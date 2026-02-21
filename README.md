@@ -8,5 +8,22 @@ To build the game, follow build instructions in the [BUILD.md](BUILD.md) file.
 
 Build or runtime issues should be reported on our [GitHub tracker](https://github.com/DescentDevelopers/Descent3/issues).
 
+## Multiplayer Bots (Experimental)
+
+This fork introduces an experimental server-side multiplayer bot system for Descent 3. These AI-controlled bots occupy real player slots on dedicated servers, appearing as normal players to clients.
+
+**Current Status: Phase 0.5 — Stability Fixes (In Progress)**
+
+**Key Features (Phase 0 & 0.5):**
+*   **Protocol Transparency:** Bots use the same player slots, packets, and state structures as human players.
+*   **Wandering AI:** Bots autonomously navigate maps using the existing AI goal system, can be killed, and auto-respawn.
+*   **Console Management:** Dedicated server console commands (`addbot`, `removebot`, `removebots`, `botlist`) are available for management.
+*   **Stability:** Phase 0.5 focused on significant stability fixes.
+
+This system aims to provide AI opponents for dedicated servers while maintaining full compatibility with the main branch of this Descent 3 fork. Future phases will focus on combat AI, advanced pathfinding, and configuration options.
+
+**Current Issues:**
+The scoreboard at round end currently does not properly track bot players. Bots currently cannot shoot, or do much of anything yet. This is still in a very early proof-of-concept stage.
+
 ## Contributing
 Anyone can contribute! We have an active Discord presence at [Descent Developer Network](https://discord.gg/GNy5CUQ). Patches should be submitted on GitHub.
