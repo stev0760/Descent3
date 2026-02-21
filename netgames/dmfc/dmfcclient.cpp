@@ -900,8 +900,10 @@ void DMFCBase::OnPlayerReconnect(int player_num) {
     // restore their team
     int team = PRec_GetPlayerTeam(player_num);
     if (team != Players[player_num].team) {
-      // hey! Jason hasn't set the correct team for this player
-      ASSERT(player_num == 0); // this is only going to happen for the server
+      // Team mismatch on reconnect — expected for dedicated server (slot 0) and server-side bots
+      // whose team may not have been saved to PRec. Log instead of asserting.
+      mprintf(0, "DMFC: Team mismatch on reconnect for player %d (%s): PRec=%d, current=%d\n",
+              player_num, Players[player_num].callsign, team, Players[player_num].team);
     }
 
     SendTeamAssignment(player_num, team, false);

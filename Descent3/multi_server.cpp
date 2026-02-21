@@ -669,6 +669,7 @@
 #include "psrand.h"
 #include "polymodel.h"
 #include "init.h"
+#include "bot.h"
 
 void MultiProcessShipChecksum(MD5 *md5, int ship_index);
 
@@ -1035,7 +1036,7 @@ void MultiSendPlayerDisconnect(int slot) {
     if (i == Player_num || i == slot)
       continue;
 
-    if (NetPlayers[i].flags & NPF_CONNECTED)
+    if ((NetPlayers[i].flags & NPF_CONNECTED) && !(NetPlayers[i].flags & NPF_BOT))
       nw_SendReliable(NetPlayers[i].reliable_socket, data, count);
   }
 }
@@ -1049,6 +1050,10 @@ void MultiDisconnectDeadPlayers() {
       continue;
 
     if (NetPlayers[i].flags & NPF_CONNECTED) {
+      // Skip bot slots — they have no real network connection
+      if (NetPlayers[i].flags & NPF_BOT)
+        continue;
+
       float cur_time = timer_GetTime();
 
       if (!nw_CheckReliableSocket(NetPlayers[i].reliable_socket)) {
@@ -1086,7 +1091,9 @@ void MultiDisconnectPlayer(int slot) {
     if (NetPlayers[slot].file_xfer_flags != NETFILE_NONE) {
       MultiCancelFile(slot, NetPlayers[slot].custom_file_seq, NetPlayers[slot].file_xfer_who);
     }
-    nw_CloseSocket(&NetPlayers[slot].reliable_socket);
+    if (!(NetPlayers[slot].flags & NPF_BOT)) {
+      nw_CloseSocket(&NetPlayers[slot].reliable_socket);
+    }
 
     if (NetPlayers[slot].sequence == NETSEQ_PLAYING) {
       PlayerSpewInventory(&Objects[Players[slot].objnum], true, true);
@@ -1828,6 +1835,10 @@ void MultiSendReliablyToAllExcept(int except, uint8_t *data, int size, int seq_t
     if (i == except || i == Player_num)
       continue;
 
+    // Skip bot slots — they have no real network connection
+    if (NetPlayers[i].flags & NPF_BOT)
+      continue;
+
     if (NetPlayers[i].sequence >= seq_threshold && NetPlayers[i].sequence != NETSEQ_LEVEL_END)
       nw_SendReliable(NetPlayers[i].reliable_socket, data, size, urgent);
   }
@@ -1843,6 +1854,10 @@ void MultiSendToAllExcept(int except, uint8_t *data, int size, int seq_threshold
 
     // Don't send to these clowns
     if (i == except || i == Player_num)
+      continue;
+
+    // Skip bot slots — they have no real network connection
+    if (NetPlayers[i].flags & NPF_BOT)
       continue;
 
     if (seq_threshold == -1 || (NetPlayers[i].sequence >= seq_threshold && NetPlayers[i].sequence != NETSEQ_LEVEL_END))
@@ -2198,6 +2213,8 @@ void MultiSendGenericNonVis(int slot, uint16_t *objarray, int num) {
   END_DATA(count, data, size_offset);
 
   // Send it out
+  if (NetPlayers[slot].flags & NPF_BOT)
+    return; // Bots have no socket — skip
   nw_SendReliable(NetPlayers[slot].reliable_socket, data, count);
 }
 
@@ -2586,6 +2603,9 @@ void MultiDoServerFrame() {
   // get the other net players data
   MultiProcessIncoming();
 
+  // Update server-side bots (keep-alive, death/respawn)
+  BotDoFrame();
+
   // Find destination room if they fired
   MultiGetDestFireRooms();
 
@@ -2633,6 +2653,13 @@ void MultiDoServerFrame() {
     }
 
     if (NetPlayers[i].flags & NPF_CONNECTED) {
+      // Skip bot slots — no network I/O needed, AI runs via ObjDoFrameAll
+      if (NetPlayers[i].flags & NPF_BOT) {
+        if (NetPlayers[i].sequence == NETSEQ_PLAYING)
+          Player_count++;
+        continue;
+      }
+
       // Check to see if this guy as any special requests
       if (NetPlayers[i].sequence == NETSEQ_REQUEST_PLAYERS) {
         for (int t = 0; t < MAX_NET_PLAYERS; t++) {
@@ -2789,8 +2816,11 @@ void MultiSendClientExecuteDLL(int eventnum, int me_objnum, int it_objnum, int t
   // Send it out
   if (to == -1)
     MultiSendReliablyToAllExcept(Player_num, data, count, NETSEQ_OBJECTS, false);
-  else
+  else {
+    if (NetPlayers[to].flags & NPF_BOT)
+      return; // Bots have no socket — skip
     nw_SendReliable(NetPlayers[to].reliable_socket, data, count);
+  }
 }
 
 // Resets the settings that a server uses

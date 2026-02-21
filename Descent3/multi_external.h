@@ -170,6 +170,7 @@ typedef int HANDLE;
 #define NPF_MT_WRITING_PILOT 16  // Waiting to finish updating the mastertracker with this pilot's stats
 #define NPF_MT_HAS_PILOT_DATA 32 // We got data from the mastertracker
 #define NPF_WROTE_RANK 64        // We told the clients about this clients rank
+#define NPF_BOT 128              // Slot is occupied by a server-side bot (no real network connection)
 
 struct netplayer {
   network_address addr;

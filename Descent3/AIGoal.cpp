@@ -1120,6 +1120,11 @@ int GoalAddGoal(object *obj, uint32_t goal_type, void *arg_struct, int level, fl
     int8_t new_anim = *static_cast<int *>(arg_struct);
     polyobj_info *p_info = &obj->rtype.pobj_info;
 
+    // OBJ_PLAYER objects have obj->id = player slot, not an Object_info index.
+    // All Object_info accesses below would dereference invalid data.
+    if (obj->type == OBJ_PLAYER)
+      return -1;
+
     //			mprintf(0, "Anim Goal %d\n", new_anim);
     // Custom animations cannot be overriden
     if (ai_info->next_animation_type == AS_CUSTOM) {

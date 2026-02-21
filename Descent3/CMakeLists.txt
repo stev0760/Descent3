@@ -2,6 +2,7 @@ set(HEADERS
   AIGoal.h
   AIMain.h
   BOA.h
+  bot.h
   Briefing.h
   BriefingParse.h
   ConfigItem.h
@@ -153,6 +154,7 @@ set(CPPS
   audiotaunts.cpp
   bnode.cpp
   BOA.cpp
+  bot.cpp
   Briefing.cpp
   BriefingParse.cpp
   bsp.cpp

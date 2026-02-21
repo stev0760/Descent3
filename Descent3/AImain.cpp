@@ -6047,18 +6047,21 @@ void AIDoFrame(object *obj) {
     return;
   }
 
-  // Animate the object
-  ai_do_animation(obj, Frametime);
-  if (ai_info->animation_type == AS_IDLE) {
-    f_attach_done = true;
+  // Animate the object (skip for OBJ_PLAYER — ai_do_animation uses Object_info[obj->id]
+  // which is only valid for robots, not players where obj->id is the player slot number)
+  if (obj->type != OBJ_PLAYER) {
+    ai_do_animation(obj, Frametime);
+    if (ai_info->animation_type == AS_IDLE) {
+      f_attach_done = true;
+    }
   }
 
   if (Demo_flags == DF_PLAYBACK) {
     // All we want is animation
     return;
   }
-  // Handle On/off and spray weapons
-  {
+  // Handle On/off and spray weapons (skip for OBJ_PLAYER — uses Object_info[obj->id].static_wb)
+  if (obj->type != OBJ_PLAYER) {
     if ((obj->weapon_fire_flags & WFF_SPRAY) && !(obj->flags & (OF_DESTROYED | OF_DYING))) {
       int8_t wb_index = ai_info->last_special_wb_firing;
       DoSprayEffect(obj, &Object_info[obj->id].static_wb[wb_index], wb_index);
@@ -6185,7 +6188,8 @@ void AIDoFrame(object *obj) {
     ai_walker_stuff(obj);
 
   // Animation state changes based on current level of awareness
-  if (obj->control_type == CT_AI)
+  // (skip for OBJ_PLAYER — do_awareness_based_anim_stuff uses Object_info[obj->id].anim)
+  if (obj->control_type == CT_AI && obj->type != OBJ_PLAYER)
     do_awareness_based_anim_stuff(obj);
 
   // Decrease awareness

@@ -131,6 +131,7 @@
 #include "ship.h"
 #include "hud.h"
 #include "networking.h"
+#include "bot.h"
 
 #if !defined(POSIX)
 typedef int socklen_t;
@@ -716,6 +717,55 @@ void ParseLine(char *srcline, char *command, char *operand, int cmdlen, int oprl
     operand[0] = 0;
 }
 
+// Handle bot management commands. Returns true if the command was a bot command.
+static bool DedicatedHandleBotCommand(const char *command, const char *operand) {
+  if (stricmp(command, "addbot") == 0) {
+    char botname[CALLSIGN_LEN + 1] = "Bot";
+    if (operand[0]) {
+      strncpy(botname, operand, CALLSIGN_LEN);
+      botname[CALLSIGN_LEN] = '\0';
+    }
+    int idx = BotAdd(botname);
+    if (idx >= 0)
+      PrintDedicatedMessage("Bot '%s' added in slot %d\n", Bots[idx].callsign, Bots[idx].player_slot);
+    else
+      PrintDedicatedMessage("Failed to add bot (server full or max bots reached)\n");
+    return true;
+  }
+  if (stricmp(command, "removebot") == 0) {
+    if (operand[0]) {
+      int idx = atoi(operand);
+      if (idx >= 0 && idx < MAX_BOTS && Bots[idx].active) {
+        PrintDedicatedMessage("Removing bot '%s' from slot %d\n", Bots[idx].callsign, Bots[idx].player_slot);
+        BotRemove(idx);
+      } else {
+        PrintDedicatedMessage("Invalid bot index %d\n", idx);
+      }
+    } else {
+      PrintDedicatedMessage("Usage: removebot <index>\n");
+    }
+    return true;
+  }
+  if (stricmp(command, "removebots") == 0) {
+    BotRemoveAll();
+    PrintDedicatedMessage("All bots removed\n");
+    return true;
+  }
+  if (stricmp(command, "botlist") == 0) {
+    if (Num_bots == 0) {
+      PrintDedicatedMessage("No bots active\n");
+    } else {
+      for (int i = 0; i < MAX_BOTS; i++) {
+        if (Bots[i].active)
+          PrintDedicatedMessage("  Bot %d: '%s' slot=%d %s\n", i, Bots[i].callsign, Bots[i].player_slot,
+                                Bots[i].awaiting_respawn ? "(dead)" : "(alive)");
+      }
+    }
+    return true;
+  }
+  return false;
+}
+
 // Called once per frame for the dedicated server
 void DoDedicatedServerFrame() {
   char str[255];
@@ -752,6 +802,9 @@ void DoDedicatedServerFrame() {
   ParseLine(str, command, operand, 255, 255);
 
   if (!command[0])
+    return;
+
+  if (DedicatedHandleBotCommand(command, operand))
     return;
 
   int index = DedicatedServerLex(command);
@@ -995,6 +1048,9 @@ void DedicatedReadTelnet(void) {
               ParseLine(conn->input, command, operand, 255, 255);
               conn->input[0] = '\0';
               if (!command[0])
+                return;
+
+              if (DedicatedHandleBotCommand(command, operand))
                 return;
 
               int index = DedicatedServerLex(command);

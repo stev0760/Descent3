@@ -1695,6 +1695,7 @@
 #include "osiris_share.h"
 #include "cockpit.h"
 #include "psrand.h"
+#include "bot.h"
 
 void MultiProcessShipChecksum(MD5 *md5, int ship_index);
 
@@ -4962,7 +4963,8 @@ void MultiSendMessageFromServer(int color, char *message, int to) {
     if (team == -1) {
       // send it off to one person
       if (to >= 0 && to < MAX_PLAYERS) {
-        if (NetPlayers[to].flags & NPF_CONNECTED && NetPlayers[to].sequence == NETSEQ_PLAYING && to != Player_num) {
+        if (NetPlayers[to].flags & NPF_CONNECTED && !(NetPlayers[to].flags & NPF_BOT) &&
+            NetPlayers[to].sequence == NETSEQ_PLAYING && to != Player_num) {
           nw_SendReliable(NetPlayers[to].reliable_socket, data, count, false);
         }
       }
@@ -4971,8 +4973,8 @@ void MultiSendMessageFromServer(int color, char *message, int to) {
     } else {
       // send it off only to teammates
       for (int p = 0; p < MAX_PLAYERS; p++) {
-        if (NetPlayers[p].flags & NPF_CONNECTED && NetPlayers[p].sequence == NETSEQ_PLAYING &&
-            Players[p].team == team && p != Player_num) {
+        if (NetPlayers[p].flags & NPF_CONNECTED && !(NetPlayers[p].flags & NPF_BOT) &&
+            NetPlayers[p].sequence == NETSEQ_PLAYING && Players[p].team == team && p != Player_num) {
 
           nw_SendReliable(NetPlayers[p].reliable_socket, data, count, false);
         }
@@ -5571,7 +5573,8 @@ void MultiSendMissileRelease(int slot, bool is_guided) {
       if (i == slot)
         continue;
 
-      if ((NetPlayers[i].flags & NPF_CONNECTED) && (NetPlayers[i].sequence == NETSEQ_PLAYING)) {
+      if ((NetPlayers[i].flags & NPF_CONNECTED) && !(NetPlayers[i].flags & NPF_BOT) &&
+          (NetPlayers[i].sequence == NETSEQ_PLAYING)) {
         nw_SendReliable(NetPlayers[i].reliable_socket, data, count, true);
       }
     }
@@ -5599,6 +5602,9 @@ void MultiDoSpecialPacket(uint8_t *data) {
 // Sends the special script packet to a player
 void MultiSendSpecialPacket(int slot, uint8_t *outdata, int size) {
   MULTI_ASSERT_NOMESSAGE(Netgame.local_role == LR_SERVER);
+
+  if (NetPlayers[slot].flags & NPF_BOT)
+    return; // Bots have no socket — skip
 
   int count = 0;
   uint8_t data[MAX_GAME_DATA_SIZE];
@@ -6433,6 +6439,10 @@ bool MultiStartNewLevel(int level) {
 
   CallGameDLL(EVT_GAMELEVELSTART, &DLLInfo);
 
+  // Restore bot AI state after level transition (objects were destroyed and recreated)
+  if (Netgame.local_role == LR_SERVER)
+    BotReinitAll();
+
   return true;
 }
 
@@ -6458,6 +6468,11 @@ void MultiSendFullPacket(int slot, int flags) {
   if (Multi_send_size[slot] < 1)
     return;
 
+  if (NetPlayers[slot].flags & NPF_BOT) {
+    Multi_send_size[slot] = 0;
+    return;
+  }
+
   MULTI_ASSERT_NOMESSAGE(NetPlayers[slot].flags & NPF_CONNECTED);
   nw_Send(&NetPlayers[slot].addr, Multi_send_buffer[slot], Multi_send_size[slot], flags);
   Multi_send_size[slot] = 0;
@@ -6480,6 +6495,13 @@ void MultiSendFullReliablePacket(int slot, int flags) {
     Multi_reliable_urgent[Player_num] = 0;
   } else // We are the server and we're sending to "slot"
   {
+    if (NetPlayers[slot].flags & NPF_BOT) {
+      Multi_reliable_send_size[slot] = 0;
+      Multi_reliable_sent_position[slot] = 0;
+      Multi_reliable_last_send_time[slot] = 0;
+      Multi_reliable_urgent[slot] = 0;
+      return;
+    }
     MULTI_ASSERT_NOMESSAGE(NetPlayers[slot].flags & NPF_CONNECTED);
     nw_SendReliable(NetPlayers[slot].reliable_socket, Multi_reliable_send_buffer[slot], Multi_reliable_send_size[slot],
                     true);
@@ -7931,7 +7953,8 @@ void MultiSendClientCustomData(int slot, int whoto) {
       // Send to all clients
       MultiSendReliablyToAllExcept(Player_num, data, count, NETSEQ_PLAYING);
     } else {
-      nw_SendReliable(NetPlayers[whoto].reliable_socket, data, count, true);
+      if (!(NetPlayers[whoto].flags & NPF_BOT))
+        nw_SendReliable(NetPlayers[whoto].reliable_socket, data, count, true);
     }
   } else {
     // Send to the server
