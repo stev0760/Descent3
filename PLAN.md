@@ -370,7 +370,7 @@ Add `bot.h` to HEADERS list and `bot.cpp` to SOURCES list in the Descent3 target
 
 ## Why This Works Without Breaking Retail Clients
 
-1. **Protocol compatibility**: Bots use real player slots. Clients receive the same `MP_PLAYER`, `MP_PLAYER_POS`, `MP_PLAYER_ENTERED_GAME`, `MP_PLAYER_DEAD`, `MP_PLAYER_RENEW` packets they would for any human player. There is zero protocol-level distinction.
+1. **Protocol compatibility**: Bots use real player slots. Clients receive the same `MP_PLAYER`, `MP_PLAYER_POS`, `MP_PLAYER_ENTERED_GAME`, `MP_PLAYER_DEAD`, `MP_RENEW_PLAYER` packets they would for any human player. There is zero protocol-level distinction.
 
 2. **No new packet types**: All communication uses existing packet types. The client has no way to tell a bot from a human — it just sees another player with a callsign, a ship model, and position updates.
 
@@ -490,8 +490,11 @@ These send functions were found to reach bot slots without checking NPF_BOT:
 
 ### Scoreboard Tracking Fixes
 
-Investigation revealed that bots were missing from the end-of-level scoreboard because they were not being registered in DMFC's **PRec (Player Record)** system due to non-unique network addresses.
+Investigation revealed that bots were missing from the end-of-level scoreboard because they were not being registered in DMFC's **PRec (Player Record)** system and were being misidentified as the dedicated server.
 
-- **Root Cause:** Bots were initialized with zeroed addresses, causing collisions in DMFC's identification logic.
-- **Fix:** Bots are now assigned a unique dummy network address (e.g., `127.<bot_index>.<slot>.1`) during creation and level transitions. This enables successful `PRec` registration.
-- **Remaining Limitation:** Scoreboards in certain game modes may still hide bots if they only iterate the first 32 player slots. Fixing this requires modifying `netgames` code, which is currently deferred to maintain minimal engine-only changes.
+- **Root Cause 1 (Address):** Bots were initialized with zeroed addresses, causing collisions in DMFC's identification logic.
+- **Fix 1:** Bots are now assigned a unique dummy network address (e.g., `127.<bot_index>.<slot>.1`) during creation and level transitions.
+- **Root Cause 2 (Team):** Bots were assigned to `team = -1`. DMFC treats disconnected players with team -1 as the dedicated server and excludes them from the scoreboard.
+- **Fix 2:** Bots are now assigned to **team 0** by default instead of -1.
+- **Result:** Successful `PRec` registration and scoreboard visibility.
+- **Remaining Limitation:** Scoreboards in certain game modes may still hide bots if they only iterate the first 32 player slots. Fixing this would require modifying `netgames` code, which is currently deferred.

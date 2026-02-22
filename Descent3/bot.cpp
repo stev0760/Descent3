@@ -120,6 +120,8 @@ void BotReinitAll() {
 
     // The level load created a new player object — reinitialize it
     InitPlayerNewShip(slot, INVRESET_ALL);
+    InitPlayerNewGame(slot); // This resets team to -1
+    Players[slot].team = 0;  // Restore to a valid team
     Players[slot].start_index = PlayerGetRandomStartPosition(slot);
     PlayerMoveToStartPos(slot, Players[slot].start_index);
     ResetPlayerObject(slot);
@@ -207,7 +209,7 @@ int BotAdd(const char *name, int ship_index) {
   strncpy(Players[slot].callsign, name, CALLSIGN_LEN);
   Players[slot].callsign[CALLSIGN_LEN] = '\0';
   Players[slot].ship_index = ship_index;
-  Players[slot].team = -1;
+  Players[slot].team = 0; // Assign to a valid team (0) so they aren't mistaken for the dedicated server (-1)
   Players[slot].flags = 0;
   Players[slot].rank = -1.0f;
   memset(Players[slot].tracker_id, 0, sizeof(Players[slot].tracker_id));

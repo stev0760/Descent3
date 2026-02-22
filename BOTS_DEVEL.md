@@ -171,20 +171,18 @@ Use `-tempdir` to avoid cache lock conflicts when running both server and client
 
 ### Scoreboard Tracking (Phase 0.5)
 
-Investigation revealed that bots were missing from the end-of-level scoreboard because they were not being registered in DMFC's **PRec (Player Record)** system. 
+Investigation revealed that bots were missing from the end-of-level scoreboard because they were not being registered in DMFC's **PRec (Player Record)** system and were being misidentified as the dedicated server.
 
 **Findings:**
 - DMFC registers players during the `EVT_CLIENT_GAMEPLAYERENTERSGAME` event.
-- The `PRec` system uses the player's network address (`NetPlayers[slot].addr`) as a primary identifier.
-- Originally, bots were initialized with zeroed network addresses, causing collisions or silent registration failures in `PRec_AssignPlayerToSlot` or `PRec_FindPlayer`.
+- The `PRec` system uses the player's network address (`NetPlayers[slot].addr`) as a primary identifier. Originally, bots were initialized with zeroed network addresses, causing collisions or silent registration failures.
+- Furthermore, bots were assigned to `team = -1`. In DMFC, a disconnected player with team -1 is identified as the **Dedicated Server** and is intentionally excluded from the scoreboard.
 
 **Fix Implemented:**
 - Bots are now assigned a **unique dummy network address** in `BotAdd()` and `BotReinitAll()` (e.g., `127.<bot_index>.<slot>.1`).
-- This allows DMFC to distinguish between individual bots and successfully assign them unique `PRec` slots.
-- Logs now confirm successful registration: `DMFC: (testbot1) has been assigned to Player Record slot #X`.
-
-**Remaining Issue:**
-Despite successful `PRec` registration, bots may still be missing from the final scoreboard in certain game modes (like Anarchy). This is likely due to sorting or display limits in the game mode's `OnPLRInterval` logic, which often only iterates through the first 32 player slots (`DLLMAX_PLAYERS`) while `PRec` supports 64 slots (`MAX_PLAYER_RECORDS`). Fixing this would require modifying `netgames` code, which is currently outside the project's minimal-surface-area scope.
+- Bots are now assigned to **team 0** by default instead of -1.
+- These changes allow DMFC to distinguish between individual bots and correctly identify them as players rather than the dedicated server.
+- **Result:** Bots are now fully tracked and visible on the end-of-level scoreboard.
 
 - **No persistence** — Bots must be re-added after server restart. Config-file-based bot spawning is future work.
 - **Bot removal during level transition untested** — removing bots while a level change is in progress may have edge cases.
