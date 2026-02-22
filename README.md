@@ -23,7 +23,7 @@ This fork introduces an experimental server-side multiplayer bot system for Desc
 This system aims to provide AI opponents for dedicated servers while maintaining full compatibility with the main branch of this Descent 3 fork. Future phases will focus on combat AI, advanced pathfinding, and configuration options.
 
 **Current Issues:**
-The scoreboard at round end currently does not properly track bot players. Bots currently cannot shoot, or do much of anything yet. This is still in a very early proof-of-concept stage.
+Bots currently cannot fire weapons, or do much of anything yet besides wander around. This is still in a very early proof-of-concept stage.
 
 ## Contributing
 Anyone can contribute! We have an active Discord presence at [Descent Developer Network](https://discord.gg/GNy5CUQ). Patches should be submitted on GitHub.
