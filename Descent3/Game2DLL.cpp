@@ -708,7 +708,13 @@ void DLLFatalError(const char *reason) {
 }
 // The chokepoint function to call the dll function
 void CallGameDLL(int eventnum, dllinfo *data) {
+  if (eventnum != EVT_GAME_INTERVAL && eventnum != EVT_CLIENT_HUD_INTERVAL) {
+    // LOG_DEBUG.printf("Game2DLL: CallGameDLL event=0x%X", eventnum);
+  }
   if (GameDLLHandle.handle && DLLGameCall) {
+    if (eventnum == EVT_GAMEPLAYERENTERSGAME || eventnum == EVT_CLIENT_GAMEPLAYERENTERSGAME) {
+      LOG_DEBUG.printf("Game2DLL: Invoking DLLGameCall for event 0x%X", eventnum);
+    }
     data->iRet = 0;
     DLLGameCall(eventnum, data);
   }

@@ -487,3 +487,11 @@ These send functions were found to reach bot slots without checking NPF_BOT:
 ### Bot Removal Client Notification
 
 `BotRemove()` now fires `EVT_GAMEPLAYERDISCONNECT` and broadcasts `MultiSendPlayerDisconnect()` before ghosting, so clients remove the bot from HUD/scoreboard.
+
+### Scoreboard Tracking Fixes
+
+Investigation revealed that bots were missing from the end-of-level scoreboard because they were not being registered in DMFC's **PRec (Player Record)** system due to non-unique network addresses.
+
+- **Root Cause:** Bots were initialized with zeroed addresses, causing collisions in DMFC's identification logic.
+- **Fix:** Bots are now assigned a unique dummy network address (e.g., `127.<bot_index>.<slot>.1`) during creation and level transitions. This enables successful `PRec` registration.
+- **Remaining Limitation:** Scoreboards in certain game modes may still hide bots if they only iterate the first 32 player slots. Fixing this requires modifying `netgames` code, which is currently deferred to maintain minimal engine-only changes.

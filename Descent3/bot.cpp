@@ -107,6 +107,15 @@ void BotReinitAll() {
     NetPlayers[slot].sequence = NETSEQ_PLAYING;
     NetPlayers[slot].last_packet_time = timer_GetTime();
 
+    // Ensure unique dummy network address is set for PRec registration
+    NetPlayers[slot].addr.connection_type = NP_TCP;
+    memset(NetPlayers[slot].addr.address, 0, 6);
+    NetPlayers[slot].addr.address[0] = 0x7F; // 127
+    NetPlayers[slot].addr.address[1] = (uint8_t)i;
+    NetPlayers[slot].addr.address[2] = (uint8_t)slot;
+    NetPlayers[slot].addr.address[3] = 0x01;
+    NetPlayers[slot].addr.port = 0;
+
     LOG_DEBUG.printf("BOT: Reinitializing '%s' in slot %d, team=%d", Bots[i].callsign, slot, Players[slot].team);
 
     // The level load created a new player object — reinitialize it
@@ -183,6 +192,17 @@ int BotAdd(const char *name, int ship_index) {
   NetPlayers[slot].ping_time = 0.0f;
   NetPlayers[slot].percent_loss = 0.0f;
 
+  // Assign a unique dummy network address for PRec registration.
+  // This allows DMFC to distinguish between different bots.
+  // Using 127.<bot_index>.<slot>.1 to be very unique on localhost.
+  NetPlayers[slot].addr.connection_type = NP_TCP;
+  memset(NetPlayers[slot].addr.address, 0, 6);
+  NetPlayers[slot].addr.address[0] = 0x7F; // 127
+  NetPlayers[slot].addr.address[1] = (uint8_t)bot_index;
+  NetPlayers[slot].addr.address[2] = (uint8_t)slot;
+  NetPlayers[slot].addr.address[3] = 0x01;
+  NetPlayers[slot].addr.port = 0;
+
   // --- Set up Players slot ---
   strncpy(Players[slot].callsign, name, CALLSIGN_LEN);
   Players[slot].callsign[CALLSIGN_LEN] = '\0';
@@ -220,10 +240,14 @@ int BotAdd(const char *name, int ship_index) {
   // Notify the game mode DLL (DMFC) that this player entered the game.
   // This triggers the HUD player list update and scoreboard registration on all clients.
   // Without this, the bot is visible in-world but missing from the player list overlay.
+  LOG_DEBUG.printf("BOT: Firing EVT_GAMEPLAYERENTERSGAME for slot %d", slot);
   extern dllinfo DLLInfo;
   DLLInfo.me_handle = Objects[Players[slot].objnum].handle;
   DLLInfo.it_handle = Objects[Players[slot].objnum].handle;
   CallGameDLL(EVT_GAMEPLAYERENTERSGAME, &DLLInfo);
+
+  // Verify PRec slot (via DMFC interface if possible, or just log intent)
+  LOG_DEBUG.printf("BOT: Finished adding bot '%s' in slot %d", name, slot);
 
   // --- Populate bot_info record ---
   Bots[bot_index].active = true;

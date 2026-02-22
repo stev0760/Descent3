@@ -2,6 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Collaborative Workflow
+
+This project uses both **Claude Code** and **Gemini** as agentic coding assistants. 
+- **Claude Code** is the primary assistant for implementation and feature work.
+- **Gemini** acts as a companion agent for review, analysis, and secondary tasks.
+Refer to `GEMINI.md` for Gemini-specific guidance.
+
 ## Build Commands
 
 Descent 3 uses CMake (3.20+) with Ninja, vcpkg for dependencies, and requires C++17. Set `VCPKG_ROOT` before building.

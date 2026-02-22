@@ -820,6 +820,8 @@ void DoDedicatedServerFrame() {
 }
 
 // Prints a message to the console if the dedicated server is active
+#include "log.h"
+
 void PrintDedicatedMessage(const char *fmt, ...) {
   if (!Dedicated_server)
     return;
@@ -830,6 +832,8 @@ void PrintDedicatedMessage(const char *fmt, ...) {
   va_start(args, fmt);
   std::vsnprintf(buf, CON_MAX_STRINGLEN, fmt, args);
   va_end(args);
+
+  LOG_DEBUG.printf("DPrintf: %s", buf);
 
   con_Printf(buf);
   DedicatedSocketputs(buf);
