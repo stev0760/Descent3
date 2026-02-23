@@ -12,7 +12,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 This fork introduces an experimental server-side multiplayer bot system for Descent 3. These AI-controlled bots occupy real player slots on dedicated servers, appearing as normal players to clients.
 
-**Current Status: Phase 3 — Combat Behaviors & State Machine**
+**Current Status: Phase 3 complete. Live tested. Movement realism research in progress (Phase 3.5).**
 
 **Key Features:**
 *   **Protocol Transparency:** Bots use the same player slots, packets, and state structures as human players. No client modifications required.
@@ -22,10 +22,11 @@ This fork introduces an experimental server-side multiplayer bot system for Desc
 *   **Target Diversity:** A congestion penalty spreads bots across multiple targets, reducing collision pile-ups.
 *   **Robot Targeting:** In co-op and robo-anarchy, bots pursue level robots as well as human players.
 *   **Smart Team Assignment:** Bots are auto-assigned to the team with the fewest members in team game modes, and team assignments persist across level transitions.
-*   **Console Management:** Dedicated server console commands (`addbot`, `removebot`, `removebots`, `botlist`).
+*   **Thruster Visuals:** Other players see thrust plumes and afterburner glow on bot ships.
+*   **Console Management:** Dedicated server console commands (`addbot`, `removebot`, `removebots`, `botlist`, `botstat`, `botmov`).
 
 **Current Limitations:**
-Bots navigate in straight lines toward targets when hunting (no BOA pathfinding) and may get stuck in geometry. See `BOTS_DEVEL.md` for full details.
+Bots move realistically enough to play against but lack the inertia and afterburner physics of human players — they use CT_AI direct velocity control rather than CT_FLYING thrust physics. Phase 3.5 investigates synthetic CT_FLYING controls to close this gap. Bots also navigate in straight lines toward targets (no BOA pathfinding) and may get stuck in geometry. See `BOTS_DEVEL.md` for full details.
 
 ## Contributing
 Anyone can contribute! We have an active Discord presence at [Descent Developer Network](https://discord.gg/GNy5CUQ). Patches should be submitted on GitHub.

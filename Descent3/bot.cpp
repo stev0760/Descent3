@@ -43,6 +43,7 @@
 
 bot_info Bots[MAX_BOTS];
 int Num_bots = 0;
+bool Bot_debug_movement = false; // Toggle with "botmov on/off" console command
 
 // Forward declarations for functions not exposed in headers
 extern void MultiSendPlayerEnteredGame(int which);
@@ -58,8 +59,8 @@ static void BotConfigureAI(int player_slot) {
   obj->ai_info->ai_class = AIC_AIS_FULL;
   obj->ai_info->flags = AIF_PERSISTANT | AIF_DISABLE_FIRING | AIF_DISABLE_MELEE | AIF_FORCE_AWARENESS | AIF_DODGE;
   obj->ai_info->awareness = AWARE_MOSTLY;
-  obj->ai_info->max_velocity = 30.0f;
-  obj->ai_info->max_delta_velocity = 20.0f;
+  obj->ai_info->max_velocity = 50.0f;       // matches typical player physics equilibrium
+  obj->ai_info->max_delta_velocity = 40.0f; // matches PlayerSetControlToAI default
   obj->ai_info->max_turn_rate = 16000;
   obj->ai_info->movement_type = MC_FLYING;
   obj->ai_info->fov = 0.7f;
@@ -376,13 +377,14 @@ static void BotRespawn(int bot_index) {
   MultiSendRenewPlayer(slot);
 
   // ResetPlayerObject() sets CT_NONE for non-local players, so re-apply AI control.
-  PlayerSetControlToAI(slot, 30.0f);
+  PlayerSetControlToAI(slot, 50.0f);
   BotConfigureAI(slot);
 
   Bots[bot_index].awaiting_respawn = false;
   Bots[bot_index].pursuit_goal_index = -1;
   Bots[bot_index].combat_goal_index = -1;
   Bots[bot_index].state = BOT_STATE_WANDER;
+  Bots[bot_index].afterburner_timer = 0.0f;
   Bots[bot_index].last_target_update = 0.0f; // force immediate re-target after respawn
   LOG_DEBUG.printf("BOT: '%s' respawned in slot %d", Bots[bot_index].callsign, slot);
 }
@@ -397,6 +399,7 @@ void BotInitAll() {
     Bots[i].combat_goal_index = -1;
     Bots[i].intended_team = 0;
     Bots[i].state = BOT_STATE_WANDER;
+    Bots[i].afterburner_timer = 0.0f;
   }
   Num_bots = 0;
 }
@@ -417,6 +420,7 @@ void BotReinitAll() {
     Bots[i].pursuit_goal_index = -1;
     Bots[i].combat_goal_index = -1;
     Bots[i].state = BOT_STATE_WANDER;
+    Bots[i].afterburner_timer = 0.0f;
 
     // Restore NetPlayers sequence (level end sets NETSEQ_WAITING_FOR_LEVEL)
     NetPlayers[slot].sequence = NETSEQ_PLAYING;
@@ -447,7 +451,7 @@ void BotReinitAll() {
     MultiSendPlayerEnteredGame(slot);
 
     // Restore AI control (MultiDoPlayerEnteredGame calls ResetPlayerObject which sets CT_NONE)
-    PlayerSetControlToAI(slot, 30.0f);
+    PlayerSetControlToAI(slot, 50.0f);
     BotConfigureAI(slot);
 
     // Mark server-owned
@@ -567,7 +571,7 @@ int BotAdd(const char *name, int ship_index) {
   MultiSendPlayerEnteredGame(slot);
 
   // Now apply AI control AFTER the re-init from MultiSendPlayerEnteredGame.
-  PlayerSetControlToAI(slot, 30.0f);
+  PlayerSetControlToAI(slot, 50.0f);
   BotConfigureAI(slot);
 
   // Mark the object as server-owned
@@ -599,6 +603,7 @@ int BotAdd(const char *name, int ship_index) {
   Bots[bot_index].combat_goal_index = -1;
   Bots[bot_index].intended_team = chosen_team;
   Bots[bot_index].state = BOT_STATE_WANDER;
+  Bots[bot_index].afterburner_timer = 0.0f;
   Num_bots++;
 
   LOG_INFO.printf("BOT: Added '%s' in player slot %d (bot index %d)", name, slot, bot_index);
@@ -644,6 +649,8 @@ void BotRemoveAll() {
 }
 
 void BotDoFrame() {
+  static int mov_log_counter = 0;
+
   for (int i = 0; i < MAX_BOTS; i++) {
     if (!Bots[i].active)
       continue;
@@ -681,6 +688,46 @@ void BotDoFrame() {
     // Per-frame actions based on state
     if (Bots[i].state == BOT_STATE_COMBAT)
       BotDoFiring(i);
+  }
+
+  // Movement logging (throttled to every 30 frames, ~0.5s at 60Hz)
+  if (Bot_debug_movement) {
+    mov_log_counter++;
+    if (mov_log_counter >= 30) {
+      mov_log_counter = 0;
+      static const char *state_names[] = {"WANDER", "HUNT", "COMBAT", "FLEE"};
+
+      // Log bot speeds
+      for (int i = 0; i < MAX_BOTS; i++) {
+        if (!Bots[i].active)
+          continue;
+        int slot = Bots[i].player_slot;
+        object *obj = &Objects[Players[slot].objnum];
+        vector &vel = obj->mtype.phys_info.velocity;
+        float speed = vm_GetMagnitude(&vel);
+        LOG_DEBUG.printf("BOTMOV: slot=%d '%s' state=%s speed=%.2f vel=(%.1f,%.1f,%.1f)", slot, Bots[i].callsign,
+                         state_names[Bots[i].state], speed, vel.x(), vel.y(), vel.z());
+      }
+
+      // Log human player speeds for baseline comparison
+      for (int i = 0; i < MAX_NET_PLAYERS; i++) {
+        if (!(NetPlayers[i].flags & NPF_CONNECTED))
+          continue;
+        if (NetPlayers[i].flags & NPF_BOT)
+          continue;
+        if (Players[i].flags & (PLAYER_FLAGS_DEAD | PLAYER_FLAGS_DYING))
+          continue;
+        object *obj = &Objects[Players[i].objnum];
+        if (obj->type != OBJ_PLAYER)
+          continue;
+        vector &vel = obj->mtype.phys_info.velocity;
+        float speed = vm_GetMagnitude(&vel);
+        LOG_DEBUG.printf("PLRMOV: slot=%d '%s' speed=%.2f vel=(%.1f,%.1f,%.1f)", i, Players[i].callsign, speed,
+                         vel.x(), vel.y(), vel.z());
+      }
+    }
+  } else {
+    mov_log_counter = 0; // reset counter when logging disabled so next enable starts fresh
   }
 }
 

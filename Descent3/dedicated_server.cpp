@@ -132,6 +132,8 @@
 #include "hud.h"
 #include "networking.h"
 #include "bot.h"
+#include "object.h"
+#include "vecmat.h"
 
 #if !defined(POSIX)
 typedef int socklen_t;
@@ -760,6 +762,50 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
           PrintDedicatedMessage("  Bot %d: '%s' slot=%d %s\n", i, Bots[i].callsign, Bots[i].player_slot,
                                 Bots[i].awaiting_respawn ? "(dead)" : "(alive)");
       }
+    }
+    return true;
+  }
+  if (stricmp(command, "botstat") == 0) {
+    static const char *state_names[] = {"WANDER", "HUNT", "COMBAT", "FLEE"};
+    bool any = false;
+    bool do_all = (operand[0] == '\0' || stricmp(operand, "all") == 0);
+    int single_idx = do_all ? -1 : atoi(operand);
+
+    for (int i = 0; i < MAX_BOTS; i++) {
+      if (!Bots[i].active)
+        continue;
+      if (!do_all && i != single_idx)
+        continue;
+      any = true;
+      int slot = Bots[i].player_slot;
+      object *obj = &Objects[Players[slot].objnum];
+      vector &vel = obj->mtype.phys_info.velocity;
+      float speed = vm_GetMagnitude(&vel);
+      const char *tgt_name = "(none)";
+      if (obj->ai_info) {
+        object *tgt = ObjGet(obj->ai_info->target_handle);
+        if (tgt && tgt->type == OBJ_PLAYER)
+          tgt_name = Players[tgt->id].callsign;
+        else if (tgt)
+          tgt_name = "(robot)";
+      }
+      PrintDedicatedMessage("  Bot %d '%s' slot=%d state=%s speed=%.1f vel=(%.1f,%.1f,%.1f) shields=%.0f target=%s\n",
+                            i, Bots[i].callsign, slot, state_names[Bots[i].state], speed, vel.x(), vel.y(), vel.z(),
+                            obj->shields, tgt_name);
+    }
+    if (!any)
+      PrintDedicatedMessage("No bots active (or invalid index)\n");
+    return true;
+  }
+  if (stricmp(command, "botmov") == 0) {
+    if (stricmp(operand, "on") == 0) {
+      Bot_debug_movement = true;
+      PrintDedicatedMessage("Bot movement logging ON\n");
+    } else if (stricmp(operand, "off") == 0) {
+      Bot_debug_movement = false;
+      PrintDedicatedMessage("Bot movement logging OFF\n");
+    } else {
+      PrintDedicatedMessage("Usage: botmov on|off  (current: %s)\n", Bot_debug_movement ? "on" : "off");
     }
     return true;
   }

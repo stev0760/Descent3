@@ -53,10 +53,12 @@ struct bot_info {
   int intended_team;                  // team this bot is assigned to (persists across level transitions)
   BotState state;                     // current behavioral state
   int combat_goal_index;              // goal index for circle-strafe or flee goal, or -1
+  float afterburner_timer;            // remaining simulated afterburner time (seconds), 0 = off
 };
 
 extern bot_info Bots[MAX_BOTS];
 extern int Num_bots;
+extern bool Bot_debug_movement; // When true, log bot+player velocity every ~0.5s
 
 // Add a bot to the game. Returns bot index (into Bots[]) or -1 on failure.
 int BotAdd(const char *name, int ship_index = 0);
