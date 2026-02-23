@@ -2196,6 +2196,9 @@ void MultiSetupNonVisRobots(int slot, object *obj) { obj->generic_nonvis_flags |
 
 // Sends out a list of generics that this client can't see
 void MultiSendGenericNonVis(int slot, uint16_t *objarray, int num) {
+  if (NetPlayers[slot].flags & NPF_BOT)
+    return; // Bots have no socket — skip
+
   uint8_t data[MAX_GAME_DATA_SIZE];
   int count = 0;
   int size_offset;
@@ -2212,9 +2215,6 @@ void MultiSendGenericNonVis(int slot, uint16_t *objarray, int num) {
 
   END_DATA(count, data, size_offset);
 
-  // Send it out
-  if (NetPlayers[slot].flags & NPF_BOT)
-    return; // Bots have no socket — skip
   nw_SendReliable(NetPlayers[slot].reliable_socket, data, count);
 }
 

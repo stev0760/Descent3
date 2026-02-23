@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Phase 0.5 — Stability Fixes (In Progress)
+**Status:** Phase 1 — Combat (Implemented, Needs Testing)
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -21,8 +21,8 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | Phase | Scope | Status |
 |-------|-------|--------|
 | 0 | Wandering bots — spawn, move, die, respawn | Complete |
-| 0.5 | Stability fixes — crash guards, level transitions, AI safety | In progress |
-| 1 | Weapon firing and combat AI (target pursuit, shooting) | Not started |
+| 0.5 | Stability fixes — crash guards, level transitions, AI safety, scoreboard | Complete |
+| 1 | Weapon firing and combat AI (target pursuit, shooting) | Implemented — needs live testing |
 | 2 | BOA-driven navigation, map-aware pathfinding | Not started |
 | 3 | Difficulty levels, configuration UI | Not started |
 
@@ -81,19 +81,38 @@ Connect with `telnet localhost 2092` and enter your password.
 
 5. **`BotReinitAll()`** runs after `MultiStartNewLevel()` on the server. Level transitions destroy all objects and recreate player objects with new objnums. This function restores each bot's AI control, wander goals, start position, and DMFC registration. It saves/restores `Players[slot].team` across the reinit to prevent a DMFC assertion in `OnPlayerReconnect`.
 
-### AI Configuration (Phase 0)
+### AI Configuration (Phase 0/1)
 
 Bots use the existing AI goal system with:
-- `AIG_WANDER_AROUND` goal for movement
-- `AIF_DISABLE_FIRING | AIF_DISABLE_MELEE` to prevent weapon use (see below)
+- `AIG_WANDER_AROUND` goal (level 1, non-flushable) for background movement
+- `AIG_GET_TO_OBJ` goal (level 2) for target pursuit — added/cleared by `BotSelectTarget()`
+- `AIF_DISABLE_FIRING | AIF_DISABLE_MELEE` — keeps `ai_fire()` from being called by the AI pipeline (which would crash — see below). Bot firing is handled explicitly in `BotDoFiring()`.
 - `AIF_PERSISTANT | AIF_FORCE_AWARENESS | AIF_DODGE` for continuous activity
 - `MC_FLYING` movement type, 30 units/sec max velocity
 
 AI frame processing is handled automatically by the engine's `ObjDoFrameAll()` -> `AIDoFrame()` path for any object with `control_type == CT_AI`.
 
-### Why Bots Cannot Fire Weapons Yet
+### Why ai_fire() Cannot Be Used for Bots
 
-The AI weapon firing path (`ai_fire()` in `AImain.cpp`) accesses `Object_info[obj->id].static_wb`. For player objects, `obj->id` is the player slot number (0-31), not an `Object_info` index. This would access invalid memory. Player weapons live in `Ships[Players[slot].ship_index].static_wb[]` instead. Bridging this is Phase 1 work.
+The AI weapon firing path (`ai_fire()` in `AImain.cpp`) accesses `Object_info[obj->id].static_wb`. For player objects, `obj->id` is the player slot number (0-31), not an `Object_info` index — this accesses invalid memory. Player weapons live in `Ships[Players[slot].ship_index].static_wb[]` instead. `AIF_DISABLE_FIRING` keeps the AI pipeline from calling `ai_fire()` on bots.
+
+### Phase 1: Bot Targeting and Firing
+
+`BotDoFrame()` calls two new functions each frame:
+
+**`BotSelectTarget(bot_index)`** (throttled to `BOT_TARGET_UPDATE_INTERVAL` = 0.5s):
+1. Iterates `Players[]` to find the nearest connected, alive, non-bot player
+2. Calls `AISetTarget(obj, target_handle)` to set `ai_info->target_handle`
+3. Clears any existing pursuit goal via `GoalClearGoal()`, then adds a fresh `AIG_GET_TO_OBJ` goal with `GF_SPEED_ATTACK | GF_OBJ_IS_TARGET | GF_USE_BLINE_IF_SEES_GOAL`
+
+**`BotDoFiring(bot_index)`** (every frame, rate-limited by `WBIsBatteryReady()`):
+1. Reads `ai_info->target_handle` and validates the target is alive
+2. Computes vector to target: if `dist > BOT_FIRE_RANGE` (200 units), skips
+3. Dot-product aim check: if `dot(forward, to_target) < BOT_FIRE_AIM_DOT` (0.6), skips
+4. Reads `Ships[Players[slot].ship_index].static_wb[wb_index]` for weapon data
+5. Calls `WBIsBatteryReady()` then `WBFireBattery(obj, wb, 0, wb_index)` — the same path used by `FireOnOffWeapon()` for player objects
+
+This bypasses `ai_fire()` entirely. Network synchronization of fired projectiles is handled inside `WBFireBattery()` → `FireWeaponFromObject()` → `MultiSendRobotFireWeapon()` for CT_AI objects on the server.
 
 ### NPF_BOT Guard Locations
 
@@ -164,10 +183,9 @@ Use `-tempdir` to avoid cache lock conflicts when running both server and client
 
 ## Known Issues and Limitations
 
-- **Bots do not fire weapons** — `AIF_DISABLE_FIRING` is required because `ai_fire()` uses `Object_info[obj->id].static_wb` which is invalid for player objects. See "Why Bots Cannot Fire Weapons Yet" above.
-- **No pathfinding** — Bots wander randomly. They may get stuck in geometry or cluster in rooms. BOA-driven navigation is Phase 2.
-- **No team assignment** — Bots start with `team = -1`. DMFC may reassign to team 0 on reconnect. Team game integration is future work.
-- **Scoreboard tracking** — Bots may not appear in the DMFC scoreboard/HUD player list. Diagnostic logging has been added to trace PRec registration.
+- **No pathfinding** — Bots pursue targets in a straight line (`GF_USE_BLINE_IF_SEES_GOAL`) and wander otherwise. They may get stuck in geometry. BOA-driven navigation is Phase 2.
+- **No team game support** — Bots default to team 0. Team game integration (CTF, team anarchy) is future work.
+- **Scoreboard tracking** — Fixed in Phase 0.5. Bots now appear on the end-of-level scoreboard. See "Scoreboard Tracking" section below.
 
 ### Scoreboard Tracking (Phase 0.5)
 
@@ -186,16 +204,17 @@ Investigation revealed that bots were missing from the end-of-level scoreboard b
 
 - **No persistence** — Bots must be re-added after server restart. Config-file-based bot spawning is future work.
 - **Bot removal during level transition untested** — removing bots while a level change is in progress may have edge cases.
+- **AI pathfinding exhaustion** — When too many bots are stuck or colliding, the dynamic path pool (`AIPathGetDPathSlot`) can be exhausted, triggering an assertion in `aipath.cpp:533`. This occurs when the server is overloaded with bots in confined spaces. A proper fix should be addressed alongside Phase 2 navigation improvements rather than modifying `aipath.cpp` directly.
 
 ## Future Work
 
 See [PLAN.md](PLAN.md) for the Phase 0 design rationale and risk assessment.
 
-### Phase 1: Combat
+### Phase 1.5: Combat Polish (optional)
 
-- Bridge `Ships[].static_wb` to the AI fire system for player-type bots
-- Target acquisition and pursuit goals (`AIG_GET_TO_OBJ`, `AIG_FIRE_AT_OBJ`)
-- Weapon selection logic
+- Energy/ammo consumption on bot firing (currently bots fire without draining energy or ammo)
+- Lead-tracking aim (bots currently fire when facing target, no trajectory prediction)
+- Weapon switching when out of ammo
 
 ### Phase 2: Navigation
 

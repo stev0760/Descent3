@@ -28,12 +28,15 @@
 #include "ddio.h"
 #include "ship.h"
 #include "AIGoal.h"
+#include "AIMain.h"
 #include "aistruct.h"
 #include "aistruct_external.h"
 #include "object_external.h"
 #include "Inventory.h"
 #include "game2dll.h"
 #include "d3events.h"
+#include "robotfire.h"
+#include "vecmat.h"
 #include "log.h"
 
 bot_info Bots[MAX_BOTS];
@@ -63,6 +66,94 @@ static void BotConfigureAI(int player_slot) {
   GoalAddGoal(obj, AIG_WANDER_AROUND, NULL, 1, 1.0f, GF_NONFLUSHABLE | GF_KEEP_AT_COMPLETION, -1, 0);
 }
 
+// Find and set the nearest human player as this bot's AI target.
+// Sets ai_info->target_handle and adds/refreshes an AIG_GET_TO_OBJ pursuit goal.
+static void BotSelectTarget(int bot_index) {
+  int bot_slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[bot_slot].objnum];
+  if (!obj->ai_info)
+    return;
+
+  int best_slot = -1;
+  float best_dist = 1e30f;
+
+  for (int i = 0; i < MAX_NET_PLAYERS; i++) {
+    if (i == bot_slot)
+      continue;
+    if (!(NetPlayers[i].flags & NPF_CONNECTED))
+      continue;
+    if (BotIsPlayerSlot(i))
+      continue;
+    if (Players[i].flags & (PLAYER_FLAGS_DEAD | PLAYER_FLAGS_DYING))
+      continue;
+
+    object *target_obj = &Objects[Players[i].objnum];
+    float dist = vm_VectorDistanceQuick(&obj->pos, &target_obj->pos);
+    if (dist < best_dist) {
+      best_dist = dist;
+      best_slot = i;
+    }
+  }
+
+  if (best_slot >= 0) {
+    int target_handle = Objects[Players[best_slot].objnum].handle;
+    AISetTarget(obj, target_handle);
+
+    // Clear old pursuit goal so GoalAddGoal gets a fresh slot
+    if (Bots[bot_index].pursuit_goal_index >= 0) {
+      int gi = Bots[bot_index].pursuit_goal_index;
+      if (gi >= 0 && gi < MAX_GOALS && obj->ai_info->goals[gi].used)
+        GoalClearGoal(obj, &obj->ai_info->goals[gi]);
+      Bots[bot_index].pursuit_goal_index = -1;
+    }
+
+    int gi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&target_handle, 2, 1.0f,
+                         GF_SPEED_ATTACK | GF_OBJ_IS_TARGET | GF_USE_BLINE_IF_SEES_GOAL);
+    Bots[bot_index].pursuit_goal_index = gi;
+  } else {
+    // No valid target — clear targeting state
+    AISetTarget(obj, OBJECT_HANDLE_NONE);
+    if (Bots[bot_index].pursuit_goal_index >= 0) {
+      int gi = Bots[bot_index].pursuit_goal_index;
+      if (gi >= 0 && gi < MAX_GOALS && obj->ai_info->goals[gi].used)
+        GoalClearGoal(obj, &obj->ai_info->goals[gi]);
+      Bots[bot_index].pursuit_goal_index = -1;
+    }
+  }
+}
+
+// Fire the bot's primary weapon at its current AI target if in range and aimed.
+// Bypasses ai_fire() (which is OBJ_PLAYER-unsafe) by calling WBFireBattery() directly.
+// AIF_DISABLE_FIRING remains set so the AI pipeline never calls ai_fire() on bots.
+static void BotDoFiring(int bot_index) {
+  int bot_slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[bot_slot].objnum];
+  if (!obj->ai_info)
+    return;
+
+  object *target = ObjGet(obj->ai_info->target_handle);
+  if (!target || target->type == OBJ_NONE)
+    return;
+  if (target->type == OBJ_PLAYER && (Players[target->id].flags & (PLAYER_FLAGS_DEAD | PLAYER_FLAGS_DYING)))
+    return;
+
+  vector to_target = target->pos - obj->pos;
+  float dist = vm_GetMagnitude(&to_target);
+  if (dist > BOT_FIRE_RANGE)
+    return;
+
+  vm_NormalizeVector(&to_target);
+  float dot = vm_DotProduct(&to_target, &obj->orient.fvec);
+  if (dot < BOT_FIRE_AIM_DOT)
+    return;
+
+  int wb_index = Players[bot_slot].weapon[PW_PRIMARY].index;
+  otype_wb_info *wb = &Ships[Players[bot_slot].ship_index].static_wb[wb_index];
+
+  if (WBIsBatteryReady(obj, wb, wb_index))
+    WBFireBattery(obj, wb, 0, wb_index);
+}
+
 // Respawn a dead bot.
 static void BotRespawn(int bot_index) {
   int slot = Bots[bot_index].player_slot;
@@ -78,6 +169,8 @@ static void BotRespawn(int bot_index) {
   BotConfigureAI(slot);
 
   Bots[bot_index].awaiting_respawn = false;
+  Bots[bot_index].pursuit_goal_index = -1;
+  Bots[bot_index].last_target_update = 0.0f; // force immediate re-target after respawn
   LOG_DEBUG.printf("BOT: '%s' respawned in slot %d", Bots[bot_index].callsign, slot);
 }
 
@@ -86,6 +179,8 @@ void BotInitAll() {
     Bots[i].active = false;
     Bots[i].player_slot = -1;
     Bots[i].awaiting_respawn = false;
+    Bots[i].last_target_update = 0.0f;
+    Bots[i].pursuit_goal_index = -1;
   }
   Num_bots = 0;
 }
@@ -102,6 +197,8 @@ void BotReinitAll() {
     // Reset bot state for new level
     Bots[i].awaiting_respawn = false;
     Bots[i].death_time = 0.0f;
+    Bots[i].last_target_update = 0.0f;
+    Bots[i].pursuit_goal_index = -1;
 
     // Restore NetPlayers sequence (level end sets NETSEQ_WAITING_FOR_LEVEL)
     NetPlayers[slot].sequence = NETSEQ_PLAYING;
@@ -209,15 +306,15 @@ int BotAdd(const char *name, int ship_index) {
   strncpy(Players[slot].callsign, name, CALLSIGN_LEN);
   Players[slot].callsign[CALLSIGN_LEN] = '\0';
   Players[slot].ship_index = ship_index;
-  Players[slot].team = 0; // Assign to a valid team (0) so they aren't mistaken for the dedicated server (-1)
   Players[slot].flags = 0;
   Players[slot].rank = -1.0f;
   memset(Players[slot].tracker_id, 0, sizeof(Players[slot].tracker_id));
 
   // --- Initialize player state using existing engine functions ---
   InitPlayerNewShip(slot, INVRESET_ALL);
-  InitPlayerNewGame(slot);
+  InitPlayerNewGame(slot);   // Resets team to -1
   InitPlayerNewLevel(slot);
+  Players[slot].team = 0; // Must be after InitPlayerNewGame which resets team to -1
 
   // Place at a random start position
   Players[slot].start_index = PlayerGetRandomStartPosition(slot);
@@ -259,6 +356,8 @@ int BotAdd(const char *name, int ship_index) {
   Bots[bot_index].ship_index = ship_index;
   Bots[bot_index].death_time = 0.0f;
   Bots[bot_index].awaiting_respawn = false;
+  Bots[bot_index].last_target_update = 0.0f;
+  Bots[bot_index].pursuit_goal_index = -1;
   Num_bots++;
 
   LOG_INFO.printf("BOT: Added '%s' in player slot %d (bot index %d)", name, slot, bot_index);
@@ -288,12 +387,12 @@ void BotRemove(int bot_index) {
   NetPlayers[slot].sequence = NETSEQ_PREGAME;
   NetPlayers[slot].reliable_socket = INVALID_SOCKET;
 
+  LOG_INFO.printf("BOT: Removed '%s' from slot %d", Bots[bot_index].callsign, slot);
+
   // Clear bot record
   Bots[bot_index].active = false;
   Bots[bot_index].player_slot = -1;
   Num_bots--;
-
-  LOG_INFO.printf("BOT: Removed '%s' from slot %d", Bots[bot_index].callsign, slot);
 }
 
 void BotRemoveAll() {
@@ -325,11 +424,18 @@ void BotDoFrame() {
     if (Players[slot].flags & (PLAYER_FLAGS_DEAD | PLAYER_FLAGS_DYING)) {
       Bots[i].awaiting_respawn = true;
       Bots[i].death_time = Gametime;
+      Bots[i].pursuit_goal_index = -1;
       continue;
     }
 
-    // AI frame processing is handled automatically by ObjDoFrameAll() -> AIDoFrame()
-    // for any object with control_type == CT_AI. No manual tick needed here.
+    // Target acquisition (throttled)
+    if (Gametime - Bots[i].last_target_update > BOT_TARGET_UPDATE_INTERVAL) {
+      BotSelectTarget(i);
+      Bots[i].last_target_update = Gametime;
+    }
+
+    // Weapon firing (every frame, rate-limited by WBIsBatteryReady)
+    BotDoFiring(i);
   }
 }
 

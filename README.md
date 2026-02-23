@@ -12,7 +12,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 This fork introduces an experimental server-side multiplayer bot system for Descent 3. These AI-controlled bots occupy real player slots on dedicated servers, appearing as normal players to clients.
 
-**Current Status: Phase 0.5 — Stability Fixes (In Progress)**
+**Current Status: Phase 1 — Combat AI (Up Next)**
 
 **Key Features (Phase 0 & 0.5):**
 *   **Protocol Transparency:** Bots use the same player slots, packets, and state structures as human players.
@@ -22,8 +22,8 @@ This fork introduces an experimental server-side multiplayer bot system for Desc
 
 This system aims to provide AI opponents for dedicated servers while maintaining full compatibility with the main branch of this Descent 3 fork. Future phases will focus on combat AI, advanced pathfinding, and configuration options.
 
-**Current Issues:**
-Bots currently cannot fire weapons, or do much of anything yet besides wander around. This is still in a very early proof-of-concept stage.
+**Current Limitations:**
+Bots currently cannot fire weapons. They wander, get killed by robots and players, auto-respawn, and show on the scoreboard. Combat AI (weapon selection and firing) is the next development phase.
 
 ## Contributing
 Anyone can contribute! We have an active Discord presence at [Descent Developer Network](https://discord.gg/GNy5CUQ). Patches should be submitted on GitHub.

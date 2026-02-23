@@ -22,7 +22,10 @@
 #include "player_external_struct.h"
 
 #define MAX_BOTS 16
-#define BOT_RESPAWN_DELAY 3.0f // seconds after death before respawn
+#define BOT_RESPAWN_DELAY 3.0f    // seconds after death before respawn
+#define BOT_TARGET_UPDATE_INTERVAL 0.5f // seconds between target search runs
+#define BOT_FIRE_RANGE 200.0f     // max distance (units) to fire primary weapon
+#define BOT_FIRE_AIM_DOT 0.6f    // min dot(forward, to_target) to allow firing (~53 degrees)
 
 struct bot_info {
   bool active;
@@ -31,6 +34,8 @@ struct bot_info {
   int ship_index;                     // index into Ships[]
   float death_time;                   // Gametime when bot died (for respawn delay)
   bool awaiting_respawn;
+  float last_target_update;           // Gametime of last BotSelectTarget() call
+  int pursuit_goal_index;             // Bots[].goals[] index of AIG_GET_TO_OBJ goal, or -1
 };
 
 extern bot_info Bots[MAX_BOTS];
