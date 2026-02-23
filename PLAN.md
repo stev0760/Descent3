@@ -1,10 +1,22 @@
-# Phase 0: Descent 3 Multiplayer Bot Implementation Plan
+# Descent 3 Multiplayer Bot Implementation Plan
+
+## Current Status
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| 0 | Wandering bots — spawn, move, die, respawn | Complete |
+| 0.5 | Stability fixes — crash guards, level transitions, AI safety, scoreboard | Complete |
+| 1 | Weapon firing — target pursuit, direct-fire combat | Complete |
+| 2 | Smart targeting — game mode awareness, target diversity, robot targeting, team persistence | Complete |
+| 3 | Combat behaviors — FSM (wander/hunt/combat/flee), LOS gating, circle-strafe, flee | Implemented — needs live testing |
+| 1.5 | Combat polish — energy/ammo drain, lead-tracking aim | Not started |
+| 4 | Difficulty levels, configuration UI | Not started |
 
 ## Goal
 
-Add server-side bot players to the D3 dedicated server engine. Bots occupy real player slots, appear as normal players to retail D3 v1.5 clients, and wander around the map. No client modifications required.
+Add server-side bot players to the D3 dedicated server engine. Bots occupy real player slots, appear as normal players to retail D3 v1.5 clients, and exhibit intelligent combat behavior. No client modifications required.
 
-## Phase 0 Scope
+## Phase 0 Scope (Historical)
 
 **In scope:**
 - Bot occupies a real player slot (NetPlayers + Players + Objects)
@@ -15,13 +27,13 @@ Add server-side bot players to the D3 dedicated server engine. Bots occupy real 
 - Does NOT break any existing multiplayer functionality
 - Dedicated server console commands: `addbot`, `removebot`, `removebots`, `botlist`
 
-**Deferred to future phases:**
-- Weapon firing (Phase 1) — requires bridging `Ships[].static_wb` to the AI fire system
-- Combat AI / target pursuit (Phase 1)
-- Advanced pathfinding / BOA-driven navigation (Phase 2)
-- Map-independent smart behavior (Phase 2)
-- Difficulty levels (Phase 3)
-- Frontend/configuration UI (Phase 3)
+**Implemented in later phases:**
+- Weapon firing (Phase 1) — `WBFireBattery()` with `Ships[].static_wb`
+- Combat AI / target pursuit (Phase 1) — `AIG_GET_TO_OBJ` goals
+- Smart targeting / game mode awareness (Phase 2) — enemy filtering, congestion penalty, robot targets
+- Combat behaviors (Phase 3) — FSM with LOS gating, circle-strafe, flee
+- Difficulty levels (Phase 4) — not started
+- Frontend/configuration UI (Phase 4) — not started
 
 ---
 
@@ -447,7 +459,7 @@ All of these are Phase 1 work. For Phase 0, `AIF_DISABLE_FIRING` keeps the bot s
 
 ---
 
-## Phase 0.5: Stability Fixes (In Progress)
+## Phase 0.5: Stability Fixes (Complete)
 
 Phase 0 testing revealed multiple crashes and bugs. This section documents the root causes and fixes.
 
@@ -498,3 +510,81 @@ Investigation revealed that bots were missing from the end-of-level scoreboard b
 - **Fix 2:** Bots are now assigned to **team 0** by default instead of -1.
 - **Result:** Successful `PRec` registration and scoreboard visibility.
 - **Remaining Limitation:** Scoreboards in certain game modes may still hide bots if they only iterate the first 32 player slots. Fixing this would require modifying `netgames` code, which is currently deferred.
+
+---
+
+## Phase 1: Weapon Firing & Target Pursuit (Complete)
+
+Added bot weapon firing and target acquisition:
+
+- **`BotSelectTarget()`** (throttled to 0.5s): finds nearest enemy player, calls `AISetTarget()`, adds `AIG_GET_TO_OBJ` pursuit goal with `GF_SPEED_ATTACK | GF_OBJ_IS_TARGET | GF_USE_BLINE_IF_SEES_GOAL`
+- **`BotDoFiring()`** (every frame): validates target is alive, checks range (`BOT_FIRE_RANGE = 200`) and aim angle (`BOT_FIRE_AIM_DOT = 0.6`), calls `WBFireBattery()` directly with `Ships[].static_wb` — bypasses `ai_fire()` which is unsafe for OBJ_PLAYER
+- `AIF_DISABLE_FIRING` kept to prevent the AI pipeline from calling `ai_fire()` on bots
+
+---
+
+## Phase 2: Smart Targeting & Game Mode Awareness (Complete)
+
+Made targeting mode-aware with target diversity:
+
+- **`BotIsPlayerEnemy()`**: co-op → false, team anarchy → opposing team only, anarchy → all enemies
+- **Robot targeting**: in co-op/robo-anarchy, scans `Objects[]` for live `OBJ_ROBOT | CT_AI` targets
+- **Congestion penalty**: 80 units per bot already targeting the same slot, spreads bots across targets
+- **Team assignment**: fewest-members heuristic in `BotAdd()`, persists via `bot_info.intended_team`
+- **DMFC team fix**: re-assert `Players[slot].team` after `EVT_GAMEPLAYERENTERSGAME` (DMFC restores stale PRec)
+- **Gunboy fix**: replaced `AITargetCheck` → `BOA_IsVisible` with direct distance check in PTMC multiplayer targeting loop
+
+---
+
+## Phase 3: Combat Behaviors & State Machine (Implemented — Needs Testing)
+
+Replaced simple "beeline and fire" with a lightweight FSM:
+
+### States
+
+| State | Goal | Behavior |
+|-------|------|----------|
+| `BOT_STATE_WANDER` | `AIG_WANDER_AROUND` (level 1) | No target, background exploration |
+| `BOT_STATE_HUNT` | `AIG_GET_TO_OBJ` (level 2) | Has target, pursue (out of range or no LOS) |
+| `BOT_STATE_COMBAT` | `AIG_MOVE_RELATIVE_OBJ` (level 2) | In range + LOS, circle-strafe + fire |
+| `BOT_STATE_FLEE` | `AIG_GET_TO_POS` (level 2) | Low shields, retreat from target |
+
+### Transitions (every 0.5s)
+
+- `WANDER → HUNT`: target acquired
+- `HUNT → COMBAT`: distance < 200 AND `fvi_FindIntersection` LOS passes
+- `COMBAT → HUNT`: distance > 240 (hysteresis) OR LOS lost
+- `COMBAT → FLEE`: shields < 20% of max
+- `FLEE → HUNT`: shields > 40% OR distance > 300 from threat
+- `any → WANDER`: bot respawns
+
+### Key Implementation Details
+
+- **LOS check** (`BotHasLOS`): `fvi_FindIntersection` ray-cast with `FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS | FQ_IGNORE_MOVING_OBJECTS`
+- **Circle-strafe**: `AIG_MOVE_RELATIVE_OBJ` (implemented in `AImain.cpp:4934`) — strafes at `BOT_COMBAT_CIRCLE_DIST` (120 units), flees when < 0.7× distance
+- **Flee**: computes position away from target, uses `AIG_GET_TO_POS` with `GF_SPEED_FLEE`
+- **Firing**: only in COMBAT state (LOS already verified at state entry)
+- **Safety guards**: `AIG_FIRE_AT_OBJ` OBJ_PLAYER guard; `AIG_GET_AWAY_FROM_OBJ` and `AIG_MOVE_AROUND_OBJ` added to `GoalAddGoal` switch (were stubs that would `ASSERT(0)`)
+
+### Research Finding
+
+`AIG_MOVE_AROUND_OBJ` and `AIG_GET_AWAY_FROM_OBJ` are defined in headers but were **never implemented** in `GoalAddGoal` or the movement code — they were stubs. `AIG_MOVE_RELATIVE_OBJ` provides the actual circle-strafe + distance-management behavior.
+
+---
+
+## Future Work
+
+### Phase 1.5: Combat Polish
+- Energy/ammo consumption on bot firing
+- Lead-tracking aim (`AIDetermineAimPoint()`)
+- Weapon switching when out of ammo
+
+### Phase 4: Configuration
+- Difficulty levels (accuracy, reaction time, aggression)
+- Server config file bot definitions
+- Frontend/administration UI
+
+### Known Issues
+- **Gunboy targeting**: Phase 2 fix allows target acquisition but gunboy still doesn't fire — likely blocked by a separate condition in `ai_fire()` or weapon battery configuration
+- **AI path exhaustion**: `AIPathGetDPathSlot` assertion under load (3+ bots pathfinding simultaneously)
+- **Navigation is beeline-only**: bots may get stuck in geometry when hunting

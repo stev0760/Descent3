@@ -38,6 +38,7 @@
 #include "d3events.h"
 #include "robotfire.h"
 #include "vecmat.h"
+#include "findintersection.h"
 #include "log.h"
 
 bot_info Bots[MAX_BOTS];
@@ -79,6 +80,178 @@ static bool BotIsPlayerEnemy(int bot_index, int target_slot) {
 
 // Returns true if bots should also target OBJ_ROBOT objects in this game mode.
 static bool BotShouldTargetRobots() { return (Netgame.flags & (NF_COOP | NF_USE_ROBOTS)) != 0; }
+
+// Returns true if there is line-of-sight from obj to target (no walls blocking).
+static bool BotHasLOS(object *obj, object *target) {
+  fvi_query fq{};
+  fvi_info hit{};
+  fq.p0 = &obj->pos;
+  fq.p1 = &target->pos;
+  fq.startroom = obj->roomnum;
+  fq.rad = 0.0f;
+  fq.thisobjnum = OBJNUM(obj);
+  fq.ignore_obj_list = nullptr;
+  fq.flags = FQ_CHECK_OBJS | FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS | FQ_IGNORE_MOVING_OBJECTS;
+  int hit_type = fvi_FindIntersection(&fq, &hit);
+  // HIT_NONE = clear path, HIT_OBJECT = hit an object (target or another player) — still valid
+  return (hit_type == HIT_NONE || hit_type == HIT_OBJECT);
+}
+
+// Clear the bot's current level-2 goal (pursuit, combat, or flee).
+static void BotClearActiveGoal(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  if (!obj->ai_info)
+    return;
+
+  auto clear_goal = [&](int &gi) {
+    if (gi >= 0 && gi < MAX_GOALS && obj->ai_info->goals[gi].used)
+      GoalClearGoal(obj, &obj->ai_info->goals[gi]);
+    gi = -1;
+  };
+  clear_goal(Bots[bot_index].pursuit_goal_index);
+  clear_goal(Bots[bot_index].combat_goal_index);
+}
+
+// Set a pursuit (AIG_GET_TO_OBJ) goal for the bot's current AI target.
+static void BotSetPursuitGoal(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  if (!obj->ai_info)
+    return;
+
+  int target_handle = obj->ai_info->target_handle;
+  if (target_handle == OBJECT_HANDLE_NONE)
+    return;
+
+  int gi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&target_handle, 2, 1.0f,
+                       GF_SPEED_ATTACK | GF_OBJ_IS_TARGET | GF_USE_BLINE_IF_SEES_GOAL);
+  Bots[bot_index].pursuit_goal_index = gi;
+}
+
+// Set a combat (AIG_MOVE_RELATIVE_OBJ) goal — circle-strafe around target.
+static void BotSetCombatGoal(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  if (!obj->ai_info)
+    return;
+
+  int target_handle = obj->ai_info->target_handle;
+  if (target_handle == OBJECT_HANDLE_NONE)
+    return;
+
+  // AIG_MOVE_RELATIVE_OBJ: circle-strafes at circle_distance, flees when too close.
+  int gi = GoalAddGoal(obj, AIG_MOVE_RELATIVE_OBJ, (void *)&target_handle, 2, 1.0f,
+                       GF_SPEED_ATTACK | GF_OBJ_IS_TARGET | GF_ORIENT_TARGET | GF_CIRCLE_OBJ);
+  if (gi >= 0 && gi < MAX_GOALS)
+    obj->ai_info->goals[gi].circle_distance = BOT_COMBAT_CIRCLE_DIST;
+  Bots[bot_index].combat_goal_index = gi;
+}
+
+// Set a flee goal — move to a position away from the target.
+static void BotSetFleeGoal(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  if (!obj->ai_info)
+    return;
+
+  object *target = ObjGet(obj->ai_info->target_handle);
+  if (!target)
+    return;
+
+  // Compute flee position: current pos + direction away from target * flee distance
+  vector away = obj->pos - target->pos;
+  vm_NormalizeVector(&away);
+  vector flee_pos = obj->pos + away * BOT_FLEE_DISTANCE;
+
+  // Use a goal_info struct for AIG_GET_TO_POS
+  goal_info gi_info;
+  memset(&gi_info, 0, sizeof(gi_info));
+  gi_info.pos = flee_pos;
+  gi_info.roomnum = obj->roomnum;
+
+  int gi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_FLEE | GF_ORIENT_TARGET);
+  Bots[bot_index].combat_goal_index = gi;
+}
+
+// Evaluate and update the bot's behavioral state based on target, distance, LOS, and shields.
+// Called from BotDoFrame after target selection.
+static void BotUpdateState(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  if (!obj->ai_info)
+    return;
+
+  BotState old_state = Bots[bot_index].state;
+  BotState new_state = old_state;
+
+  object *target = ObjGet(obj->ai_info->target_handle);
+  float dist = target ? vm_VectorDistanceQuick(&obj->pos, &target->pos) : 1e30f;
+  float shields = obj->shields;
+  float max_shields = INITIAL_SHIELDS; // from player_external.h
+  bool has_target = (target != nullptr);
+  bool has_los = has_target && BotHasLOS(obj, target);
+  bool low_shields = (shields < max_shields * BOT_FLEE_SHIELD_PCT);
+  bool shields_recovered = (shields > max_shields * BOT_FLEE_RECOVER_PCT);
+
+  switch (old_state) {
+  case BOT_STATE_WANDER:
+    if (has_target)
+      new_state = BOT_STATE_HUNT;
+    break;
+
+  case BOT_STATE_HUNT:
+    if (!has_target)
+      new_state = BOT_STATE_WANDER;
+    else if (low_shields)
+      new_state = BOT_STATE_FLEE;
+    else if (dist < BOT_FIRE_RANGE && has_los)
+      new_state = BOT_STATE_COMBAT;
+    break;
+
+  case BOT_STATE_COMBAT:
+    if (!has_target)
+      new_state = BOT_STATE_WANDER;
+    else if (low_shields)
+      new_state = BOT_STATE_FLEE;
+    else if (dist > BOT_COMBAT_EXIT_RANGE || !has_los)
+      new_state = BOT_STATE_HUNT;
+    break;
+
+  case BOT_STATE_FLEE:
+    if (!has_target)
+      new_state = BOT_STATE_WANDER;
+    else if (shields_recovered || dist > BOT_FLEE_DISTANCE)
+      new_state = BOT_STATE_HUNT;
+    break;
+  }
+
+  if (new_state != old_state) {
+    // Clear old level-2 goals
+    BotClearActiveGoal(bot_index);
+
+    // Set new goal for the new state
+    switch (new_state) {
+    case BOT_STATE_WANDER:
+      AISetTarget(obj, OBJECT_HANDLE_NONE);
+      break;
+    case BOT_STATE_HUNT:
+      BotSetPursuitGoal(bot_index);
+      break;
+    case BOT_STATE_COMBAT:
+      BotSetCombatGoal(bot_index);
+      break;
+    case BOT_STATE_FLEE:
+      BotSetFleeGoal(bot_index);
+      break;
+    }
+
+    static const char *state_names[] = {"WANDER", "HUNT", "COMBAT", "FLEE"};
+    LOG_DEBUG.printf("BOT: '%s' state %s -> %s (dist=%.0f shields=%.0f los=%d)", Bots[bot_index].callsign,
+                     state_names[old_state], state_names[new_state], dist, shields, has_los);
+    Bots[bot_index].state = new_state;
+  }
+}
 
 // Find and set the best target as this bot's AI target.
 // Considers all enemies (players + robots in coop/robo-anarchy), with a congestion
@@ -152,22 +325,8 @@ static void BotSelectTarget(int bot_index) {
   else if (best_obj_num >= 0)
     target_handle = Objects[best_obj_num].handle;
 
-  // Clear old pursuit goal
-  if (Bots[bot_index].pursuit_goal_index >= 0) {
-    int gi = Bots[bot_index].pursuit_goal_index;
-    if (gi < MAX_GOALS && obj->ai_info->goals[gi].used)
-      GoalClearGoal(obj, &obj->ai_info->goals[gi]);
-    Bots[bot_index].pursuit_goal_index = -1;
-  }
-
-  if (target_handle != OBJECT_HANDLE_NONE) {
-    AISetTarget(obj, target_handle);
-    int gi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&target_handle, 2, 1.0f,
-                         GF_SPEED_ATTACK | GF_OBJ_IS_TARGET | GF_USE_BLINE_IF_SEES_GOAL);
-    Bots[bot_index].pursuit_goal_index = gi;
-  } else {
-    AISetTarget(obj, OBJECT_HANDLE_NONE);
-  }
+  // Only update AI target — goal management is handled by BotUpdateState
+  AISetTarget(obj, target_handle);
 }
 
 // Fire the bot's primary weapon at its current AI target if in range and aimed.
@@ -222,6 +381,8 @@ static void BotRespawn(int bot_index) {
 
   Bots[bot_index].awaiting_respawn = false;
   Bots[bot_index].pursuit_goal_index = -1;
+  Bots[bot_index].combat_goal_index = -1;
+  Bots[bot_index].state = BOT_STATE_WANDER;
   Bots[bot_index].last_target_update = 0.0f; // force immediate re-target after respawn
   LOG_DEBUG.printf("BOT: '%s' respawned in slot %d", Bots[bot_index].callsign, slot);
 }
@@ -233,7 +394,9 @@ void BotInitAll() {
     Bots[i].awaiting_respawn = false;
     Bots[i].last_target_update = 0.0f;
     Bots[i].pursuit_goal_index = -1;
+    Bots[i].combat_goal_index = -1;
     Bots[i].intended_team = 0;
+    Bots[i].state = BOT_STATE_WANDER;
   }
   Num_bots = 0;
 }
@@ -252,6 +415,8 @@ void BotReinitAll() {
     Bots[i].death_time = 0.0f;
     Bots[i].last_target_update = 0.0f;
     Bots[i].pursuit_goal_index = -1;
+    Bots[i].combat_goal_index = -1;
+    Bots[i].state = BOT_STATE_WANDER;
 
     // Restore NetPlayers sequence (level end sets NETSEQ_WAITING_FOR_LEVEL)
     NetPlayers[slot].sequence = NETSEQ_PLAYING;
@@ -431,7 +596,9 @@ int BotAdd(const char *name, int ship_index) {
   Bots[bot_index].awaiting_respawn = false;
   Bots[bot_index].last_target_update = 0.0f;
   Bots[bot_index].pursuit_goal_index = -1;
+  Bots[bot_index].combat_goal_index = -1;
   Bots[bot_index].intended_team = chosen_team;
+  Bots[bot_index].state = BOT_STATE_WANDER;
   Num_bots++;
 
   LOG_INFO.printf("BOT: Added '%s' in player slot %d (bot index %d)", name, slot, bot_index);
@@ -499,17 +666,21 @@ void BotDoFrame() {
       Bots[i].awaiting_respawn = true;
       Bots[i].death_time = Gametime;
       Bots[i].pursuit_goal_index = -1;
+      Bots[i].combat_goal_index = -1;
+      Bots[i].state = BOT_STATE_WANDER;
       continue;
     }
 
-    // Target acquisition (throttled)
+    // Target acquisition + state transition (throttled)
     if (Gametime - Bots[i].last_target_update > BOT_TARGET_UPDATE_INTERVAL) {
       BotSelectTarget(i);
+      BotUpdateState(i);
       Bots[i].last_target_update = Gametime;
     }
 
-    // Weapon firing (every frame, rate-limited by WBIsBatteryReady)
-    BotDoFiring(i);
+    // Per-frame actions based on state
+    if (Bots[i].state == BOT_STATE_COMBAT)
+      BotDoFiring(i);
   }
 }
 

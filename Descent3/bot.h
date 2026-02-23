@@ -27,6 +27,20 @@
 #define BOT_FIRE_RANGE 200.0f     // max distance (units) to fire primary weapon
 #define BOT_FIRE_AIM_DOT 0.6f    // min dot(forward, to_target) to allow firing (~53 degrees)
 
+// Combat behavior constants
+#define BOT_FLEE_SHIELD_PCT 0.20f              // flee when shields < 20% of max
+#define BOT_FLEE_RECOVER_PCT 0.40f             // stop fleeing when shields > 40%
+#define BOT_FLEE_DISTANCE 300.0f               // stop fleeing when > 300 units from threat
+#define BOT_COMBAT_EXIT_RANGE (BOT_FIRE_RANGE * 1.2f) // hysteresis for combat→hunt transition
+#define BOT_COMBAT_CIRCLE_DIST 120.0f          // circle-strafe orbit distance in combat state
+
+enum BotState {
+  BOT_STATE_WANDER,  // No target. Background exploration.
+  BOT_STATE_HUNT,    // Has target, out of range or no LOS. Pursue.
+  BOT_STATE_COMBAT,  // In range + has LOS. Circle-strafe + fire.
+  BOT_STATE_FLEE,    // Low shields. Retreat from target.
+};
+
 struct bot_info {
   bool active;
   int player_slot;                    // index into Players[]/NetPlayers[]
@@ -37,6 +51,8 @@ struct bot_info {
   float last_target_update;           // Gametime of last BotSelectTarget() call
   int pursuit_goal_index;             // Bots[].goals[] index of AIG_GET_TO_OBJ goal, or -1
   int intended_team;                  // team this bot is assigned to (persists across level transitions)
+  BotState state;                     // current behavioral state
+  int combat_goal_index;              // goal index for circle-strafe or flee goal, or -1
 };
 
 extern bot_info Bots[MAX_BOTS];

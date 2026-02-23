@@ -979,6 +979,8 @@ int GoalAddGoal(object *obj, uint32_t goal_type, void *arg_struct, int level, fl
   case AIG_DODGE_OBJ:
   case AIG_GET_AROUND_OBJ:
   case AIG_MOVE_RELATIVE_OBJ:
+  case AIG_GET_AWAY_FROM_OBJ:
+  case AIG_MOVE_AROUND_OBJ:
     goal_ptr->g_info.handle = *((int *)arg_struct);
     break;
 
@@ -1068,6 +1070,9 @@ int GoalAddGoal(object *obj, uint32_t goal_type, void *arg_struct, int level, fl
   } break;
 
   case AIG_FIRE_AT_OBJ: {
+    // OBJ_PLAYER bots use WBFireBattery directly; Object_info[obj->id] is invalid for them.
+    if (obj->type == OBJ_PLAYER)
+      return 0;
     gi_fire *attack_info = (gi_fire *)arg_struct;
     if (attack_info->cur_wb > MAX_WBS_PER_OBJ) { // DAJ
       LOG_DEBUG.printf("GoalAddGoal wb_index %d > MAX_WBS_PER_OBJ", attack_info->cur_wb);

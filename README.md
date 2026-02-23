@@ -12,20 +12,20 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 This fork introduces an experimental server-side multiplayer bot system for Descent 3. These AI-controlled bots occupy real player slots on dedicated servers, appearing as normal players to clients.
 
-**Current Status: Phase 2 — Smart Targeting & Game Mode Awareness**
+**Current Status: Phase 3 — Combat Behaviors & State Machine**
 
 **Key Features:**
 *   **Protocol Transparency:** Bots use the same player slots, packets, and state structures as human players. No client modifications required.
-*   **Combat AI:** Bots pursue, aim at, and fire weapons at enemies using the existing AI goal and weapon systems.
+*   **Combat State Machine:** Bots use a 4-state FSM (Wander, Hunt, Combat, Flee) with LOS-gated transitions. They circle-strafe enemies in combat, flee when low on shields, and pursue targets they can't yet see.
+*   **Line-of-Sight Gating:** Bots only enter combat when they have a clear line of sight to their target (ray-cast check), preventing firing through walls.
 *   **Game Mode Awareness:** Bots correctly identify enemies per game mode — free-for-all targets all players, team anarchy targets opposing teams only, co-op targets robots and protects players.
 *   **Target Diversity:** A congestion penalty spreads bots across multiple targets, reducing collision pile-ups.
 *   **Robot Targeting:** In co-op and robo-anarchy, bots pursue level robots as well as human players.
 *   **Smart Team Assignment:** Bots are auto-assigned to the team with the fewest members in team game modes, and team assignments persist across level transitions.
-*   **Wandering AI:** Bots autonomously navigate maps when no target is available.
 *   **Console Management:** Dedicated server console commands (`addbot`, `removebot`, `removebots`, `botlist`).
 
 **Current Limitations:**
-Bots navigate in straight lines toward targets (no BOA pathfinding) and may get stuck in geometry. BOA-driven navigation is Phase 3. See `BOTS_DEVEL.md` for full details.
+Bots navigate in straight lines toward targets when hunting (no BOA pathfinding) and may get stuck in geometry. See `BOTS_DEVEL.md` for full details.
 
 ## Contributing
 Anyone can contribute! We have an active Discord presence at [Descent Developer Network](https://discord.gg/GNy5CUQ). Patches should be submitted on GitHub.

@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Phase 2 — Smart Targeting & Game Mode Awareness (Implemented, Needs Testing)
+**Status:** Phase 3 — Bot Combat Behaviors & Navigation (Implemented, Needs Testing)
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -23,9 +23,9 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | 0 | Wandering bots — spawn, move, die, respawn | Complete |
 | 0.5 | Stability fixes — crash guards, level transitions, AI safety, scoreboard | Complete |
 | 1 | Weapon firing and combat AI (target pursuit, shooting) | Complete |
-| 2 | Smart targeting — game mode awareness, target diversity, robot targeting, team persistence | Implemented — needs live testing |
+| 2 | Smart targeting — game mode awareness, target diversity, robot targeting, team persistence | Complete |
+| 3 | Combat behaviors — FSM (wander/hunt/combat/flee), LOS gating, circle-strafe, flee | Implemented — needs live testing |
 | 1.5 | Combat polish — energy/ammo drain, lead-tracking aim | Not started |
-| 3 | BOA-driven navigation, map-aware pathfinding | Not started |
 | 4 | Difficulty levels, configuration UI | Not started |
 
 ## Files
@@ -46,7 +46,7 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | `Descent3/multi.cpp` | NPF_BOT guards in `MultiSendFullPacket()`, `MultiSendFullReliablePacket()`, `MultiSendSpecialPacket()`, `MultiSendMessageToPlayer()`, multisafe send path, missile release broadcast; `BotReinitAll()` call in `MultiStartNewLevel()` |
 | `Descent3/dedicated_server.cpp` | Console commands: `addbot`, `removebot`, `removebots`, `botlist` (via local console and remote telnet) |
 | `Descent3/AImain.cpp` | OBJ_PLAYER guards in `AIDoFrame()` to skip `ai_do_animation()`, spray/on-off weapons, and `do_awareness_based_anim_stuff()` — prevents `Object_info[obj->id]` crash for player objects; Phase 2: PTMC multiplayer targeting loop bypasses `BOA_IsVisible` (via direct distance check) so map-placed robots (gunboys) can acquire player targets |
-| `Descent3/AIGoal.cpp` | OBJ_PLAYER guard in `AIG_SET_ANIM` goal case |
+| `Descent3/AIGoal.cpp` | OBJ_PLAYER guard in `AIG_SET_ANIM` and `AIG_FIRE_AT_OBJ` goal cases; added `AIG_GET_AWAY_FROM_OBJ` and `AIG_MOVE_AROUND_OBJ` to `GoalAddGoal` switch |
 | `Descent3/CMakeLists.txt` | Added `bot.h` and `bot.cpp` to build |
 | `netgames/dmfc/dmfcclient.cpp` | Replaced `ASSERT(player_num == 0)` in `OnPlayerReconnect` with warning log — prevents server abort when bot team doesn't match PRec default |
 
@@ -135,6 +135,39 @@ Replaced the simple nearest-human search with a full mode-aware targeting pass:
 - `AIDetermineTarget` PTMC multiplayer branch previously called `AITargetCheck`, which internally calls `BOA_IsVisible`. In multiplayer maps, the BOA graph often doesn't connect a map-placed robot's room to the player's room, so `BOA_IsVisible` returns false and the robot never acquires a target.
 - Fix: replaced `AITargetCheck` with a direct distance + `AIObjEnemy` check. Weapon fire still requires LOS (handled inside `CreateAndFireWeapon`, which logs "weapon point in wall, didn't fire").
 
+### Phase 3: Combat Behaviors & State Machine
+
+Phase 3 replaces the simple "beeline and fire" behavior with a lightweight FSM (Finite State Machine) that gives bots distinct behavioral modes.
+
+**State Enum (`BotState`):**
+
+| State | Goal Active | Behavior |
+|-------|------------|----------|
+| `BOT_STATE_WANDER` | `AIG_WANDER_AROUND` (level 1) | No target. Background exploration. |
+| `BOT_STATE_HUNT` | `AIG_GET_TO_OBJ` (level 2) | Has target, out of range or no LOS. Pursue. |
+| `BOT_STATE_COMBAT` | `AIG_MOVE_RELATIVE_OBJ` (level 2) | In range + has LOS. Circle-strafe + fire. |
+| `BOT_STATE_FLEE` | `AIG_GET_TO_POS` (level 2) | Low shields. Retreat from target. |
+
+**State Transitions** (evaluated every target-update tick, 0.5s):
+- `WANDER → HUNT`: target acquired
+- `HUNT → COMBAT`: distance < `BOT_FIRE_RANGE` (200) AND `fvi_FindIntersection` LOS check passes
+- `COMBAT → HUNT`: distance > `BOT_COMBAT_EXIT_RANGE` (240, hysteresis) OR LOS lost
+- `COMBAT → FLEE`: shields < 20% of max
+- `FLEE → HUNT`: shields > 40% OR distance > 300 units from threat
+- `any → WANDER`: bot respawns (reset state)
+
+**LOS Check (`BotHasLOS`):**
+Uses `fvi_FindIntersection` with `FQ_CHECK_OBJS | FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS | FQ_IGNORE_MOVING_OBJECTS` to cast a ray from bot to target. Returns true on `HIT_NONE` or `HIT_OBJECT`. This prevents bots from entering COMBAT state when the target is behind a wall.
+
+**Combat Circle-Strafe:**
+Uses `AIG_MOVE_RELATIVE_OBJ` goal (fully implemented in `AImain.cpp:4934`). This goal type handles both circle-strafing at `circle_distance` and fleeing when too close (< 0.7× circle distance). The `GF_ORIENT_TARGET` flag keeps the bot facing its target during the strafe.
+
+**Key finding during research:** `AIG_MOVE_AROUND_OBJ` and `AIG_GET_AWAY_FROM_OBJ` are defined in headers but were NOT handled in `GoalAddGoal`'s switch (would hit `ASSERT(0)`) and have no distinct movement behavior in `AIDoFrame`. They were stubs. Switch cases were added for safety, but `AIG_MOVE_RELATIVE_OBJ` is used for combat instead.
+
+**Safety guards added:**
+- `AIG_FIRE_AT_OBJ`: OBJ_PLAYER guard prevents crash if any AI code path triggers this goal on a bot (accesses `Object_info[obj->id].static_wb`)
+- `AIG_GET_AWAY_FROM_OBJ`, `AIG_MOVE_AROUND_OBJ`: added to `GoalAddGoal` switch to prevent `ASSERT(0)` if ever used
+
 ### NPF_BOT Guard Locations
 
 The `NPF_BOT` flag prevents network I/O on bot slots. Guards are placed in:
@@ -204,7 +237,8 @@ Use `-tempdir` to avoid cache lock conflicts when running both server and client
 
 ## Known Issues and Limitations
 
-- **No pathfinding** — Bots pursue targets in a straight line (`GF_USE_BLINE_IF_SEES_GOAL`) and wander otherwise. They may get stuck in geometry. BOA-driven navigation is Phase 3.
+- **Gunboy targeting issue** — The Phase 2 `AImain.cpp` fix allows gunboys to acquire player targets (bypasses `BOA_IsVisible`), but they still don't fire. Likely blocked by a separate condition in `ai_fire()` or weapon battery configuration. Revisit in future phase.
+- **Navigation is beeline-only** — In HUNT state, bots pursue targets in a straight line (`GF_USE_BLINE_IF_SEES_GOAL`) and wander otherwise. They may get stuck in geometry.
 - **Team assignment is static** — Bots are assigned to a team at `addbot` time based on current counts. If human players join or leave after bots are added, teams may become unbalanced. Dynamic rebalancing is future work.
 - **Congestion penalty is player-only** — The 80-unit diversity penalty only applies to player targets, not robot targets. In co-op, all bots may still converge on the same robot.
 - **Scoreboard tracking** — Fixed in Phase 0.5. Bots now appear on the end-of-level scoreboard. See "Scoreboard Tracking" section below.
@@ -238,12 +272,6 @@ See [PLAN.md](PLAN.md) for the Phase 0 design rationale and risk assessment.
 - Lead-tracking aim (bots currently fire when facing target, no trajectory prediction)
 - Weapon switching when out of ammo
 - Congestion penalty for robot targets in co-op/robo-anarchy
-
-### Phase 3: Navigation
-
-- BOA (Best Octant Algorithm) pathfinding integration
-- Room-to-room traversal planning
-- Map-independent behavior
 
 ### Phase 4: Configuration
 
