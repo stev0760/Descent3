@@ -20,6 +20,7 @@
 // Bots occupy real player slots and appear as normal players to retail clients.
 
 #include "bot.h"
+#include <climits>
 #include "multi.h"
 #include "multi_server.h"
 #include "player.h"
@@ -66,59 +67,106 @@ static void BotConfigureAI(int player_slot) {
   GoalAddGoal(obj, AIG_WANDER_AROUND, NULL, 1, 1.0f, GF_NONFLUSHABLE | GF_KEEP_AT_COMPLETION, -1, 0);
 }
 
-// Find and set the nearest human player as this bot's AI target.
-// Sets ai_info->target_handle and adds/refreshes an AIG_GET_TO_OBJ pursuit goal.
+// Returns true if the target player slot is a valid enemy for the given bot.
+// Respects co-op (all players are allies), team anarchy, and free-for-all modes.
+static bool BotIsPlayerEnemy(int bot_index, int target_slot) {
+  if (Netgame.flags & NF_COOP)
+    return false; // co-op: all players are allies
+  if (Num_teams > 1)
+    return Players[target_slot].team != Players[Bots[bot_index].player_slot].team;
+  return true; // anarchy / robo-anarchy: everyone is an enemy
+}
+
+// Returns true if bots should also target OBJ_ROBOT objects in this game mode.
+static bool BotShouldTargetRobots() { return (Netgame.flags & (NF_COOP | NF_USE_ROBOTS)) != 0; }
+
+// Find and set the best target as this bot's AI target.
+// Considers all enemies (players + robots in coop/robo-anarchy), with a congestion
+// penalty to spread bots across multiple targets.
 static void BotSelectTarget(int bot_index) {
   int bot_slot = Bots[bot_index].player_slot;
   object *obj = &Objects[Players[bot_slot].objnum];
   if (!obj->ai_info)
     return;
 
-  int best_slot = -1;
-  float best_dist = 1e30f;
+  int best_player_slot = -1;
+  int best_obj_num = -1;
+  float best_score = 1e30f; // lower is better (distance + congestion penalty)
 
+  // Count bots already targeting each player slot (for congestion penalty)
+  int slot_bot_count[MAX_NET_PLAYERS] = {};
+  for (int b = 0; b < MAX_BOTS; b++) {
+    if (!Bots[b].active || b == bot_index)
+      continue;
+    object *bobj = &Objects[Players[Bots[b].player_slot].objnum];
+    if (!bobj->ai_info)
+      continue;
+    object *btgt = ObjGet(bobj->ai_info->target_handle);
+    if (btgt && btgt->type == OBJ_PLAYER && btgt->id >= 0 && btgt->id < MAX_NET_PLAYERS)
+      slot_bot_count[btgt->id]++;
+  }
+
+  // --- Player targets ---
   for (int i = 0; i < MAX_NET_PLAYERS; i++) {
     if (i == bot_slot)
       continue;
     if (!(NetPlayers[i].flags & NPF_CONNECTED))
       continue;
-    if (BotIsPlayerSlot(i))
-      continue;
     if (Players[i].flags & (PLAYER_FLAGS_DEAD | PLAYER_FLAGS_DYING))
       continue;
+    if (!BotIsPlayerEnemy(bot_index, i))
+      continue;
 
-    object *target_obj = &Objects[Players[i].objnum];
-    float dist = vm_VectorDistanceQuick(&obj->pos, &target_obj->pos);
-    if (dist < best_dist) {
-      best_dist = dist;
-      best_slot = i;
+    float dist = vm_VectorDistanceQuick(&obj->pos, &Objects[Players[i].objnum].pos);
+    float score = dist + slot_bot_count[i] * 80.0f; // penalize congested targets
+    if (score < best_score) {
+      best_score = score;
+      best_player_slot = i;
+      best_obj_num = -1;
     }
   }
 
-  if (best_slot >= 0) {
-    int target_handle = Objects[Players[best_slot].objnum].handle;
-    AISetTarget(obj, target_handle);
-
-    // Clear old pursuit goal so GoalAddGoal gets a fresh slot
-    if (Bots[bot_index].pursuit_goal_index >= 0) {
-      int gi = Bots[bot_index].pursuit_goal_index;
-      if (gi >= 0 && gi < MAX_GOALS && obj->ai_info->goals[gi].used)
-        GoalClearGoal(obj, &obj->ai_info->goals[gi]);
-      Bots[bot_index].pursuit_goal_index = -1;
+  // --- Robot targets (co-op and robo-anarchy only) ---
+  if (BotShouldTargetRobots()) {
+    for (int i = 0; i <= Highest_object_index; i++) {
+      object *t = &Objects[i];
+      if (t->type != OBJ_ROBOT)
+        continue;
+      if (t->flags & (OF_DEAD | OF_DESTROYED))
+        continue;
+      if (t->control_type != CT_AI)
+        continue;
+      float dist = vm_VectorDistanceQuick(&obj->pos, &t->pos);
+      if (dist < best_score) {
+        best_score = dist;
+        best_player_slot = -1;
+        best_obj_num = i;
+      }
     }
+  }
 
+  // Resolve winner
+  int target_handle = OBJECT_HANDLE_NONE;
+  if (best_player_slot >= 0)
+    target_handle = Objects[Players[best_player_slot].objnum].handle;
+  else if (best_obj_num >= 0)
+    target_handle = Objects[best_obj_num].handle;
+
+  // Clear old pursuit goal
+  if (Bots[bot_index].pursuit_goal_index >= 0) {
+    int gi = Bots[bot_index].pursuit_goal_index;
+    if (gi < MAX_GOALS && obj->ai_info->goals[gi].used)
+      GoalClearGoal(obj, &obj->ai_info->goals[gi]);
+    Bots[bot_index].pursuit_goal_index = -1;
+  }
+
+  if (target_handle != OBJECT_HANDLE_NONE) {
+    AISetTarget(obj, target_handle);
     int gi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&target_handle, 2, 1.0f,
                          GF_SPEED_ATTACK | GF_OBJ_IS_TARGET | GF_USE_BLINE_IF_SEES_GOAL);
     Bots[bot_index].pursuit_goal_index = gi;
   } else {
-    // No valid target — clear targeting state
     AISetTarget(obj, OBJECT_HANDLE_NONE);
-    if (Bots[bot_index].pursuit_goal_index >= 0) {
-      int gi = Bots[bot_index].pursuit_goal_index;
-      if (gi >= 0 && gi < MAX_GOALS && obj->ai_info->goals[gi].used)
-        GoalClearGoal(obj, &obj->ai_info->goals[gi]);
-      Bots[bot_index].pursuit_goal_index = -1;
-    }
   }
 }
 
@@ -134,8 +182,12 @@ static void BotDoFiring(int bot_index) {
   object *target = ObjGet(obj->ai_info->target_handle);
   if (!target || target->type == OBJ_NONE)
     return;
-  if (target->type == OBJ_PLAYER && (Players[target->id].flags & (PLAYER_FLAGS_DEAD | PLAYER_FLAGS_DYING)))
+  if (target->type == OBJ_PLAYER) {
+    if (Players[target->id].flags & (PLAYER_FLAGS_DEAD | PLAYER_FLAGS_DYING))
+      return;
+  } else if (target->flags & (OF_DEAD | OF_DESTROYED)) {
     return;
+  }
 
   vector to_target = target->pos - obj->pos;
   float dist = vm_GetMagnitude(&to_target);
@@ -181,6 +233,7 @@ void BotInitAll() {
     Bots[i].awaiting_respawn = false;
     Bots[i].last_target_update = 0.0f;
     Bots[i].pursuit_goal_index = -1;
+    Bots[i].intended_team = 0;
   }
   Num_bots = 0;
 }
@@ -218,7 +271,7 @@ void BotReinitAll() {
     // The level load created a new player object — reinitialize it
     InitPlayerNewShip(slot, INVRESET_ALL);
     InitPlayerNewGame(slot); // This resets team to -1
-    Players[slot].team = 0;  // Restore to a valid team
+    Players[slot].team = Bots[i].intended_team; // Restore intended team
     Players[slot].start_index = PlayerGetRandomStartPosition(slot);
     PlayerMoveToStartPos(slot, Players[slot].start_index);
     ResetPlayerObject(slot);
@@ -244,6 +297,8 @@ void BotReinitAll() {
     DLLInfo.me_handle = Objects[Players[slot].objnum].handle;
     DLLInfo.it_handle = Objects[Players[slot].objnum].handle;
     CallGameDLL(EVT_GAMEPLAYERENTERSGAME, &DLLInfo);
+    // DMFC OnPlayerReconnect may restore team from PRec — re-assert intended team
+    Players[slot].team = Bots[i].intended_team;
 
     LOG_DEBUG.printf("BOT: Reinitialized '%s' in slot %d for new level, team=%d", Bots[i].callsign, slot,
                      Players[slot].team);
@@ -312,9 +367,26 @@ int BotAdd(const char *name, int ship_index) {
 
   // --- Initialize player state using existing engine functions ---
   InitPlayerNewShip(slot, INVRESET_ALL);
-  InitPlayerNewGame(slot);   // Resets team to -1
+  InitPlayerNewGame(slot); // Resets team to -1
   InitPlayerNewLevel(slot);
-  Players[slot].team = 0; // Must be after InitPlayerNewGame which resets team to -1
+
+  // Assign to the team with the fewest current members; default to 0 in non-team modes.
+  int chosen_team = 0;
+  if (Num_teams > 1) {
+    int team_counts[MAX_TEAMS] = {};
+    for (int i = 0; i < MAX_NET_PLAYERS; i++) {
+      if ((NetPlayers[i].flags & NPF_CONNECTED) && Players[i].team >= 0 && Players[i].team < MAX_TEAMS)
+        team_counts[Players[i].team]++;
+    }
+    int min_count = INT_MAX;
+    for (int t = 0; t < Num_teams && t < MAX_TEAMS; t++) {
+      if (team_counts[t] < min_count) {
+        min_count = team_counts[t];
+        chosen_team = t;
+      }
+    }
+  }
+  Players[slot].team = chosen_team; // Must be after InitPlayerNewGame which resets team to -1
 
   // Place at a random start position
   Players[slot].start_index = PlayerGetRandomStartPosition(slot);
@@ -344,9 +416,10 @@ int BotAdd(const char *name, int ship_index) {
   DLLInfo.me_handle = Objects[Players[slot].objnum].handle;
   DLLInfo.it_handle = Objects[Players[slot].objnum].handle;
   CallGameDLL(EVT_GAMEPLAYERENTERSGAME, &DLLInfo);
+  // DMFC OnPlayerReconnect may restore team from PRec — re-assert chosen team
+  Players[slot].team = chosen_team;
 
-  // Verify PRec slot (via DMFC interface if possible, or just log intent)
-  LOG_DEBUG.printf("BOT: Finished adding bot '%s' in slot %d", name, slot);
+  LOG_DEBUG.printf("BOT: Finished adding bot '%s' in slot %d, team=%d", name, slot, chosen_team);
 
   // --- Populate bot_info record ---
   Bots[bot_index].active = true;
@@ -358,6 +431,7 @@ int BotAdd(const char *name, int ship_index) {
   Bots[bot_index].awaiting_respawn = false;
   Bots[bot_index].last_target_update = 0.0f;
   Bots[bot_index].pursuit_goal_index = -1;
+  Bots[bot_index].intended_team = chosen_team;
   Num_bots++;
 
   LOG_INFO.printf("BOT: Added '%s' in player slot %d (bot index %d)", name, slot, bot_index);

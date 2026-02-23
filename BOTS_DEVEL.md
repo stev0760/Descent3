@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Phase 1 — Combat (Implemented, Needs Testing)
+**Status:** Phase 2 — Smart Targeting & Game Mode Awareness (Implemented, Needs Testing)
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -22,9 +22,11 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 |-------|-------|--------|
 | 0 | Wandering bots — spawn, move, die, respawn | Complete |
 | 0.5 | Stability fixes — crash guards, level transitions, AI safety, scoreboard | Complete |
-| 1 | Weapon firing and combat AI (target pursuit, shooting) | Implemented — needs live testing |
-| 2 | BOA-driven navigation, map-aware pathfinding | Not started |
-| 3 | Difficulty levels, configuration UI | Not started |
+| 1 | Weapon firing and combat AI (target pursuit, shooting) | Complete |
+| 2 | Smart targeting — game mode awareness, target diversity, robot targeting, team persistence | Implemented — needs live testing |
+| 1.5 | Combat polish — energy/ammo drain, lead-tracking aim | Not started |
+| 3 | BOA-driven navigation, map-aware pathfinding | Not started |
+| 4 | Difficulty levels, configuration UI | Not started |
 
 ## Files
 
@@ -43,7 +45,7 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | `Descent3/multi_server.cpp` | NPF_BOT guards on network sends, disconnect logic, `BotDoFrame()` hook in `MultiDoServerFrame()`, guards in `MultiSendClientExecuteDLL()` and `MultiSendGenericNonVis()` |
 | `Descent3/multi.cpp` | NPF_BOT guards in `MultiSendFullPacket()`, `MultiSendFullReliablePacket()`, `MultiSendSpecialPacket()`, `MultiSendMessageToPlayer()`, multisafe send path, missile release broadcast; `BotReinitAll()` call in `MultiStartNewLevel()` |
 | `Descent3/dedicated_server.cpp` | Console commands: `addbot`, `removebot`, `removebots`, `botlist` (via local console and remote telnet) |
-| `Descent3/AImain.cpp` | OBJ_PLAYER guards in `AIDoFrame()` to skip `ai_do_animation()`, spray/on-off weapons, and `do_awareness_based_anim_stuff()` — prevents `Object_info[obj->id]` crash for player objects |
+| `Descent3/AImain.cpp` | OBJ_PLAYER guards in `AIDoFrame()` to skip `ai_do_animation()`, spray/on-off weapons, and `do_awareness_based_anim_stuff()` — prevents `Object_info[obj->id]` crash for player objects; Phase 2: PTMC multiplayer targeting loop bypasses `BOA_IsVisible` (via direct distance check) so map-placed robots (gunboys) can acquire player targets |
 | `Descent3/AIGoal.cpp` | OBJ_PLAYER guard in `AIG_SET_ANIM` goal case |
 | `Descent3/CMakeLists.txt` | Added `bot.h` and `bot.cpp` to build |
 | `netgames/dmfc/dmfcclient.cpp` | Replaced `ASSERT(player_num == 0)` in `OnPlayerReconnect` with warning log — prevents server abort when bot team doesn't match PRec default |
@@ -98,21 +100,40 @@ The AI weapon firing path (`ai_fire()` in `AImain.cpp`) accesses `Object_info[ob
 
 ### Phase 1: Bot Targeting and Firing
 
-`BotDoFrame()` calls two new functions each frame:
-
-**`BotSelectTarget(bot_index)`** (throttled to `BOT_TARGET_UPDATE_INTERVAL` = 0.5s):
-1. Iterates `Players[]` to find the nearest connected, alive, non-bot player
-2. Calls `AISetTarget(obj, target_handle)` to set `ai_info->target_handle`
-3. Clears any existing pursuit goal via `GoalClearGoal()`, then adds a fresh `AIG_GET_TO_OBJ` goal with `GF_SPEED_ATTACK | GF_OBJ_IS_TARGET | GF_USE_BLINE_IF_SEES_GOAL`
+`BotDoFrame()` calls two functions each frame:
 
 **`BotDoFiring(bot_index)`** (every frame, rate-limited by `WBIsBatteryReady()`):
-1. Reads `ai_info->target_handle` and validates the target is alive
+1. Reads `ai_info->target_handle` and validates the target is alive (handles both `OBJ_PLAYER` and `OBJ_ROBOT` dead checks)
 2. Computes vector to target: if `dist > BOT_FIRE_RANGE` (200 units), skips
 3. Dot-product aim check: if `dot(forward, to_target) < BOT_FIRE_AIM_DOT` (0.6), skips
 4. Reads `Ships[Players[slot].ship_index].static_wb[wb_index]` for weapon data
 5. Calls `WBIsBatteryReady()` then `WBFireBattery(obj, wb, 0, wb_index)` — the same path used by `FireOnOffWeapon()` for player objects
 
 This bypasses `ai_fire()` entirely. Network synchronization of fired projectiles is handled inside `WBFireBattery()` → `FireWeaponFromObject()` → `MultiSendRobotFireWeapon()` for CT_AI objects on the server.
+
+### Phase 2: Smart Targeting & Game Mode Awareness
+
+**`BotSelectTarget(bot_index)`** (throttled to `BOT_TARGET_UPDATE_INTERVAL` = 0.5s):
+
+Replaced the simple nearest-human search with a full mode-aware targeting pass:
+
+1. **Congestion penalty**: counts how many other bots already target each player slot; adds `80.0f × count` to the scoring distance to spread bots across targets and reduce collision pile-ups.
+2. **`BotIsPlayerEnemy(bot_index, target_slot)`**: returns false in co-op (all players are allies), checks opposing team in team anarchy, returns true for all players in anarchy and robo-anarchy.
+3. **Robot targeting** (`BotShouldTargetRobots()`): in co-op and robo-anarchy (`NF_COOP | NF_USE_ROBOTS`), scans `Objects[0..Highest_object_index]` for live `OBJ_ROBOT | CT_AI` targets.
+4. Selects the lowest-score target (player or robot), calls `AISetTarget()`, and adds/refreshes an `AIG_GET_TO_OBJ` pursuit goal.
+
+**Team assignment (`BotAdd`):**
+- In team game modes (`Num_teams > 1`), counts current members per team and assigns the bot to the team with the fewest members.
+- Stores the chosen team in `bot_info.intended_team`.
+- Re-asserts `Players[slot].team` after `CallGameDLL(EVT_GAMEPLAYERENTERSGAME)` because DMFC's `OnPlayerReconnect` may restore a stale PRec value.
+
+**Team persistence (`BotReinitAll`):**
+- Uses `Bots[i].intended_team` instead of hardcoded `0` when restoring team after level transition.
+- Re-asserts `Players[slot].team` after the DMFC EVT call for the same reason.
+
+**Gunboy fix (`AImain.cpp`):**
+- `AIDetermineTarget` PTMC multiplayer branch previously called `AITargetCheck`, which internally calls `BOA_IsVisible`. In multiplayer maps, the BOA graph often doesn't connect a map-placed robot's room to the player's room, so `BOA_IsVisible` returns false and the robot never acquires a target.
+- Fix: replaced `AITargetCheck` with a direct distance + `AIObjEnemy` check. Weapon fire still requires LOS (handled inside `CreateAndFireWeapon`, which logs "weapon point in wall, didn't fire").
 
 ### NPF_BOT Guard Locations
 
@@ -183,8 +204,9 @@ Use `-tempdir` to avoid cache lock conflicts when running both server and client
 
 ## Known Issues and Limitations
 
-- **No pathfinding** — Bots pursue targets in a straight line (`GF_USE_BLINE_IF_SEES_GOAL`) and wander otherwise. They may get stuck in geometry. BOA-driven navigation is Phase 2.
-- **No team game support** — Bots default to team 0. Team game integration (CTF, team anarchy) is future work.
+- **No pathfinding** — Bots pursue targets in a straight line (`GF_USE_BLINE_IF_SEES_GOAL`) and wander otherwise. They may get stuck in geometry. BOA-driven navigation is Phase 3.
+- **Team assignment is static** — Bots are assigned to a team at `addbot` time based on current counts. If human players join or leave after bots are added, teams may become unbalanced. Dynamic rebalancing is future work.
+- **Congestion penalty is player-only** — The 80-unit diversity penalty only applies to player targets, not robot targets. In co-op, all bots may still converge on the same robot.
 - **Scoreboard tracking** — Fixed in Phase 0.5. Bots now appear on the end-of-level scoreboard. See "Scoreboard Tracking" section below.
 
 ### Scoreboard Tracking (Phase 0.5)
@@ -215,14 +237,15 @@ See [PLAN.md](PLAN.md) for the Phase 0 design rationale and risk assessment.
 - Energy/ammo consumption on bot firing (currently bots fire without draining energy or ammo)
 - Lead-tracking aim (bots currently fire when facing target, no trajectory prediction)
 - Weapon switching when out of ammo
+- Congestion penalty for robot targets in co-op/robo-anarchy
 
-### Phase 2: Navigation
+### Phase 3: Navigation
 
 - BOA (Best Octant Algorithm) pathfinding integration
 - Room-to-room traversal planning
 - Map-independent behavior
 
-### Phase 3: Configuration
+### Phase 4: Configuration
 
 - Difficulty levels (accuracy, reaction time, aggression)
 - Server config file bot definitions

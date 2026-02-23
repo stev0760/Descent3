@@ -47,3 +47,48 @@ ctest --preset linux -C Debug
 - **Formatting:** Code style is enforced by `.clang-format`. Use `clang-format -i <file>` or the `tools/formatter.sh` script to format any changes.
 - **Architecture:** The project is a large set of static libraries linked into the main `Descent3` executable. Core multiplayer logic is in `Descent3/`, with the server frame loop in `multi_server.cpp:MultiDoServerFrame()`. The bot system is isolated in `Descent3/bot.cpp` and `Descent3/bot.h`, and activated via the `NPF_BOT` flag in `multi_external.h`.
 - **Server Logs:** The user may provide server logs (`server.log`) for diagnostics. Review these logs carefully to understand runtime behavior and debug issues.
+
+## Recent Work — Phase 2: Smart Targeting & Game Mode Awareness
+
+Phase 2 has been implemented by Claude Code. The following changes are in `Descent3/bot.cpp`, `Descent3/bot.h`, and `Descent3/AImain.cpp`. Review `BOTS_DEVEL.md` for the full design rationale.
+
+### What changed
+
+**`bot.h`** — Added `intended_team` field to `bot_info`. Stores the team assigned at `BotAdd()` time so it can be re-asserted after level transitions (DMFC's `OnPlayerReconnect` overwrites `Players[slot].team` from a stale PRec value).
+
+**`bot.cpp`** — Three new/updated subsystems:
+
+1. **`BotIsPlayerEnemy(bot_index, target_slot)`** — Returns false in co-op (all players are allies). In team anarchy (`Num_teams > 1`), returns true only when the target is on a different team. In anarchy/robo-anarchy, always returns true.
+
+2. **`BotShouldTargetRobots()`** — Returns true when `Netgame.flags` has `NF_COOP` or `NF_USE_ROBOTS` set.
+
+3. **`BotSelectTarget()` (rewritten)** — Now runs two passes:
+   - *Player pass*: iterates `NetPlayers[]`, skips dead/non-enemy players, applies a congestion penalty of `80.0f × (number of other bots already targeting that slot)` to spread bots across targets.
+   - *Robot pass* (co-op/robo-anarchy only): scans `Objects[0..Highest_object_index]` for live `OBJ_ROBOT | CT_AI` objects. Uses raw distance (no congestion penalty yet).
+   - Sets `AISetTarget()` and adds/refreshes an `AIG_GET_TO_OBJ` pursuit goal for the winning target.
+
+4. **`BotDoFiring()` dead-check** — Fixed to handle `OBJ_ROBOT` targets (`OF_DEAD | OF_DESTROYED`) in addition to the existing `OBJ_PLAYER` check.
+
+5. **`BotAdd()` team assignment** — In team modes, assigns to the team with the fewest current members. Saves result to `Bots[i].intended_team`. Re-asserts `Players[slot].team` after the DMFC EVT call.
+
+6. **`BotReinitAll()` team persistence** — Uses `Bots[i].intended_team` instead of hardcoded `0`. Re-asserts after DMFC EVT call.
+
+**`AImain.cpp`** — Gunboy targeting fix: in `AIDetermineTarget`, the PTMC multiplayer branch previously called `AITargetCheck()`, which calls `BOA_IsVisible()`. In multiplayer maps the BOA graph doesn't connect robot rooms to player rooms, so gunboys never acquired targets. The fix replaces `AITargetCheck` with a direct `AIObjEnemy` + distance check. Weapon fire still requires LOS (handled in `CreateAndFireWeapon`).
+
+### Key constants & tuning knobs
+
+| Constant | Value | Location |
+|----------|-------|----------|
+| `BOT_TARGET_UPDATE_INTERVAL` | 0.5s | `bot.h` |
+| `BOT_FIRE_RANGE` | 200 units | `bot.h` |
+| `BOT_FIRE_AIM_DOT` | 0.6 | `bot.h` |
+| Congestion penalty | 80 units/bot | `bot.cpp:BotSelectTarget` |
+
+### Verification needed (live test)
+
+1. **Anarchy** — bots target each other AND the human; collision pile-ups reduced
+2. **Team anarchy** — bots auto-assigned to balanced teams; target opposing team only; teams survive level transitions
+3. **Co-op** — bots target level robots, not human players
+4. **Robo-anarchy** — bots target both humans and level robots
+5. **Gunboy** — gunboy acquires and fires on human player in robo-anarchy
+6. **Level transition** — bot teams are `-1`-free after level change

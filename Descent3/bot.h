@@ -36,6 +36,7 @@ struct bot_info {
   bool awaiting_respawn;
   float last_target_update;           // Gametime of last BotSelectTarget() call
   int pursuit_goal_index;             // Bots[].goals[] index of AIG_GET_TO_OBJ goal, or -1
+  int intended_team;                  // team this bot is assigned to (persists across level transitions)
 };
 
 extern bot_info Bots[MAX_BOTS];

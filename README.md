@@ -12,18 +12,20 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 This fork introduces an experimental server-side multiplayer bot system for Descent 3. These AI-controlled bots occupy real player slots on dedicated servers, appearing as normal players to clients.
 
-**Current Status: Phase 1 — Combat AI (Up Next)**
+**Current Status: Phase 2 — Smart Targeting & Game Mode Awareness**
 
-**Key Features (Phase 0 & 0.5):**
-*   **Protocol Transparency:** Bots use the same player slots, packets, and state structures as human players.
-*   **Wandering AI:** Bots autonomously navigate maps using the existing AI goal system, can be killed, and auto-respawn.
-*   **Console Management:** Dedicated server console commands (`addbot`, `removebot`, `removebots`, `botlist`) are available for management.
-*   **Stability:** Phase 0.5 focused on significant stability fixes.
-
-This system aims to provide AI opponents for dedicated servers while maintaining full compatibility with the main branch of this Descent 3 fork. Future phases will focus on combat AI, advanced pathfinding, and configuration options.
+**Key Features:**
+*   **Protocol Transparency:** Bots use the same player slots, packets, and state structures as human players. No client modifications required.
+*   **Combat AI:** Bots pursue, aim at, and fire weapons at enemies using the existing AI goal and weapon systems.
+*   **Game Mode Awareness:** Bots correctly identify enemies per game mode — free-for-all targets all players, team anarchy targets opposing teams only, co-op targets robots and protects players.
+*   **Target Diversity:** A congestion penalty spreads bots across multiple targets, reducing collision pile-ups.
+*   **Robot Targeting:** In co-op and robo-anarchy, bots pursue level robots as well as human players.
+*   **Smart Team Assignment:** Bots are auto-assigned to the team with the fewest members in team game modes, and team assignments persist across level transitions.
+*   **Wandering AI:** Bots autonomously navigate maps when no target is available.
+*   **Console Management:** Dedicated server console commands (`addbot`, `removebot`, `removebots`, `botlist`).
 
 **Current Limitations:**
-Bots currently cannot fire weapons. They wander, get killed by robots and players, auto-respawn, and show on the scoreboard. Combat AI (weapon selection and firing) is the next development phase.
+Bots navigate in straight lines toward targets (no BOA pathfinding) and may get stuck in geometry. BOA-driven navigation is Phase 3. See `BOTS_DEVEL.md` for full details.
 
 ## Contributing
 Anyone can contribute! We have an active Discord presence at [Descent Developer Network](https://discord.gg/GNy5CUQ). Patches should be submitted on GitHub.

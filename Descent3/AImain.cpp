@@ -5860,12 +5860,21 @@ void AIDetermineTarget(object *obj) {
   } else // Team PTMC  :)
   {
     if (Game_mode & GM_MULTI) {
-      // Multiplayer targeting (Major difference is that robot will ignore players while infighting in single player)
+      // In multiplayer, BOA_IsVisible (used inside AITargetCheck) often fails for
+      // map-placed robots whose rooms aren't connected to player rooms in the BOA graph.
+      // Use a direct distance check instead so PTMC robots (gunboys, etc.) can acquire
+      // player targets. Weapon fire still requires LOS (handled in CreateAndFireWeapon).
       for (i = 0; i < MAX_PLAYERS; i++) {
         if ((NetPlayers[i].flags & NPF_CONNECTED) && (NetPlayers[i].sequence >= NETSEQ_PLAYING)) {
           object *target = &Objects[Players[i].objnum];
-
-          AITargetCheck(obj, target, &best_obj, &best_dot, &best_dist);
+          if (!AIObjEnemy(obj, target))
+            continue;
+          vector to_target = target->pos - obj->pos;
+          float dist = vm_GetMagnitude(&to_target);
+          if (dist < best_dist && dist < MAX_SEE_TARGET_DIST) {
+            best_dist = dist;
+            best_obj = target;
+          }
         }
       }
     } else {
