@@ -1923,13 +1923,6 @@ int MultiStuffPosition(int slot, uint8_t *data) {
     flags |= MPF_AFTERBURNER;
   if (Players[slot].flags & PLAYER_FLAGS_THRUSTED)
     flags |= MPF_THRUSTED;
-  // For bots, PLAYER_FLAGS_THRUSTED is never set by the input system.
-  // Use velocity magnitude as a proxy so clients see thruster glow/plumes.
-  if (BotIsPlayerSlot(slot) && !(flags & MPF_THRUSTED)) {
-    vector &bvel = obj->mtype.phys_info.velocity;
-    if (vm_GetMagnitude(&bvel) > 1.0f)
-      flags |= MPF_THRUSTED;
-  }
   if (Objects[Players[slot].objnum].weapon_fire_flags & WFF_SPRAY)
     flags |= MPF_SPRAY;
   if (Objects[Players[slot].objnum].weapon_fire_flags & WFF_ON_OFF)

@@ -1532,6 +1532,7 @@
 #include "aipath.h"
 #include "log.h"
 #include "attach.h"
+#include "bot.h"
 #include "demofile.h"
 #include "matcen.h"
 #include "difficulty.h"
@@ -6036,10 +6037,16 @@ void AIDoFrame(object *obj) {
   int multi_saved_weapon_flags;
   char multi_saved_wb_firing;
 
-  // AI objects don't use thrust (in general)
-  obj->mtype.phys_info.flags &= ~PF_USES_THRUST;
+  // AI objects don't use thrust (in general).
+  // Exception: bot player objects use thrust-based movement — BotApplyThrust() has already
+  // written phys_info.thrust and set PF_USES_THRUST. Preserve those values so PhysicsDoFrame
+  // integrates thrust with real drag/inertia instead of direct velocity control.
+  bool is_bot_player = (obj->type == OBJ_PLAYER && BotIsPlayerSlot(obj->id));
+  if (!is_bot_player) {
+    obj->mtype.phys_info.flags &= ~PF_USES_THRUST;
+    obj->mtype.phys_info.thrust = vector{};
+  }
   obj->mtype.phys_info.rotthrust = vector{};
-  obj->mtype.phys_info.thrust = vector{};
 
   if (obj->type == OBJ_DUMMY)
     return;
@@ -6154,8 +6161,10 @@ void AIDoFrame(object *obj) {
 
         speed = obj->mtype.phys_info.velocity.mag();
 
-        // Removes the framerate independence from objects moving within 2x of there normal max speed
-        if (speed > 0.1f && speed <= ai_info->max_velocity * 2.0) {
+        // Removes the framerate independence from objects moving within 2x of there normal max speed.
+        // Skip for bot player objects — their thrust is set by BotApplyThrust() and must not be
+        // overwritten with drag compensation. PhysicsDoFrame handles drag integration directly.
+        if (!is_bot_player && speed > 0.1f && speed <= ai_info->max_velocity * 2.0) {
           if (obj->mtype.phys_info.drag > 0.0f && obj->mtype.phys_info.mass > 0.0f) {
             obj->mtype.phys_info.flags |= PF_USES_THRUST;
             obj->mtype.phys_info.rotthrust = vector{};

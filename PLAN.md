@@ -8,8 +8,9 @@
 | 0.5 | Stability fixes — crash guards, level transitions, AI safety, scoreboard | Complete |
 | 1 | Weapon firing — target pursuit, direct-fire combat | Complete |
 | 2 | Smart targeting — game mode awareness, target diversity, robot targeting, team persistence | Complete |
-| 3 | Combat behaviors — FSM (wander/hunt/combat/flee), LOS gating, circle-strafe, flee | Implemented — needs live testing |
-| Movement | Velocity tuning, movement logging, botstat/botmov commands, MPF_THRUSTED cosmetics | Implemented — build verified |
+| 3 | Combat behaviors — FSM (wander/hunt/combat/flee), LOS gating, circle-strafe, flee | Complete |
+| Movement | Velocity tuning, movement logging, botstat/botmov commands, MPF_THRUSTED cosmetics | Complete |
+| 3.5 | Thrust-based physics — real inertia, tri-chording, afterburner, lateral evasion | Complete |
 | 1.5 | Combat polish — energy/ammo drain, lead-tracking aim | Not started |
 | 4 | Difficulty levels, configuration UI | Not started |
 
@@ -601,14 +602,9 @@ PLRMOV: slot=1 'Human' speed=63.2 vel=(45.1,-2.1,43.0)
 
 ## Future Work
 
-### Phase 3.5: Realistic Movement (CT_FLYING Synthetic Controls)
+### Phase 3.5: Thrust-Based Movement — COMPLETE
 
-Live testing (Movement phase) confirmed bots are measurably faster but still move unrealistically — no inertia, no momentum, instant direction snapping. Root cause: CT_AI sets velocity directly, bypassing physics.
-
-**Direction:** Run bots as CT_FLYING and feed synthetic thrust inputs through the existing player movement code path (`object.cpp:2387–2427`, `Player.cpp:PlayerProcessKeys()`). Key benefits:
-- Real drag/inertia from `PhysicsDoFrame()` — matching player feel
-- `PLAYER_FLAGS_AFTERBURN_ON` / `PLAYER_FLAGS_THRUSTED` set by real engine path (no MPF hacks)
-- Tri-chord physics automatic — HUNT = forward thrust, COMBAT = forward + lateral
+Implemented thrust-based physics for bots. Bots keep CT_AI for AI infrastructure but write `phys_info.thrust` directly via `BotApplyThrust()`. Guards in `AIDoFrame()` preserve bot thrust. `PhysicsDoFrame()` integrates with real ship mass/drag. See `BOTS_DEVEL.md` Phase 3.5 section for full details.
 
 ### Phase 1.5: Combat Polish
 - Energy/ammo consumption on bot firing

@@ -34,6 +34,17 @@
 #define BOT_COMBAT_EXIT_RANGE (BOT_FIRE_RANGE * 1.2f) // hysteresis for combat→hunt transition
 #define BOT_COMBAT_CIRCLE_DIST 120.0f          // circle-strafe orbit distance in combat state
 
+// Thrust-based movement constants (Phase 3.5)
+#define BOT_AFTERBURNER_FUEL_MAX 5.0f          // seconds of fuel (matches AFTERBURN_TIME)
+#define BOT_AFTERBURNER_THRUST_MULT 1.6f       // base afterburner thrust multiplier
+#define BOT_JUKE_FREQUENCY 2.5f                // lateral oscillation frequency (Hz)
+#define BOT_JUKE_AMPLITUDE_HUNT 0.6f           // sideways thrust scale during hunt
+#define BOT_JUKE_AMPLITUDE_COMBAT 0.8f         // sideways thrust scale during combat
+#define BOT_JUKE_AMPLITUDE_FLEE 0.5f           // sideways thrust scale during flee
+#define BOT_VERTICAL_JUKE_AMPLITUDE 0.3f       // vertical oscillation amplitude
+#define BOT_COMBAT_ORBIT_FORWARD 0.5f          // forward thrust for orbit maintenance
+#define BOT_WANDER_FORWARD 0.3f                // gentle forward thrust while wandering
+
 enum BotState {
   BOT_STATE_WANDER,  // No target. Background exploration.
   BOT_STATE_HUNT,    // Has target, out of range or no LOS. Pursue.
@@ -53,7 +64,15 @@ struct bot_info {
   int intended_team;                  // team this bot is assigned to (persists across level transitions)
   BotState state;                     // current behavioral state
   int combat_goal_index;              // goal index for circle-strafe or flee goal, or -1
-  float afterburner_timer;            // remaining simulated afterburner time (seconds), 0 = off
+
+  // Thrust-based movement (Phase 3.5)
+  float ship_full_thrust;             // cached from ship physics template
+  float ship_full_rotthrust;          // cached from ship physics template
+  float ship_mass;                    // cached from ship physics template
+  float ship_drag;                    // cached from ship physics template
+  float ship_rotdrag;                 // cached from ship physics template
+  float afterburner_fuel;             // remaining fuel (seconds), 0 = empty
+  float juke_phase;                   // oscillating strafe phase (radians)
 };
 
 extern bot_info Bots[MAX_BOTS];

@@ -21,6 +21,7 @@
 
 #include "bot.h"
 #include <climits>
+#include <cmath>
 #include "multi.h"
 #include "multi_server.h"
 #include "player.h"
@@ -50,7 +51,24 @@ extern void MultiSendPlayerEnteredGame(int which);
 extern void MultiSendRenewPlayer(int slot);
 extern void MultiSendPlayerDisconnect(int slot);
 
-// Configure a bot's AI for wandering behavior after PlayerSetControlToAI has been called.
+// Cache the ship physics template values for thrust-based movement.
+static void BotCacheShipPhysics(int bot_index) {
+  int ship_idx = Bots[bot_index].ship_index;
+  physics_info &sp = Ships[ship_idx].phys_info;
+  Bots[bot_index].ship_full_thrust = sp.full_thrust;
+  Bots[bot_index].ship_full_rotthrust = sp.full_rotthrust;
+  Bots[bot_index].ship_mass = sp.mass;
+  Bots[bot_index].ship_drag = sp.drag;
+  Bots[bot_index].ship_rotdrag = sp.rotdrag;
+  Bots[bot_index].afterburner_fuel = BOT_AFTERBURNER_FUEL_MAX;
+  Bots[bot_index].juke_phase = 0.0f;
+  LOG_DEBUG.printf("BOT: Ship physics cached for bot %d: thrust=%.1f mass=%.1f drag=%.1f rotthrust=%.1f rotdrag=%.1f",
+                   bot_index, sp.full_thrust, sp.mass, sp.drag, sp.full_rotthrust, sp.rotdrag);
+}
+
+// Configure a bot's AI after PlayerSetControlToAI has been called.
+// Movement goals still run for ORIENTATION only — max_delta_velocity=0 prevents velocity changes.
+// Thrust-based movement is driven by BotApplyThrust() each frame.
 static void BotConfigureAI(int player_slot) {
   object *obj = &Objects[Players[player_slot].objnum];
   if (!obj->ai_info)
@@ -59,13 +77,22 @@ static void BotConfigureAI(int player_slot) {
   obj->ai_info->ai_class = AIC_AIS_FULL;
   obj->ai_info->flags = AIF_PERSISTANT | AIF_DISABLE_FIRING | AIF_DISABLE_MELEE | AIF_FORCE_AWARENESS | AIF_DODGE;
   obj->ai_info->awareness = AWARE_MOSTLY;
-  obj->ai_info->max_velocity = 50.0f;       // matches typical player physics equilibrium
-  obj->ai_info->max_delta_velocity = 40.0f; // matches PlayerSetControlToAI default
+  obj->ai_info->max_velocity = 50.0f;       // used by AI goal system for direction scaling
+  obj->ai_info->max_delta_velocity = 0.0f;  // ZERO: prevents AI goals from changing velocity
   obj->ai_info->max_turn_rate = 16000;
   obj->ai_info->movement_type = MC_FLYING;
   obj->ai_info->fov = 0.7f;
 
-  // Add a persistent wander goal
+  // Restore real ship physics values (PlayerSetControlToAI sets drag=0.1, clears PF_USES_THRUST)
+  int ship_idx = Players[player_slot].ship_index;
+  obj->mtype.phys_info.mass = Ships[ship_idx].phys_info.mass;
+  obj->mtype.phys_info.drag = Ships[ship_idx].phys_info.drag;
+  obj->mtype.phys_info.rotdrag = Ships[ship_idx].phys_info.rotdrag;
+  obj->mtype.phys_info.full_thrust = Ships[ship_idx].phys_info.full_thrust;
+  obj->mtype.phys_info.full_rotthrust = Ships[ship_idx].phys_info.full_rotthrust;
+  obj->mtype.phys_info.flags |= PF_USES_THRUST; // enable thrust-based physics integration
+
+  // Add a persistent wander goal (provides orientation when no target)
   GoalAddGoal(obj, AIG_WANDER_AROUND, NULL, 1, 1.0f, GF_NONFLUSHABLE | GF_KEEP_AT_COMPLETION, -1, 0);
 }
 
@@ -254,6 +281,113 @@ static void BotUpdateState(int bot_index) {
   }
 }
 
+// Compute synthetic thrust controls based on FSM state and write thrust vector to phys_info.
+// The physics engine (PhysicsDoFrame) integrates this thrust with the ship's real mass/drag
+// to produce velocity with natural inertia — matching how human CT_FLYING players move.
+static void BotApplyThrust(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+
+  float forward = 0.0f, sideways = 0.0f, vertical = 0.0f;
+  bool use_afterburner = false;
+
+  object *target = (obj->ai_info) ? ObjGet(obj->ai_info->target_handle) : nullptr;
+  float dist_to_target = target ? vm_VectorDistanceQuick(&obj->pos, &target->pos) : 1e30f;
+
+  // Compute synthetic control inputs per FSM state
+  switch (Bots[bot_index].state) {
+  case BOT_STATE_WANDER:
+    forward = BOT_WANDER_FORWARD;
+    break;
+
+  case BOT_STATE_HUNT:
+    forward = 1.0f;
+    sideways = sinf(Bots[bot_index].juke_phase) * BOT_JUKE_AMPLITUDE_HUNT;
+    vertical = cosf(Bots[bot_index].juke_phase * 0.7f) * BOT_VERTICAL_JUKE_AMPLITUDE;
+    // Afterburner when far from target (gap closing)
+    if (dist_to_target > BOT_FIRE_RANGE * 2.0f && Bots[bot_index].afterburner_fuel > 0)
+      use_afterburner = true;
+    break;
+
+  case BOT_STATE_COMBAT: {
+    // Circle-strafe: moderate forward (orbit maintenance), strong lateral strafe
+    // Modulate forward based on orbit distance
+    float orbit_error = dist_to_target - BOT_COMBAT_CIRCLE_DIST;
+    if (orbit_error > 20.0f)
+      forward = BOT_COMBAT_ORBIT_FORWARD; // closing in
+    else if (orbit_error < -20.0f)
+      forward = -0.3f; // backing off (too close)
+    else
+      forward = orbit_error / 20.0f * BOT_COMBAT_ORBIT_FORWARD; // smooth transition
+
+    // Directional strafing — alternates direction for circle-strafe
+    sideways = (sinf(Bots[bot_index].juke_phase) > 0 ? 1.0f : -1.0f) * BOT_JUKE_AMPLITUDE_COMBAT;
+    vertical = cosf(Bots[bot_index].juke_phase * 1.3f) * BOT_VERTICAL_JUKE_AMPLITUDE;
+    break;
+  }
+
+  case BOT_STATE_FLEE:
+    forward = 1.0f; // AI flee goal orients away from target, so forward = away
+    sideways = sinf(Bots[bot_index].juke_phase) * BOT_JUKE_AMPLITUDE_FLEE;
+    vertical = cosf(Bots[bot_index].juke_phase * 0.5f) * BOT_VERTICAL_JUKE_AMPLITUDE;
+    // Afterburner when fleeing
+    if (Bots[bot_index].afterburner_fuel > 0)
+      use_afterburner = true;
+    break;
+  }
+
+  // Update juke phase
+  Bots[bot_index].juke_phase += Frametime * BOT_JUKE_FREQUENCY * 2.0f * 3.14159f;
+  if (Bots[bot_index].juke_phase > 6.28318f)
+    Bots[bot_index].juke_phase -= 6.28318f;
+
+  // Afterburner handling — matches DoPlayerAfterburnControl() punch_scalar ramp
+  float thrust_multiplier = 1.0f;
+  if (use_afterburner) {
+    float fuel = Bots[bot_index].afterburner_fuel;
+    float punch_scalar = 1.0f;
+    if (fuel > BOT_AFTERBURNER_FUEL_MAX * 0.90f)
+      punch_scalar = 1.8f;
+    else if (fuel > BOT_AFTERBURNER_FUEL_MAX * 0.80f) {
+      float norm = (fuel - BOT_AFTERBURNER_FUEL_MAX * 0.80f) / (BOT_AFTERBURNER_FUEL_MAX * 0.10f);
+      punch_scalar = 1.0f + norm * 0.8f;
+    }
+    forward = 1.0f; // afterburner forces full forward
+    thrust_multiplier = BOT_AFTERBURNER_THRUST_MULT * punch_scalar;
+    Bots[bot_index].afterburner_fuel -= Frametime;
+    if (Bots[bot_index].afterburner_fuel < 0)
+      Bots[bot_index].afterburner_fuel = 0;
+    Players[slot].flags |= PLAYER_FLAGS_AFTERBURN_ON | PLAYER_FLAGS_THRUSTED;
+  } else {
+    Players[slot].flags &= ~PLAYER_FLAGS_AFTERBURN_ON;
+    // Recharge afterburner fuel
+    if (Bots[bot_index].afterburner_fuel < BOT_AFTERBURNER_FUEL_MAX) {
+      Bots[bot_index].afterburner_fuel += Frametime;
+      if (Bots[bot_index].afterburner_fuel > BOT_AFTERBURNER_FUEL_MAX)
+        Bots[bot_index].afterburner_fuel = BOT_AFTERBURNER_FUEL_MAX;
+    }
+    if (forward > 0)
+      Players[slot].flags |= PLAYER_FLAGS_THRUSTED;
+    else
+      Players[slot].flags &= ~PLAYER_FLAGS_THRUSTED;
+  }
+
+  // Speed scalar (terrain speed bonus, same as DoFlyingControl)
+  float speed_scalar = 1.0f;
+  if (OBJECT_OUTSIDE(obj))
+    speed_scalar *= 1.3f;
+
+  // Compute thrust vector — same formula as DoFlyingControl (object.cpp:2424-2427)
+  // Tri-chording: forward + sideways + vertical combine without normalization
+  float full_thrust = Bots[bot_index].ship_full_thrust;
+  obj->mtype.phys_info.thrust =
+      speed_scalar * ((obj->orient.fvec * forward * thrust_multiplier * full_thrust) +
+                      (obj->orient.uvec * vertical * full_thrust) + (obj->orient.rvec * sideways * full_thrust));
+
+  // Ensure PF_USES_THRUST stays enabled (PhysicsDoFrame integrates thrust → velocity with real drag)
+  obj->mtype.phys_info.flags |= PF_USES_THRUST;
+}
+
 // Find and set the best target as this bot's AI target.
 // Considers all enemies (players + robots in coop/robo-anarchy), with a congestion
 // penalty to spread bots across multiple targets.
@@ -384,7 +518,8 @@ static void BotRespawn(int bot_index) {
   Bots[bot_index].pursuit_goal_index = -1;
   Bots[bot_index].combat_goal_index = -1;
   Bots[bot_index].state = BOT_STATE_WANDER;
-  Bots[bot_index].afterburner_timer = 0.0f;
+  Bots[bot_index].afterburner_fuel = BOT_AFTERBURNER_FUEL_MAX;
+  Bots[bot_index].juke_phase = 0.0f;
   Bots[bot_index].last_target_update = 0.0f; // force immediate re-target after respawn
   LOG_DEBUG.printf("BOT: '%s' respawned in slot %d", Bots[bot_index].callsign, slot);
 }
@@ -399,7 +534,13 @@ void BotInitAll() {
     Bots[i].combat_goal_index = -1;
     Bots[i].intended_team = 0;
     Bots[i].state = BOT_STATE_WANDER;
-    Bots[i].afterburner_timer = 0.0f;
+    Bots[i].ship_full_thrust = 0.0f;
+    Bots[i].ship_full_rotthrust = 0.0f;
+    Bots[i].ship_mass = 0.0f;
+    Bots[i].ship_drag = 0.0f;
+    Bots[i].ship_rotdrag = 0.0f;
+    Bots[i].afterburner_fuel = 0.0f;
+    Bots[i].juke_phase = 0.0f;
   }
   Num_bots = 0;
 }
@@ -420,7 +561,8 @@ void BotReinitAll() {
     Bots[i].pursuit_goal_index = -1;
     Bots[i].combat_goal_index = -1;
     Bots[i].state = BOT_STATE_WANDER;
-    Bots[i].afterburner_timer = 0.0f;
+    Bots[i].afterburner_fuel = BOT_AFTERBURNER_FUEL_MAX;
+    Bots[i].juke_phase = 0.0f;
 
     // Restore NetPlayers sequence (level end sets NETSEQ_WAITING_FOR_LEVEL)
     NetPlayers[slot].sequence = NETSEQ_PLAYING;
@@ -453,6 +595,7 @@ void BotReinitAll() {
     // Restore AI control (MultiDoPlayerEnteredGame calls ResetPlayerObject which sets CT_NONE)
     PlayerSetControlToAI(slot, 50.0f);
     BotConfigureAI(slot);
+    BotCacheShipPhysics(i);
 
     // Mark server-owned
     Objects[Players[slot].objnum].flags |= OF_SERVER_OBJECT;
@@ -574,6 +717,10 @@ int BotAdd(const char *name, int ship_index) {
   PlayerSetControlToAI(slot, 50.0f);
   BotConfigureAI(slot);
 
+  // Cache ship physics template for thrust-based movement (must be after BotConfigureAI)
+  // bot_index is used here, and ship_index is already validated above
+  // We'll call BotCacheShipPhysics after populating the bot record below
+
   // Mark the object as server-owned
   Objects[Players[slot].objnum].flags |= OF_SERVER_OBJECT;
 
@@ -603,7 +750,9 @@ int BotAdd(const char *name, int ship_index) {
   Bots[bot_index].combat_goal_index = -1;
   Bots[bot_index].intended_team = chosen_team;
   Bots[bot_index].state = BOT_STATE_WANDER;
-  Bots[bot_index].afterburner_timer = 0.0f;
+  Bots[bot_index].afterburner_fuel = BOT_AFTERBURNER_FUEL_MAX;
+  Bots[bot_index].juke_phase = 0.0f;
+  BotCacheShipPhysics(bot_index);
   Num_bots++;
 
   LOG_INFO.printf("BOT: Added '%s' in player slot %d (bot index %d)", name, slot, bot_index);
@@ -675,6 +824,7 @@ void BotDoFrame() {
       Bots[i].pursuit_goal_index = -1;
       Bots[i].combat_goal_index = -1;
       Bots[i].state = BOT_STATE_WANDER;
+      Players[slot].flags &= ~(PLAYER_FLAGS_THRUSTED | PLAYER_FLAGS_AFTERBURN_ON);
       continue;
     }
 
@@ -684,6 +834,9 @@ void BotDoFrame() {
       BotUpdateState(i);
       Bots[i].last_target_update = Gametime;
     }
+
+    // Apply thrust-based movement every frame (before AIDoFrame runs)
+    BotApplyThrust(i);
 
     // Per-frame actions based on state
     if (Bots[i].state == BOT_STATE_COMBAT)

@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Movement testing infrastructure in place; realistic movement requires further research.
+**Status:** Phase 3.5 complete — thrust-based movement with real inertia, tri-chording, and afterburner.
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -26,7 +26,7 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | 2 | Smart targeting — game mode awareness, target diversity, robot targeting, team persistence | Complete |
 | 3 | Combat behaviors — FSM (wander/hunt/combat/flee), LOS gating, circle-strafe, flee | Complete |
 | Mov | Movement testing infra — velocity tuning, logging, `botstat`/`botmov`, MPF_THRUSTED | Complete — live tested |
-| 3.5 | Realistic movement — CT_FLYING synthetic controls, inertia, afterburner emulation | Research phase |
+| 3.5 | Realistic movement — thrust-based physics, inertia, afterburner, tri-chording | Complete |
 | 1.5 | Combat polish — energy/ammo drain, lead-tracking aim | Not started |
 | 4 | Difficulty levels, configuration UI | Not started |
 
@@ -47,7 +47,7 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | `Descent3/multi_server.cpp` | NPF_BOT guards on network sends, disconnect logic, `BotDoFrame()` hook in `MultiDoServerFrame()`, guards in `MultiSendClientExecuteDLL()` and `MultiSendGenericNonVis()` |
 | `Descent3/multi.cpp` | NPF_BOT guards in `MultiSendFullPacket()`, `MultiSendFullReliablePacket()`, `MultiSendSpecialPacket()`, `MultiSendMessageToPlayer()`, multisafe send path, missile release broadcast; `BotReinitAll()` call in `MultiStartNewLevel()` |
 | `Descent3/dedicated_server.cpp` | Console commands: `addbot`, `removebot`, `removebots`, `botlist` (via local console and remote telnet) |
-| `Descent3/AImain.cpp` | OBJ_PLAYER guards in `AIDoFrame()` to skip `ai_do_animation()`, spray/on-off weapons, and `do_awareness_based_anim_stuff()` — prevents `Object_info[obj->id]` crash for player objects; Phase 2: PTMC multiplayer targeting loop bypasses `BOA_IsVisible` (via direct distance check) so map-placed robots (gunboys) can acquire player targets |
+| `Descent3/AImain.cpp` | OBJ_PLAYER guards in `AIDoFrame()` to skip `ai_do_animation()`, spray/on-off weapons, and `do_awareness_based_anim_stuff()` — prevents `Object_info[obj->id]` crash for player objects; Phase 2: PTMC multiplayer targeting loop bypasses `BOA_IsVisible` (via direct distance check) so map-placed robots (gunboys) can acquire player targets; Phase 3.5: skip thrust zeroing and drag compensation for bot objects (preserves `BotApplyThrust()` values for physics integration) |
 | `Descent3/AIGoal.cpp` | OBJ_PLAYER guard in `AIG_SET_ANIM` and `AIG_FIRE_AT_OBJ` goal cases; added `AIG_GET_AWAY_FROM_OBJ` and `AIG_MOVE_AROUND_OBJ` to `GoalAddGoal` switch |
 | `Descent3/CMakeLists.txt` | Added `bot.h` and `bot.cpp` to build |
 | `netgames/dmfc/dmfcclient.cpp` | Replaced `ASSERT(player_num == 0)` in `OnPlayerReconnect` with warning log — prevents server abort when bot team doesn't match PRec default |
@@ -87,16 +87,19 @@ Connect with `telnet localhost 2092` and enter your password.
 
 5. **`BotReinitAll()`** runs after `MultiStartNewLevel()` on the server. Level transitions destroy all objects and recreate player objects with new objnums. This function restores each bot's AI control, wander goals, start position, and DMFC registration. It saves/restores `Players[slot].team` across the reinit to prevent a DMFC assertion in `OnPlayerReconnect`.
 
-### AI Configuration (Phase 0/1, updated Mov phase)
+### AI Configuration (Phase 0/1, updated Phase 3.5)
 
-Bots use the existing AI goal system with:
-- `AIG_WANDER_AROUND` goal (level 1, non-flushable) for background movement
-- `AIG_GET_TO_OBJ` goal (level 2) for target pursuit — added/cleared by `BotUpdateState()`
+Bots use `CT_AI` for AI infrastructure (targeting, orientation, goal management) but drive movement via thrust-based physics:
+- `AIG_WANDER_AROUND` goal (level 1, non-flushable) for orientation when no target
+- `AIG_GET_TO_OBJ` goal (level 2) for pursuit orientation — added/cleared by `BotUpdateState()`
+- `AIG_MOVE_RELATIVE_OBJ` goal (level 2) for combat orientation — faces target during circle-strafe
+- `AIG_GET_TO_POS` goal (level 2) for flee orientation — faces away from threat
 - `AIF_DISABLE_FIRING | AIF_DISABLE_MELEE` — keeps `ai_fire()` from being called by the AI pipeline (which would crash — see below). Bot firing is handled explicitly in `BotDoFiring()`.
 - `AIF_PERSISTANT | AIF_FORCE_AWARENESS | AIF_DODGE` for continuous activity
-- `MC_FLYING` movement type, **50 units/sec max velocity** (raised from 30 in movement phase), **40 units/sec² max_delta_velocity** (raised from 20)
+- **`max_delta_velocity = 0`** — prevents AI goals from changing velocity (movement is driven by `BotApplyThrust()`)
+- Ship physics template values (mass, drag, full_thrust, full_rotthrust) restored after `PlayerSetControlToAI()` and `PF_USES_THRUST` enabled
 
-AI frame processing is handled automatically by the engine's `ObjDoFrameAll()` -> `AIDoFrame()` path for any object with `control_type == CT_AI`.
+AI frame processing runs automatically via `ObjDoFrameAll()` → `AIDoFrame()`. Guards in `AIDoFrame()` skip thrust zeroing and drag compensation for bot objects, preserving the thrust vector set by `BotApplyThrust()`.
 
 ### Why ai_fire() Cannot Be Used for Bots
 
@@ -212,12 +215,11 @@ The fix replaces the assertion with a warning log. The code after the check alre
 Live testing confirmed visible behavioral improvement but identified a fundamental gap in movement realism.
 
 **What was implemented:**
-- `max_velocity` raised 30 → **50**, `max_delta_velocity` raised 20 → **40** (Priority 1 tuning)
-- `bot_info.afterburner_timer` field added (reserved for future simulated afterburner)
+- `max_velocity` raised 30 → **50**, `max_delta_velocity` raised 20 → **40** (Priority 1 tuning, later superseded by thrust-based system)
 - `Bot_debug_movement` flag + per-frame `BOTMOV`/`PLRMOV` logging in `BotDoFrame()` (every ~30 frames)
 - `botstat [index|all]` console command for real-time speed/state snapshots
 - `botmov on|off` console command to toggle the log stream
-- `MPF_THRUSTED` flag set for bots in `MultiStuffPosition()` when velocity > 1.0 — clients now see thruster glow/plumes on moving bots (confirmed working)
+- `MPF_THRUSTED` flag originally set via velocity proxy; now set properly via `PLAYER_FLAGS_THRUSTED` (see Phase 3.5)
 
 **Log format:**
 ```
@@ -231,33 +233,57 @@ PLRMOV: slot=1 'Human' speed=63.2 vel=(45.1,-2.1,43.0)
 - Bot movement is still not realistic: no inertia, instant velocity snapping, no tri-chord physics
 - Human players can still out-maneuver bots with normal flight techniques, not just afterburner
 
-**Root cause — CT_AI vs CT_FLYING:**
+**Root cause identified — CT_AI bypasses physics:**
+CT_AI writes velocity directly each frame via `AIMoveTowardsDir()`, then applies a drag compensation hack (`thrust = velocity × drag`). This neutralizes the physics engine's exponential drag model, eliminating inertia. This was resolved in Phase 3.5 (see below).
 
-The fundamental movement gap stems from how control types work:
+### Phase 3.5: Thrust-Based Movement
 
-| | Human (CT_FLYING) | Bot (CT_AI) |
-|-|------------------|-------------|
-| Input | Thrust force applied | Velocity set directly by AI |
-| Physics | Engine applies drag → velocity | Velocity written each frame |
-| Inertia | Yes — momentum preserved | No — instant direction change |
-| Afterburner | `PLAYER_FLAGS_AFTERBURN_ON` set by input system | Never set |
-| Tri-chord | Forward + strafe + vertical add (√3 max) | Single pursuit axis only |
+Phase 3.5 replaces CT_AI's direct velocity control with real thrust-based physics, giving bots inertia, tri-chording, and afterburner effects matching human player movement.
 
-**Research direction — Phase 3.5:**
+**Key insight:** `DoFlyingControl()` returns immediately on dedicated servers (`if (Dedicated_server) return;`), so switching to CT_FLYING was not viable. Instead, bots keep `CT_AI` for AI infrastructure (targeting, orientation via goals) but write `phys_info.thrust` directly in `BotApplyThrust()`, bypassing the AI's velocity-writing path.
 
-The correct fix is to run bots as `CT_FLYING` (the same control type as human players) and feed *synthetic thrust inputs* into `object.cpp`'s player movement code (`ObjDoFrame` / `PlayerProcessKeys` equivalents), rather than using `CT_AI` which bypasses physics entirely. This would give bots:
-- Real inertia and momentum
-- `PLAYER_FLAGS_AFTERBURN_ON` set from the engine path (not simulated)
-- `PLAYER_FLAGS_THRUSTED` set correctly (removing the need for the MPF_THRUSTED hack)
-- Tri-chord physics matching real player movement
+**How it works:**
 
-Key code paths to investigate:
-- `object.cpp:2170–2226` — afterburner thrust math
-- `object.cpp:2387–2427` — thrust combination and `PLAYER_FLAGS_THRUSTED` assignment
-- `Player.cpp:PlayerProcessKeys()` — the human input → thrust conversion path
-- `PhysicsDoFrame()` — how CT_FLYING objects integrate thrust into velocity
+1. **`BotApplyThrust()`** runs every frame from `BotDoFrame()` (called in `MultiDoServerFrame()`, before `AIDoFrame`). It:
+   - Computes synthetic control inputs (forward, sideways, vertical thrust in [-1, 1]) based on FSM state
+   - Combines them using the same tri-chord formula as `DoFlyingControl()`: `thrust = fvec×f + uvec×v + rvec×s` (no normalization — gives √3 speed advantage)
+   - Handles afterburner: ramps `punch_scalar` 1.0→1.8 based on fuel (matches `DoPlayerAfterburnControl()`), applies 1.6× base multiplier
+   - Writes thrust to `phys_info.thrust` and sets `PF_USES_THRUST`
+   - Sets `PLAYER_FLAGS_THRUSTED` and `PLAYER_FLAGS_AFTERBURN_ON` directly on `Players[slot].flags`
 
-This research is tracked as **Phase 3.5** in the roadmap.
+2. **`AIDoFrame()` guards** preserve bot thrust:
+   - Skip `phys_info.flags &= ~PF_USES_THRUST` for bot objects
+   - Skip `phys_info.thrust = vector{}` zeroing for bot objects
+   - Skip drag compensation (`thrust = velocity × drag`) for bot objects
+   - `max_delta_velocity = 0` prevents AI goals from overwriting velocity
+
+3. **`PhysicsDoFrame()`** integrates bot thrust with the ship's real mass/drag using the exponential drag model: `v(t) = v_eq + (v₀ - v_eq) × exp(-t/τ)` where `τ = mass/drag`. This produces real inertia — bots slide when changing direction, accelerate gradually, and reach physically correct equilibrium velocities.
+
+4. **`BotConfigureAI()`** restores ship template physics values (mass, drag, full_thrust, full_rotthrust, rotdrag) after `PlayerSetControlToAI()` (which sets drag=0.1 and clears PF_USES_THRUST).
+
+**Synthetic control inputs per FSM state:**
+
+| State | Forward | Sideways | Vertical | Afterburner |
+|-------|---------|----------|----------|-------------|
+| WANDER | 0.3 | 0 | 0 | off |
+| HUNT | 1.0 | ±0.6 (juke) | ±0.3 (juke) | on if > 2× fire range |
+| COMBAT | 0.5 (orbit) | ±0.8 (strafe) | ±0.3 (juke) | off |
+| FLEE | 1.0 (away) | ±0.5 (juke) | ±0.3 (juke) | on |
+
+Combat forward thrust is dynamically modulated based on orbit distance error (closes if > circle_dist + 20, backs off if < circle_dist - 20).
+
+**Movement improvements over CT_AI:**
+
+| Property | Before (CT_AI) | After (Phase 3.5) |
+|----------|---------------|-------------------|
+| Inertia | None — instant direction snap | Real exponential drag model |
+| Tri-chording | No — single axis only | Yes — √3 speed from combined axes |
+| Afterburner | No | Yes — 1.6×–2.88× thrust, fuel management |
+| Lateral evasion | No | Yes — sinusoidal juke oscillation |
+| Vertical movement | No | Yes — cosine vertical oscillation |
+| PLAYER_FLAGS | Hacked via velocity proxy | Set naturally by BotApplyThrust |
+| MPF_AFTERBURNER | Never set | Set when afterburner active |
+| Speed scalar | N/A | 1.3× in terrain (matches players) |
 
 ## Running a Test Server
 
@@ -293,7 +319,7 @@ Use `-tempdir` to avoid cache lock conflicts when running both server and client
 
 ## Known Issues and Limitations
 
-- **Bot movement is not realistic** — Bots use `CT_AI` which sets velocity directly, bypassing the physics engine. Players use `CT_FLYING` with thrust-based physics (inertia, drag, afterburner). Even with tuned velocity caps, bots snap directions instantly and cannot tri-chord. Phase 3.5 targets this with CT_FLYING synthetic controls.
+- **Thrust-based movement is new and needs live testing** — Phase 3.5 thrust physics replaces the old CT_AI velocity control. Ship template values (mass, drag, full_thrust) vary per ship and may need tuning if bots feel too fast/slow on specific ships.
 - **Gunboy targeting issue** — The Phase 2 `AImain.cpp` fix allows gunboys to acquire player targets (bypasses `BOA_IsVisible`), but they still don't fire. Likely blocked by a separate condition in `ai_fire()` or weapon battery configuration. Revisit in future phase.
 - **Navigation is beeline-only** — In HUNT state, bots pursue targets in a straight line (`GF_USE_BLINE_IF_SEES_GOAL`) and wander otherwise. They may get stuck in geometry.
 - **Team assignment is static** — Bots are assigned to a team at `addbot` time based on current counts. If human players join or leave after bots are added, teams may become unbalanced. Dynamic rebalancing is future work.
@@ -322,17 +348,6 @@ Investigation revealed that bots were missing from the end-of-level scoreboard b
 ## Future Work
 
 See [PLAN.md](PLAN.md) for the Phase 0 design rationale and risk assessment.
-
-### Phase 3.5: Realistic Movement (CT_FLYING Synthetic Controls)
-
-The primary next research goal. Rather than tuning CT_AI velocity parameters, run bots as CT_FLYING and feed synthetic thrust inputs through the same player movement code that human players use:
-
-1. Investigate `PlayerProcessKeys()` (or equivalent input path) to understand how thrust vectors are built from controller input
-2. Add a per-frame bot hook that writes equivalent thrust values based on the bot's current FSM state (pursue = forward thrust, strafe in COMBAT = lateral thrust, flee = full forward)
-3. Let `PhysicsDoFrame()` apply drag and integrate velocity — bots get inertia for free
-4. `PLAYER_FLAGS_AFTERBURN_ON` and `PLAYER_FLAGS_THRUSTED` set by the real engine path — no hacks needed
-
-Key files: `object.cpp:2170–2427`, `Player.cpp:PlayerProcessKeys()`, `physics/physics.cpp`
 
 ### Phase 1.5: Combat Polish (optional)
 
