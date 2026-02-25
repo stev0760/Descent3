@@ -76,13 +76,16 @@ static void BotConfigureAI(int player_slot) {
     return;
 
   obj->ai_info->ai_class = AIC_AIS_FULL;
-  obj->ai_info->flags = AIF_PERSISTANT | AIF_DISABLE_FIRING | AIF_DISABLE_MELEE | AIF_FORCE_AWARENESS | AIF_DODGE;
+  obj->ai_info->flags = AIF_PERSISTANT | AIF_DISABLE_FIRING | AIF_DISABLE_MELEE | AIF_FORCE_AWARENESS | AIF_DODGE |
+                         AIF_AVOID_WALLS | AIF_AUTO_AVOID_FRIENDS;
   obj->ai_info->awareness = AWARE_MOSTLY;
   obj->ai_info->max_velocity = 50.0f;       // used by AI goal system for direction scaling
   obj->ai_info->max_delta_velocity = 0.0f;  // ZERO: prevents AI goals from changing velocity
   obj->ai_info->max_turn_rate = 16000;
   obj->ai_info->movement_type = MC_FLYING;
   obj->ai_info->fov = 0.7f;
+  // PlayerSetControlToAI sets avoid_friends_distance=0 — override so AIF_AUTO_AVOID_FRIENDS works
+  obj->ai_info->avoid_friends_distance = 40.0f;
 
   // Restore real ship physics values (PlayerSetControlToAI sets drag=0.1, clears PF_USES_THRUST)
   int ship_idx = Players[player_slot].ship_index;
@@ -283,37 +286,52 @@ static void BotUpdateState(int bot_index) {
   }
 }
 
-// Compute synthetic thrust controls based on FSM state and write thrust vector to phys_info.
-// The physics engine (PhysicsDoFrame) integrates this thrust with the ship's real mass/drag
-// to produce velocity with natural inertia — matching how human CT_FLYING players move.
+// Compute thrust from engine's AI movement_dir — a blended, normalized direction vector
+// incorporating pathfinding, wall avoidance, dodge, and friend avoidance from AIDoFrame().
+// FSM state controls speed scaling and combat-specific overrides; juke is additive.
 static void BotApplyThrust(int bot_index) {
   int slot = Bots[bot_index].player_slot;
   object *obj = &Objects[Players[slot].objnum];
+  if (!obj->ai_info)
+    return;
 
+  // Read movement_dir from previous frame's AIDoFrame() — world-space normalized direction
+  vector &mdir = obj->ai_info->movement_dir;
+  float mdir_mag = vm_GetMagnitude(&mdir);
+
+  // Decompose world-space movement_dir into bot-local axes
   float forward = 0.0f, sideways = 0.0f, vertical = 0.0f;
+  if (mdir_mag > 0.01f) {
+    forward = vm_DotProduct(&mdir, &obj->orient.fvec);
+    sideways = vm_DotProduct(&mdir, &obj->orient.rvec);
+    vertical = vm_DotProduct(&mdir, &obj->orient.uvec);
+  } else {
+    // Fallback: first frame after spawn or no active goal — default forward
+    forward = 1.0f;
+  }
+
+  // FSM-based speed scaling and overrides
+  float speed_scale = 1.0f;
   bool use_afterburner = false;
 
-  object *target = (obj->ai_info) ? ObjGet(obj->ai_info->target_handle) : nullptr;
+  object *target = ObjGet(obj->ai_info->target_handle);
   float dist_to_target = target ? vm_VectorDistanceQuick(&obj->pos, &target->pos) : 1e30f;
 
-  // Compute synthetic control inputs per FSM state
   switch (Bots[bot_index].state) {
   case BOT_STATE_WANDER:
-    forward = BOT_WANDER_FORWARD;
+    speed_scale = 0.3f;
     break;
 
   case BOT_STATE_HUNT:
-    forward = 1.0f;
-    sideways = sinf(Bots[bot_index].juke_phase) * BOT_JUKE_AMPLITUDE_HUNT;
-    vertical = cosf(Bots[bot_index].juke_phase * 0.7f) * BOT_VERTICAL_JUKE_AMPLITUDE;
-    // Afterburner only when chasing from a real distance (conservative — avoids spam)
+    speed_scale = 1.0f;
+    // Afterburner only when chasing from a real distance
     if (dist_to_target > BOT_AFTERBURNER_MIN_DIST && Bots[bot_index].afterburner_fuel > 0)
       use_afterburner = true;
     break;
 
   case BOT_STATE_COMBAT: {
-    // Circle-strafe: moderate forward (orbit maintenance), strong lateral strafe
-    // Modulate forward based on orbit distance
+    speed_scale = 1.0f;
+    // Override forward with orbit-distance-error logic for circle-strafe
     float orbit_error = dist_to_target - BOT_COMBAT_CIRCLE_DIST;
     if (orbit_error > 20.0f)
       forward = BOT_COMBAT_ORBIT_FORWARD; // closing in
@@ -321,20 +339,35 @@ static void BotApplyThrust(int bot_index) {
       forward = -0.3f; // backing off (too close)
     else
       forward = orbit_error / 20.0f * BOT_COMBAT_ORBIT_FORWARD; // smooth transition
-
-    // Smooth sinusoidal strafe — no square-wave direction snap
-    sideways = sinf(Bots[bot_index].juke_phase) * BOT_JUKE_AMPLITUDE_COMBAT;
-    vertical = cosf(Bots[bot_index].juke_phase * 1.3f) * BOT_VERTICAL_JUKE_AMPLITUDE;
+    // Keep sideways/vertical from movement_dir for wall avoidance during strafe
     break;
   }
 
   case BOT_STATE_FLEE:
-    forward = 1.0f; // AI flee goal orients away from target, so forward = away
-    sideways = sinf(Bots[bot_index].juke_phase) * BOT_JUKE_AMPLITUDE_FLEE;
-    vertical = cosf(Bots[bot_index].juke_phase * 0.5f) * BOT_VERTICAL_JUKE_AMPLITUDE;
-    // Afterburner when fleeing
+    speed_scale = 1.0f;
     if (Bots[bot_index].afterburner_fuel > 0)
       use_afterburner = true;
+    break;
+  }
+
+  // Additive juke oscillation — dodging on top of AI navigation direction
+  float juke_sideways = sinf(Bots[bot_index].juke_phase);
+  float juke_vertical = cosf(Bots[bot_index].juke_phase * 0.7f);
+
+  switch (Bots[bot_index].state) {
+  case BOT_STATE_HUNT:
+    sideways += juke_sideways * BOT_JUKE_AMPLITUDE_HUNT;
+    vertical += juke_vertical * BOT_VERTICAL_JUKE_AMPLITUDE;
+    break;
+  case BOT_STATE_COMBAT:
+    sideways += juke_sideways * BOT_JUKE_AMPLITUDE_COMBAT;
+    vertical += cosf(Bots[bot_index].juke_phase * 1.3f) * BOT_VERTICAL_JUKE_AMPLITUDE;
+    break;
+  case BOT_STATE_FLEE:
+    sideways += juke_sideways * BOT_JUKE_AMPLITUDE_FLEE;
+    vertical += cosf(Bots[bot_index].juke_phase * 0.5f) * BOT_VERTICAL_JUKE_AMPLITUDE;
+    break;
+  default:
     break;
   }
 
@@ -343,34 +376,29 @@ static void BotApplyThrust(int bot_index) {
   if (Bots[bot_index].juke_phase > 6.28318f)
     Bots[bot_index].juke_phase -= 6.28318f;
 
-  // Time-based stuck detection: escape after 0.5 continuous seconds at near-zero speed.
-  // We check if we are applying thrust but not moving.
+  // Apply speed scaling
+  forward *= speed_scale;
+  sideways *= speed_scale;
+  vertical *= speed_scale;
+
+  // Stuck detection: escape after 3s at near-zero speed while applying thrust
   float current_speed = vm_GetMagnitude(&obj->mtype.phys_info.velocity);
   bool applying_thrust = (fabsf(forward) > 0.1f || fabsf(sideways) > 0.1f);
-  
+
   if (current_speed < 5.0f && applying_thrust) {
     Bots[bot_index].stuck_timer += Frametime;
   } else {
     Bots[bot_index].stuck_timer = 0.0f;
   }
 
-  // Stuck recovery maneuver
-  if (Bots[bot_index].stuck_timer > 0.5f) {
-    // REVERSE thrust to back away from the wall
+  if (Bots[bot_index].stuck_timer > 3.0f) {
+    // Orthogonal escape: reverse + hard strafe
     forward = -1.0f;
-    
-    // Hard strafe in a consistent direction for this stuck episode
-    // (using juke_phase to pick a direction, but holding it strong)
     float strafe_dir = (sinf(Bots[bot_index].juke_phase) > 0) ? 1.0f : -1.0f;
     sideways = strafe_dir * 1.0f;
-    
-    // Add some vertical escape too
     vertical = 0.5f;
-
-    // Reset after 1.0 second total (0.5s detection + 0.5s maneuvering)
-    // This creates a "pulse" of backup attempts
-    if (Bots[bot_index].stuck_timer > 1.0f)
-      Bots[bot_index].stuck_timer = 0.0f; 
+    if (Bots[bot_index].stuck_timer > 4.5f)
+      Bots[bot_index].stuck_timer = 0.0f;
   }
 
   // Afterburner handling — matches DoPlayerAfterburnControl() punch_scalar ramp
@@ -402,61 +430,6 @@ static void BotApplyThrust(int bot_index) {
       Players[slot].flags |= PLAYER_FLAGS_THRUSTED;
     else
       Players[slot].flags &= ~PLAYER_FLAGS_THRUSTED;
-  }
-
-  // Proactive Wall/Obstacle Avoidance
-  // Cast a "feeler" ray forward to detect impending collisions
-  if (Bots[bot_index].stuck_timer == 0.0f) {
-    fvi_query fq = {};
-    fvi_info hit = {};
-    vector ray_dir = obj->mtype.phys_info.velocity;
-    float speed = vm_GetMagnitude(&ray_dir);
-    
-    // Look ahead 1.0s, clamped between 15 and 50 units
-    float lookahead = speed; 
-    if (lookahead < 15.0f) lookahead = 15.0f;
-    if (lookahead > 50.0f) lookahead = 50.0f;
-
-    // Use facing direction if moving too slowly
-    if (speed < 5.0f) ray_dir = obj->orient.fvec;
-    else vm_NormalizeVector(&ray_dir);
-
-    vector ray_end = obj->pos + ray_dir * lookahead;
-
-    fq.p0 = &obj->pos;
-    fq.p1 = &ray_end;
-    fq.startroom = obj->roomnum;
-    fq.rad = obj->size; 
-    fq.thisobjnum = OBJNUM(obj);
-    fq.ignore_obj_list = NULL;
-    fq.flags = FQ_CHECK_OBJS | FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS | FQ_IGNORE_MOVING_OBJECTS; 
-
-    if (fvi_FindIntersection(&fq, &hit) != HIT_NONE) {
-      // We are heading for a wall/object!
-      vector &normal = hit.hit_wallnorm[0];
-      
-      // Calculate repulsion strength (stronger as we get closer)
-      float proximity = 1.0f - (hit.hit_dist / lookahead); // 0.0 to 1.0
-      if (proximity < 0.0f) proximity = 0.0f;
-      float strength = 1.5f * (proximity * proximity + 0.5f); // 0.75 to 2.25
-
-      // Project wall normal into ship's local control axes
-      // normal points OUT of the wall.
-      float push_f = vm_DotProduct(&normal, &obj->orient.fvec);
-      float push_r = vm_DotProduct(&normal, &obj->orient.rvec);
-      float push_u = vm_DotProduct(&normal, &obj->orient.uvec);
-
-      // Apply avoidance forces
-      // If wall is in front (push_f < 0), this reduces forward thrust.
-      // If angled, push_r/push_u slide us along the wall.
-      forward += push_f * strength;
-      sideways += push_r * strength;
-      vertical += push_u * strength;
-      
-      // Ensure we don't completely stop if we just need to turn
-      // (This creates a "glancing" behavior)
-      if (forward < 0.2f && forward > -0.2f) forward = 0.2f; 
-    }
   }
 
   // Speed scalar (terrain speed bonus, same as DoFlyingControl)
@@ -953,8 +926,10 @@ void BotDoFrame() {
         object *obj = &Objects[Players[slot].objnum];
         vector &vel = obj->mtype.phys_info.velocity;
         float speed = vm_GetMagnitude(&vel);
-        LOG_DEBUG.printf("BOTMOV: slot=%d '%s' state=%s speed=%.2f vel=(%.1f,%.1f,%.1f)", slot, Bots[i].callsign,
-                         state_names[Bots[i].state], speed, vel.x(), vel.y(), vel.z());
+        vector &mdir = obj->ai_info ? obj->ai_info->movement_dir : vel;
+        LOG_DEBUG.printf("BOTMOV: slot=%d '%s' state=%s speed=%.2f vel=(%.1f,%.1f,%.1f) mdir=(%.2f,%.2f,%.2f)", slot,
+                         Bots[i].callsign, state_names[Bots[i].state], speed, vel.x(), vel.y(), vel.z(), mdir.x(),
+                         mdir.y(), mdir.z());
       }
 
       // Log human player speeds for baseline comparison

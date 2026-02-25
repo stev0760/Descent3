@@ -1696,6 +1696,7 @@
 #include "cockpit.h"
 #include "psrand.h"
 #include "bot.h"
+#include "BOA.h"
 
 void MultiProcessShipChecksum(MD5 *md5, int ship_index);
 
@@ -6401,6 +6402,12 @@ bool MultiStartNewLevel(int level) {
   MultiMassageAllObjects(0, (Netgame.flags & NF_USE_ROBOTS) ? 0 : 1);
   MultiBuildMatchTables();
   Num_broke_glass = 0;
+
+  // Ensure BOA pathfinding data is available for AI navigation
+  if (BOA_mine_checksum == 0) {
+    LOG_INFO << "MULTI: BOA data missing, rebuilding for AI pathfinding";
+    MakeBOA();
+  }
 
   // Fill in player object numbers
   for (int i = 0; i < MAX_PLAYERS; i++) {

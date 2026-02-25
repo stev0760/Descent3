@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Phase 3.6 in progress — Navigation refinements (wall avoidance, stuck recovery) added to thrust-based movement system.
+**Status:** Phase 3.6 complete — Engine `movement_dir` integration replaces manual thrust computation; `AIF_AVOID_WALLS` + `AIF_AUTO_AVOID_FRIENDS` for 360° wall/friend avoidance; `MakeBOA()` repair for missing pathfinding data.
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -27,7 +27,7 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | 3 | Combat behaviors — FSM (wander/hunt/combat/flee), LOS gating, circle-strafe, flee | Complete |
 | Mov | Movement testing infra — velocity tuning, logging, `botstat`/`botmov`, MPF_THRUSTED | Complete — live tested |
 | 3.5 | Realistic movement — thrust-based physics, inertia, afterburner, tri-chording | Complete |
-| 3.6 | Navigation refinements — Stuck detection, wall avoidance, reverse thrust | In Progress |
+| 3.6 | Navigation — engine `movement_dir` integration, `AIF_AVOID_WALLS`, `AIF_AUTO_AVOID_FRIENDS`, BOA repair | Complete |
 | 1.5 | Combat polish — energy/ammo drain, lead-tracking aim | Not started |
 | 4 | Difficulty levels, configuration UI | Not started |
 
@@ -97,6 +97,9 @@ Bots use `CT_AI` for AI infrastructure (targeting, orientation, goal management)
 - `AIG_GET_TO_POS` goal (level 2) for flee orientation — faces away from threat
 - `AIF_DISABLE_FIRING | AIF_DISABLE_MELEE` — keeps `ai_fire()` from being called by the AI pipeline (which would crash — see below). Bot firing is handled explicitly in `BotDoFiring()`.
 - `AIF_PERSISTANT | AIF_FORCE_AWARENESS | AIF_DODGE` for continuous activity
+- `AIF_AVOID_WALLS` — engine-native 360° wall avoidance via `goal_do_avoid_walls()` face-distance raycasting
+- `AIF_AUTO_AVOID_FRIENDS` with `avoid_friends_distance=40.0f` — prevents bot clustering
+- `BotApplyThrust()` reads `ai_info->movement_dir` (blended pathfinding + avoidance vector from `AIDoFrame()`)
 - **`max_delta_velocity = 0`** — prevents AI goals from changing velocity (movement is driven by `BotApplyThrust()`)
 - Ship physics template values (mass, drag, full_thrust, full_rotthrust) restored after `PlayerSetControlToAI()` and `PF_USES_THRUST` enabled
 
