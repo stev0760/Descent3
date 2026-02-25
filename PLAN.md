@@ -11,6 +11,8 @@
 | 3 | Combat behaviors — FSM (wander/hunt/combat/flee), LOS gating, circle-strafe, flee | Complete |
 | Movement | Velocity tuning, movement logging, botstat/botmov commands, MPF_THRUSTED cosmetics | Complete |
 | 3.5 | Thrust-based physics — real inertia, tri-chording, afterburner, lateral evasion | Complete |
+| 3.7 | Engine-native intent — consume movement_dir, native avoidance/dodge | In Progress |
+| 5 | High-Fidelity 6DOF Combat — predictive aiming, tactical maneuvers, skill scaling | Not started |
 | 1.5 | Combat polish — energy/ammo drain, lead-tracking aim | Not started |
 | 4 | Difficulty levels, configuration UI | Not started |
 

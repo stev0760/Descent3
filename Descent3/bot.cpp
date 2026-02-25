@@ -343,22 +343,34 @@ static void BotApplyThrust(int bot_index) {
   if (Bots[bot_index].juke_phase > 6.28318f)
     Bots[bot_index].juke_phase -= 6.28318f;
 
-  // Time-based stuck detection: only escape after 3+ continuous seconds at near-zero speed.
-  // Do NOT suppress forward thrust (that would prevent acceleration from rest and cause hovering).
-  // Instead, add orthogonal components alongside existing thrust to slide off the wall.
+  // Time-based stuck detection: escape after 0.5 continuous seconds at near-zero speed.
+  // We check if we are applying thrust but not moving.
   float current_speed = vm_GetMagnitude(&obj->mtype.phys_info.velocity);
   bool applying_thrust = (fabsf(forward) > 0.1f || fabsf(sideways) > 0.1f);
+  
   if (current_speed < 5.0f && applying_thrust) {
     Bots[bot_index].stuck_timer += Frametime;
   } else {
     Bots[bot_index].stuck_timer = 0.0f;
   }
-  if (Bots[bot_index].stuck_timer > 3.0f) {
-    // Inject orthogonal escape components without reducing forward pressure
-    sideways += (cosf(Bots[bot_index].juke_phase * 2.3f) > 0) ? 0.7f : -0.7f;
-    vertical += 0.6f;
-    if (Bots[bot_index].stuck_timer > 4.5f)
-      Bots[bot_index].stuck_timer = 0.0f; // reset so escape fires in bursts, not constantly
+
+  // Stuck recovery maneuver
+  if (Bots[bot_index].stuck_timer > 0.5f) {
+    // REVERSE thrust to back away from the wall
+    forward = -1.0f;
+    
+    // Hard strafe in a consistent direction for this stuck episode
+    // (using juke_phase to pick a direction, but holding it strong)
+    float strafe_dir = (sinf(Bots[bot_index].juke_phase) > 0) ? 1.0f : -1.0f;
+    sideways = strafe_dir * 1.0f;
+    
+    // Add some vertical escape too
+    vertical = 0.5f;
+
+    // Reset after 1.0 second total (0.5s detection + 0.5s maneuvering)
+    // This creates a "pulse" of backup attempts
+    if (Bots[bot_index].stuck_timer > 1.0f)
+      Bots[bot_index].stuck_timer = 0.0f; 
   }
 
   // Afterburner handling — matches DoPlayerAfterburnControl() punch_scalar ramp
@@ -390,6 +402,61 @@ static void BotApplyThrust(int bot_index) {
       Players[slot].flags |= PLAYER_FLAGS_THRUSTED;
     else
       Players[slot].flags &= ~PLAYER_FLAGS_THRUSTED;
+  }
+
+  // Proactive Wall/Obstacle Avoidance
+  // Cast a "feeler" ray forward to detect impending collisions
+  if (Bots[bot_index].stuck_timer == 0.0f) {
+    fvi_query fq = {};
+    fvi_info hit = {};
+    vector ray_dir = obj->mtype.phys_info.velocity;
+    float speed = vm_GetMagnitude(&ray_dir);
+    
+    // Look ahead 1.0s, clamped between 15 and 50 units
+    float lookahead = speed; 
+    if (lookahead < 15.0f) lookahead = 15.0f;
+    if (lookahead > 50.0f) lookahead = 50.0f;
+
+    // Use facing direction if moving too slowly
+    if (speed < 5.0f) ray_dir = obj->orient.fvec;
+    else vm_NormalizeVector(&ray_dir);
+
+    vector ray_end = obj->pos + ray_dir * lookahead;
+
+    fq.p0 = &obj->pos;
+    fq.p1 = &ray_end;
+    fq.startroom = obj->roomnum;
+    fq.rad = obj->size; 
+    fq.thisobjnum = OBJNUM(obj);
+    fq.ignore_obj_list = NULL;
+    fq.flags = FQ_CHECK_OBJS | FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS | FQ_IGNORE_MOVING_OBJECTS; 
+
+    if (fvi_FindIntersection(&fq, &hit) != HIT_NONE) {
+      // We are heading for a wall/object!
+      vector &normal = hit.hit_wallnorm[0];
+      
+      // Calculate repulsion strength (stronger as we get closer)
+      float proximity = 1.0f - (hit.hit_dist / lookahead); // 0.0 to 1.0
+      if (proximity < 0.0f) proximity = 0.0f;
+      float strength = 1.5f * (proximity * proximity + 0.5f); // 0.75 to 2.25
+
+      // Project wall normal into ship's local control axes
+      // normal points OUT of the wall.
+      float push_f = vm_DotProduct(&normal, &obj->orient.fvec);
+      float push_r = vm_DotProduct(&normal, &obj->orient.rvec);
+      float push_u = vm_DotProduct(&normal, &obj->orient.uvec);
+
+      // Apply avoidance forces
+      // If wall is in front (push_f < 0), this reduces forward thrust.
+      // If angled, push_r/push_u slide us along the wall.
+      forward += push_f * strength;
+      sideways += push_r * strength;
+      vertical += push_u * strength;
+      
+      // Ensure we don't completely stop if we just need to turn
+      // (This creates a "glancing" behavior)
+      if (forward < 0.2f && forward > -0.2f) forward = 0.2f; 
+    }
   }
 
   // Speed scalar (terrain speed bonus, same as DoFlyingControl)

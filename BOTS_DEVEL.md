@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Phase 3.5 complete — thrust-based movement with real inertia, tri-chording, and afterburner. Post-launch movement tuning applied (reduced jitter, LOS-gated firing, conservative afterburner, stuck deflection).
+**Status:** Phase 3.6 in progress — Navigation refinements (wall avoidance, stuck recovery) added to thrust-based movement system.
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -27,6 +27,7 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | 3 | Combat behaviors — FSM (wander/hunt/combat/flee), LOS gating, circle-strafe, flee | Complete |
 | Mov | Movement testing infra — velocity tuning, logging, `botstat`/`botmov`, MPF_THRUSTED | Complete — live tested |
 | 3.5 | Realistic movement — thrust-based physics, inertia, afterburner, tri-chording | Complete |
+| 3.6 | Navigation refinements — Stuck detection, wall avoidance, reverse thrust | In Progress |
 | 1.5 | Combat polish — energy/ammo drain, lead-tracking aim | Not started |
 | 4 | Difficulty levels, configuration UI | Not started |
 
@@ -284,6 +285,44 @@ Combat forward thrust is dynamically modulated based on orbit distance error (cl
 | PLAYER_FLAGS | Hacked via velocity proxy | Set naturally by BotApplyThrust |
 | MPF_AFTERBURNER | Never set | Set when afterburner active |
 | Speed scalar | N/A | 1.3× in terrain (matches players) |
+
+### Phase 3.6: Navigation Refinements (In Progress)
+
+Addressed regression where bots would get stuck on geometry or collide head-on with walls.
+
+**Proactive Wall Avoidance:**
+- Added a single "feeler" raycast in `BotApplyThrust()` that looks ahead 1.0s (clamped 15-50 units).
+- Detects impending collisions with walls or objects.
+- Applies a repulsion force based on the hit normal, modifying the bot's `forward`, `sideways`, and `vertical` control inputs.
+- Result: Bots now brake and slide along walls rather than slamming into them.
+
+**Improved Stuck Recovery:**
+- **Detection Threshold:** Reduced from 3.0s to 0.5s for faster reaction.
+- **Maneuver:** Replaced the old "add lateral thrust" logic with a forceful **Reverse Thrust + Strafe** maneuver.
+- **Pulse:** Fires in 0.5s bursts to back the bot away from the obstacle.
+
+### Current Research: Engine Navigation Integration (The "Intention" Shift)
+
+Research into the **Guide Bot** and **Thief Bot** logic has revealed a more robust way to handle bot movement. Instead of the bots "calculating" their own paths, they should "consume" the engine's built-in AI intent.
+
+**Key Findings:**
+- **The `movement_dir` Vector:** The engine's AI pipeline (`ai_move` in `AImain.cpp`) already calculates a normalized preferred direction every frame, blending path-following, dodging, and avoidance.
+- **Native Avoidance:** Setting `AIF_AVOID_WALLS` and `AIF_AUTO_AVOID_FRIENDS` enables high-fidelity, 360° avoidance that is far superior to our manual "feeler" rays.
+- **Velocity Suppression:** Our current `max_delta_velocity = 0` setting is the perfect configuration for this. It allows the engine to compute the "intelligence" (where it wants to go) without the engine snapping the velocity itself.
+
+**Proposed Integration:**
+1. **Enable Flags:** Enable `AIF_AVOID_WALLS`, `AIF_AUTO_AVOID_FRIENDS`, and `AIF_DODGE` in `BotConfigureAI`.
+2. **Consume Intent:** Modify `BotApplyThrust` to read `obj->ai_info->movement_dir` and map it to our thrust axes.
+3. **Repair BOA:** Investigate calling `MakeBOA()` at level load to programmaticly fix missing pathfinding data in MP maps.
+
+### Strategic Architecture Vision (6DOF vs. FPS)
+
+Insights from the `D3_VS_FPS_BOT_MOVEMENT_PRIMER.md` guide our long-term goals:
+
+- **Hierarchical Navigation:** Maintain the engine's room/portal (BOA) graph for high-level "mine topology" traversal while using physics-aware steering (Seek, Pursue, Evade, Orbit) for intra-room combat.
+- **Physics-Native Controllers:** Bots output desired thrust and torque exactly like player input. Future work includes implementing PD/PID controllers to smoothly match desired velocity/orientation, ensuring bots feel like "pro" pilots rather than snapping robots.
+- **3D Combat Maneuvers:** Move beyond simple juking to tactical 6DOF maneuvers like barrel rolls, perpendicular-plane strafing, and "Immelmann" turns by mapping engine torque-requests to physics inputs.
+- **Predictive Intercepts:** Solve quadratic aiming equations for projectile lead time, accounting for both bot and target momentum.
 
 ## Running a Test Server
 

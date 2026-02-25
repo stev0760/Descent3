@@ -44,6 +44,14 @@ Claude Code should regularly review server logs to diagnose any debug feedback f
 
 ## Architecture
 
+> [!IMPORTANT]
+> **Gemini Research Note:** Investigation into Guide Bot/Thief Bot logic suggests a strategic shift for bot navigation. 
+> Instead of calculating manual thrust vectors, bots should **consume the engine's AI intent**.
+> 1. **Read `ai_info->movement_dir`:** Blended result of path-following, dodging, and avoidance.
+> 2. **Leverage Flags:** Enable `AIF_AVOID_WALLS`, `AIF_AUTO_AVOID_FRIENDS`, and `AIF_DODGE`.
+> 3. **Thrust Mapping:** Map the resulting `movement_dir` vector directly to thrust axes in `BotApplyThrust`.
+> 4. **Repair BOA:** Call `MakeBOA()` at level load if connectivity is missing in MP maps.
+
 The project is a large set of static libraries linked into the main `Descent3` executable, plus dynamically-loaded script and netgame modules.
 
 **Core game**: `Descent3/` — AI, multiplayer, game loop, UI, physics integration, mission loading. The multiplayer system uses `NetPlayers[32]` for connection state, `Players[32]` for game state, and `Objects[]` for world entities. Server frame loop is in `multi_server.cpp:MultiDoServerFrame()`.

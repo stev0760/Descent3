@@ -92,3 +92,12 @@ Phase 2 has been implemented by Claude Code. The following changes are in `Desce
 4. **Robo-anarchy** — bots target both humans and level robots
 5. **Gunboy** — gunboy acquires and fires on human player in robo-anarchy
 6. **Level transition** — bot teams are `-1`-free after level change
+
+## Current Research: Engine Navigation Integration
+
+Investigation into **Guide Bot** and **Thief Bot** logic has revealed a superior architectural path for navigation:
+
+- **Consume `movement_dir`:** The engine (`AImain.cpp:ai_move`) already computes a normalized preferred direction vector every frame. It blends path-following (BOA/BNode), dodging, and avoidance.
+- **Leverage Native Flags:** Enabling `AIF_AVOID_WALLS` and `AIF_AUTO_AVOID_FRIENDS` allows the engine to handle obstacle avoidance with high fidelity, replacing manual raycast feelers.
+- **Strategic Shift:** Move from **simulating** movement math to **consuming** the engine's AI intent. Map `ai_info->movement_dir` directly to thrust axes in `BotApplyThrust`.
+
