@@ -62,6 +62,7 @@ static void BotCacheShipPhysics(int bot_index) {
   Bots[bot_index].ship_rotdrag = sp.rotdrag;
   Bots[bot_index].afterburner_fuel = BOT_AFTERBURNER_FUEL_MAX;
   Bots[bot_index].juke_phase = 0.0f;
+  Bots[bot_index].stuck_timer = 0.0f;
   LOG_DEBUG.printf("BOT: Ship physics cached for bot %d: thrust=%.1f mass=%.1f drag=%.1f rotthrust=%.1f rotdrag=%.1f",
                    bot_index, sp.full_thrust, sp.mass, sp.drag, sp.full_rotthrust, sp.rotdrag);
 }
@@ -90,7 +91,8 @@ static void BotConfigureAI(int player_slot) {
   obj->mtype.phys_info.rotdrag = Ships[ship_idx].phys_info.rotdrag;
   obj->mtype.phys_info.full_thrust = Ships[ship_idx].phys_info.full_thrust;
   obj->mtype.phys_info.full_rotthrust = Ships[ship_idx].phys_info.full_rotthrust;
-  obj->mtype.phys_info.flags |= PF_USES_THRUST; // enable thrust-based physics integration
+  obj->mtype.phys_info.flags &= ~PF_FIXED_VELOCITY; // clear fixed-velocity (set by ResetPlayerObject for non-local players)
+  obj->mtype.phys_info.flags |= PF_USES_THRUST;     // enable thrust-based physics integration
 
   // Add a persistent wander goal (provides orientation when no target)
   GoalAddGoal(obj, AIG_WANDER_AROUND, NULL, 1, 1.0f, GF_NONFLUSHABLE | GF_KEEP_AT_COMPLETION, -1, 0);
@@ -242,8 +244,8 @@ static void BotUpdateState(int bot_index) {
       new_state = BOT_STATE_WANDER;
     else if (low_shields)
       new_state = BOT_STATE_FLEE;
-    else if (dist > BOT_COMBAT_EXIT_RANGE || !has_los)
-      new_state = BOT_STATE_HUNT;
+    else if (dist > BOT_COMBAT_EXIT_RANGE)
+      new_state = BOT_STATE_HUNT; // LOS loss alone doesn't exit COMBAT (avoids oscillation at close range)
     break;
 
   case BOT_STATE_FLEE:
@@ -304,8 +306,8 @@ static void BotApplyThrust(int bot_index) {
     forward = 1.0f;
     sideways = sinf(Bots[bot_index].juke_phase) * BOT_JUKE_AMPLITUDE_HUNT;
     vertical = cosf(Bots[bot_index].juke_phase * 0.7f) * BOT_VERTICAL_JUKE_AMPLITUDE;
-    // Afterburner when far from target (gap closing)
-    if (dist_to_target > BOT_FIRE_RANGE * 2.0f && Bots[bot_index].afterburner_fuel > 0)
+    // Afterburner only when chasing from a real distance (conservative — avoids spam)
+    if (dist_to_target > BOT_AFTERBURNER_MIN_DIST && Bots[bot_index].afterburner_fuel > 0)
       use_afterburner = true;
     break;
 
@@ -320,8 +322,8 @@ static void BotApplyThrust(int bot_index) {
     else
       forward = orbit_error / 20.0f * BOT_COMBAT_ORBIT_FORWARD; // smooth transition
 
-    // Directional strafing — alternates direction for circle-strafe
-    sideways = (sinf(Bots[bot_index].juke_phase) > 0 ? 1.0f : -1.0f) * BOT_JUKE_AMPLITUDE_COMBAT;
+    // Smooth sinusoidal strafe — no square-wave direction snap
+    sideways = sinf(Bots[bot_index].juke_phase) * BOT_JUKE_AMPLITUDE_COMBAT;
     vertical = cosf(Bots[bot_index].juke_phase * 1.3f) * BOT_VERTICAL_JUKE_AMPLITUDE;
     break;
   }
@@ -340,6 +342,24 @@ static void BotApplyThrust(int bot_index) {
   Bots[bot_index].juke_phase += Frametime * BOT_JUKE_FREQUENCY * 2.0f * 3.14159f;
   if (Bots[bot_index].juke_phase > 6.28318f)
     Bots[bot_index].juke_phase -= 6.28318f;
+
+  // Time-based stuck detection: only escape after 3+ continuous seconds at near-zero speed.
+  // Do NOT suppress forward thrust (that would prevent acceleration from rest and cause hovering).
+  // Instead, add orthogonal components alongside existing thrust to slide off the wall.
+  float current_speed = vm_GetMagnitude(&obj->mtype.phys_info.velocity);
+  bool applying_thrust = (fabsf(forward) > 0.1f || fabsf(sideways) > 0.1f);
+  if (current_speed < 5.0f && applying_thrust) {
+    Bots[bot_index].stuck_timer += Frametime;
+  } else {
+    Bots[bot_index].stuck_timer = 0.0f;
+  }
+  if (Bots[bot_index].stuck_timer > 3.0f) {
+    // Inject orthogonal escape components without reducing forward pressure
+    sideways += (cosf(Bots[bot_index].juke_phase * 2.3f) > 0) ? 0.7f : -0.7f;
+    vertical += 0.6f;
+    if (Bots[bot_index].stuck_timer > 4.5f)
+      Bots[bot_index].stuck_timer = 0.0f; // reset so escape fires in bursts, not constantly
+  }
 
   // Afterburner handling — matches DoPlayerAfterburnControl() punch_scalar ramp
   float thrust_multiplier = 1.0f;
@@ -483,6 +503,10 @@ static void BotDoFiring(int bot_index) {
     return;
   }
 
+  // Don't fire through walls
+  if (!BotHasLOS(obj, target))
+    return;
+
   vector to_target = target->pos - obj->pos;
   float dist = vm_GetMagnitude(&to_target);
   if (dist > BOT_FIRE_RANGE)
@@ -520,6 +544,7 @@ static void BotRespawn(int bot_index) {
   Bots[bot_index].state = BOT_STATE_WANDER;
   Bots[bot_index].afterburner_fuel = BOT_AFTERBURNER_FUEL_MAX;
   Bots[bot_index].juke_phase = 0.0f;
+  Bots[bot_index].stuck_timer = 0.0f;
   Bots[bot_index].last_target_update = 0.0f; // force immediate re-target after respawn
   LOG_DEBUG.printf("BOT: '%s' respawned in slot %d", Bots[bot_index].callsign, slot);
 }
@@ -541,6 +566,7 @@ void BotInitAll() {
     Bots[i].ship_rotdrag = 0.0f;
     Bots[i].afterburner_fuel = 0.0f;
     Bots[i].juke_phase = 0.0f;
+    Bots[i].stuck_timer = 0.0f;
   }
   Num_bots = 0;
 }
@@ -563,6 +589,7 @@ void BotReinitAll() {
     Bots[i].state = BOT_STATE_WANDER;
     Bots[i].afterburner_fuel = BOT_AFTERBURNER_FUEL_MAX;
     Bots[i].juke_phase = 0.0f;
+    Bots[i].stuck_timer = 0.0f;
 
     // Restore NetPlayers sequence (level end sets NETSEQ_WAITING_FOR_LEVEL)
     NetPlayers[slot].sequence = NETSEQ_PLAYING;
@@ -752,6 +779,7 @@ int BotAdd(const char *name, int ship_index) {
   Bots[bot_index].state = BOT_STATE_WANDER;
   Bots[bot_index].afterburner_fuel = BOT_AFTERBURNER_FUEL_MAX;
   Bots[bot_index].juke_phase = 0.0f;
+  Bots[bot_index].stuck_timer = 0.0f;
   BotCacheShipPhysics(bot_index);
   Num_bots++;
 

@@ -37,7 +37,8 @@
 // Thrust-based movement constants (Phase 3.5)
 #define BOT_AFTERBURNER_FUEL_MAX 5.0f          // seconds of fuel (matches AFTERBURN_TIME)
 #define BOT_AFTERBURNER_THRUST_MULT 1.6f       // base afterburner thrust multiplier
-#define BOT_JUKE_FREQUENCY 2.5f                // lateral oscillation frequency (Hz)
+#define BOT_JUKE_FREQUENCY 0.5f                // lateral oscillation frequency (Hz)
+#define BOT_AFTERBURNER_MIN_DIST (BOT_FIRE_RANGE * 3.0f) // min gap-to-target to use afterburner in HUNT
 #define BOT_JUKE_AMPLITUDE_HUNT 0.6f           // sideways thrust scale during hunt
 #define BOT_JUKE_AMPLITUDE_COMBAT 0.8f         // sideways thrust scale during combat
 #define BOT_JUKE_AMPLITUDE_FLEE 0.5f           // sideways thrust scale during flee
@@ -73,6 +74,7 @@ struct bot_info {
   float ship_rotdrag;                 // cached from ship physics template
   float afterburner_fuel;             // remaining fuel (seconds), 0 = empty
   float juke_phase;                   // oscillating strafe phase (radians)
+  float stuck_timer;                  // seconds at near-zero speed with nonzero thrust (wall escape)
 };
 
 extern bot_info Bots[MAX_BOTS];

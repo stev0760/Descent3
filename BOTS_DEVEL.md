@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Phase 3.5 complete — thrust-based movement with real inertia, tri-chording, and afterburner.
+**Status:** Phase 3.5 complete — thrust-based movement with real inertia, tri-chording, and afterburner. Post-launch movement tuning applied (reduced jitter, LOS-gated firing, conservative afterburner, stuck deflection).
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -158,7 +158,7 @@ Phase 3 replaces the simple "beeline and fire" behavior with a lightweight FSM (
 **State Transitions** (evaluated every target-update tick, 0.5s):
 - `WANDER → HUNT`: target acquired
 - `HUNT → COMBAT`: distance < `BOT_FIRE_RANGE` (200) AND `fvi_FindIntersection` LOS check passes
-- `COMBAT → HUNT`: distance > `BOT_COMBAT_EXIT_RANGE` (240, hysteresis) OR LOS lost
+- `COMBAT → HUNT`: distance > `BOT_COMBAT_EXIT_RANGE` (240, hysteresis) — LOS loss alone no longer exits COMBAT (prevents rapid oscillation at close range)
 - `COMBAT → FLEE`: shields < 20% of max
 - `FLEE → HUNT`: shields > 40% OR distance > 300 units from threat
 - `any → WANDER`: bot respawns (reset state)
@@ -266,7 +266,7 @@ Phase 3.5 replaces CT_AI's direct velocity control with real thrust-based physic
 | State | Forward | Sideways | Vertical | Afterburner |
 |-------|---------|----------|----------|-------------|
 | WANDER | 0.3 | 0 | 0 | off |
-| HUNT | 1.0 | ±0.6 (juke) | ±0.3 (juke) | on if > 2× fire range |
+| HUNT | 1.0 | ±0.6 (juke) | ±0.3 (juke) | on if > 3× fire range (600 units) |
 | COMBAT | 0.5 (orbit) | ±0.8 (strafe) | ±0.3 (juke) | off |
 | FLEE | 1.0 (away) | ±0.5 (juke) | ±0.3 (juke) | on |
 
@@ -293,14 +293,17 @@ Create `./dedicated.cfg`:
 
 ```
 [server config file]
-ConnectionType Direct=TCP~IP
+PPS=28
 MaxPlayers=8
-ServerName=BotTest
+TimeLimit=2
+KillGoal=0
+GameName=BotTestServer
+MissionName=fury.mn3
+Scriptname=anarchy.d3m
+ConnectionName=Direct TCP~IP
 AllowRemoteConsole=1
 RemoteConsolePort=2092
-ConsolePassword=test
-GameType=Anarchy
-Mission=Fury.mn3
+ConsolePassword=yourpassword
 ```
 
 Start the server (note the `./` prefix — `cfopen()` requires a directory component on Linux):
@@ -321,7 +324,7 @@ Use `-tempdir` to avoid cache lock conflicts when running both server and client
 
 - **Thrust-based movement is new and needs live testing** — Phase 3.5 thrust physics replaces the old CT_AI velocity control. Ship template values (mass, drag, full_thrust) vary per ship and may need tuning if bots feel too fast/slow on specific ships.
 - **Gunboy targeting issue** — The Phase 2 `AImain.cpp` fix allows gunboys to acquire player targets (bypasses `BOA_IsVisible`), but they still don't fire. Likely blocked by a separate condition in `ai_fire()` or weapon battery configuration. Revisit in future phase.
-- **Navigation is beeline-only** — In HUNT state, bots pursue targets in a straight line (`GF_USE_BLINE_IF_SEES_GOAL`) and wander otherwise. They may get stuck in geometry.
+- **Navigation is beeline-only** — In HUNT state, bots pursue targets in a straight line (`GF_USE_BLINE_IF_SEES_GOAL`) and wander otherwise. A basic stuck-deflection mechanism (reduce forward thrust + inject lateral/vertical when speed < 5 units/s) provides limited wall escape, but bots can still get trapped in complex geometry. BOA pathfinding integration is future work.
 - **Team assignment is static** — Bots are assigned to a team at `addbot` time based on current counts. If human players join or leave after bots are added, teams may become unbalanced. Dynamic rebalancing is future work.
 - **Congestion penalty is player-only** — The 80-unit diversity penalty only applies to player targets, not robot targets. In co-op, all bots may still converge on the same robot.
 - **Scoreboard tracking** — Fixed in Phase 0.5. Bots now appear on the end-of-level scoreboard. See "Scoreboard Tracking" section below.
@@ -348,6 +351,17 @@ Investigation revealed that bots were missing from the end-of-level scoreboard b
 ## Future Work
 
 See [PLAN.md](PLAN.md) for the Phase 0 design rationale and risk assessment.
+
+### Advanced Movement: Player Movement Capture and Analysis
+
+To achieve higher-fidelity bot movement, we will eventually need to capture real human player movement data and use it to tune bot behavior. This requires:
+
+1. **Server-side movement logging** — extend `PLRMOV` logging to capture per-frame: position, velocity vector, orientation (fvec/uvec/rvec), thrust flags (`PLAYER_FLAGS_THRUSTED`, `PLAYER_FLAGS_AFTERBURN_ON`), current speed, and game state (in combat, health).
+2. **Session capture tool** — a post-processing script that converts server logs into movement traces grouped by behavioral context (combat maneuvering, gap-closing, evasion, etc.).
+3. **Statistical analysis** — measure distributions of speed, acceleration, turn rate, strafe amplitude, and afterburner usage frequency per behavioral context.
+4. **Bot tuning from data** — use measured player baselines to calibrate bot constants (`BOT_JUKE_FREQUENCY`, `BOT_JUKE_AMPLITUDE_*`, `BOT_AFTERBURNER_MIN_DIST`, `BOT_COMBAT_CIRCLE_DIST`, etc.) to match real player patterns.
+
+This is a future-phase initiative (likely Phase 5+) after basic navigation and pathfinding are resolved. The full 6DoF movement space (slide forward/backward/left/right/up/down, pitch/yaw/bank) means bots require behavioral data across all axes to accurately emulate human play patterns.
 
 ### Phase 1.5: Combat Polish (optional)
 
