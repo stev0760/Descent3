@@ -100,4 +100,5 @@ Investigation into **Guide Bot** and **Thief Bot** logic has revealed a superior
 - **Consume `movement_dir`:** The engine (`AImain.cpp:ai_move`) already computes a normalized preferred direction vector every frame. It blends path-following (BOA/BNode), dodging, and avoidance.
 - **Leverage Native Flags:** Enabling `AIF_AVOID_WALLS` and `AIF_AUTO_AVOID_FRIENDS` allows the engine to handle obstacle avoidance with high fidelity, replacing manual raycast feelers.
 - **Strategic Shift:** Move from **simulating** movement math to **consuming** the engine's AI intent. Map `ai_info->movement_dir` directly to thrust axes in `BotApplyThrust`.
+- **Programmatic BOA Repair:** Call `MakeBOA()` in `Descent3/multi.cpp` inside `MultiStartNewLevel()` if `BOA_mine_checksum == 0` to fix missing AI data in MP maps at level load.
 

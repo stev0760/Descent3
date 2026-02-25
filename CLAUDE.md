@@ -50,7 +50,7 @@ Claude Code should regularly review server logs to diagnose any debug feedback f
 > 1. **Read `ai_info->movement_dir`:** Blended result of path-following, dodging, and avoidance.
 > 2. **Leverage Flags:** Enable `AIF_AVOID_WALLS`, `AIF_AUTO_AVOID_FRIENDS`, and `AIF_DODGE`.
 > 3. **Thrust Mapping:** Map the resulting `movement_dir` vector directly to thrust axes in `BotApplyThrust`.
-> 4. **Repair BOA:** Call `MakeBOA()` at level load if connectivity is missing in MP maps.
+> 4. **Repair BOA:** In `Descent3/multi.cpp`, call `MakeBOA()` inside `MultiStartNewLevel()` if `BOA_mine_checksum == 0`.
 
 The project is a large set of static libraries linked into the main `Descent3` executable, plus dynamically-loaded script and netgame modules.
 

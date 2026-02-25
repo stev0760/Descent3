@@ -313,7 +313,7 @@ Research into the **Guide Bot** and **Thief Bot** logic has revealed a more robu
 **Proposed Integration:**
 1. **Enable Flags:** Enable `AIF_AVOID_WALLS`, `AIF_AUTO_AVOID_FRIENDS`, and `AIF_DODGE` in `BotConfigureAI`.
 2. **Consume Intent:** Modify `BotApplyThrust` to read `obj->ai_info->movement_dir` and map it to our thrust axes.
-3. **Repair BOA:** Investigate calling `MakeBOA()` at level load to programmaticly fix missing pathfinding data in MP maps.
+3. **Repair BOA:** Call `MakeBOA()` in `Descent3/multi.cpp` inside `MultiStartNewLevel()` if `BOA_mine_checksum == 0`. This programmatically fixes missing pathfinding data in MP maps at level load.
 
 ### Strategic Architecture Vision (6DOF vs. FPS)
 

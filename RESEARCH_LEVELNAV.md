@@ -47,7 +47,8 @@ Instead of duplicating script logic, the bots can leverage the engine's pre-calc
 1.  **Read `ai_info->movement_dir`:** The engine calculates this vector every frame. Even though the bot's `max_delta_velocity` is 0 (preventing the engine from overwriting velocity), the vector remains a valid "ideal steering" direction.
 2.  **Enable Flags:** Enabling `AIF_AVOID_WALLS` and `AIF_AUTO_AVOID_FRIENDS` allows the engine to handle obstacle avoidance automatically, baking it into the `movement_dir` vector.
 3.  **Predictive Combat (Future):** Implement the "Dogfight specific" recommendations from the primer: Solve quadratic intercepts for aiming and utilize 3D maneuvers like barrel rolls and "Immelmann" turns by mapping engine torque/torque-requests to physics inputs.
-4.  **Fix BOA Connectivity:** Pathfinding depends on valid BOA data. If BOA is missing or disconnected in a multiplayer map, `BOA_GetNextRoom` returns `BOA_NO_PATH`. Calling `MakeBOA()` at level load on the server may help repair these maps.
+4. **Fix BOA Connectivity:** Pathfinding depends on valid BOA data. If BOA is missing or disconnected in a multiplayer map, `BOA_GetNextRoom` returns `BOA_NO_PATH`. 
+    *   **Implementation:** Call `MakeBOA()` in `Descent3/multi.cpp` inside `MultiStartNewLevel()` if `BOA_mine_checksum == 0`. This repairs the navigation graph programmatically for maps lacking AI data.
 
 ## 5. Summary & Recommendations
 
