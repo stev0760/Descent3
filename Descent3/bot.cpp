@@ -284,17 +284,20 @@ static void BotSetEvadeGoal(int bot_index) {
   Bots[bot_index].combat_goal_index = gi;
 }
 
-// Select the highest-damage weapon battery the bot currently owns and can fire.
-// Called after respawn and when entering combat to ensure bots use their best weapons.
+// Select a weapon battery for the bot to use.
+// Strategy: stay on battery 0 (default laser) unless the bot has picked up other weapons,
+// in which case pick randomly from the acquired non-default batteries.
+// Flares (FLARE_INDEX) are always excluded — they're for lighting, not combat.
 static void BotSelectBestWeapon(int bot_index) {
   int slot = Bots[bot_index].player_slot;
   int ship_idx = Bots[bot_index].ship_index;
 
-  int best_wb = Players[slot].weapon[PW_PRIMARY].index;
-  float best_damage = -1.0f;
+  // Collect acquired (non-default, non-flare, usable) weapon batteries.
+  // Battery 0 is the default laser — always available as fallback.
+  int acquired[MAX_PLAYER_WEAPONS];
+  int num_acquired = 0;
 
-  for (int wb = 0; wb < MAX_PLAYER_WEAPONS; wb++) {
-    // Must own this battery
+  for (int wb = 1; wb < MAX_PLAYER_WEAPONS; wb++) {
     if (!(Players[slot].weapon_flags & (1u << wb)))
       continue;
 
@@ -303,22 +306,25 @@ static void BotSelectBestWeapon(int bot_index) {
     if (weapon_id <= 0 || weapon_id >= MAX_WEAPONS)
       continue;
 
-    // Must have ammo or enough energy to fire
+    // Never use flares in combat — they're for lighting and door-opening
+    if (weapon_id == FLARE_INDEX)
+      continue;
+
+    // Must have ammo or enough energy
     bool has_ammo = Players[slot].weapon_ammo[wb] > 0;
     bool has_energy = Players[slot].energy > 10.0f;
     if (!has_ammo && !has_energy)
       continue;
 
-    float dmg = Weapons[weapon_id].player_damage;
-    if (dmg > best_damage) {
-      best_damage = dmg;
-      best_wb = wb;
-    }
+    acquired[num_acquired++] = wb;
   }
 
+  // Stay on default (0) unless we've acquired something else
+  int best_wb = (num_acquired > 0) ? acquired[rand() % num_acquired] : 0;
+
   if (best_wb != Players[slot].weapon[PW_PRIMARY].index) {
-    LOG_DEBUG.printf("BOT: '%s' weapon switch: battery %d → %d (damage=%.1f)", Bots[bot_index].callsign,
-                     Players[slot].weapon[PW_PRIMARY].index, best_wb, best_damage);
+    LOG_DEBUG.printf("BOT: '%s' weapon switch: battery %d → %d", Bots[bot_index].callsign,
+                     Players[slot].weapon[PW_PRIMARY].index, best_wb);
     Players[slot].weapon[PW_PRIMARY].index = best_wb;
   }
 }
