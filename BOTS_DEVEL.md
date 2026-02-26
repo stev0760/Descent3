@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Phase 3.7 complete — Afterburner burst management, juke only in COMBAT/FLEE, EXPLORE state with sound reactivity, portal-based cover-seeking flee.
+**Status:** Phase 3.8 complete — Lead targeting, OBJ_GHOST fix, EVADE state, powerup collection, weapon switching.
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -29,7 +29,8 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | 3.5 | Realistic movement — thrust-based physics, inertia, afterburner, tri-chording | Complete |
 | 3.6 | Navigation — engine `movement_dir` integration, `AIF_AVOID_WALLS`, `AIF_AUTO_AVOID_FRIENDS`, BOA repair | Complete |
 | 3.7 | Behavior polish — burst afterburner, EXPLORE state, sound reactivity, portal flee, juke only in COMBAT/FLEE | Complete |
-| 1.5 | Combat polish — energy/ammo drain, lead-tracking aim | Not started |
+| 3.8 | Combat quality — lead targeting, OBJ_GHOST fix, EVADE state, powerup collection, weapon switching | Complete |
+| 1.5 | Combat polish — energy/ammo drain | Not started |
 | 4 | Difficulty levels, configuration UI | Not started |
 
 ## Files

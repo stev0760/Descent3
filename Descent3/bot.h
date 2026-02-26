@@ -57,11 +57,23 @@
 // Sound awareness (Phase 3.7)
 #define BOT_HEAR_AB_RADIUS 200.0f       // radius (units) to detect enemy afterburner noise
 
+// EVADE state (Phase 3.8)
+// Triggered from COMBAT after bot has been stuck in prolonged combat without progress.
+// Bot breaks off engagement for BOT_EVADE_DURATION seconds, then returns to HUNT or EXPLORE.
+#define BOT_EVADE_COMBAT_TIMEOUT 8.0f  // seconds in COMBAT before triggering EVADE
+#define BOT_EVADE_DURATION 3.5f        // seconds to stay in EVADE before re-engaging
+
+// Powerup collection (Phase 3.8)
+#define BOT_POWERUP_SEEK_RADIUS 350.0f // scan radius for powerup objects
+#define BOT_LOW_SHIELDS_PCT 0.30f      // seek shield powerups when below 30% shields
+#define BOT_LOW_ENERGY 25.0f           // seek energy powerups when below 25 energy units
+
 enum BotState {
-  BOT_STATE_EXPLORE, // No target. Roam level, react to sounds.
+  BOT_STATE_EXPLORE, // No target. Roam level, collect powerups, react to sounds.
   BOT_STATE_HUNT,    // Has target, out of range or no LOS. Pursue.
   BOT_STATE_COMBAT,  // In range + has LOS. Circle-strafe + fire.
   BOT_STATE_FLEE,    // Low shields. Retreat from target.
+  BOT_STATE_EVADE,   // Prolonged combat stall. Break off, regroup, then re-engage.
 };
 
 struct bot_info {
@@ -90,6 +102,13 @@ struct bot_info {
   // Afterburner burst management (Phase 3.7)
   // >0 = seconds remaining in current burst, <0 = cooldown remaining, 0 = ready for new burst
   float afterburner_burst_timer;
+
+  // EVADE state timers (Phase 3.8)
+  float combat_idle_timer; // seconds spent in COMBAT state; triggers EVADE when > BOT_EVADE_COMBAT_TIMEOUT
+  float evade_timer;       // counts down from BOT_EVADE_DURATION while in EVADE state
+
+  // Powerup seeking (Phase 3.8)
+  int powerup_goal_index; // goal index of AIG_GET_TO_OBJ powerup pursuit goal, or -1
 };
 
 extern bot_info Bots[MAX_BOTS];

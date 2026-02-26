@@ -41,6 +41,8 @@
 #include "vecmat.h"
 #include "findintersection.h"
 #include "room.h"
+#include "weapon.h"
+#include "objinfo.h"
 #include "log.h"
 
 bot_info Bots[MAX_BOTS];
@@ -146,6 +148,7 @@ static void BotClearActiveGoal(int bot_index) {
   };
   clear_goal(Bots[bot_index].pursuit_goal_index);
   clear_goal(Bots[bot_index].combat_goal_index);
+  clear_goal(Bots[bot_index].powerup_goal_index);
 }
 
 // Set a pursuit (AIG_GET_TO_OBJ) goal for the bot's current AI target.
@@ -238,6 +241,133 @@ static void BotSetFleeGoal(int bot_index) {
   Bots[bot_index].combat_goal_index = gi;
 }
 
+// Set an evade goal — break off engagement. If there's a live target, behave like BotSetFleeGoal().
+// With no target, pick any traversable portal to put geometry between us and where we were.
+static void BotSetEvadeGoal(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  if (!obj->ai_info)
+    return;
+
+  object *target = ObjGet(obj->ai_info->target_handle);
+  if (target) {
+    // Has a target — flee away from it through the best portal (reuse flee logic)
+    BotSetFleeGoal(bot_index);
+    return;
+  }
+
+  // No target — pick any traversable portal to break line-of-sight and change rooms
+  vector away = obj->orient.fvec; // continue in current heading as default
+  vector flee_pos = obj->pos + away * BOT_FLEE_DISTANCE;
+  int flee_room = obj->roomnum;
+
+  if (obj->roomnum >= 0 && Rooms[obj->roomnum].used) {
+    room &cur = Rooms[obj->roomnum];
+    for (int p = 0; p < cur.num_portals; p++) {
+      int croom = cur.portals[p].croom;
+      if (croom < 0 || !Rooms[croom].used)
+        continue;
+      if (cur.portals[p].flags & PF_TOO_SMALL_FOR_ROBOT)
+        continue;
+      flee_pos = Rooms[croom].path_pnt;
+      flee_room = croom;
+      break;
+    }
+  }
+
+  goal_info gi_info;
+  memset(&gi_info, 0, sizeof(gi_info));
+  gi_info.pos = flee_pos;
+  gi_info.roomnum = flee_room;
+
+  int gi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_FLEE);
+  Bots[bot_index].combat_goal_index = gi;
+}
+
+// Select the highest-damage weapon battery the bot currently owns and can fire.
+// Called after respawn and when entering combat to ensure bots use their best weapons.
+static void BotSelectBestWeapon(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  int ship_idx = Bots[bot_index].ship_index;
+
+  int best_wb = Players[slot].weapon[PW_PRIMARY].index;
+  float best_damage = -1.0f;
+
+  for (int wb = 0; wb < MAX_PLAYER_WEAPONS; wb++) {
+    // Must own this battery
+    if (!(Players[slot].weapon_flags & (1u << wb)))
+      continue;
+
+    otype_wb_info &wbinfo = Ships[ship_idx].static_wb[wb];
+    int weapon_id = wbinfo.gp_weapon_index[0];
+    if (weapon_id <= 0 || weapon_id >= MAX_WEAPONS)
+      continue;
+
+    // Must have ammo or enough energy to fire
+    bool has_ammo = Players[slot].weapon_ammo[wb] > 0;
+    bool has_energy = Players[slot].energy > 10.0f;
+    if (!has_ammo && !has_energy)
+      continue;
+
+    float dmg = Weapons[weapon_id].player_damage;
+    if (dmg > best_damage) {
+      best_damage = dmg;
+      best_wb = wb;
+    }
+  }
+
+  if (best_wb != Players[slot].weapon[PW_PRIMARY].index) {
+    LOG_DEBUG.printf("BOT: '%s' weapon switch: battery %d → %d (damage=%.1f)", Bots[bot_index].callsign,
+                     Players[slot].weapon[PW_PRIMARY].index, best_wb, best_damage);
+    Players[slot].weapon[PW_PRIMARY].index = best_wb;
+  }
+}
+
+// Scan nearby objects for the most valuable powerup this bot should collect.
+// Returns Objects[] index of the best powerup, or -1 if none found.
+// Priority: shield (when low) > energy (when low) > any powerup nearby.
+static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+
+  int best_obj = -1;
+  float best_dist = BOT_POWERUP_SEEK_RADIUS;
+  int best_priority = 0; // higher = more urgent
+
+  for (int i = 0; i <= Highest_object_index; i++) {
+    object *p = &Objects[i];
+    if (p->type != OBJ_POWERUP)
+      continue;
+    if (p->flags & (OF_DEAD | OF_DESTROYED))
+      continue;
+
+    float dist = vm_VectorDistanceQuick(&obj->pos, &p->pos);
+    if (dist >= best_dist && best_priority == 0) // only skip if we already have something equally good
+      continue;
+
+    // Name-based prioritization (case-insensitive substring match)
+    const char *raw = Object_info[p->id].name;
+    char lower[64] = {};
+    strncpy(lower, raw, sizeof(lower) - 1);
+    for (int k = 0; lower[k]; k++)
+      lower[k] = (char)tolower((unsigned char)lower[k]);
+
+    int priority = 1; // any powerup beats nothing
+    if (need_shields && strstr(lower, "shield"))
+      priority = 10;
+    else if (need_energy && strstr(lower, "energy"))
+      priority = 8;
+
+    if (priority > best_priority || (priority == best_priority && dist < best_dist)) {
+      best_priority = priority;
+      best_dist = dist;
+      best_obj = i;
+    }
+  }
+
+  return best_obj;
+}
+
 // Evaluate and update the bot's behavioral state based on target, distance, LOS, and shields.
 // Called from BotDoFrame after target selection.
 static void BotUpdateState(int bot_index) {
@@ -250,6 +380,15 @@ static void BotUpdateState(int bot_index) {
   BotState new_state = old_state;
 
   object *target = ObjGet(obj->ai_info->target_handle);
+
+  // Ghost target fix: when a player dies/respawns their object briefly becomes OBJ_GHOST.
+  // ObjGet() still returns a valid pointer (handle matches), but the bot would orbit a ghost
+  // forever. Clear the target so the state machine re-evaluates properly.
+  if (target && target->type == OBJ_GHOST) {
+    AISetTarget(obj, OBJECT_HANDLE_NONE);
+    target = nullptr;
+  }
+
   float dist = target ? vm_VectorDistanceQuick(&obj->pos, &target->pos) : 1e30f;
   float shields = obj->shields;
   float max_shields = INITIAL_SHIELDS; // from player_external.h
@@ -257,11 +396,27 @@ static void BotUpdateState(int bot_index) {
   bool has_los = has_target && BotHasLOS(obj, target);
   bool low_shields = (shields < max_shields * BOT_FLEE_SHIELD_PCT);
   bool shields_recovered = (shields > max_shields * BOT_FLEE_RECOVER_PCT);
+  bool low_energy = (Players[slot].energy < BOT_LOW_ENERGY);
 
   switch (old_state) {
   case BOT_STATE_EXPLORE:
-    if (has_target)
+    if (has_target) {
       new_state = BOT_STATE_HUNT;
+    } else {
+      // No combat target — try to collect a nearby powerup
+      bool need_shields = (shields < max_shields * BOT_LOW_SHIELDS_PCT);
+      int pu_obj = BotFindBestPowerup(bot_index, need_shields, low_energy);
+      if (pu_obj >= 0) {
+        // Refresh powerup pursuit goal each tick (powerup may have been picked up)
+        int &pgi = Bots[bot_index].powerup_goal_index;
+        if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+          GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+        pgi = -1;
+        int tgt_handle = Objects[pu_obj].handle;
+        pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f,
+                          GF_SPEED_ATTACK | GF_USE_BLINE_IF_SEES_GOAL);
+      }
+    }
     break;
 
   case BOT_STATE_HUNT:
@@ -279,7 +434,9 @@ static void BotUpdateState(int bot_index) {
     else if (low_shields)
       new_state = BOT_STATE_FLEE;
     else if (dist > BOT_COMBAT_EXIT_RANGE)
-      new_state = BOT_STATE_HUNT; // LOS loss alone doesn't exit COMBAT (avoids oscillation at close range)
+      new_state = BOT_STATE_HUNT; // LOS loss alone doesn't exit COMBAT (avoids oscillation)
+    else if (Bots[bot_index].combat_idle_timer > BOT_EVADE_COMBAT_TIMEOUT)
+      new_state = BOT_STATE_EVADE; // stuck in combat too long without progress — disengage
     break;
 
   case BOT_STATE_FLEE:
@@ -287,6 +444,12 @@ static void BotUpdateState(int bot_index) {
       new_state = BOT_STATE_EXPLORE;
     else if (shields_recovered || dist > BOT_FLEE_DISTANCE)
       new_state = BOT_STATE_HUNT;
+    break;
+
+  case BOT_STATE_EVADE:
+    // Exit when evade timer expires (timer is decremented per-frame in BotDoFrame)
+    if (Bots[bot_index].evade_timer <= 0.0f)
+      new_state = has_target ? BOT_STATE_HUNT : BOT_STATE_EXPLORE;
     break;
   }
 
@@ -303,14 +466,21 @@ static void BotUpdateState(int bot_index) {
       BotSetPursuitGoal(bot_index);
       break;
     case BOT_STATE_COMBAT:
+      Bots[bot_index].combat_idle_timer = 0.0f; // fresh combat engagement
       BotSetCombatGoal(bot_index);
+      BotSelectBestWeapon(bot_index); // equip best available weapon on entry
       break;
     case BOT_STATE_FLEE:
       BotSetFleeGoal(bot_index);
       break;
+    case BOT_STATE_EVADE:
+      Bots[bot_index].evade_timer = BOT_EVADE_DURATION;
+      Bots[bot_index].combat_idle_timer = 0.0f; // prevent immediate re-trigger
+      BotSetEvadeGoal(bot_index);
+      break;
     }
 
-    static const char *state_names[] = {"EXPLORE", "HUNT", "COMBAT", "FLEE"};
+    static const char *state_names[] = {"EXPLORE", "HUNT", "COMBAT", "FLEE", "EVADE"};
     LOG_DEBUG.printf("BOT: '%s' state %s -> %s (dist=%.0f shields=%.0f los=%d)", Bots[bot_index].callsign,
                      state_names[old_state], state_names[new_state], dist, shields, has_los);
     Bots[bot_index].state = new_state;
@@ -381,15 +551,24 @@ static void BotApplyThrust(int bot_index) {
     speed_scale = 1.0f;
     want_afterburner = true; // use bursts to escape, gated below by fuel/energy/burst timer
     break;
+
+  case BOT_STATE_EVADE:
+    // Full speed break-off; AB only outdoors (stay quiet indoors)
+    speed_scale = 1.0f;
+    if (is_outdoor)
+      want_afterburner = true;
+    break;
   }
 
-  // Additive juke oscillation — only in COMBAT and FLEE (not explore or hunt)
-  if (Bots[bot_index].state == BOT_STATE_COMBAT || Bots[bot_index].state == BOT_STATE_FLEE) {
+  // Additive juke oscillation — only in COMBAT, FLEE, and EVADE (not explore or hunt)
+  if (Bots[bot_index].state == BOT_STATE_COMBAT || Bots[bot_index].state == BOT_STATE_FLEE ||
+      Bots[bot_index].state == BOT_STATE_EVADE) {
     float juke_sideways = sinf(Bots[bot_index].juke_phase);
     if (Bots[bot_index].state == BOT_STATE_COMBAT) {
       sideways += juke_sideways * BOT_JUKE_AMPLITUDE_COMBAT;
       vertical += cosf(Bots[bot_index].juke_phase * 1.3f) * BOT_VERTICAL_JUKE_AMPLITUDE;
     } else {
+      // FLEE and EVADE use the same evasive juke pattern
       sideways += juke_sideways * BOT_JUKE_AMPLITUDE_FLEE;
       vertical += cosf(Bots[bot_index].juke_phase * 0.5f) * BOT_VERTICAL_JUKE_AMPLITUDE;
     }
@@ -607,7 +786,7 @@ static void BotDoFiring(int bot_index) {
     return;
 
   object *target = ObjGet(obj->ai_info->target_handle);
-  if (!target || target->type == OBJ_NONE)
+  if (!target || target->type == OBJ_NONE || target->type == OBJ_GHOST)
     return;
   if (target->type == OBJ_PLAYER) {
     if (Players[target->id].flags & (PLAYER_FLAGS_DEAD | PLAYER_FLAGS_DYING))
@@ -625,13 +804,28 @@ static void BotDoFiring(int bot_index) {
   if (dist > BOT_FIRE_RANGE)
     return;
 
+  // Lead targeting: if the target is moving, aim ahead of their current position.
+  // aim_pos = target->pos + target_vel * (dist / projectile_speed)
+  // Fall back to direct aim if target is stationary or weapon has no travel time.
+  int wb_index = Players[bot_slot].weapon[PW_PRIMARY].index;
+  otype_wb_info *wb = &Ships[Players[bot_slot].ship_index].static_wb[wb_index];
+  int weapon_id = wb->gp_weapon_index[0];
+
+  vector aim_pos = target->pos;
+  float target_speed = vm_GetMagnitude(&target->mtype.phys_info.velocity);
+  if (target_speed > 2.0f && weapon_id > 0 && weapon_id < MAX_WEAPONS) {
+    float proj_speed = vm_GetMagnitude(&Weapons[weapon_id].phys_info.velocity);
+    if (proj_speed > 1.0f) {
+      float time_to_hit = dist / proj_speed;
+      aim_pos = target->pos + target->mtype.phys_info.velocity * time_to_hit;
+    }
+  }
+
+  to_target = aim_pos - obj->pos;
   vm_NormalizeVector(&to_target);
   float dot = vm_DotProduct(&to_target, &obj->orient.fvec);
   if (dot < BOT_FIRE_AIM_DOT)
     return;
-
-  int wb_index = Players[bot_slot].weapon[PW_PRIMARY].index;
-  otype_wb_info *wb = &Ships[Players[bot_slot].ship_index].static_wb[wb_index];
 
   if (WBIsBatteryReady(obj, wb, wb_index))
     WBFireBattery(obj, wb, 0, wb_index);
@@ -654,12 +848,16 @@ static void BotRespawn(int bot_index) {
   Bots[bot_index].awaiting_respawn = false;
   Bots[bot_index].pursuit_goal_index = -1;
   Bots[bot_index].combat_goal_index = -1;
+  Bots[bot_index].powerup_goal_index = -1;
   Bots[bot_index].state = BOT_STATE_EXPLORE;
   Bots[bot_index].afterburner_fuel = BOT_AFTERBURNER_FUEL_MAX;
   Bots[bot_index].afterburner_burst_timer = 0.0f;
   Bots[bot_index].juke_phase = 0.0f;
   Bots[bot_index].stuck_timer = 0.0f;
+  Bots[bot_index].combat_idle_timer = 0.0f;
+  Bots[bot_index].evade_timer = 0.0f;
   Bots[bot_index].last_target_update = 0.0f; // force immediate re-target after respawn
+  BotSelectBestWeapon(bot_index);             // equip best available weapon on respawn
   LOG_DEBUG.printf("BOT: '%s' respawned in slot %d", Bots[bot_index].callsign, slot);
 }
 
@@ -682,6 +880,9 @@ void BotInitAll() {
     Bots[i].afterburner_burst_timer = 0.0f;
     Bots[i].juke_phase = 0.0f;
     Bots[i].stuck_timer = 0.0f;
+    Bots[i].combat_idle_timer = 0.0f;
+    Bots[i].evade_timer = 0.0f;
+    Bots[i].powerup_goal_index = -1;
   }
   Num_bots = 0;
 }
@@ -701,11 +902,14 @@ void BotReinitAll() {
     Bots[i].last_target_update = 0.0f;
     Bots[i].pursuit_goal_index = -1;
     Bots[i].combat_goal_index = -1;
+    Bots[i].powerup_goal_index = -1;
     Bots[i].state = BOT_STATE_EXPLORE;
     Bots[i].afterburner_fuel = BOT_AFTERBURNER_FUEL_MAX;
     Bots[i].afterburner_burst_timer = 0.0f;
     Bots[i].juke_phase = 0.0f;
     Bots[i].stuck_timer = 0.0f;
+    Bots[i].combat_idle_timer = 0.0f;
+    Bots[i].evade_timer = 0.0f;
 
     // Restore NetPlayers sequence (level end sets NETSEQ_WAITING_FOR_LEVEL)
     NetPlayers[slot].sequence = NETSEQ_PLAYING;
@@ -891,12 +1095,15 @@ int BotAdd(const char *name, int ship_index) {
   Bots[bot_index].last_target_update = 0.0f;
   Bots[bot_index].pursuit_goal_index = -1;
   Bots[bot_index].combat_goal_index = -1;
+  Bots[bot_index].powerup_goal_index = -1;
   Bots[bot_index].intended_team = chosen_team;
   Bots[bot_index].state = BOT_STATE_EXPLORE;
   Bots[bot_index].afterburner_fuel = BOT_AFTERBURNER_FUEL_MAX;
   Bots[bot_index].afterburner_burst_timer = 0.0f;
   Bots[bot_index].juke_phase = 0.0f;
   Bots[bot_index].stuck_timer = 0.0f;
+  Bots[bot_index].combat_idle_timer = 0.0f;
+  Bots[bot_index].evade_timer = 0.0f;
   BotCacheShipPhysics(bot_index);
   Num_bots++;
 
@@ -968,7 +1175,10 @@ void BotDoFrame() {
       Bots[i].death_time = Gametime;
       Bots[i].pursuit_goal_index = -1;
       Bots[i].combat_goal_index = -1;
+      Bots[i].powerup_goal_index = -1;
       Bots[i].state = BOT_STATE_EXPLORE;
+      Bots[i].combat_idle_timer = 0.0f;
+      Bots[i].evade_timer = 0.0f;
       Players[slot].flags &= ~(PLAYER_FLAGS_THRUSTED | PLAYER_FLAGS_AFTERBURN_ON);
       continue;
     }
@@ -998,17 +1208,24 @@ void BotDoFrame() {
       }
     }
 
+    // Per-frame state timer updates
+    if (Bots[i].state == BOT_STATE_COMBAT)
+      Bots[i].combat_idle_timer += Frametime;
+    else if (Bots[i].state == BOT_STATE_EVADE)
+      Bots[i].evade_timer -= Frametime;
+
     // Target acquisition + state transition (throttled)
     if (Gametime - Bots[i].last_target_update > BOT_TARGET_UPDATE_INTERVAL) {
       BotSelectTarget(i);
       BotUpdateState(i);
+      BotSelectBestWeapon(i); // equip best owned weapon (picks up new drops automatically)
       Bots[i].last_target_update = Gametime;
     }
 
     // Apply thrust-based movement every frame (before AIDoFrame runs)
     BotApplyThrust(i);
 
-    // Per-frame actions based on state
+    // Firing: active during COMBAT state
     if (Bots[i].state == BOT_STATE_COMBAT)
       BotDoFiring(i);
   }
@@ -1018,7 +1235,7 @@ void BotDoFrame() {
     mov_log_counter++;
     if (mov_log_counter >= 30) {
       mov_log_counter = 0;
-      static const char *state_names[] = {"EXPLORE", "HUNT", "COMBAT", "FLEE"};
+      static const char *state_names[] = {"EXPLORE", "HUNT", "COMBAT", "FLEE", "EVADE"};
 
       // Log bot speeds
       for (int i = 0; i < MAX_BOTS; i++) {
