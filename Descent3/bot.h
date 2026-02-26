@@ -22,10 +22,10 @@
 #include "player_external_struct.h"
 
 #define MAX_BOTS 16
-#define BOT_RESPAWN_DELAY 3.0f    // seconds after death before respawn
+#define BOT_RESPAWN_DELAY 3.0f          // seconds after death before respawn
 #define BOT_TARGET_UPDATE_INTERVAL 0.5f // seconds between target search runs
-#define BOT_FIRE_RANGE 200.0f     // max distance (units) to fire primary weapon
-#define BOT_FIRE_AIM_DOT 0.6f    // min dot(forward, to_target) to allow firing (~53 degrees)
+#define BOT_FIRE_RANGE 200.0f           // max distance (units) to fire primary weapon
+#define BOT_FIRE_AIM_DOT 0.6f           // min dot(forward, to_target) to allow firing (~53 degrees)
 
 // Combat behavior constants
 #define BOT_FLEE_SHIELD_PCT 0.20f              // flee when shields < 20% of max
@@ -39,15 +39,26 @@
 #define BOT_AFTERBURNER_THRUST_MULT 1.6f       // base afterburner thrust multiplier
 #define BOT_JUKE_FREQUENCY 0.5f                // lateral oscillation frequency (Hz)
 #define BOT_AFTERBURNER_MIN_DIST (BOT_FIRE_RANGE * 3.0f) // min gap-to-target to use afterburner in HUNT
-#define BOT_JUKE_AMPLITUDE_HUNT 0.6f           // sideways thrust scale during hunt
 #define BOT_JUKE_AMPLITUDE_COMBAT 0.8f         // sideways thrust scale during combat
 #define BOT_JUKE_AMPLITUDE_FLEE 0.5f           // sideways thrust scale during flee
 #define BOT_VERTICAL_JUKE_AMPLITUDE 0.3f       // vertical oscillation amplitude
 #define BOT_COMBAT_ORBIT_FORWARD 0.5f          // forward thrust for orbit maintenance
-#define BOT_WANDER_FORWARD 0.3f                // gentle forward thrust while wandering
+
+// Afterburner burst management (Phase 3.7)
+// Bots use afterburner in controlled bursts to conserve fuel and avoid wasting energy.
+// DoFlyingControl() skips on dedicated server, so we manually manage fuel/energy sync.
+#define BOT_AB_BURST_MAX 1.0f           // max duration of a single afterburner burst (seconds)
+#define BOT_AB_COOLDOWN_INDOOR 2.5f     // cooldown between bursts in tight/indoor spaces
+#define BOT_AB_COOLDOWN_OUTDOOR 0.5f    // cooldown between bursts in open outdoor terrain
+#define BOT_AB_MIN_FUEL (BOT_AFTERBURNER_FUEL_MAX * 0.25f) // need >=25% fuel to start a burst
+#define BOT_AB_ENERGY_MIN 15.0f         // don't start a burst below this energy level
+#define BOT_AB_RECHARGE_ENERGY_MIN 20.0f // need this much energy to recharge fuel at all
+
+// Sound awareness (Phase 3.7)
+#define BOT_HEAR_AB_RADIUS 200.0f       // radius (units) to detect enemy afterburner noise
 
 enum BotState {
-  BOT_STATE_WANDER,  // No target. Background exploration.
+  BOT_STATE_EXPLORE, // No target. Roam level, react to sounds.
   BOT_STATE_HUNT,    // Has target, out of range or no LOS. Pursue.
   BOT_STATE_COMBAT,  // In range + has LOS. Circle-strafe + fire.
   BOT_STATE_FLEE,    // Low shields. Retreat from target.
@@ -75,6 +86,10 @@ struct bot_info {
   float afterburner_fuel;             // remaining fuel (seconds), 0 = empty
   float juke_phase;                   // oscillating strafe phase (radians)
   float stuck_timer;                  // seconds at near-zero speed with nonzero thrust (wall escape)
+
+  // Afterburner burst management (Phase 3.7)
+  // >0 = seconds remaining in current burst, <0 = cooldown remaining, 0 = ready for new burst
+  float afterburner_burst_timer;
 };
 
 extern bot_info Bots[MAX_BOTS];

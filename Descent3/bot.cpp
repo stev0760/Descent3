@@ -40,6 +40,7 @@
 #include "robotfire.h"
 #include "vecmat.h"
 #include "findintersection.h"
+#include "room.h"
 #include "log.h"
 
 bot_info Bots[MAX_BOTS];
@@ -61,6 +62,7 @@ static void BotCacheShipPhysics(int bot_index) {
   Bots[bot_index].ship_drag = sp.drag;
   Bots[bot_index].ship_rotdrag = sp.rotdrag;
   Bots[bot_index].afterburner_fuel = BOT_AFTERBURNER_FUEL_MAX;
+  Bots[bot_index].afterburner_burst_timer = 0.0f;
   Bots[bot_index].juke_phase = 0.0f;
   Bots[bot_index].stuck_timer = 0.0f;
   LOG_DEBUG.printf("BOT: Ship physics cached for bot %d: thrust=%.1f mass=%.1f drag=%.1f rotthrust=%.1f rotdrag=%.1f",
@@ -181,7 +183,8 @@ static void BotSetCombatGoal(int bot_index) {
   Bots[bot_index].combat_goal_index = gi;
 }
 
-// Set a flee goal — move to a position away from the target.
+// Set a flee goal — try to duck through the portal most away from the threat (cover seeking).
+// Falls back to a simple "away" position if no suitable portal exists.
 static void BotSetFleeGoal(int bot_index) {
   int slot = Bots[bot_index].player_slot;
   object *obj = &Objects[Players[slot].objnum];
@@ -192,16 +195,44 @@ static void BotSetFleeGoal(int bot_index) {
   if (!target)
     return;
 
-  // Compute flee position: current pos + direction away from target * flee distance
+  // Direction away from the threat
   vector away = obj->pos - target->pos;
   vm_NormalizeVector(&away);
-  vector flee_pos = obj->pos + away * BOT_FLEE_DISTANCE;
 
-  // Use a goal_info struct for AIG_GET_TO_POS
+  // Try to pick a portal leading away from the threat — puts geometry between us and them
+  vector flee_pos = obj->pos + away * BOT_FLEE_DISTANCE;
+  int flee_room = obj->roomnum;
+
+  if (obj->roomnum >= 0 && Rooms[obj->roomnum].used) {
+    int best_portal = -1;
+    float best_dot = -0.2f; // only use portal if it's reasonably in the away direction
+    room &cur = Rooms[obj->roomnum];
+    for (int p = 0; p < cur.num_portals; p++) {
+      int croom = cur.portals[p].croom;
+      if (croom < 0 || !Rooms[croom].used)
+        continue;
+      // Skip portals that are too small for bots
+      if (cur.portals[p].flags & PF_TOO_SMALL_FOR_ROBOT)
+        continue;
+      vector pdir = cur.portals[p].path_pnt - obj->pos;
+      vm_NormalizeVector(&pdir);
+      float d = vm_DotProduct(&pdir, &away);
+      if (d > best_dot) {
+        best_dot = d;
+        best_portal = p;
+      }
+    }
+    if (best_portal >= 0) {
+      int croom = cur.portals[best_portal].croom;
+      flee_pos = Rooms[croom].path_pnt;
+      flee_room = croom;
+    }
+  }
+
   goal_info gi_info;
   memset(&gi_info, 0, sizeof(gi_info));
   gi_info.pos = flee_pos;
-  gi_info.roomnum = obj->roomnum;
+  gi_info.roomnum = flee_room;
 
   int gi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_FLEE | GF_ORIENT_TARGET);
   Bots[bot_index].combat_goal_index = gi;
@@ -228,14 +259,14 @@ static void BotUpdateState(int bot_index) {
   bool shields_recovered = (shields > max_shields * BOT_FLEE_RECOVER_PCT);
 
   switch (old_state) {
-  case BOT_STATE_WANDER:
+  case BOT_STATE_EXPLORE:
     if (has_target)
       new_state = BOT_STATE_HUNT;
     break;
 
   case BOT_STATE_HUNT:
     if (!has_target)
-      new_state = BOT_STATE_WANDER;
+      new_state = BOT_STATE_EXPLORE;
     else if (low_shields)
       new_state = BOT_STATE_FLEE;
     else if (dist < BOT_FIRE_RANGE && has_los)
@@ -244,7 +275,7 @@ static void BotUpdateState(int bot_index) {
 
   case BOT_STATE_COMBAT:
     if (!has_target)
-      new_state = BOT_STATE_WANDER;
+      new_state = BOT_STATE_EXPLORE;
     else if (low_shields)
       new_state = BOT_STATE_FLEE;
     else if (dist > BOT_COMBAT_EXIT_RANGE)
@@ -253,7 +284,7 @@ static void BotUpdateState(int bot_index) {
 
   case BOT_STATE_FLEE:
     if (!has_target)
-      new_state = BOT_STATE_WANDER;
+      new_state = BOT_STATE_EXPLORE;
     else if (shields_recovered || dist > BOT_FLEE_DISTANCE)
       new_state = BOT_STATE_HUNT;
     break;
@@ -265,7 +296,7 @@ static void BotUpdateState(int bot_index) {
 
     // Set new goal for the new state
     switch (new_state) {
-    case BOT_STATE_WANDER:
+    case BOT_STATE_EXPLORE:
       AISetTarget(obj, OBJECT_HANDLE_NONE);
       break;
     case BOT_STATE_HUNT:
@@ -279,7 +310,7 @@ static void BotUpdateState(int bot_index) {
       break;
     }
 
-    static const char *state_names[] = {"WANDER", "HUNT", "COMBAT", "FLEE"};
+    static const char *state_names[] = {"EXPLORE", "HUNT", "COMBAT", "FLEE"};
     LOG_DEBUG.printf("BOT: '%s' state %s -> %s (dist=%.0f shields=%.0f los=%d)", Bots[bot_index].callsign,
                      state_names[old_state], state_names[new_state], dist, shields, has_los);
     Bots[bot_index].state = new_state;
@@ -312,21 +343,23 @@ static void BotApplyThrust(int bot_index) {
 
   // FSM-based speed scaling and overrides
   float speed_scale = 1.0f;
-  bool use_afterburner = false;
+  bool want_afterburner = false;
 
   object *target = ObjGet(obj->ai_info->target_handle);
   float dist_to_target = target ? vm_VectorDistanceQuick(&obj->pos, &target->pos) : 1e30f;
+  bool is_outdoor = OBJECT_OUTSIDE(obj);
 
   switch (Bots[bot_index].state) {
-  case BOT_STATE_WANDER:
+  case BOT_STATE_EXPLORE:
+    // Slow, silent movement — no afterburner, no juke, just navigate
     speed_scale = 0.3f;
     break;
 
   case BOT_STATE_HUNT:
     speed_scale = 1.0f;
-    // Afterburner only when chasing from a real distance
-    if (dist_to_target > BOT_AFTERBURNER_MIN_DIST && Bots[bot_index].afterburner_fuel > 0)
-      use_afterburner = true;
+    // Afterburner only when outdoors AND closing a large distance: silent indoors
+    if (is_outdoor && dist_to_target > BOT_AFTERBURNER_MIN_DIST)
+      want_afterburner = true;
     break;
 
   case BOT_STATE_COMBAT: {
@@ -340,35 +373,26 @@ static void BotApplyThrust(int bot_index) {
     else
       forward = orbit_error / 20.0f * BOT_COMBAT_ORBIT_FORWARD; // smooth transition
     // Keep sideways/vertical from movement_dir for wall avoidance during strafe
+    // No afterburner in combat — bot is already close, noise/fuel not worth it
     break;
   }
 
   case BOT_STATE_FLEE:
     speed_scale = 1.0f;
-    if (Bots[bot_index].afterburner_fuel > 0)
-      use_afterburner = true;
+    want_afterburner = true; // use bursts to escape, gated below by fuel/energy/burst timer
     break;
   }
 
-  // Additive juke oscillation — dodging on top of AI navigation direction
-  float juke_sideways = sinf(Bots[bot_index].juke_phase);
-  float juke_vertical = cosf(Bots[bot_index].juke_phase * 0.7f);
-
-  switch (Bots[bot_index].state) {
-  case BOT_STATE_HUNT:
-    sideways += juke_sideways * BOT_JUKE_AMPLITUDE_HUNT;
-    vertical += juke_vertical * BOT_VERTICAL_JUKE_AMPLITUDE;
-    break;
-  case BOT_STATE_COMBAT:
-    sideways += juke_sideways * BOT_JUKE_AMPLITUDE_COMBAT;
-    vertical += cosf(Bots[bot_index].juke_phase * 1.3f) * BOT_VERTICAL_JUKE_AMPLITUDE;
-    break;
-  case BOT_STATE_FLEE:
-    sideways += juke_sideways * BOT_JUKE_AMPLITUDE_FLEE;
-    vertical += cosf(Bots[bot_index].juke_phase * 0.5f) * BOT_VERTICAL_JUKE_AMPLITUDE;
-    break;
-  default:
-    break;
+  // Additive juke oscillation — only in COMBAT and FLEE (not explore or hunt)
+  if (Bots[bot_index].state == BOT_STATE_COMBAT || Bots[bot_index].state == BOT_STATE_FLEE) {
+    float juke_sideways = sinf(Bots[bot_index].juke_phase);
+    if (Bots[bot_index].state == BOT_STATE_COMBAT) {
+      sideways += juke_sideways * BOT_JUKE_AMPLITUDE_COMBAT;
+      vertical += cosf(Bots[bot_index].juke_phase * 1.3f) * BOT_VERTICAL_JUKE_AMPLITUDE;
+    } else {
+      sideways += juke_sideways * BOT_JUKE_AMPLITUDE_FLEE;
+      vertical += cosf(Bots[bot_index].juke_phase * 0.5f) * BOT_VERTICAL_JUKE_AMPLITUDE;
+    }
   }
 
   // Update juke phase
@@ -401,9 +425,47 @@ static void BotApplyThrust(int bot_index) {
       Bots[bot_index].stuck_timer = 0.0f;
   }
 
-  // Afterburner handling — matches DoPlayerAfterburnControl() punch_scalar ramp
+  // Afterburner burst management (Phase 3.7)
+  // DoFlyingControl() skips on dedicated server, so we manually manage afterburner_fuel and
+  // the energy drain/recharge cycle that would normally happen there.
+  //
+  // burst_timer > 0: actively burning this burst, counts down
+  // burst_timer < 0: in inter-burst cooldown (indoor=2.5s, outdoor=0.5s), counts up toward 0
+  // burst_timer == 0: ready to start a new burst
+  float &burst_timer = Bots[bot_index].afterburner_burst_timer;
+
+  // Advance burst/cooldown state machine
+  if (burst_timer > 0.0f) {
+    burst_timer -= Frametime;
+    if (burst_timer <= 0.0f) {
+      // Burst expired — enter cooldown
+      burst_timer = is_outdoor ? -BOT_AB_COOLDOWN_OUTDOOR : -BOT_AB_COOLDOWN_INDOOR;
+    }
+  } else if (burst_timer < 0.0f) {
+    // Count cooldown toward 0
+    burst_timer += Frametime;
+    if (burst_timer > 0.0f)
+      burst_timer = 0.0f;
+  }
+
+  // Decide whether to fire afterburner this frame
+  bool use_afterburner = false;
+  if (want_afterburner && burst_timer == 0.0f) {
+    // Start a new burst if we have enough fuel and energy
+    float fuel = Bots[bot_index].afterburner_fuel;
+    float energy = Players[slot].energy;
+    if (fuel >= BOT_AB_MIN_FUEL && energy > BOT_AB_ENERGY_MIN) {
+      burst_timer = BOT_AB_BURST_MAX;
+      use_afterburner = true;
+    }
+  } else if (want_afterburner && burst_timer > 0.0f) {
+    // Continue current burst
+    use_afterburner = true;
+  }
+
   float thrust_multiplier = 1.0f;
   if (use_afterburner) {
+    // Punch scalar ramp — matches object.cpp:2183-2190
     float fuel = Bots[bot_index].afterburner_fuel;
     float punch_scalar = 1.0f;
     if (fuel > BOT_AFTERBURNER_FUEL_MAX * 0.90f)
@@ -414,18 +476,29 @@ static void BotApplyThrust(int bot_index) {
     }
     forward = 1.0f; // afterburner forces full forward
     thrust_multiplier = BOT_AFTERBURNER_THRUST_MULT * punch_scalar;
+
+    // Drain fuel and energy (mirrors object.cpp:2198,2222 — matches Frametime per second)
     Bots[bot_index].afterburner_fuel -= Frametime;
-    if (Bots[bot_index].afterburner_fuel < 0)
-      Bots[bot_index].afterburner_fuel = 0;
+    if (Bots[bot_index].afterburner_fuel < 0.0f)
+      Bots[bot_index].afterburner_fuel = 0.0f;
+    Players[slot].energy -= Frametime;
+    if (Players[slot].energy < 0.0f)
+      Players[slot].energy = 0.0f;
+
     Players[slot].flags |= PLAYER_FLAGS_AFTERBURN_ON | PLAYER_FLAGS_THRUSTED;
   } else {
     Players[slot].flags &= ~PLAYER_FLAGS_AFTERBURN_ON;
-    // Recharge afterburner fuel
-    if (Bots[bot_index].afterburner_fuel < BOT_AFTERBURNER_FUEL_MAX) {
-      Bots[bot_index].afterburner_fuel += Frametime;
+
+    // Recharge fuel from energy when not burning (mirrors object.cpp:2208-2223)
+    // Rate: 1.0f/s normal, but DoFlyingControl skips on dedicated server so we do it here
+    if (Bots[bot_index].afterburner_fuel < BOT_AFTERBURNER_FUEL_MAX && Players[slot].energy > BOT_AB_RECHARGE_ENERGY_MIN) {
+      float recharge = Frametime;
+      Bots[bot_index].afterburner_fuel += recharge;
       if (Bots[bot_index].afterburner_fuel > BOT_AFTERBURNER_FUEL_MAX)
         Bots[bot_index].afterburner_fuel = BOT_AFTERBURNER_FUEL_MAX;
+      Players[slot].energy -= recharge; // energy is consumed during recharge (real engine behavior)
     }
+
     if (forward > 0)
       Players[slot].flags |= PLAYER_FLAGS_THRUSTED;
     else
@@ -581,8 +654,9 @@ static void BotRespawn(int bot_index) {
   Bots[bot_index].awaiting_respawn = false;
   Bots[bot_index].pursuit_goal_index = -1;
   Bots[bot_index].combat_goal_index = -1;
-  Bots[bot_index].state = BOT_STATE_WANDER;
+  Bots[bot_index].state = BOT_STATE_EXPLORE;
   Bots[bot_index].afterburner_fuel = BOT_AFTERBURNER_FUEL_MAX;
+  Bots[bot_index].afterburner_burst_timer = 0.0f;
   Bots[bot_index].juke_phase = 0.0f;
   Bots[bot_index].stuck_timer = 0.0f;
   Bots[bot_index].last_target_update = 0.0f; // force immediate re-target after respawn
@@ -598,13 +672,14 @@ void BotInitAll() {
     Bots[i].pursuit_goal_index = -1;
     Bots[i].combat_goal_index = -1;
     Bots[i].intended_team = 0;
-    Bots[i].state = BOT_STATE_WANDER;
+    Bots[i].state = BOT_STATE_EXPLORE;
     Bots[i].ship_full_thrust = 0.0f;
     Bots[i].ship_full_rotthrust = 0.0f;
     Bots[i].ship_mass = 0.0f;
     Bots[i].ship_drag = 0.0f;
     Bots[i].ship_rotdrag = 0.0f;
     Bots[i].afterburner_fuel = 0.0f;
+    Bots[i].afterburner_burst_timer = 0.0f;
     Bots[i].juke_phase = 0.0f;
     Bots[i].stuck_timer = 0.0f;
   }
@@ -626,8 +701,9 @@ void BotReinitAll() {
     Bots[i].last_target_update = 0.0f;
     Bots[i].pursuit_goal_index = -1;
     Bots[i].combat_goal_index = -1;
-    Bots[i].state = BOT_STATE_WANDER;
+    Bots[i].state = BOT_STATE_EXPLORE;
     Bots[i].afterburner_fuel = BOT_AFTERBURNER_FUEL_MAX;
+    Bots[i].afterburner_burst_timer = 0.0f;
     Bots[i].juke_phase = 0.0f;
     Bots[i].stuck_timer = 0.0f;
 
@@ -816,8 +892,9 @@ int BotAdd(const char *name, int ship_index) {
   Bots[bot_index].pursuit_goal_index = -1;
   Bots[bot_index].combat_goal_index = -1;
   Bots[bot_index].intended_team = chosen_team;
-  Bots[bot_index].state = BOT_STATE_WANDER;
+  Bots[bot_index].state = BOT_STATE_EXPLORE;
   Bots[bot_index].afterburner_fuel = BOT_AFTERBURNER_FUEL_MAX;
+  Bots[bot_index].afterburner_burst_timer = 0.0f;
   Bots[bot_index].juke_phase = 0.0f;
   Bots[bot_index].stuck_timer = 0.0f;
   BotCacheShipPhysics(bot_index);
@@ -891,9 +968,34 @@ void BotDoFrame() {
       Bots[i].death_time = Gametime;
       Bots[i].pursuit_goal_index = -1;
       Bots[i].combat_goal_index = -1;
-      Bots[i].state = BOT_STATE_WANDER;
+      Bots[i].state = BOT_STATE_EXPLORE;
       Players[slot].flags &= ~(PLAYER_FLAGS_THRUSTED | PLAYER_FLAGS_AFTERBURN_ON);
       continue;
+    }
+
+    object *obj = &Objects[Players[slot].objnum];
+
+    // Sound alerting: when exploring, check for nearby human players using afterburner.
+    // Afterburner is audible — if we detect one in range, force immediate target re-evaluation.
+    if (Bots[i].state == BOT_STATE_EXPLORE && obj->ai_info) {
+      for (int j = 0; j < MAX_NET_PLAYERS; j++) {
+        if (j == slot || !(NetPlayers[j].flags & NPF_CONNECTED))
+          continue;
+        if (NetPlayers[j].flags & NPF_BOT)
+          continue; // don't react to other bots' noise
+        if (Players[j].flags & (PLAYER_FLAGS_DEAD | PLAYER_FLAGS_DYING))
+          continue;
+        if (!BotIsPlayerEnemy(i, j))
+          continue;
+        if (!(Players[j].flags & PLAYER_FLAGS_AFTERBURN_ON))
+          continue;
+        object *noisy = &Objects[Players[j].objnum];
+        if (vm_VectorDistanceQuick(&obj->pos, &noisy->pos) < BOT_HEAR_AB_RADIUS) {
+          // Heard an enemy burning — force immediate target update
+          Bots[i].last_target_update = 0.0f;
+          break;
+        }
+      }
     }
 
     // Target acquisition + state transition (throttled)
@@ -916,7 +1018,7 @@ void BotDoFrame() {
     mov_log_counter++;
     if (mov_log_counter >= 30) {
       mov_log_counter = 0;
-      static const char *state_names[] = {"WANDER", "HUNT", "COMBAT", "FLEE"};
+      static const char *state_names[] = {"EXPLORE", "HUNT", "COMBAT", "FLEE"};
 
       // Log bot speeds
       for (int i = 0; i < MAX_BOTS; i++) {

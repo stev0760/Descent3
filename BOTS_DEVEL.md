@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Phase 3.6 complete — Engine `movement_dir` integration replaces manual thrust computation; `AIF_AVOID_WALLS` + `AIF_AUTO_AVOID_FRIENDS` for 360° wall/friend avoidance; `MakeBOA()` repair for missing pathfinding data.
+**Status:** Phase 3.7 complete — Afterburner burst management, juke only in COMBAT/FLEE, EXPLORE state with sound reactivity, portal-based cover-seeking flee.
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -28,6 +28,7 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | Mov | Movement testing infra — velocity tuning, logging, `botstat`/`botmov`, MPF_THRUSTED | Complete — live tested |
 | 3.5 | Realistic movement — thrust-based physics, inertia, afterburner, tri-chording | Complete |
 | 3.6 | Navigation — engine `movement_dir` integration, `AIF_AVOID_WALLS`, `AIF_AUTO_AVOID_FRIENDS`, BOA repair | Complete |
+| 3.7 | Behavior polish — burst afterburner, EXPLORE state, sound reactivity, portal flee, juke only in COMBAT/FLEE | Complete |
 | 1.5 | Combat polish — energy/ammo drain, lead-tracking aim | Not started |
 | 4 | Difficulty levels, configuration UI | Not started |
 
