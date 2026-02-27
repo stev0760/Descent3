@@ -10,23 +10,28 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Multiplayer Bots (Experimental)
 
-This fork introduces an experimental server-side multiplayer bot system for Descent 3. These AI-controlled bots occupy real player slots on dedicated servers, appearing as normal players to clients.
+This fork introduces an experimental server-side multiplayer bot system for Descent 3. These AI-controlled bots occupy real player slots on dedicated servers, appearing as normal players to clients. No client modifications are required — retail D3 v1.5 clients connect without changes.
 
-**Current Status: Phase 3.5 complete — thrust-based movement with real inertia, tri-chording, and afterburner.**
+**Current Status: Phase 3.9 complete.**
 
 **Key Features:**
-*   **Protocol Transparency:** Bots use the same player slots, packets, and state structures as human players. No client modifications required.
-*   **Thrust-Based Physics:** Bots use the same ship physics template (mass, drag, full_thrust) as human players. Movement is driven by synthetic thrust inputs integrated by the real physics engine, producing natural inertia and momentum.
-*   **Tri-Chording:** Forward + sideways + vertical thrust combine without normalization (matching player physics), giving bots the same √3 speed advantage human players exploit.
-*   **Afterburner:** Simulated afterburner with fuel management matching the player system (1.6×–2.88× thrust multiplier with punch scalar ramp). Clients see the afterburner flame effect.
-*   **Combat State Machine:** 4-state FSM (Wander, Hunt, Combat, Flee) with LOS-gated transitions, circle-strafe combat, and lateral evasion juking.
-*   **Game Mode Awareness:** Bots correctly identify enemies per game mode — free-for-all targets all players, team anarchy targets opposing teams only, co-op targets robots and protects players.
-*   **Target Diversity:** A congestion penalty spreads bots across multiple targets, reducing collision pile-ups.
-*   **Thruster Visuals:** PLAYER_FLAGS_THRUSTED and PLAYER_FLAGS_AFTERBURN_ON set natively — clients see thrust plumes and afterburner glow.
-*   **Console Management:** Dedicated server console commands (`addbot`, `removebot`, `removebots`, `botlist`, `botstat`, `botmov`).
+*   **Protocol Transparency:** Bots use the same player slots, packets, and state structures as human players. Retail D3 v1.5 clients see bots as normal players on the scoreboard and HUD.
+*   **Thrust-Based Physics:** Movement uses the ship's real physics template (mass, drag, full_thrust) integrated by the engine's physics system — natural inertia, momentum, and tri-chording (√3× speed when strafing all three axes simultaneously).
+*   **Afterburner:** Burst-based afterburner management with fuel/energy accounting that mirrors the player system (1.6×–2.88× thrust ramp). Clients see the flame effect. Stealth-aware: no afterburner in tight indoor spaces.
+*   **Engine Navigation:** Integrates `ai_info->movement_dir` (wall avoidance, dodge, friend avoidance) into thrust. BOA pathfinding data is rebuilt automatically when missing. Bots no longer get stuck on walls.
+*   **5-State Combat FSM:** EXPLORE → HUNT → COMBAT → FLEE → EVADE.
+    *   *EXPLORE:* Roams level room-to-room via portals, seeking powerups and players.
+    *   *HUNT:* Pursues a target using BOA-assisted pathfinding.
+    *   *COMBAT:* Circle-strafes at optimal range, fires with lead targeting, jukes laterally.
+    *   *FLEE:* Seeks cover through portals when critically low on shields.
+    *   *EVADE:* Breaks off stalled engagements to regroup before re-engaging.
+*   **Lead Targeting:** Bots aim ahead of moving targets using the weapon's real projectile velocity.
+*   **Inventory Management:** Tactical weapon hierarchy — energy-critical bots switch to ammo weapons (Vauss/Mass Driver); range-aware selection (long range: fast projectiles; close range: area weapons). Energy and ammo drain per shot matching the player system. Flares are never used in combat.
+*   **Powerup Collection:** Bots actively seek nearby powerups — shields when HP is critical, energy when low, weapons after kills.
+*   **Game Mode Awareness:** Free-for-all, team anarchy, and co-op modes handled correctly. Team assignment persists across level transitions.
+*   **Console Management:** `addbot`, `removebot`, `removebots`, `botlist`, `botstat`, `botmov` commands on the dedicated server console.
 
-**Current Limitations:**
-Bots navigate in straight lines toward targets (no BOA pathfinding) and may get stuck in geometry. Thrust physics parameters are derived from ship templates and may need tuning. See `BOTS_DEVEL.md` for full details.
+See `BOTS_DEVEL.md` for full implementation details and phase history.
 
 ## Contributing
 Anyone can contribute! We have an active Discord presence at [Descent Developer Network](https://discord.gg/GNy5CUQ). Patches should be submitted on GitHub.

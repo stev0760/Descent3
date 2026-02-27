@@ -284,18 +284,36 @@ static void BotSetEvadeGoal(int bot_index) {
   Bots[bot_index].combat_goal_index = gi;
 }
 
-// Select a weapon battery for the bot to use.
-// Strategy: stay on battery 0 (default laser) unless the bot has picked up other weapons,
-// in which case pick randomly from the acquired non-default batteries.
-// Flares (FLARE_INDEX) are always excluded — they're for lighting, not combat.
+// Select the best weapon battery for the current tactical situation.
+//
+// Decision tree (from d3-weapons-expert tactical hierarchy):
+//   1. Energy critically low → ammo-based weapon (Vauss/Mass Driver) — no energy cost
+//   2. Long range (dist > BOT_WEAPON_LONGRANGE_DIST) → fast-projectile energy weapon
+//   3. Close range (dist < BOT_WEAPON_CLOSERANGE_DIST) → slow/area energy weapon
+//   4. Otherwise → pick randomly from all acquired energy weapons
+//   5. Fallback: battery 0 (default Laser)
+//
+// Flares are always excluded. Battery 0 (default laser) is the guaranteed fallback.
+// Ammo weapons: identified by Ships[ship_idx].max_ammo[wb] > 0 (Vauss, Mass Driver, missiles).
+// Range split: Weapons[id].phys_info.velocity magnitude separates sniper vs. close-quarter.
 static void BotSelectBestWeapon(int bot_index) {
   int slot = Bots[bot_index].player_slot;
   int ship_idx = Bots[bot_index].ship_index;
+  float energy = Players[slot].energy;
 
-  // Collect acquired (non-default, non-flare, usable) weapon batteries.
-  // Battery 0 is the default laser — always available as fallback.
-  int acquired[MAX_PLAYER_WEAPONS];
-  int num_acquired = 0;
+  // Determine combat distance for range-based selection
+  object *obj = &Objects[Players[slot].objnum];
+  float dist = 1e30f;
+  if (obj->ai_info) {
+    object *tgt = ObjGet(obj->ai_info->target_handle);
+    if (tgt)
+      dist = vm_VectorDistanceQuick(&obj->pos, &tgt->pos);
+  }
+
+  // Categorize all owned, usable, non-flare batteries into three tactical buckets
+  int ammo_wb[MAX_PLAYER_WEAPONS], num_ammo = 0;       // ammo-based (no energy cost)
+  int long_wb[MAX_PLAYER_WEAPONS], num_long = 0;       // energy + fast projectile
+  int close_wb[MAX_PLAYER_WEAPONS], num_close = 0;     // energy + slow/area projectile
 
   for (int wb = 1; wb < MAX_PLAYER_WEAPONS; wb++) {
     if (!(Players[slot].weapon_flags & (1u << wb)))
@@ -305,28 +323,133 @@ static void BotSelectBestWeapon(int bot_index) {
     int weapon_id = wbinfo.gp_weapon_index[0];
     if (weapon_id <= 0 || weapon_id >= MAX_WEAPONS)
       continue;
-
-    // Never use flares in combat — they're for lighting and door-opening
     if (weapon_id == FLARE_INDEX)
-      continue;
+      continue; // never use flares in combat
 
-    // Must have ammo or enough energy
+    bool uses_ammo = Ships[ship_idx].max_ammo[wb] > 0;
     bool has_ammo = Players[slot].weapon_ammo[wb] > 0;
-    bool has_energy = Players[slot].energy > 10.0f;
-    if (!has_ammo && !has_energy)
+    bool has_energy = energy > 10.0f;
+
+    if (uses_ammo && !has_ammo)
+      continue;
+    if (!uses_ammo && !has_energy)
       continue;
 
-    acquired[num_acquired++] = wb;
+    if (uses_ammo) {
+      ammo_wb[num_ammo++] = wb;
+    } else {
+      float proj_speed = vm_GetMagnitude(&Weapons[weapon_id].phys_info.velocity);
+      if (proj_speed >= BOT_WEAPON_LONGRANGE_VEL)
+        long_wb[num_long++] = wb;
+      else
+        close_wb[num_close++] = wb;
+    }
   }
 
-  // Stay on default (0) unless we've acquired something else
-  int best_wb = (num_acquired > 0) ? acquired[rand() % num_acquired] : 0;
+  // Apply tactical hierarchy
+  int best_wb = 0; // default: battery 0 (Laser)
+
+  if (energy < BOT_ENERGY_LOW_WEAPON && num_ammo > 0) {
+    // Step 1: energy critical — switch to ammo weapon to conserve (Vauss/Mass Driver)
+    best_wb = ammo_wb[rand() % num_ammo];
+  } else if (dist > BOT_WEAPON_LONGRANGE_DIST && num_long > 0) {
+    // Step 2: long range — fast projectile wins (Super Laser, Plasma, Mass Driver)
+    best_wb = long_wb[rand() % num_long];
+  } else if (dist < BOT_WEAPON_CLOSERANGE_DIST && num_close > 0) {
+    // Step 3: close range — slow/area weapons shine (Napalm, Microwave, Fusion)
+    best_wb = close_wb[rand() % num_close];
+  } else {
+    // Step 4: medium range — pick randomly from all acquired non-flare batteries
+    int all[MAX_PLAYER_WEAPONS], num_all = 0;
+    for (int i = 0; i < num_long; i++) all[num_all++] = long_wb[i];
+    for (int i = 0; i < num_close; i++) all[num_all++] = close_wb[i];
+    for (int i = 0; i < num_ammo; i++) all[num_all++] = ammo_wb[i];
+    if (num_all > 0)
+      best_wb = all[rand() % num_all];
+    // else: stay on battery 0 (default Laser)
+  }
 
   if (best_wb != Players[slot].weapon[PW_PRIMARY].index) {
-    LOG_DEBUG.printf("BOT: '%s' weapon switch: battery %d → %d", Bots[bot_index].callsign,
-                     Players[slot].weapon[PW_PRIMARY].index, best_wb);
+    LOG_DEBUG.printf("BOT: '%s' weapon switch: battery %d → %d (energy=%.0f dist=%.0f)", Bots[bot_index].callsign,
+                     Players[slot].weapon[PW_PRIMARY].index, best_wb, energy, dist);
     Players[slot].weapon[PW_PRIMARY].index = best_wb;
   }
+}
+
+// Navigate the bot portal-to-portal through the level when in EXPLORE state with no nearby pickups.
+// Picks a random reachable room from the current position and sets AIG_GET_TO_POS toward it.
+// Called from BotUpdateState() every 0.5s tick when no powerup goal is active.
+// Uses pursuit_goal_index — cleared automatically when leaving EXPLORE via BotClearActiveGoal().
+static void BotDoExploreRoaming(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  if (!obj->ai_info || obj->roomnum < 0)
+    return;
+
+  // Still navigating to current destination — don't change course until we arrive or time out
+  if (Bots[bot_index].explore_dest_room >= 0 && Bots[bot_index].explore_room_timer > 0.0f) {
+    if (obj->roomnum != Bots[bot_index].explore_dest_room)
+      return; // still en route
+    // Arrived — fall through to pick next destination
+  }
+
+  if (!Rooms[obj->roomnum].used)
+    return;
+
+  // Build candidate portal list from the current room and one level deeper.
+  // Deeper reach gives more varied destinations and reduces back-and-forth bouncing.
+  int candidates[24]; // room indices of reachable destinations
+  int num_candidates = 0;
+
+  room &cur = Rooms[obj->roomnum];
+  for (int p = 0; p < cur.num_portals && num_candidates < 8; p++) {
+    int r1 = cur.portals[p].croom;
+    if (r1 < 0 || !Rooms[r1].used)
+      continue;
+    if (cur.portals[p].flags & PF_TOO_SMALL_FOR_ROBOT)
+      continue;
+    // Skip the room we just came from if there are other options (avoids ping-pong)
+    if (r1 == Bots[bot_index].explore_dest_room && cur.num_portals > 1)
+      continue;
+    candidates[num_candidates++] = r1;
+
+    // Also look one portal deeper from r1 for more varied routing
+    if (BOT_EXPLORE_PORTAL_DEPTH >= 2) {
+      room &r1room = Rooms[r1];
+      for (int p2 = 0; p2 < r1room.num_portals && num_candidates < 24; p2++) {
+        int r2 = r1room.portals[p2].croom;
+        if (r2 < 0 || r2 == obj->roomnum || !Rooms[r2].used)
+          continue;
+        if (r1room.portals[p2].flags & PF_TOO_SMALL_FOR_ROBOT)
+          continue;
+        candidates[num_candidates++] = r2;
+      }
+    }
+  }
+
+  if (num_candidates == 0)
+    return; // dead end room — wander goal handles orientation
+
+  // Pick a random destination from candidates
+  int dest_room = candidates[rand() % num_candidates];
+
+  // Clear old explore goal and set new AIG_GET_TO_POS destination
+  int &pgi = Bots[bot_index].pursuit_goal_index;
+  if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+    GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+  pgi = -1;
+
+  goal_info gi_info;
+  memset(&gi_info, 0, sizeof(gi_info));
+  gi_info.pos = Rooms[dest_room].path_pnt;
+  gi_info.roomnum = dest_room;
+
+  pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
+  Bots[bot_index].explore_dest_room = dest_room;
+  Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME;
+
+  LOG_DEBUG.printf("BOT: '%s' explore → room %d (from room %d)", Bots[bot_index].callsign, dest_room,
+                   obj->roomnum);
 }
 
 // Scan nearby objects for the most valuable powerup this bot should collect.
@@ -409,7 +532,7 @@ static void BotUpdateState(int bot_index) {
     if (has_target) {
       new_state = BOT_STATE_HUNT;
     } else {
-      // No combat target — try to collect a nearby powerup
+      // Priority 1: seek a nearby powerup (shields > energy > any)
       bool need_shields = (shields < max_shields * BOT_LOW_SHIELDS_PCT);
       int pu_obj = BotFindBestPowerup(bot_index, need_shields, low_energy);
       if (pu_obj >= 0) {
@@ -421,6 +544,12 @@ static void BotUpdateState(int bot_index) {
         int tgt_handle = Objects[pu_obj].handle;
         pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f,
                           GF_SPEED_ATTACK | GF_USE_BLINE_IF_SEES_GOAL);
+        // Reset roaming state so we resume searching after collecting
+        Bots[bot_index].explore_dest_room = -1;
+        Bots[bot_index].explore_room_timer = 0.0f;
+      } else {
+        // Priority 2: no powerup nearby — roam room-to-room searching for targets and items
+        BotDoExploreRoaming(bot_index);
       }
     }
     break;
@@ -467,6 +596,8 @@ static void BotUpdateState(int bot_index) {
     switch (new_state) {
     case BOT_STATE_EXPLORE:
       AISetTarget(obj, OBJECT_HANDLE_NONE);
+      Bots[bot_index].explore_dest_room = -1;  // start fresh room search
+      Bots[bot_index].explore_room_timer = 0.0f;
       break;
     case BOT_STATE_HUNT:
       BotSetPursuitGoal(bot_index);
@@ -785,6 +916,8 @@ static void BotSelectTarget(int bot_index) {
 // Fire the bot's primary weapon at its current AI target if in range and aimed.
 // Bypasses ai_fire() (which is OBJ_PLAYER-unsafe) by calling WBFireBattery() directly.
 // AIF_DISABLE_FIRING remains set so the AI pipeline never calls ai_fire() on bots.
+// Resource drain mirrors WeaponFire.cpp:2996-3009 — WBFireBattery() alone does NOT drain
+// energy or ammo; the caller is always responsible for that in the normal player path.
 static void BotDoFiring(int bot_index) {
   int bot_slot = Bots[bot_index].player_slot;
   object *obj = &Objects[Players[bot_slot].objnum];
@@ -833,8 +966,32 @@ static void BotDoFiring(int bot_index) {
   if (dot < BOT_FIRE_AIM_DOT)
     return;
 
-  if (WBIsBatteryReady(obj, wb, wb_index))
+  // Pre-fire resource check: skip and switch weapon if we've run dry.
+  // Mirrors WeaponFire.cpp:2930-2950 (energy/ammo guard before firing).
+  if (wb->energy_usage > 0.0f && Players[bot_slot].energy <= 0.0f) {
+    BotSelectBestWeapon(bot_index); // switch to an ammo weapon or laser
+    return;
+  }
+  if (wb->ammo_usage > 0.0f && Players[bot_slot].weapon_ammo[wb_index] == 0) {
+    BotSelectBestWeapon(bot_index); // pick next available weapon
+    return;
+  }
+
+  if (WBIsBatteryReady(obj, wb, wb_index)) {
     WBFireBattery(obj, wb, 0, wb_index);
+
+    // Drain energy and ammo per shot — mirrors WeaponFire.cpp:2996-3009.
+    // WBFireBattery creates the projectile only; resource accounting is the caller's job.
+    Players[bot_slot].energy -= wb->energy_usage;
+    if (Players[bot_slot].energy < 0.0f)
+      Players[bot_slot].energy = 0.0f;
+
+    if (wb->ammo_usage > 0.0f) {
+      int drain = (int)wb->ammo_usage;
+      uint16_t &ammo = Players[bot_slot].weapon_ammo[wb_index];
+      ammo = (ammo >= (uint16_t)drain) ? ammo - (uint16_t)drain : 0;
+    }
+  }
 }
 
 // Respawn a dead bot.
@@ -862,6 +1019,8 @@ static void BotRespawn(int bot_index) {
   Bots[bot_index].stuck_timer = 0.0f;
   Bots[bot_index].combat_idle_timer = 0.0f;
   Bots[bot_index].evade_timer = 0.0f;
+  Bots[bot_index].explore_dest_room = -1;
+  Bots[bot_index].explore_room_timer = 0.0f;
   Bots[bot_index].last_target_update = 0.0f; // force immediate re-target after respawn
   BotSelectBestWeapon(bot_index);             // equip best available weapon on respawn
   LOG_DEBUG.printf("BOT: '%s' respawned in slot %d", Bots[bot_index].callsign, slot);
@@ -889,6 +1048,8 @@ void BotInitAll() {
     Bots[i].combat_idle_timer = 0.0f;
     Bots[i].evade_timer = 0.0f;
     Bots[i].powerup_goal_index = -1;
+    Bots[i].explore_dest_room = -1;
+    Bots[i].explore_room_timer = 0.0f;
   }
   Num_bots = 0;
 }
@@ -916,6 +1077,8 @@ void BotReinitAll() {
     Bots[i].stuck_timer = 0.0f;
     Bots[i].combat_idle_timer = 0.0f;
     Bots[i].evade_timer = 0.0f;
+    Bots[i].explore_dest_room = -1;
+    Bots[i].explore_room_timer = 0.0f;
 
     // Restore NetPlayers sequence (level end sets NETSEQ_WAITING_FOR_LEVEL)
     NetPlayers[slot].sequence = NETSEQ_PLAYING;
@@ -1110,6 +1273,8 @@ int BotAdd(const char *name, int ship_index) {
   Bots[bot_index].stuck_timer = 0.0f;
   Bots[bot_index].combat_idle_timer = 0.0f;
   Bots[bot_index].evade_timer = 0.0f;
+  Bots[bot_index].explore_dest_room = -1;
+  Bots[bot_index].explore_room_timer = 0.0f;
   BotCacheShipPhysics(bot_index);
   Num_bots++;
 
@@ -1185,6 +1350,8 @@ void BotDoFrame() {
       Bots[i].state = BOT_STATE_EXPLORE;
       Bots[i].combat_idle_timer = 0.0f;
       Bots[i].evade_timer = 0.0f;
+      Bots[i].explore_dest_room = -1;
+      Bots[i].explore_room_timer = 0.0f;
       Players[slot].flags &= ~(PLAYER_FLAGS_THRUSTED | PLAYER_FLAGS_AFTERBURN_ON);
       continue;
     }
@@ -1219,6 +1386,8 @@ void BotDoFrame() {
       Bots[i].combat_idle_timer += Frametime;
     else if (Bots[i].state == BOT_STATE_EVADE)
       Bots[i].evade_timer -= Frametime;
+    else if (Bots[i].state == BOT_STATE_EXPLORE && Bots[i].explore_room_timer > 0.0f)
+      Bots[i].explore_room_timer -= Frametime;
 
     // Target acquisition + state transition (throttled)
     if (Gametime - Bots[i].last_target_update > BOT_TARGET_UPDATE_INTERVAL) {

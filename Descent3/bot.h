@@ -68,6 +68,22 @@
 #define BOT_LOW_SHIELDS_PCT 0.30f      // seek shield powerups when below 30% shields
 #define BOT_LOW_ENERGY 25.0f           // seek energy powerups when below 25 energy units
 
+// Inventory management (Phase 3.9)
+// Weapon selection uses energy level and combat distance to pick the best available weapon.
+//   Low energy  → prefer ammo-based weapons (Vauss, Mass Driver) — no energy cost
+//   Long range  → prefer fast-projectile weapons (proj_speed > BOT_WEAPON_LONGRANGE_VEL)
+//   Close range → prefer slow/area weapons (proj_speed < BOT_WEAPON_CLOSERANGE_VEL)
+#define BOT_ENERGY_LOW_WEAPON 15.0f       // energy threshold to switch to ammo weapons
+#define BOT_WEAPON_LONGRANGE_VEL 150.0f   // projectile velocity above which weapon is "long range"
+#define BOT_WEAPON_CLOSERANGE_VEL 60.0f   // projectile velocity below which weapon is "close range"
+#define BOT_WEAPON_LONGRANGE_DIST 120.0f  // combat dist (units) to apply long-range selection
+#define BOT_WEAPON_CLOSERANGE_DIST 40.0f  // combat dist (units) to apply close-range selection
+
+// EXPLORE state room roaming (Phase 3.9)
+// Bots navigate portal-to-portal through the level searching for players and pickups.
+#define BOT_EXPLORE_ROOM_TIME 5.0f     // max seconds to spend navigating to one explore destination
+#define BOT_EXPLORE_PORTAL_DEPTH 2     // max portals deep to look when picking a random dest room
+
 enum BotState {
   BOT_STATE_EXPLORE, // No target. Roam level, collect powerups, react to sounds.
   BOT_STATE_HUNT,    // Has target, out of range or no LOS. Pursue.
@@ -109,6 +125,10 @@ struct bot_info {
 
   // Powerup seeking (Phase 3.8)
   int powerup_goal_index; // goal index of AIG_GET_TO_OBJ powerup pursuit goal, or -1
+
+  // EXPLORE room roaming (Phase 3.9)
+  int explore_dest_room;    // Rooms[] index the bot is currently navigating toward, -1 = none
+  float explore_room_timer; // counts down; when <=0 bot picks a new destination room
 };
 
 extern bot_info Bots[MAX_BOTS];
