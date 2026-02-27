@@ -103,6 +103,32 @@
 #define BOT_POWERUP_INTERRUPT_RADIUS 120.0f // scan radius to interrupt combat for pickup
 #define BOT_POWERUP_INTERRUPT_PRIORITY 15   // minimum powerup priority that triggers combat interrupt
 
+// Equipment-based behavior (Phase 3.11)
+// Bots self-classify their loadout into three tiers each target-update tick.
+// The tier drives flee aggression, target selection bias, and rampage mode.
+#define BOT_EQUIP_TIER_WEAK   0   // only default Laser (battery 0)
+#define BOT_EQUIP_TIER_GOOD   1   // Super Laser/Vauss/Mass Driver (batteries 1-3)
+#define BOT_EQUIP_TIER_ELITE  2   // Napalm/Microwave/Plasma/EMD/Fusion/Omega (batteries 4-9)
+
+#define BOT_RAMPAGE_FLEE_PCT    0.12f  // elite bots barely flee (12% shields — rampage mode)
+#define BOT_WEAK_FLEE_PCT       0.40f  // ill-equipped bots flee early (40% shields)
+#define BOT_RAMPAGE_AGRO_BONUS  60.0f  // score reduction: elite bot vs weak target (prefer easy prey)
+#define BOT_OUTGUNNED_PENALTY   80.0f  // score increase: weak bot vs elite target (avoid the beast)
+
+// Close-quarters dynamic turn rate (Phase 3.11)
+// Tighter tracking at close range improves hit accuracy in dogfights.
+#define BOT_CLOSERANGE_DIST      70.0f
+#define BOT_MIDRANGE_DIST       140.0f
+#define BOT_CLOSERANGE_TURNRATE  45000
+#define BOT_MIDRANGE_TURNRATE    26000
+#define BOT_LONGRANGE_TURNRATE   16000  // matches original BotConfigureAI value
+
+// AB burst toward distant weapon pickups in EXPLORE
+#define BOT_PICKUP_AB_DIST 250.0f
+
+// Countermeasure deployment (Phase 3.11)
+#define BOT_COUNTERMEASURE_INTERVAL 5.0f // seconds between flare deployments in COMBAT/FLEE
+
 enum BotState {
   BOT_STATE_EXPLORE, // No target. Roam level, collect powerups, react to sounds.
   BOT_STATE_HUNT,    // Has target, out of range or no LOS. Pursue.
@@ -148,6 +174,9 @@ struct bot_info {
   // EXPLORE room roaming (Phase 3.9)
   int explore_dest_room;    // Rooms[] index the bot is currently navigating toward, -1 = none
   float explore_room_timer; // counts down; when <=0 bot picks a new destination room
+
+  // Countermeasure deployment (Phase 3.11)
+  float countermeasure_timer; // counts down; deploys flare when <=0 in COMBAT/FLEE
 };
 
 extern bot_info Bots[MAX_BOTS];

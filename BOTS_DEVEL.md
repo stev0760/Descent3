@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Phase 3.10 complete — Secondary weapon firing, aggressive weapon pickup prioritization, dynamic path pool expansion.
+**Status:** Phase 3.11 complete — Equipment tiers, countermeasures, close-quarters turn rate, weapon-before-target priority.
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -33,6 +33,7 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | 3.9 | Inventory management — tactical weapon hierarchy (energy/range/ammo), EXPLORE room-to-room roaming | Complete |
 | 1.5 | Combat polish — energy/ammo drain per shot, pre-fire resource guard, auto weapon switch on empty | Complete |
 | 3.10 | Secondary weapon firing (missiles), aggressive weapon pickup priorities, aipath pool fix, EXPLORE speed-up when chasing pickups | Complete |
+| 3.11 | Equipment tiers (WEAK/GOOD/ELITE), dynamic flee threshold, countermeasure flares, close-range turn rate, weapon-pickup-before-HUNT, target scoring bias | Complete |
 | 4 | Difficulty levels, configuration UI | Not started |
 
 ## Files

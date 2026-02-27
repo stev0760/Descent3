@@ -504,6 +504,27 @@ static void BotDoSecondaryFiring(int bot_index) {
   }
 }
 
+// Deploy a flare countermeasure if the bot has any and the battery is ready.
+// Called in COMBAT and FLEE states on a BOT_COUNTERMEASURE_INTERVAL cooldown.
+static void BotDeployCountermeasure(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  if (!(Players[slot].weapon_flags & (1u << FLARE_INDEX)))
+    return;
+  if (Players[slot].weapon_ammo[FLARE_INDEX] == 0)
+    return;
+  object *obj = &Objects[Players[slot].objnum];
+  otype_wb_info *wb = &Ships[Players[slot].ship_index].static_wb[FLARE_INDEX];
+  if (!WBIsBatteryReady(obj, wb, FLARE_INDEX))
+    return;
+  WBFireBattery(obj, wb, 0, FLARE_INDEX);
+  if (wb->ammo_usage > 0.0f) {
+    int drain = (int)wb->ammo_usage;
+    uint16_t &ammo = Players[slot].weapon_ammo[FLARE_INDEX];
+    ammo = (ammo >= (uint16_t)drain) ? ammo - (uint16_t)drain : 0;
+  }
+  LOG_DEBUG.printf("BOT: '%s' deployed flare countermeasure", Bots[bot_index].callsign);
+}
+
 // Navigate the bot portal-to-portal through the level when in EXPLORE state with no nearby pickups.
 // Picks a random reachable room from the current position and sets AIG_GET_TO_POS toward it.
 // Called from BotUpdateState() every 0.5s tick when no powerup goal is active.
@@ -601,6 +622,30 @@ static bool BotHasNoSecondaries(int bot_index) {
   return true;
 }
 
+// Classify this bot's primary weapon loadout into a tier.
+// Used to adjust flee threshold, target selection bias, and rampage behavior.
+static int BotGetEquipmentRating(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  for (int wb = 4; wb <= 9; wb++) // Plasma/EMD/Fusion/Omega/Napalm/Microwave
+    if (Players[slot].weapon_flags & (1u << wb))
+      return BOT_EQUIP_TIER_ELITE;
+  for (int wb = 1; wb <= 3; wb++) // Super Laser/Vauss/Mass Driver
+    if (Players[slot].weapon_flags & (1u << wb))
+      return BOT_EQUIP_TIER_GOOD;
+  return BOT_EQUIP_TIER_WEAK;
+}
+
+// Classify a target player's primary weapon loadout into a tier.
+static int BotGetTargetEquipmentRating(int target_slot) {
+  for (int wb = 4; wb <= 9; wb++)
+    if (Players[target_slot].weapon_flags & (1u << wb))
+      return BOT_EQUIP_TIER_ELITE;
+  for (int wb = 1; wb <= 3; wb++)
+    if (Players[target_slot].weapon_flags & (1u << wb))
+      return BOT_EQUIP_TIER_GOOD;
+  return BOT_EQUIP_TIER_WEAK;
+}
+
 // Scan nearby objects for the most valuable powerup this bot should collect.
 // Returns Objects[] index of the best powerup, or -1 if none found.
 //
@@ -658,12 +703,14 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
       priority = no_secondaries ? 12 : 4;
     else if (strstr(lower, "concussion") || strstr(lower, "mortar") || strstr(lower, "frag"))
       priority = no_secondaries ? 9 : 3;
-    else if (only_default && (strstr(lower, "plasma") || strstr(lower, "vauss") ||
-                               strstr(lower, "super laser") || strstr(lower, "mass driver")))
-      priority = 12; // grab good primary weapons when stuck with default laser
-    else if (only_default && (strstr(lower, "napalm") || strstr(lower, "microwave") ||
-                               strstr(lower, "fusion") || strstr(lower, "omega") || strstr(lower, "emd")))
-      priority = 9;
+    // High-value dogfighting primaries — always worth grabbing; priority 2× higher when bare
+    else if (strstr(lower, "vauss") || strstr(lower, "plasma") ||
+             strstr(lower, "super laser") || strstr(lower, "emd") || strstr(lower, "electro"))
+      priority = only_default ? 16 : 8;
+    else if (strstr(lower, "fusion") || strstr(lower, "omega") || strstr(lower, "microwave"))
+      priority = only_default ? 13 : 6;
+    else if (strstr(lower, "napalm") || strstr(lower, "mass driver"))
+      priority = only_default ? 10 : 4;
     else if (strstr(lower, "shield") || strstr(lower, "energy"))
       priority = 1; // not needed but grab if nothing better
     else
@@ -736,36 +783,53 @@ static void BotUpdateState(int bot_index) {
   float max_shields = INITIAL_SHIELDS; // from player_external.h
   bool has_target = (target != nullptr);
   bool has_los = has_target && BotHasLOS(obj, target);
-  bool low_shields = (shields < max_shields * BOT_FLEE_SHIELD_PCT);
   bool shields_recovered = (shields > max_shields * BOT_FLEE_RECOVER_PCT);
   bool low_energy = (Players[slot].energy < BOT_LOW_ENERGY);
 
+  // Dynamic flee threshold based on equipment tier (Phase 3.11)
+  // Elite bots fight longer; bare-laser bots retreat much earlier.
+  int bot_equip = BotGetEquipmentRating(bot_index);
+  float flee_pct = (bot_equip >= BOT_EQUIP_TIER_ELITE) ? BOT_RAMPAGE_FLEE_PCT
+                 : (bot_equip == BOT_EQUIP_TIER_WEAK)  ? BOT_WEAK_FLEE_PCT
+                 :                                        BOT_FLEE_SHIELD_PCT;
+  bool low_shields = (shields < max_shields * flee_pct);
+
   switch (old_state) {
-  case BOT_STATE_EXPLORE:
-    if (has_target) {
-      new_state = BOT_STATE_HUNT;
+  case BOT_STATE_EXPLORE: {
+    // Always seek powerups — even when transitioning to HUNT (fix: was skipped when has_target)
+    bool need_sh = (shields < max_shields * BOT_LOW_SHIELDS_PCT);
+    int pu_obj = BotFindBestPowerup(bot_index, need_sh, low_energy);
+    bool holding_for_weapon = false;
+    if (pu_obj >= 0) {
+      // Check if this powerup is a weapon (not health/energy)
+      const char *raw = Object_info[Objects[pu_obj].id].name;
+      char lower[64] = {};
+      strncpy(lower, raw, sizeof(lower) - 1);
+      for (int k = 0; lower[k]; k++)
+        lower[k] = (char)tolower((unsigned char)lower[k]);
+      bool is_weapon = !(strstr(lower, "shield") || strstr(lower, "energy"));
+      // Delay HUNT transition to grab weapons when bare — weapon > target when unarmed
+      holding_for_weapon = is_weapon && BotHasOnlyDefaultPrimary(bot_index);
+
+      // Refresh powerup pursuit goal each tick (powerup may disappear)
+      int &pgi = Bots[bot_index].powerup_goal_index;
+      if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+        GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+      pgi = -1;
+      int tgt_handle = Objects[pu_obj].handle;
+      pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f,
+                        GF_SPEED_ATTACK | GF_USE_BLINE_IF_SEES_GOAL);
+      // Reset roaming state so we resume searching after collecting
+      Bots[bot_index].explore_dest_room = -1;
+      Bots[bot_index].explore_room_timer = 0.0f;
     } else {
-      // Priority 1: seek a nearby powerup (shields > energy > any)
-      bool need_shields = (shields < max_shields * BOT_LOW_SHIELDS_PCT);
-      int pu_obj = BotFindBestPowerup(bot_index, need_shields, low_energy);
-      if (pu_obj >= 0) {
-        // Refresh powerup pursuit goal each tick (powerup may have been picked up)
-        int &pgi = Bots[bot_index].powerup_goal_index;
-        if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
-          GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
-        pgi = -1;
-        int tgt_handle = Objects[pu_obj].handle;
-        pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f,
-                          GF_SPEED_ATTACK | GF_USE_BLINE_IF_SEES_GOAL);
-        // Reset roaming state so we resume searching after collecting
-        Bots[bot_index].explore_dest_room = -1;
-        Bots[bot_index].explore_room_timer = 0.0f;
-      } else {
-        // Priority 2: no powerup nearby — roam room-to-room searching for targets and items
-        BotDoExploreRoaming(bot_index);
-      }
+      // No powerup nearby — roam room-to-room searching for targets and items
+      BotDoExploreRoaming(bot_index);
     }
+    if (has_target && !holding_for_weapon)
+      new_state = BOT_STATE_HUNT;
     break;
+  }
 
   case BOT_STATE_HUNT:
     if (!has_target)
@@ -871,13 +935,24 @@ static void BotApplyThrust(int bot_index) {
   float dist_to_target = target ? vm_VectorDistanceQuick(&obj->pos, &target->pos) : 1e30f;
   bool is_outdoor = OBJECT_OUTSIDE(obj);
 
+  // Dynamic turn rate: tighter close-quarters tracking (Phase 3.11)
+  {
+    int turn_rate = (dist_to_target < BOT_CLOSERANGE_DIST) ? BOT_CLOSERANGE_TURNRATE
+                  : (dist_to_target < BOT_MIDRANGE_DIST)   ? BOT_MIDRANGE_TURNRATE
+                  :                                          BOT_LONGRANGE_TURNRATE;
+    obj->ai_info->max_turn_rate = turn_rate;
+  }
+
   switch (Bots[bot_index].state) {
   case BOT_STATE_EXPLORE:
-    // Full speed when actively chasing a powerup; slow + silent when roaming
-    if (Bots[bot_index].powerup_goal_index >= 0)
+    // Full speed when actively chasing a powerup (with outdoor AB bursts); slow + silent when roaming
+    if (Bots[bot_index].powerup_goal_index >= 0) {
       speed_scale = 1.0f;
-    else
+      if (is_outdoor)
+        want_afterburner = true; // short burst toward outdoor pickups
+    } else {
       speed_scale = 0.3f;
+    }
     break;
 
   case BOT_STATE_HUNT:
@@ -1094,6 +1169,16 @@ static void BotSelectTarget(int bot_index) {
 
     float dist = vm_VectorDistanceQuick(&obj->pos, &Objects[Players[i].objnum].pos);
     float score = dist + slot_bot_count[i] * 80.0f; // penalize congested targets
+
+    // Equipment differential scoring (Phase 3.11): elite bots prefer weak targets;
+    // weak bots avoid elite opponents.
+    int bot_rating = BotGetEquipmentRating(bot_index);
+    int tgt_rating = BotGetTargetEquipmentRating(i);
+    if (bot_rating >= BOT_EQUIP_TIER_ELITE && tgt_rating == BOT_EQUIP_TIER_WEAK)
+      score -= BOT_RAMPAGE_AGRO_BONUS; // rampage: hunt the weak
+    else if (bot_rating == BOT_EQUIP_TIER_WEAK && tgt_rating >= BOT_EQUIP_TIER_ELITE)
+      score += BOT_OUTGUNNED_PENALTY; // underarmed: avoid the elite
+
     if (score < best_score) {
       best_score = score;
       best_player_slot = i;
@@ -1239,6 +1324,7 @@ static void BotRespawn(int bot_index) {
   Bots[bot_index].evade_timer = 0.0f;
   Bots[bot_index].explore_dest_room = -1;
   Bots[bot_index].explore_room_timer = 0.0f;
+  Bots[bot_index].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
   Bots[bot_index].last_target_update = 0.0f; // force immediate re-target after respawn
   BotSelectBestWeapon(bot_index);    // equip best primary weapon on respawn
   BotSelectBestSecondary(bot_index); // equip best secondary weapon on respawn
@@ -1269,6 +1355,7 @@ void BotInitAll() {
     Bots[i].powerup_goal_index = -1;
     Bots[i].explore_dest_room = -1;
     Bots[i].explore_room_timer = 0.0f;
+    Bots[i].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
   }
   Num_bots = 0;
 }
@@ -1298,6 +1385,7 @@ void BotReinitAll() {
     Bots[i].evade_timer = 0.0f;
     Bots[i].explore_dest_room = -1;
     Bots[i].explore_room_timer = 0.0f;
+    Bots[i].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
 
     // Restore NetPlayers sequence (level end sets NETSEQ_WAITING_FOR_LEVEL)
     NetPlayers[slot].sequence = NETSEQ_PLAYING;
@@ -1494,6 +1582,7 @@ int BotAdd(const char *name, int ship_index) {
   Bots[bot_index].evade_timer = 0.0f;
   Bots[bot_index].explore_dest_room = -1;
   Bots[bot_index].explore_room_timer = 0.0f;
+  Bots[bot_index].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
   BotCacheShipPhysics(bot_index);
   BotSelectBestSecondary(bot_index); // equip best secondary weapon at spawn
   Num_bots++;
@@ -1572,6 +1661,7 @@ void BotDoFrame() {
       Bots[i].evade_timer = 0.0f;
       Bots[i].explore_dest_room = -1;
       Bots[i].explore_room_timer = 0.0f;
+      Bots[i].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
       Players[slot].flags &= ~(PLAYER_FLAGS_THRUSTED | PLAYER_FLAGS_AFTERBURN_ON);
       continue;
     }
@@ -1609,6 +1699,10 @@ void BotDoFrame() {
     else if (Bots[i].state == BOT_STATE_EXPLORE && Bots[i].explore_room_timer > 0.0f)
       Bots[i].explore_room_timer -= Frametime;
 
+    // Countermeasure cooldown
+    if (Bots[i].countermeasure_timer > 0.0f)
+      Bots[i].countermeasure_timer -= Frametime;
+
     // Target acquisition + state transition (throttled)
     if (Gametime - Bots[i].last_target_update > BOT_TARGET_UPDATE_INTERVAL) {
       BotSelectTarget(i);
@@ -1625,6 +1719,16 @@ void BotDoFrame() {
     if (Bots[i].state == BOT_STATE_COMBAT) {
       BotDoFiring(i);
       BotDoSecondaryFiring(i);
+      // Deploy countermeasure flare on interval (Phase 3.11)
+      if (Bots[i].countermeasure_timer <= 0.0f) {
+        BotDeployCountermeasure(i);
+        Bots[i].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
+      }
+    }
+    // Also deploy flares while fleeing
+    if (Bots[i].state == BOT_STATE_FLEE && Bots[i].countermeasure_timer <= 0.0f) {
+      BotDeployCountermeasure(i);
+      Bots[i].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
     }
   }
 
