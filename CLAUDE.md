@@ -30,8 +30,11 @@ cmake --build --preset linux --config Debug
 ctest --preset linux -C Debug
 ```
 
-# Project Tracking files
-Update PLAN.md and BOTS_DEVEL.md as we continue adding functionality and testing.
+# Project Tracking and Reference Files
+- **`BOT_DEV_REFERENCE.md`** — living developer reference: architecture, FSM, constants, engine API patterns, critical gotchas. **Read this before modifying bot code.**
+- **`BOTS_DEVEL.md`** — phase history and roadmap. Update when a phase completes.
+- **`PLAN.md`** — original Phase 0 design document.
+- **`D3_MOVEMENT_PHYSICS.md`** — engine physics constants and packet flag reference.
 
 Useful CMake options: `BUILD_TESTING=OFF`, `ENABLE_LOGGER=OFF`, `FORCE_PORTABLE_INSTALL=ON`, `FATAL_GL_ERRORS=OFF`. Output goes to `builds/<preset>/build/<config>/`.
 
