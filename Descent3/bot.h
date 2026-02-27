@@ -126,8 +126,15 @@
 // AB burst toward distant weapon pickups in EXPLORE
 #define BOT_PICKUP_AB_DIST 250.0f
 
-// Countermeasure deployment (Phase 3.11)
-#define BOT_COUNTERMEASURE_INTERVAL 5.0f // seconds between flare deployments in COMBAT/FLEE
+// Countermeasure deployment — reserved for future inventory-item deployment (Gunboy, Seeker Mine, etc.)
+// Flares are NOT countermeasures and should NOT be fired by bots.
+#define BOT_COUNTERMEASURE_INTERVAL 5.0f // seconds between inventory countermeasure uses (future)
+
+// Stuck-clear firing (Phase 3.11 fix)
+// When a bot is pinned by another player/bot or a destructible obstacle, it fires to clear the path.
+#define BOT_STUCK_FIGHT_TIMER     1.5f  // seconds stuck before firing to clear the blockage
+#define BOT_STUCK_ENEMY_RADIUS   50.0f  // proximity radius to detect a player/bot we're jammed against
+#define BOT_STUCK_OBSTACLE_DIST  40.0f  // forward ray length to detect blocking destructible objects
 
 enum BotState {
   BOT_STATE_EXPLORE, // No target. Roam level, collect powerups, react to sounds.
@@ -175,8 +182,8 @@ struct bot_info {
   int explore_dest_room;    // Rooms[] index the bot is currently navigating toward, -1 = none
   float explore_room_timer; // counts down; when <=0 bot picks a new destination room
 
-  // Countermeasure deployment (Phase 3.11)
-  float countermeasure_timer; // counts down; deploys flare when <=0 in COMBAT/FLEE
+  // Countermeasure deployment — reserved for future inventory-item countermeasures (not flares)
+  float countermeasure_timer; // cooldown between inventory countermeasure uses (future use)
 };
 
 extern bot_info Bots[MAX_BOTS];

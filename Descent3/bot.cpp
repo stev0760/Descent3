@@ -504,25 +504,104 @@ static void BotDoSecondaryFiring(int bot_index) {
   }
 }
 
-// Deploy a flare countermeasure if the bot has any and the battery is ready.
-// Called in COMBAT and FLEE states on a BOT_COUNTERMEASURE_INTERVAL cooldown.
-static void BotDeployCountermeasure(int bot_index) {
+// Fire the bot's primary weapon at a specific object with a relaxed aim constraint.
+// Used for stuck-clearing at close/point-blank range where strict aim would prevent firing.
+// Only checks that we're not pointing directly backwards (dot >= 0); resource drain is identical
+// to BotDoFiring so both paths are always consistent.
+static void BotFireAtObject(int bot_index, object *target_obj) {
+  if (!target_obj)
+    return;
   int slot = Bots[bot_index].player_slot;
-  if (!(Players[slot].weapon_flags & (1u << FLARE_INDEX)))
-    return;
-  if (Players[slot].weapon_ammo[FLARE_INDEX] == 0)
-    return;
   object *obj = &Objects[Players[slot].objnum];
-  otype_wb_info *wb = &Ships[Players[slot].ship_index].static_wb[FLARE_INDEX];
-  if (!WBIsBatteryReady(obj, wb, FLARE_INDEX))
+
+  vector to_target = target_obj->pos - obj->pos;
+  float dist = vm_GetMagnitude(&to_target);
+  if (dist < 0.1f)
     return;
-  WBFireBattery(obj, wb, 0, FLARE_INDEX);
+  vm_NormalizeVector(&to_target);
+
+  // Relaxed aim: only ensure we're not firing directly behind ourselves
+  float dot = vm_DotProduct(&to_target, &obj->orient.fvec);
+  if (dot < 0.0f)
+    return;
+
+  int wb_index = Players[slot].weapon[PW_PRIMARY].index;
+  otype_wb_info *wb = &Ships[Players[slot].ship_index].static_wb[wb_index];
+
+  if (wb->energy_usage > 0.0f && Players[slot].energy <= 0.0f) {
+    BotSelectBestWeapon(bot_index);
+    return;
+  }
+  if (wb->ammo_usage > 0.0f && Players[slot].weapon_ammo[wb_index] == 0) {
+    BotSelectBestWeapon(bot_index);
+    return;
+  }
+  if (!WBIsBatteryReady(obj, wb, wb_index))
+    return;
+
+  WBFireBattery(obj, wb, 0, wb_index);
+  Players[slot].energy -= wb->energy_usage;
+  if (Players[slot].energy < 0.0f)
+    Players[slot].energy = 0.0f;
   if (wb->ammo_usage > 0.0f) {
     int drain = (int)wb->ammo_usage;
-    uint16_t &ammo = Players[slot].weapon_ammo[FLARE_INDEX];
+    uint16_t &ammo = Players[slot].weapon_ammo[wb_index];
     ammo = (ammo >= (uint16_t)drain) ? ammo - (uint16_t)drain : 0;
   }
-  LOG_DEBUG.printf("BOT: '%s' deployed flare countermeasure", Bots[bot_index].callsign);
+}
+
+// When the bot has been stuck for BOT_STUCK_FIGHT_TIMER seconds, try to fight through the blockage.
+//
+// Priority order:
+//  1. Nearby enemy player/bot within BOT_STUCK_ENEMY_RADIUS — set target + fire (self-defense).
+//  2. Forward ray (BOT_STUCK_OBSTACLE_DIST) hits an object (door, grate, building) — blast it open.
+//
+// Called every frame from BotDoFrame after BotApplyThrust sets stuck_timer.
+static void BotDoStuckClear(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  if (!obj->ai_info)
+    return;
+
+  // Priority 1: proximity scan for enemy players/bots we're physically jammed against
+  for (int i = 0; i < MAX_NET_PLAYERS; i++) {
+    if (i == slot)
+      continue;
+    if (!(NetPlayers[i].flags & NPF_CONNECTED))
+      continue;
+    if (Players[i].flags & (PLAYER_FLAGS_DEAD | PLAYER_FLAGS_DYING))
+      continue;
+    if (!BotIsPlayerEnemy(bot_index, i))
+      continue;
+    float dist = vm_VectorDistanceQuick(&obj->pos, &Objects[Players[i].objnum].pos);
+    if (dist < BOT_STUCK_ENEMY_RADIUS) {
+      object *enemy = &Objects[Players[i].objnum];
+      AISetTarget(obj, enemy->handle); // set target so state machine picks this up next tick
+      BotFireAtObject(bot_index, enemy);
+      return;
+    }
+  }
+
+  // Priority 2: forward ray to detect a blocking destructible object (door, grate, etc.)
+  fvi_query fq{};
+  fvi_info hit{};
+  vector end = obj->pos + obj->orient.fvec * BOT_STUCK_OBSTACLE_DIST;
+  fq.p0 = &obj->pos;
+  fq.p1 = &end;
+  fq.startroom = obj->roomnum;
+  fq.rad = 0.0f;
+  fq.thisobjnum = OBJNUM(obj);
+  fq.ignore_obj_list = nullptr;
+  fq.flags = FQ_CHECK_OBJS | FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS;
+
+  int hit_type = fvi_FindIntersection(&fq, &hit);
+  if (hit_type == HIT_OBJECT && hit.hit_object[0] >= 0) {
+    object *blocker = &Objects[hit.hit_object[0]];
+    if (blocker->type != OBJ_NONE && blocker->type != OBJ_GHOST && blocker->type != OBJ_POWERUP) {
+      BotFireAtObject(bot_index, blocker);
+      LOG_DEBUG.printf("BOT: '%s' blasting stuck obstacle (type=%d)", Bots[bot_index].callsign, blocker->type);
+    }
+  }
 }
 
 // Navigate the bot portal-to-portal through the level when in EXPLORE state with no nearby pickups.
@@ -808,8 +887,9 @@ static void BotUpdateState(int bot_index) {
       for (int k = 0; lower[k]; k++)
         lower[k] = (char)tolower((unsigned char)lower[k]);
       bool is_weapon = !(strstr(lower, "shield") || strstr(lower, "energy"));
-      // Delay HUNT transition to grab weapons when bare — weapon > target when unarmed
-      holding_for_weapon = is_weapon && BotHasOnlyDefaultPrimary(bot_index);
+      // Delay HUNT transition to grab weapons when bare — but NOT when enemy is already in combat range.
+      // If a target is within BOT_CLOSERANGE_DIST they're essentially on top of us: engage immediately.
+      holding_for_weapon = is_weapon && BotHasOnlyDefaultPrimary(bot_index) && (dist > BOT_CLOSERANGE_DIST);
 
       // Refresh powerup pursuit goal each tick (powerup may disappear)
       int &pgi = Bots[bot_index].powerup_goal_index;
@@ -1712,23 +1792,17 @@ void BotDoFrame() {
       Bots[i].last_target_update = Gametime;
     }
 
-    // Apply thrust-based movement every frame (before AIDoFrame runs)
+    // Apply thrust-based movement every frame (also advances stuck_timer — must precede StuckClear)
     BotApplyThrust(i);
+
+    // Stuck-clear: when pinned by a player/bot or blocking destructible object, fight through it
+    if (Bots[i].stuck_timer > BOT_STUCK_FIGHT_TIMER)
+      BotDoStuckClear(i);
 
     // Firing: active during COMBAT state — fire both primary and secondary
     if (Bots[i].state == BOT_STATE_COMBAT) {
       BotDoFiring(i);
       BotDoSecondaryFiring(i);
-      // Deploy countermeasure flare on interval (Phase 3.11)
-      if (Bots[i].countermeasure_timer <= 0.0f) {
-        BotDeployCountermeasure(i);
-        Bots[i].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
-      }
-    }
-    // Also deploy flares while fleeing
-    if (Bots[i].state == BOT_STATE_FLEE && Bots[i].countermeasure_timer <= 0.0f) {
-      BotDeployCountermeasure(i);
-      Bots[i].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
     }
   }
 
