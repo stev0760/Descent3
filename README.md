@@ -12,7 +12,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 This fork introduces an experimental server-side multiplayer bot system for Descent 3. These AI-controlled bots occupy real player slots on dedicated servers, appearing as normal players to clients. No client modifications are required — retail D3 v1.5 clients connect without changes.
 
-**Current Status: Phase 3.9 complete.**
+**Current Status: Phase 3.10 complete.**
 
 **Key Features:**
 *   **Protocol Transparency:** Bots use the same player slots, packets, and state structures as human players. Retail D3 v1.5 clients see bots as normal players on the scoreboard and HUD.
@@ -27,7 +27,8 @@ This fork introduces an experimental server-side multiplayer bot system for Desc
     *   *EVADE:* Breaks off stalled engagements to regroup before re-engaging.
 *   **Lead Targeting:** Bots aim ahead of moving targets using the weapon's real projectile velocity.
 *   **Inventory Management:** Tactical weapon hierarchy — energy-critical bots switch to ammo weapons (Vauss/Mass Driver); range-aware selection (long range: fast projectiles; close range: area weapons). Energy and ammo drain per shot matching the player system. Flares are never used in combat.
-*   **Powerup Collection:** Bots actively seek nearby powerups — shields when HP is critical, energy when low, weapons after kills.
+*   **Secondary Weapons:** Bots fire missiles alongside primaries in COMBAT. Concussion barrages at close-to-medium range; Mega Missile held for long range (self-guard); Napalm Rockets aimed beside targets for splash; tracking missiles (Homing, Smart, Cyclone, Black Shark) with loose aim requirement. Best available secondary auto-selected on equip.
+*   **Powerup Collection:** Aggressive weapon pickup prioritization — Mega Missile and Black Shark interrupt even active combat; spawning bots rush for weapons. Shield/energy pickups collected when needed. Combat interrupted for high-value finds within 120 units.
 *   **Game Mode Awareness:** Free-for-all, team anarchy, and co-op modes handled correctly. Team assignment persists across level transitions.
 *   **Console Management:** `addbot`, `removebot`, `removebots`, `botlist`, `botstat`, `botmov` commands on the dedicated server console.
 

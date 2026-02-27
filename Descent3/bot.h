@@ -84,6 +84,25 @@
 #define BOT_EXPLORE_ROOM_TIME 5.0f     // max seconds to spend navigating to one explore destination
 #define BOT_EXPLORE_PORTAL_DEPTH 2     // max portals deep to look when picking a random dest room
 
+// Secondary weapon firing (Phase 3.10)
+// Bots fire missiles alongside primaries in COMBAT. Each secondary has range gates and self-guards.
+//   Concussion/Frag: rapid barrage at close-to-medium range (fast dumbfire)
+//   Mega/Black Shark: held for long range only (massive splash — NEVER fire close)
+//   Napalm Rocket: area denial; aim beside/below target, short range only
+//   Tracking missiles (Homing, Smart, Cyclone): medium range, looser aim requirement
+#define BOT_SECONDARY_AIM_DOT 0.5f        // min dot to fire secondary (looser than primary — missiles track)
+#define BOT_CONCUSSION_MIN_DIST 20.0f     // don't barrage with concussions closer than this
+#define BOT_CONCUSSION_MAX_DIST 180.0f    // max range for concussion fire
+#define BOT_MEGA_MIN_DIST 80.0f           // self-guard for Mega Missile
+#define BOT_NAPALM_ROCKET_MAX_DIST 90.0f  // short-range area denial only
+#define BOT_SPLASH_SELF_GUARD 30.0f       // universal: never fire splash weapons this close to self
+
+// Powerup interrupt (Phase 3.10)
+// When a very high-value pickup (Mega/Black Shark) is within this radius, bots break off combat
+// to collect it — even mid-fight.
+#define BOT_POWERUP_INTERRUPT_RADIUS 120.0f // scan radius to interrupt combat for pickup
+#define BOT_POWERUP_INTERRUPT_PRIORITY 15   // minimum powerup priority that triggers combat interrupt
+
 enum BotState {
   BOT_STATE_EXPLORE, // No target. Roam level, collect powerups, react to sounds.
   BOT_STATE_HUNT,    // Has target, out of range or no LOS. Pursue.

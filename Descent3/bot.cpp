@@ -376,6 +376,134 @@ static void BotSelectBestWeapon(int bot_index) {
   }
 }
 
+// Select and equip the best available secondary weapon.
+// Priority: BlackShark > Mega > Cyclone > Smart > NapalmRocket > Homing > Mortar > Frag > Concussion.
+// Updates Players[slot].weapon[PW_SECONDARY].index.
+static void BotSelectBestSecondary(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  // Indices from weapon_external.h (battery slot == weapon type for standard ship secondaries)
+  static const int priority_order[] = {
+    BLACKSHARK_INDEX, MEGA_INDEX, CYCLONE_INDEX, SMART_INDEX,
+    NAPALMROCKET_INDEX, HOMING_INDEX, IMPACTMORTAR_INDEX, FRAG_INDEX, CONCUSSION_INDEX};
+
+  for (int k = 0; k < (int)(sizeof(priority_order) / sizeof(priority_order[0])); k++) {
+    int wb = priority_order[k];
+    if (!(Players[slot].weapon_flags & (1u << wb)))
+      continue;
+    if (Players[slot].weapon_ammo[wb] == 0)
+      continue;
+    if (wb != Players[slot].weapon[PW_SECONDARY].index) {
+      LOG_DEBUG.printf("BOT: '%s' secondary switch → battery %d", Bots[bot_index].callsign, wb);
+      Players[slot].weapon[PW_SECONDARY].index = wb;
+    }
+    return;
+  }
+}
+
+// Fire the bot's secondary weapon (missiles) at its current AI target.
+// Concussion: barrage at close-to-medium range.
+// Mega: long range only with self-guard.
+// Napalm Rocket: aim beside/below target for splash; short range.
+// Tracking missiles: loose aim requirement — they'll home in.
+static void BotDoSecondaryFiring(int bot_index) {
+  int bot_slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[bot_slot].objnum];
+  if (!obj->ai_info)
+    return;
+
+  object *target = ObjGet(obj->ai_info->target_handle);
+  if (!target || target->type == OBJ_NONE || target->type == OBJ_GHOST)
+    return;
+  if (target->type == OBJ_PLAYER) {
+    if (Players[target->id].flags & (PLAYER_FLAGS_DEAD | PLAYER_FLAGS_DYING))
+      return;
+  } else if (target->flags & (OF_DEAD | OF_DESTROYED)) {
+    return;
+  }
+
+  if (!BotHasLOS(obj, target))
+    return;
+
+  vector to_target = target->pos - obj->pos;
+  float dist = vm_GetMagnitude(&to_target);
+  if (dist > BOT_FIRE_RANGE)
+    return;
+
+  int wb_index = Players[bot_slot].weapon[PW_SECONDARY].index;
+  // Must be a real secondary battery (10–19)
+  if (wb_index < 10 || wb_index > 19)
+    return;
+  if (!(Players[bot_slot].weapon_flags & (1u << wb_index)))
+    return;
+  if (Players[bot_slot].weapon_ammo[wb_index] == 0)
+    return;
+
+  otype_wb_info *wb = &Ships[Players[bot_slot].ship_index].static_wb[wb_index];
+
+  // Per-weapon range gates
+  if (wb_index == CONCUSSION_INDEX || wb_index == FRAG_INDEX) {
+    if (dist < BOT_CONCUSSION_MIN_DIST || dist > BOT_CONCUSSION_MAX_DIST)
+      return;
+  } else if (wb_index == MEGA_INDEX) {
+    if (dist < BOT_MEGA_MIN_DIST)
+      return; // self-guard
+  } else if (wb_index == NAPALMROCKET_INDEX) {
+    if (dist > BOT_NAPALM_ROCKET_MAX_DIST)
+      return;
+  }
+
+  // Universal splash self-guard
+  bool is_splash = (wb_index == MEGA_INDEX || wb_index == BLACKSHARK_INDEX ||
+                    wb_index == IMPACTMORTAR_INDEX || wb_index == FRAG_INDEX ||
+                    wb_index == SMART_INDEX || wb_index == NAPALMROCKET_INDEX);
+  if (is_splash && dist < BOT_SPLASH_SELF_GUARD)
+    return;
+
+  // Compute aim position
+  vector aim_pos = target->pos;
+  if (wb_index == NAPALMROCKET_INDEX) {
+    // Aim beside/below target to maximize area denial splash
+    aim_pos = target->pos + obj->orient.rvec * 4.0f - obj->orient.uvec * 3.0f;
+  } else if (wb_index == CONCUSSION_INDEX || wb_index == FRAG_INDEX || wb_index == IMPACTMORTAR_INDEX) {
+    // Dumbfire — use lead targeting to compensate for travel time
+    float target_speed = vm_GetMagnitude(&target->mtype.phys_info.velocity);
+    if (target_speed > 2.0f) {
+      int weapon_id = wb->gp_weapon_index[0];
+      if (weapon_id > 0 && weapon_id < MAX_WEAPONS) {
+        float proj_speed = vm_GetMagnitude(&Weapons[weapon_id].phys_info.velocity);
+        if (proj_speed > 1.0f)
+          aim_pos = target->pos + target->mtype.phys_info.velocity * (dist / proj_speed);
+      }
+    }
+  }
+  // Tracking missiles (Homing, Smart, Cyclone, Mega, BlackShark, NapalmRocket) will home in —
+  // aim at direct target position; dot check only ensures we're not firing backwards.
+
+  vector to_aim = aim_pos - obj->pos;
+  vm_NormalizeVector(&to_aim);
+  float dot = vm_DotProduct(&to_aim, &obj->orient.fvec);
+  if (dot < BOT_SECONDARY_AIM_DOT)
+    return;
+
+  if (!WBIsBatteryReady(obj, wb, wb_index))
+    return;
+
+  WBFireBattery(obj, wb, 0, wb_index);
+
+  // Drain ammo (mirrors WeaponFire.cpp — WBFireBattery does not drain resources)
+  if (wb->ammo_usage > 0.0f) {
+    int drain = (int)wb->ammo_usage;
+    uint16_t &ammo = Players[bot_slot].weapon_ammo[wb_index];
+    ammo = (ammo >= (uint16_t)drain) ? ammo - (uint16_t)drain : 0;
+  }
+  // Most secondaries have no energy cost, but handle it anyway
+  if (wb->energy_usage > 0.0f) {
+    Players[bot_slot].energy -= wb->energy_usage;
+    if (Players[bot_slot].energy < 0.0f)
+      Players[bot_slot].energy = 0.0f;
+  }
+}
+
 // Navigate the bot portal-to-portal through the level when in EXPLORE state with no nearby pickups.
 // Picks a random reachable room from the current position and sets AIG_GET_TO_POS toward it.
 // Called from BotUpdateState() every 0.5s tick when no powerup goal is active.
@@ -452,16 +580,52 @@ static void BotDoExploreRoaming(int bot_index) {
                    obj->roomnum);
 }
 
+// Returns true if the bot has no primary weapon beyond the default Laser (battery 0).
+// Used to boost weapon pickup priority when the bot just spawned with bare equipment.
+static bool BotHasOnlyDefaultPrimary(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  for (int wb = 1; wb < 10; wb++) {
+    if (Players[slot].weapon_flags & (1u << wb))
+      return false;
+  }
+  return true;
+}
+
+// Returns true if the bot has no secondary weapon with remaining ammo.
+static bool BotHasNoSecondaries(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  for (int wb = 10; wb <= 19; wb++) {
+    if ((Players[slot].weapon_flags & (1u << wb)) && Players[slot].weapon_ammo[wb] > 0)
+      return false;
+  }
+  return true;
+}
+
 // Scan nearby objects for the most valuable powerup this bot should collect.
 // Returns Objects[] index of the best powerup, or -1 if none found.
-// Priority: shield (when low) > energy (when low) > any powerup nearby.
+//
+// Priority table (higher = more urgent):
+//   25  Mega Missile when bot has no secondaries
+//   22  Black Shark when bot has no secondaries
+//   20  Mega Missile (always high — interrupt combat for this)
+//   18  Black Shark  (always high — interrupt combat for this)
+//   15  Cyclone/Smart when no secondaries
+//   12  Napalm Rocket/Homing when no secondaries; or primary weapon when only default laser
+//   10  Shields when critically low
+//    9  Concussion/Mortar/Frag when no secondaries
+//    8  Energy when low
+//    5  Weapon pickups with minor benefit
+//    1  Any other powerup
 static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy) {
   int slot = Bots[bot_index].player_slot;
   object *obj = &Objects[Players[slot].objnum];
 
+  bool only_default = BotHasOnlyDefaultPrimary(bot_index);
+  bool no_secondaries = BotHasNoSecondaries(bot_index);
+
   int best_obj = -1;
   float best_dist = BOT_POWERUP_SEEK_RADIUS;
-  int best_priority = 0; // higher = more urgent
+  int best_priority = 0;
 
   for (int i = 0; i <= Highest_object_index; i++) {
     object *p = &Objects[i];
@@ -471,8 +635,6 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
       continue;
 
     float dist = vm_VectorDistanceQuick(&obj->pos, &p->pos);
-    if (dist >= best_dist && best_priority == 0) // only skip if we already have something equally good
-      continue;
 
     // Name-based prioritization (case-insensitive substring match)
     const char *raw = Object_info[p->id].name;
@@ -481,20 +643,71 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
     for (int k = 0; lower[k]; k++)
       lower[k] = (char)tolower((unsigned char)lower[k]);
 
-    int priority = 1; // any powerup beats nothing
+    int priority = 0;
     if (need_shields && strstr(lower, "shield"))
       priority = 10;
     else if (need_energy && strstr(lower, "energy"))
       priority = 8;
+    else if (strstr(lower, "mega"))
+      priority = no_secondaries ? 25 : 20;
+    else if (strstr(lower, "black shark") || strstr(lower, "blackshark"))
+      priority = no_secondaries ? 22 : 18;
+    else if (strstr(lower, "cyclone") || strstr(lower, "smart"))
+      priority = no_secondaries ? 15 : 5;
+    else if (strstr(lower, "napalm rocket") || strstr(lower, "homing"))
+      priority = no_secondaries ? 12 : 4;
+    else if (strstr(lower, "concussion") || strstr(lower, "mortar") || strstr(lower, "frag"))
+      priority = no_secondaries ? 9 : 3;
+    else if (only_default && (strstr(lower, "plasma") || strstr(lower, "vauss") ||
+                               strstr(lower, "super laser") || strstr(lower, "mass driver")))
+      priority = 12; // grab good primary weapons when stuck with default laser
+    else if (only_default && (strstr(lower, "napalm") || strstr(lower, "microwave") ||
+                               strstr(lower, "fusion") || strstr(lower, "omega") || strstr(lower, "emd")))
+      priority = 9;
+    else if (strstr(lower, "shield") || strstr(lower, "energy"))
+      priority = 1; // not needed but grab if nothing better
+    else
+      priority = 1; // any powerup beats nothing
 
-    if (priority > best_priority || (priority == best_priority && dist < best_dist)) {
-      best_priority = priority;
-      best_dist = dist;
-      best_obj = i;
-    }
+    if (priority == 0)
+      continue; // worthless pickup
+    if (priority < best_priority || (priority == best_priority && dist >= best_dist))
+      continue;
+
+    best_priority = priority;
+    best_dist = dist;
+    best_obj = i;
   }
 
   return best_obj;
+}
+
+// Returns true if there's a very high value pickup (Mega/Black Shark) within interrupt range.
+// Used to break bots out of COMBAT state to collect game-changing weapons.
+static bool BotShouldInterruptForPowerup(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+
+  for (int i = 0; i <= Highest_object_index; i++) {
+    object *p = &Objects[i];
+    if (p->type != OBJ_POWERUP)
+      continue;
+    if (p->flags & (OF_DEAD | OF_DESTROYED))
+      continue;
+    float dist = vm_VectorDistanceQuick(&obj->pos, &p->pos);
+    if (dist >= BOT_POWERUP_INTERRUPT_RADIUS)
+      continue;
+
+    const char *raw = Object_info[p->id].name;
+    char lower[64] = {};
+    strncpy(lower, raw, sizeof(lower) - 1);
+    for (int k = 0; lower[k]; k++)
+      lower[k] = (char)tolower((unsigned char)lower[k]);
+
+    if (strstr(lower, "mega") || strstr(lower, "black shark") || strstr(lower, "blackshark"))
+      return true;
+  }
+  return false;
 }
 
 // Evaluate and update the bot's behavioral state based on target, distance, LOS, and shields.
@@ -572,6 +785,8 @@ static void BotUpdateState(int bot_index) {
       new_state = BOT_STATE_HUNT; // LOS loss alone doesn't exit COMBAT (avoids oscillation)
     else if (Bots[bot_index].combat_idle_timer > BOT_EVADE_COMBAT_TIMEOUT)
       new_state = BOT_STATE_EVADE; // stuck in combat too long without progress — disengage
+    else if (BotShouldInterruptForPowerup(bot_index))
+      new_state = BOT_STATE_EXPLORE; // nearby Mega/BlackShark — worth breaking off combat
     break;
 
   case BOT_STATE_FLEE:
@@ -658,8 +873,11 @@ static void BotApplyThrust(int bot_index) {
 
   switch (Bots[bot_index].state) {
   case BOT_STATE_EXPLORE:
-    // Slow, silent movement — no afterburner, no juke, just navigate
-    speed_scale = 0.3f;
+    // Full speed when actively chasing a powerup; slow + silent when roaming
+    if (Bots[bot_index].powerup_goal_index >= 0)
+      speed_scale = 1.0f;
+    else
+      speed_scale = 0.3f;
     break;
 
   case BOT_STATE_HUNT:
@@ -1022,7 +1240,8 @@ static void BotRespawn(int bot_index) {
   Bots[bot_index].explore_dest_room = -1;
   Bots[bot_index].explore_room_timer = 0.0f;
   Bots[bot_index].last_target_update = 0.0f; // force immediate re-target after respawn
-  BotSelectBestWeapon(bot_index);             // equip best available weapon on respawn
+  BotSelectBestWeapon(bot_index);    // equip best primary weapon on respawn
+  BotSelectBestSecondary(bot_index); // equip best secondary weapon on respawn
   LOG_DEBUG.printf("BOT: '%s' respawned in slot %d", Bots[bot_index].callsign, slot);
 }
 
@@ -1276,6 +1495,7 @@ int BotAdd(const char *name, int ship_index) {
   Bots[bot_index].explore_dest_room = -1;
   Bots[bot_index].explore_room_timer = 0.0f;
   BotCacheShipPhysics(bot_index);
+  BotSelectBestSecondary(bot_index); // equip best secondary weapon at spawn
   Num_bots++;
 
   LOG_INFO.printf("BOT: Added '%s' in player slot %d (bot index %d)", name, slot, bot_index);
@@ -1393,16 +1613,19 @@ void BotDoFrame() {
     if (Gametime - Bots[i].last_target_update > BOT_TARGET_UPDATE_INTERVAL) {
       BotSelectTarget(i);
       BotUpdateState(i);
-      BotSelectBestWeapon(i); // equip best owned weapon (picks up new drops automatically)
+      BotSelectBestWeapon(i);     // equip best primary weapon (picks up new drops automatically)
+      BotSelectBestSecondary(i);  // equip best secondary weapon
       Bots[i].last_target_update = Gametime;
     }
 
     // Apply thrust-based movement every frame (before AIDoFrame runs)
     BotApplyThrust(i);
 
-    // Firing: active during COMBAT state
-    if (Bots[i].state == BOT_STATE_COMBAT)
+    // Firing: active during COMBAT state — fire both primary and secondary
+    if (Bots[i].state == BOT_STATE_COMBAT) {
       BotDoFiring(i);
+      BotDoSecondaryFiring(i);
+    }
   }
 
   // Movement logging (throttled to every 30 frames, ~0.5s at 60Hz)

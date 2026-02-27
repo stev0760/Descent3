@@ -30,8 +30,7 @@
 #include "psrand.h"
 #include "findintersection.h"
 
-#define MAX_DYNAMIC_PATHS 50
-#define MAX_NODES 50
+// MAX_DYNAMIC_PATHS and MAX_NODES are defined in aistruct.h (included transitively)
 
 ai_dynamic_path AIDynamicPath[MAX_DYNAMIC_PATHS];
 int AIAltPath[MAX_ROOMS];
@@ -530,7 +529,6 @@ static bool AIPathGetDPathSlot(int *slot, int handle) {
   }
 
   LOG_ERROR << "Out of dynamic paths";
-  ASSERT(0); // -- get chris
   return false;
 }
 

@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Phase 3.9 complete — Inventory-aware weapon switching, EXPLORE room roaming, tactical combat hierarchy.
+**Status:** Phase 3.10 complete — Secondary weapon firing, aggressive weapon pickup prioritization, dynamic path pool expansion.
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -32,6 +32,7 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | 3.8 | Combat quality — lead targeting, OBJ_GHOST fix, EVADE state, powerup collection, weapon switching | Complete |
 | 3.9 | Inventory management — tactical weapon hierarchy (energy/range/ammo), EXPLORE room-to-room roaming | Complete |
 | 1.5 | Combat polish — energy/ammo drain per shot, pre-fire resource guard, auto weapon switch on empty | Complete |
+| 3.10 | Secondary weapon firing (missiles), aggressive weapon pickup priorities, aipath pool fix, EXPLORE speed-up when chasing pickups | Complete |
 | 4 | Difficulty levels, configuration UI | Not started |
 
 ## Files
@@ -55,6 +56,8 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | `Descent3/AIGoal.cpp` | OBJ_PLAYER guard in `AIG_SET_ANIM` and `AIG_FIRE_AT_OBJ` goal cases; added `AIG_GET_AWAY_FROM_OBJ` and `AIG_MOVE_AROUND_OBJ` to `GoalAddGoal` switch |
 | `Descent3/CMakeLists.txt` | Added `bot.h` and `bot.cpp` to build |
 | `netgames/dmfc/dmfcclient.cpp` | Replaced `ASSERT(player_num == 0)` in `OnPlayerReconnect` with warning log — prevents server abort when bot team doesn't match PRec default |
+| `Descent3/aistruct.h` | Raised `MAX_DYNAMIC_PATHS` from 50 → 100 to prevent pool exhaustion crash when many bots use pathfinding simultaneously |
+| `Descent3/aipath.cpp` | Removed `ASSERT(0)` on path pool exhaustion — now logs error and returns false gracefully instead of hard-crashing |
 
 ## Console Commands
 
