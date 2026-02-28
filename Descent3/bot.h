@@ -60,7 +60,7 @@
 // EVADE state (Phase 3.8)
 // Triggered from COMBAT after bot has been stuck in prolonged combat without progress.
 // Bot breaks off engagement for BOT_EVADE_DURATION seconds, then returns to HUNT or EXPLORE.
-#define BOT_EVADE_COMBAT_TIMEOUT 8.0f  // seconds in COMBAT before triggering EVADE
+#define BOT_EVADE_COMBAT_TIMEOUT 20.0f // seconds in COMBAT before triggering EVADE (requires shields < 60%)
 #define BOT_EVADE_DURATION 3.5f        // seconds to stay in EVADE before re-engaging
 
 // Powerup collection (Phase 3.8)
@@ -97,11 +97,14 @@
 #define BOT_NAPALM_ROCKET_MAX_DIST 90.0f  // short-range area denial only
 #define BOT_SPLASH_SELF_GUARD 30.0f       // universal: never fire splash weapons this close to self
 
-// Powerup interrupt (Phase 3.10)
-// When a very high-value pickup (Mega/Black Shark) is within this radius, bots break off combat
-// to collect it — even mid-fight.
-#define BOT_POWERUP_INTERRUPT_RADIUS 120.0f // scan radius to interrupt combat for pickup
-#define BOT_POWERUP_INTERRUPT_PRIORITY 15   // minimum powerup priority that triggers combat interrupt
+// Powerup interrupt (Phase 3.10 / 3.12)
+// Two-tier interrupt system:
+//   COMBAT interrupt  — breaks off a live fight; tight radius, only game-changers
+//   HUNT divert       — detours mid-hunt; medium radius, any upgrade worth grabbing
+#define BOT_POWERUP_INTERRUPT_RADIUS  120.0f // radius to interrupt active combat for a pickup
+#define BOT_POWERUP_INTERRUPT_PRIORITY 15    // (legacy — kept for reference; logic is now name-based)
+#define BOT_POWERUP_DIVERT_RADIUS     175.0f // radius for a bot in HUNT to divert and grab a pickup
+#define BOT_POWERUP_DIVERT_PRIORITY    15    // minimum priority to trigger HUNT divert (Mega/Invuln/etc.)
 
 // Equipment-based behavior (Phase 3.11)
 // Bots self-classify their loadout into three tiers each target-update tick.
@@ -129,6 +132,12 @@
 // Countermeasure deployment — reserved for future inventory-item deployment (Gunboy, Seeker Mine, etc.)
 // Flares are NOT countermeasures and should NOT be fired by bots.
 #define BOT_COUNTERMEASURE_INTERVAL 5.0f // seconds between inventory countermeasure uses (future)
+
+// Powerup interrupt cooldown — prevents the COMBAT→EXPLORE→HUNT→COMBAT oscillation.
+// After any powerup interrupt or HUNT divert fires, the bot is suppressed for this duration
+// before it can divert/interrupt again. This allows the bot to collect the item and re-engage
+// without immediately being yanked out of COMBAT on the next tick.
+#define BOT_POWERUP_INTERRUPT_COOLDOWN 6.0f
 
 // Stuck-clear firing (Phase 3.11 fix)
 // When a bot is pinned by another player/bot or a destructible obstacle, it fires to clear the path.
@@ -184,6 +193,11 @@ struct bot_info {
 
   // Countermeasure deployment — reserved for future inventory-item countermeasures (not flares)
   float countermeasure_timer; // cooldown between inventory countermeasure uses (future use)
+
+  // Powerup interrupt cooldown — prevents COMBAT→EXPLORE→HUNT→COMBAT oscillation.
+  // Set to BOT_POWERUP_INTERRUPT_COOLDOWN after any divert/interrupt fires.
+  // BotShouldInterruptForPowerup() and the HUNT divert check return false while > 0.
+  float powerup_interrupt_cooldown;
 };
 
 extern bot_info Bots[MAX_BOTS];

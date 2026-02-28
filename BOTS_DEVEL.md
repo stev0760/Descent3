@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Phase 3.11 complete — Equipment tiers, countermeasures, close-quarters turn rate, weapon-before-target priority.
+**Status:** Phase 3.12 complete — FSM stability, deterministic weapon selection, powerup awareness, ghost shooting fix.
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -34,6 +34,7 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | 1.5 | Combat polish — energy/ammo drain per shot, pre-fire resource guard, auto weapon switch on empty | Complete |
 | 3.10 | Secondary weapon firing (missiles), aggressive weapon pickup priorities, aipath pool fix, EXPLORE speed-up when chasing pickups | Complete |
 | 3.11 | Equipment tiers (WEAK/GOOD/ELITE), dynamic flee threshold, countermeasure flares, close-range turn rate, weapon-pickup-before-HUNT, target scoring bias | Complete |
+| 3.12 | FSM stability (FLEE→EXPLORE, EVADE health gate), deterministic weapon selection, powerup awareness expansion, state-independent firing, ghost shooting fix | Complete |
 | 4 | Difficulty levels, configuration UI | Not started |
 
 ## Files
@@ -333,6 +334,78 @@ Insights from the `D3_VS_FPS_BOT_MOVEMENT_PRIMER.md` guide our long-term goals:
 - **Physics-Native Controllers:** Bots output desired thrust and torque exactly like player input. Future work includes implementing PD/PID controllers to smoothly match desired velocity/orientation, ensuring bots feel like "pro" pilots rather than snapping robots.
 - **3D Combat Maneuvers:** Move beyond simple juking to tactical 6DOF maneuvers like barrel rolls, perpendicular-plane strafing, and "Immelmann" turns by mapping engine torque-requests to physics inputs.
 - **Predictive Intercepts:** Solve quadratic aiming equations for projectile lead time, accounting for both bot and target momentum.
+
+### Phase 3.12: FSM Stability, Weapon Selection Fixes, Ghost Shooting Fix
+
+Addressed a set of bugs identified during live playtesting across a full fury.mn3 map rotation (5-minute rounds, 4 bots). All fixes are in `bot.cpp`/`bot.h`.
+
+#### Bug Fixes
+
+**Primary weapon selection — secondary batteries used as primaries (critical)**
+- `BotSelectBestWeapon` loop was `for (int wb = 1; wb < MAX_PLAYER_WEAPONS; wb++)` (limit = 21).
+- Secondary batteries (indices 10–19) were being scored and occasionally selected as primary weapons.
+- Visible in logs as rapid battery oscillation (e.g., `battery 0 → 12 → 0` within one tick).
+- Fix: capped loop at `wb < 10` (primaries only). Array sizes tightened from `MAX_PLAYER_WEAPONS` to `10`.
+
+**Weapon selection oscillation — non-deterministic `rand()` picks**
+- When multiple batteries tied for tactical slot (e.g., two long-range weapons), `rand()` caused per-tick oscillation.
+- Replaced all `rand() % n` picks with a deterministic `pick_best()` lambda that selects highest `player_damage`.
+- Bots now hold a stable weapon through a combat engagement and only switch when genuinely outclassed.
+
+**FLEE↔HUNT oscillation at distance boundary**
+- FLEE→HUNT transition on `dist > BOT_FLEE_DISTANCE` immediately re-triggered FLEE (shields still low).
+- Fix: distance exit from FLEE now goes to EXPLORE and drops the target. Bots roam for health rather than re-engaging immediately.
+
+**EVADE triggering on full-health bots**
+- Healthy bots (90-100 shields) were entering EVADE after 8 s in COMBAT with no health gate.
+- Fix: EVADE now requires `shields < 60%` of max. Timeout raised 8 s → 20 s so committed fights aren't abandoned prematurely.
+
+**COMBAT→EXPLORE oscillation — powerup interrupt thrashing**
+- `BotShouldInterruptForPowerup` fired every 0.5 s tick without any cooldown, causing COMBAT→EXPLORE→HUNT→COMBAT loops.
+- Added `BOT_POWERUP_INTERRUPT_COOLDOWN 6.0f` timer (`powerup_interrupt_cooldown` field on `bot_info`).
+- Both COMBAT interrupt and HUNT divert set the cooldown; `BotShouldInterruptForPowerup` short-circuits while it is positive.
+
+**EXPLORE trap on item-dense maps (critical regression)**
+- Attempted guard `!chasing_powerup` (derived from `powerup_goal_index >= 0`) permanently blocked EXPLORE→HUNT on maps like Fury where `BotFindBestPowerup` always finds something.
+- Fix: removed the guard entirely. The cooldown timer above is the correct mechanism for preventing oscillation.
+
+**Firing locked to COMBAT state only**
+- `BotDoFiring`/`BotDoSecondaryFiring` were gated behind `if (state == BOT_STATE_COMBAT)`.
+- Bots now call both every frame. Internal guards (target validity, LOS, range, aim dot, ammo) are sufficient.
+- Result: bots shoot enemies they pass while collecting powerups, while being chased in FLEE, and during HUNT approach.
+
+#### Ghost Shooting Fix
+
+Bots were visually firing at nothing ("ghost shooting"), most apparent on Taurus and Paranoia levels.
+
+**Root cause:** After `MultiSendRenewPlayer`, `PLAYER_FLAGS_DEAD` is cleared but the respawning player's object may still be `OBJ_GHOST` or at position (0, 0, 0) before `PlayerMoveToStartPos` runs. `BotSelectTarget` only checked player flags, not the underlying object type. This produced `dist=0` targets — log evidence: `EXPLORE -> HUNT (dist=0 shields=100 los=1)` appearing across level transitions.
+
+**Compound failure:** When `dist=0`, `to_target = target->pos - obj->pos` is a zero vector. `vm_NormalizeVector` on a zero vector is undefined behavior: the result is garbage. The dot product check accidentally passed, and the bot fired in whatever direction it happened to be facing — at nothing visible.
+
+**Three-point fix:**
+1. `BotSelectTarget`: added `Objects[Players[i].objnum].type != OBJ_PLAYER` check — only score candidates whose object is a fully instantiated live player.
+2. `BotUpdateState`: after the existing OBJ_GHOST clear, added `dist < 1.0f` guard — clears stale handles recycled to a same-position object, resets `has_target`/`has_los` cleanly.
+3. `BotDoFiring` + `BotDoSecondaryFiring`: added `dist < 1.0f` early return before any aim computation — prevents undefined-behavior normalization of a zero vector. (`BotFireAtObject` already had a `dist < 0.1f` guard.)
+
+#### Powerup Awareness Improvements
+
+- `BotFindBestPowerup` gained a `min_priority` parameter; callers can set a threshold to avoid triggering on low-value items.
+- Expanded priority table: Invulnerability (16), Quad Laser (11), Rapid Fire (7), Cloak (6), Afterburner (4); shield/energy when not critical now 3/2 instead of 1.
+- HUNT-state divert: bots in HUNT check for exceptional pickups (`BOT_POWERUP_DIVERT_PRIORITY = 15`) within `BOT_POWERUP_DIVERT_RADIUS = 175` units; matching item briefly routes to EXPLORE.
+- `BotShouldInterruptForPowerup` expanded to 3 tiers: (A) Invulnerability/Rapid Fire — always break off; (B) Mega/Black Shark — break off only if unarmed; (C) Shield — break off only if critically low.
+
+#### New Constants (bot.h)
+```
+BOT_POWERUP_INTERRUPT_COOLDOWN  6.0f    // seconds before another interrupt/divert is allowed
+BOT_POWERUP_DIVERT_RADIUS      175.0f   // HUNT divert scan radius for high-priority pickups
+BOT_POWERUP_DIVERT_PRIORITY     15      // minimum pickup priority to trigger HUNT divert
+BOT_EVADE_COMBAT_TIMEOUT        20.0f   // raised from 8.0f; requires shields < 60% to trigger
+```
+
+#### New bot_info Fields
+```
+float powerup_interrupt_cooldown;  // countdown suppressing powerup interrupt/divert
+```
 
 ## Running a Test Server
 

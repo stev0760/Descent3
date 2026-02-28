@@ -7,8 +7,8 @@ Current implementation status is in `BOTS_DEVEL.md`. Physics model reference is 
 
 ## Current Status
 
-**Phase 3.11 complete** — Equipment tiers, countermeasures (framework), close-range turn rate,
-weapon-pickup-before-HUNT priority fix, stuck-clear firing.
+**Phase 3.12 complete** — FSM stability fixes, deterministic weapon selection, powerup awareness
+expansion, state-independent firing, ghost shooting fix (zero-distance target guard).
 
 For the full phase history and roadmap, see `BOTS_DEVEL.md`.
 
@@ -297,7 +297,26 @@ Scans within `BOT_POWERUP_SEEK_RADIUS = 350u`. Higher score = more urgent.
 | 6–8 | Tier-2/3 primaries when already equipped |
 | 1 | Anything else |
 
-Combat interrupt: `BotShouldInterruptForPowerup()` checks for Mega/BlackShark within `BOT_POWERUP_INTERRUPT_RADIUS = 120u`.
+`BotFindBestPowerup` takes a `min_priority` parameter — items at or below the threshold are skipped. HUNT divert uses `min_priority = BOT_POWERUP_DIVERT_PRIORITY (15)`.
+
+**Instant-activation items (Phase 3.12 additions):**
+
+| Priority | Item | Condition |
+|----------|------|-----------|
+| 16 | Invulnerability | always |
+| 11 | Quad Laser | always |
+| 7 | Rapid Fire | always |
+| 6 | Cloak | always |
+| 4 | Afterburner Cooler | always |
+| 3 | Shield Boost | not critical need |
+| 2 | Energy Boost | not critical need |
+
+Combat interrupt: `BotShouldInterruptForPowerup()` uses a **3-tier system** within `BOT_POWERUP_INTERRUPT_RADIUS = 120u`:
+- **Tier A:** Invulnerability, Rapid Fire — always break off combat
+- **Tier B:** Mega Missile, Black Shark — break off only when bot has no secondaries
+- **Tier C:** Shield Boost — break off only when critically low on shields
+
+Both COMBAT interrupt and HUNT divert set `powerup_interrupt_cooldown = BOT_POWERUP_INTERRUPT_COOLDOWN (6 s)` to prevent thrashing.
 
 ---
 
@@ -320,6 +339,13 @@ Combat interrupt: `BotShouldInterruptForPowerup()` checks for Mega/BlackShark wi
 - `WBFireBattery()` does not drain energy or ammo. Always drain manually.
 - Flares are battery 20 (`FLARE_INDEX`). Never fire them in bot combat or countermeasure code.
 - After switching weapons, must update `Players[slot].weapon[PW_PRIMARY].index` — the engine does not auto-select.
+- **Primary weapon loop must stop at `wb < 10`** — secondaries are batteries 10–19; including them in primary selection causes oscillation and incorrect behavior.
+- **Never normalize a zero-length aim vector** — when `dist < 1.0f`, `to_target` is a zero vector and `vm_NormalizeVector` is undefined behavior. Always guard with `if (dist < 1.0f) return;` before normalizing.
+
+### Target Validity (Ghost Shooting)
+- After `MultiSendRenewPlayer`, `PLAYER_FLAGS_DEAD` is cleared but the player's object may still be `OBJ_GHOST` or at position (0, 0, 0) before `PlayerMoveToStartPos` runs. Always verify `Objects[Players[i].objnum].type == OBJ_PLAYER` in `BotSelectTarget` before scoring a candidate.
+- `ObjGet(handle)` returns a valid pointer even for `OBJ_GHOST` objects — handle still matches. Always check `target->type != OBJ_GHOST` after any `ObjGet` call.
+- A `dist=0` target indicates a stale or recycled handle (object at same position as bot). Clear the target immediately; do not transition to HUNT or fire.
 
 ### Pathfinding
 - `AIPathGetDPathSlot` can exhaust `MAX_DYNAMIC_PATHS` with many bots — raised to 100 in `aistruct.h`. Graceful failure in `aipath.cpp` (no more ASSERT).
@@ -380,8 +406,13 @@ BOT_AB_MIN_FUEL   (FUEL_MAX*0.25f)
 BOT_AB_ENERGY_MIN          15.0f
 
 // EVADE state
-BOT_EVADE_COMBAT_TIMEOUT    8.0f    // seconds in COMBAT before EVADE
+BOT_EVADE_COMBAT_TIMEOUT    20.0f   // seconds in COMBAT before EVADE (also requires shields < 60%)
 BOT_EVADE_DURATION          3.5f
+
+// Powerup interrupt/divert (Phase 3.12)
+BOT_POWERUP_INTERRUPT_COOLDOWN  6.0f   // seconds before next interrupt/divert allowed
+BOT_POWERUP_DIVERT_RADIUS      175.0f  // HUNT-state divert scan radius
+BOT_POWERUP_DIVERT_PRIORITY     15     // minimum priority to trigger HUNT divert
 
 // Stuck clearing
 BOT_STUCK_FIGHT_TIMER       1.5f    // seconds stuck before firing to clear

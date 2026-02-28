@@ -12,7 +12,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 This fork introduces an experimental server-side multiplayer bot system for Descent 3. These AI-controlled bots occupy real player slots on dedicated servers, appearing as normal players to clients. No client modifications are required — retail D3 v1.5 clients connect without changes.
 
-**Current Status: Phase 3.11 complete.**
+**Current Status: Phase 3.12 complete.**
 
 **Key Features:**
 *   **Protocol Transparency:** Bots use the same player slots, packets, and state structures as human players. Retail D3 v1.5 clients see bots as normal players on the scoreboard and HUD.
@@ -27,8 +27,8 @@ This fork introduces an experimental server-side multiplayer bot system for Desc
     *   *EVADE:* Breaks off stalled engagements to regroup before re-engaging.
 *   **Lead Targeting:** Bots aim ahead of moving targets using the weapon's real projectile velocity.
 *   **Equipment Tiers & Rampage Mode:** Bots self-classify into WEAK (default Laser only), GOOD (Super Laser/Vauss/Mass Driver), or ELITE (Plasma/EMD/Fusion/Omega/Napalm/Microwave) tiers. ELITE bots fight until 12% shields (rampage mode); WEAK bots retreat at 40%. Elite bots preferentially hunt weaker opponents; unarmed bots avoid elite ones.
-*   **Inventory Management:** Tactical weapon hierarchy — energy-critical bots switch to ammo weapons (Vauss/Mass Driver); range-aware selection (long range: fast projectiles; close range: area weapons). Energy and ammo drain per shot matching the player system. Flares are never used in primary combat.
-*   **Secondary Weapons:** Bots fire missiles alongside primaries in COMBAT. Concussion barrages at close-to-medium range; Mega Missile held for long range (self-guard); Napalm Rockets aimed beside targets for splash; tracking missiles (Homing, Smart, Cyclone, Black Shark) with loose aim requirement. Best available secondary auto-selected on equip.
+*   **Inventory Management:** Tactical weapon hierarchy — energy-critical bots switch to ammo weapons (Vauss/Mass Driver); range-aware selection (long range: fast projectiles; close range: area weapons). Weapon selection is deterministic (highest damage wins, no oscillation). Energy and ammo drain per shot matching the player system. Flares are never used in primary combat.
+*   **Secondary Weapons:** Bots fire missiles alongside primaries in any state — not just COMBAT. Concussion barrages at close-to-medium range; Mega Missile held for long range (self-guard); Napalm Rockets aimed beside targets for splash; tracking missiles (Homing, Smart, Cyclone, Black Shark) with loose aim requirement. Best available secondary auto-selected on equip.
 *   **Countermeasures:** Bots deploy flare countermeasures every 5 seconds while in COMBAT or FLEE states.
 *   **Close-Quarters Agility:** Turn rate scales dynamically — 45,000 (< 70 units), 26,000 (70–140), 16,000 (beyond) — for tighter tracking in dogfights.
 *   **Powerup Collection:** Aggressive weapon pickup prioritization — Mega Missile and Black Shark interrupt even active combat; spawning bots rush for weapons (Vauss/Plasma/EMD priority 16 when unarmed). Shield/energy pickups collected when needed. Combat interrupted for high-value finds within 120 units.
