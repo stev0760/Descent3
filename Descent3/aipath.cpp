@@ -609,7 +609,8 @@ static inline bool AIPathAddDPathNode(ai_path_info *aip, int *slot, int *cur_nod
   if (*cur_node == MAX_NODES) {
     status = AIPathAddDPath(aip, handle);
     if (!status)
-      Int3(); // chrishack -- out of dynamic paths
+      LOG_WARNING.printf("AIPath: dynamic path pool exhausted — path truncated");
+      // fall through: aip->num_paths unchanged, so "num_paths < 1" check below returns false
     if (aip->num_paths < 1)
       return false;
 

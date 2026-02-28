@@ -43,6 +43,7 @@
 #include "room.h"
 #include "weapon.h"
 #include "objinfo.h"
+#include "terrain.h"
 #include "log.h"
 
 bot_info Bots[MAX_BOTS];
@@ -89,7 +90,7 @@ static void BotConfigureAI(int player_slot) {
   obj->ai_info->movement_type = MC_FLYING;
   obj->ai_info->fov = 0.7f;
   // PlayerSetControlToAI sets avoid_friends_distance=0 — override so AIF_AUTO_AVOID_FRIENDS works
-  obj->ai_info->avoid_friends_distance = 40.0f;
+  obj->ai_info->avoid_friends_distance = BOT_AVOID_FRIENDS_DIST;
 
   // Restore real ship physics values (PlayerSetControlToAI sets drag=0.1, clears PF_USES_THRUST)
   int ship_idx = Players[player_slot].ship_index;
@@ -673,8 +674,22 @@ static void BotDoExploreRoaming(int bot_index) {
   if (num_candidates == 0)
     return; // dead end room — wander goal handles orientation
 
-  // Pick a random destination from candidates
-  int dest_room = candidates[rand() % num_candidates];
+  // Prefer uncrowded destinations (< 2 other bots already heading there)
+  int bot_heading[24] = {};
+  for (int b = 0; b < MAX_BOTS; b++) {
+    if (!Bots[b].active || b == bot_index)
+      continue;
+    for (int c = 0; c < num_candidates; c++)
+      if (Bots[b].explore_dest_room == candidates[c])
+        bot_heading[c]++;
+  }
+  int uncrowded[24], num_uncrowded = 0;
+  for (int c = 0; c < num_candidates; c++)
+    if (bot_heading[c] < 2)
+      uncrowded[num_uncrowded++] = candidates[c];
+  int *pick_list = (num_uncrowded > 0) ? uncrowded : candidates;
+  int pick_count = (num_uncrowded > 0) ? num_uncrowded : num_candidates;
+  int dest_room = pick_list[rand() % pick_count];
 
   // Clear old explore goal and set new AIG_GET_TO_POS destination
   int &pgi = Bots[bot_index].pursuit_goal_index;
@@ -1218,13 +1233,15 @@ static void BotApplyThrust(int bot_index) {
     Bots[bot_index].stuck_timer = 0.0f;
   }
 
-  if (Bots[bot_index].stuck_timer > 3.0f) {
-    // Orthogonal escape: reverse + hard strafe
+  if (Bots[bot_index].stuck_timer > 1.5f) {
+    // Orthogonal escape: reverse + fan bots apart by slot so co-located bots choose different vectors
     forward = -1.0f;
-    float strafe_dir = (sinf(Bots[bot_index].juke_phase) > 0) ? 1.0f : -1.0f;
-    sideways = strafe_dir * 1.0f;
-    vertical = 0.5f;
-    if (Bots[bot_index].stuck_timer > 4.5f)
+    float strafe_dir = ((Bots[bot_index].player_slot % 2) == 0) ? 1.0f : -1.0f;
+    if (sinf(Bots[bot_index].juke_phase) < 0)
+      strafe_dir = -strafe_dir;
+    sideways = strafe_dir;
+    vertical = (Bots[bot_index].player_slot % 3 == 0) ? 0.5f : -0.3f;
+    if (Bots[bot_index].stuck_timer > 3.0f)
       Bots[bot_index].stuck_timer = 0.0f;
   }
 
@@ -1312,6 +1329,18 @@ static void BotApplyThrust(int bot_index) {
   float speed_scalar = 1.0f;
   if (OBJECT_OUTSIDE(obj))
     speed_scalar *= 1.3f;
+
+  // Terrain boundary enforcement (outdoor maps only).
+  // The physics engine resets position when OBJ_PLAYER crosses the terrain boundary, but does
+  // not clear phys_info.thrust — the stored thrust re-accumulates velocity each frame and
+  // eventually overcomes the position reset. Zero both thrust and velocity here so the reset
+  // is permanent. The stuck_timer then fires the existing escape system after ~1.5 s.
+  if (OBJECT_OUTSIDE(obj) && GetTerrainCellFromPos(&obj->pos) == -1) {
+    obj->mtype.phys_info.thrust = {};
+    obj->mtype.phys_info.velocity = {};
+    Bots[bot_index].stuck_timer += Frametime;
+    return;
+  }
 
   // Compute thrust vector — same formula as DoFlyingControl (object.cpp:2424-2427)
   // Tri-chording: forward + sideways + vertical combine without normalization
