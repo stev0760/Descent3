@@ -90,7 +90,7 @@ static void BotConfigureAI(int player_slot) {
   obj->ai_info->movement_type = MC_FLYING;
   obj->ai_info->fov = 0.7f;
   // PlayerSetControlToAI sets avoid_friends_distance=0 — override so AIF_AUTO_AVOID_FRIENDS works
-  obj->ai_info->avoid_friends_distance = BOT_AVOID_FRIENDS_DIST;
+  obj->ai_info->avoid_friends_distance = 40.0f;
 
   // Restore real ship physics values (PlayerSetControlToAI sets drag=0.1, clears PF_USES_THRUST)
   int ship_idx = Players[player_slot].ship_index;
@@ -1233,15 +1233,13 @@ static void BotApplyThrust(int bot_index) {
     Bots[bot_index].stuck_timer = 0.0f;
   }
 
-  if (Bots[bot_index].stuck_timer > 1.5f) {
-    // Orthogonal escape: reverse + fan bots apart by slot so co-located bots choose different vectors
+  if (Bots[bot_index].stuck_timer > 3.0f) {
+    // Orthogonal escape: reverse + hard strafe
     forward = -1.0f;
-    float strafe_dir = ((Bots[bot_index].player_slot % 2) == 0) ? 1.0f : -1.0f;
-    if (sinf(Bots[bot_index].juke_phase) < 0)
-      strafe_dir = -strafe_dir;
-    sideways = strafe_dir;
-    vertical = (Bots[bot_index].player_slot % 3 == 0) ? 0.5f : -0.3f;
-    if (Bots[bot_index].stuck_timer > 3.0f)
+    float strafe_dir = (sinf(Bots[bot_index].juke_phase) > 0) ? 1.0f : -1.0f;
+    sideways = strafe_dir * 1.0f;
+    vertical = 0.5f;
+    if (Bots[bot_index].stuck_timer > 4.5f)
       Bots[bot_index].stuck_timer = 0.0f;
   }
 

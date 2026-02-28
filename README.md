@@ -12,7 +12,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 This fork introduces an experimental server-side multiplayer bot system for Descent 3. These AI-controlled bots occupy real player slots on dedicated servers, appearing as normal players to clients. No client modifications are required — retail D3 v1.5 clients connect without changes.
 
-**Current Status: Phase 3.12 complete.**
+**Current Status: Phase 3.12 complete (post-playtest patch applied).**
 
 **Key Features:**
 *   **Protocol Transparency:** Bots use the same player slots, packets, and state structures as human players. Retail D3 v1.5 clients see bots as normal players on the scoreboard and HUD.

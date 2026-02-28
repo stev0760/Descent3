@@ -34,9 +34,6 @@
 #define BOT_COMBAT_EXIT_RANGE (BOT_FIRE_RANGE * 1.2f) // hysteresis for combat→hunt transition
 #define BOT_COMBAT_CIRCLE_DIST 120.0f          // circle-strafe orbit distance in combat state
 
-// Navigation / clustering constants
-#define BOT_AVOID_FRIENDS_DIST 80.0f           // friend-avoidance radius (doubled from 40 to repel before contact)
-
 // Thrust-based movement constants (Phase 3.5)
 #define BOT_AFTERBURNER_FUEL_MAX 5.0f          // seconds of fuel (matches AFTERBURN_TIME)
 #define BOT_AFTERBURNER_THRUST_MULT 1.6f       // base afterburner thrust multiplier

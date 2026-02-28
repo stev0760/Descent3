@@ -35,6 +35,7 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | 3.10 | Secondary weapon firing (missiles), aggressive weapon pickup priorities, aipath pool fix, EXPLORE speed-up when chasing pickups | Complete |
 | 3.11 | Equipment tiers (WEAK/GOOD/ELITE), dynamic flee threshold, countermeasure flares, close-range turn rate, weapon-pickup-before-HUNT, target scoring bias | Complete |
 | 3.12 | FSM stability (FLEE→EXPLORE, EVADE health gate), deterministic weapon selection, powerup awareness expansion, state-independent firing, ghost shooting fix | Complete |
+| 3.12p | Post-playtest: aipath crash fix (Int3→LOG_WARNING), terrain OOB guard, explore room congestion filter. Friend-avoidance and stuck-timer changes reverted after regression. Outdoor altitude OOB still open. | Complete |
 | 4 | Difficulty levels, configuration UI | Not started |
 
 ## Files
@@ -469,6 +470,7 @@ Investigation revealed that bots were missing from the end-of-level scoreboard b
 - **No persistence** — Bots must be re-added after server restart. Config-file-based bot spawning is future work.
 - **Bot removal during level transition untested** — removing bots while a level change is in progress may have edge cases.
 - **AI pathfinding exhaustion** — When too many bots are stuck or colliding, the dynamic path pool (`AIPathGetDPathSlot`) can be exhausted, triggering an assertion in `aipath.cpp:533`. This occurs when the server is overloaded with bots in confined spaces. A proper fix should be addressed alongside Phase 2 navigation improvements rather than modifying `aipath.cpp` directly.
+- **Bots fly out of bounds on outdoor/terrain maps** — On certain maps with large outdoor terrain sections (notably the custom level set Fellowship, level 3), bots escape the playable area and fight high in the sky where human players cannot reach them. The current OOB guard in `BotApplyThrust()` only fires when the bot is fully outside the terrain cell grid (`GetTerrainCellFromPos == -1`), which does not catch bots that remain within the X/Z grid but fly to extreme Y altitudes. The physics engine's `HIT_OUT_OF_TERRAIN_BOUNDS` reset is insufficient because stored `phys_info.thrust` re-accumulates velocity each frame. A proper fix needs to enforce the same vertical/altitude bounds that constrain human players — investigation required into how the engine limits player altitude on terrain maps.
 
 ## Future Work
 
