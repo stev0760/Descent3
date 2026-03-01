@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Phase 3.17 complete — per-frame lead aim steering, tighter fire gates, faster turn rates. First playtest baseline where bots are genuinely dangerous.
+**Status:** Phase 3.18 complete — dynamic path pool exhaustion fix. Zero path errors on 3.18 playtests (down from 1.4M on 3.17).
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -39,6 +39,7 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | 3.14 | Weapon dynamics: WEAK-tier acquisition boost (faster explore, indoor AB, lower divert threshold, combat interrupt for weapons), Omega Cannon melee override, Mass Driver sniper behavior, Cyclone priority bump | Complete |
 | 3.15 | Homing missile evasion (scan + EVADE + chaff + AB), greedy powerup collection in HUNT, outdoor awareness scaling (seek/range/combat multipliers), glass/grate breaking when stuck | Complete |
 | 3.17 | **Accuracy milestone:** Per-frame lead aim steering (`BotUpdateAimDirection`), tighter fire gates (0.85/0.7), faster turn rates (65535/40000/26000). First baseline where bots are genuinely dangerous. | Complete |
+| 3.18 | **Path pool exhaustion fix:** `MAX_DYNAMIC_PATHS` 100→200, OBJ goal retry throttle (per-frame→0.5s), rate-limited log warning. Eliminated 1.4M errors/session → 0. Log sizes down 38× (SPLUS: 26MB→694KB). | Complete |
 | 4 | Difficulty levels, configuration UI | Not started |
 
 ## Files
@@ -62,8 +63,9 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | `Descent3/AIGoal.cpp` | OBJ_PLAYER guard in `AIG_SET_ANIM` and `AIG_FIRE_AT_OBJ` goal cases; added `AIG_GET_AWAY_FROM_OBJ` and `AIG_MOVE_AROUND_OBJ` to `GoalAddGoal` switch |
 | `Descent3/CMakeLists.txt` | Added `bot.h` and `bot.cpp` to build |
 | `netgames/dmfc/dmfcclient.cpp` | Replaced `ASSERT(player_num == 0)` in `OnPlayerReconnect` with warning log — prevents server abort when bot team doesn't match PRec default |
-| `Descent3/aistruct.h` | Raised `MAX_DYNAMIC_PATHS` from 50 → 100 to prevent pool exhaustion crash when many bots use pathfinding simultaneously |
-| `Descent3/aipath.cpp` | Removed `ASSERT(0)` on path pool exhaustion — now logs error and returns false gracefully instead of hard-crashing |
+| `Descent3/aistruct.h` | Raised `MAX_DYNAMIC_PATHS` 50→100→200; prevents pool exhaustion with many AI objects |
+| `Descent3/aipath.cpp` | Removed `ASSERT(0)` on path pool exhaustion → graceful `return false`; rate-limited log warning (once/sec) |
+| `Descent3/AIGoal.cpp` | OBJ_PLAYER guards in `AIG_SET_ANIM`/`AIG_FIRE_AT_OBJ`; stub cases; OBJ goal path failure retry throttle (0.5s) |
 
 ## Console Commands
 

@@ -848,6 +848,8 @@ void GoalPathComplete(object *obj) {
       if (AIPathAllocPath(obj, ai_info, cur_goal, &obj->roomnum, &obj->pos, &goal_obj->roomnum, &goal_obj->pos, 0.0f, 0,
                           obj->handle, ignore_obj)) {
         cur_goal->next_path_time = Gametime + MIN_NEXT_PATH_INTERVAL + ps_rand() / (float)D3_RAND_MAX;
+      } else {
+        cur_goal->next_path_time = Gametime + 0.5f;
       }
     } else {
       GoalClearGoal(obj, cur_goal, AIN_GOAL_COMPLETE);
@@ -1008,7 +1010,7 @@ int GoalAddGoal(object *obj, uint32_t goal_type, void *arg_struct, int level, fl
                           &goal_obj->pos, 0.0f, 0, obj->handle, ignore_obj)) {
         goal_ptr->next_path_time = Gametime + MIN_NEXT_PATH_INTERVAL + ps_rand() / (float)D3_RAND_MAX;
       } else {
-        goal_ptr->next_path_time = Gametime;
+        goal_ptr->next_path_time = Gametime + 0.5f;
       }
     } else
       goal_ptr->g_info.handle = OBJECT_HANDLE_NONE;
@@ -1029,7 +1031,7 @@ int GoalAddGoal(object *obj, uint32_t goal_type, void *arg_struct, int level, fl
                           &goal_obj->pos, 0.0f, 0, obj->handle, ignore_obj)) {
         goal_ptr->next_path_time = Gametime + MIN_NEXT_PATH_INTERVAL + ps_rand() / (float)D3_RAND_MAX;
       } else {
-        goal_ptr->next_path_time = Gametime;
+        goal_ptr->next_path_time = Gametime + 0.5f;
       }
     } else
       goal_ptr->g_info.handle = OBJECT_HANDLE_NONE;

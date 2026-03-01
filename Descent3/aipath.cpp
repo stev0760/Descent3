@@ -21,6 +21,7 @@
 #include "AIGoal.h"
 #include "BOA.h"
 #include "AIMain.h"
+#include "game.h"
 #include "log.h"
 #include "object.h"
 #include "objinfo.h"
@@ -528,7 +529,11 @@ static bool AIPathGetDPathSlot(int *slot, int handle) {
     }
   }
 
-  LOG_ERROR << "Out of dynamic paths";
+  static float last_log_time = 0.0f;
+  if (Gametime - last_log_time >= 1.0f) {
+    LOG_WARNING << "Out of dynamic paths (pool=" << MAX_DYNAMIC_PATHS << ")";
+    last_log_time = Gametime;
+  }
   return false;
 }
 

@@ -855,7 +855,7 @@ struct ai_frame {
 #include "object_external.h"
 #include "room.h"
 
-#define MAX_DYNAMIC_PATHS 100
+#define MAX_DYNAMIC_PATHS 200
 #define MAX_NODES 50
 
 class ai_dynamic_path {

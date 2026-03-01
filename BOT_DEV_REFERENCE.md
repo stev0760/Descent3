@@ -7,8 +7,7 @@ Current implementation status is in `BOTS_DEVEL.md`. Physics model reference is 
 
 ## Current Status
 
-**Phase 3.17 complete** — Per-frame lead aim steering, tighter fire gates, faster turn rates.
-First playtest baseline where bots are genuinely dangerous.
+**Phase 3.18 complete** — Dynamic path pool exhaustion fix. Zero path errors on 3.18 playtests (down from 1.4M on 3.17). Log sizes down 38×.
 
 For the full phase history and roadmap, see `BOTS_DEVEL.md`.
 
@@ -23,10 +22,10 @@ For the full phase history and roadmap, see `BOTS_DEVEL.md`.
 | `Descent3/multi_server.cpp` | `BotDoFrame()` hook in `MultiDoServerFrame()`; NPF_BOT send guards |
 | `Descent3/multi.cpp` | `BotReinitAll()` in `MultiStartNewLevel()`; `MakeBOA()` call; send guards |
 | `Descent3/AImain.cpp` | OBJ_PLAYER guards in `AIDoFrame()`; bot thrust-zeroing skip; gunboy fix |
-| `Descent3/AIGoal.cpp` | OBJ_PLAYER guards in `AIG_FIRE_AT_OBJ`, `AIG_SET_ANIM`; stub cases added |
+| `Descent3/AIGoal.cpp` | OBJ_PLAYER guards in `AIG_FIRE_AT_OBJ`, `AIG_SET_ANIM`; stub cases; OBJ goal path failure retry throttle (0.5s) |
 | `Descent3/dedicated_server.cpp` | Console commands: `addbot`, `removebot`, `removebots`, `botlist`, `botstat`, `botmov` |
-| `Descent3/aistruct.h` | `MAX_DYNAMIC_PATHS` raised 50→100 |
-| `Descent3/aipath.cpp` | Path pool exhaustion: `ASSERT(0)` replaced with graceful `return false` |
+| `Descent3/aistruct.h` | `MAX_DYNAMIC_PATHS` raised 50→100→200 |
+| `Descent3/aipath.cpp` | Path pool exhaustion: `ASSERT(0)` → graceful `return false`; rate-limited log warning (once/sec) |
 | `netgames/dmfc/dmfcclient.cpp` | `OnPlayerReconnect` ASSERT replaced with warning log |
 
 ---
