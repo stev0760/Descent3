@@ -7,14 +7,23 @@
 | 0 | Wandering bots — spawn, move, die, respawn | Complete |
 | 0.5 | Stability fixes — crash guards, level transitions, AI safety, scoreboard | Complete |
 | 1 | Weapon firing — target pursuit, direct-fire combat | Complete |
+| 1.5 | Combat polish — energy/ammo drain, auto weapon switch on empty | Complete |
 | 2 | Smart targeting — game mode awareness, target diversity, robot targeting, team persistence | Complete |
-| 3 | Combat behaviors — FSM (wander/hunt/combat/flee), LOS gating, circle-strafe, flee | Complete |
+| 3 | Combat behaviors — FSM (explore/hunt/combat/flee), LOS gating, circle-strafe, flee | Complete |
 | Movement | Velocity tuning, movement logging, botstat/botmov commands, MPF_THRUSTED cosmetics | Complete |
 | 3.5 | Thrust-based physics — real inertia, tri-chording, afterburner, lateral evasion | Complete |
-| 3.7 | Engine-native intent — consume movement_dir, native avoidance/dodge | In Progress |
-| 5 | High-Fidelity 6DOF Combat — predictive aiming, tactical maneuvers, skill scaling | Not started |
-| 1.5 | Combat polish — energy/ammo drain, lead-tracking aim | Not started |
+| 3.6 | Navigation — engine movement_dir, AIF_AVOID_WALLS, AIF_AUTO_AVOID_FRIENDS, BOA repair | Complete |
+| 3.7 | Behavior polish — burst afterburner, EXPLORE state, sound reactivity, portal flee | Complete |
+| 3.8 | Combat quality — lead targeting (gate-only), EVADE state, powerup collection, weapon switching | Complete |
+| 3.9 | Inventory management — tactical weapon hierarchy, EXPLORE room-to-room roaming | Complete |
+| 3.10 | Secondary weapons (missiles), aggressive pickup priorities, aipath pool fix | Complete |
+| 3.11 | Equipment tiers (WEAK/GOOD/ELITE), dynamic flee, countermeasures, close-range turn rate | Complete |
+| 3.12 | FSM stability — deterministic weapon selection, ghost shooting fix, powerup cooldowns | Complete |
+| 3.14 | Weapon dynamics — Omega melee override, Mass Driver sniper, WEAK-tier acquisition boost | Complete |
+| 3.15 | Missile evasion, greedy pickups, outdoor awareness scaling | Complete |
+| 3.17 | **Accuracy milestone** — per-frame lead aim steering, tighter fire gates, faster turn rates | Complete |
 | 4 | Difficulty levels, configuration UI | Not started |
+| 5 | High-fidelity 6DOF combat — tactical maneuvers, skill scaling | Not started |
 
 ## Goal
 
@@ -602,19 +611,17 @@ PLRMOV: slot=1 'Human' speed=63.2 vel=(45.1,-2.1,43.0)
 
 ---
 
-## Completed Work (Phases 3.6 – 3.12)
+## Completed Work (Phases 1.5 – 3.17)
 
 The following phases originally planned as "Future Work" have been completed. See `BOTS_DEVEL.md` for implementation details.
 
 - **Phase 1.5 (Combat Polish):** Energy/ammo resource drain, auto-switching on empty.
 - **Phase 3.6 (Navigation):** Wall/friend avoidance, stuck recovery, `MakeBOA` repair.
 - **Phase 3.7 (Behavior Polish):** Sound reactivity, portal fleeing, burst afterburner.
-- **Phase 3.8 – 3.12 (Combat Depth):** 
-    - Secondary weapon usage (missiles/rockets)
-    - Inventory management & tactical weapon switching
-    - Equipment tiers (WEAK/GOOD/ELITE) impacting FSM thresholds
-    - Powerup awareness & combat interruption
-    - Deterministic weapon selection & ghost shooting fixes
+- **Phase 3.8 – 3.12 (Combat Depth):** Secondary weapons (missiles/rockets), inventory management, tactical weapon switching, equipment tiers (WEAK/GOOD/ELITE), powerup awareness, deterministic weapon selection, ghost shooting fix.
+- **Phase 3.14 (Weapon Dynamics):** Omega Cannon melee override, Mass Driver sniper behavior, WEAK-tier weapon acquisition boost.
+- **Phase 3.15 (Tactical Awareness):** Homing missile evasion (scan + EVADE + chaff + AB), greedy powerup collection in HUNT, outdoor awareness scaling.
+- **Phase 3.17 (Accuracy Milestone):** Per-frame lead aim steering (`BotUpdateAimDirection`), tighter fire gates (0.85/0.7 dot), faster turn rates (65535/40000/26000). First playtest baseline where bots are genuinely dangerous.
 
 ## Future Work
 
@@ -625,14 +632,18 @@ The following phases originally planned as "Future Work" have been completed. Se
 
 ### Phase 5: Advanced Human-Like Flight
 - **6DOF Maneuvers:** Barrel rolls, perpendicular strafing, and "Immelmann" turns.
-- **Predictive Intercepts:** Solve quadratic aiming equations for true leading of moving targets.
 - **Movement Capture:** (Long-term) Record human player movement traces to tune bot thrust/drag PID controllers.
+
+### Navigation Research
+- **Guide Bot pathfinding:** Investigate how the Guide Bot navigates complex openings (outdoor→underground transitions) in single-player. Its pathfinding may use techniques applicable to multiplayer bot navigation.
 
 ## Known Issues
 
+- **Dynamic path pool exhaustion:** With 6+ bots, `MAX_DYNAMIC_PATHS=100` is insufficient. Millions of "Out of dynamic paths" errors per session. Paths are allocated but not freed fast enough. Needs investigation into path slot lifecycle.
+- **Complex geometry navigation:** Bots get stuck on walls and geometry, especially at transitions between outdoor terrain and underground rooms. Afterburner exacerbates this. Guide Bot research may help.
 - **Terrain Out-of-Bounds:** On maps with large outdoor terrain (e.g., Fellowship L3), bots can fly vertically out of the playable area. The current grid-based OOB check does not catch altitude escapes.
 - **Physics Immunity:** Bots appear unaffected by physics-based weapons like the Mass Driver (inertia transfer) and Black Shark missile vortex. Likely due to `BotApplyThrust()` overwriting physics state or engine handling of `CT_AI`.
+- **Weapon under-utilization:** Bots favor Vauss and Fusion over Plasma, EMD, and Super Laser. The tactical weapon hierarchy needs rebalancing in the medium-range energy weapon band.
 - **State Oscillation/Locking:** Bots sometimes get stuck trying to engage enemies through thin walls, unable to find a path or line of sight, leading to transient state locking.
-- **Navigation Limitations:** Bots use beeline navigation in HUNT state. While basic obstacle avoidance is active, they lack full pathfinding for complex geometry and can get stuck in dead ends or behind complex structures.
 - **Team Rebalancing:** Bots are assigned teams at creation time. If humans join/leave, teams can become unbalanced.
 - **Gunboys:** Map-placed robots (Gunboys) can acquire targets but often fail to fire due to internal engine flags.

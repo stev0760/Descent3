@@ -10,7 +10,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Multiplayer Bots (Experimental)
 
-**Status:** Phase 3.12 (Stable Release)
+**Status:** Phase 3.17 — Accuracy Milestone
 
 This fork introduces a **server-side multiplayer bot system** for Descent 3. These AI-controlled bots occupy real player slots on dedicated servers, appearing and acting as normal players.
 
@@ -18,14 +18,14 @@ This fork introduces a **server-side multiplayer bot system** for Descent 3. The
 
 ### ✨ Key Features
 
-*   **Intelligent Combat:** Bots use a 5-state Finite State Machine (EXPLORE, HUNT, COMBAT, FLEE, EVADE) to engage players dynamically. They circle-strafe, lead their shots, manage ammo/energy, and retreat when critically damaged.
-*   **Physics-Based Movement:** Bots obey the same physics laws as players—including inertia, momentum, and tri-chording. They use afterburners to chase or escape and navigate complex level geometry.
+*   **Dangerous Combat AI:** Bots use a 5-state Finite State Machine (EXPLORE, HUNT, COMBAT, FLEE, EVADE) with per-frame predictive lead aiming. They track where targets *will be*, not where they are — projectiles actually connect. Circle-strafing, afterburner pursuit, and evasive maneuvers make dogfights intense.
+*   **Physics-Based Movement:** Bots obey the same physics laws as players — inertia, momentum, and tri-chording. They use afterburners to chase or escape, evade homing missiles with chaff + afterburner bursts, and navigate level geometry using the engine's pathfinding.
 *   **Weapon Mastery:**
-    *   **Tactical Switching:** Bots switch between energy and ammo weapons based on resources and range.
-    *   **Secondary Fire:** They use missiles and rockets effectively, from close-range Concussion barrages to long-range Mega Missiles.
-    *   **Powerup Awareness:** Unarmed bots will prioritize finding weapons over fighting. High-tier items like Invulnerability will trigger combat interrupts to collect them.
-*   **Equipment Loadout Awareness:** Bots self-classify into tiers (WEAK, GOOD, ELITE) based on their current equipment, adjusting their aggression and retreat thresholds accordingly.
-*   **Game Mode Support:** Works in Anarchy, Team Anarchy, Robo-Anarchy, and even Co-op. Bots automatically balance teams and persist across level changes.
+    *   **Tactical Switching:** Bots switch between energy and ammo weapons based on resources, range, and combat situation. Omega Cannon at melee range, Mass Driver for sniping, Vauss/Plasma for mid-range dogfights.
+    *   **Secondary Fire:** Missiles and rockets from close-range Concussion barrages to long-range Mega Missiles, with splash damage self-guards.
+    *   **Powerup Awareness:** Unarmed bots aggressively seek weapons. High-tier items like Invulnerability trigger combat interrupts.
+*   **Equipment Loadout Awareness:** Bots self-classify into tiers (WEAK, GOOD, ELITE) based on their current equipment, adjusting aggression and retreat thresholds accordingly.
+*   **Game Mode Support:** Works in Anarchy, Team Anarchy, Robo-Anarchy, and Co-op. Bots automatically balance teams and persist across level changes.
 
 ### 🎮 How to Use
 
@@ -41,9 +41,10 @@ These commands are available in the dedicated server console (or via remote teln
 
 ### ⚠️ Known Issues
 
+*   **Navigation:** Bots can get stuck on complex geometry, especially at transitions between outdoor terrain and underground rooms. They may afterburn into walls when pursuing targets through tight openings.
 *   **Outdoor Flight:** On certain outdoor levels with vast open spaces, bots may occasionally fly too high and exit the playable area.
-*   **Physics Immunity:** Some physics-based weapons (Mass Driver, Black Shark vortex) do not currently affect bot movement as intended.
-*   **Navigation:** While bots are good at avoiding walls, they may occasionally get stuck in complex geometry or dead ends.
+*   **Physics Immunity:** Some physics-based weapons (Mass Driver knockback, Black Shark vortex) do not currently affect bot movement as intended.
+*   **Weapon Variety:** Bots tend to favor Vauss and Fusion over Plasma, EMD, and Super Laser. Weapon selection hierarchy needs further tuning.
 
 ### 🛠️ For Developers
 

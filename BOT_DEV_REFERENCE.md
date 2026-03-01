@@ -7,8 +7,8 @@ Current implementation status is in `BOTS_DEVEL.md`. Physics model reference is 
 
 ## Current Status
 
-**Phase 3.12 complete** — FSM stability fixes, deterministic weapon selection, powerup awareness
-expansion, state-independent firing, ghost shooting fix (zero-distance target guard).
+**Phase 3.17 complete** — Per-frame lead aim steering, tighter fire gates, faster turn rates.
+First playtest baseline where bots are genuinely dangerous.
 
 For the full phase history and roadmap, see `BOTS_DEVEL.md`.
 
@@ -103,9 +103,10 @@ for each active bot:
        BotUpdateState()       — evaluate transitions, set goals
        BotSelectBestWeapon()  — tactical primary weapon selection
        BotSelectBestSecondary()
-  7. BotApplyThrust()         — compute thrust from movement_dir + FSM; advance stuck_timer
-  8. if stuck_timer > BOT_STUCK_FIGHT_TIMER → BotDoStuckClear()
-  9. if state == COMBAT → BotDoFiring() + BotDoSecondaryFiring()
+  7. BotUpdateAimDirection()  — per-frame lead aim: predict intercept pos, write to last_see_target_pos
+  8. BotApplyThrust()         — compute thrust from movement_dir + FSM; advance stuck_timer
+  9. if stuck_timer > BOT_STUCK_FIGHT_TIMER → BotDoStuckClear()
+ 10. BotDoFiring() + BotDoSecondaryFiring()  — every frame, all states (internal guards)
 ```
 
 ---
@@ -213,9 +214,9 @@ movement_dir (from AIDoFrame) → decompose into fvec/rvec/uvec dot products
 ```
 
 Dynamic turn rate (set on `ai_info->max_turn_rate` each frame):
-- dist < 70u → 45,000 (tight close-quarters tracking)
-- dist < 140u → 26,000
-- dist ≥ 140u → 16,000
+- dist < 70u → 65,535 (near-instant close-quarters tracking)
+- dist < 140u → 40,000 (fast dogfight tracking)
+- dist ≥ 140u → 26,000 (snappy long-range aim)
 
 ### Stuck Detection & Clearing
 
@@ -226,11 +227,28 @@ Dynamic turn rate (set on `ai_info->max_turn_rate` each frame):
   2. Forward ray (40u) for blocking objects (doors, grates) → `BotFireAtObject()`
 
 `BotFireAtObject()`: relaxed aim (dot ≥ 0, not purely backwards), no state requirement.
-Normal `BotDoFiring()`: strict aim (dot ≥ 0.6), COMBAT state only.
+Normal `BotDoFiring()`: strict aim (dot ≥ 0.85), all states (internal guards).
 
 ---
 
 ## Weapon System
+
+### Lead Aim Steering (Phase 3.17)
+
+`BotUpdateAimDirection()` runs every frame before `BotApplyThrust()`. It predicts where the
+target will be when the projectile arrives and writes that intercept position into
+`ai_info->last_see_target_pos`. The AI orient system (`AIDoOrient` with `GF_ORIENT_TARGET`)
+then rotates the bot toward the lead point instead of the current position.
+
+```
+aim_pos = target->pos + target_vel * (dist / proj_speed)
+→ written to ai_info->last_see_target_pos
+→ AIDoOrient turns bot toward aim_pos
+→ projectiles fire along fvec → hit moving targets
+```
+
+Guards: skips when no target, target is `OBJ_GHOST`, dist < 1.0, target speed < 2.0 (stationary),
+or weapon_id is invalid. Falls back to direct aim (no lead) in all guard cases.
 
 ### Firing Rules
 
@@ -366,7 +384,7 @@ BOT_TARGET_UPDATE_INTERVAL    0.5f
 
 // Ranges
 BOT_FIRE_RANGE              200.0f
-BOT_FIRE_AIM_DOT              0.6f   // strict aim for normal firing
+BOT_FIRE_AIM_DOT              0.85f  // strict aim for normal firing (~32°)
 BOT_COMBAT_CIRCLE_DIST      120.0f   // orbit radius
 BOT_COMBAT_EXIT_RANGE       240.0f   // COMBAT→HUNT hysteresis
 BOT_FLEE_DISTANCE           300.0f   // flee goal distance
@@ -376,9 +394,9 @@ BOT_POWERUP_SEEK_RADIUS     350.0f
 BOT_POWERUP_INTERRUPT_RADIUS 120.0f  // break combat for Mega/BlackShark
 
 // Turn rates (set on ai_info->max_turn_rate per frame)
-BOT_CLOSERANGE_TURNRATE    45000
-BOT_MIDRANGE_TURNRATE      26000
-BOT_LONGRANGE_TURNRATE     16000
+BOT_CLOSERANGE_TURNRATE    65535   // near-instant at point blank
+BOT_MIDRANGE_TURNRATE      40000   // fast dogfight tracking
+BOT_LONGRANGE_TURNRATE     26000   // snappy long-range aim
 
 // Shields / flee
 BOT_FLEE_SHIELD_PCT         0.20f   // GOOD tier
@@ -414,6 +432,9 @@ BOT_POWERUP_INTERRUPT_COOLDOWN  6.0f   // seconds before next interrupt/divert a
 BOT_POWERUP_DIVERT_RADIUS      175.0f  // HUNT-state divert scan radius
 BOT_POWERUP_DIVERT_PRIORITY     15     // minimum priority to trigger HUNT divert
 
+// Secondary aim
+BOT_SECONDARY_AIM_DOT        0.7f   // looser than primary (missiles track)
+
 // Stuck clearing
 BOT_STUCK_FIGHT_TIMER       1.5f    // seconds stuck before firing to clear
 BOT_STUCK_ENEMY_RADIUS      50.0f   // proximity scan radius
@@ -422,6 +443,16 @@ BOT_STUCK_OBSTACLE_DIST     40.0f   // forward ray for destructible objects
 // Equipment scoring (Phase 3.11)
 BOT_RAMPAGE_AGRO_BONUS      60.0f   // elite vs weak: score reduction (prefer)
 BOT_OUTGUNNED_PENALTY       80.0f   // weak vs elite: score increase (avoid)
+
+// Missile evasion (Phase 3.15)
+BOT_MISSILE_SCAN_COOLDOWN   1.0f    // seconds between homing missile scans
+BOT_HUNT_PICKUP_RADIUS    100.0f    // grab items while hunting without state change
+BOT_WEAK_INTERRUPT_RADIUS 200.0f    // WEAK bots break combat for weapons
+
+// Outdoor scaling (Phase 3.15)
+BOT_OUTDOOR_SEEK_MULTIPLIER   1.5f  // powerup seek radius multiplier outdoors
+BOT_OUTDOOR_TARGET_DIST_SCALE 0.7f  // target scoring scale (engage farther)
+BOT_OUTDOOR_COMBAT_RANGE_MULT 1.5f  // combat entry/exit range multiplier
 ```
 
 ---

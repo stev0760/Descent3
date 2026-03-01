@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Phase 3.14 complete — weapon dynamics: WEAK-tier acquisition, Omega melee override, Mass Driver sniper behavior.
+**Status:** Phase 3.17 complete — per-frame lead aim steering, tighter fire gates, faster turn rates. First playtest baseline where bots are genuinely dangerous.
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -37,6 +37,8 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | 3.12 | FSM stability (FLEE→EXPLORE, EVADE health gate), deterministic weapon selection, powerup awareness expansion, state-independent firing, ghost shooting fix | Complete |
 | 3.12p | Post-playtest: aipath crash fix (Int3→LOG_WARNING), terrain OOB guard, explore room congestion filter. Friend-avoidance and stuck-timer changes reverted after regression. Outdoor altitude OOB still open. | Complete |
 | 3.14 | Weapon dynamics: WEAK-tier acquisition boost (faster explore, indoor AB, lower divert threshold, combat interrupt for weapons), Omega Cannon melee override, Mass Driver sniper behavior, Cyclone priority bump | Complete |
+| 3.15 | Homing missile evasion (scan + EVADE + chaff + AB), greedy powerup collection in HUNT, outdoor awareness scaling (seek/range/combat multipliers), glass/grate breaking when stuck | Complete |
+| 3.17 | **Accuracy milestone:** Per-frame lead aim steering (`BotUpdateAimDirection`), tighter fire gates (0.85/0.7), faster turn rates (65535/40000/26000). First baseline where bots are genuinely dangerous. | Complete |
 | 4 | Difficulty levels, configuration UI | Not started |
 
 ## Files
@@ -387,6 +389,125 @@ BOT_WEAK_EXPLORE_SPEED       0.6f   // EXPLORE speed for Laser-only bots
 BOT_WEAK_SEEK_RADIUS       500.0f   // powerup scan radius for Laser-only bots
 ```
 
+### Phase 3.15: Missile Evasion, Greedy Pickups, Outdoor Awareness
+
+#### Homing Missile Evasion
+
+Bots now detect incoming homing missiles by scanning `Objects[]` for `OBJ_WEAPON` with `PF_HOMING` tracking their handle. On detection:
+- Immediate transition to `BOT_STATE_EVADE`
+- Chaff deployment (`BotDeployCountermeasure`) to distract the missile
+- Afterburner burst to outrun the missile
+
+Scan is throttled by `BOT_MISSILE_SCAN_COOLDOWN = 1.0s` per bot to avoid per-frame object iteration cost.
+
+#### Greedy Powerup Collection
+
+- **HUNT pickup**: bots in HUNT grab items within `BOT_HUNT_PICKUP_RADIUS = 100u` without changing state — barely a detour from pursuit path.
+- **WEAK combat interrupt**: WEAK-tier bots break off active combat for weapon pickups within `BOT_WEAK_INTERRUPT_RADIUS = 200u` (wider than the standard 120u interrupt radius).
+
+#### Outdoor Awareness Scaling
+
+Open outdoor spaces need wider search and engagement parameters:
+- `BOT_OUTDOOR_SEEK_MULTIPLIER = 1.5×` — powerup scan radius 350→525u outdoors
+- `BOT_OUTDOOR_TARGET_DIST_SCALE = 0.7×` — 500u target scores like 350u (bots engage farther)
+- `BOT_OUTDOOR_COMBAT_RANGE_MULT = 1.5×` — combat entry/exit ranges scale up outdoors
+
+#### New Constants (bot.h)
+```
+BOT_MISSILE_SCAN_COOLDOWN     1.0f
+BOT_HUNT_PICKUP_RADIUS      100.0f
+BOT_WEAK_INTERRUPT_RADIUS   200.0f
+BOT_OUTDOOR_SEEK_MULTIPLIER   1.5f
+BOT_OUTDOOR_TARGET_DIST_SCALE 0.7f
+BOT_OUTDOOR_COMBAT_RANGE_MULT 1.5f
+```
+
+### Phase 3.17: Lead Aim Steering — Accuracy Milestone
+
+Phase 3.17 is the accuracy milestone that transformed bots from "firing near targets" to "genuinely dangerous opponents." Root cause analysis identified that projectiles were systematically missing behind moving targets because the AI orient system tracked the target's *current* position while projectiles fired along fvec.
+
+#### Fix A — Per-Frame Lead Aim Steering (`BotUpdateAimDirection`)
+
+New function called every frame from `BotDoFrame()`, before `BotApplyThrust()`:
+
+1. Reads current target via `ai_info->target_handle`
+2. Computes projectile travel time: `dist / proj_speed` (from `Weapons[weapon_id].phys_info.velocity`)
+3. Predicts intercept position: `aim_pos = target->pos + target_vel * travel_time`
+4. Writes `aim_pos` into `ai_info->last_see_target_pos` — this is what `AIDoOrient()` (`GF_ORIENT_TARGET`) uses to rotate the bot
+5. Also writes normalized aim direction into `ai_info->vec_to_target_perceived`
+
+Result: the AI orient system now turns the bot toward where the target *will be*, and projectiles (fired along fvec) connect with moving targets.
+
+#### Fix B — Tighter Fire Gates
+
+| Constant | Old | New | Effect |
+|----------|-----|-----|--------|
+| `BOT_FIRE_AIM_DOT` | 0.6 (~53°) | 0.85 (~32°) | Primary: fire only when nearly on-target |
+| `BOT_SECONDARY_AIM_DOT` | 0.5 (~60°) | 0.7 (~45°) | Secondary: tighter but still looser (missiles track) |
+
+Combined with lead steering, tighter gates ensure bots fire *accurately* rather than firing *often*. Fewer wasted shots, higher hit percentage.
+
+#### Fix C — Faster Turn Rates
+
+| Constant | Old | New | Rationale |
+|----------|-----|-----|-----------|
+| `BOT_CLOSERANGE_TURNRATE` | 45000 | 65535 | Near-instant tracking at point blank |
+| `BOT_MIDRANGE_TURNRATE` | 26000 | 40000 | Fast dogfight tracking |
+| `BOT_LONGRANGE_TURNRATE` | 16000 | 26000 | Snappier long-range aim |
+
+### Phase 3.17 Playtest Results — FURY Anarchy Baseline
+
+**Test session:** FURY map rotation, Anarchy, 6 active bots (test1–test6) + 1 human (stvLinux), 6 levels over 25 minutes.
+
+#### Kill Statistics
+
+| Entity | Kills | Deaths | K/D |
+|--------|-------|--------|-----|
+| stvLinux (human) | ~24 | ~20 | 1.2 |
+| test6 | 21 | 14 | 1.5 |
+| test4 | 15 | 8 | 1.9 |
+| test5 | 15 | 10 | 1.5 |
+| test1 | 13 | 8 | 1.6 |
+| test2 | 13 | 11 | 1.2 |
+| test3 | 9 | 13 | 0.7 |
+
+- **95 total kills** across 6 levels (~3.8 kills/min) — healthy anarchy pace
+- **Human was competitive but not dominant** — bots killed the human player multiple times across different levels
+- **Bot-on-bot combat** accounts for the majority of kills — bots are actively fighting each other
+- **Kill streaks observed**: test6 had a 4-kill streak; multiple bots had 3-kill streaks
+- **Laser is viable now**: with accurate aim, even the default Laser lands consistent hits. Many kills are genuine Laser kills. Bots still pick up and switch to upgraded weapons, but Plasma, EMD, and Super Laser appear under-utilized relative to Vauss/Fusion/Microwave.
+
+#### FSM Health
+
+2,988 state transitions across the session. Distribution is healthy:
+
+| Transition | % | Assessment |
+|-----------|---|------------|
+| EXPLORE→HUNT | 36.9% | Primary engagement flow |
+| HUNT→COMBAT | 24.5% | Aggressive target engagement |
+| COMBAT→EXPLORE | 14.3% | Target lost/killed — back to roaming |
+| HUNT→EXPLORE | 7.8% | Target lost mid-chase |
+| HUNT→FLEE | 5.9% | Damage avoidance |
+| COMBAT→FLEE | 5.8% | Self-preservation under fire |
+| COMBAT→HUNT | 1.7% | Target left range |
+| EVADE→HUNT | 1.4% | Re-engagement after break-off |
+| FLEE→EXPLORE | 0.9% | Escaped and disengaged |
+| COMBAT→EVADE | 0.6% | Stall recovery |
+
+Mild EXPLORE→HUNT→EXPLORE oscillation observed when bots have a target but no LOS (wall between them), resolving within 1–2 cycles. Not pathological.
+
+#### Issues Identified
+
+1. **Dynamic path pool exhaustion (CRITICAL):** 1.4M `AIPathGetDPathSlot` "Out of dynamic paths" errors starting on HalfPipe (level 2). `MAX_DYNAMIC_PATHS=100` is insufficient for 6–8 concurrent bot path requests. Paths are allocated but not freed fast enough. This degrades navigation on complex maps and massively inflates log file size.
+
+2. **Geometry navigation / stuck on walls (MODERATE):** Bots sometimes get stuck running into walls, including afterburning into geometry. Most apparent on maps with mixed indoor/outdoor spaces where bots try to navigate to enemies in underground rooms through complex surface openings. The engine's wall avoidance prevents most simple collisions, but complex multi-portal transitions (e.g., outdoor terrain → narrow cave entrance → underground room) defeat the avoidance system. **Research needed:** investigate how the Guide Bot navigates these openings in single-player — its pathfinding may use techniques applicable to multiplayer bots.
+
+3. **NaN/infinity distance in weapon switch (1 occurrence):** `dist=1e30` garbage value in `BotSelectBestWeapon` — fell back to Laser correctly, but the distance computation produced a corrupt float. Likely a stale target handle after respawn.
+
+4. **Weapon under-utilization:** Bots pick up Plasma, EMD, and Super Laser but don't switch to them often enough. Vauss and Fusion dominate the weapon switch logs. The tactical weapon hierarchy may be biased toward ammo/fast-projectile weapons at the expense of energy weapons in the medium-range band.
+
+5. **Missile evasion working:** 52 homing missile detection events across the session, with successful EVADE transitions. At least one "can't shake Smart missile" event (test4 vs test6), confirming Smart missiles are harder to evade as intended.
+
 ## Running a Test Server
 
 ### Server Setup
@@ -452,6 +573,9 @@ Investigation revealed that bots were missing from the end-of-level scoreboard b
 - **Bots fly out of bounds (sky) in outdoor levels** — Very apparent in custom level sets such as "Fellowship" (level 3) which has lots of wide open space but low bounding area to contain players. The current OOB guard in `BotApplyThrust()` only fires when the bot is fully outside the terrain cell grid, which does not catch bots that remain within the X/Z grid but fly to extreme Y altitudes.
 - **Physics immunity to certain weapons** — Bots seem to be unaffected by physics from weapons like the Mass Driver (supposed to disorient and "fling" players via inertia transfer) and the Black Shark missile vortex. This is likely due to `BotApplyThrust()` overwriting the physics state every frame or the engine not applying these forces to `CT_AI` objects correctly.
 - **Sporadic and transient state oscillation/locking** — Unproven theory: bots try to engage and reposition when there is an enemy bot on the other side of a thin wall. This seems to cause bots to get stuck in combat engagement but unable to make line of sight to fire. Bots need better logic for navigating around walls/obstacles in this condition.
+- **Dynamic path pool exhaustion** — With 6+ bots, `MAX_DYNAMIC_PATHS=100` is insufficient. The pool fills up and produces millions of "Out of dynamic paths" log errors per session. Paths are allocated but not freed fast enough, degrading navigation and inflating log files. Needs investigation into path slot lifecycle and possible pool size increase.
+- **Complex geometry navigation** — Bots get stuck on walls and geometry, especially at transitions between outdoor terrain and underground rooms through complex openings. Afterburner exacerbates this (bots AB into walls). Guide Bot pathfinding in single-player may offer techniques for navigating these transitions.
+- **Weapon under-utilization** — Plasma, EMD, and Super Laser are picked up but under-selected relative to Vauss/Fusion/Microwave. The tactical weapon hierarchy may need rebalancing in the medium-range energy weapon band.
 
 ## Future Work
 
