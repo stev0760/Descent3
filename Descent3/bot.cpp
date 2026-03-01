@@ -792,8 +792,11 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
   bool only_default = BotHasOnlyDefaultPrimary(bot_index);
   bool no_secondaries = BotHasNoSecondaries(bot_index);
 
+  // WEAK bots scan a wider radius to find weapons sooner
+  float seek_radius = only_default ? BOT_WEAK_SEEK_RADIUS : BOT_POWERUP_SEEK_RADIUS;
+
   int best_obj = -1;
-  float best_dist = BOT_POWERUP_SEEK_RADIUS;
+  float best_dist = seek_radius;
   int best_priority = 0;
 
   for (int i = 0; i <= Highest_object_index; i++) {
@@ -844,7 +847,7 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
     else if (strstr(lower, "black shark") || strstr(lower, "blackshark"))
       priority = no_secondaries ? 22 : 18;
     else if (strstr(lower, "cyclone") || strstr(lower, "smart"))
-      priority = no_secondaries ? 15 : 5;
+      priority = no_secondaries ? 15 : 8; // Cyclone/Smart are strong dogfighting secondaries
     else if (strstr(lower, "napalm rocket") || strstr(lower, "homing"))
       priority = no_secondaries ? 12 : 4;
     else if (strstr(lower, "concussion") || strstr(lower, "mortar") || strstr(lower, "frag"))
@@ -883,6 +886,7 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
 //   Tier A — always interrupt: Invulnerability/Rapid Fire (instant power-ups too good to pass)
 //   Tier B — interrupt if unarmed: Mega/Black Shark (game-changing secondaries when bare)
 //   Tier C — interrupt if critically hurt: Shield powerup (survival when shields < 20%)
+//   Tier D — interrupt if WEAK: any primary weapon upgrade (Laser-only bot MUST arm up)
 static bool BotShouldInterruptForPowerup(int bot_index) {
   if (Bots[bot_index].powerup_interrupt_cooldown > 0.0f)
     return false; // still cooling down from last interrupt — stay in combat
@@ -891,6 +895,7 @@ static bool BotShouldInterruptForPowerup(int bot_index) {
   object *obj = &Objects[Players[slot].objnum];
   bool no_secondaries = BotHasNoSecondaries(bot_index);
   bool critically_low = (obj->shields < INITIAL_SHIELDS * 0.20f);
+  bool only_default = BotHasOnlyDefaultPrimary(bot_index);
 
   for (int i = 0; i <= Highest_object_index; i++) {
     object *p = &Objects[i];
@@ -919,6 +924,16 @@ static bool BotShouldInterruptForPowerup(int bot_index) {
 
     // Tier C: survival — break off if critically low and a shield drop is right here
     if (critically_low && strstr(lower, "shield"))
+      return true;
+
+    // Tier D: weapon upgrade — WEAK bots break off combat to grab any primary weapon
+    // A Laser-only bot dogfighting with the default weapon is at a massive disadvantage;
+    // grabbing a Plasma/Super Laser/EMD nearby is worth the brief combat interruption.
+    if (only_default && (strstr(lower, "vauss") || strstr(lower, "plasma") ||
+                         strstr(lower, "super laser") || strstr(lower, "emd") ||
+                         strstr(lower, "electro") || strstr(lower, "fusion") ||
+                         strstr(lower, "omega") || strstr(lower, "microwave") ||
+                         strstr(lower, "napalm") || strstr(lower, "mass driver")))
       return true;
   }
   return false;
@@ -1024,14 +1039,15 @@ static void BotUpdateState(int bot_index) {
     else if (dist < BOT_FIRE_RANGE && has_los)
       new_state = BOT_STATE_COMBAT;
     else if (Bots[bot_index].powerup_interrupt_cooldown <= 0.0f) {
-      // Opportunistic pickup divert: only for truly exceptional items (Mega, Invulnerability, etc.)
-      // Suppressed during cooldown to prevent thrashing. Threshold is high so minor items
-      // (weapons already owned, low-priority ammo) don't break the hunt.
+      // Opportunistic pickup divert: WEAK bots divert for any weapon upgrade;
+      // well-armed bots only divert for game-changers (Mega, Invulnerability, etc.)
       bool need_sh = (shields < max_shields * BOT_LOW_SHIELDS_PCT);
-      int pu_obj = BotFindBestPowerup(bot_index, need_sh, low_energy, BOT_POWERUP_DIVERT_PRIORITY);
+      int divert_pri = (bot_equip <= BOT_EQUIP_TIER_WEAK) ? BOT_WEAK_DIVERT_PRIORITY : BOT_POWERUP_DIVERT_PRIORITY;
+      float divert_rad = (bot_equip <= BOT_EQUIP_TIER_WEAK) ? BOT_WEAK_DIVERT_RADIUS : BOT_POWERUP_DIVERT_RADIUS;
+      int pu_obj = BotFindBestPowerup(bot_index, need_sh, low_energy, divert_pri);
       if (pu_obj >= 0) {
         float pu_dist = vm_VectorDistanceQuick(&obj->pos, &Objects[pu_obj].pos);
-        if (pu_dist <= BOT_POWERUP_DIVERT_RADIUS) {
+        if (pu_dist <= divert_rad) {
           Bots[bot_index].powerup_interrupt_cooldown = BOT_POWERUP_INTERRUPT_COOLDOWN;
           new_state = BOT_STATE_EXPLORE; // brief detour to grab the item, then return to hunt
         }
@@ -1153,16 +1169,19 @@ static void BotApplyThrust(int bot_index) {
   }
 
   switch (Bots[bot_index].state) {
-  case BOT_STATE_EXPLORE:
-    // Full speed when actively chasing a powerup (with outdoor AB bursts); slow + silent when roaming
+  case BOT_STATE_EXPLORE: {
+    // Full speed when actively chasing a powerup; slow when roaming.
+    // WEAK bots explore faster and use AB bursts even indoors to grab weapons quickly.
+    int equip = BotGetEquipmentRating(bot_index);
     if (Bots[bot_index].powerup_goal_index >= 0) {
       speed_scale = 1.0f;
-      if (is_outdoor)
-        want_afterburner = true; // short burst toward outdoor pickups
+      if (is_outdoor || equip <= BOT_EQUIP_TIER_WEAK)
+        want_afterburner = true; // WEAK bots burst toward weapons even indoors
     } else {
-      speed_scale = 0.3f;
+      speed_scale = (equip <= BOT_EQUIP_TIER_WEAK) ? BOT_WEAK_EXPLORE_SPEED : 0.3f;
     }
     break;
+  }
 
   case BOT_STATE_HUNT:
     speed_scale = 1.0f;

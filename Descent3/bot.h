@@ -105,6 +105,10 @@
 #define BOT_POWERUP_INTERRUPT_PRIORITY 15    // (legacy — kept for reference; logic is now name-based)
 #define BOT_POWERUP_DIVERT_RADIUS     175.0f // radius for a bot in HUNT to divert and grab a pickup
 #define BOT_POWERUP_DIVERT_PRIORITY    15    // minimum priority to trigger HUNT divert (Mega/Invuln/etc.)
+#define BOT_WEAK_DIVERT_PRIORITY        8    // WEAK bots divert for any primary weapon upgrade
+#define BOT_WEAK_DIVERT_RADIUS        250.0f // WEAK bots scan wider for weapon diverts
+#define BOT_WEAK_EXPLORE_SPEED          0.6f // WEAK bots explore faster to find weapons (was 0.3×)
+#define BOT_WEAK_SEEK_RADIUS          500.0f // WEAK bots scan further for powerups
 
 // Equipment-based behavior (Phase 3.11)
 // Bots self-classify their loadout into three tiers each target-update tick.
