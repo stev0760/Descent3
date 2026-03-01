@@ -365,8 +365,8 @@ static void BotSelectBestWeapon(int bot_index) {
 
     if (uses_ammo) {
       ammo_wb[num_ammo++] = wb;
-      // Mass Driver also goes into long-range bucket (hitscan sniper)
-      if (wb == BOT_WB_MASS_DRIVER)
+      // Hitscan/rapid-fire ammo weapons are also effective at long range
+      if (wb == BOT_WB_MASS_DRIVER || wb == BOT_WB_VAUSS)
         long_wb[num_long++] = wb;
     } else {
       float proj_speed = vm_GetMagnitude(&Weapons[weapon_id].phys_info.velocity);
@@ -377,14 +377,20 @@ static void BotSelectBestWeapon(int bot_index) {
     }
   }
 
-  // Helper: pick the highest player_damage weapon from a list — deterministic, no oscillation.
+  // Helper: pick the highest effective-damage weapon from a list — deterministic, no oscillation.
+  // Rapid-fire weapons (fire_time < 0.2s) get a 1.5× DPS bias to reflect their actual damage
+  // output with high-accuracy bots (e.g. Vauss, Plasma).
   auto pick_best = [&](const int *arr, int n) -> int {
     int pick = arr[0];
-    float best_dmg = -1.0f;
+    float best_score = -1.0f;
     for (int i = 0; i < n; i++) {
-      int wid = Ships[ship_idx].static_wb[arr[i]].gp_weapon_index[0];
+      otype_wb_info &info = Ships[ship_idx].static_wb[arr[i]];
+      int wid = info.gp_weapon_index[0];
       float dmg = (wid > 0 && wid < MAX_WEAPONS) ? Weapons[wid].player_damage : 0.0f;
-      if (dmg > best_dmg) { best_dmg = dmg; pick = arr[i]; }
+      // Rapid-fire weapons get a DPS bias (gp_fire_wait is per-shot interval)
+      if (info.gp_fire_wait[0] < 0.2f)
+        dmg *= 1.5f;
+      if (dmg > best_score) { best_score = dmg; pick = arr[i]; }
     }
     return pick;
   };

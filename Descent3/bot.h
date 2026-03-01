@@ -76,13 +76,14 @@
 #define BOT_ENERGY_LOW_WEAPON 15.0f       // energy threshold to switch to ammo weapons
 #define BOT_WEAPON_LONGRANGE_VEL 150.0f   // projectile velocity above which weapon is "long range"
 #define BOT_WEAPON_CLOSERANGE_VEL 60.0f   // projectile velocity below which weapon is "close range"
-#define BOT_WEAPON_LONGRANGE_DIST 120.0f  // combat dist (units) to apply long-range selection
+#define BOT_WEAPON_LONGRANGE_DIST 90.0f   // combat dist (units) to apply long-range selection
 #define BOT_WEAPON_CLOSERANGE_DIST 40.0f  // combat dist (units) to apply close-range selection
 
 // Weapon-specific range overrides
 #define BOT_OMEGA_MAX_DIST 35.0f          // Omega Cannon (wb 9): leech beam, melee-range only
 #define BOT_MASS_DRIVER_MIN_DIST 100.0f   // Mass Driver (wb 3): hitscan sniper, prefer at distance
 #define BOT_WB_OMEGA 9                    // battery index: Omega Cannon (slot 5b)
+#define BOT_WB_VAUSS 1                    // battery index: Vauss Cannon (slot 1b)
 #define BOT_WB_MASS_DRIVER 3              // battery index: Mass Driver (slot 2b)
 
 // EXPLORE state room roaming (Phase 3.9)
