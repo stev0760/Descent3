@@ -311,14 +311,34 @@ static void BotSelectBestWeapon(int bot_index) {
       dist = vm_VectorDistanceQuick(&obj->pos, &tgt->pos);
   }
 
+  // Omega Cannon (wb 9): leech beam — devastating at melee range, useless beyond it.
+  // If we have it and the target is within melee distance, use it immediately.
+  bool has_omega = (Players[slot].weapon_flags & (1u << BOT_WB_OMEGA)) && energy > 10.0f;
+  if (has_omega && dist < BOT_OMEGA_MAX_DIST) {
+    if (BOT_WB_OMEGA != Players[slot].weapon[PW_PRIMARY].index) {
+      LOG_DEBUG.printf("BOT: '%s' weapon switch: battery %d → %d (Omega melee, dist=%.0f)",
+                       Bots[bot_index].callsign, Players[slot].weapon[PW_PRIMARY].index, BOT_WB_OMEGA, dist);
+      Players[slot].weapon[PW_PRIMARY].index = BOT_WB_OMEGA;
+    }
+    return; // Omega at melee range overrides everything
+  }
+
+  // Mass Driver (wb 3): hitscan sniper — check if we have it and it has ammo.
+  bool has_mass_driver = (Players[slot].weapon_flags & (1u << BOT_WB_MASS_DRIVER)) &&
+                         Players[slot].weapon_ammo[BOT_WB_MASS_DRIVER] > 0;
+
   // Categorize owned, usable, non-flare PRIMARY batteries (1-9 only; 10-19 are secondaries)
   // into three tactical buckets. Arrays sized for primary count only.
   int ammo_wb[10], num_ammo = 0;    // ammo-based (no energy cost)
-  int long_wb[10], num_long = 0;    // energy + fast projectile
+  int long_wb[10], num_long = 0;    // energy + fast projectile (or hitscan sniper)
   int close_wb[10], num_close = 0;  // energy + slow/area projectile
 
   for (int wb = 1; wb < 10; wb++) { // primaries only — secondaries are batteries 10-19
     if (!(Players[slot].weapon_flags & (1u << wb)))
+      continue;
+
+    // Omega excluded from normal selection — only used at melee range (handled above)
+    if (wb == BOT_WB_OMEGA)
       continue;
 
     otype_wb_info &wbinfo = Ships[ship_idx].static_wb[wb];
@@ -339,6 +359,9 @@ static void BotSelectBestWeapon(int bot_index) {
 
     if (uses_ammo) {
       ammo_wb[num_ammo++] = wb;
+      // Mass Driver also goes into long-range bucket (hitscan sniper)
+      if (wb == BOT_WB_MASS_DRIVER)
+        long_wb[num_long++] = wb;
     } else {
       float proj_speed = vm_GetMagnitude(&Weapons[weapon_id].phys_info.velocity);
       if (proj_speed >= BOT_WEAPON_LONGRANGE_VEL)
@@ -367,17 +390,25 @@ static void BotSelectBestWeapon(int bot_index) {
     // Step 1: energy critical — switch to highest-damage ammo weapon (Vauss/Mass Driver)
     best_wb = pick_best(ammo_wb, num_ammo);
   } else if (dist > BOT_WEAPON_LONGRANGE_DIST && num_long > 0) {
-    // Step 2: long range — highest-damage fast-projectile weapon
+    // Step 2: long range — highest-damage fast-projectile or hitscan weapon
+    // Mass Driver is dual-listed here as a long-range hitscan sniper
     best_wb = pick_best(long_wb, num_long);
   } else if (dist < BOT_WEAPON_CLOSERANGE_DIST && num_close > 0) {
     // Step 3: close range — highest-damage slow/area weapon (Napalm, Microwave, Fusion)
     best_wb = pick_best(close_wb, num_close);
   } else {
     // Step 4: medium range — highest-damage weapon from all available primaries
+    // Mass Driver excluded at medium range (save it for sniping)
     int all[10], num_all = 0;
-    for (int i = 0; i < num_long; i++) all[num_all++] = long_wb[i];
+    for (int i = 0; i < num_long; i++) {
+      if (long_wb[i] != BOT_WB_MASS_DRIVER)
+        all[num_all++] = long_wb[i];
+    }
     for (int i = 0; i < num_close; i++) all[num_all++] = close_wb[i];
-    for (int i = 0; i < num_ammo; i++) all[num_all++] = ammo_wb[i];
+    for (int i = 0; i < num_ammo; i++) {
+      if (ammo_wb[i] != BOT_WB_MASS_DRIVER)
+        all[num_all++] = ammo_wb[i];
+    }
     if (num_all > 0)
       best_wb = pick_best(all, num_all);
     // else: stay on battery 0 (default Laser)
@@ -857,8 +888,10 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
     else if (strstr(lower, "vauss") || strstr(lower, "plasma") ||
              strstr(lower, "super laser") || strstr(lower, "emd") || strstr(lower, "electro"))
       priority = only_default ? 16 : 8;
-    else if (strstr(lower, "fusion") || strstr(lower, "omega") || strstr(lower, "microwave"))
+    else if (strstr(lower, "fusion") || strstr(lower, "microwave"))
       priority = only_default ? 13 : 6;
+    else if (strstr(lower, "omega"))
+      priority = only_default ? 8 : 4; // Omega is situational (melee only) — lower pickup priority
     else if (strstr(lower, "napalm") || strstr(lower, "mass driver"))
       priority = only_default ? 10 : 4;
 
