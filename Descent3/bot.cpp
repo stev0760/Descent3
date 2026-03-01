@@ -92,6 +92,12 @@ static void BotConfigureAI(int player_slot) {
   // PlayerSetControlToAI sets avoid_friends_distance=0 — override so AIF_AUTO_AVOID_FRIENDS works
   obj->ai_info->avoid_friends_distance = 40.0f;
 
+  // Enable AI dodge system — fires on AIN_OBJ_FIRED notification for CT_AI objects.
+  // PlayerSetControlToAI sets dodge_percent=0 which disables dodge entirely.
+  obj->ai_info->dodge_percent = 1.0f;       // 100% chance to attempt dodge per incoming shot
+  obj->ai_info->dodge_vel_percent = 1.0f;   // full dodge speed
+  obj->ai_info->life_preservation = 0.8f;   // high self-preservation → longer residual dodge
+
   // Restore real ship physics values (PlayerSetControlToAI sets drag=0.1, clears PF_USES_THRUST)
   int ship_idx = Players[player_slot].ship_index;
   obj->mtype.phys_info.mass = Ships[ship_idx].phys_info.mass;
@@ -597,11 +603,150 @@ static void BotFireAtObject(int bot_index, object *target_obj) {
   }
 }
 
+// Scan Objects[] for homing missiles locked onto this bot.
+// Returns true if at least one PF_HOMING weapon is tracking us and closing in.
+static bool BotDetectIncomingMissile(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  int my_handle = obj->handle;
+
+  for (int i = 0; i <= Highest_object_index; i++) {
+    object *w = &Objects[i];
+    if (w->type != OBJ_WEAPON)
+      continue;
+    if (w->flags & (OF_DEAD | OF_DESTROYED))
+      continue;
+    if (!(w->mtype.phys_info.flags & PF_HOMING))
+      continue;
+    if (w->ctype.laser_info.track_handle != my_handle)
+      continue;
+    // Verify missile is actually approaching (not flying away)
+    vector to_me = obj->pos - w->pos;
+    float dot = vm_DotProduct(&to_me, &w->mtype.phys_info.velocity);
+    if (dot > 0.0f)
+      return true; // closing on us
+  }
+  return false;
+}
+
+// Deploy chaff countermeasure (fires flare battery 20 which spawns GENOBJ_CHAFFCHUNK).
+// Homing missiles prefer chaff over players, so chaff + afterburner is effective evasion.
+static void BotDeployChaff(int bot_index) {
+  if (Bots[bot_index].countermeasure_timer > 0.0f)
+    return;
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  int ship_idx = Players[slot].ship_index;
+  otype_wb_info *wb = &Ships[ship_idx].static_wb[FLARE_INDEX];
+  if (Players[slot].energy < wb->energy_usage)
+    return;
+  if (!WBIsBatteryReady(obj, wb, FLARE_INDEX))
+    return;
+  WBFireBattery(obj, wb, 0, FLARE_INDEX);
+  Players[slot].energy -= wb->energy_usage;
+  if (Players[slot].energy < 0.0f)
+    Players[slot].energy = 0.0f;
+  Bots[bot_index].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
+  LOG_DEBUG.printf("BOT: '%s' deploying chaff countermeasure", Bots[bot_index].callsign);
+}
+
+// Aim and fire the bot's primary weapon at a world position (for obstacle breaking).
+static void BotFireAtPosition(int bot_index, vector *pos) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  int wb_index = Players[slot].weapon[PW_PRIMARY].index;
+  int ship_idx = Players[slot].ship_index;
+
+  if (wb_index < 0 || wb_index >= MAX_WBS_PER_OBJ)
+    return;
+  otype_wb_info *wb = &Ships[ship_idx].static_wb[wb_index];
+  if (wb->energy_usage > 0.0f && Players[slot].energy <= 0.0f)
+    return;
+  if (wb->ammo_usage > 0.0f && Players[slot].weapon_ammo[wb_index] == 0)
+    return;
+  if (!WBIsBatteryReady(obj, wb, wb_index))
+    return;
+
+  WBFireBattery(obj, wb, 0, wb_index);
+  Players[slot].energy -= wb->energy_usage;
+  if (Players[slot].energy < 0.0f)
+    Players[slot].energy = 0.0f;
+  if (wb->ammo_usage > 0.0f) {
+    int drain = (int)wb->ammo_usage;
+    uint16_t &ammo = Players[slot].weapon_ammo[wb_index];
+    ammo = (ammo >= (uint16_t)drain) ? ammo - (uint16_t)drain : 0;
+  }
+}
+
+// Aim and fire the bot's secondary weapon at a world position (for obstacle breaking).
+static void BotFireSecondaryAtPosition(int bot_index, vector *pos) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  int wb_index = Players[slot].weapon[PW_SECONDARY].index;
+  int ship_idx = Players[slot].ship_index;
+
+  if (wb_index < 10 || wb_index > 19)
+    return;
+  if (!(Players[slot].weapon_flags & (1u << wb_index)))
+    return;
+  if (Players[slot].weapon_ammo[wb_index] == 0)
+    return;
+  otype_wb_info *wb = &Ships[ship_idx].static_wb[wb_index];
+  if (!WBIsBatteryReady(obj, wb, wb_index))
+    return;
+
+  WBFireBattery(obj, wb, 0, wb_index);
+  if (wb->ammo_usage > 0.0f) {
+    int drain = (int)wb->ammo_usage;
+    uint16_t &ammo = Players[slot].weapon_ammo[wb_index];
+    ammo = (ammo >= (uint16_t)drain) ? ammo - (uint16_t)drain : 0;
+  }
+  if (wb->energy_usage > 0.0f) {
+    Players[slot].energy -= wb->energy_usage;
+    if (Players[slot].energy < 0.0f)
+      Players[slot].energy = 0.0f;
+  }
+}
+
+// Break glass obstacle: use a matter weapon (secondary missile, Vauss, or Mass Driver).
+// Glass (TF_BREAKABLE portal faces) requires WF_MATTER_WEAPON to shatter.
+static void BotBreakGlassObstacle(int bot_index, vector *target_pos) {
+  int slot = Bots[bot_index].player_slot;
+
+  // Try secondary first — all secondaries are matter weapons (missiles, concussions)
+  int sec_wb = Players[slot].weapon[PW_SECONDARY].index;
+  if (sec_wb >= 10 && sec_wb < 20 && Players[slot].weapon_ammo[sec_wb] > 0) {
+    BotFireSecondaryAtPosition(bot_index, target_pos);
+    LOG_DEBUG.printf("BOT: '%s' firing secondary at glass obstacle", Bots[bot_index].callsign);
+    return;
+  }
+
+  // Try Vauss (battery 2, ammo/matter weapon)
+  if (Players[slot].weapon_flags & (1u << 2)) {
+    Players[slot].weapon[PW_PRIMARY].index = 2;
+    BotFireAtPosition(bot_index, target_pos);
+    LOG_DEBUG.printf("BOT: '%s' firing Vauss at glass obstacle", Bots[bot_index].callsign);
+    return;
+  }
+
+  // Try Mass Driver (battery 3, ammo/matter weapon)
+  if (Players[slot].weapon_flags & (1u << 3)) {
+    Players[slot].weapon[PW_PRIMARY].index = 3;
+    BotFireAtPosition(bot_index, target_pos);
+    LOG_DEBUG.printf("BOT: '%s' firing Mass Driver at glass obstacle", Bots[bot_index].callsign);
+    return;
+  }
+
+  // No matter weapon available — fire primary anyway (won't break glass but might unstick)
+  BotFireAtPosition(bot_index, target_pos);
+}
+
 // When the bot has been stuck for BOT_STUCK_FIGHT_TIMER seconds, try to fight through the blockage.
 //
 // Priority order:
 //  1. Nearby enemy player/bot within BOT_STUCK_ENEMY_RADIUS — set target + fire (self-defense).
-//  2. Forward ray (BOT_STUCK_OBSTACLE_DIST) hits an object (door, grate, building) — blast it open.
+//  2. Forward ray (BOT_STUCK_OBSTACLE_DIST) hits a destroyable object (door, grate) — blast it open.
+//  3. Forward ray hits a breakable glass portal face — use matter weapon to shatter it.
 //
 // Called every frame from BotDoFrame after BotApplyThrust sets stuck_timer.
 static void BotDoStuckClear(int bot_index) {
@@ -642,11 +787,34 @@ static void BotDoStuckClear(int bot_index) {
   fq.flags = FQ_CHECK_OBJS | FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS;
 
   int hit_type = fvi_FindIntersection(&fq, &hit);
+
+  // Priority 2: forward ray hits a destroyable object (door, grate, building) — blast it open.
+  // Only fire at objects that are actually destroyable to avoid wasting ammo on pillars.
   if (hit_type == HIT_OBJECT && hit.hit_object[0] >= 0) {
     object *blocker = &Objects[hit.hit_object[0]];
-    if (blocker->type != OBJ_NONE && blocker->type != OBJ_GHOST && blocker->type != OBJ_POWERUP) {
+    if (blocker->type != OBJ_NONE && blocker->type != OBJ_GHOST && blocker->type != OBJ_POWERUP &&
+        (blocker->flags & OF_DESTROYABLE)) {
       BotFireAtObject(bot_index, blocker);
-      LOG_DEBUG.printf("BOT: '%s' blasting stuck obstacle (type=%d)", Bots[bot_index].callsign, blocker->type);
+      LOG_DEBUG.printf("BOT: '%s' blasting destructible obstacle (type=%d)", Bots[bot_index].callsign, blocker->type);
+      return;
+    }
+  }
+
+  // Priority 3: forward ray hits a wall face — check if it's breakable glass (portal).
+  // TF_BREAKABLE glass requires a matter weapon (WF_MATTER_WEAPON) to shatter.
+  // TF_DESTROYABLE face textures are cosmetic only (face stays solid) — skip those.
+  if (hit_type == HIT_WALL && hit.hit_face_room[0] >= 0 && hit.hit_face[0] >= 0) {
+    int face_room = hit.hit_face_room[0];
+    int face_num = hit.hit_face[0];
+    if (face_room >= 0 && face_room <= Highest_room_index && Rooms[face_room].used) {
+      face &fp = Rooms[face_room].faces[face_num];
+      int16_t tmap = fp.tmap;
+      if ((GameTextures[tmap].flags & TF_BREAKABLE) && fp.portal_num >= 0) {
+        BotBreakGlassObstacle(bot_index, &hit.hit_face_pnt[0]);
+        LOG_DEBUG.printf("BOT: '%s' breaking glass obstacle in room %d face %d", Bots[bot_index].callsign, face_room,
+                         face_num);
+        return;
+      }
     }
   }
 }
@@ -823,8 +991,10 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
   bool only_default = BotHasOnlyDefaultPrimary(bot_index);
   bool no_secondaries = BotHasNoSecondaries(bot_index);
 
-  // WEAK bots scan a wider radius to find weapons sooner
+  // WEAK bots scan a wider radius to find weapons sooner; outdoor spaces scale up further
   float seek_radius = only_default ? BOT_WEAK_SEEK_RADIUS : BOT_POWERUP_SEEK_RADIUS;
+  if (OBJECT_OUTSIDE(obj))
+    seek_radius *= BOT_OUTDOOR_SEEK_MULTIPLIER;
 
   int best_obj = -1;
   float best_dist = seek_radius;
@@ -930,6 +1100,9 @@ static bool BotShouldInterruptForPowerup(int bot_index) {
   bool critically_low = (obj->shields < INITIAL_SHIELDS * 0.20f);
   bool only_default = BotHasOnlyDefaultPrimary(bot_index);
 
+  // WEAK bots scan wider for combat interrupts — grabbing any weapon is worth the brief break
+  float interrupt_radius = only_default ? BOT_WEAK_INTERRUPT_RADIUS : BOT_POWERUP_INTERRUPT_RADIUS;
+
   for (int i = 0; i <= Highest_object_index; i++) {
     object *p = &Objects[i];
     if (p->type != OBJ_POWERUP)
@@ -937,7 +1110,7 @@ static bool BotShouldInterruptForPowerup(int bot_index) {
     if (p->flags & (OF_DEAD | OF_DESTROYED))
       continue;
     float dist = vm_VectorDistanceQuick(&obj->pos, &p->pos);
-    if (dist >= BOT_POWERUP_INTERRUPT_RADIUS)
+    if (dist >= interrupt_radius)
       continue;
 
     const char *raw = Object_info[p->id].name;
@@ -1065,13 +1238,35 @@ static void BotUpdateState(int bot_index) {
   }
 
   case BOT_STATE_HUNT: {
+    // Outdoor spaces: enter combat at longer range (fewer walls to break LOS)
+    float combat_entry = BOT_FIRE_RANGE;
+    if (OBJECT_OUTSIDE(obj))
+      combat_entry *= BOT_OUTDOOR_COMBAT_RANGE_MULT;
+
     if (!has_target)
       new_state = BOT_STATE_EXPLORE;
     else if (low_shields)
       new_state = BOT_STATE_FLEE;
-    else if (dist < BOT_FIRE_RANGE && has_los)
+    else if (dist < combat_entry && has_los)
       new_state = BOT_STATE_COMBAT;
-    else if (Bots[bot_index].powerup_interrupt_cooldown <= 0.0f) {
+
+    // Opportunistic powerup grab while hunting (no state change — just set a secondary goal)
+    // Picks up very close items that barely detour the hunt path.
+    if (new_state == BOT_STATE_HUNT && Bots[bot_index].powerup_goal_index < 0) {
+      bool need_sh = (shields < max_shields * BOT_LOW_SHIELDS_PCT);
+      int pu_obj = BotFindBestPowerup(bot_index, need_sh, low_energy, 0);
+      if (pu_obj >= 0) {
+        float pu_dist = vm_VectorDistanceQuick(&obj->pos, &Objects[pu_obj].pos);
+        if (pu_dist < BOT_HUNT_PICKUP_RADIUS) {
+          int tgt_handle = Objects[pu_obj].handle;
+          Bots[bot_index].powerup_goal_index = GoalAddGoal(
+              obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f,
+              GF_SPEED_ATTACK | GF_USE_BLINE_IF_SEES_GOAL);
+        }
+      }
+    }
+
+    if (new_state == BOT_STATE_HUNT && Bots[bot_index].powerup_interrupt_cooldown <= 0.0f) {
       // Opportunistic pickup divert: WEAK bots divert for any weapon upgrade;
       // well-armed bots only divert for game-changers (Mega, Invulnerability, etc.)
       bool need_sh = (shields < max_shields * BOT_LOW_SHIELDS_PCT);
@@ -1089,21 +1284,29 @@ static void BotUpdateState(int bot_index) {
     break;
   }
 
-  case BOT_STATE_COMBAT:
+  case BOT_STATE_COMBAT: {
+    // Outdoor spaces: scale combat exit range to match entry range
+    float combat_exit = BOT_COMBAT_EXIT_RANGE;
+    if (OBJECT_OUTSIDE(obj))
+      combat_exit *= BOT_OUTDOOR_COMBAT_RANGE_MULT;
+
     if (!has_target)
       new_state = BOT_STATE_EXPLORE;
     else if (low_shields)
       new_state = BOT_STATE_FLEE;
-    else if (dist > BOT_COMBAT_EXIT_RANGE)
+    else if (dist > combat_exit)
       new_state = BOT_STATE_HUNT; // LOS loss alone doesn't exit COMBAT (avoids oscillation)
     else if (Bots[bot_index].combat_idle_timer > BOT_EVADE_COMBAT_TIMEOUT &&
              shields < max_shields * 0.60f)
       new_state = BOT_STATE_EVADE; // prolonged combat AND taking losses — break off to regroup
     else if (BotShouldInterruptForPowerup(bot_index)) {
-      Bots[bot_index].powerup_interrupt_cooldown = BOT_POWERUP_INTERRUPT_COOLDOWN;
+      // WEAK bots use shorter cooldown — they interrupt more aggressively to arm up
+      float cooldown = (bot_equip <= BOT_EQUIP_TIER_WEAK) ? 3.0f : BOT_POWERUP_INTERRUPT_COOLDOWN;
+      Bots[bot_index].powerup_interrupt_cooldown = cooldown;
       new_state = BOT_STATE_EXPLORE; // grab it then re-engage; cooldown prevents immediate re-trigger
     }
     break;
+  }
 
   case BOT_STATE_FLEE:
     if (!has_target)
@@ -1244,10 +1447,10 @@ static void BotApplyThrust(int bot_index) {
     break;
 
   case BOT_STATE_EVADE:
-    // Full speed break-off; AB only outdoors (stay quiet indoors)
+    // Full speed break-off; always AB in EVADE — missile evasion needs max speed.
+    // Safe because EVADE is time-limited (3.5s) and already rare.
     speed_scale = 1.0f;
-    if (is_outdoor)
-      want_afterburner = true;
+    want_afterburner = true;
     break;
   }
 
@@ -1446,7 +1649,9 @@ static void BotSelectTarget(int bot_index) {
       continue;
 
     float dist = vm_VectorDistanceQuick(&obj->pos, &Objects[Players[i].objnum].pos);
-    float score = dist + slot_bot_count[i] * 80.0f; // penalize congested targets
+    // Outdoor maps: reduce perceived distance for scoring (wider engagement)
+    float effective_dist = OBJECT_OUTSIDE(obj) ? dist * BOT_OUTDOOR_TARGET_DIST_SCALE : dist;
+    float score = effective_dist + slot_bot_count[i] * 80.0f; // penalize congested targets
 
     // Equipment differential scoring (Phase 3.11): elite bots prefer weak targets;
     // weak bots avoid elite opponents.
@@ -1608,6 +1813,7 @@ static void BotRespawn(int bot_index) {
   Bots[bot_index].explore_room_timer = 0.0f;
   Bots[bot_index].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
   Bots[bot_index].powerup_interrupt_cooldown = 0.0f;
+  Bots[bot_index].missile_evade_cooldown = 0.0f;
   Bots[bot_index].last_target_update = 0.0f; // force immediate re-target after respawn
   BotSelectBestWeapon(bot_index);    // equip best primary weapon on respawn
   BotSelectBestSecondary(bot_index); // equip best secondary weapon on respawn
@@ -1640,6 +1846,7 @@ void BotInitAll() {
     Bots[i].explore_room_timer = 0.0f;
     Bots[i].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
     Bots[i].powerup_interrupt_cooldown = 0.0f;
+    Bots[i].missile_evade_cooldown = 0.0f;
   }
   Num_bots = 0;
 }
@@ -1671,6 +1878,7 @@ void BotReinitAll() {
     Bots[i].explore_room_timer = 0.0f;
     Bots[i].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
     Bots[i].powerup_interrupt_cooldown = 0.0f;
+    Bots[i].missile_evade_cooldown = 0.0f;
 
     // Restore NetPlayers sequence (level end sets NETSEQ_WAITING_FOR_LEVEL)
     NetPlayers[slot].sequence = NETSEQ_PLAYING;
@@ -1869,6 +2077,7 @@ int BotAdd(const char *name, int ship_index) {
   Bots[bot_index].explore_room_timer = 0.0f;
   Bots[bot_index].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
   Bots[bot_index].powerup_interrupt_cooldown = 0.0f;
+  Bots[bot_index].missile_evade_cooldown = 0.0f;
   BotCacheShipPhysics(bot_index);
   BotSelectBestSecondary(bot_index); // equip best secondary weapon at spawn
   Num_bots++;
@@ -1948,7 +2157,8 @@ void BotDoFrame() {
       Bots[i].explore_dest_room = -1;
       Bots[i].explore_room_timer = 0.0f;
       Bots[i].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
-    Bots[i].powerup_interrupt_cooldown = 0.0f;
+      Bots[i].powerup_interrupt_cooldown = 0.0f;
+      Bots[i].missile_evade_cooldown = 0.0f;
       Players[slot].flags &= ~(PLAYER_FLAGS_THRUSTED | PLAYER_FLAGS_AFTERBURN_ON);
       continue;
     }
@@ -1991,6 +2201,23 @@ void BotDoFrame() {
       Bots[i].countermeasure_timer -= Frametime;
     if (Bots[i].powerup_interrupt_cooldown > 0.0f)
       Bots[i].powerup_interrupt_cooldown -= Frametime;
+    if (Bots[i].missile_evade_cooldown > 0.0f)
+      Bots[i].missile_evade_cooldown -= Frametime;
+
+    // Homing missile evasion: scan for missiles locked onto us (throttled by cooldown)
+    if (Bots[i].missile_evade_cooldown <= 0.0f) {
+      if (BotDetectIncomingMissile(i)) {
+        if (Bots[i].state != BOT_STATE_FLEE && Bots[i].state != BOT_STATE_EVADE) {
+          Bots[i].state = BOT_STATE_EVADE;
+          Bots[i].evade_timer = BOT_EVADE_DURATION;
+          BotClearActiveGoal(i);
+          BotSetEvadeGoal(i);
+          LOG_DEBUG.printf("BOT: '%s' detected homing missile → EVADE", Bots[i].callsign);
+        }
+        BotDeployChaff(i);
+        Bots[i].missile_evade_cooldown = BOT_MISSILE_SCAN_COOLDOWN;
+      }
+    }
 
     // Target acquisition + state transition (throttled)
     if (Gametime - Bots[i].last_target_update > BOT_TARGET_UPDATE_INTERVAL) {

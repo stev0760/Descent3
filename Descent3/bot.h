@@ -139,15 +139,32 @@
 // AB burst toward distant weapon pickups in EXPLORE
 #define BOT_PICKUP_AB_DIST 250.0f
 
-// Countermeasure deployment — reserved for future inventory-item deployment (Gunboy, Seeker Mine, etc.)
-// Flares are NOT countermeasures and should NOT be fired by bots.
-#define BOT_COUNTERMEASURE_INTERVAL 5.0f // seconds between inventory countermeasure uses (future)
+// Countermeasure / chaff deployment
+// Flares (battery 20) spawn GENOBJ_CHAFFCHUNK robot objects that attract homing missiles.
+// Deployed as a missile evasion countermeasure — chaff + afterburner outmaneuvers homing missiles.
+#define BOT_COUNTERMEASURE_INTERVAL 5.0f // seconds between chaff deployments
 
 // Powerup interrupt cooldown — prevents the COMBAT→EXPLORE→HUNT→COMBAT oscillation.
 // After any powerup interrupt or HUNT divert fires, the bot is suppressed for this duration
 // before it can divert/interrupt again. This allows the bot to collect the item and re-engage
 // without immediately being yanked out of COMBAT on the next tick.
 #define BOT_POWERUP_INTERRUPT_COOLDOWN 6.0f
+
+// Homing missile evasion (Phase 3.15)
+// Scans Objects[] for OBJ_WEAPON with PF_HOMING tracking the bot's handle.
+// Triggers EVADE + chaff deployment + afterburner burst to outrun/dodge.
+#define BOT_MISSILE_SCAN_COOLDOWN 1.0f  // seconds between homing missile scans (per bot)
+
+// Greedy powerup collection (Phase 3.15)
+// Bots in HUNT grab very close items without changing state; WEAK bots interrupt combat at wider range.
+#define BOT_HUNT_PICKUP_RADIUS 100.0f     // max dist to grab an item while hunting (barely a detour)
+#define BOT_WEAK_INTERRUPT_RADIUS 200.0f  // WEAK bots break off combat for weapons within this range
+
+// Outdoor awareness scaling (Phase 3.15)
+// Open spaces need wider search/engagement ranges — indoor settings are the base.
+#define BOT_OUTDOOR_SEEK_MULTIPLIER 1.5f        // powerup seek radius multiplier outdoors
+#define BOT_OUTDOOR_TARGET_DIST_SCALE 0.7f      // target scoring: 500u outdoors scores like 350u
+#define BOT_OUTDOOR_COMBAT_RANGE_MULT 1.5f      // combat entry/exit range multiplier outdoors
 
 // Stuck-clear firing (Phase 3.11 fix)
 // When a bot is pinned by another player/bot or a destructible obstacle, it fires to clear the path.
@@ -208,6 +225,10 @@ struct bot_info {
   // Set to BOT_POWERUP_INTERRUPT_COOLDOWN after any divert/interrupt fires.
   // BotShouldInterruptForPowerup() and the HUNT divert check return false while > 0.
   float powerup_interrupt_cooldown;
+
+  // Homing missile evasion (Phase 3.15)
+  // Counts down from BOT_MISSILE_SCAN_COOLDOWN; scan only when <= 0.
+  float missile_evade_cooldown;
 };
 
 extern bot_info Bots[MAX_BOTS];
