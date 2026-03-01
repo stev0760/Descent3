@@ -1364,6 +1364,49 @@ static void BotUpdateState(int bot_index) {
   }
 }
 
+// Per-frame lead aim steering (Phase 3.16 accuracy fix).
+// Writes the predicted intercept position into ai_info->last_see_target_pos so that
+// AIDoOrient (GF_ORIENT_TARGET) turns the bot toward where the target WILL BE,
+// not where it is now. This makes projectiles (fired along fvec) actually hit.
+static void BotUpdateAimDirection(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  if (!obj->ai_info)
+    return;
+
+  object *target = ObjGet(obj->ai_info->target_handle);
+  if (!target || target->type == OBJ_GHOST)
+    return;
+
+  vector to_target = target->pos - obj->pos;
+  float dist = vm_GetMagnitude(&to_target);
+  if (dist < 1.0f)
+    return;
+
+  // Lead targeting: aim ahead of moving targets based on projectile travel time
+  vector aim_pos = target->pos;
+  float target_speed = vm_GetMagnitude(&target->mtype.phys_info.velocity);
+  if (target_speed > 2.0f) {
+    int wb_index = Players[slot].weapon[PW_PRIMARY].index;
+    int ship_idx = Players[slot].ship_index;
+    int weapon_id = Ships[ship_idx].static_wb[wb_index].gp_weapon_index[0];
+    if (weapon_id > 0 && weapon_id < MAX_WEAPONS) {
+      float proj_speed = vm_GetMagnitude(&Weapons[weapon_id].phys_info.velocity);
+      if (proj_speed > 1.0f)
+        aim_pos = target->pos + target->mtype.phys_info.velocity * (dist / proj_speed);
+    }
+  }
+
+  // Steer AI orient system toward the lead position
+  obj->ai_info->last_see_target_pos = aim_pos;
+
+  // Also set perceived target vector for consistency
+  vector aim_dir = aim_pos - obj->pos;
+  vm_NormalizeVector(&aim_dir);
+  obj->ai_info->vec_to_target_perceived = aim_dir;
+  obj->ai_info->dist_to_target_perceived = dist;
+}
+
 // Compute thrust from engine's AI movement_dir — a blended, normalized direction vector
 // incorporating pathfinding, wall avoidance, dodge, and friend avoidance from AIDoFrame().
 // FSM state controls speed scaling and combat-specific overrides; juke is additive.
@@ -2227,6 +2270,9 @@ void BotDoFrame() {
       BotSelectBestSecondary(i);  // equip best secondary weapon
       Bots[i].last_target_update = Gametime;
     }
+
+    // Steer AI orient system toward lead aim position (must precede BotApplyThrust)
+    BotUpdateAimDirection(i);
 
     // Apply thrust-based movement every frame (also advances stuck_timer — must precede StuckClear)
     BotApplyThrust(i);

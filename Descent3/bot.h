@@ -25,7 +25,7 @@
 #define BOT_RESPAWN_DELAY 3.0f          // seconds after death before respawn
 #define BOT_TARGET_UPDATE_INTERVAL 0.5f // seconds between target search runs
 #define BOT_FIRE_RANGE 200.0f           // max distance (units) to fire primary weapon
-#define BOT_FIRE_AIM_DOT 0.6f           // min dot(forward, to_target) to allow firing (~53 degrees)
+#define BOT_FIRE_AIM_DOT 0.85f          // min dot(forward, to_target) to allow firing (~32 degrees)
 
 // Combat behavior constants
 #define BOT_FLEE_SHIELD_PCT 0.20f              // flee when shields < 20% of max
@@ -96,7 +96,7 @@
 //   Mega/Black Shark: held for long range only (massive splash — NEVER fire close)
 //   Napalm Rocket: area denial; aim beside/below target, short range only
 //   Tracking missiles (Homing, Smart, Cyclone): medium range, looser aim requirement
-#define BOT_SECONDARY_AIM_DOT 0.5f        // min dot to fire secondary (looser than primary — missiles track)
+#define BOT_SECONDARY_AIM_DOT 0.7f        // min dot to fire secondary (looser than primary — missiles track)
 #define BOT_CONCUSSION_MIN_DIST 20.0f     // don't barrage with concussions closer than this
 #define BOT_CONCUSSION_MAX_DIST 180.0f    // max range for concussion fire
 #define BOT_MEGA_MIN_DIST 80.0f           // self-guard for Mega Missile
@@ -132,9 +132,9 @@
 // Tighter tracking at close range improves hit accuracy in dogfights.
 #define BOT_CLOSERANGE_DIST      70.0f
 #define BOT_MIDRANGE_DIST       140.0f
-#define BOT_CLOSERANGE_TURNRATE  45000
-#define BOT_MIDRANGE_TURNRATE    26000
-#define BOT_LONGRANGE_TURNRATE   16000  // matches original BotConfigureAI value
+#define BOT_CLOSERANGE_TURNRATE  65535  // near-instant tracking at point blank
+#define BOT_MIDRANGE_TURNRATE    40000  // fast dogfight tracking
+#define BOT_LONGRANGE_TURNRATE   26000  // snappier long-range aim
 
 // AB burst toward distant weapon pickups in EXPLORE
 #define BOT_PICKUP_AB_DIST 250.0f
