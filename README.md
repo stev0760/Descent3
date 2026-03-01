@@ -10,32 +10,44 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Multiplayer Bots (Experimental)
 
-This fork introduces an experimental server-side multiplayer bot system for Descent 3. These AI-controlled bots occupy real player slots on dedicated servers, appearing as normal players to clients. No client modifications are required — retail D3 v1.5 clients connect without changes.
+**Status:** Phase 3.12 (Stable Release)
 
-**Current Status: Phase 3.12 complete (post-playtest patch applied).**
+This fork introduces a **server-side multiplayer bot system** for Descent 3. These AI-controlled bots occupy real player slots on dedicated servers, appearing and acting as normal players.
 
-**Key Features:**
-*   **Protocol Transparency:** Bots use the same player slots, packets, and state structures as human players. Retail D3 v1.5 clients see bots as normal players on the scoreboard and HUD.
-*   **Thrust-Based Physics:** Movement uses the ship's real physics template (mass, drag, full_thrust) integrated by the engine's physics system — natural inertia, momentum, and tri-chording (√3× speed when strafing all three axes simultaneously).
-*   **Afterburner:** Burst-based afterburner management with fuel/energy accounting that mirrors the player system (1.6×–2.88× thrust ramp). Clients see the flame effect. Stealth-aware: no afterburner in tight indoor spaces.
-*   **Engine Navigation:** Integrates `ai_info->movement_dir` (wall avoidance, dodge, friend avoidance) into thrust. BOA pathfinding data is rebuilt automatically when missing. Bots no longer get stuck on walls.
-*   **5-State Combat FSM:** EXPLORE → HUNT → COMBAT → FLEE → EVADE.
-    *   *EXPLORE:* Roams level room-to-room via portals, seeking powerups and players. Weapon pickups are always pursued even when a combat target exists — unarmed bots grab weapons before engaging.
-    *   *HUNT:* Pursues a target using BOA-assisted pathfinding.
-    *   *COMBAT:* Circle-strafes at optimal range, fires with lead targeting, jukes laterally.
-    *   *FLEE:* Seeks cover through portals when critically low on shields.
-    *   *EVADE:* Breaks off stalled engagements to regroup before re-engaging.
-*   **Lead Targeting:** Bots aim ahead of moving targets using the weapon's real projectile velocity.
-*   **Equipment Tiers & Rampage Mode:** Bots self-classify into WEAK (default Laser only), GOOD (Super Laser/Vauss/Mass Driver), or ELITE (Plasma/EMD/Fusion/Omega/Napalm/Microwave) tiers. ELITE bots fight until 12% shields (rampage mode); WEAK bots retreat at 40%. Elite bots preferentially hunt weaker opponents; unarmed bots avoid elite ones.
-*   **Inventory Management:** Tactical weapon hierarchy — energy-critical bots switch to ammo weapons (Vauss/Mass Driver); range-aware selection (long range: fast projectiles; close range: area weapons). Weapon selection is deterministic (highest damage wins, no oscillation). Energy and ammo drain per shot matching the player system. Flares are never used in primary combat.
-*   **Secondary Weapons:** Bots fire missiles alongside primaries in any state — not just COMBAT. Concussion barrages at close-to-medium range; Mega Missile held for long range (self-guard); Napalm Rockets aimed beside targets for splash; tracking missiles (Homing, Smart, Cyclone, Black Shark) with loose aim requirement. Best available secondary auto-selected on equip.
-*   **Countermeasures:** Bots deploy flare countermeasures every 5 seconds while in COMBAT or FLEE states.
-*   **Close-Quarters Agility:** Turn rate scales dynamically — 45,000 (< 70 units), 26,000 (70–140), 16,000 (beyond) — for tighter tracking in dogfights.
-*   **Powerup Collection:** Aggressive weapon pickup prioritization — Mega Missile and Black Shark interrupt even active combat; spawning bots rush for weapons (Vauss/Plasma/EMD priority 16 when unarmed). Shield/energy pickups collected when needed. Combat interrupted for high-value finds within 120 units.
-*   **Game Mode Awareness:** Free-for-all, team anarchy, and co-op modes handled correctly. Team assignment persists across level transitions.
-*   **Console Management:** `addbot`, `removebot`, `removebots`, `botlist`, `botstat`, `botmov` commands on the dedicated server console.
+**No client mods required.** Retail D3 v1.5 clients can connect and play against these bots immediately.
 
-See `BOTS_DEVEL.md` for full implementation details and phase history.
+### ✨ Key Features
+
+*   **Intelligent Combat:** Bots use a 5-state Finite State Machine (EXPLORE, HUNT, COMBAT, FLEE, EVADE) to engage players dynamically. They circle-strafe, lead their shots, manage ammo/energy, and retreat when critically damaged.
+*   **Physics-Based Movement:** Bots obey the same physics laws as players—including inertia, momentum, and tri-chording. They use afterburners to chase or escape and navigate complex level geometry.
+*   **Weapon Mastery:**
+    *   **Tactical Switching:** Bots switch between energy and ammo weapons based on resources and range.
+    *   **Secondary Fire:** They use missiles and rockets effectively, from close-range Concussion barrages to long-range Mega Missiles.
+    *   **Powerup Awareness:** Unarmed bots will prioritize finding weapons over fighting. High-tier items like Invulnerability will trigger combat interrupts to collect them.
+*   **Equipment Loadout Awareness:** Bots self-classify into tiers (WEAK, GOOD, ELITE) based on their current equipment, adjusting their aggression and retreat thresholds accordingly.
+*   **Game Mode Support:** Works in Anarchy, Team Anarchy, Robo-Anarchy, and even Co-op. Bots automatically balance teams and persist across level changes.
+
+### 🎮 How to Use
+
+These commands are available in the dedicated server console (or via remote telnet):
+
+| Command | Description |
+| :--- | :--- |
+| `addbot <name>` | Adds a bot with the given name (default: "Bot"). |
+| `removebot <index>` | Removes a specific bot (use `botlist` to find the index). |
+| `removebots` | Removes all active bots. |
+| `botlist` | Displays a list of all current bots and their status. |
+| `botstat [index\|all]` | Displays real-time physics/state data for debugging. |
+
+### ⚠️ Known Issues
+
+*   **Outdoor Flight:** On certain outdoor levels with vast open spaces, bots may occasionally fly too high and exit the playable area.
+*   **Physics Immunity:** Some physics-based weapons (Mass Driver, Black Shark vortex) do not currently affect bot movement as intended.
+*   **Navigation:** While bots are good at avoiding walls, they may occasionally get stuck in complex geometry or dead ends.
+
+### 🛠️ For Developers
+
+For a deep dive into the architecture, FSM logic, and implementation history, please see [BOTS_DEVEL.md](BOTS_DEVEL.md).
 
 ## Contributing
 Anyone can contribute! We have an active Discord presence at [Descent Developer Network](https://discord.gg/GNy5CUQ). Patches should be submitted on GitHub.

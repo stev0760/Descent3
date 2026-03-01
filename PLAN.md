@@ -602,23 +602,37 @@ PLRMOV: slot=1 'Human' speed=63.2 vel=(45.1,-2.1,43.0)
 
 ---
 
+## Completed Work (Phases 3.6 – 3.12)
+
+The following phases originally planned as "Future Work" have been completed. See `BOTS_DEVEL.md` for implementation details.
+
+- **Phase 1.5 (Combat Polish):** Energy/ammo resource drain, auto-switching on empty.
+- **Phase 3.6 (Navigation):** Wall/friend avoidance, stuck recovery, `MakeBOA` repair.
+- **Phase 3.7 (Behavior Polish):** Sound reactivity, portal fleeing, burst afterburner.
+- **Phase 3.8 – 3.12 (Combat Depth):** 
+    - Secondary weapon usage (missiles/rockets)
+    - Inventory management & tactical weapon switching
+    - Equipment tiers (WEAK/GOOD/ELITE) impacting FSM thresholds
+    - Powerup awareness & combat interruption
+    - Deterministic weapon selection & ghost shooting fixes
+
 ## Future Work
 
-### Phase 3.5: Thrust-Based Movement — COMPLETE
+### Phase 4: Configuration & Accessibility
+- **Difficulty Levels:** Scale accuracy, reaction time, and aggression (e.g., ROOKIE, HOTSHOT, ACE, INSANE).
+- **Server Configuration:** Load bot definitions and rosters from `dedicated.cfg` or a JSON manifest.
+- **Remote Admin:** Extend `addbot`/`removebot` commands with team selection and skill overrides.
 
-Implemented thrust-based physics for bots. Bots keep CT_AI for AI infrastructure but write `phys_info.thrust` directly via `BotApplyThrust()`. Guards in `AIDoFrame()` preserve bot thrust. `PhysicsDoFrame()` integrates with real ship mass/drag. See `BOTS_DEVEL.md` Phase 3.5 section for full details.
+### Phase 5: Advanced Human-Like Flight
+- **6DOF Maneuvers:** Barrel rolls, perpendicular strafing, and "Immelmann" turns.
+- **Predictive Intercepts:** Solve quadratic aiming equations for true leading of moving targets.
+- **Movement Capture:** (Long-term) Record human player movement traces to tune bot thrust/drag PID controllers.
 
-### Phase 1.5: Combat Polish
-- Energy/ammo consumption on bot firing
-- Lead-tracking aim (`AIDetermineAimPoint()`)
-- Weapon switching when out of ammo
+## Known Issues
 
-### Phase 4: Configuration
-- Difficulty levels (accuracy, reaction time, aggression)
-- Server config file bot definitions
-- Frontend/administration UI
-
-### Known Issues
-- **Gunboy targeting**: Phase 2 fix allows target acquisition but gunboy still doesn't fire — likely blocked by a separate condition in `ai_fire()` or weapon battery configuration
-- **AI path exhaustion**: `AIPathGetDPathSlot` assertion under load (3+ bots pathfinding simultaneously)
-- **Navigation is beeline-only**: bots may get stuck in geometry when hunting
+- **Terrain Out-of-Bounds:** On maps with large outdoor terrain (e.g., Fellowship L3), bots can fly vertically out of the playable area. The current grid-based OOB check does not catch altitude escapes.
+- **Physics Immunity:** Bots appear unaffected by physics-based weapons like the Mass Driver (inertia transfer) and Black Shark missile vortex. Likely due to `BotApplyThrust()` overwriting physics state or engine handling of `CT_AI`.
+- **State Oscillation/Locking:** Bots sometimes get stuck trying to engage enemies through thin walls, unable to find a path or line of sight, leading to transient state locking.
+- **Navigation Limitations:** Bots use beeline navigation in HUNT state. While basic obstacle avoidance is active, they lack full pathfinding for complex geometry and can get stuck in dead ends or behind complex structures.
+- **Team Rebalancing:** Bots are assigned teams at creation time. If humans join/leave, teams can become unbalanced.
+- **Gunboys:** Map-placed robots (Gunboys) can acquire targets but often fail to fire due to internal engine flags.
