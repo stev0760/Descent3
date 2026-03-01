@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Phase 3.12 complete — FSM stability, deterministic weapon selection, powerup awareness, ghost shooting fix.
+**Status:** Phase 3.14 complete — weapon dynamics: WEAK-tier acquisition, Omega melee override, Mass Driver sniper behavior.
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -36,6 +36,7 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | 3.11 | Equipment tiers (WEAK/GOOD/ELITE), dynamic flee threshold, countermeasure flares, close-range turn rate, weapon-pickup-before-HUNT, target scoring bias | Complete |
 | 3.12 | FSM stability (FLEE→EXPLORE, EVADE health gate), deterministic weapon selection, powerup awareness expansion, state-independent firing, ghost shooting fix | Complete |
 | 3.12p | Post-playtest: aipath crash fix (Int3→LOG_WARNING), terrain OOB guard, explore room congestion filter. Friend-avoidance and stuck-timer changes reverted after regression. Outdoor altitude OOB still open. | Complete |
+| 3.14 | Weapon dynamics: WEAK-tier acquisition boost (faster explore, indoor AB, lower divert threshold, combat interrupt for weapons), Omega Cannon melee override, Mass Driver sniper behavior, Cyclone priority bump | Complete |
 | 4 | Difficulty levels, configuration UI | Not started |
 
 ## Files
@@ -345,6 +346,45 @@ BOT_EVADE_COMBAT_TIMEOUT        20.0f   // raised from 8.0f; requires shields < 
 #### New bot_info Fields
 ```
 float powerup_interrupt_cooldown;  // countdown suppressing powerup interrupt/divert
+```
+
+### Phase 3.14: Weapon Dynamics — Acquisition, Omega, Mass Driver
+
+Playtest feedback (v3.14) identified that bots dogfight with default Laser too often and underutilize key weapons like Plasma Cannon, Super Laser, EMD, and Cyclone missiles. Two sub-phases address this:
+
+#### WEAK-Tier Weapon Acquisition Boost
+
+Bots classified as `BOT_EQUIP_TIER_WEAK` (Laser-only) now aggressively seek weapons:
+
+- **EXPLORE speed** 0.3× → 0.6× (`BOT_WEAK_EXPLORE_SPEED`) — faster room traversal to find pickups
+- **Indoor AB bursts** toward weapon pickups — WEAK bots burst even indoors (was outdoor-only)
+- **HUNT divert threshold** lowered: priority 15 → 8 (`BOT_WEAK_DIVERT_PRIORITY`), radius 175 → 250u (`BOT_WEAK_DIVERT_RADIUS`) — any primary weapon upgrade triggers a detour
+- **Combat interrupt Tier D** — WEAK bots break off active fights to grab nearby primary weapons (Plasma/EMD/Super Laser/Vauss/Fusion/etc within `BOT_POWERUP_INTERRUPT_RADIUS`)
+- **Powerup seek radius** 350 → 500u (`BOT_WEAK_SEEK_RADIUS`) — wider scan for Laser-only bots
+- **Cyclone/Smart pickup priority** 5 → 8 when already armed — better secondary resupply
+
+#### Weapon-Specific Range Behaviors
+
+**Omega Cannon (battery 9, slot 5b)** — energy leech beam:
+- Melee override: at `dist < BOT_OMEGA_MAX_DIST` (35u), Omega is immediately selected, overriding all other weapons. The leech beam's shield/energy drain is devastating at point-blank range.
+- Excluded from normal weapon selection beyond 35u — prevents bots from wasting energy on a beam that can't reach.
+- Pickup priority lowered: 8 bare / 4 equipped (was 13/6 with Fusion/Microwave). Bots grab Plasma/Vauss/EMD/Fusion first; Omega is situational.
+
+**Mass Driver (battery 3, slot 2b)** — hitscan railgun:
+- Dual-listed in `ammo_wb` AND `long_wb` buckets — gets selected at long range as a hitscan sniper alongside energy fast-projectile weapons.
+- Excluded from medium-range "all weapons" pool — ammo is saved for sniping, not wasted at dogfighting range.
+- Still available as low-energy fallback at any range (Step 1 in the tactical hierarchy).
+
+#### New Constants (bot.h)
+```
+BOT_OMEGA_MAX_DIST          35.0f   // Omega melee-only threshold
+BOT_MASS_DRIVER_MIN_DIST   100.0f   // Mass Driver sniper preference distance
+BOT_WB_OMEGA                 9      // battery index: Omega Cannon
+BOT_WB_MASS_DRIVER           3      // battery index: Mass Driver
+BOT_WEAK_DIVERT_PRIORITY     8      // HUNT divert threshold for WEAK bots
+BOT_WEAK_DIVERT_RADIUS     250.0f   // HUNT divert scan radius for WEAK bots
+BOT_WEAK_EXPLORE_SPEED       0.6f   // EXPLORE speed for Laser-only bots
+BOT_WEAK_SEEK_RADIUS       500.0f   // powerup scan radius for Laser-only bots
 ```
 
 ## Running a Test Server
