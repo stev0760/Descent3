@@ -155,99 +155,39 @@ Replaced the simple nearest-human search with a full mode-aware targeting pass:
 - `AIDetermineTarget` PTMC multiplayer branch previously called `AITargetCheck`, which internally calls `BOA_IsVisible`. In multiplayer maps, the BOA graph often doesn't connect a map-placed robot's room to the player's room, so `BOA_IsVisible` returns false and the robot never acquires a target.
 - Fix: replaced `AITargetCheck` with a direct distance + `AIObjEnemy` check. Weapon fire still requires LOS (handled inside `CreateAndFireWeapon`, which logs "weapon point in wall, didn't fire").
 
-### Phase 3: Combat Behaviors & State Machine
+### Phase 3 & 3.8: Combat Behaviors & State Machine
 
-Phase 3 replaces the simple "beeline and fire" behavior with a lightweight FSM (Finite State Machine) that gives bots distinct behavioral modes.
+Phase 3 replaced the simple "beeline and fire" behavior with a lightweight FSM that gives bots distinct behavioral modes. Phase 3.8 added the EVADE state.
 
 **State Enum (`BotState`):**
 
 | State | Goal Active | Behavior |
 |-------|------------|----------|
-| `BOT_STATE_WANDER` | `AIG_WANDER_AROUND` (level 1) | No target. Background exploration. |
-| `BOT_STATE_HUNT` | `AIG_GET_TO_OBJ` (level 2) | Has target, out of range or no LOS. Pursue. |
-| `BOT_STATE_COMBAT` | `AIG_MOVE_RELATIVE_OBJ` (level 2) | In range + has LOS. Circle-strafe + fire. |
-| `BOT_STATE_FLEE` | `AIG_GET_TO_POS` (level 2) | Low shields. Retreat from target. |
+| `BOT_STATE_EXPLORE` | `AIG_GET_TO_POS` | No target. Roams room-to-room via portals, seeks powerups. |
+| `BOT_STATE_HUNT` | `AIG_GET_TO_OBJ` | Has target, out of range or no LOS. Pursue. |
+| `BOT_STATE_COMBAT` | `AIG_MOVE_RELATIVE_OBJ` | In range + has LOS. Circle-strafe + fire. |
+| `BOT_STATE_FLEE` | `AIG_GET_TO_POS` | Low shields. Retreat from threat, seek cover. |
+| `BOT_STATE_EVADE` | `AIG_GET_TO_POS` | Prolonged combat without a kill. Break off to regroup. |
 
 **State Transitions** (evaluated every target-update tick, 0.5s):
-- `WANDER → HUNT`: target acquired
-- `HUNT → COMBAT`: distance < `BOT_FIRE_RANGE` (200) AND `fvi_FindIntersection` LOS check passes
-- `COMBAT → HUNT`: distance > `BOT_COMBAT_EXIT_RANGE` (240, hysteresis) — LOS loss alone no longer exits COMBAT (prevents rapid oscillation at close range)
-- `COMBAT → FLEE`: shields < 20% of max
-- `FLEE → HUNT`: shields > 40% OR distance > 300 units from threat
-- `any → WANDER`: bot respawns (reset state)
+- `EXPLORE → HUNT`: `has_target` and not holding position for a nearby weapon.
+- `HUNT → COMBAT`: `dist < BOT_FIRE_RANGE` (200) AND `has_los`.
+- `HUNT → FLEE`: `low_shields`.
+- `HUNT → EXPLORE`: `!has_target` or interrupted by high-priority powerup.
+- `COMBAT → HUNT`: `dist > BOT_COMBAT_EXIT_RANGE` (240, hysteresis). LOS loss alone does not exit state.
+- `COMBAT → FLEE`: `low_shields`.
+- `COMBAT → EVADE`: `combat_idle_timer > 20s` AND `shields < 60%`.
+- `COMBAT → EXPLORE`: Interrupted by high-priority powerup.
+- `FLEE → HUNT`: `shields_recovered`.
+- `FLEE → EXPLORE`: `dist > BOT_FLEE_DISTANCE` (escaped) or `!has_target`.
+- `EVADE → HUNT`/`EXPLORE`: `evade_timer <= 0`.
+- `any → EXPLORE`: bot respawns (reset state).
 
 **LOS Check (`BotHasLOS`):**
 Uses `fvi_FindIntersection` with `FQ_CHECK_OBJS | FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS | FQ_IGNORE_MOVING_OBJECTS` to cast a ray from bot to target. Returns true on `HIT_NONE` or `HIT_OBJECT`. This prevents bots from entering COMBAT state when the target is behind a wall.
 
 **Combat Circle-Strafe:**
 Uses `AIG_MOVE_RELATIVE_OBJ` goal (fully implemented in `AImain.cpp:4934`). This goal type handles both circle-strafing at `circle_distance` and fleeing when too close (< 0.7× circle distance). The `GF_ORIENT_TARGET` flag keeps the bot facing its target during the strafe.
-
-**Key finding during research:** `AIG_MOVE_AROUND_OBJ` and `AIG_GET_AWAY_FROM_OBJ` are defined in headers but were NOT handled in `GoalAddGoal`'s switch (would hit `ASSERT(0)`) and have no distinct movement behavior in `AIDoFrame`. They were stubs. Switch cases were added for safety, but `AIG_MOVE_RELATIVE_OBJ` is used for combat instead.
-
-**Safety guards added:**
-- `AIG_FIRE_AT_OBJ`: OBJ_PLAYER guard prevents crash if any AI code path triggers this goal on a bot (accesses `Object_info[obj->id].static_wb`)
-- `AIG_GET_AWAY_FROM_OBJ`, `AIG_MOVE_AROUND_OBJ`: added to `GoalAddGoal` switch to prevent `ASSERT(0)` if ever used
-
-### NPF_BOT Guard Locations
-
-The `NPF_BOT` flag prevents network I/O on bot slots. Guards are placed in:
-
-**`multi_server.cpp`:**
-- `MultiDisconnectDeadPlayers()` — skip socket timeout check
-- `MultiDisconnectPlayer()` — skip `nw_CloseSocket()`
-- `MultiSendPlayerDisconnect()` — skip `nw_SendReliable()` for disconnect packet
-- `MultiSendReliablyToAllExcept()` — skip reliable send to bot slots
-- `MultiSendToAllExcept()` — skip unreliable send to bot slots
-- Per-player send loop in `MultiDoServerFrame()` — skip positional updates, pings, robot frames for bots
-- `MultiSendClientExecuteDLL()` — skip direct reliable send to bot when `to != -1`
-- `MultiSendGenericNonVis()` — skip reliable send of nonvis object list
-
-**`multi.cpp`:**
-- `MultiSendFullPacket()` — discard buffered unreliable data for bot slots (prevents `nw_Send` on zeroed `addr`)
-- `MultiSendFullReliablePacket()` — discard buffered reliable data for bot slots
-- `MultiSendSpecialPacket()` — early return for bot slots
-- `MultiSendMessageToPlayer()` — skip in both single-player and team send paths
-- Multisafe send-to-specific-player path — skip `nw_SendReliable` for bot slots
-- Missile release broadcast — skip send to bot's `INVALID_SOCKET`
-
-### AI Safety Guards (OBJ_PLAYER)
-
-The AI system was designed for robots and accesses `Object_info[obj->id]` throughout. For `OBJ_PLAYER` objects, `obj->id` is the player slot number (0-31), not an `Object_info` index — accessing it crashes or corrupts memory. Guards are placed in:
-
-- `AIDoFrame()` in `AImain.cpp` — skip `ai_do_animation()`, spray/on-off weapon block, and `do_awareness_based_anim_stuff()` for `OBJ_PLAYER`
-- `AIG_SET_ANIM` case in `GoalDoFrame()` in `AIGoal.cpp` — early return for `OBJ_PLAYER`
-
-### DMFC Assertion Fix (OnPlayerReconnect)
-
-`OnPlayerReconnect()` in `dmfcclient.cpp` originally contained `ASSERT(player_num == 0)` — a sanity check that team mismatches on reconnect only happen for the dedicated server player (slot 0). For bots, the PRec (Player Record) system may return a default team of 0 when the bot's saved PRec entry can't be found, while the bot's current team is -1. This causes `assertdll` → `SDL_assert` → `SIGTRAP`, aborting the server process on Linux.
-
-The fix replaces the assertion with a warning log. The code after the check already handles the mismatch correctly by reassigning the team from the PRec value via `SendTeamAssignment`.
-
-### Movement Testing Infrastructure (Mov Phase)
-
-Live testing confirmed visible behavioral improvement but identified a fundamental gap in movement realism.
-
-**What was implemented:**
-- `max_velocity` raised 30 → **50**, `max_delta_velocity` raised 20 → **40** (Priority 1 tuning, later superseded by thrust-based system)
-- `Bot_debug_movement` flag + per-frame `BOTMOV`/`PLRMOV` logging in `BotDoFrame()` (every ~30 frames)
-- `botstat [index|all]` console command for real-time speed/state snapshots
-- `botmov on|off` console command to toggle the log stream
-- `MPF_THRUSTED` flag originally set via velocity proxy; now set properly via `PLAYER_FLAGS_THRUSTED` (see Phase 3.5)
-
-**Log format:**
-```
-BOTMOV: slot=3 'BotA' state=HUNT speed=47.3 vel=(-12.1,3.4,45.8)
-PLRMOV: slot=1 'Human' speed=63.2 vel=(45.1,-2.1,43.0)
-```
-
-**Live test findings:**
-- Afterburner glow effects are now visible on bot ships (MPF_THRUSTED propagating correctly)
-- Measurable speed improvement — bots noticeably faster with tuned parameters
-- Bot movement is still not realistic: no inertia, instant velocity snapping, no tri-chord physics
-- Human players can still out-maneuver bots with normal flight techniques, not just afterburner
-
-**Root cause identified — CT_AI bypasses physics:**
-CT_AI writes velocity directly each frame via `AIMoveTowardsDir()`, then applies a drag compensation hack (`thrust = velocity × drag`). This neutralizes the physics engine's exponential drag model, eliminating inertia. This was resolved in Phase 3.5 (see below).
 
 ### Phase 3.5: Thrust-Based Movement
 
@@ -276,14 +216,13 @@ Phase 3.5 replaces CT_AI's direct velocity control with real thrust-based physic
 
 **Synthetic control inputs per FSM state:**
 
-| State | Forward | Sideways | Vertical | Afterburner |
-|-------|---------|----------|----------|-------------|
-| WANDER | 0.3 | 0 | 0 | off |
-| HUNT | 1.0 | ±0.6 (juke) | ±0.3 (juke) | on if > 3× fire range (600 units) |
-| COMBAT | 0.5 (orbit) | ±0.8 (strafe) | ±0.3 (juke) | off |
-| FLEE | 1.0 (away) | ±0.5 (juke) | ±0.3 (juke) | on |
-
-Combat forward thrust is dynamically modulated based on orbit distance error (closes if > circle_dist + 20, backs off if < circle_dist - 20).
+| State | Speed Scale | Sideways Juke | Afterburner | Notes |
+|---|---|---|---|---|
+| `EXPLORE` | 0.3x (roam) / 1.0x (pickup) | No | Yes (outdoor pickup chase) | Slow and quiet when not seeking items. |
+| `HUNT` | 1.0x | No | Yes (if outdoor & dist > 600) | Full speed pursuit, uses afterburner to close large gaps. |
+| `COMBAT` | 1.0x | Yes | No | Forward thrust is overridden to manage orbit distance. |
+| `FLEE` | 1.0x | Yes | Yes (bursts) | Full speed retreat with evasive maneuvers. |
+| `EVADE` | 1.0x | Yes | Yes (if outdoor) | Full speed disengagement with evasive maneuvers. |
 
 **Movement improvements over CT_AI:**
 
@@ -489,15 +428,14 @@ To achieve higher-fidelity bot movement, we will eventually need to capture real
 
 This is a future-phase initiative (likely Phase 5+) after basic navigation and pathfinding are resolved. The full 6DoF movement space (slide forward/backward/left/right/up/down, pitch/yaw/bank) means bots require behavioral data across all axes to accurately emulate human play patterns.
 
-### Phase 1.5: Combat Polish (optional)
-
-- Energy/ammo consumption on bot firing (currently bots fire without draining energy or ammo)
-- Lead-tracking aim (bots currently fire when facing target, no trajectory prediction)
-- Weapon switching when out of ammo
-- Congestion penalty for robot targets in co-op/robo-anarchy
-
 ### Phase 4: Configuration
 
 - Difficulty levels (accuracy, reaction time, aggression)
 - Server config file bot definitions
 - Frontend/administration UI
+
+### Phase 5: Advanced Features and Nice-to-Haves
+- Human-Like flight patterns and maneuvers; advanced target leading ability.
+- Granular bot configuration parameters, characters with adjustable stats.
+- Team and squad dynamics for Team-Anarchy.
+- Advanced Game-Mode awareness for CTF, Monsterball, and squad orders for Co-Op.
