@@ -220,10 +220,11 @@ Dynamic turn rate (set on `ai_info->max_turn_rate` each frame):
 ### Stuck Detection & Clearing
 
 `stuck_timer` accumulates when speed < 5 and thrust is applied.
-- At **3.0s**: reverse + hard strafe escape thrust applied
 - At **1.5s** (`BOT_STUCK_FIGHT_TIMER`): `BotDoStuckClear()` fires:
   1. Proximity scan (50u) for enemy players/bots → `AISetTarget()` + `BotFireAtObject()`
   2. Forward ray (40u) for blocking objects (doors, grates) → `BotFireAtObject()`
+- At **3.0s**: reverse + hard strafe escape thrust applied; afterburner suppressed
+- At **7.0s** (`BOT_STUCK_ABANDON_TIME`): goal abandonment — `BotClearActiveGoal()`, force `BOT_STATE_EXPLORE` with fresh room pick (`explore_dest_room = -1`). Handles unreachable goals (window too small, complex geometry transitions).
 
 `BotFireAtObject()`: relaxed aim (dot ≥ 0, not purely backwards), no state requirement.
 Normal `BotDoFiring()`: strict aim (dot ≥ 0.85), all states (internal guards).
@@ -438,6 +439,7 @@ BOT_SECONDARY_AIM_DOT        0.7f   // looser than primary (missiles track)
 BOT_STUCK_FIGHT_TIMER       1.5f    // seconds stuck before firing to clear
 BOT_STUCK_ENEMY_RADIUS      50.0f   // proximity scan radius
 BOT_STUCK_OBSTACLE_DIST     40.0f   // forward ray for destructible objects
+BOT_STUCK_ABANDON_TIME      7.0f    // seconds stuck before abandoning goal → EXPLORE
 
 // Equipment scoring (Phase 3.11)
 BOT_RAMPAGE_AGRO_BONUS      60.0f   // elite vs weak: score reduction (prefer)

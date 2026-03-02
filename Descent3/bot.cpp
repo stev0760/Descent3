@@ -1538,14 +1538,27 @@ static void BotApplyThrust(int bot_index) {
     Bots[bot_index].stuck_timer = 0.0f;
   }
 
-  if (Bots[bot_index].stuck_timer > 3.0f) {
-    // Orthogonal escape: reverse + hard strafe
+  if (Bots[bot_index].stuck_timer > BOT_STUCK_ABANDON_TIME) {
+    // Prolonged stuck: the goal itself is unreachable (window too small, complex geometry).
+    // Abandon all goals and pick a fresh direction via EXPLORE.
+    BotClearActiveGoal(bot_index);
+    Bots[bot_index].state = BOT_STATE_EXPLORE;
+    Bots[bot_index].explore_dest_room = -1;
+    Bots[bot_index].explore_room_timer = 0.0f;
+    Bots[bot_index].stuck_timer = 0.0f;
+    forward = -1.0f;
+    sideways = 0.0f;
+    vertical = 0.0f;
+    want_afterburner = false;
+    LOG_DEBUG << "Bot " << Bots[bot_index].callsign << " abandoned goal (stuck " << BOT_STUCK_ABANDON_TIME
+              << "s) — switching to EXPLORE";
+  } else if (Bots[bot_index].stuck_timer > 3.0f) {
+    // Short stuck: reverse + strafe to clear geometry snag
     forward = -1.0f;
     float strafe_dir = (sinf(Bots[bot_index].juke_phase) > 0) ? 1.0f : -1.0f;
     sideways = strafe_dir * 1.0f;
     vertical = 0.5f;
-    if (Bots[bot_index].stuck_timer > 4.5f)
-      Bots[bot_index].stuck_timer = 0.0f;
+    want_afterburner = false;
   }
 
   // Afterburner burst management (Phase 3.7)

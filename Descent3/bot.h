@@ -172,6 +172,7 @@
 #define BOT_STUCK_FIGHT_TIMER     1.5f  // seconds stuck before firing to clear the blockage
 #define BOT_STUCK_ENEMY_RADIUS   50.0f  // proximity radius to detect a player/bot we're jammed against
 #define BOT_STUCK_OBSTACLE_DIST  40.0f  // forward ray length to detect blocking destructible objects
+#define BOT_STUCK_ABANDON_TIME   7.0f  // seconds stuck before abandoning goal and switching to EXPLORE
 
 // Altitude constraint (Phase 3.20)
 // Prevents bots from flying out of the level space on outdoor maps.
