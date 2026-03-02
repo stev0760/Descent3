@@ -10,13 +10,13 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Multiplayer Bots (Experimental)
 
-**Status:** Phase 3.17 — Accuracy Milestone
+**Status:** Phase 3.21 — Navigation Stuck Recovery
 
 This fork introduces a **server-side multiplayer bot system** for Descent 3. These AI-controlled bots occupy real player slots on dedicated servers, appearing and acting as normal players.
 
 **No client mods required.** Retail D3 v1.5 clients can connect and play against these bots immediately.
 
-### ✨ Key Features
+### Key Features
 
 *   **Dangerous Combat AI:** Bots use a 5-state Finite State Machine (EXPLORE, HUNT, COMBAT, FLEE, EVADE) with per-frame predictive lead aiming. They track where targets *will be*, not where they are — projectiles actually connect. Circle-strafing, afterburner pursuit, and evasive maneuvers make dogfights intense.
 *   **Physics-Based Movement:** Bots obey the same physics laws as players — inertia, momentum, and tri-chording. They use afterburners to chase or escape, evade homing missiles with chaff + afterburner bursts, and navigate level geometry using the engine's pathfinding.
@@ -25,9 +25,10 @@ This fork introduces a **server-side multiplayer bot system** for Descent 3. The
     *   **Secondary Fire:** Missiles and rockets from close-range Concussion barrages to long-range Mega Missiles, with splash damage self-guards.
     *   **Powerup Awareness:** Unarmed bots aggressively seek weapons. High-tier items like Invulnerability trigger combat interrupts.
 *   **Equipment Loadout Awareness:** Bots self-classify into tiers (WEAK, GOOD, ELITE) based on their current equipment, adjusting aggression and retreat thresholds accordingly.
+*   **Stuck Recovery:** Bots detect when they're wedged in geometry and escalate through escape maneuvers (reverse + strafe), obstacle clearing (shooting destructibles), and goal abandonment (picking a completely new navigation target). This prevents bots from getting permanently stuck on problem maps.
 *   **Game Mode Support:** Works in Anarchy, Team Anarchy, Robo-Anarchy, and Co-op. Bots automatically balance teams and persist across level changes.
 
-### 🎮 How to Use
+### How to Use
 
 These commands are available in the dedicated server console (or via remote telnet):
 
@@ -39,14 +40,13 @@ These commands are available in the dedicated server console (or via remote teln
 | `botlist` | Displays a list of all current bots and their status. |
 | `botstat [index\|all]` | Displays real-time physics/state data for debugging. |
 
-### ⚠️ Known Issues
+### Known Issues
 
-*   **Navigation:** Bots can get stuck on complex geometry, especially at transitions between outdoor terrain and underground rooms. They may afterburn into walls when pursuing targets through tight openings.
-*   **Outdoor Flight:** On certain outdoor levels with vast open spaces, bots may occasionally fly too high and exit the playable area.
-*   **Physics Immunity:** Some physics-based weapons (Mass Driver knockback, Black Shark vortex) do not currently affect bot movement as intended.
-*   **Weapon Variety:** Bots tend to favor Vauss and Fusion over Plasma, EMD, and Super Laser. Weapon selection hierarchy needs further tuning.
+*   **Navigation on extreme geometry:** The stuck recovery system handles most cases, but maps with very tight or recessed spawn points (e.g. spawns under ledges or behind narrow windows) may need bots to reverse further before re-orienting. Edge cases in complex indoor/outdoor transitions can still trap bots briefly. Further tuning of escape distances is planned.
+*   **Physics immunity (under investigation):** Some physics-based weapons may not affect bot movement as intended. Black Shark vortex is the primary suspect — bots appear to resist its pull effect. Mass Driver knockback may also be reduced. More testing is needed to confirm the scope and determine whether this is a bot-specific issue or a server-side physics limitation.
+*   **Weapon variety:** Bots select weapons based on damage output, fire rate, and range, which can result in heavy Vauss/Fusion usage when those are genuinely optimal. Selection logic accounts for energy vs. ammo economy and projectile speed, but further playtesting may reveal edge cases.
 
-### 🛠️ For Developers
+### For Developers
 
 For a deep dive into the architecture, FSM logic, and implementation history, please see [BOTS_DEVEL.md](BOTS_DEVEL.md).
 
