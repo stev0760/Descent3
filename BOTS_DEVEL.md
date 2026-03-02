@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Phase 3.18 complete — dynamic path pool exhaustion fix. Zero path errors on 3.18 playtests (down from 1.4M on 3.17).
+**Status:** Phase 3.20 complete — bot out-of-bounds fix. Ceiling collision enabled via `OF_FORCE_CEILING_CHECK`; altitude soft cap in `BotApplyThrust()`.
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -40,6 +40,7 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | 3.15 | Homing missile evasion (scan + EVADE + chaff + AB), greedy powerup collection in HUNT, outdoor awareness scaling (seek/range/combat multipliers), glass/grate breaking when stuck | Complete |
 | 3.17 | **Accuracy milestone:** Per-frame lead aim steering (`BotUpdateAimDirection`), tighter fire gates (0.85/0.7), faster turn rates (65535/40000/26000). First baseline where bots are genuinely dangerous. | Complete |
 | 3.18 | **Path pool exhaustion fix:** `MAX_DYNAMIC_PATHS` 100→200, OBJ goal retry throttle (per-frame→0.5s), rate-limited log warning. Eliminated 1.4M errors/session → 0. Log sizes down 38× (SPLUS: 26MB→694KB). | Complete |
+| 3.20 | **Out-of-bounds fix:** `OF_FORCE_CEILING_CHECK` flag on bot objects enables engine ceiling collision (bots were CT_AI, explicitly excluded). Altitude soft cap in `BotApplyThrust()` suppresses upward thrust near ceiling to prevent "Too many collisions" spam. | Complete |
 | 4 | Difficulty levels, configuration UI | Not started |
 
 ## Files

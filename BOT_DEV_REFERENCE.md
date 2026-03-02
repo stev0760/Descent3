@@ -7,7 +7,7 @@ Current implementation status is in `BOTS_DEVEL.md`. Physics model reference is 
 
 ## Current Status
 
-**Phase 3.18 complete** — Dynamic path pool exhaustion fix. Zero path errors on 3.18 playtests (down from 1.4M on 3.17). Log sizes down 38×.
+**Phase 3.20 complete** — Bot out-of-bounds fix. `OF_FORCE_CEILING_CHECK` enables engine ceiling collision for bot objects; altitude soft cap prevents ceiling-pinning thrust loops.
 
 For the full phase history and roadmap, see `BOTS_DEVEL.md`.
 

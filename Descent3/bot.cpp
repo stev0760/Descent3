@@ -107,6 +107,7 @@ static void BotConfigureAI(int player_slot) {
   obj->mtype.phys_info.full_rotthrust = Ships[ship_idx].phys_info.full_rotthrust;
   obj->mtype.phys_info.flags &= ~PF_FIXED_VELOCITY; // clear fixed-velocity (set by ResetPlayerObject for non-local players)
   obj->mtype.phys_info.flags |= PF_USES_THRUST;     // enable thrust-based physics integration
+  obj->flags |= OF_FORCE_CEILING_CHECK;              // enable ceiling collision (bots are CT_AI, normally excluded)
 
   // Add a persistent wander goal (provides orientation when no target)
   GoalAddGoal(obj, AIG_WANDER_AROUND, NULL, 1, 1.0f, GF_NONFLUSHABLE | GF_KEEP_AT_COMPLETION, -1, 0);
@@ -1642,6 +1643,30 @@ static void BotApplyThrust(int bot_index) {
     obj->mtype.phys_info.velocity = {};
     Bots[bot_index].stuck_timer += Frametime;
     return;
+  }
+
+  // Altitude soft cap (outdoor maps only).
+  // Suppress upward thrust near the ceiling so bots don't pin themselves against it.
+  // The ceiling collision (OF_FORCE_CEILING_CHECK) handles the hard boundary; this prevents
+  // the thrust-into-ceiling loop that causes "Too many collisions" spam.
+  if (OBJECT_OUTSIDE(obj)) {
+    float ground_y = GetTerrainGroundPoint(&obj->pos);
+    float alt_above_ground = obj->pos.y() - ground_y;
+
+    // Ground-relative cap: keep fights at reasonable altitudes
+    if (alt_above_ground > BOT_MAX_ALTITUDE_ABOVE_GROUND && vertical > 0.0f)
+      vertical = 0.0f;
+
+    // Absolute ceiling cap: never approach Ceiling_height
+    if (obj->pos.y() > Ceiling_height - BOT_ALTITUDE_CEILING_MARGIN && vertical > 0.0f)
+      vertical = 0.0f;
+
+    // Hard recovery: if somehow above ceiling, force descent
+    if (obj->pos.y() > Ceiling_height) {
+      vertical = -1.0f;
+      forward *= 0.5f;
+      sideways *= 0.5f;
+    }
   }
 
   // Compute thrust vector — same formula as DoFlyingControl (object.cpp:2424-2427)

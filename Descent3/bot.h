@@ -173,6 +173,12 @@
 #define BOT_STUCK_ENEMY_RADIUS   50.0f  // proximity radius to detect a player/bot we're jammed against
 #define BOT_STUCK_OBSTACLE_DIST  40.0f  // forward ray length to detect blocking destructible objects
 
+// Altitude constraint (Phase 3.20)
+// Prevents bots from flying out of the level space on outdoor maps.
+// OF_FORCE_CEILING_CHECK enables engine ceiling collision; these constants add a thrust soft cap.
+#define BOT_MAX_ALTITUDE_ABOVE_GROUND 200.0f // max height above terrain before suppressing climb
+#define BOT_ALTITUDE_CEILING_MARGIN 50.0f    // suppress upward thrust this far below Ceiling_height
+
 enum BotState {
   BOT_STATE_EXPLORE, // No target. Roam level, collect powerups, react to sounds.
   BOT_STATE_HUNT,    // Has target, out of range or no LOS. Pursue.
