@@ -47,13 +47,11 @@ Claude Code should regularly review server logs to diagnose any debug feedback f
 
 ## Architecture
 
-> [!IMPORTANT]
-> **Gemini Research Note:** Investigation into Guide Bot/Thief Bot logic suggests a strategic shift for bot navigation. 
-> Instead of calculating manual thrust vectors, bots should **consume the engine's AI intent**.
-> 1. **Read `ai_info->movement_dir`:** Blended result of path-following, dodging, and avoidance.
-> 2. **Leverage Flags:** Enable `AIF_AVOID_WALLS`, `AIF_AUTO_AVOID_FRIENDS`, and `AIF_DODGE`.
-> 3. **Thrust Mapping:** Map the resulting `movement_dir` vector directly to thrust axes in `BotApplyThrust`.
-> 4. **Repair BOA:** In `Descent3/multi.cpp`, call `MakeBOA()` inside `MultiStartNewLevel()` if `BOA_mine_checksum == 0`.
+> [!NOTE]
+> **Implemented (Phase 3.6):** Bots consume the engine's `ai_info->movement_dir` — the blended result of
+> path-following, wall avoidance (`AIF_AVOID_WALLS`), friend avoidance (`AIF_AUTO_AVOID_FRIENDS`), and dodge
+> (`AIF_DODGE`). `BotApplyThrust()` decomposes `movement_dir` into local axes. BOA repair (`MakeBOA()`) is
+> called in `MultiStartNewLevel()` when `BOA_mine_checksum == 0`. See Phase 3.6 in `BOTS_DEVEL.md`.
 
 The project is a large set of static libraries linked into the main `Descent3` executable, plus dynamically-loaded script and netgame modules.
 

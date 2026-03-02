@@ -52,7 +52,22 @@ ctest --preset linux -C Debug
 
 ## Current Implementation State
 
-The bot system is at **Phase 3.11**. All details are in `BOT_DEV_REFERENCE.md` and `BOTS_DEVEL.md`.
+The bot system is at **Phase 3.21**. All details are in `BOT_DEV_REFERENCE.md` and `BOTS_DEVEL.md`.
 
-Do not rely on this file for implementation specifics — it was written at Phase 2 and those inline notes are stale. Use `BOT_DEV_REFERENCE.md` as the authoritative source for architecture, constants, and gotchas.
+Key capabilities implemented through Phase 3.21:
+- 5-state FSM (EXPLORE, HUNT, COMBAT, FLEE, EVADE) with per-frame lead aim steering
+- Thrust-based physics movement using engine `movement_dir` integration (Phase 3.6)
+- Full primary + secondary weapon selection, firing, and tactical switching
+- Equipment tier awareness (WEAK/GOOD/ELITE) with dynamic aggression tuning
+- Homing missile evasion (chaff + afterburner burst)
+- Navigation stuck recovery: 3s escape maneuver → 7s goal abandonment (Phase 3.21)
+- Ceiling collision and altitude soft cap for outdoor maps (Phase 3.20)
+- Dynamic path pool management (Phase 3.18)
+
+### Open Issues for Investigation
+- **Physics immunity:** Black Shark vortex may not affect bot movement — needs more testing to determine if this is bot-specific or a server-side physics limitation
+- **Stuck recovery tuning:** Goal abandonment works but bots may need longer reverse distances before re-orienting on maps with deeply recessed spawn geometry
+- **Weapon variety:** Selection favors Vauss/Fusion when they are DPS-optimal; may need situational diversity
+
+Use `BOT_DEV_REFERENCE.md` as the authoritative source for architecture, constants, and gotchas.
 
