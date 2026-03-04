@@ -39,6 +39,8 @@ extern bool AIPathGetNextNodePos(ai_path_info *aip, vector *pos, int *room = NUL
 extern bool AIPathGetPrevNodePos(ai_path_info *aip, vector *pos, int *room = NULL);
 extern bool AIPathGetCurrentNodePos(ai_path_info *aip, vector *pos, int *room = NULL);
 
+extern void AIPathResetDynamicPaths();
+
 #ifdef _DEBUG
 extern bool MakeTestPath(int *start_room, vector *pos);
 

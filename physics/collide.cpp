@@ -896,7 +896,7 @@ static void check_lg_inform(object *A, object *B);
 bool IsOKToApplyForce(object *objp) {
   if (Game_mode & GM_MULTI) {
     if (objp->type == OBJ_PLAYER) {
-      if (objp != Player_object)
+      if (objp != Player_object && !(Netgame.local_role == LR_SERVER && objp->control_type == CT_AI))
         return false;
     } else {
       if (objp->type != OBJ_WEAPON && objp->type != OBJ_POWERUP && Netgame.local_role != LR_SERVER)

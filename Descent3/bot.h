@@ -145,6 +145,14 @@
 // Deployed as a missile evasion countermeasure — chaff + afterburner outmaneuvers homing missiles.
 #define BOT_COUNTERMEASURE_INTERVAL 5.0f // seconds between chaff deployments
 
+// Mine and gunboy deployment (Phase 3.22)
+// Bots dump mines near indoor portals while exploring, and place gunboys as sentries.
+#define BOT_MINE_DEPLOY_CHANCE 0.15f    // probability per 0.5s EXPLORE tick to dump mines near a portal
+#define BOT_MINE_RAPID_INTERVAL 0.3f    // seconds between mine drops during a dump burst
+#define BOT_GUNBOY_DEPLOY_CHANCE 0.10f  // probability per 0.5s EXPLORE tick to place a gunboy
+#define BOT_MINE_PORTAL_DIST 80.0f      // max distance from portal to trigger mine/gunboy deployment
+#define BOT_GUNBOY_COOLDOWN 30.0f       // min seconds between gunboy placements
+
 // Powerup interrupt cooldown — prevents the COMBAT→EXPLORE→HUNT→COMBAT oscillation.
 // After any powerup interrupt or HUNT divert fires, the bot is suppressed for this duration
 // before it can divert/interrupt again. This allows the bot to collect the item and re-engage
@@ -237,6 +245,11 @@ struct bot_info {
   // Homing missile evasion (Phase 3.15)
   // Counts down from BOT_MISSILE_SCAN_COOLDOWN; scan only when <= 0.
   float missile_evade_cooldown;
+
+  // Mine/gunboy deployment (Phase 3.22)
+  float mine_dump_timer;    // >0: rapid-dumping mines, counts down between drops
+  int mine_dump_remaining;  // mines left in current dump burst
+  float gunboy_cooldown;    // cooldown for gunboy placement
 };
 
 extern bot_info Bots[MAX_BOTS];

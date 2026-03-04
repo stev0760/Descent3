@@ -1697,6 +1697,7 @@
 #include "psrand.h"
 #include "bot.h"
 #include "BOA.h"
+#include "aipath.h"
 
 void MultiProcessShipChecksum(MD5 *md5, int ship_index);
 
@@ -6402,6 +6403,10 @@ bool MultiStartNewLevel(int level) {
   MultiMassageAllObjects(0, (Netgame.flags & NF_USE_ROBOTS) ? 0 : 1);
   MultiBuildMatchTables();
   Num_broke_glass = 0;
+
+  // Reset AI dynamic path pool — entries from previous level are orphaned after MultiMassageAllObjects
+  if (Netgame.local_role == LR_SERVER)
+    AIPathResetDynamicPaths();
 
   // Ensure BOA pathfinding data is available for AI navigation
   if (BOA_mine_checksum == 0) {

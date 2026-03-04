@@ -55,6 +55,25 @@ extern void MultiSendPlayerEnteredGame(int which);
 extern void MultiSendRenewPlayer(int slot);
 extern void MultiSendPlayerDisconnect(int slot);
 
+// Cached countermeasure weapon IDs (resolved once per level via FindWeaponName)
+static int Bot_chaff_id = -1;
+static int Bot_proxmine_id = -1;
+static int Bot_betty_id = -1;
+static int Bot_seekermine_id = -1;
+static int Bot_gunboy_id = -1;
+static bool Bot_cm_ids_cached = false;
+
+static void BotCacheCountermeasureIDs() {
+  Bot_chaff_id = FindWeaponName("Chaff");
+  Bot_proxmine_id = FindWeaponName("ProxMine");
+  Bot_betty_id = FindWeaponName("Betty");
+  Bot_seekermine_id = FindWeaponName("SeekerMine");
+  Bot_gunboy_id = FindWeaponName("Gunboy");
+  Bot_cm_ids_cached = true;
+  LOG_DEBUG.printf("BOT: Cached countermeasure IDs: chaff=%d prox=%d betty=%d seeker=%d gunboy=%d", Bot_chaff_id,
+                   Bot_proxmine_id, Bot_betty_id, Bot_seekermine_id, Bot_gunboy_id);
+}
+
 // Cache the ship physics template values for thrust-based movement.
 static void BotCacheShipPhysics(int bot_index) {
   int ship_idx = Bots[bot_index].ship_index;
@@ -636,13 +655,23 @@ static bool BotDetectIncomingMissile(int bot_index) {
   return false;
 }
 
-// Deploy chaff countermeasure (fires flare battery 20 which spawns GENOBJ_CHAFFCHUNK).
-// Homing missiles prefer chaff over players, so chaff + afterburner is effective evasion.
+// Deploy chaff countermeasure. Tries real Chaff from inventory first; falls back to flare battery.
 static void BotDeployChaff(int bot_index) {
   if (Bots[bot_index].countermeasure_timer > 0.0f)
     return;
   int slot = Bots[bot_index].player_slot;
   object *obj = &Objects[Players[slot].objnum];
+
+  // Try real chaff from countermeasure inventory
+  if (Bot_chaff_id >= 0 && Players[slot].counter_measures.CheckItem(OBJ_WEAPON, Bot_chaff_id)) {
+    if (Players[slot].counter_measures.Use(OBJ_WEAPON, Bot_chaff_id, obj)) {
+      Bots[bot_index].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
+      LOG_DEBUG.printf("BOT: '%s' deploying REAL chaff", Bots[bot_index].callsign);
+      return;
+    }
+  }
+
+  // Fallback: fire flare battery 20 (always available, spawns GENOBJ_CHAFFCHUNK)
   int ship_idx = Players[slot].ship_index;
   otype_wb_info *wb = &Ships[ship_idx].static_wb[FLARE_INDEX];
   if (Players[slot].energy < wb->energy_usage)
@@ -654,7 +683,101 @@ static void BotDeployChaff(int bot_index) {
   if (Players[slot].energy < 0.0f)
     Players[slot].energy = 0.0f;
   Bots[bot_index].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
-  LOG_DEBUG.printf("BOT: '%s' deploying chaff countermeasure", Bots[bot_index].callsign);
+  LOG_DEBUG.printf("BOT: '%s' deploying chaff (flare fallback)", Bots[bot_index].callsign);
+}
+
+// Check if the bot is near an indoor portal (for mine/gunboy placement).
+static bool BotNearIndoorPortal(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  if (OBJECT_OUTSIDE(obj))
+    return false;
+  if (obj->roomnum < 0 || !Rooms[obj->roomnum].used)
+    return false;
+  room &cur = Rooms[obj->roomnum];
+  for (int p = 0; p < cur.num_portals; p++) {
+    vector to_portal = cur.portals[p].path_pnt - obj->pos;
+    if (vm_GetMagnitude(&to_portal) < BOT_MINE_PORTAL_DIST)
+      return true;
+  }
+  return false;
+}
+
+// Deploy mines from countermeasure inventory in rapid bursts near indoor portals.
+// Called per-frame during a dump burst (mine_dump_remaining > 0), or on 0.5s tick to start a new burst.
+static void BotDeployMines(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+
+  // If mid-burst, wait for rapid-fire timer
+  if (Bots[bot_index].mine_dump_remaining > 0) {
+    if (Bots[bot_index].mine_dump_timer > 0.0f)
+      return;
+    // Try to drop the next mine
+    int mine_ids[] = {Bot_proxmine_id, Bot_betty_id, Bot_seekermine_id};
+    bool dropped = false;
+    for (int m = 0; m < 3; m++) {
+      if (mine_ids[m] < 0)
+        continue;
+      if (Players[slot].counter_measures.CheckItem(OBJ_WEAPON, mine_ids[m])) {
+        if (Players[slot].counter_measures.Use(OBJ_WEAPON, mine_ids[m], obj)) {
+          dropped = true;
+          LOG_DEBUG.printf("BOT: '%s' dumping mine (id=%d, remaining=%d)", Bots[bot_index].callsign, mine_ids[m],
+                           Bots[bot_index].mine_dump_remaining - 1);
+          break;
+        }
+      }
+    }
+    Bots[bot_index].mine_dump_remaining--;
+    Bots[bot_index].mine_dump_timer = BOT_MINE_RAPID_INTERVAL;
+    if (!dropped || Bots[bot_index].mine_dump_remaining <= 0)
+      Bots[bot_index].mine_dump_remaining = 0;
+    return;
+  }
+
+  // Not mid-burst: roll chance to start a new dump (called from 0.5s tick)
+  if ((float)rand() / (float)RAND_MAX > BOT_MINE_DEPLOY_CHANCE)
+    return;
+  if (!BotNearIndoorPortal(bot_index))
+    return;
+
+  // Count available mines in inventory
+  int count = 0;
+  int mine_ids[] = {Bot_proxmine_id, Bot_betty_id, Bot_seekermine_id};
+  for (int m = 0; m < 3; m++) {
+    if (mine_ids[m] < 0)
+      continue;
+    if (Players[slot].counter_measures.CheckItem(OBJ_WEAPON, mine_ids[m]))
+      count++;
+  }
+  if (count == 0)
+    return;
+
+  Bots[bot_index].mine_dump_remaining = count;
+  Bots[bot_index].mine_dump_timer = 0.0f; // fire first one immediately
+  LOG_DEBUG.printf("BOT: '%s' starting mine dump (%d mines near portal)", Bots[bot_index].callsign, count);
+}
+
+// Deploy a gunboy sentry from countermeasure inventory near indoor portals.
+static void BotDeployGunboy(int bot_index) {
+  if (Bot_gunboy_id < 0)
+    return;
+  if (Bots[bot_index].gunboy_cooldown > 0.0f)
+    return;
+  if ((float)rand() / (float)RAND_MAX > BOT_GUNBOY_DEPLOY_CHANCE)
+    return;
+  if (!BotNearIndoorPortal(bot_index))
+    return;
+
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  if (!Players[slot].counter_measures.CheckItem(OBJ_WEAPON, Bot_gunboy_id))
+    return;
+
+  if (Players[slot].counter_measures.Use(OBJ_WEAPON, Bot_gunboy_id, obj)) {
+    Bots[bot_index].gunboy_cooldown = BOT_GUNBOY_COOLDOWN;
+    LOG_DEBUG.printf("BOT: '%s' deployed Gunboy sentry", Bots[bot_index].callsign);
+  }
 }
 
 // Aim and fire the bot's primary weapon at a world position (for obstacle breaking).
@@ -1901,6 +2024,9 @@ static void BotRespawn(int bot_index) {
   Bots[bot_index].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
   Bots[bot_index].powerup_interrupt_cooldown = 0.0f;
   Bots[bot_index].missile_evade_cooldown = 0.0f;
+  Bots[bot_index].mine_dump_timer = 0.0f;
+  Bots[bot_index].mine_dump_remaining = 0;
+  Bots[bot_index].gunboy_cooldown = 0.0f;
   Bots[bot_index].last_target_update = 0.0f; // force immediate re-target after respawn
   BotSelectBestWeapon(bot_index);    // equip best primary weapon on respawn
   BotSelectBestSecondary(bot_index); // equip best secondary weapon on respawn
@@ -1934,8 +2060,12 @@ void BotInitAll() {
     Bots[i].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
     Bots[i].powerup_interrupt_cooldown = 0.0f;
     Bots[i].missile_evade_cooldown = 0.0f;
+    Bots[i].mine_dump_timer = 0.0f;
+    Bots[i].mine_dump_remaining = 0;
+    Bots[i].gunboy_cooldown = 0.0f;
   }
   Num_bots = 0;
+  BotCacheCountermeasureIDs();
 }
 
 void BotShutdownAll() { BotRemoveAll(); }
@@ -1966,6 +2096,9 @@ void BotReinitAll() {
     Bots[i].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
     Bots[i].powerup_interrupt_cooldown = 0.0f;
     Bots[i].missile_evade_cooldown = 0.0f;
+    Bots[i].mine_dump_timer = 0.0f;
+    Bots[i].mine_dump_remaining = 0;
+    Bots[i].gunboy_cooldown = 0.0f;
 
     // Restore NetPlayers sequence (level end sets NETSEQ_WAITING_FOR_LEVEL)
     NetPlayers[slot].sequence = NETSEQ_PLAYING;
@@ -2018,6 +2151,7 @@ void BotReinitAll() {
     LOG_DEBUG.printf("BOT: Reinitialized '%s' in slot %d for new level, team=%d", Bots[i].callsign, slot,
                      Players[slot].team);
   }
+  BotCacheCountermeasureIDs();
 }
 
 int BotAdd(const char *name, int ship_index) {
@@ -2165,6 +2299,9 @@ int BotAdd(const char *name, int ship_index) {
   Bots[bot_index].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
   Bots[bot_index].powerup_interrupt_cooldown = 0.0f;
   Bots[bot_index].missile_evade_cooldown = 0.0f;
+  Bots[bot_index].mine_dump_timer = 0.0f;
+  Bots[bot_index].mine_dump_remaining = 0;
+  Bots[bot_index].gunboy_cooldown = 0.0f;
   BotCacheShipPhysics(bot_index);
   BotSelectBestSecondary(bot_index); // equip best secondary weapon at spawn
   Num_bots++;
@@ -2246,6 +2383,9 @@ void BotDoFrame() {
       Bots[i].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
       Bots[i].powerup_interrupt_cooldown = 0.0f;
       Bots[i].missile_evade_cooldown = 0.0f;
+      Bots[i].mine_dump_timer = 0.0f;
+      Bots[i].mine_dump_remaining = 0;
+      Bots[i].gunboy_cooldown = 0.0f;
       Players[slot].flags &= ~(PLAYER_FLAGS_THRUSTED | PLAYER_FLAGS_AFTERBURN_ON);
       continue;
     }
@@ -2290,6 +2430,14 @@ void BotDoFrame() {
       Bots[i].powerup_interrupt_cooldown -= Frametime;
     if (Bots[i].missile_evade_cooldown > 0.0f)
       Bots[i].missile_evade_cooldown -= Frametime;
+    if (Bots[i].mine_dump_timer > 0.0f)
+      Bots[i].mine_dump_timer -= Frametime;
+    if (Bots[i].gunboy_cooldown > 0.0f)
+      Bots[i].gunboy_cooldown -= Frametime;
+
+    // Per-frame: continue rapid mine dump if mid-burst
+    if (Bots[i].mine_dump_remaining > 0)
+      BotDeployMines(i);
 
     // Homing missile evasion: scan for missiles locked onto us (throttled by cooldown)
     if (Bots[i].missile_evade_cooldown <= 0.0f) {
@@ -2313,6 +2461,12 @@ void BotDoFrame() {
       BotSelectBestWeapon(i);     // equip best primary weapon (picks up new drops automatically)
       BotSelectBestSecondary(i);  // equip best secondary weapon
       Bots[i].last_target_update = Gametime;
+
+      // EXPLORE: deploy mines and gunboys near indoor portals
+      if (Bots[i].state == BOT_STATE_EXPLORE && Bot_cm_ids_cached) {
+        BotDeployMines(i);
+        BotDeployGunboy(i);
+      }
     }
 
     // Steer AI orient system toward lead aim position (must precede BotApplyThrust)

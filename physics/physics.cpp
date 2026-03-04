@@ -2552,7 +2552,8 @@ void phys_apply_force(object *obj, vector *force_vec, int16_t weapon_index) {
     return;
 
   if ((Game_mode & GM_MULTI) &&
-      ((obj->type == OBJ_PLAYER && obj->id != Player_num) ||
+      ((obj->type == OBJ_PLAYER && obj->id != Player_num &&
+        !(Netgame.local_role == LR_SERVER && obj->control_type == CT_AI)) ||
        ((obj->type != OBJ_PLAYER && obj->type != OBJ_POWERUP) && Netgame.local_role != LR_SERVER)))
     return;
 

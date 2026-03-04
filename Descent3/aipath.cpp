@@ -37,6 +37,15 @@ ai_dynamic_path AIDynamicPath[MAX_DYNAMIC_PATHS];
 int AIAltPath[MAX_ROOMS];
 int AIAltPathNumNodes;
 
+void AIPathResetDynamicPaths() {
+  for (int i = 0; i < MAX_DYNAMIC_PATHS; i++) {
+    AIDynamicPath[i].num_nodes = 0;
+    AIDynamicPath[i].use_count = 0;
+    AIDynamicPath[i].owner_handle = OBJECT_HANDLE_NONE;
+  }
+  LOG_DEBUG.printf("AI: Reset %d dynamic path slots", MAX_DYNAMIC_PATHS);
+}
+
 static void AIUpdatePathInfo(q_item **node_list, int start, int end) {
   int cur_room = end;
   int i;
