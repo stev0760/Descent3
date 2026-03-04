@@ -84,8 +84,6 @@ Add server-side bot players to the D3 dedicated server engine. Bots occupy real 
 |------|---------------|
 | `Descent3/Player.cpp` | `PlayerSetControlToAI()`, `InitPlayerNewShip()`, `InitPlayerNewGame()`, `ResetPlayerObject()`, `PlayerMoveToStartPos()`, `PlayerGetRandomStartPosition()` |
 | `Descent3/object.cpp` | `SetObjectControlType()` — allocates `ai_frame` when setting `CT_AI`. Object frame loop calls `AIDoFrame()` for `CT_AI` objects automatically. |
-| `Descent3/AIGoal.cpp` | `GoalAddGoal()` with `AIG_WANDER_AROUND` — provides wandering out of the box |
-| `Descent3/multi.cpp` | `MultiMakePlayerReal()`, `MultiSendRenewPlayer()`, `MultiSendPlayerEnteredGame()` — all work for bot slots without modification |
 
 ---
 
