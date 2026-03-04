@@ -10,18 +10,22 @@
 | 1.5 | Combat polish — energy/ammo drain, auto weapon switch on empty | Complete |
 | 2 | Smart targeting — game mode awareness, target diversity, robot targeting, team persistence | Complete |
 | 3 | Combat behaviors — FSM (explore/hunt/combat/flee), LOS gating, circle-strafe, flee | Complete |
-| Movement | Velocity tuning, movement logging, botstat/botmov commands, MPF_THRUSTED cosmetics | Complete |
+| Mov | Movement testing infra — velocity tuning, logging, `botstat`/`botmov`, MPF_THRUSTED | Complete |
 | 3.5 | Thrust-based physics — real inertia, tri-chording, afterburner, lateral evasion | Complete |
-| 3.6 | Navigation — engine movement_dir, AIF_AVOID_WALLS, AIF_AUTO_AVOID_FRIENDS, BOA repair | Complete |
+| 3.6 | Navigation — engine `movement_dir` integration, `AIF_AVOID_WALLS`, `AIF_AUTO_AVOID_FRIENDS`, BOA repair | Complete |
 | 3.7 | Behavior polish — burst afterburner, EXPLORE state, sound reactivity, portal flee | Complete |
-| 3.8 | Combat quality — lead targeting (gate-only), EVADE state, powerup collection, weapon switching | Complete |
+| 3.8 | Combat quality — lead targeting, OBJ_GHOST fix, EVADE state, powerup collection, weapon switching | Complete |
 | 3.9 | Inventory management — tactical weapon hierarchy, EXPLORE room-to-room roaming | Complete |
 | 3.10 | Secondary weapons (missiles), aggressive pickup priorities, aipath pool fix | Complete |
 | 3.11 | Equipment tiers (WEAK/GOOD/ELITE), dynamic flee, countermeasures, close-range turn rate | Complete |
 | 3.12 | FSM stability — deterministic weapon selection, ghost shooting fix, powerup cooldowns | Complete |
+| 3.12p | Post-playtest — aipath crash fix, terrain OOB guard, explore room congestion filter | Complete |
 | 3.14 | Weapon dynamics — Omega melee override, Mass Driver sniper, WEAK-tier acquisition boost | Complete |
-| 3.15 | Missile evasion, greedy pickups, outdoor awareness scaling | Complete |
+| 3.15 | Missile evasion, greedy pickups, outdoor awareness scaling, glass/grate breaking when stuck | Complete |
 | 3.17 | **Accuracy milestone** — per-frame lead aim steering, tighter fire gates, faster turn rates | Complete |
+| 3.18 | **Path pool fix** — `MAX_DYNAMIC_PATHS` 100→200, OBJ goal retry throttle, rate-limited warnings | Complete |
+| 3.20 | **Out-of-bounds fix** — `OF_FORCE_CEILING_CHECK` flag, altitude soft cap in `BotApplyThrust()` | Complete |
+| 3.21 | **Stuck recovery** — 7s goal abandonment (`BOT_STUCK_ABANDON_TIME`), afterburner suppression while stuck | Complete |
 | 4 | Difficulty levels, configuration UI | Not started |
 | 5 | High-fidelity 6DOF combat — tactical maneuvers, skill scaling | Not started |
 
@@ -56,26 +60,30 @@ Add server-side bot players to the D3 dedicated server engine. Bots occupy real 
 
 | File | Purpose |
 |------|---------|
-| `Descent3/bot.h` | Bot subsystem header: `NPF_BOT` usage, `bot_info` struct, function prototypes |
-| `Descent3/bot.cpp` | Bot lifecycle: init, add, remove, per-frame update, death/respawn handling |
+| `Descent3/bot.h` | Bot subsystem header: `bot_info` struct, constants, function prototypes |
+| `Descent3/bot.cpp` | Bot lifecycle: init, add, remove, per-frame update, AI configuration, FSM, combat, navigation, death/respawn |
 
-### Modified Files (5)
+### Modified Files (10)
 
 | File | Changes |
 |------|---------|
-| `Descent3/multi_external.h` | Add `#define NPF_BOT 128` flag constant |
-| `Descent3/multi_server.cpp` | 7 modifications: NPF_BOT guards + BotDoFrame() hook |
-| `Descent3/dedicated_server.cpp` | Add bot console commands to `ParseLine()` |
-| `Descent3/Player.cpp` | Add `PlayerSetControlToAI_Bot()` variant (or modify existing) |
-| `Descent3/CMakeLists.txt` | Add `bot.h` and `bot.cpp` to build |
+| `Descent3/multi_external.h` | `NPF_BOT` flag (128) |
+| `Descent3/multi_server.cpp` | NPF_BOT guards on network sends, disconnect logic, `BotDoFrame()` hook in `MultiDoServerFrame()` |
+| `Descent3/multi.cpp` | NPF_BOT guards in packet send functions, `BotReinitAll()` call in `MultiStartNewLevel()`, `MakeBOA()` repair |
+| `Descent3/dedicated_server.cpp` | Console commands: `addbot`, `removebot`, `removebots`, `botlist`, `botstat`, `botmov` |
+| `Descent3/AImain.cpp` | OBJ_PLAYER guards (animation, weapons), PTMC targeting fix, bot thrust preservation |
+| `Descent3/AIGoal.cpp` | OBJ_PLAYER guards in `AIG_SET_ANIM`/`AIG_FIRE_AT_OBJ`; stub goal cases; OBJ goal retry throttle |
+| `Descent3/CMakeLists.txt` | Added `bot.h` and `bot.cpp` to build |
+| `netgames/dmfc/dmfcclient.cpp` | Replaced `ASSERT` in `OnPlayerReconnect` with warning log |
+| `Descent3/aistruct.h` | `MAX_DYNAMIC_PATHS` 50→200 |
+| `Descent3/aipath.cpp` | Removed `ASSERT(0)` on path pool exhaustion → graceful fallback + rate-limited warning |
 
 ### Unchanged Files (Leveraged As-Is)
 
 | File | What's Reused |
 |------|---------------|
-| `Descent3/Player.cpp` | `PlayerSetControlToAI()` (line 2595), `InitPlayerNewShip()`, `InitPlayerNewGame()`, `ResetPlayerObject()`, `PlayerMoveToStartPos()`, `PlayerGetRandomStartPosition()` |
+| `Descent3/Player.cpp` | `PlayerSetControlToAI()`, `InitPlayerNewShip()`, `InitPlayerNewGame()`, `ResetPlayerObject()`, `PlayerMoveToStartPos()`, `PlayerGetRandomStartPosition()` |
 | `Descent3/object.cpp` | `SetObjectControlType()` — allocates `ai_frame` when setting `CT_AI`. Object frame loop calls `AIDoFrame()` for `CT_AI` objects automatically. |
-| `Descent3/AImain.cpp` | `AIDoFrame()` — runs full AI tick. With `AIF_DISABLE_FIRING`, `ai_fire()` is never called, avoiding the `Object_info[obj->id].static_wb` crash. |
 | `Descent3/AIGoal.cpp` | `GoalAddGoal()` with `AIG_WANDER_AROUND` — provides wandering out of the box |
 | `Descent3/multi.cpp` | `MultiMakePlayerReal()`, `MultiSendRenewPlayer()`, `MultiSendPlayerEnteredGame()` — all work for bot slots without modification |
 
@@ -549,39 +557,41 @@ Made targeting mode-aware with target diversity:
 
 ---
 
-## Phase 3: Combat Behaviors & State Machine (Implemented — Needs Testing)
+## Phase 3: Combat Behaviors & State Machine (Complete)
 
-Replaced simple "beeline and fire" with a lightweight FSM:
+Replaced simple "beeline and fire" with a 5-state FSM. Extensively playtested across multiple maps.
 
 ### States
 
 | State | Goal | Behavior |
 |-------|------|----------|
-| `BOT_STATE_WANDER` | `AIG_WANDER_AROUND` (level 1) | No target, background exploration |
+| `BOT_STATE_EXPLORE` | `AIG_GET_TO_POS` (room roaming) / `AIG_GET_TO_OBJ` (powerup) | No target — room-to-room exploration via portal graph, powerup seeking |
 | `BOT_STATE_HUNT` | `AIG_GET_TO_OBJ` (level 2) | Has target, pursue (out of range or no LOS) |
 | `BOT_STATE_COMBAT` | `AIG_MOVE_RELATIVE_OBJ` (level 2) | In range + LOS, circle-strafe + fire |
-| `BOT_STATE_FLEE` | `AIG_GET_TO_POS` (level 2) | Low shields, retreat from target |
+| `BOT_STATE_FLEE` | `AIG_GET_TO_POS` (portal flee) | Low shields, retreat via portal most aligned away from threat |
+| `BOT_STATE_EVADE` | Movement override | Dodge after prolonged COMBAT idle (20s), or homing missile detected |
 
 ### Transitions (every 0.5s)
 
-- `WANDER → HUNT`: target acquired
-- `HUNT → COMBAT`: distance < 200 AND `fvi_FindIntersection` LOS passes
-- `COMBAT → HUNT`: distance > 240 (hysteresis) OR LOS lost
-- `COMBAT → FLEE`: shields < 20% of max
-- `FLEE → HUNT`: shields > 40% OR distance > 300 from threat
-- `any → WANDER`: bot respawns
+- `EXPLORE → HUNT`: target acquired (unless holding for weapon pickup)
+- `HUNT → COMBAT`: distance < `BOT_FIRE_RANGE` (200) AND LOS passes
+- `COMBAT → HUNT`: distance > `BOT_COMBAT_EXIT_RANGE` (240) (hysteresis)
+- `COMBAT → FLEE`: shields < dynamic threshold (ELITE=12%, GOOD=20%, WEAK=40%)
+- `COMBAT → EVADE`: `combat_idle_timer` > 20s, or homing missile within scan range
+- `FLEE → EXPLORE`: distance > `BOT_FLEE_DISTANCE` (drops target, roams for health)
+- `EVADE → HUNT/EXPLORE`: `evade_timer` expires (3.5s)
+- `any → EXPLORE`: bot respawns or stuck timer exceeds 7s (goal abandonment)
 
 ### Key Implementation Details
 
 - **LOS check** (`BotHasLOS`): `fvi_FindIntersection` ray-cast with `FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS | FQ_IGNORE_MOVING_OBJECTS`
-- **Circle-strafe**: `AIG_MOVE_RELATIVE_OBJ` (implemented in `AImain.cpp:4934`) — strafes at `BOT_COMBAT_CIRCLE_DIST` (120 units), flees when < 0.7× distance
-- **Flee**: computes position away from target, uses `AIG_GET_TO_POS` with `GF_SPEED_FLEE`
-- **Firing**: only in COMBAT state (LOS already verified at state entry)
+- **Circle-strafe**: `AIG_MOVE_RELATIVE_OBJ` (implemented in `AImain.cpp:4934`) — strafes at `BOT_COMBAT_CIRCLE_DIST` (120 units)
+- **Portal flee** (Phase 3.7): picks portal most aligned with "away from threat" direction, skips `PF_TOO_SMALL_FOR_ROBOT`
+- **EXPLORE roaming** (Phase 3.9): builds candidate pool from current room portals + 1 level deep, picks random destination room
+- **Firing**: state-independent since Phase 3.12 — `BotDoFiring()`/`BotDoSecondaryFiring()` run every frame with internal guards (target, LOS, range, aim dot, ammo)
+- **Lead aim steering** (Phase 3.17): `BotUpdateAimDirection()` runs per-frame, predicts intercept position using projectile speed
+- **Stuck recovery** (Phase 3.21): 3s escape maneuver → 7s goal abandonment with EXPLORE transition
 - **Safety guards**: `AIG_FIRE_AT_OBJ` OBJ_PLAYER guard; `AIG_GET_AWAY_FROM_OBJ` and `AIG_MOVE_AROUND_OBJ` added to `GoalAddGoal` switch (were stubs that would `ASSERT(0)`)
-
-### Research Finding
-
-`AIG_MOVE_AROUND_OBJ` and `AIG_GET_AWAY_FROM_OBJ` are defined in headers but were **never implemented** in `GoalAddGoal` or the movement code — they were stubs. `AIG_MOVE_RELATIVE_OBJ` provides the actual circle-strafe + distance-management behavior.
 
 ---
 
@@ -611,17 +621,21 @@ PLRMOV: slot=1 'Human' speed=63.2 vel=(45.1,-2.1,43.0)
 
 ---
 
-## Completed Work (Phases 1.5 – 3.17)
+## Completed Work (Phases 1.5 – 3.21)
 
-The following phases originally planned as "Future Work" have been completed. See `BOTS_DEVEL.md` for implementation details.
+The following phases originally planned as "Future Work" have been completed. See `BOTS_DEVEL.md` for full implementation details and per-phase changelogs.
 
 - **Phase 1.5 (Combat Polish):** Energy/ammo resource drain, auto-switching on empty.
-- **Phase 3.6 (Navigation):** Wall/friend avoidance, stuck recovery, `MakeBOA` repair.
-- **Phase 3.7 (Behavior Polish):** Sound reactivity, portal fleeing, burst afterburner.
-- **Phase 3.8 – 3.12 (Combat Depth):** Secondary weapons (missiles/rockets), inventory management, tactical weapon switching, equipment tiers (WEAK/GOOD/ELITE), powerup awareness, deterministic weapon selection, ghost shooting fix.
-- **Phase 3.14 (Weapon Dynamics):** Omega Cannon melee override, Mass Driver sniper behavior, WEAK-tier weapon acquisition boost.
-- **Phase 3.15 (Tactical Awareness):** Homing missile evasion (scan + EVADE + chaff + AB), greedy powerup collection in HUNT, outdoor awareness scaling.
+- **Phase 3.6 (Navigation):** Engine `movement_dir` integration — bots consume the AI's blended direction vector (pathfinding + wall avoidance + dodge). BOA repair via `MakeBOA()`.
+- **Phase 3.7 (Behavior Polish):** Sound reactivity, portal-based fleeing, burst afterburner management, EXPLORE state (renamed from WANDER).
+- **Phase 3.8 – 3.12 (Combat Depth):** Secondary weapons (missiles/rockets), inventory management, tactical weapon switching, equipment tiers (WEAK/GOOD/ELITE), EVADE state, powerup awareness, deterministic weapon selection, ghost shooting fix, FSM stability (oscillation fixes, powerup interrupt cooldowns).
+- **Phase 3.12p (Post-Playtest):** Aipath crash fix (`Int3` → `LOG_WARNING`), terrain OOB guard, explore room congestion filter.
+- **Phase 3.14 (Weapon Dynamics):** Omega Cannon melee override, Mass Driver sniper behavior, WEAK-tier weapon acquisition boost, Cyclone priority bump.
+- **Phase 3.15 (Tactical Awareness):** Homing missile evasion (scan + EVADE + chaff + AB), greedy powerup collection in HUNT, outdoor awareness scaling, glass/grate breaking when stuck.
 - **Phase 3.17 (Accuracy Milestone):** Per-frame lead aim steering (`BotUpdateAimDirection`), tighter fire gates (0.85/0.7 dot), faster turn rates (65535/40000/26000). First playtest baseline where bots are genuinely dangerous.
+- **Phase 3.18 (Path Pool Fix):** `MAX_DYNAMIC_PATHS` 100→200, OBJ goal retry throttle (per-frame→0.5s), rate-limited log warning. Eliminated 1.4M errors/session → 0.
+- **Phase 3.20 (Out-of-Bounds Fix):** `OF_FORCE_CEILING_CHECK` flag on bot objects enables engine ceiling collision. Altitude soft cap in `BotApplyThrust()` prevents upward thrust near ceiling.
+- **Phase 3.21 (Stuck Recovery):** Goal abandonment after 7s stuck (`BOT_STUCK_ABANDON_TIME`). Removes 4.5s stuck reset so timer accumulates 3→7s with continuous escape thrust, then abandons all goals and forces EXPLORE with fresh room pick. Afterburner suppressed while stuck.
 
 ## Future Work
 
@@ -634,16 +648,9 @@ The following phases originally planned as "Future Work" have been completed. Se
 - **6DOF Maneuvers:** Barrel rolls, perpendicular strafing, and "Immelmann" turns.
 - **Movement Capture:** (Long-term) Record human player movement traces to tune bot thrust/drag PID controllers.
 
-### Navigation Research
-- **Guide Bot pathfinding:** Investigate how the Guide Bot navigates complex openings (outdoor→underground transitions) in single-player. Its pathfinding may use techniques applicable to multiplayer bot navigation.
-
 ## Known Issues
 
-- **Dynamic path pool exhaustion:** With 6+ bots, `MAX_DYNAMIC_PATHS=100` is insufficient. Millions of "Out of dynamic paths" errors per session. Paths are allocated but not freed fast enough. Needs investigation into path slot lifecycle.
-- **Complex geometry navigation:** Bots get stuck on walls and geometry, especially at transitions between outdoor terrain and underground rooms. Afterburner exacerbates this. Guide Bot research may help.
-- **Terrain Out-of-Bounds:** On maps with large outdoor terrain (e.g., Fellowship L3), bots can fly vertically out of the playable area. The current grid-based OOB check does not catch altitude escapes.
-- **Physics Immunity:** Bots appear unaffected by physics-based weapons like the Mass Driver (inertia transfer) and Black Shark missile vortex. Likely due to `BotApplyThrust()` overwriting physics state or engine handling of `CT_AI`.
-- **Weapon under-utilization:** Bots favor Vauss and Fusion over Plasma, EMD, and Super Laser. The tactical weapon hierarchy needs rebalancing in the medium-range energy weapon band.
-- **State Oscillation/Locking:** Bots sometimes get stuck trying to engage enemies through thin walls, unable to find a path or line of sight, leading to transient state locking.
-- **Team Rebalancing:** Bots are assigned teams at creation time. If humans join/leave, teams can become unbalanced.
-- **Gunboys:** Map-placed robots (Gunboys) can acquire targets but often fail to fire due to internal engine flags.
+- **Physics immunity (under investigation):** Some physics-based weapons may not affect bot movement as intended. Black Shark vortex is the primary suspect — bots appear to resist its pull effect. Mass Driver knockback may also be reduced. More testing is needed to determine whether this is a bot-specific issue or a server-side physics limitation.
+- **Navigation on extreme geometry:** The stuck recovery system (Phase 3.21) handles most cases, but maps with very tight or recessed spawn points (e.g. spawns under ledges or behind narrow windows) may need bots to reverse further before re-orienting. Edge cases in complex indoor/outdoor transitions can still trap bots briefly. Further tuning of escape distances is planned.
+- **Weapon variety:** Bots select weapons based on damage output, fire rate, and range, which can result in heavy Vauss/Fusion usage when those are genuinely optimal. Selection logic accounts for energy vs. ammo economy and projectile speed, but further playtesting may reveal edge cases.
+- **Team rebalancing:** Bots are assigned teams at creation time. If humans join/leave, teams can become unbalanced.
