@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Phase 3.21 complete — navigation stuck recovery. Goal abandonment after 7s stuck prevents bots from permanently wedging into unreachable geometry.
+**Status:** Phase 3.22 complete — countermeasures, mines/gunboys, physics knockback, behavior tweaks.
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -42,6 +42,8 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | 3.18 | **Path pool exhaustion fix:** `MAX_DYNAMIC_PATHS` 100→200, OBJ goal retry throttle (per-frame→0.5s), rate-limited log warning. Eliminated 1.4M errors/session → 0. Log sizes down 38× (SPLUS: 26MB→694KB). | Complete |
 | 3.20 | **Out-of-bounds fix:** `OF_FORCE_CEILING_CHECK` flag on bot objects enables engine ceiling collision (bots were CT_AI, explicitly excluded). Altitude soft cap in `BotApplyThrust()` suppresses upward thrust near ceiling to prevent "Too many collisions" spam. | Complete |
 | 3.21 | **Navigation stuck recovery:** Goal abandonment after 7s stuck (`BOT_STUCK_ABANDON_TIME`). Removes 4.5s stuck reset so timer accumulates 3→7s with continuous escape thrust, then abandons all goals and forces EXPLORE with fresh room pick. Afterburner suppressed while stuck. Fixes BBQ spawn-point wedging (0 kills/deaths for entire matches). | Complete |
+| 3.22 | **Countermeasures & mines:** Inventory chaff/flare deployment, prox mine dumps near portals, gunboy sentries, physics knockback response, path pool reset on level transition. | Complete |
+| 3.22b | **Behavior tweaks:** Fix flare fallback log, chaff/flare in EVADE/FLEE, mines in FLEE, countermeasure powerup priority (5), weapon priority rebalance (Fusion→top, Vauss→mid), lower divert thresholds. | Complete |
 | 4 | Difficulty levels, configuration UI | Not started |
 
 ## Files
@@ -511,6 +513,36 @@ Mild EXPLORE→HUNT→EXPLORE oscillation observed when bots have a target but n
 4. **Weapon under-utilization:** Bots pick up Plasma, EMD, and Super Laser but don't switch to them often enough. Vauss and Fusion dominate the weapon switch logs. The tactical weapon hierarchy may be biased toward ammo/fast-projectile weapons at the expense of energy weapons in the medium-range band.
 
 5. **Missile evasion working:** 52 homing missile detection events across the session, with successful EVADE transitions. At least one "can't shake Smart missile" event (test4 vs test6), confirming Smart missiles are harder to evade as intended.
+
+### Phase 3.22 / 3.22b: Countermeasures, Mines, Gunboys & Behavior Tweaks
+
+**Countermeasure deployment** (`BotDeployChaff`): Bots deploy real chaff from inventory first; fall back to flare battery 20 (always available). Deployed on homing missile detection (Phase 3.15) and now also per-frame during EVADE and FLEE states. Cooldown: `BOT_COUNTERMEASURE_INTERVAL=5s`.
+
+**Mine placement** (`BotDeployMines`): During EXPLORE (and now FLEE), bots dump prox mines near indoor portals. `BOT_MINE_DEPLOY_CHANCE=0.15` per 0.5s tick; rapid-dump burst at `BOT_MINE_RAPID_INTERVAL=0.3s`. Mines placed within `BOT_MINE_PORTAL_DIST=80u` of a portal.
+
+**Gunboy sentries** (`BotDeployGunboy`): `BOT_GUNBOY_DEPLOY_CHANCE=0.10` per 0.5s tick; `BOT_GUNBOY_COOLDOWN=30s` between placements.
+
+**Countermeasure ID cache** (`BotCacheCMIds`): Scans `Object_info[]` once at level start for chaff/prox/betty/seeker/gunboy weapon IDs. Cached in `Bot_chaff_id`, `Bot_prox_id`, etc.
+
+**Physics knockback response** (Phase 3.22): `ApplyForceToPlayer()` in `physics.cpp` applies weapon knockback forces to bot objects.
+
+**Path pool reset** (Phase 3.22): `AIResetDynamicPaths()` called in `MultiStartNewLevel()` to prevent stale path slot accumulation across level transitions.
+
+**3.22b behavior tweaks:**
+- Fixed flare fallback log: `"deploying chaff (flare fallback)"` → `"deploying flare"`
+- Chaff/flare deployed per-frame during EVADE and FLEE (not just on missile detection)
+- Mine/gunboy deployment extended from EXPLORE-only to EXPLORE+FLEE
+- Countermeasure powerup priority: chaff/betty/seeker/gunboy/proxmine → priority 5 (was 1)
+- Weapon priority rebalance: Fusion promoted to top tier (16/8), Vauss demoted to mid tier (13/6)
+- Divert thresholds lowered: `BOT_POWERUP_DIVERT_PRIORITY` 15→6, `BOT_HUNT_PICKUP_RADIUS` 100→150, `BOT_POWERUP_DIVERT_RADIUS` 175→225, `BOT_POWERUP_INTERRUPT_RADIUS` 120→150
+
+**3.23 playtest results (INDIKA3, 1v1, ~5min):**
+- 8 flare deployments on 5s cooldown — working
+- 7 prox mine dumps near portals — working
+- Weapon switching observed (batteries 0→1→4) — diversity improving
+- Zero crashes, zero path exhaustion, zero stuck events
+- 210 "Too many collisions" warnings (known issue)
+- EXPLORE↔HUNT oscillation still present at 0.5s boundaries (known, non-critical)
 
 ## Running a Test Server
 

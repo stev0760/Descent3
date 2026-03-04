@@ -634,6 +634,8 @@ The following phases originally planned as "Future Work" have been completed. Se
 - **Phase 3.18 (Path Pool Fix):** `MAX_DYNAMIC_PATHS` 100→200, OBJ goal retry throttle (per-frame→0.5s), rate-limited log warning. Eliminated 1.4M errors/session → 0.
 - **Phase 3.20 (Out-of-Bounds Fix):** `OF_FORCE_CEILING_CHECK` flag on bot objects enables engine ceiling collision. Altitude soft cap in `BotApplyThrust()` prevents upward thrust near ceiling.
 - **Phase 3.21 (Stuck Recovery):** Goal abandonment after 7s stuck (`BOT_STUCK_ABANDON_TIME`). Removes 4.5s stuck reset so timer accumulates 3→7s with continuous escape thrust, then abandons all goals and forces EXPLORE with fresh room pick. Afterburner suppressed while stuck.
+- **Phase 3.22 (Countermeasures & Mines):** Inventory chaff/flare deployment, prox mine dumps near indoor portals, gunboy sentries, physics knockback response, path pool reset on level transition.
+- **Phase 3.22b (Behavior Tweaks):** Chaff/flare in EVADE/FLEE states, mines in FLEE, countermeasure powerup priority (5), Fusion promoted to top-tier weapon pickup, Vauss demoted to mid-tier, lower divert thresholds for broader weapon acquisition.
 
 ## Future Work
 

@@ -108,10 +108,10 @@
 // Two-tier interrupt system:
 //   COMBAT interrupt  — breaks off a live fight; tight radius, only game-changers
 //   HUNT divert       — detours mid-hunt; medium radius, any upgrade worth grabbing
-#define BOT_POWERUP_INTERRUPT_RADIUS  120.0f // radius to interrupt active combat for a pickup
+#define BOT_POWERUP_INTERRUPT_RADIUS  150.0f // radius to interrupt active combat for a pickup
 #define BOT_POWERUP_INTERRUPT_PRIORITY 15    // (legacy — kept for reference; logic is now name-based)
-#define BOT_POWERUP_DIVERT_RADIUS     175.0f // radius for a bot in HUNT to divert and grab a pickup
-#define BOT_POWERUP_DIVERT_PRIORITY    15    // minimum priority to trigger HUNT divert (Mega/Invuln/etc.)
+#define BOT_POWERUP_DIVERT_RADIUS     225.0f // radius for a bot in HUNT to divert and grab a pickup
+#define BOT_POWERUP_DIVERT_PRIORITY    6     // minimum priority to trigger HUNT divert (weapons + game-changers)
 #define BOT_WEAK_DIVERT_PRIORITY        8    // WEAK bots divert for any primary weapon upgrade
 #define BOT_WEAK_DIVERT_RADIUS        250.0f // WEAK bots scan wider for weapon diverts
 #define BOT_WEAK_EXPLORE_SPEED          0.6f // WEAK bots explore faster to find weapons (was 0.3×)
@@ -166,7 +166,7 @@
 
 // Greedy powerup collection (Phase 3.15)
 // Bots in HUNT grab very close items without changing state; WEAK bots interrupt combat at wider range.
-#define BOT_HUNT_PICKUP_RADIUS 100.0f     // max dist to grab an item while hunting (barely a detour)
+#define BOT_HUNT_PICKUP_RADIUS 150.0f     // max dist to grab an item while hunting (wider corridor grab)
 #define BOT_WEAK_INTERRUPT_RADIUS 200.0f  // WEAK bots break off combat for weapons within this range
 
 // Outdoor awareness scaling (Phase 3.15)

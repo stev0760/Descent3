@@ -683,7 +683,7 @@ static void BotDeployChaff(int bot_index) {
   if (Players[slot].energy < 0.0f)
     Players[slot].energy = 0.0f;
   Bots[bot_index].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
-  LOG_DEBUG.printf("BOT: '%s' deploying chaff (flare fallback)", Bots[bot_index].callsign);
+  LOG_DEBUG.printf("BOT: '%s' deploying flare", Bots[bot_index].callsign);
 }
 
 // Check if the bot is near an indoor portal (for mine/gunboy placement).
@@ -1185,15 +1185,20 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
       priority = no_secondaries ? 9 : 3;
 
     // --- Primary weapon upgrades (priority doubles when bot has only default Laser) ---
-    else if (strstr(lower, "vauss") || strstr(lower, "plasma") ||
+    else if (strstr(lower, "plasma") || strstr(lower, "fusion") ||
              strstr(lower, "super laser") || strstr(lower, "emd") || strstr(lower, "electro"))
       priority = only_default ? 16 : 8;
-    else if (strstr(lower, "fusion") || strstr(lower, "microwave"))
+    else if (strstr(lower, "vauss") || strstr(lower, "microwave"))
       priority = only_default ? 13 : 6;
     else if (strstr(lower, "omega"))
       priority = only_default ? 8 : 4; // Omega is situational (melee only) — lower pickup priority
     else if (strstr(lower, "napalm") || strstr(lower, "mass driver"))
       priority = only_default ? 10 : 4;
+
+    // --- Countermeasure pickups (from death spew and spawn areas) ---
+    else if (strstr(lower, "chaff") || strstr(lower, "betty") || strstr(lower, "seeker") ||
+             strstr(lower, "gunboy") || strstr(lower, "proxmine"))
+      priority = 5;
 
     // --- Anything else (Extra Life, map downloads, access keys, etc.) ---
     else
@@ -2423,6 +2428,10 @@ void BotDoFrame() {
     else if (Bots[i].state == BOT_STATE_EXPLORE && Bots[i].explore_room_timer > 0.0f)
       Bots[i].explore_room_timer -= Frametime;
 
+    // Deploy chaff/flare during EVADE and FLEE (defensive countermeasures while retreating)
+    if (Bots[i].state == BOT_STATE_EVADE || Bots[i].state == BOT_STATE_FLEE)
+      BotDeployChaff(i);
+
     // Cooldown timers
     if (Bots[i].countermeasure_timer > 0.0f)
       Bots[i].countermeasure_timer -= Frametime;
@@ -2463,7 +2472,7 @@ void BotDoFrame() {
       Bots[i].last_target_update = Gametime;
 
       // EXPLORE: deploy mines and gunboys near indoor portals
-      if (Bots[i].state == BOT_STATE_EXPLORE && Bot_cm_ids_cached) {
+      if ((Bots[i].state == BOT_STATE_EXPLORE || Bots[i].state == BOT_STATE_FLEE) && Bot_cm_ids_cached) {
         BotDeployMines(i);
         BotDeployGunboy(i);
       }
