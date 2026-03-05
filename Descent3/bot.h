@@ -67,6 +67,7 @@
 // If a bot stays in HUNT for this long without ever gaining line-of-sight, it drops the target
 // and returns to EXPLORE. This breaks the HUNT↔stuck loop on indoor/outdoor boundary maps.
 #define BOT_HUNT_NO_LOS_TIMEOUT 5.0f
+#define BOT_RETARGET_COOLDOWN   4.0f   // seconds after HUNT timeout before re-acquiring targets
 
 // Powerup collection (Phase 3.8)
 #define BOT_POWERUP_SEEK_RADIUS 350.0f // scan radius for powerup objects
@@ -133,6 +134,7 @@
 #define BOT_WEAK_FLEE_PCT       0.40f  // ill-equipped bots flee early (40% shields)
 #define BOT_RAMPAGE_AGRO_BONUS  60.0f  // score reduction: elite bot vs weak target (prefer easy prey)
 #define BOT_OUTGUNNED_PENALTY   80.0f  // score increase: weak bot vs elite target (avoid the beast)
+#define BOT_NO_LOS_TARGET_PENALTY 500.0f // score increase for targets not visible (behind walls)
 
 // Close-quarters dynamic turn rate (Phase 3.11)
 // Tighter tracking at close range improves hit accuracy in dogfights.
@@ -234,6 +236,7 @@ struct bot_info {
 
   // HUNT LOS timeout (Phase 3.24) — prevents bots from ramming walls chasing unreachable targets
   float hunt_no_los_timer; // seconds in HUNT without line-of-sight; drop target when > threshold
+  float retarget_cooldown; // >0: suppress BotSelectTarget (after HUNT timeout, let bot explore)
 
   // Powerup seeking (Phase 3.8)
   int powerup_goal_index; // goal index of AIG_GET_TO_OBJ powerup pursuit goal, or -1

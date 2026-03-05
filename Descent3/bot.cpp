@@ -1064,7 +1064,6 @@ static void BotDoExploreRoaming(int bot_index) {
       uncrowded[num_uncrowded++] = candidates[c];
 
   // Pick a destination — prefer uncrowded, fall back to any candidate
-  int *pick_list = (num_uncrowded > 0) ? uncrowded : candidates;
   int pick_count = (num_uncrowded > 0) ? num_uncrowded : num_candidates;
   int pick_idx = rand() % pick_count;
 
@@ -1462,12 +1461,13 @@ static void BotUpdateState(int bot_index) {
       new_state = BOT_STATE_EXPLORE;
     else if (Bots[bot_index].hunt_no_los_timer > BOT_HUNT_NO_LOS_TIMEOUT) {
       // Chased this target for too long without ever seeing them — unreachable.
-      // Drop target and explore; the bot will find a different target naturally.
+      // Drop target, suppress retargeting for a few seconds, and explore.
       AISetTarget(obj, OBJECT_HANDLE_NONE);
       Bots[bot_index].hunt_no_los_timer = 0.0f;
+      Bots[bot_index].retarget_cooldown = BOT_RETARGET_COOLDOWN;
       new_state = BOT_STATE_EXPLORE;
-      LOG_DEBUG.printf("BOT: '%s' HUNT timeout — no LOS for %.1fs, dropping target",
-                       Bots[bot_index].callsign, BOT_HUNT_NO_LOS_TIMEOUT);
+      LOG_DEBUG.printf("BOT: '%s' HUNT timeout — no LOS for %.1fs, dropping target (cooldown %.1fs)",
+                       Bots[bot_index].callsign, BOT_HUNT_NO_LOS_TIMEOUT, BOT_RETARGET_COOLDOWN);
     } else if (low_shields)
       new_state = BOT_STATE_FLEE;
     else if (dist < combat_entry && has_los)
@@ -1962,6 +1962,12 @@ static void BotSelectTarget(int bot_index) {
     float effective_dist = OBJECT_OUTSIDE(obj) ? dist * BOT_OUTDOOR_TARGET_DIST_SCALE : dist;
     float score = effective_dist + slot_bot_count[i] * 80.0f; // penalize congested targets
 
+    // LOS penalty: targets behind walls are much less desirable than visible ones.
+    // This prevents bots from locking onto through-wall enemies they can't reach,
+    // which was causing permanent HUNT↔timeout oscillation on complex maps.
+    if (!BotHasLOS(obj, &Objects[Players[i].objnum]))
+      score += BOT_NO_LOS_TARGET_PENALTY;
+
     // Equipment differential scoring (Phase 3.11): elite bots prefer weak targets;
     // weak bots avoid elite opponents.
     int bot_rating = BotGetEquipmentRating(bot_index);
@@ -2119,6 +2125,7 @@ static void BotRespawn(int bot_index) {
   Bots[bot_index].combat_idle_timer = 0.0f;
   Bots[bot_index].evade_timer = 0.0f;
   Bots[bot_index].hunt_no_los_timer = 0.0f;
+  Bots[bot_index].retarget_cooldown = 0.0f;
   Bots[bot_index].explore_dest_room = -1;
   Bots[bot_index].explore_stuck_room = -1;
   Bots[bot_index].explore_room_timer = 0.0f;
@@ -2195,6 +2202,7 @@ void BotReinitAll() {
     Bots[i].combat_idle_timer = 0.0f;
     Bots[i].evade_timer = 0.0f;
     Bots[i].hunt_no_los_timer = 0.0f;
+    Bots[i].retarget_cooldown = 0.0f;
     Bots[i].explore_dest_room = -1;
     Bots[i].explore_stuck_room = -1;
     Bots[i].explore_room_timer = 0.0f;
@@ -2400,6 +2408,7 @@ int BotAdd(const char *name, int ship_index) {
   Bots[bot_index].combat_idle_timer = 0.0f;
   Bots[bot_index].evade_timer = 0.0f;
   Bots[bot_index].hunt_no_los_timer = 0.0f;
+  Bots[bot_index].retarget_cooldown = 0.0f;
   Bots[bot_index].explore_dest_room = -1;
   Bots[bot_index].explore_stuck_room = -1;
   Bots[bot_index].explore_room_timer = 0.0f;
@@ -2569,7 +2578,12 @@ void BotDoFrame() {
 
     // Target acquisition + state transition (throttled)
     if (Gametime - Bots[i].last_target_update > BOT_TARGET_UPDATE_INTERVAL) {
-      BotSelectTarget(i);
+      // Retarget cooldown: after HUNT timeout, suppress target acquisition so the bot
+      // actually explores instead of immediately re-locking the same unreachable enemy.
+      if (Bots[i].retarget_cooldown > 0.0f)
+        Bots[i].retarget_cooldown -= BOT_TARGET_UPDATE_INTERVAL;
+      else
+        BotSelectTarget(i);
       BotUpdateState(i);
       BotSelectBestWeapon(i);     // equip best primary weapon (picks up new drops automatically)
       BotSelectBestSecondary(i);  // equip best secondary weapon
