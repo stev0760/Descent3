@@ -966,9 +966,38 @@ static void BotDoExploreRoaming(int bot_index) {
     // Consider "not arrived" while still outdoor OR in a different indoor room.
     if (OBJECT_OUTSIDE(obj) || obj->roomnum != Bots[bot_index].explore_dest_room)
       return; // still en route
-    // Arrived — clear blacklist (we successfully reached a destination)
+    // Arrived — clear blacklist and last-known position (we successfully reached a destination)
     Bots[bot_index].explore_stuck_room = -1;
+    Bots[bot_index].last_target_room = -1;
     // Fall through to pick next destination
+  }
+
+  // If we have a last-known target position (from HUNT timeout), navigate there first.
+  // This guides the bot toward the door/portal where the target was last seen, instead of
+  // random wandering. Uses AIG_GET_TO_POS with proper roomnum so BOA pathfinding works
+  // across indoor/outdoor boundaries.
+  if (Bots[bot_index].last_target_room >= 0) {
+    int &pgi = Bots[bot_index].pursuit_goal_index;
+    if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+      GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+    pgi = -1;
+
+    goal_info gi_info;
+    memset(&gi_info, 0, sizeof(gi_info));
+    gi_info.pos = Bots[bot_index].last_target_pos;
+    gi_info.roomnum = Bots[bot_index].last_target_room;
+
+    pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
+    // Use last_target_room as explore destination so arrival detection works
+    Bots[bot_index].explore_dest_room = ROOMNUM_OUTSIDE(Bots[bot_index].last_target_room)
+        ? -1 // outdoor target — can't match indoor roomnum; will clear on timer
+        : BOA_INDEX(Bots[bot_index].last_target_room);
+    Bots[bot_index].explore_room_timer = BOT_HUNT_NO_LOS_TIMEOUT; // generous time to reach it
+
+    LOG_DEBUG.printf("BOT: '%s' explore -> last-known target pos (room %d)",
+                     Bots[bot_index].callsign, Bots[bot_index].last_target_room);
+    Bots[bot_index].last_target_room = -1; // consumed — don't loop back here
+    return;
   }
 
   // Build candidate list of room destinations
@@ -980,9 +1009,8 @@ static void BotDoExploreRoaming(int bot_index) {
 
   if (is_outdoor) {
     // Outdoor: use BOA_connect to find indoor rooms reachable from this terrain region.
-    // CRITICAL: AIG_GET_TO_POS does NOT trigger pathfinding — it just computes a direct vector
-    // toward the destination. So we must navigate to the portal entrance (the actual doorway),
-    // not the room center which may be behind solid walls.
+    // AIG_GET_TO_POS triggers BOA pathfinding via GoalDoFrame→AIPathAllocPath when given
+    // a valid roomnum. Navigate to portal entrance positions for better approach angles.
     int cellnum = CELLNUM(obj->roomnum);
     int region = TERRAIN_REGION(cellnum);
     if (region >= 0 && region < MAX_BOA_TERRAIN_REGIONS) {
@@ -1450,24 +1478,39 @@ static void BotUpdateState(int bot_index) {
       combat_entry *= BOT_OUTDOOR_COMBAT_RANGE_MULT;
 
     // Track continuous time in HUNT without line-of-sight.
-    // If we never gain LOS, the target is likely unreachable (other side of wall/terrain).
+    // Progress-based: if the bot is getting closer to the target, it's navigating correctly
+    // through doors/portals — reset the timer. Only timeout when making no progress.
     if (has_target && !has_los) {
       Bots[bot_index].hunt_no_los_timer += BOT_TARGET_UPDATE_INTERVAL;
+      // Check if we're making progress (getting closer to target)
+      if (Bots[bot_index].hunt_last_dist > 0.0f &&
+          dist < Bots[bot_index].hunt_last_dist - BOT_HUNT_PROGRESS_THRESHOLD) {
+        Bots[bot_index].hunt_no_los_timer = 0.0f; // making progress — reset timer
+      }
+      Bots[bot_index].hunt_last_dist = dist;
     } else {
       Bots[bot_index].hunt_no_los_timer = 0.0f;
+      Bots[bot_index].hunt_last_dist = dist;
     }
 
     if (!has_target)
       new_state = BOT_STATE_EXPLORE;
     else if (Bots[bot_index].hunt_no_los_timer > BOT_HUNT_NO_LOS_TIMEOUT) {
-      // Chased this target for too long without ever seeing them — unreachable.
-      // Drop target, suppress retargeting for a few seconds, and explore.
+      // Chased this target for too long without getting closer — unreachable.
+      // Save target's position so EXPLORE can navigate to the last-known location
+      // (guides bot toward doors/entrances instead of random wandering).
+      object *target = ObjGet(obj->ai_info->target_handle);
+      if (target) {
+        Bots[bot_index].last_target_pos = target->pos;
+        Bots[bot_index].last_target_room = target->roomnum;
+      }
       AISetTarget(obj, OBJECT_HANDLE_NONE);
       Bots[bot_index].hunt_no_los_timer = 0.0f;
+      Bots[bot_index].hunt_last_dist = 0.0f;
       Bots[bot_index].retarget_cooldown = BOT_RETARGET_COOLDOWN;
       new_state = BOT_STATE_EXPLORE;
-      LOG_DEBUG.printf("BOT: '%s' HUNT timeout — no LOS for %.1fs, dropping target (cooldown %.1fs)",
-                       Bots[bot_index].callsign, BOT_HUNT_NO_LOS_TIMEOUT, BOT_RETARGET_COOLDOWN);
+      LOG_DEBUG.printf("BOT: '%s' HUNT timeout — no progress for %.1fs, saving last pos and exploring",
+                       Bots[bot_index].callsign, BOT_HUNT_NO_LOS_TIMEOUT);
     } else if (low_shields)
       new_state = BOT_STATE_FLEE;
     else if (dist < combat_entry && has_los)
@@ -1565,6 +1608,8 @@ static void BotUpdateState(int bot_index) {
       break;
     case BOT_STATE_HUNT:
       Bots[bot_index].hunt_no_los_timer = 0.0f; // fresh hunt
+      Bots[bot_index].hunt_last_dist = 0.0f;
+      Bots[bot_index].last_target_room = -1; // clear last-known pos when actively pursuing
       BotSetPursuitGoal(bot_index);
       break;
     case BOT_STATE_COMBAT:
@@ -2125,7 +2170,10 @@ static void BotRespawn(int bot_index) {
   Bots[bot_index].combat_idle_timer = 0.0f;
   Bots[bot_index].evade_timer = 0.0f;
   Bots[bot_index].hunt_no_los_timer = 0.0f;
+  Bots[bot_index].hunt_last_dist = 0.0f;
   Bots[bot_index].retarget_cooldown = 0.0f;
+  Bots[bot_index].last_target_room = -1;
+  vm_MakeZero(&Bots[bot_index].last_target_pos);
   Bots[bot_index].explore_dest_room = -1;
   Bots[bot_index].explore_stuck_room = -1;
   Bots[bot_index].explore_room_timer = 0.0f;
@@ -2163,6 +2211,10 @@ void BotInitAll() {
     Bots[i].combat_idle_timer = 0.0f;
     Bots[i].evade_timer = 0.0f;
     Bots[i].hunt_no_los_timer = 0.0f;
+    Bots[i].hunt_last_dist = 0.0f;
+    Bots[i].retarget_cooldown = 0.0f;
+    Bots[i].last_target_room = -1;
+    vm_MakeZero(&Bots[i].last_target_pos);
     Bots[i].powerup_goal_index = -1;
     Bots[i].explore_dest_room = -1;
     Bots[i].explore_stuck_room = -1;
@@ -2202,7 +2254,10 @@ void BotReinitAll() {
     Bots[i].combat_idle_timer = 0.0f;
     Bots[i].evade_timer = 0.0f;
     Bots[i].hunt_no_los_timer = 0.0f;
+    Bots[i].hunt_last_dist = 0.0f;
     Bots[i].retarget_cooldown = 0.0f;
+    Bots[i].last_target_room = -1;
+    vm_MakeZero(&Bots[i].last_target_pos);
     Bots[i].explore_dest_room = -1;
     Bots[i].explore_stuck_room = -1;
     Bots[i].explore_room_timer = 0.0f;
@@ -2408,7 +2463,10 @@ int BotAdd(const char *name, int ship_index) {
   Bots[bot_index].combat_idle_timer = 0.0f;
   Bots[bot_index].evade_timer = 0.0f;
   Bots[bot_index].hunt_no_los_timer = 0.0f;
+  Bots[bot_index].hunt_last_dist = 0.0f;
   Bots[bot_index].retarget_cooldown = 0.0f;
+  Bots[bot_index].last_target_room = -1;
+  vm_MakeZero(&Bots[bot_index].last_target_pos);
   Bots[bot_index].explore_dest_room = -1;
   Bots[bot_index].explore_stuck_room = -1;
   Bots[bot_index].explore_room_timer = 0.0f;
@@ -2495,6 +2553,10 @@ void BotDoFrame() {
       Bots[i].combat_idle_timer = 0.0f;
       Bots[i].evade_timer = 0.0f;
       Bots[i].hunt_no_los_timer = 0.0f;
+      Bots[i].hunt_last_dist = 0.0f;
+      Bots[i].retarget_cooldown = 0.0f;
+      Bots[i].last_target_room = -1;
+      vm_MakeZero(&Bots[i].last_target_pos);
       Bots[i].explore_dest_room = -1;
       Bots[i].explore_stuck_room = -1;
       Bots[i].explore_room_timer = 0.0f;

@@ -63,11 +63,12 @@
 #define BOT_EVADE_COMBAT_TIMEOUT 20.0f // seconds in COMBAT before triggering EVADE (requires shields < 60%)
 #define BOT_EVADE_DURATION 3.5f        // seconds to stay in EVADE before re-engaging
 
-// HUNT LOS timeout (Phase 3.24) — prevents bots from ramming walls chasing unreachable targets.
-// If a bot stays in HUNT for this long without ever gaining line-of-sight, it drops the target
-// and returns to EXPLORE. This breaks the HUNT↔stuck loop on indoor/outdoor boundary maps.
-#define BOT_HUNT_NO_LOS_TIMEOUT 5.0f
-#define BOT_RETARGET_COOLDOWN   4.0f   // seconds after HUNT timeout before re-acquiring targets
+// HUNT LOS timeout (Phase 3.24, tuned Phase 3.26) — prevents bots from ramming walls chasing
+// unreachable targets. Uses progress-based tracking: timer resets when bot gets closer to target.
+// Only fires when bot makes no progress for the full timeout duration.
+#define BOT_HUNT_NO_LOS_TIMEOUT 15.0f
+#define BOT_HUNT_PROGRESS_THRESHOLD 10.0f // distance decrease (units) that counts as "making progress"
+#define BOT_RETARGET_COOLDOWN   2.0f   // seconds after HUNT timeout before re-acquiring targets
 
 // Powerup collection (Phase 3.8)
 #define BOT_POWERUP_SEEK_RADIUS 350.0f // scan radius for powerup objects
@@ -234,9 +235,14 @@ struct bot_info {
   float combat_idle_timer; // seconds spent in COMBAT state; triggers EVADE when > BOT_EVADE_COMBAT_TIMEOUT
   float evade_timer;       // counts down from BOT_EVADE_DURATION while in EVADE state
 
-  // HUNT LOS timeout (Phase 3.24) — prevents bots from ramming walls chasing unreachable targets
+  // HUNT LOS timeout (Phase 3.24, progress-based Phase 3.26)
   float hunt_no_los_timer; // seconds in HUNT without line-of-sight; drop target when > threshold
+  float hunt_last_dist;    // distance to target at last progress check; reset timer if closer
   float retarget_cooldown; // >0: suppress BotSelectTarget (after HUNT timeout, let bot explore)
+
+  // Last-known target position (Phase 3.26) — guides EXPLORE toward doors/entrances after HUNT timeout
+  vector last_target_pos;  // position of target when it was dropped (or zero if none)
+  int last_target_room;    // roomnum of target when dropped; -1 = no last-known position
 
   // Powerup seeking (Phase 3.8)
   int powerup_goal_index; // goal index of AIG_GET_TO_OBJ powerup pursuit goal, or -1
