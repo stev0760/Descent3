@@ -26,6 +26,9 @@
 | 3.18 | **Path pool fix** — `MAX_DYNAMIC_PATHS` 100→200, OBJ goal retry throttle, rate-limited warnings | Complete |
 | 3.20 | **Out-of-bounds fix** — `OF_FORCE_CEILING_CHECK` flag, altitude soft cap in `BotApplyThrust()` | Complete |
 | 3.21 | **Stuck recovery** — 7s goal abandonment (`BOT_STUCK_ABANDON_TIME`), afterburner suppression while stuck | Complete |
+| 3.22 | **Countermeasures & mines** — chaff/flare deployment, prox mine dumps, gunboy sentries, physics knockback | Complete |
+| 3.22b | **Behavior tweaks** — weapon priority rebalance, lower divert thresholds, countermeasure in EVADE/FLEE | Complete |
+| 3.24 | **Outdoor↔indoor nav fix** — portal entrance navigation via `BOA_connect`, HUNT LOS timeout, stuck blacklist | Complete |
 | 4 | Difficulty levels, configuration UI | Not started |
 | 5 | High-fidelity 6DOF combat — tactical maneuvers, skill scaling | Not started |
 

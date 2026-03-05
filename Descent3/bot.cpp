@@ -44,6 +44,7 @@
 #include "weapon.h"
 #include "objinfo.h"
 #include "terrain.h"
+#include "BOA.h"
 #include "log.h"
 
 bot_info Bots[MAX_BOTS];
@@ -233,7 +234,7 @@ static void BotSetFleeGoal(int bot_index) {
   vector flee_pos = obj->pos + away * BOT_FLEE_DISTANCE;
   int flee_room = obj->roomnum;
 
-  if (obj->roomnum >= 0 && Rooms[obj->roomnum].used) {
+  if (!OBJECT_OUTSIDE(obj) && obj->roomnum >= 0 && Rooms[obj->roomnum].used) {
     int best_portal = -1;
     float best_dot = -0.2f; // only use portal if it's reasonably in the away direction
     room &cur = Rooms[obj->roomnum];
@@ -288,7 +289,7 @@ static void BotSetEvadeGoal(int bot_index) {
   vector flee_pos = obj->pos + away * BOT_FLEE_DISTANCE;
   int flee_room = obj->roomnum;
 
-  if (obj->roomnum >= 0 && Rooms[obj->roomnum].used) {
+  if (!OBJECT_OUTSIDE(obj) && obj->roomnum >= 0 && Rooms[obj->roomnum].used) {
     room &cur = Rooms[obj->roomnum];
     for (int p = 0; p < cur.num_portals; p++) {
       int croom = cur.portals[p].croom;
@@ -956,54 +957,99 @@ static void BotDoStuckClear(int bot_index) {
 static void BotDoExploreRoaming(int bot_index) {
   int slot = Bots[bot_index].player_slot;
   object *obj = &Objects[Players[slot].objnum];
-  if (!obj->ai_info || obj->roomnum < 0)
+  if (!obj->ai_info)
     return;
 
   // Still navigating to current destination — don't change course until we arrive or time out
   if (Bots[bot_index].explore_dest_room >= 0 && Bots[bot_index].explore_room_timer > 0.0f) {
-    if (obj->roomnum != Bots[bot_index].explore_dest_room)
+    // Outdoor bots: destination is always an indoor room, so can't match roomnum directly.
+    // Consider "not arrived" while still outdoor OR in a different indoor room.
+    if (OBJECT_OUTSIDE(obj) || obj->roomnum != Bots[bot_index].explore_dest_room)
       return; // still en route
-    // Arrived — fall through to pick next destination
+    // Arrived — clear blacklist (we successfully reached a destination)
+    Bots[bot_index].explore_stuck_room = -1;
+    // Fall through to pick next destination
   }
 
-  if (!Rooms[obj->roomnum].used)
-    return;
-
-  // Build candidate portal list from the current room and one level deeper.
-  // Deeper reach gives more varied destinations and reduces back-and-forth bouncing.
-  int candidates[24]; // room indices of reachable destinations
+  // Build candidate list of room destinations
+  int candidates[24];
   int num_candidates = 0;
+  // For outdoor bots, store portal entrance positions parallel to candidates[]
+  vector portal_pos[24];
+  bool is_outdoor = OBJECT_OUTSIDE(obj);
 
-  room &cur = Rooms[obj->roomnum];
-  for (int p = 0; p < cur.num_portals && num_candidates < 8; p++) {
-    int r1 = cur.portals[p].croom;
-    if (r1 < 0 || !Rooms[r1].used)
-      continue;
-    if (cur.portals[p].flags & PF_TOO_SMALL_FOR_ROBOT)
-      continue;
-    // Skip the room we just came from if there are other options (avoids ping-pong)
-    if (r1 == Bots[bot_index].explore_dest_room && cur.num_portals > 1)
-      continue;
-    candidates[num_candidates++] = r1;
-
-    // Also look one portal deeper from r1 for more varied routing
-    if (BOT_EXPLORE_PORTAL_DEPTH >= 2) {
-      room &r1room = Rooms[r1];
-      for (int p2 = 0; p2 < r1room.num_portals && num_candidates < 24; p2++) {
-        int r2 = r1room.portals[p2].croom;
-        if (r2 < 0 || r2 == obj->roomnum || !Rooms[r2].used)
+  if (is_outdoor) {
+    // Outdoor: use BOA_connect to find indoor rooms reachable from this terrain region.
+    // CRITICAL: AIG_GET_TO_POS does NOT trigger pathfinding — it just computes a direct vector
+    // toward the destination. So we must navigate to the portal entrance (the actual doorway),
+    // not the room center which may be behind solid walls.
+    int cellnum = CELLNUM(obj->roomnum);
+    int region = TERRAIN_REGION(cellnum);
+    if (region >= 0 && region < MAX_BOA_TERRAIN_REGIONS) {
+      for (int c = 0; c < BOA_num_connect[region] && num_candidates < 24; c++) {
+        int dest = BOA_connect[region][c].roomnum;
+        int portal_idx = BOA_connect[region][c].portal;
+        if (dest < 0 || dest > Highest_room_index || !Rooms[dest].used)
           continue;
-        if (r1room.portals[p2].flags & PF_TOO_SMALL_FOR_ROBOT)
+        // Skip the room we just got stuck at
+        if (dest == Bots[bot_index].explore_stuck_room)
           continue;
-        candidates[num_candidates++] = r2;
+        // Validate portal index and get the entrance position
+        if (portal_idx >= 0 && portal_idx < Rooms[dest].num_portals) {
+          portal_pos[num_candidates] = Rooms[dest].portals[portal_idx].path_pnt;
+        } else {
+          // Fallback: use room path_pnt if portal index is invalid
+          portal_pos[num_candidates] = Rooms[dest].path_pnt;
+        }
+        candidates[num_candidates++] = dest;
       }
+    }
+    if (num_candidates == 0) {
+      // No reachable indoor rooms (or all blacklisted) — clear blacklist and try again next tick.
+      // Meanwhile the bot will roam via movement_dir / wall avoidance.
+      Bots[bot_index].explore_stuck_room = -1;
+      return;
+    }
+  } else {
+    // Indoor: portal-based candidate list (current room + one level deeper)
+    if (obj->roomnum < 0 || !Rooms[obj->roomnum].used)
+      return;
+
+    room &cur = Rooms[obj->roomnum];
+    for (int p = 0; p < cur.num_portals && num_candidates < 8; p++) {
+      int r1 = cur.portals[p].croom;
+      if (r1 < 0 || !Rooms[r1].used)
+        continue;
+      if (cur.portals[p].flags & PF_TOO_SMALL_FOR_ROBOT)
+        continue;
+      if (r1 == Bots[bot_index].explore_dest_room && cur.num_portals > 1)
+        continue;
+      if (r1 == Bots[bot_index].explore_stuck_room)
+        continue;
+      candidates[num_candidates++] = r1;
+
+      if (BOT_EXPLORE_PORTAL_DEPTH >= 2) {
+        room &r1room = Rooms[r1];
+        for (int p2 = 0; p2 < r1room.num_portals && num_candidates < 24; p2++) {
+          int r2 = r1room.portals[p2].croom;
+          if (r2 < 0 || r2 == obj->roomnum || !Rooms[r2].used)
+            continue;
+          if (r1room.portals[p2].flags & PF_TOO_SMALL_FOR_ROBOT)
+            continue;
+          if (r2 == Bots[bot_index].explore_stuck_room)
+            continue;
+          candidates[num_candidates++] = r2;
+        }
+      }
+    }
+
+    if (num_candidates == 0) {
+      Bots[bot_index].explore_stuck_room = -1; // clear blacklist if it eliminated all options
+      return;
     }
   }
 
-  if (num_candidates == 0)
-    return; // dead end room — wander goal handles orientation
-
-  // Prefer uncrowded destinations (< 2 other bots already heading there)
+  // Prefer uncrowded destinations (< 3 other bots already heading there)
   int bot_heading[24] = {};
   for (int b = 0; b < MAX_BOTS; b++) {
     if (!Bots[b].active || b == bot_index)
@@ -1014,11 +1060,35 @@ static void BotDoExploreRoaming(int bot_index) {
   }
   int uncrowded[24], num_uncrowded = 0;
   for (int c = 0; c < num_candidates; c++)
-    if (bot_heading[c] < 2)
+    if (bot_heading[c] < 3)
       uncrowded[num_uncrowded++] = candidates[c];
+
+  // Pick a destination — prefer uncrowded, fall back to any candidate
   int *pick_list = (num_uncrowded > 0) ? uncrowded : candidates;
   int pick_count = (num_uncrowded > 0) ? num_uncrowded : num_candidates;
-  int dest_room = pick_list[rand() % pick_count];
+  int pick_idx = rand() % pick_count;
+
+  // Map back to the candidates[] index to get the matching portal_pos[] entry
+  int dest_room;
+  vector dest_pos;
+  if (num_uncrowded > 0) {
+    dest_room = uncrowded[pick_idx];
+    // Find original candidates[] index for this room to get portal_pos
+    if (is_outdoor) {
+      dest_pos = Rooms[dest_room].path_pnt; // default
+      for (int c = 0; c < num_candidates; c++) {
+        if (candidates[c] == dest_room) {
+          dest_pos = portal_pos[c];
+          break;
+        }
+      }
+    } else {
+      dest_pos = Rooms[dest_room].path_pnt;
+    }
+  } else {
+    dest_room = candidates[pick_idx];
+    dest_pos = is_outdoor ? portal_pos[pick_idx] : Rooms[dest_room].path_pnt;
+  }
 
   // Clear old explore goal and set new AIG_GET_TO_POS destination
   int &pgi = Bots[bot_index].pursuit_goal_index;
@@ -1028,15 +1098,16 @@ static void BotDoExploreRoaming(int bot_index) {
 
   goal_info gi_info;
   memset(&gi_info, 0, sizeof(gi_info));
-  gi_info.pos = Rooms[dest_room].path_pnt;
+  gi_info.pos = dest_pos;
   gi_info.roomnum = dest_room;
 
   pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
   Bots[bot_index].explore_dest_room = dest_room;
   Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME;
 
-  LOG_DEBUG.printf("BOT: '%s' explore → room %d (from room %d)", Bots[bot_index].callsign, dest_room,
-                   obj->roomnum);
+  LOG_DEBUG.printf("BOT: '%s' explore → room %d (%s%s)", Bots[bot_index].callsign, dest_room,
+                   is_outdoor ? "from outdoor, portal entrance" : "from indoor",
+                   Bots[bot_index].explore_stuck_room >= 0 ? ", avoiding stuck room" : "");
 }
 
 // Returns true if the bot has no primary weapon beyond the default Laser (battery 0).
@@ -1354,6 +1425,7 @@ static void BotUpdateState(int bot_index) {
                         GF_SPEED_ATTACK | GF_USE_BLINE_IF_SEES_GOAL);
       // Reset roaming state so we resume searching after collecting
       Bots[bot_index].explore_dest_room = -1;
+      Bots[bot_index].explore_stuck_room = -1;
       Bots[bot_index].explore_room_timer = 0.0f;
     } else {
       // No powerup nearby — clear any stale goal index (powerup may have just been collected)
@@ -1378,9 +1450,25 @@ static void BotUpdateState(int bot_index) {
     if (OBJECT_OUTSIDE(obj))
       combat_entry *= BOT_OUTDOOR_COMBAT_RANGE_MULT;
 
+    // Track continuous time in HUNT without line-of-sight.
+    // If we never gain LOS, the target is likely unreachable (other side of wall/terrain).
+    if (has_target && !has_los) {
+      Bots[bot_index].hunt_no_los_timer += BOT_TARGET_UPDATE_INTERVAL;
+    } else {
+      Bots[bot_index].hunt_no_los_timer = 0.0f;
+    }
+
     if (!has_target)
       new_state = BOT_STATE_EXPLORE;
-    else if (low_shields)
+    else if (Bots[bot_index].hunt_no_los_timer > BOT_HUNT_NO_LOS_TIMEOUT) {
+      // Chased this target for too long without ever seeing them — unreachable.
+      // Drop target and explore; the bot will find a different target naturally.
+      AISetTarget(obj, OBJECT_HANDLE_NONE);
+      Bots[bot_index].hunt_no_los_timer = 0.0f;
+      new_state = BOT_STATE_EXPLORE;
+      LOG_DEBUG.printf("BOT: '%s' HUNT timeout — no LOS for %.1fs, dropping target",
+                       Bots[bot_index].callsign, BOT_HUNT_NO_LOS_TIMEOUT);
+    } else if (low_shields)
       new_state = BOT_STATE_FLEE;
     else if (dist < combat_entry && has_los)
       new_state = BOT_STATE_COMBAT;
@@ -1471,10 +1559,12 @@ static void BotUpdateState(int bot_index) {
     switch (new_state) {
     case BOT_STATE_EXPLORE:
       AISetTarget(obj, OBJECT_HANDLE_NONE);
-      Bots[bot_index].explore_dest_room = -1;  // start fresh room search
+      Bots[bot_index].explore_dest_room = -1;
+      Bots[bot_index].explore_stuck_room = -1; // start fresh room search
       Bots[bot_index].explore_room_timer = 0.0f;
       break;
     case BOT_STATE_HUNT:
+      Bots[bot_index].hunt_no_los_timer = 0.0f; // fresh hunt
       BotSetPursuitGoal(bot_index);
       break;
     case BOT_STATE_COMBAT:
@@ -1668,9 +1758,13 @@ static void BotApplyThrust(int bot_index) {
 
   if (Bots[bot_index].stuck_timer > BOT_STUCK_ABANDON_TIME) {
     // Prolonged stuck: the goal itself is unreachable (window too small, complex geometry).
-    // Abandon all goals and pick a fresh direction via EXPLORE.
+    // Abandon all goals, drop target, and pick a fresh direction via EXPLORE.
+    // Blacklist the destination so we don't re-pick it immediately.
+    // Drop target so BotSelectTarget doesn't immediately re-acquire the same unreachable enemy.
     BotClearActiveGoal(bot_index);
+    AISetTarget(obj, OBJECT_HANDLE_NONE);
     Bots[bot_index].state = BOT_STATE_EXPLORE;
+    Bots[bot_index].explore_stuck_room = Bots[bot_index].explore_dest_room;
     Bots[bot_index].explore_dest_room = -1;
     Bots[bot_index].explore_room_timer = 0.0f;
     Bots[bot_index].stuck_timer = 0.0f;
@@ -2024,7 +2118,9 @@ static void BotRespawn(int bot_index) {
   Bots[bot_index].stuck_timer = 0.0f;
   Bots[bot_index].combat_idle_timer = 0.0f;
   Bots[bot_index].evade_timer = 0.0f;
+  Bots[bot_index].hunt_no_los_timer = 0.0f;
   Bots[bot_index].explore_dest_room = -1;
+  Bots[bot_index].explore_stuck_room = -1;
   Bots[bot_index].explore_room_timer = 0.0f;
   Bots[bot_index].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
   Bots[bot_index].powerup_interrupt_cooldown = 0.0f;
@@ -2059,8 +2155,10 @@ void BotInitAll() {
     Bots[i].stuck_timer = 0.0f;
     Bots[i].combat_idle_timer = 0.0f;
     Bots[i].evade_timer = 0.0f;
+    Bots[i].hunt_no_los_timer = 0.0f;
     Bots[i].powerup_goal_index = -1;
     Bots[i].explore_dest_room = -1;
+    Bots[i].explore_stuck_room = -1;
     Bots[i].explore_room_timer = 0.0f;
     Bots[i].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
     Bots[i].powerup_interrupt_cooldown = 0.0f;
@@ -2096,7 +2194,9 @@ void BotReinitAll() {
     Bots[i].stuck_timer = 0.0f;
     Bots[i].combat_idle_timer = 0.0f;
     Bots[i].evade_timer = 0.0f;
+    Bots[i].hunt_no_los_timer = 0.0f;
     Bots[i].explore_dest_room = -1;
+    Bots[i].explore_stuck_room = -1;
     Bots[i].explore_room_timer = 0.0f;
     Bots[i].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
     Bots[i].powerup_interrupt_cooldown = 0.0f;
@@ -2299,7 +2399,9 @@ int BotAdd(const char *name, int ship_index) {
   Bots[bot_index].stuck_timer = 0.0f;
   Bots[bot_index].combat_idle_timer = 0.0f;
   Bots[bot_index].evade_timer = 0.0f;
+  Bots[bot_index].hunt_no_los_timer = 0.0f;
   Bots[bot_index].explore_dest_room = -1;
+  Bots[bot_index].explore_stuck_room = -1;
   Bots[bot_index].explore_room_timer = 0.0f;
   Bots[bot_index].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
   Bots[bot_index].powerup_interrupt_cooldown = 0.0f;
@@ -2383,7 +2485,9 @@ void BotDoFrame() {
       Bots[i].state = BOT_STATE_EXPLORE;
       Bots[i].combat_idle_timer = 0.0f;
       Bots[i].evade_timer = 0.0f;
+      Bots[i].hunt_no_los_timer = 0.0f;
       Bots[i].explore_dest_room = -1;
+      Bots[i].explore_stuck_room = -1;
       Bots[i].explore_room_timer = 0.0f;
       Bots[i].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
       Bots[i].powerup_interrupt_cooldown = 0.0f;

@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Phase 3.22 complete — countermeasures, mines/gunboys, physics knockback, behavior tweaks.
+**Status:** Phase 3.24 complete — outdoor↔indoor navigation fix, HUNT LOS timeout, stuck destination blacklist.
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -44,6 +44,7 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | 3.21 | **Navigation stuck recovery:** Goal abandonment after 7s stuck (`BOT_STUCK_ABANDON_TIME`). Removes 4.5s stuck reset so timer accumulates 3→7s with continuous escape thrust, then abandons all goals and forces EXPLORE with fresh room pick. Afterburner suppressed while stuck. Fixes BBQ spawn-point wedging (0 kills/deaths for entire matches). | Complete |
 | 3.22 | **Countermeasures & mines:** Inventory chaff/flare deployment, prox mine dumps near portals, gunboy sentries, physics knockback response, path pool reset on level transition. | Complete |
 | 3.22b | **Behavior tweaks:** Fix flare fallback log, chaff/flare in EVADE/FLEE, mines in FLEE, countermeasure powerup priority (5), weapon priority rebalance (Fusion→top, Vauss→mid), lower divert thresholds. | Complete |
+| 3.24 | **Outdoor↔indoor navigation fix:** Outdoor bots navigate to portal entrance positions via `BOA_connect` instead of room centers (which are behind walls). HUNT LOS timeout (5s) drops unreachable through-wall targets. Stuck abandon clears AI target + blacklists destination room. Flee/evade guards for outdoor `Rooms[]` access. Congestion limit 2→3. Fixes 0-kill outdoor maps (towerofisengard, townofbree). | Complete |
 | 4 | Difficulty levels, configuration UI | Not started |
 
 ## Files
@@ -543,6 +544,28 @@ Mild EXPLORE→HUNT→EXPLORE oscillation observed when bots have a target but n
 - Zero crashes, zero path exhaustion, zero stuck events
 - 210 "Too many collisions" warnings (known issue)
 - EXPLORE↔HUNT oscillation still present at 0.5s boundaries (known, non-critical)
+
+### Phase 3.24 — Outdoor↔Indoor Navigation Fix
+
+**Root cause (outdoor maps producing 0 kills):** Three interrelated bugs:
+
+1. **`BotDoExploreRoaming()` Rooms[] OOB access:** When outdoor, `obj->roomnum` is encoded as `cellnum | 0x80000000`. Indexing `Rooms[2 billion+]` is garbage memory. The function silently failed, leaving outdoor bots unable to navigate.
+
+2. **AIG_GET_TO_POS doesn't trigger pathfinding:** This goal type only computes a direct vector via `AIMoveTowardsPosition()` — no BOA pathfinding. Even after fix #1 (navigating to BOA_connect rooms), bots aimed at room centers behind solid walls. Wall avoidance created equilibrium: bot pushed against wall forever.
+
+3. **HUNT state lacked LOS timeout:** Bots entered HUNT with `los=0` (target through wall), then stayed in HUNT forever — never gaining LOS (can't enter COMBAT), never losing target (BotSelectTarget re-acquires every 0.5s). Result: permanent wall-ramming.
+
+**Fixes:**
+- **Portal entrance navigation:** Outdoor bots now navigate to `Rooms[dest].portals[portal_idx].path_pnt` (the actual doorway) via `BOA_connect[region][c].portal`, not the room center
+- **HUNT LOS timeout (`BOT_HUNT_NO_LOS_TIMEOUT=5.0f`):** After 5s in HUNT without line-of-sight, drops target and returns to EXPLORE. Breaks the HUNT↔stuck loop
+- **Stuck abandon clears AI target:** Prevents `BotSelectTarget()` from immediately re-acquiring the same unreachable enemy
+- **Stuck destination blacklist:** `explore_stuck_room` field records the room that caused stuck abandon; `BotDoExploreRoaming()` skips it until the bot successfully reaches a different destination
+- **Flee/evade outdoor guard:** Added `!OBJECT_OUTSIDE(obj)` before `Rooms[obj->roomnum]` access in `BotSetFleeGoal()` and `BotSetEvadeGoal()`. Outdoor bots use straight-line fallback
+- **Congestion limit 2→3:** With 8 bots, 2-per-room was too restrictive on complex maps
+
+**New constants:** `BOT_HUNT_NO_LOS_TIMEOUT=5.0f`
+**New `bot_info` fields:** `hunt_no_los_timer`, `explore_stuck_room`
+**Files modified:** `bot.h`, `bot.cpp`
 
 ## Running a Test Server
 

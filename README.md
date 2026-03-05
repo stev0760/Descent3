@@ -10,7 +10,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Multiplayer Bots (Experimental)
 
-**Status:** Phase 3.21 — Navigation Stuck Recovery
+**Status:** Phase 3.24 — Outdoor↔Indoor Navigation Fix
 
 This fork introduces a **server-side multiplayer bot system** for Descent 3. These AI-controlled bots occupy real player slots on dedicated servers, appearing and acting as normal players.
 
@@ -42,7 +42,7 @@ These commands are available in the dedicated server console (or via remote teln
 
 ### ⚠️ Known Issues
 
-*   **Navigation on extreme geometry:** The stuck recovery system handles most cases, but maps with very tight or recessed spawn points (e.g. spawns under ledges or behind narrow windows) may need bots to reverse further before re-orienting. Edge cases in complex indoor/outdoor transitions can still trap bots briefly. Further tuning of escape distances is planned.
+*   **Navigation on extreme geometry:** The stuck recovery system handles most cases. Outdoor↔indoor transitions now use portal entrance navigation via `BOA_connect`, with a HUNT LOS timeout that drops unreachable through-wall targets. Maps with very tight or recessed spawn points may still need bots to reverse further before re-orienting.
 *   **Physics immunity (under investigation):** Some physics-based weapons may not affect bot movement as intended. Black Shark vortex is the primary suspect — bots appear to resist its pull effect. Mass Driver knockback may also be reduced. More testing is needed to confirm the scope and determine whether this is a bot-specific issue or a server-side physics limitation.
 *   **Weapon variety:** Bots select weapons based on damage output, fire rate, and range, which can result in heavy Vauss/Fusion usage when those are genuinely optimal. Selection logic accounts for energy vs. ammo economy and projectile speed, but further playtesting may reveal edge cases.
 

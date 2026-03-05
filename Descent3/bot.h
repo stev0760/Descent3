@@ -63,6 +63,11 @@
 #define BOT_EVADE_COMBAT_TIMEOUT 20.0f // seconds in COMBAT before triggering EVADE (requires shields < 60%)
 #define BOT_EVADE_DURATION 3.5f        // seconds to stay in EVADE before re-engaging
 
+// HUNT LOS timeout (Phase 3.24) — prevents bots from ramming walls chasing unreachable targets.
+// If a bot stays in HUNT for this long without ever gaining line-of-sight, it drops the target
+// and returns to EXPLORE. This breaks the HUNT↔stuck loop on indoor/outdoor boundary maps.
+#define BOT_HUNT_NO_LOS_TIMEOUT 5.0f
+
 // Powerup collection (Phase 3.8)
 #define BOT_POWERUP_SEEK_RADIUS 350.0f // scan radius for powerup objects
 #define BOT_LOW_SHIELDS_PCT 0.30f      // seek shield powerups when below 30% shields
@@ -227,12 +232,16 @@ struct bot_info {
   float combat_idle_timer; // seconds spent in COMBAT state; triggers EVADE when > BOT_EVADE_COMBAT_TIMEOUT
   float evade_timer;       // counts down from BOT_EVADE_DURATION while in EVADE state
 
+  // HUNT LOS timeout (Phase 3.24) — prevents bots from ramming walls chasing unreachable targets
+  float hunt_no_los_timer; // seconds in HUNT without line-of-sight; drop target when > threshold
+
   // Powerup seeking (Phase 3.8)
   int powerup_goal_index; // goal index of AIG_GET_TO_OBJ powerup pursuit goal, or -1
 
-  // EXPLORE room roaming (Phase 3.9)
+  // EXPLORE room roaming (Phase 3.9, outdoor fix Phase 3.24)
   int explore_dest_room;    // Rooms[] index the bot is currently navigating toward, -1 = none
   float explore_room_timer; // counts down; when <=0 bot picks a new destination room
+  int explore_stuck_room;   // last room abandoned due to stuck — blacklisted for next pick
 
   // Countermeasure deployment — reserved for future inventory-item countermeasures (not flares)
   float countermeasure_timer; // cooldown between inventory countermeasure uses (future use)
