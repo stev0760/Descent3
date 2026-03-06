@@ -28,34 +28,34 @@
 #define BOT_FIRE_AIM_DOT 0.85f          // min dot(forward, to_target) to allow firing (~32 degrees)
 
 // Combat behavior constants
-#define BOT_FLEE_SHIELD_PCT 0.20f              // flee when shields < 20% of max
-#define BOT_FLEE_RECOVER_PCT 0.40f             // stop fleeing when shields > 40%
-#define BOT_FLEE_DISTANCE 300.0f               // stop fleeing when > 300 units from threat
+#define BOT_FLEE_SHIELD_PCT 0.20f                     // flee when shields < 20% of max
+#define BOT_FLEE_RECOVER_PCT 0.40f                    // stop fleeing when shields > 40%
+#define BOT_FLEE_DISTANCE 300.0f                      // stop fleeing when > 300 units from threat
 #define BOT_COMBAT_EXIT_RANGE (BOT_FIRE_RANGE * 1.2f) // hysteresis for combat→hunt transition
-#define BOT_COMBAT_CIRCLE_DIST 120.0f          // circle-strafe orbit distance in combat state
+#define BOT_COMBAT_CIRCLE_DIST 120.0f                 // circle-strafe orbit distance in combat state
 
 // Thrust-based movement constants (Phase 3.5)
-#define BOT_AFTERBURNER_FUEL_MAX 5.0f          // seconds of fuel (matches AFTERBURN_TIME)
-#define BOT_AFTERBURNER_THRUST_MULT 1.6f       // base afterburner thrust multiplier
-#define BOT_JUKE_FREQUENCY 0.5f                // lateral oscillation frequency (Hz)
+#define BOT_AFTERBURNER_FUEL_MAX 5.0f                    // seconds of fuel (matches AFTERBURN_TIME)
+#define BOT_AFTERBURNER_THRUST_MULT 1.6f                 // base afterburner thrust multiplier
+#define BOT_JUKE_FREQUENCY 0.5f                          // lateral oscillation frequency (Hz)
 #define BOT_AFTERBURNER_MIN_DIST (BOT_FIRE_RANGE * 3.0f) // min gap-to-target to use afterburner in HUNT
-#define BOT_JUKE_AMPLITUDE_COMBAT 0.8f         // sideways thrust scale during combat
-#define BOT_JUKE_AMPLITUDE_FLEE 0.5f           // sideways thrust scale during flee
-#define BOT_VERTICAL_JUKE_AMPLITUDE 0.3f       // vertical oscillation amplitude
-#define BOT_COMBAT_ORBIT_FORWARD 0.5f          // forward thrust for orbit maintenance
+#define BOT_JUKE_AMPLITUDE_COMBAT 0.8f                   // sideways thrust scale during combat
+#define BOT_JUKE_AMPLITUDE_FLEE 0.5f                     // sideways thrust scale during flee
+#define BOT_VERTICAL_JUKE_AMPLITUDE 0.3f                 // vertical oscillation amplitude
+#define BOT_COMBAT_ORBIT_FORWARD 0.5f                    // forward thrust for orbit maintenance
 
 // Afterburner burst management (Phase 3.7)
 // Bots use afterburner in controlled bursts to conserve fuel and avoid wasting energy.
 // DoFlyingControl() skips on dedicated server, so we manually manage fuel/energy sync.
-#define BOT_AB_BURST_MAX 1.0f           // max duration of a single afterburner burst (seconds)
-#define BOT_AB_COOLDOWN_INDOOR 2.5f     // cooldown between bursts in tight/indoor spaces
-#define BOT_AB_COOLDOWN_OUTDOOR 0.5f    // cooldown between bursts in open outdoor terrain
+#define BOT_AB_BURST_MAX 1.0f                              // max duration of a single afterburner burst (seconds)
+#define BOT_AB_COOLDOWN_INDOOR 2.5f                        // cooldown between bursts in tight/indoor spaces
+#define BOT_AB_COOLDOWN_OUTDOOR 0.5f                       // cooldown between bursts in open outdoor terrain
 #define BOT_AB_MIN_FUEL (BOT_AFTERBURNER_FUEL_MAX * 0.25f) // need >=25% fuel to start a burst
-#define BOT_AB_ENERGY_MIN 15.0f         // don't start a burst below this energy level
-#define BOT_AB_RECHARGE_ENERGY_MIN 20.0f // need this much energy to recharge fuel at all
+#define BOT_AB_ENERGY_MIN 15.0f                            // don't start a burst below this energy level
+#define BOT_AB_RECHARGE_ENERGY_MIN 20.0f                   // need this much energy to recharge fuel at all
 
 // Sound awareness (Phase 3.7)
-#define BOT_HEAR_AB_RADIUS 200.0f       // radius (units) to detect enemy afterburner noise
+#define BOT_HEAR_AB_RADIUS 200.0f // radius (units) to detect enemy afterburner noise
 
 // EVADE state (Phase 3.8)
 // Triggered from COMBAT after bot has been stuck in prolonged combat without progress.
@@ -68,7 +68,13 @@
 // Only fires when bot makes no progress for the full timeout duration.
 #define BOT_HUNT_NO_LOS_TIMEOUT 15.0f
 #define BOT_HUNT_PROGRESS_THRESHOLD 10.0f // distance decrease (units) that counts as "making progress"
-#define BOT_RETARGET_COOLDOWN   2.0f   // seconds after HUNT timeout before re-acquiring targets
+#define BOT_RETARGET_COOLDOWN 2.0f        // seconds after HUNT timeout before re-acquiring targets
+
+// Target blacklist (Phase 3.28) — prevents re-selecting unreachable targets during retarget cooldown.
+// When a target is blacklisted due to HUNT timeout, the bot cannot select it again until the
+// blacklist timer expires. This breaks infinite loops where bots repeatedly lock onto the same
+// enemy they can't reach due to walls/geometry on complex maps like Fellowship.
+#define BOT_TARGET_BLACKLIST_DURATION 10.0f // seconds a target remains blacklisted after HUNT timeout
 
 // Powerup collection (Phase 3.8)
 #define BOT_POWERUP_SEEK_RADIUS 350.0f // scan radius for powerup objects
@@ -80,23 +86,23 @@
 //   Low energy  → prefer ammo-based weapons (Vauss, Mass Driver) — no energy cost
 //   Long range  → prefer fast-projectile weapons (proj_speed > BOT_WEAPON_LONGRANGE_VEL)
 //   Close range → prefer slow/area weapons (proj_speed < BOT_WEAPON_CLOSERANGE_VEL)
-#define BOT_ENERGY_LOW_WEAPON 15.0f       // energy threshold to switch to ammo weapons
-#define BOT_WEAPON_LONGRANGE_VEL 150.0f   // projectile velocity above which weapon is "long range"
-#define BOT_WEAPON_CLOSERANGE_VEL 60.0f   // projectile velocity below which weapon is "close range"
-#define BOT_WEAPON_LONGRANGE_DIST 90.0f   // combat dist (units) to apply long-range selection
-#define BOT_WEAPON_CLOSERANGE_DIST 40.0f  // combat dist (units) to apply close-range selection
+#define BOT_ENERGY_LOW_WEAPON 15.0f      // energy threshold to switch to ammo weapons
+#define BOT_WEAPON_LONGRANGE_VEL 150.0f  // projectile velocity above which weapon is "long range"
+#define BOT_WEAPON_CLOSERANGE_VEL 60.0f  // projectile velocity below which weapon is "close range"
+#define BOT_WEAPON_LONGRANGE_DIST 90.0f  // combat dist (units) to apply long-range selection
+#define BOT_WEAPON_CLOSERANGE_DIST 40.0f // combat dist (units) to apply close-range selection
 
 // Weapon-specific range overrides
-#define BOT_OMEGA_MAX_DIST 35.0f          // Omega Cannon (wb 9): leech beam, melee-range only
-#define BOT_MASS_DRIVER_MIN_DIST 100.0f   // Mass Driver (wb 3): hitscan sniper, prefer at distance
-#define BOT_WB_OMEGA 9                    // battery index: Omega Cannon (slot 5b)
-#define BOT_WB_VAUSS 1                    // battery index: Vauss Cannon (slot 1b)
-#define BOT_WB_MASS_DRIVER 3              // battery index: Mass Driver (slot 2b)
+#define BOT_OMEGA_MAX_DIST 35.0f        // Omega Cannon (wb 9): leech beam, melee-range only
+#define BOT_MASS_DRIVER_MIN_DIST 100.0f // Mass Driver (wb 3): hitscan sniper, prefer at distance
+#define BOT_WB_OMEGA 9                  // battery index: Omega Cannon (slot 5b)
+#define BOT_WB_VAUSS 1                  // battery index: Vauss Cannon (slot 1b)
+#define BOT_WB_MASS_DRIVER 3            // battery index: Mass Driver (slot 2b)
 
 // EXPLORE state room roaming (Phase 3.9)
 // Bots navigate portal-to-portal through the level searching for players and pickups.
-#define BOT_EXPLORE_ROOM_TIME 5.0f     // max seconds to spend navigating to one explore destination
-#define BOT_EXPLORE_PORTAL_DEPTH 2     // max portals deep to look when picking a random dest room
+#define BOT_EXPLORE_ROOM_TIME 5.0f // max seconds to spend navigating to one explore destination
+#define BOT_EXPLORE_PORTAL_DEPTH 2 // max portals deep to look when picking a random dest room
 
 // Secondary weapon firing (Phase 3.10)
 // Bots fire missiles alongside primaries in COMBAT. Each secondary has range gates and self-guards.
@@ -104,46 +110,46 @@
 //   Mega/Black Shark: held for long range only (massive splash — NEVER fire close)
 //   Napalm Rocket: area denial; aim beside/below target, short range only
 //   Tracking missiles (Homing, Smart, Cyclone): medium range, looser aim requirement
-#define BOT_SECONDARY_AIM_DOT 0.7f        // min dot to fire secondary (looser than primary — missiles track)
-#define BOT_CONCUSSION_MIN_DIST 20.0f     // don't barrage with concussions closer than this
-#define BOT_CONCUSSION_MAX_DIST 180.0f    // max range for concussion fire
-#define BOT_MEGA_MIN_DIST 80.0f           // self-guard for Mega Missile
-#define BOT_NAPALM_ROCKET_MAX_DIST 90.0f  // short-range area denial only
-#define BOT_SPLASH_SELF_GUARD 30.0f       // universal: never fire splash weapons this close to self
+#define BOT_SECONDARY_AIM_DOT 0.7f       // min dot to fire secondary (looser than primary — missiles track)
+#define BOT_CONCUSSION_MIN_DIST 20.0f    // don't barrage with concussions closer than this
+#define BOT_CONCUSSION_MAX_DIST 180.0f   // max range for concussion fire
+#define BOT_MEGA_MIN_DIST 80.0f          // self-guard for Mega Missile
+#define BOT_NAPALM_ROCKET_MAX_DIST 90.0f // short-range area denial only
+#define BOT_SPLASH_SELF_GUARD 30.0f      // universal: never fire splash weapons this close to self
 
 // Powerup interrupt (Phase 3.10 / 3.12)
 // Two-tier interrupt system:
 //   COMBAT interrupt  — breaks off a live fight; tight radius, only game-changers
 //   HUNT divert       — detours mid-hunt; medium radius, any upgrade worth grabbing
-#define BOT_POWERUP_INTERRUPT_RADIUS  150.0f // radius to interrupt active combat for a pickup
-#define BOT_POWERUP_INTERRUPT_PRIORITY 15    // (legacy — kept for reference; logic is now name-based)
-#define BOT_POWERUP_DIVERT_RADIUS     225.0f // radius for a bot in HUNT to divert and grab a pickup
-#define BOT_POWERUP_DIVERT_PRIORITY    6     // minimum priority to trigger HUNT divert (weapons + game-changers)
-#define BOT_WEAK_DIVERT_PRIORITY        8    // WEAK bots divert for any primary weapon upgrade
-#define BOT_WEAK_DIVERT_RADIUS        250.0f // WEAK bots scan wider for weapon diverts
-#define BOT_WEAK_EXPLORE_SPEED          0.6f // WEAK bots explore faster to find weapons (was 0.3×)
-#define BOT_WEAK_SEEK_RADIUS          500.0f // WEAK bots scan further for powerups
+#define BOT_POWERUP_INTERRUPT_RADIUS 150.0f // radius to interrupt active combat for a pickup
+#define BOT_POWERUP_INTERRUPT_PRIORITY 15   // (legacy — kept for reference; logic is now name-based)
+#define BOT_POWERUP_DIVERT_RADIUS 225.0f    // radius for a bot in HUNT to divert and grab a pickup
+#define BOT_POWERUP_DIVERT_PRIORITY 6       // minimum priority to trigger HUNT divert (weapons + game-changers)
+#define BOT_WEAK_DIVERT_PRIORITY 8          // WEAK bots divert for any primary weapon upgrade
+#define BOT_WEAK_DIVERT_RADIUS 250.0f       // WEAK bots scan wider for weapon diverts
+#define BOT_WEAK_EXPLORE_SPEED 0.6f         // WEAK bots explore faster to find weapons (was 0.3×)
+#define BOT_WEAK_SEEK_RADIUS 500.0f         // WEAK bots scan further for powerups
 
 // Equipment-based behavior (Phase 3.11)
 // Bots self-classify their loadout into three tiers each target-update tick.
 // The tier drives flee aggression, target selection bias, and rampage mode.
-#define BOT_EQUIP_TIER_WEAK   0   // only default Laser (battery 0)
-#define BOT_EQUIP_TIER_GOOD   1   // Super Laser/Vauss/Mass Driver (batteries 1-3)
-#define BOT_EQUIP_TIER_ELITE  2   // Napalm/Microwave/Plasma/EMD/Fusion/Omega (batteries 4-9)
+#define BOT_EQUIP_TIER_WEAK 0  // only default Laser (battery 0)
+#define BOT_EQUIP_TIER_GOOD 1  // Super Laser/Vauss/Mass Driver (batteries 1-3)
+#define BOT_EQUIP_TIER_ELITE 2 // Napalm/Microwave/Plasma/EMD/Fusion/Omega (batteries 4-9)
 
-#define BOT_RAMPAGE_FLEE_PCT    0.12f  // elite bots barely flee (12% shields — rampage mode)
-#define BOT_WEAK_FLEE_PCT       0.40f  // ill-equipped bots flee early (40% shields)
-#define BOT_RAMPAGE_AGRO_BONUS  60.0f  // score reduction: elite bot vs weak target (prefer easy prey)
-#define BOT_OUTGUNNED_PENALTY   80.0f  // score increase: weak bot vs elite target (avoid the beast)
+#define BOT_RAMPAGE_FLEE_PCT 0.12f       // elite bots barely flee (12% shields — rampage mode)
+#define BOT_WEAK_FLEE_PCT 0.40f          // ill-equipped bots flee early (40% shields)
+#define BOT_RAMPAGE_AGRO_BONUS 60.0f     // score reduction: elite bot vs weak target (prefer easy prey)
+#define BOT_OUTGUNNED_PENALTY 80.0f      // score increase: weak bot vs elite target (avoid the beast)
 #define BOT_NO_LOS_TARGET_PENALTY 500.0f // score increase for targets not visible (behind walls)
 
 // Close-quarters dynamic turn rate (Phase 3.11)
 // Tighter tracking at close range improves hit accuracy in dogfights.
-#define BOT_CLOSERANGE_DIST      70.0f
-#define BOT_MIDRANGE_DIST       140.0f
-#define BOT_CLOSERANGE_TURNRATE  65535  // near-instant tracking at point blank
-#define BOT_MIDRANGE_TURNRATE    40000  // fast dogfight tracking
-#define BOT_LONGRANGE_TURNRATE   26000  // snappier long-range aim
+#define BOT_CLOSERANGE_DIST 70.0f
+#define BOT_MIDRANGE_DIST 140.0f
+#define BOT_CLOSERANGE_TURNRATE 65535 // near-instant tracking at point blank
+#define BOT_MIDRANGE_TURNRATE 40000   // fast dogfight tracking
+#define BOT_LONGRANGE_TURNRATE 26000  // snappier long-range aim
 
 // AB burst toward distant weapon pickups in EXPLORE
 #define BOT_PICKUP_AB_DIST 250.0f
@@ -155,11 +161,11 @@
 
 // Mine and gunboy deployment (Phase 3.22)
 // Bots dump mines near indoor portals while exploring, and place gunboys as sentries.
-#define BOT_MINE_DEPLOY_CHANCE 0.15f    // probability per 0.5s EXPLORE tick to dump mines near a portal
-#define BOT_MINE_RAPID_INTERVAL 0.3f    // seconds between mine drops during a dump burst
-#define BOT_GUNBOY_DEPLOY_CHANCE 0.10f  // probability per 0.5s EXPLORE tick to place a gunboy
-#define BOT_MINE_PORTAL_DIST 80.0f      // max distance from portal to trigger mine/gunboy deployment
-#define BOT_GUNBOY_COOLDOWN 30.0f       // min seconds between gunboy placements
+#define BOT_MINE_DEPLOY_CHANCE 0.15f   // probability per 0.5s EXPLORE tick to dump mines near a portal
+#define BOT_MINE_RAPID_INTERVAL 0.3f   // seconds between mine drops during a dump burst
+#define BOT_GUNBOY_DEPLOY_CHANCE 0.10f // probability per 0.5s EXPLORE tick to place a gunboy
+#define BOT_MINE_PORTAL_DIST 80.0f     // max distance from portal to trigger mine/gunboy deployment
+#define BOT_GUNBOY_COOLDOWN 30.0f      // min seconds between gunboy placements
 
 // Powerup interrupt cooldown — prevents the COMBAT→EXPLORE→HUNT→COMBAT oscillation.
 // After any powerup interrupt or HUNT divert fires, the bot is suppressed for this duration
@@ -170,25 +176,25 @@
 // Homing missile evasion (Phase 3.15)
 // Scans Objects[] for OBJ_WEAPON with PF_HOMING tracking the bot's handle.
 // Triggers EVADE + chaff deployment + afterburner burst to outrun/dodge.
-#define BOT_MISSILE_SCAN_COOLDOWN 1.0f  // seconds between homing missile scans (per bot)
+#define BOT_MISSILE_SCAN_COOLDOWN 1.0f // seconds between homing missile scans (per bot)
 
 // Greedy powerup collection (Phase 3.15)
 // Bots in HUNT grab very close items without changing state; WEAK bots interrupt combat at wider range.
-#define BOT_HUNT_PICKUP_RADIUS 150.0f     // max dist to grab an item while hunting (wider corridor grab)
-#define BOT_WEAK_INTERRUPT_RADIUS 200.0f  // WEAK bots break off combat for weapons within this range
+#define BOT_HUNT_PICKUP_RADIUS 150.0f    // max dist to grab an item while hunting (wider corridor grab)
+#define BOT_WEAK_INTERRUPT_RADIUS 200.0f // WEAK bots break off combat for weapons within this range
 
 // Outdoor awareness scaling (Phase 3.15)
 // Open spaces need wider search/engagement ranges — indoor settings are the base.
-#define BOT_OUTDOOR_SEEK_MULTIPLIER 1.5f        // powerup seek radius multiplier outdoors
-#define BOT_OUTDOOR_TARGET_DIST_SCALE 0.7f      // target scoring: 500u outdoors scores like 350u
-#define BOT_OUTDOOR_COMBAT_RANGE_MULT 1.5f      // combat entry/exit range multiplier outdoors
+#define BOT_OUTDOOR_SEEK_MULTIPLIER 1.5f   // powerup seek radius multiplier outdoors
+#define BOT_OUTDOOR_TARGET_DIST_SCALE 0.7f // target scoring: 500u outdoors scores like 350u
+#define BOT_OUTDOOR_COMBAT_RANGE_MULT 1.5f // combat entry/exit range multiplier outdoors
 
 // Stuck-clear firing (Phase 3.11 fix)
 // When a bot is pinned by another player/bot or a destructible obstacle, it fires to clear the path.
-#define BOT_STUCK_FIGHT_TIMER     1.5f  // seconds stuck before firing to clear the blockage
-#define BOT_STUCK_ENEMY_RADIUS   50.0f  // proximity radius to detect a player/bot we're jammed against
-#define BOT_STUCK_OBSTACLE_DIST  40.0f  // forward ray length to detect blocking destructible objects
-#define BOT_STUCK_ABANDON_TIME   7.0f  // seconds stuck before abandoning goal and switching to EXPLORE
+#define BOT_STUCK_FIGHT_TIMER 1.5f    // seconds stuck before firing to clear the blockage
+#define BOT_STUCK_ENEMY_RADIUS 50.0f  // proximity radius to detect a player/bot we're jammed against
+#define BOT_STUCK_OBSTACLE_DIST 40.0f // forward ray length to detect blocking destructible objects
+#define BOT_STUCK_ABANDON_TIME 7.0f   // seconds stuck before abandoning goal and switching to EXPLORE
 
 // Altitude constraint (Phase 3.20)
 // Prevents bots from flying out of the level space on outdoor maps.
@@ -206,26 +212,26 @@ enum BotState {
 
 struct bot_info {
   bool active;
-  int player_slot;                    // index into Players[]/NetPlayers[]
+  int player_slot; // index into Players[]/NetPlayers[]
   char callsign[CALLSIGN_LEN + 1];
-  int ship_index;                     // index into Ships[]
-  float death_time;                   // Gametime when bot died (for respawn delay)
+  int ship_index;   // index into Ships[]
+  float death_time; // Gametime when bot died (for respawn delay)
   bool awaiting_respawn;
-  float last_target_update;           // Gametime of last BotSelectTarget() call
-  int pursuit_goal_index;             // Bots[].goals[] index of AIG_GET_TO_OBJ goal, or -1
-  int intended_team;                  // team this bot is assigned to (persists across level transitions)
-  BotState state;                     // current behavioral state
-  int combat_goal_index;              // goal index for circle-strafe or flee goal, or -1
+  float last_target_update; // Gametime of last BotSelectTarget() call
+  int pursuit_goal_index;   // Bots[].goals[] index of AIG_GET_TO_OBJ goal, or -1
+  int intended_team;        // team this bot is assigned to (persists across level transitions)
+  BotState state;           // current behavioral state
+  int combat_goal_index;    // goal index for circle-strafe or flee goal, or -1
 
   // Thrust-based movement (Phase 3.5)
-  float ship_full_thrust;             // cached from ship physics template
-  float ship_full_rotthrust;          // cached from ship physics template
-  float ship_mass;                    // cached from ship physics template
-  float ship_drag;                    // cached from ship physics template
-  float ship_rotdrag;                 // cached from ship physics template
-  float afterburner_fuel;             // remaining fuel (seconds), 0 = empty
-  float juke_phase;                   // oscillating strafe phase (radians)
-  float stuck_timer;                  // seconds at near-zero speed with nonzero thrust (wall escape)
+  float ship_full_thrust;    // cached from ship physics template
+  float ship_full_rotthrust; // cached from ship physics template
+  float ship_mass;           // cached from ship physics template
+  float ship_drag;           // cached from ship physics template
+  float ship_rotdrag;        // cached from ship physics template
+  float afterburner_fuel;    // remaining fuel (seconds), 0 = empty
+  float juke_phase;          // oscillating strafe phase (radians)
+  float stuck_timer;         // seconds at near-zero speed with nonzero thrust (wall escape)
 
   // Afterburner burst management (Phase 3.7)
   // >0 = seconds remaining in current burst, <0 = cooldown remaining, 0 = ready for new burst
@@ -241,8 +247,8 @@ struct bot_info {
   float retarget_cooldown; // >0: suppress BotSelectTarget (after HUNT timeout, let bot explore)
 
   // Last-known target position (Phase 3.26) — guides EXPLORE toward doors/entrances after HUNT timeout
-  vector last_target_pos;  // position of target when it was dropped (or zero if none)
-  int last_target_room;    // roomnum of target when dropped; -1 = no last-known position
+  vector last_target_pos; // position of target when it was dropped (or zero if none)
+  int last_target_room;   // roomnum of target when dropped; -1 = no last-known position
 
   // Powerup seeking (Phase 3.8)
   int powerup_goal_index; // goal index of AIG_GET_TO_OBJ powerup pursuit goal, or -1
@@ -251,6 +257,10 @@ struct bot_info {
   int explore_dest_room;    // Rooms[] index the bot is currently navigating toward, -1 = none
   float explore_room_timer; // counts down; when <=0 bot picks a new destination room
   int explore_stuck_room;   // last room abandoned due to stuck — blacklisted for next pick
+
+  // Target blacklist (Phase 3.28) — prevents re-selecting unreachable targets after HUNT timeout
+  int target_blacklist[MAX_NET_PLAYERS]; // player slots blacklisted as targets
+  float target_blacklist_timer;          // countdown until blacklist expires
 
   // Countermeasure deployment — reserved for future inventory-item countermeasures (not flares)
   float countermeasure_timer; // cooldown between inventory countermeasure uses (future use)
@@ -265,9 +275,9 @@ struct bot_info {
   float missile_evade_cooldown;
 
   // Mine/gunboy deployment (Phase 3.22)
-  float mine_dump_timer;    // >0: rapid-dumping mines, counts down between drops
-  int mine_dump_remaining;  // mines left in current dump burst
-  float gunboy_cooldown;    // cooldown for gunboy placement
+  float mine_dump_timer;   // >0: rapid-dumping mines, counts down between drops
+  int mine_dump_remaining; // mines left in current dump burst
+  float gunboy_cooldown;   // cooldown for gunboy placement
 };
 
 extern bot_info Bots[MAX_BOTS];
