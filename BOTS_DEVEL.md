@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Phase 3.24 complete — outdoor↔indoor navigation fix, HUNT LOS timeout, stuck destination blacklist.
+**Status:** Phase 3.26 complete — pursuit persistence, BOA portal navigation when stuck, beeline-through-floors fix.
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -45,6 +45,7 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | 3.22 | **Countermeasures & mines:** Inventory chaff/flare deployment, prox mine dumps near portals, gunboy sentries, physics knockback response, path pool reset on level transition. | Complete |
 | 3.22b | **Behavior tweaks:** Fix flare fallback log, chaff/flare in EVADE/FLEE, mines in FLEE, countermeasure powerup priority (5), weapon priority rebalance (Fusion→top, Vauss→mid), lower divert thresholds. | Complete |
 | 3.24 | **Outdoor↔indoor navigation fix:** Outdoor bots navigate to portal entrance positions via `BOA_connect` instead of room centers (which are behind walls). HUNT LOS timeout (5s) drops unreachable through-wall targets. Stuck abandon clears AI target + blacklists destination room. Flee/evade guards for outdoor `Rooms[]` access. Congestion limit 2→3. Fixes 0-kill outdoor maps (towerofisengard, townofbree). | Complete |
+| 3.26 | **Pursuit persistence & portal navigation:** Progress-based HUNT timeout (15s, resets when closing distance). Last-known target position pursuit on timeout (BOA pathfinding to doors/entrances). Removed `GF_USE_BLINE_IF_SEES_GOAL` — prevents beelining through thin floors/ceilings. BOA portal navigation when stuck in HUNT (finds correct portal via `BOA_GetNextRoom` + `BOA_DetermineStartRoomPortal`). | Complete |
 | 4 | Difficulty levels, configuration UI | Not started |
 
 ## Files
@@ -567,6 +568,35 @@ Mild EXPLORE→HUNT→EXPLORE oscillation observed when bots have a target but n
 **New `bot_info` fields:** `hunt_no_los_timer`, `explore_stuck_room`
 **Files modified:** `bot.h`, `bot.cpp`
 
+### Phase 3.26 — Pursuit Persistence & BOA Portal Navigation
+
+**Root cause (bots stuck underground slamming into ceilings):** The engine's `fvi_FindIntersection` raycast passes through thin floors/ceilings between underground rooms and the surface. When `GF_USE_BLINE_IF_SEES_GOAL` was set on pursuit goals, the AI set `AISR_SEES_GOAL` through thin geometry, causing bots to beeline upward into the ceiling instead of following BOA path nodes through actual portals.
+
+**Key discovery:** Both `AIG_GET_TO_OBJ` and `AIG_GET_TO_POS` trigger full BOA pathfinding via `GoalDoFrame()` → `AIPathAllocPath()`. The navigation infrastructure works correctly across indoor↔outdoor boundaries — the issue was (a) the beeline optimization bypassing it, and (b) the 5s HUNT timeout killing goals before bots could navigate multi-room paths.
+
+**Fixes:**
+
+1. **Removed `GF_USE_BLINE_IF_SEES_GOAL` from `BotSetPursuitGoal()`:** Bots always follow BOA path nodes when a path exists. When no path is needed (same room), falls through to direct movement. Prevents the thin-geometry beeline entirely.
+
+2. **Progress-based HUNT timeout (5s→15s):** Instead of a flat timer, tracks `hunt_last_dist`. If the bot gets ≥10 units closer to the target, the timer resets. Only fires when making no progress for 15 continuous seconds.
+
+3. **Last-known target position pursuit:** When HUNT timeout fires, saves the target's position and roomnum. In EXPLORE, navigates there via `AIG_GET_TO_POS` (with BOA pathfinding) instead of random room-to-room wandering. Guides bots toward the doors/entrances where targets were last seen.
+
+4. **BOA portal navigation when stuck:** When the stuck handler fires during HUNT (7s at near-zero speed), uses `BOA_GetNextRoom()` + `BOA_DetermineStartRoomPortal()` to find the correct portal toward the target. Sets `AIG_GET_TO_POS` to the portal entrance position. Saves last target pos for re-acquisition after reaching the portal.
+
+5. **Reduced retarget cooldown (4s→2s):** Faster re-acquisition after timeout lets bots resume pursuit sooner.
+
+**New constants:** `BOT_HUNT_PROGRESS_THRESHOLD=10.0f`
+**Updated constants:** `BOT_HUNT_NO_LOS_TIMEOUT` 5→15, `BOT_RETARGET_COOLDOWN` 4→2
+**New `bot_info` fields:** `hunt_last_dist`, `last_target_pos`, `last_target_room`
+**Files modified:** `bot.h`, `bot.cpp`
+
+**3.26 playtest results (fellowship.mn3, team anarchy):**
+- HUNT timeouts dropped from 231 (3.25) to 2 — progress-based timer working
+- 11,642 collisions still present (bots slamming walls before stuck handler fires)
+- Stuck-in-HUNT bots observed underground in townofbree trying to beeline to targets above
+- Fix: `GF_USE_BLINE_IF_SEES_GOAL` removal + BOA portal navigation addresses remaining stuck cases
+
 ## Running a Test Server
 
 ### Server Setup
@@ -606,7 +636,7 @@ Use `-tempdir` to avoid cache lock conflicts when running both server and client
 
 - **Thrust-based movement is new and needs live testing** — Phase 3.5 thrust physics replaces the old CT_AI velocity control. Ship template values (mass, drag, full_thrust) vary per ship and may need tuning if bots feel too fast/slow on specific ships.
 - **Gunboy targeting issue** — The Phase 2 `AImain.cpp` fix allows gunboys to acquire player targets (bypasses `BOA_IsVisible`), but they still don't fire. Likely blocked by a separate condition in `ai_fire()` or weapon battery configuration. Revisit in future phase.
-- **Navigation is beeline-only** — In HUNT state, bots pursue targets in a straight line (`GF_USE_BLINE_IF_SEES_GOAL`) and wander otherwise. A basic stuck-deflection mechanism (reduce forward thrust + inject lateral/vertical when speed < 5 units/s) provides limited wall escape, but bots can still get trapped in complex geometry. BOA pathfinding integration is future work.
+- **Navigation uses BOA pathfinding** — In HUNT state, bots follow BOA path nodes through portals and doors. `GF_USE_BLINE_IF_SEES_GOAL` was removed (Phase 3.26) because the engine's raycast passes through thin floors, causing bots to beeline through geometry. When stuck, bots use `BOA_GetNextRoom` + `BOA_DetermineStartRoomPortal` to find the correct portal toward the target. Complex multi-level maps may still have edge cases.
 - **Team assignment is static** — Bots are assigned to a team at `addbot` time based on current counts. If human players join or leave after bots are added, teams may become unbalanced. Dynamic rebalancing is future work.
 - **Congestion penalty is player-only** — The 80-unit diversity penalty only applies to player targets, not robot targets. In co-op, all bots may still converge on the same robot.
 - **Scoreboard tracking** — Fixed in Phase 0.5. Bots now appear on the end-of-level scoreboard. See "Scoreboard Tracking" section below.
@@ -631,9 +661,9 @@ Investigation revealed that bots were missing from the end-of-level scoreboard b
 - **AI pathfinding exhaustion** — When too many bots are stuck or colliding, the dynamic path pool (`AIPathGetDPathSlot`) can be exhausted, triggering an assertion in `aipath.cpp:533`. This occurs when the server is overloaded with bots in confined spaces. A proper fix should be addressed alongside Phase 2 navigation improvements rather than modifying `aipath.cpp` directly.
 - **Bots fly out of bounds (sky) in outdoor levels** — Very apparent in custom level sets such as "Fellowship" (level 3) which has lots of wide open space but low bounding area to contain players. The current OOB guard in `BotApplyThrust()` only fires when the bot is fully outside the terrain cell grid, which does not catch bots that remain within the X/Z grid but fly to extreme Y altitudes.
 - **Physics immunity to certain weapons** — Bots seem to be unaffected by physics from weapons like the Mass Driver (supposed to disorient and "fling" players via inertia transfer) and the Black Shark missile vortex. This is likely due to `BotApplyThrust()` overwriting the physics state every frame or the engine not applying these forces to `CT_AI` objects correctly.
-- **Sporadic and transient state oscillation/locking** — Unproven theory: bots try to engage and reposition when there is an enemy bot on the other side of a thin wall. This seems to cause bots to get stuck in combat engagement but unable to make line of sight to fire. Bots need better logic for navigating around walls/obstacles in this condition.
+- **Sporadic and transient state oscillation/locking** — Bots may try to engage targets through thin walls/floors. Phase 3.26 mitigates this via progress-based HUNT timeout (resets when closing distance, times out after 15s of no progress) and last-known position pursuit (navigates to where the target was seen instead of random wandering). Remaining edge cases may exist on highly complex multi-level maps.
 - **Dynamic path pool exhaustion** — With 6+ bots, `MAX_DYNAMIC_PATHS=100` is insufficient. The pool fills up and produces millions of "Out of dynamic paths" log errors per session. Paths are allocated but not freed fast enough, degrading navigation and inflating log files. Needs investigation into path slot lifecycle and possible pool size increase.
-- **Complex geometry navigation** — Bots get stuck on walls and geometry, especially at transitions between outdoor terrain and underground rooms through complex openings. Afterburner exacerbates this (bots AB into walls). Guide Bot pathfinding in single-player may offer techniques for navigating these transitions.
+- **Complex geometry navigation** — Largely addressed by Phases 3.24–3.26. Bots now use BOA_connect for outdoor↔indoor transitions, portal entrance positions instead of room centers, and BOA portal navigation when stuck. Afterburner is suppressed while stuck. Edge cases remain on maps with very tight openings or unusual portal geometry.
 - **Weapon under-utilization** — Plasma, EMD, and Super Laser are picked up but under-selected relative to Vauss/Fusion/Microwave. The tactical weapon hierarchy may need rebalancing in the medium-range energy weapon band.
 
 ## Future Work

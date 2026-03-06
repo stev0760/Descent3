@@ -29,6 +29,7 @@
 | 3.22 | **Countermeasures & mines** — chaff/flare deployment, prox mine dumps, gunboy sentries, physics knockback | Complete |
 | 3.22b | **Behavior tweaks** — weapon priority rebalance, lower divert thresholds, countermeasure in EVADE/FLEE | Complete |
 | 3.24 | **Outdoor↔indoor nav fix** — portal entrance navigation via `BOA_connect`, HUNT LOS timeout, stuck blacklist | Complete |
+| 3.26 | **Pursuit persistence** — progress-based HUNT timeout, last-known-pos pursuit, beeline-through-floors fix, BOA portal nav when stuck | Complete |
 | 4 | Difficulty levels, configuration UI | Not started |
 | 5 | High-fidelity 6DOF combat — tactical maneuvers, skill scaling | Not started |
 
@@ -639,6 +640,8 @@ The following phases originally planned as "Future Work" have been completed. Se
 - **Phase 3.21 (Stuck Recovery):** Goal abandonment after 7s stuck (`BOT_STUCK_ABANDON_TIME`). Removes 4.5s stuck reset so timer accumulates 3→7s with continuous escape thrust, then abandons all goals and forces EXPLORE with fresh room pick. Afterburner suppressed while stuck.
 - **Phase 3.22 (Countermeasures & Mines):** Inventory chaff/flare deployment, prox mine dumps near indoor portals, gunboy sentries, physics knockback response, path pool reset on level transition.
 - **Phase 3.22b (Behavior Tweaks):** Chaff/flare in EVADE/FLEE states, mines in FLEE, countermeasure powerup priority (5), Fusion promoted to top-tier weapon pickup, Vauss demoted to mid-tier, lower divert thresholds for broader weapon acquisition.
+- **Phase 3.24 (Outdoor↔Indoor Nav Fix):** Portal entrance navigation via `BOA_connect`, HUNT LOS timeout (5s), stuck destination blacklist, flee/evade outdoor guard, congestion limit 2→3.
+- **Phase 3.26 (Pursuit Persistence):** Progress-based HUNT timeout (15s, resets on closing distance), last-known target position pursuit on timeout, removed `GF_USE_BLINE_IF_SEES_GOAL` (prevents beelining through thin floors), BOA portal navigation when stuck in HUNT via `BOA_GetNextRoom` + `BOA_DetermineStartRoomPortal`.
 
 ## Future Work
 
@@ -654,6 +657,6 @@ The following phases originally planned as "Future Work" have been completed. Se
 ## Known Issues
 
 - **Physics immunity (under investigation):** Some physics-based weapons may not affect bot movement as intended. Black Shark vortex is the primary suspect — bots appear to resist its pull effect. Mass Driver knockback may also be reduced. More testing is needed to determine whether this is a bot-specific issue or a server-side physics limitation.
-- **Navigation on extreme geometry:** The stuck recovery system (Phase 3.21) handles most cases, but maps with very tight or recessed spawn points (e.g. spawns under ledges or behind narrow windows) may need bots to reverse further before re-orienting. Edge cases in complex indoor/outdoor transitions can still trap bots briefly. Further tuning of escape distances is planned.
+- **Navigation on extreme geometry:** The stuck recovery system (Phase 3.21) with BOA portal navigation (Phase 3.26) handles most cases. Bots now find correct portals when stuck underground. Maps with very tight or recessed spawn points may still need bots to reverse further before re-orienting. Further tuning is ongoing.
 - **Weapon variety:** Bots select weapons based on damage output, fire rate, and range, which can result in heavy Vauss/Fusion usage when those are genuinely optimal. Selection logic accounts for energy vs. ammo economy and projectile speed, but further playtesting may reveal edge cases.
 - **Team rebalancing:** Bots are assigned teams at creation time. If humans join/leave, teams can become unbalanced.

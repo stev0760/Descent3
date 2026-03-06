@@ -10,7 +10,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Multiplayer Bots (Experimental)
 
-**Status:** Phase 3.24 — Outdoor↔Indoor Navigation Fix
+**Status:** Phase 3.26 — Pursuit Persistence & BOA Portal Navigation
 
 This fork introduces a **server-side multiplayer bot system** for Descent 3. These AI-controlled bots occupy real player slots on dedicated servers, appearing and acting as normal players.
 
@@ -25,7 +25,7 @@ This fork introduces a **server-side multiplayer bot system** for Descent 3. The
     *   **Secondary Fire:** Missiles and rockets from close-range Concussion barrages to long-range Mega Missiles, with splash damage self-guards.
     *   **Powerup Awareness:** Unarmed bots aggressively seek weapons. High-tier items like Invulnerability trigger combat interrupts.
 *   **Equipment Loadout Awareness:** Bots self-classify into tiers (WEAK, GOOD, ELITE) based on their current equipment, adjusting aggression and retreat thresholds accordingly.
-*   **Stuck Recovery:** Bots detect when they're wedged in geometry and escalate through escape maneuvers (reverse + strafe), obstacle clearing (shooting destructibles), and goal abandonment (picking a completely new navigation target). This prevents bots from getting permanently stuck on problem maps.
+*   **Stuck Recovery & Portal Navigation:** Bots detect when they're wedged in geometry and escalate through escape maneuvers (reverse + strafe), obstacle clearing (shooting destructibles), and BOA portal navigation (finding the correct doorway via the engine's room connectivity graph). When stuck pursuing a target across floors, bots locate the nearest portal toward the target instead of beelining through solid geometry.
 *   **Game Mode Support:** Works in Anarchy, Team Anarchy, Robo-Anarchy, and Co-op. Bots automatically balance teams and persist across level changes.
 
 ### 🎮 How to Use
@@ -42,7 +42,7 @@ These commands are available in the dedicated server console (or via remote teln
 
 ### ⚠️ Known Issues
 
-*   **Navigation on extreme geometry:** The stuck recovery system handles most cases. Outdoor↔indoor transitions now use portal entrance navigation via `BOA_connect`, with a HUNT LOS timeout that drops unreachable through-wall targets. Maps with very tight or recessed spawn points may still need bots to reverse further before re-orienting.
+*   **Navigation on extreme geometry:** Bots use BOA pathfinding for cross-domain navigation (indoor↔outdoor, underground↔surface). When stuck, they find the nearest correct portal via `BOA_GetNextRoom` + `BOA_DetermineStartRoomPortal`. Progress-based HUNT timeout prevents premature target drops. Maps with very tight or recessed spawn points may still cause brief stuck periods.
 *   **Physics immunity (under investigation):** Some physics-based weapons may not affect bot movement as intended. Black Shark vortex is the primary suspect — bots appear to resist its pull effect. Mass Driver knockback may also be reduced. More testing is needed to confirm the scope and determine whether this is a bot-specific issue or a server-side physics limitation.
 *   **Weapon variety:** Bots select weapons based on damage output, fire rate, and range, which can result in heavy Vauss/Fusion usage when those are genuinely optimal. Selection logic accounts for energy vs. ammo economy and projectile speed, but further playtesting may reveal edge cases.
 

@@ -190,8 +190,12 @@ static void BotSetPursuitGoal(int bot_index) {
   if (target_handle == OBJECT_HANDLE_NONE)
     return;
 
+  // Do NOT use GF_USE_BLINE_IF_SEES_GOAL: the engine's AISR_SEES_GOAL raycast can pass through
+  // thin floors/ceilings, causing the bot to beeline into geometry instead of following BOA path
+  // nodes through portals. Without the flag, the bot always follows the BOA path when one exists,
+  // and beelines only when no path is allocated (same room — correct behavior).
   int gi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&target_handle, 2, 1.0f,
-                       GF_SPEED_ATTACK | GF_OBJ_IS_TARGET | GF_USE_BLINE_IF_SEES_GOAL);
+                       GF_SPEED_ATTACK | GF_OBJ_IS_TARGET);
   Bots[bot_index].pursuit_goal_index = gi;
 }
 
@@ -1802,23 +1806,87 @@ static void BotApplyThrust(int bot_index) {
   }
 
   if (Bots[bot_index].stuck_timer > BOT_STUCK_ABANDON_TIME) {
-    // Prolonged stuck: the goal itself is unreachable (window too small, complex geometry).
-    // Abandon all goals, drop target, and pick a fresh direction via EXPLORE.
-    // Blacklist the destination so we don't re-pick it immediately.
-    // Drop target so BotSelectTarget doesn't immediately re-acquire the same unreachable enemy.
-    BotClearActiveGoal(bot_index);
-    AISetTarget(obj, OBJECT_HANDLE_NONE);
-    Bots[bot_index].state = BOT_STATE_EXPLORE;
-    Bots[bot_index].explore_stuck_room = Bots[bot_index].explore_dest_room;
-    Bots[bot_index].explore_dest_room = -1;
-    Bots[bot_index].explore_room_timer = 0.0f;
+    // Prolonged stuck: the bot is slamming into geometry trying to reach an unreachable goal.
+    // When in HUNT, the likely cause is beelining through floors/ceilings (thin geometry lets
+    // the engine raycast pass through, so the bot "sees" the target and ignores BOA path nodes).
+    // Fix: use BOA_GetNextRoom to find the correct portal toward the target, then navigate there.
+    bool handled_via_portal = false;
+    if (Bots[bot_index].state == BOT_STATE_HUNT && obj->ai_info) {
+      object *target = ObjGet(obj->ai_info->target_handle);
+      if (target) {
+        int next_room = BOA_GetNextRoom(obj->roomnum, target->roomnum);
+        if (next_room != BOA_NO_PATH && next_room != BOA_INDEX(obj->roomnum)) {
+          // Find the portal from our current room toward the next BOA room
+          int portal_idx = BOA_DetermineStartRoomPortal(obj->roomnum, NULL, next_room, NULL);
+          vector dest_pos;
+          int dest_room = next_room;
+          if (!OBJECT_OUTSIDE(obj) && portal_idx >= 0 && portal_idx < Rooms[obj->roomnum].num_portals) {
+            dest_pos = Rooms[obj->roomnum].portals[portal_idx].path_pnt;
+            dest_room = Rooms[obj->roomnum].portals[portal_idx].croom;
+          } else if (!OBJECT_OUTSIDE(obj)) {
+            dest_pos = Rooms[obj->roomnum].path_pnt; // fallback to room center
+          } else {
+            // Outdoor: use BOA_connect portal positions
+            int cellnum = CELLNUM(obj->roomnum);
+            int region = TERRAIN_REGION(cellnum);
+            dest_pos = obj->pos; // fallback
+            for (int c = 0; c < BOA_num_connect[region]; c++) {
+              if (BOA_INDEX(BOA_connect[region][c].roomnum) == next_room ||
+                  BOA_connect[region][c].roomnum == next_room) {
+                int cr = BOA_connect[region][c].roomnum;
+                int cp = BOA_connect[region][c].portal;
+                if (cr >= 0 && cr <= Highest_room_index && cp >= 0 && cp < Rooms[cr].num_portals) {
+                  dest_pos = Rooms[cr].portals[cp].path_pnt;
+                  dest_room = cr;
+                }
+                break;
+              }
+            }
+          }
+
+          // Save target info so we can re-acquire after reaching the portal
+          Bots[bot_index].last_target_pos = target->pos;
+          Bots[bot_index].last_target_room = target->roomnum;
+
+          // Clear current goals and set portal navigation goal
+          BotClearActiveGoal(bot_index);
+          AISetTarget(obj, OBJECT_HANDLE_NONE);
+          Bots[bot_index].state = BOT_STATE_EXPLORE;
+          Bots[bot_index].retarget_cooldown = BOT_RETARGET_COOLDOWN;
+
+          goal_info gi_info;
+          memset(&gi_info, 0, sizeof(gi_info));
+          gi_info.pos = dest_pos;
+          gi_info.roomnum = dest_room;
+          Bots[bot_index].pursuit_goal_index =
+              GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
+          Bots[bot_index].explore_dest_room = (dest_room <= Highest_room_index) ? dest_room : -1;
+          Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME;
+
+          handled_via_portal = true;
+          LOG_DEBUG.printf("BOT: '%s' stuck in HUNT — portal nav to room %d toward target (next BOA room %d)",
+                           Bots[bot_index].callsign, dest_room, next_room);
+        }
+      }
+    }
+
+    if (!handled_via_portal) {
+      // Generic stuck fallback: abandon all goals, drop target, explore.
+      BotClearActiveGoal(bot_index);
+      AISetTarget(obj, OBJECT_HANDLE_NONE);
+      Bots[bot_index].state = BOT_STATE_EXPLORE;
+      Bots[bot_index].explore_stuck_room = Bots[bot_index].explore_dest_room;
+      Bots[bot_index].explore_dest_room = -1;
+      Bots[bot_index].explore_room_timer = 0.0f;
+      LOG_DEBUG << "Bot " << Bots[bot_index].callsign << " abandoned goal (stuck " << BOT_STUCK_ABANDON_TIME
+                << "s) — switching to EXPLORE";
+    }
+
     Bots[bot_index].stuck_timer = 0.0f;
     forward = -1.0f;
     sideways = 0.0f;
     vertical = 0.0f;
     want_afterburner = false;
-    LOG_DEBUG << "Bot " << Bots[bot_index].callsign << " abandoned goal (stuck " << BOT_STUCK_ABANDON_TIME
-              << "s) — switching to EXPLORE";
   } else if (Bots[bot_index].stuck_timer > 3.0f) {
     // Short stuck: reverse + strafe to clear geometry snag
     forward = -1.0f;
