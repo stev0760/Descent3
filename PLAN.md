@@ -32,8 +32,9 @@
 | 3.26 | **Pursuit persistence** — progress-based HUNT timeout, last-known-pos pursuit, beeline-through-floors fix, BOA portal nav when stuck | Complete |
 | 3.29 | **Code review refactor** — weapon index constants corrected, buffer overflow fix, BOA crash guard for outdoor bots | Complete |
 | 3.30 | **HUNT hysteresis + greedy powerups** — 3s min HUNT duration, per-weapon pickup priorities, wider divert radii, poorly-armed hold logic, collision log rate-limiting, beeline fix on powerup goals | Complete |
-| 4 | Difficulty levels, configuration UI | Not started |
-| 5 | High-fidelity 6DOF combat — tactical maneuvers, skill scaling | Not started |
+| 4.0 | **Navigation overhaul** — BOA-driven long-range exploration, engine pathfinding integration, room-change progress tracking, smart stuck escape | Not started |
+| 5 | **Bot management & server architecture** — config-file bot rosters, remote admin, difficulty levels, auto-rebalancing, server orchestration | Not started |
+| 6 | **Advanced features** — CTF/Monsterball awareness, team coordination, 6DOF maneuvers, movement capture | Not started |
 
 ## Goal
 
@@ -651,20 +652,40 @@ The following phases originally planned as "Future Work" have been completed. Se
 
 ## Future Work
 
-### Phase 4: Configuration & Accessibility
-- **Difficulty Levels:** Scale accuracy, reaction time, and aggression (e.g., ROOKIE, HOTSHOT, ACE, INSANE).
-- **Server Configuration:** Load bot definitions and rosters from `dedicated.cfg` or a JSON manifest.
-- **Remote Admin:** Extend `addbot`/`removebot` commands with team selection and skill overrides.
+### Phase 4.0: Navigation Overhaul
 
-### Phase 5: Advanced Human-Like Flight
-- **6DOF Maneuvers:** Barrel rolls, perpendicular strafing, and "Immelmann" turns.
-- **Movement Capture:** (Long-term) Record human player movement traces to tune bot thrust/drag PID controllers.
+The current navigation system causes bots to cluster and stagnate on complex maps. See `NAV_OVERHAUL.md` for the full research synthesis and implementation plan.
+
+Four incremental changes:
+1. **BOA-driven long-range explore destinations** — Replace 2-portal-deep candidate search with map-wide room selection. Let the engine build full BOA+BNode paths to distant rooms.
+2. **Simplify pursuit goals** — Use `AIG_GET_TO_OBJ` for HUNT instead of manual portal-by-portal navigation. The engine's `AIPathAllocPath` handles multi-room routing.
+3. **Room-change progress tracking** — Detect stuck bots by tracking room transitions, not just speed. Catches oscillation and dead-end loops 2-3s earlier.
+4. **Smarter stuck escape** — Enumerate portals and pick an unvisited direction instead of blind reverse.
+
+### Phase 5: Bot Management & Server Architecture
+
+Server administration and configuration improvements for managing multiplayer instances with bots.
+
+- **Config-file bot rosters:** Load bot definitions (name, ship, team, skill) from `dedicated.cfg` or a JSON/INI manifest. Auto-spawn on server start.
+- **Difficulty levels:** Scale accuracy, reaction time, aggression, and navigation competence (e.g., ROOKIE, HOTSHOT, ACE, INSANE). Separate aim accuracy from tactical intelligence.
+- **Remote administration:** Extend console commands with team selection, skill overrides, and hot-reload of bot roster. Potential for RCON or web-based admin interface.
+- **Auto-rebalancing:** Dynamic team adjustment when humans join/leave. Move bots between teams or add/remove bots to maintain balance.
+- **Server orchestration:** Scripts/tools for managing multiple dedicated server instances with different bot configurations. Match templates for different game modes.
+- **Persistent bot statistics:** Track per-bot kill/death ratios, weapon usage, and map coverage across sessions for tuning and diagnostics.
+
+### Phase 6: Advanced Features
+
+- **Game mode awareness:** CTF (flag running, base defense, escort), Monsterball (ball control, passing), Co-op (follow players, squad orders).
+- **Team coordination:** Role assignment (attacker/defender/roamer), map control strategies, coordinated pushes, callout system.
+- **6DOF maneuvers:** Barrel rolls, perpendicular strafing, Immelmann turns, advanced evasion patterns.
+- **Movement capture:** Record human player movement traces to tune bot thrust/drag PID controllers. Statistical analysis of speed, acceleration, turn rate distributions per behavioral context.
+- **Granular bot characters:** Adjustable stats per bot (aggression, caution, weapon preference, movement style). Bot "personalities" that create varied gameplay.
 
 ## Known Issues
 
-- **Pathfinding and behavior fine-tuning:** Navigation and combat behavior continue to require tuning across diverse maps. Bots may still get stuck on complex geometry or oscillate between states in edge cases. HUNT hysteresis (Phase 3.30) significantly reduced EXPLORE↔HUNT oscillation but further testing is needed.
+- **Navigation clustering (Phase 4.0 target):** Bots cluster near spawn areas due to shallow explore destinations (2 portals deep). Manual portal-by-portal navigation fights the engine's pathfinding. See `NAV_OVERHAUL.md`.
 - **Client compatibility:** Tested with retail D3 v1.5 and PiccuEngine (Windows v1.5-compatible). Some PiccuEngine-specific issues observed (e.g., control takeover in robo-anarchy) that do not reproduce on vanilla clients. BNode assertions fire on campaign levels in robo-anarchy (pre-existing engine issue — campaign levels lack multiplayer BNode data). Further cross-client testing needed.
-- **Physics immunity (under investigation):** Some physics-based weapons may not affect bot movement as intended. Black Shark vortex is the primary suspect — bots appear to resist its pull effect. Mass Driver knockback may also be reduced. More testing is needed to determine whether this is a bot-specific issue or a server-side physics limitation.
-- **Weapon usage diversity:** Each weapon now has a unique pickup priority (Phase 3.30). Bots should pick up Super Laser, Plasma, EMD, and Napalm more aggressively. Further playtesting will confirm whether the per-weapon priority system resolves the under-collection of these weapons.
+- **Physics immunity:** Previously observed (Black Shark vortex, Mass Driver knockback) — appears resolved in a prior phase.
+- **Weapon usage diversity:** Per-weapon pickup priorities added (Phase 3.30). Further playtesting needed.
 - **EVADE underutilized:** Only 2 COMBAT→EVADE transitions observed in 14min playtest. EVADE requires both prolonged combat (20s) and low shields (<60%), which may be too restrictive.
-- **Team rebalancing:** Bots are assigned teams at creation time. If humans join/leave, teams can become unbalanced.
+- **Team rebalancing (Phase 5 target):** Bots are assigned teams at creation time. If humans join/leave, teams can become unbalanced.

@@ -7,7 +7,7 @@ Current implementation status is in `BOTS_DEVEL.md`. Physics model reference is 
 
 ## Current Status
 
-**Phase 3.30 complete** — HUNT hysteresis (3s min duration), greedy powerup collection (per-weapon priorities, wider divert radii, poorly-armed hold logic), collision warning rate-limiting, `GF_USE_BLINE_IF_SEES_GOAL` removed from powerup goals.
+**Phase 4.0 complete** — Navigation overhaul: BOA-driven long-range exploration (map-wide random room sampling), engine pathfinding integration (`AIG_GET_TO_OBJ` replaces manual portal-by-portal pursuit), room-change progress tracking (8s timeout), smart portal-based stuck escape. See `NAV_OVERHAUL.md` for design rationale.
 
 For the full phase history and roadmap, see `BOTS_DEVEL.md`.
 
@@ -79,10 +79,16 @@ float   combat_idle_timer;    // triggers EVADE after BOT_EVADE_COMBAT_TIMEOUT
 float   evade_timer;          // counts down from BOT_EVADE_DURATION
 float   hunt_enter_time;      // Gametime when HUNT was entered (hysteresis — min 3s before EXPLORE)
 
-// EXPLORE roaming
+// EXPLORE roaming (Phase 3.9, overhauled Phase 4.0)
 int     explore_dest_room;    // current navigation destination room, -1 = none
 float   explore_room_timer;   // time budget for current destination
 int     explore_stuck_room;   // last room blacklisted due to stuck — skipped on next pick
+
+// Room-change progress tracking (Phase 4.0)
+int     last_progress_room;                      // roomnum at last progress check
+float   room_progress_timer;                     // seconds since last room change
+int     visited_rooms[BOT_VISITED_ROOM_COUNT];   // circular buffer of recently visited rooms
+int     visited_room_idx;                        // write index into visited_rooms[]
 
 // Countermeasure (reserved — real countermeasures are inventory items, not weapon batteries)
 float   countermeasure_timer;
@@ -101,6 +107,9 @@ for each active bot:
        evade_timer       -= Frametime  (in EVADE)
        explore_room_timer-= Frametime  (in EXPLORE)
        countermeasure_timer -= Frametime
+  5b. Room-change progress tracking (Phase 4.0, EXPLORE/HUNT only):
+       if roomnum changed → BotRecordVisitedRoom(), reset room_progress_timer
+       else room_progress_timer += Frametime → pick new dest at 8s timeout
   6. Throttled FSM tick (every BOT_TARGET_UPDATE_INTERVAL = 0.5s):
        BotSelectTarget()      — pick nearest enemy, equipment-differential score
        BotUpdateState()       — evaluate transitions, set goals
@@ -179,9 +188,29 @@ still computed and valid. This is the key insight that makes the hybrid CT_AI+th
   Pathfinding goals (`AIG_GET_TO_OBJ`, `AIG_GET_TO_POS`) use BOA for high-level routing.
 - **BNodes:** Points within rooms (usually near portals) that robots use to navigate around
   geometry *inside* a room. The engine generates a sequence of BNode waypoints along the BOA path.
-- **Dynamic Paths:** Allocated from a pool (`MAX_DYNAMIC_PATHS = 100` in `aistruct.h`). Each
+- **Dynamic Paths:** Allocated from a pool (`MAX_DYNAMIC_PATHS = 200` in `aistruct.h`). Each
   active pathfinding bot consumes one slot. Pool exhaustion was a crash source — now handled
   gracefully in `aipath.cpp`.
+
+### Navigation Strategy (Phase 4.0)
+
+**Explore destinations:** `BotDoExploreRoaming()` randomly samples rooms across the entire map
+(`Highest_room_index`), validates reachability via `BOA_GetNextRoom() != BOA_NO_PATH`, filters
+`BOAF_TOO_SMALL_FOR_ROBOT`, and scores candidates by: unvisited (+100), uncrowded (-40 per bot
+heading there), random tiebreaker. Sets `AIG_GET_TO_POS` with the room center — the engine builds
+the full BOA+BNode path. `explore_room_timer` scales proportionally to `BOA_ComputeMinDist()`.
+
+**Pursuit:** `BotSetPursuitGoal()` uses `AIG_GET_TO_OBJ` with the target handle. The engine's
+`AIPathAllocPath` handles all multi-room BOA+BNode routing automatically. BOA reachability is
+pre-validated; falls back to EXPLORE on `BOA_NO_PATH`.
+
+**Room-change progress tracking:** Each frame, if the bot's `roomnum` changes, it records the
+room in `visited_rooms[]` and resets `room_progress_timer`. If no room change occurs for
+`BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT` (8s), the bot picks a new destination and blacklists the
+current room.
+
+**Visited room memory:** Circular buffer of 12 recently visited rooms. Explore scoring favors
+unvisited rooms (+100 points), spreading bots across the map instead of clustering near spawn.
 
 ### BOA Repair
 
@@ -223,12 +252,22 @@ Dynamic turn rate (set on `ai_info->max_turn_rate` each frame):
 
 ### Stuck Detection & Clearing
 
-`stuck_timer` accumulates when speed < 5 and thrust is applied.
+Two complementary systems detect stuck bots:
+
+**Speed-based** (`stuck_timer`): accumulates when speed < 5 and thrust is applied.
 - At **1.5s** (`BOT_STUCK_FIGHT_TIMER`): `BotDoStuckClear()` fires:
   1. Proximity scan (50u) for enemy players/bots → `AISetTarget()` + `BotFireAtObject()`
   2. Forward ray (40u) for blocking objects (doors, grates) → `BotFireAtObject()`
-- At **3.0s**: reverse + hard strafe escape thrust applied; afterburner suppressed
-- At **7.0s** (`BOT_STUCK_ABANDON_TIME`): goal abandonment — `BotClearActiveGoal()`, force `BOT_STATE_EXPLORE` with fresh room pick (`explore_dest_room = -1`). Handles unreachable goals (window too small, complex geometry transitions).
+- At **3.0s** (Phase 4.0: smart portal escape): enumerates portals in the current room,
+  prefers unvisited rooms (via `visited_rooms[]`), skips the destination that caused the
+  stuck. Falls back to goal-clear for outdoor rooms or dead-ends with no valid portals.
+- At **5.0s** (`BOT_STUCK_ABANDON_TIME`): goal abandonment — `BotClearActiveGoal()`, force
+  `BOT_STATE_EXPLORE` with fresh room pick. Last resort for unreachable goals.
+
+**Room-change based** (`room_progress_timer`, Phase 4.0): accumulates when bot stays in the
+same room. At **8.0s** (`BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT`): picks a new destination,
+blacklists the current room. Catches oscillation and dead-end loops that speed-based
+detection misses (bot may be moving but going nowhere).
 
 `BotFireAtObject()`: relaxed aim (dot ≥ 0, not purely backwards), no state requirement.
 Normal `BotDoFiring()`: strict aim (dot ≥ 0.85), all states (internal guards).
@@ -443,7 +482,14 @@ BOT_SECONDARY_AIM_DOT        0.7f   // looser than primary (missiles track)
 BOT_STUCK_FIGHT_TIMER       1.5f    // seconds stuck before firing to clear
 BOT_STUCK_ENEMY_RADIUS      50.0f   // proximity scan radius
 BOT_STUCK_OBSTACLE_DIST     40.0f   // forward ray for destructible objects
-BOT_STUCK_ABANDON_TIME      7.0f    // seconds stuck before abandoning goal → EXPLORE
+BOT_STUCK_ABANDON_TIME      5.0f    // seconds stuck before abandoning goal → EXPLORE (was 7.0f pre-4.0)
+
+// EXPLORE destinations (Phase 4.0)
+BOT_EXPLORE_ROOM_TIME_MIN   6.0f    // min seconds for nearby explore destinations
+BOT_EXPLORE_ROOM_TIME_MAX  20.0f    // max seconds for far-away explore destinations
+BOT_EXPLORE_MAX_CANDIDATES 16       // max rooms to sample per destination pick
+BOT_VISITED_ROOM_COUNT     12       // circular buffer size for recently visited rooms
+BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT 8.0f // no room change for this long → pick new destination
 
 // Equipment scoring (Phase 3.11)
 BOT_RAMPAGE_AGRO_BONUS      60.0f   // elite vs weak: score reduction (prefer)

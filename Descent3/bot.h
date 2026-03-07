@@ -100,10 +100,14 @@
 #define BOT_OMEGA_MAX_DIST 35.0f        // Omega Cannon: leech beam, melee-range only
 #define BOT_MASS_DRIVER_MIN_DIST 100.0f // Mass Driver: hitscan sniper, prefer at distance
 
-// EXPLORE state room roaming (Phase 3.9)
-// Bots navigate portal-to-portal through the level searching for players and pickups.
-#define BOT_EXPLORE_ROOM_TIME 5.0f // max seconds to spend navigating to one explore destination
-#define BOT_EXPLORE_PORTAL_DEPTH 2 // max portals deep to look when picking a random dest room
+// EXPLORE state room roaming (Phase 3.9, overhauled Phase 4.0)
+// Phase 4.0: bots pick destinations from across the entire map via BOA validation,
+// letting the engine build full BOA+BNode paths instead of manual portal-by-portal navigation.
+#define BOT_EXPLORE_ROOM_TIME_MIN 6.0f  // min seconds for nearby explore destinations
+#define BOT_EXPLORE_ROOM_TIME_MAX 20.0f // max seconds for far-away explore destinations
+#define BOT_EXPLORE_MAX_CANDIDATES 16   // max rooms to sample from the map per destination pick
+#define BOT_VISITED_ROOM_COUNT 12       // circular buffer of recently visited rooms (anti-oscillation)
+#define BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT 8.0f // stuck if no room change for this long (seconds)
 
 // Secondary weapon firing (Phase 3.10)
 // Bots fire missiles alongside primaries in COMBAT. Each secondary has range gates and self-guards.
@@ -195,7 +199,7 @@
 #define BOT_STUCK_FIGHT_TIMER 1.5f    // seconds stuck before firing to clear the blockage
 #define BOT_STUCK_ENEMY_RADIUS 50.0f  // proximity radius to detect a player/bot we're jammed against
 #define BOT_STUCK_OBSTACLE_DIST 40.0f // forward ray length to detect blocking destructible objects
-#define BOT_STUCK_ABANDON_TIME 7.0f   // seconds stuck before abandoning goal and switching to EXPLORE
+#define BOT_STUCK_ABANDON_TIME 5.0f   // seconds stuck before abandoning goal and switching to EXPLORE
 
 // Altitude constraint (Phase 3.20)
 // Prevents bots from flying out of the level space on outdoor maps.
@@ -255,10 +259,16 @@ struct bot_info {
   // Powerup seeking (Phase 3.8)
   int powerup_goal_index; // goal index of AIG_GET_TO_OBJ powerup pursuit goal, or -1
 
-  // EXPLORE room roaming (Phase 3.9, outdoor fix Phase 3.24)
+  // EXPLORE room roaming (Phase 3.9, overhauled Phase 4.0)
   int explore_dest_room;    // Rooms[] index the bot is currently navigating toward, -1 = none
   float explore_room_timer; // counts down; when <=0 bot picks a new destination room
   int explore_stuck_room;   // last room abandoned due to stuck — blacklisted for next pick
+
+  // Room-change progress tracking (Phase 4.0) — detects stuck earlier than speed-based detection
+  int last_progress_room;                      // roomnum at last progress check
+  float room_progress_timer;                   // seconds since last room change
+  int visited_rooms[BOT_VISITED_ROOM_COUNT];   // circular buffer of recently visited rooms
+  int visited_room_idx;                        // write index into visited_rooms[]
 
   // Target blacklist (Phase 3.28) — prevents re-selecting unreachable targets after HUNT timeout
   int target_blacklist[MAX_NET_PLAYERS]; // player slots blacklisted as targets

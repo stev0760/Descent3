@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Phase 3.30 complete — HUNT hysteresis, greedy powerup collection, collision log rate-limiting, beeline fix.
+**Status:** Phase 4.0 complete — navigation overhaul. See `NAV_OVERHAUL.md` for design rationale.
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -48,6 +48,9 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | 3.26 | **Pursuit persistence & portal navigation:** Progress-based HUNT timeout (15s, resets when closing distance). Last-known target position pursuit on timeout (BOA pathfinding to doors/entrances). Removed `GF_USE_BLINE_IF_SEES_GOAL` — prevents beelining through thin floors/ceilings. BOA portal navigation when stuck in HUNT (finds correct portal via `BOA_GetNextRoom` + `BOA_DetermineStartRoomPortal`). | Complete |
 | 3.29 | **Code review refactor + BOA crash fix:** Weapon index constants corrected (MASSDRIVER_INDEX=6, VAUSS_INDEX=1, OMEGA_INDEX=9). Buffer overflow fix in BotDoExploreRoaming outdoor path. `BOA_DetermineStartRoomPortal` crash guard (`!OBJECT_OUTSIDE(obj)`) at both BotSetPursuitGoal and BotApplyThrust stuck recovery. Equipment tier classification fixed. | Complete |
 | 3.30 | **HUNT hysteresis + greedy powerups + collision rate-limit:** HUNT minimum duration (3s) prevents EXPLORE↔HUNT oscillation. Removed `GF_USE_BLINE_IF_SEES_GOAL` from powerup goals (fixes wall-stuck loops). "Too many collisions" warnings rate-limited to 1/sec. Per-weapon pickup priorities (Super Laser=9, Plasma=8, etc.). Wider divert radii and lower thresholds. Poorly-armed bots hold EXPLORE for weapons. Combat interrupt expanded for all secondaries when unarmed. | Complete |
+| 4.0 | **Navigation overhaul:** BOA-driven long-range exploration (map-wide random room sampling), engine pathfinding integration (`AIG_GET_TO_OBJ` replaces manual portal-by-portal pursuit), room-change progress tracking (8s timeout), smart portal-based stuck escape, visited-room memory (12-room circular buffer). See `NAV_OVERHAUL.md`. | Complete |
+| 5 | **Bot management & server architecture:** Config-file rosters, difficulty levels, remote admin, auto-rebalancing, server orchestration. | Not started |
+| 6 | **Advanced features:** CTF/Monsterball awareness, team coordination, 6DOF maneuvers, movement capture, bot personalities. | Not started |
 | 4 | Difficulty levels, configuration UI | Not started |
 
 ## Files
@@ -640,7 +643,7 @@ Use `-tempdir` to avoid cache lock conflicts when running both server and client
 
 - **Thrust-based movement is new and needs live testing** — Phase 3.5 thrust physics replaces the old CT_AI velocity control. Ship template values (mass, drag, full_thrust) vary per ship and may need tuning if bots feel too fast/slow on specific ships.
 - **Gunboy targeting issue** — The Phase 2 `AImain.cpp` fix allows gunboys to acquire player targets (bypasses `BOA_IsVisible`), but they still don't fire. Likely blocked by a separate condition in `ai_fire()` or weapon battery configuration. Revisit in future phase.
-- **Navigation uses BOA pathfinding** — In HUNT state, bots follow BOA path nodes through portals and doors. `GF_USE_BLINE_IF_SEES_GOAL` was removed (Phase 3.26) because the engine's raycast passes through thin floors, causing bots to beeline through geometry. When stuck, bots use `BOA_GetNextRoom` + `BOA_DetermineStartRoomPortal` to find the correct portal toward the target. Complex multi-level maps may still have edge cases.
+- **Navigation** — Phase 4.0 overhauled navigation: bots now pick destinations from across the entire map (not just 2 portals deep), pursuit uses `AIG_GET_TO_OBJ` letting the engine handle BOA+BNode routing, and room-change progress tracking catches stuck/oscillation. Smart portal-based stuck escape replaces blind reverse. Complex multi-level maps may still have edge cases requiring playtest tuning.
 - **Team assignment is static** — Bots are assigned to a team at `addbot` time based on current counts. If human players join or leave after bots are added, teams may become unbalanced. Dynamic rebalancing is future work.
 - **Congestion penalty is player-only** — The 80-unit diversity penalty only applies to player targets, not robot targets. In co-op, all bots may still converge on the same robot.
 - **Scoreboard tracking** — Fixed in Phase 0.5. Bots now appear on the end-of-level scoreboard. See "Scoreboard Tracking" section below.
@@ -664,7 +667,7 @@ Investigation revealed that bots were missing from the end-of-level scoreboard b
 - **Bot removal during level transition untested** — removing bots while a level change is in progress may have edge cases.
 - **AI pathfinding exhaustion** — When too many bots are stuck or colliding, the dynamic path pool (`AIPathGetDPathSlot`) can be exhausted, triggering an assertion in `aipath.cpp:533`. This occurs when the server is overloaded with bots in confined spaces. A proper fix should be addressed alongside Phase 2 navigation improvements rather than modifying `aipath.cpp` directly.
 - **Bots fly out of bounds (sky) in outdoor levels** — Very apparent in custom level sets such as "Fellowship" (level 3) which has lots of wide open space but low bounding area to contain players. The current OOB guard in `BotApplyThrust()` only fires when the bot is fully outside the terrain cell grid, which does not catch bots that remain within the X/Z grid but fly to extreme Y altitudes.
-- **Physics immunity to certain weapons** — Bots seem to be unaffected by physics from weapons like the Mass Driver (supposed to disorient and "fling" players via inertia transfer) and the Black Shark missile vortex. This is likely due to `BotApplyThrust()` overwriting the physics state every frame or the engine not applying these forces to `CT_AI` objects correctly.
+- **Physics immunity to certain weapons** — Previously observed but appears to have been resolved. Bots now respond to Mass Driver knockback and Black Shark vortex physics forces.
 - **Sporadic and transient state oscillation/locking** — Bots may try to engage targets through thin walls/floors. Phase 3.26 mitigates this via progress-based HUNT timeout (resets when closing distance, times out after 15s of no progress) and last-known position pursuit (navigates to where the target was seen instead of random wandering). Remaining edge cases may exist on highly complex multi-level maps.
 - **Dynamic path pool exhaustion** — With 6+ bots, `MAX_DYNAMIC_PATHS=100` is insufficient. The pool fills up and produces millions of "Out of dynamic paths" log errors per session. Paths are allocated but not freed fast enough, degrading navigation and inflating log files. Needs investigation into path slot lifecycle and possible pool size increase.
 - **Complex geometry navigation** — Largely addressed by Phases 3.24–3.26. Bots now use BOA_connect for outdoor↔indoor transitions, portal entrance positions instead of room centers, and BOA portal navigation when stuck. Afterburner is suppressed while stuck. Edge cases remain on maps with very tight openings or unusual portal geometry.
@@ -672,27 +675,30 @@ Investigation revealed that bots were missing from the end-of-level scoreboard b
 
 ## Future Work
 
-See [PLAN.md](PLAN.md) for the Phase 0 design rationale and risk assessment.
+See [PLAN.md](PLAN.md) for the full phase plan and risk assessment. See [NAV_OVERHAUL.md](NAV_OVERHAUL.md) for the Phase 4.0 navigation overhaul design.
 
-### Advanced Movement: Player Movement Capture and Analysis
+### Phase 4.0: Navigation Overhaul (Complete)
 
-To achieve higher-fidelity bot movement, we will eventually need to capture real human player movement data and use it to tune bot behavior. This requires:
+Implemented all four changes from `NAV_OVERHAUL.md`. Key improvements:
 
-1. **Server-side movement logging** — extend `PLRMOV` logging to capture per-frame: position, velocity vector, orientation (fvec/uvec/rvec), thrust flags (`PLAYER_FLAGS_THRUSTED`, `PLAYER_FLAGS_AFTERBURN_ON`), current speed, and game state (in combat, health).
-2. **Session capture tool** — a post-processing script that converts server logs into movement traces grouped by behavioral context (combat maneuvering, gap-closing, evasion, etc.).
-3. **Statistical analysis** — measure distributions of speed, acceleration, turn rate, strafe amplitude, and afterburner usage frequency per behavioral context.
-4. **Bot tuning from data** — use measured player baselines to calibrate bot constants (`BOT_JUKE_FREQUENCY`, `BOT_JUKE_AMPLITUDE_*`, `BOT_AFTERBURNER_MIN_DIST`, `BOT_COMBAT_CIRCLE_DIST`, etc.) to match real player patterns.
+1. **BOA-driven long-range exploration** — `BotDoExploreRoaming()` randomly samples rooms across the entire map, validates with `BOA_GetNextRoom`, scores by visited/crowded/random. Eliminated shallow 2-portal-deep explore.
+2. **Engine pathfinding integration** — `BotSetPursuitGoal()` uses `AIG_GET_TO_OBJ` with target handle. Engine handles all BOA+BNode routing. Removed manual portal-by-portal navigation.
+3. **Room-change progress tracking** — Per-frame room tracking with 8s timeout catches stuck bots that speed-based detection misses (moving but going nowhere).
+4. **Smart stuck escape** — Portal enumeration preferring unvisited rooms. Blind reverse is last resort. `BOT_STUCK_ABANDON_TIME` reduced 7s→5s.
 
-This is a future-phase initiative (likely Phase 5+) after basic navigation and pathfinding are resolved. The full 6DoF movement space (slide forward/backward/left/right/up/down, pitch/yaw/bank) means bots require behavioral data across all axes to accurately emulate human play patterns.
+### Phase 5: Bot Management & Server Architecture (Next)
 
-### Phase 4: Configuration
+- Config-file bot rosters (auto-spawn on server start)
+- Difficulty levels (accuracy, reaction time, aggression, navigation)
+- Remote administration (team selection, skill overrides, hot-reload)
+- Auto-rebalancing (dynamic team adjustment when humans join/leave)
+- Server orchestration (multi-instance management, match templates)
+- Persistent bot statistics (K/D, weapon usage, map coverage)
 
-- Difficulty levels (accuracy, reaction time, aggression)
-- Server config file bot definitions
-- Frontend/administration UI
+### Phase 6: Advanced Features
 
-### Phase 5: Advanced Features and Nice-to-Haves
-- Human-Like flight patterns and maneuvers; advanced target leading ability.
-- Granular bot configuration parameters, characters with adjustable stats.
-- Team and squad dynamics for Team-Anarchy.
-- Advanced Game-Mode awareness for CTF, Monsterball, and squad orders for Co-Op.
+- Game mode awareness: CTF, Monsterball, Co-op squad orders
+- Team coordination: roles, map control, coordinated pushes
+- 6DOF maneuvers: barrel rolls, Immelmann turns, advanced evasion
+- Movement capture: record human traces for PID tuning
+- Bot personalities: per-bot aggression, caution, weapon preference

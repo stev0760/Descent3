@@ -10,7 +10,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Multiplayer Bots (Experimental)
 
-**Status:** Phase 3.30 — Greedy Powerup Collection & HUNT Hysteresis
+**Status:** Phase 4.0 — Navigation Overhaul
 
 This fork introduces a **server-side multiplayer bot system** for Descent 3. These AI-controlled bots occupy real player slots on dedicated servers, appearing and acting as normal players.
 
@@ -42,8 +42,8 @@ These commands are available in the dedicated server console (or via remote teln
 
 ### ⚠️ Known Issues
 
-*   **Navigation fine-tuning:** Bots use BOA pathfinding for cross-domain navigation (indoor↔outdoor, underground↔surface). Progress-based HUNT timeout and portal navigation handle most cases. Maps with very tight or recessed spawn points may still cause brief stuck periods. Pathfinding and behavior continue to be tuned across diverse maps.
-*   **Physics immunity (under investigation):** Some physics-based weapons may not affect bot movement as intended. Black Shark vortex is the primary suspect — bots appear to resist its pull effect. Mass Driver knockback may also be reduced. More testing is needed to confirm the scope and determine whether this is a bot-specific issue or a server-side physics limitation.
+*   **Navigation fine-tuning:** Phase 4.0 overhauled navigation — bots now pick destinations across the entire map, use engine pathfinding (BOA+BNodes) for multi-room routing, and track room-change progress to detect stuck/oscillation. Smart portal-based stuck escape replaces blind reverse. Complex multi-level maps may still have edge cases requiring tuning.
+*   **Physics immunity:** Previously observed (Black Shark vortex, Mass Driver knockback) — appears resolved in a prior phase.
 *   **Client compatibility:** Tested with retail D3 v1.5 and PiccuEngine (Windows v1.5-compatible). Some PiccuEngine-specific issues observed (e.g., control takeover in robo-anarchy) that do not reproduce on vanilla clients. Further cross-client testing needed.
 *   **Weapon usage diversity:** Each weapon now has a unique pickup priority (Super Laser, Plasma, EMD rank highest). Bots select weapons based on damage output, fire rate, and range. Further playtesting may reveal maps where certain weapons are still under-collected.
 

@@ -19,7 +19,9 @@ Your role is to act as a **companion and secondary coding assistant**. The user 
 
 - **`BOT_DEV_REFERENCE.md`** — living developer reference: architecture, FSM, constants, engine API patterns, critical gotchas. **Primary reference for bot work.**
 - **`BOTS_DEVEL.md`** — phase history, current status, and roadmap.
-- **`PLAN.md`** — original Phase 0 design document (historical).
+- **`NAV_OVERHAUL.md`** — Phase 4.0 navigation overhaul: research synthesis, root cause analysis, engine pathfinding pipeline reference, and implementation plan. **Read this before modifying navigation code.**
+- **`PATHFINDING_CODEBASE_EXPLORE.md`** — Guide-bot navigation analysis: how single-player bots navigate complex passages. Research input for `NAV_OVERHAUL.md`.
+- **`PLAN.md`** — original Phase 0 design document and full phase roadmap.
 - **`D3_MOVEMENT_PHYSICS.md`** — engine physics constants and multiplayer packet flag reference.
 - **`CLAUDE.md`** — primary AI's instruction set: build commands and engine architecture overview.
 
@@ -52,22 +54,34 @@ ctest --preset linux -C Debug
 
 ## Current Implementation State
 
-The bot system is at **Phase 3.21**. All details are in `BOT_DEV_REFERENCE.md` and `BOTS_DEVEL.md`.
+The bot system is at **Phase 4.0** (navigation overhaul complete). All details are in `BOT_DEV_REFERENCE.md` and `BOTS_DEVEL.md`.
 
-Key capabilities implemented through Phase 3.21:
+Key capabilities implemented through Phase 4.0:
 - 5-state FSM (EXPLORE, HUNT, COMBAT, FLEE, EVADE) with per-frame lead aim steering
 - Thrust-based physics movement using engine `movement_dir` integration (Phase 3.6)
 - Full primary + secondary weapon selection, firing, and tactical switching
 - Equipment tier awareness (WEAK/GOOD/ELITE) with dynamic aggression tuning
 - Homing missile evasion (chaff + afterburner burst)
-- Navigation stuck recovery: 3s escape maneuver → 7s goal abandonment (Phase 3.21)
-- Ceiling collision and altitude soft cap for outdoor maps (Phase 3.20)
-- Dynamic path pool management (Phase 3.18)
+- Countermeasure deployment (chaff, mines, gunboy sentries) (Phase 3.22)
+- Progress-based HUNT timeout with target blacklisting (Phase 3.26-3.28)
+- HUNT hysteresis (3s minimum duration), per-weapon pickup priorities (Phase 3.30)
+- BOA-driven long-range exploration with visited-room memory (Phase 4.0)
+- Engine pathfinding integration — `AIG_GET_TO_OBJ` pursuit, no manual portal navigation (Phase 4.0)
+- Room-change progress tracking and smart portal-based stuck escape (Phase 4.0)
+- Dynamic path pool management (MAX_DYNAMIC_PATHS=200) (Phase 3.18)
 
-### Open Issues for Investigation
-- **Physics immunity:** Black Shark vortex may not affect bot movement — needs more testing to determine if this is bot-specific or a server-side physics limitation
-- **Stuck recovery tuning:** Goal abandonment works but bots may need longer reverse distances before re-orienting on maps with deeply recessed spawn geometry
-- **Weapon variety:** Selection favors Vauss/Fusion when they are DPS-optimal; may need situational diversity
+### Current Focus: Phase 5 Planning
+Phase 4.0 navigation overhaul is complete. Next: bot management & server architecture (config-file rosters, difficulty levels, remote admin, auto-rebalancing). Playtest Phase 4.0 on complex maps first.
+
+### Upcoming Phases
+- **Phase 5:** Bot management and server architecture — config-file rosters, difficulty levels, remote admin, auto-rebalancing
+- **Phase 6:** Advanced features — CTF/Monsterball, team coordination, 6DOF maneuvers, bot personalities
+
+### Open Issues
+- **Navigation edge cases** — Phase 4.0 addressed clustering; complex multi-level maps may still need tuning
+- **Physics immunity** — Previously observed, now appears resolved
+- **EVADE underutilized** — requires prolonged combat (20s) AND low shields (<60%), may be too restrictive
+- **Team rebalancing** (Phase 5 target) — static team assignment, no dynamic adjustment
 
 Use `BOT_DEV_REFERENCE.md` as the authoritative source for architecture, constants, and gotchas.
 

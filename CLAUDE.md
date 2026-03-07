@@ -33,7 +33,9 @@ ctest --preset linux -C Debug
 # Project Tracking and Reference Files
 - **`BOT_DEV_REFERENCE.md`** — living developer reference: architecture, FSM, constants, engine API patterns, critical gotchas. **Read this before modifying bot code.**
 - **`BOTS_DEVEL.md`** — phase history and roadmap. Update when a phase completes.
-- **`PLAN.md`** — original Phase 0 design document.
+- **`NAV_OVERHAUL.md`** — Phase 4.0 navigation overhaul: research synthesis, root cause analysis, engine pathfinding pipeline reference, and implementation plan. **Read this before modifying navigation code.**
+- **`PATHFINDING_CODEBASE_EXPLORE.md`** — Guide-bot navigation analysis: how single-player bots navigate complex passages vs. our multiplayer bots. Research input for `NAV_OVERHAUL.md`.
+- **`PLAN.md`** — original Phase 0 design document and full phase roadmap.
 - **`D3_MOVEMENT_PHYSICS.md`** — engine physics constants and packet flag reference.
 
 Useful CMake options: `BUILD_TESTING=OFF`, `ENABLE_LOGGER=OFF`, `FORCE_PORTABLE_INSTALL=ON`, `FATAL_GL_ERRORS=OFF`. Output goes to `builds/<preset>/build/<config>/`.
