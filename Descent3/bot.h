@@ -71,7 +71,7 @@
 #define BOT_HUNT_PROGRESS_THRESHOLD 10.0f // distance decrease (units) that counts as "making progress"
 #define BOT_RETARGET_COOLDOWN 5.0f        // seconds after HUNT drop before re-acquiring targets (Phase 4.01: 2→5)
 #define BOT_HUNT_MIN_DURATION 3.0f        // minimum seconds in HUNT before dropping to EXPLORE (hysteresis)
-#define BOT_HUNT_BLIND_MAX_DIST 400.0f    // max distance to enter HUNT without LOS (Phase 4.01: prevents blind 800u+ chases)
+#define BOT_HUNT_BLIND_MAX_DIST 150.0f    // max distance to enter HUNT without LOS (Phase 4.02: 400→150, complex maps have walls at 300u+)
 
 // Target blacklist (Phase 3.28) — prevents re-selecting unreachable targets during retarget cooldown.
 // When a target is blacklisted due to HUNT timeout, the bot cannot select it again until the

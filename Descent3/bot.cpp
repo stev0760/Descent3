@@ -1546,12 +1546,15 @@ static void BotUpdateState(int bot_index) {
       pgi = -1;
       BotDoExploreRoaming(bot_index);
     }
-    // Transition to HUNT only when the target is reachable — not for blind 800u+ chases.
-    // Phase 4.01: require LOS OR close distance to prevent EXPLORE↔HUNT oscillation on complex maps.
-    // Distant targets with no LOS cause bots to enter HUNT, fail to gain LOS, drop back to EXPLORE
-    // within seconds, then immediately re-enter HUNT — wasting time that should be spent exploring.
-    if (has_target && !holding_for_weapon && (has_los || dist < BOT_HUNT_BLIND_MAX_DIST))
+    // Transition to HUNT only when the target is reachable and we're not busy collecting.
+    // Phase 4.02: if actively pursuing a powerup, only interrupt for enemies with LOS at close range.
+    // This prevents bots from abandoning powerup pickups for blind chases behind walls.
+    bool chasing_powerup = (Bots[bot_index].powerup_goal_index >= 0);
+    bool urgent_threat = (has_los && dist < BOT_CLOSERANGE_DIST);
+    if (has_target && !holding_for_weapon && !chasing_powerup && (has_los || dist < BOT_HUNT_BLIND_MAX_DIST))
       new_state = BOT_STATE_HUNT;
+    else if (has_target && !holding_for_weapon && chasing_powerup && urgent_threat)
+      new_state = BOT_STATE_HUNT; // enemy right on top of us — drop everything and fight
     break;
   }
 
@@ -2836,19 +2839,33 @@ void BotDoFrame() {
       } else {
         Bots[i].room_progress_timer += Frametime;
         if (Bots[i].room_progress_timer > BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT) {
-          // Stuck in same room too long — pick a new destination
-          LOG_DEBUG.printf("BOT: '%s' room progress timeout (room %d, %.1fs) — picking new destination",
-                           Bots[i].callsign, cur_room, Bots[i].room_progress_timer);
+          // Stuck in same room too long — try to find a nearby powerup first before picking random room.
+          // Phase 4.02: converts "stuck oscillating" time into productive looting.
           BotClearActiveGoal(i);
           Bots[i].explore_stuck_room = cur_room;
           Bots[i].explore_dest_room = -1;
           Bots[i].explore_room_timer = 0.0f;
           Bots[i].room_progress_timer = 0.0f;
           if (Bots[i].state == BOT_STATE_HUNT) {
-            // Drop target and switch to EXPLORE — we're not making progress
             AISetTarget(obj, OBJECT_HANDLE_NONE);
             Bots[i].state = BOT_STATE_EXPLORE;
             Bots[i].retarget_cooldown = BOT_RETARGET_COOLDOWN;
+          }
+
+          // Try to find a powerup to chase instead of picking another random unreachable room
+          float shields = Objects[Players[slot].objnum].shields;
+          bool need_sh = (shields < INITIAL_SHIELDS * BOT_LOW_SHIELDS_PCT);
+          bool low_energy = (Players[slot].energy < BOT_LOW_ENERGY);
+          int pu_obj = BotFindBestPowerup(i, need_sh, low_energy);
+          if (pu_obj >= 0) {
+            int tgt_handle = Objects[pu_obj].handle;
+            Bots[i].powerup_goal_index =
+                GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f, GF_SPEED_ATTACK);
+            LOG_DEBUG.printf("BOT: '%s' room progress timeout (room %d) — chasing powerup instead",
+                             Bots[i].callsign, cur_room);
+          } else {
+            LOG_DEBUG.printf("BOT: '%s' room progress timeout (room %d, %.1fs) — picking new destination",
+                             Bots[i].callsign, cur_room, BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT);
           }
         }
       }
