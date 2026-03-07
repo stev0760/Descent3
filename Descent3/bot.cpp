@@ -1546,10 +1546,11 @@ static void BotUpdateState(int bot_index) {
       pgi = -1;
       BotDoExploreRoaming(bot_index);
     }
-    // Transition to HUNT the moment we have a target and aren't holding out for a weapon first.
-    // Powerup goals are cleared by BotClearActiveGoal on EXPLORE exit — the bot will naturally
-    // pass near items en route and collect them via physics collision.
-    if (has_target && !holding_for_weapon)
+    // Transition to HUNT only when the target is reachable — not for blind 800u+ chases.
+    // Phase 4.01: require LOS OR close distance to prevent EXPLORE↔HUNT oscillation on complex maps.
+    // Distant targets with no LOS cause bots to enter HUNT, fail to gain LOS, drop back to EXPLORE
+    // within seconds, then immediately re-enter HUNT — wasting time that should be spent exploring.
+    if (has_target && !holding_for_weapon && (has_los || dist < BOT_HUNT_BLIND_MAX_DIST))
       new_state = BOT_STATE_HUNT;
     break;
   }
@@ -1580,8 +1581,12 @@ static void BotUpdateState(int bot_index) {
       // Hysteresis: stay in HUNT for at least BOT_HUNT_MIN_DURATION before dropping to EXPLORE.
       // Prevents rapid EXPLORE↔HUNT oscillation when target flickers in/out of detection.
       float hunt_elapsed = Gametime - Bots[bot_index].hunt_enter_time;
-      if (hunt_elapsed >= BOT_HUNT_MIN_DURATION)
+      if (hunt_elapsed >= BOT_HUNT_MIN_DURATION) {
         new_state = BOT_STATE_EXPLORE;
+        // Phase 4.01: suppress retargeting so the bot actually explores for a while
+        // instead of immediately re-acquiring the same unreachable enemy next tick.
+        Bots[bot_index].retarget_cooldown = BOT_RETARGET_COOLDOWN;
+      }
     } else if (Bots[bot_index].hunt_no_los_timer > BOT_HUNT_NO_LOS_TIMEOUT) {
       // Chased this target for too long without getting closer — unreachable.
       // Blacklist the player slot to prevent re-selecting during retarget cooldown.

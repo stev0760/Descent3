@@ -7,7 +7,7 @@ Current implementation status is in `BOTS_DEVEL.md`. Physics model reference is 
 
 ## Current Status
 
-**Phase 4.0 complete** — Navigation overhaul: BOA-driven long-range exploration (map-wide random room sampling), engine pathfinding integration (`AIG_GET_TO_OBJ` replaces manual portal-by-portal pursuit), room-change progress tracking (8s timeout), smart portal-based stuck escape. See `NAV_OVERHAUL.md` for design rationale.
+**Phase 4.01 complete** — Anti-oscillation tuning: LOS/distance gate on EXPLORE→HUNT (blind chases capped at 400u), retarget cooldown on HUNT→EXPLORE (5s), room-progress timeout 8→12s. Fixes EXPLORE↔HUNT oscillation and powerup regression from Phase 4.0's map-wide exploration. See `NAV_OVERHAUL.md` for design rationale.
 
 For the full phase history and roadmap, see `BOTS_DEVEL.md`.
 
@@ -126,7 +126,8 @@ for each active bot:
 ## Behavioral FSM
 
 ```
-EXPLORE ──(has_target && !poorly_armed_holding)─► HUNT
+EXPLORE ──(has_target && !poorly_armed_holding    ─► HUNT
+           && (has_LOS || dist < 400u))
         ◄──(no target && hunt_elapsed ≥ 3s)──────
 HUNT    ──(dist < FIRE_RANGE && has_LOS)────────► COMBAT
         ──(low_shields)──────────────────────────► FLEE
@@ -206,7 +207,7 @@ pre-validated; falls back to EXPLORE on `BOA_NO_PATH`.
 
 **Room-change progress tracking:** Each frame, if the bot's `roomnum` changes, it records the
 room in `visited_rooms[]` and resets `room_progress_timer`. If no room change occurs for
-`BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT` (8s), the bot picks a new destination and blacklists the
+`BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT` (12s), the bot picks a new destination and blacklists the
 current room.
 
 **Visited room memory:** Circular buffer of 12 recently visited rooms. Explore scoring favors
@@ -265,7 +266,7 @@ Two complementary systems detect stuck bots:
   `BOT_STATE_EXPLORE` with fresh room pick. Last resort for unreachable goals.
 
 **Room-change based** (`room_progress_timer`, Phase 4.0): accumulates when bot stays in the
-same room. At **8.0s** (`BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT`): picks a new destination,
+same room. At **12.0s** (`BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT`): picks a new destination,
 blacklists the current room. Catches oscillation and dead-end loops that speed-based
 detection misses (bot may be moving but going nowhere).
 
@@ -489,7 +490,9 @@ BOT_EXPLORE_ROOM_TIME_MIN   6.0f    // min seconds for nearby explore destinatio
 BOT_EXPLORE_ROOM_TIME_MAX  20.0f    // max seconds for far-away explore destinations
 BOT_EXPLORE_MAX_CANDIDATES 16       // max rooms to sample per destination pick
 BOT_VISITED_ROOM_COUNT     12       // circular buffer size for recently visited rooms
-BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT 8.0f // no room change for this long → pick new destination
+BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT 12.0f // no room change for this long → pick new destination (Phase 4.01: 8→12)
+BOT_HUNT_BLIND_MAX_DIST    400.0f  // max distance to enter HUNT without LOS (Phase 4.01)
+BOT_RETARGET_COOLDOWN        5.0f  // seconds after HUNT drop before re-acquiring targets (Phase 4.01: 2→5)
 
 // Equipment scoring (Phase 3.11)
 BOT_RAMPAGE_AGRO_BONUS      60.0f   // elite vs weak: score reduction (prefer)

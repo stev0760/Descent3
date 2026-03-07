@@ -69,8 +69,9 @@
 // Only fires when bot makes no progress for the full timeout duration.
 #define BOT_HUNT_NO_LOS_TIMEOUT 15.0f
 #define BOT_HUNT_PROGRESS_THRESHOLD 10.0f // distance decrease (units) that counts as "making progress"
-#define BOT_RETARGET_COOLDOWN 2.0f        // seconds after HUNT timeout before re-acquiring targets
+#define BOT_RETARGET_COOLDOWN 5.0f        // seconds after HUNT drop before re-acquiring targets (Phase 4.01: 2→5)
 #define BOT_HUNT_MIN_DURATION 3.0f        // minimum seconds in HUNT before dropping to EXPLORE (hysteresis)
+#define BOT_HUNT_BLIND_MAX_DIST 400.0f    // max distance to enter HUNT without LOS (Phase 4.01: prevents blind 800u+ chases)
 
 // Target blacklist (Phase 3.28) — prevents re-selecting unreachable targets during retarget cooldown.
 // When a target is blacklisted due to HUNT timeout, the bot cannot select it again until the
@@ -107,7 +108,7 @@
 #define BOT_EXPLORE_ROOM_TIME_MAX 20.0f // max seconds for far-away explore destinations
 #define BOT_EXPLORE_MAX_CANDIDATES 16   // max rooms to sample from the map per destination pick
 #define BOT_VISITED_ROOM_COUNT 12       // circular buffer of recently visited rooms (anti-oscillation)
-#define BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT 8.0f // stuck if no room change for this long (seconds)
+#define BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT 12.0f // stuck if no room change for this long (Phase 4.01: 8→12)
 
 // Secondary weapon firing (Phase 3.10)
 // Bots fire missiles alongside primaries in COMBAT. Each secondary has range gates and self-guards.
