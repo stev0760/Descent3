@@ -384,12 +384,13 @@ retry:
     goto retry;
   }
 
-  ASSERT(bnlist->num_nodes > 0);
-  if (closest_node == -1 && bnlist->num_nodes > 0) {
+  // Guard rooms with no BNodes — campaign/custom maps may have rooms without navigation data.
+  if (bnlist->num_nodes <= 0) {
+    return -1;
+  }
+  if (closest_node == -1) {
     closest_node = ps_rand() % bnlist->num_nodes;
   }
-
-  ASSERT(closest_node != -1);
 
   return closest_node;
 }
@@ -453,12 +454,13 @@ retry:
     goto retry;
   }
 
-  ASSERT(bnlist->num_nodes > 0);
-  if (closest_node == -1 && bnlist->num_nodes > 0) {
+  // Guard rooms with no BNodes — campaign/custom maps may have rooms without navigation data.
+  if (bnlist->num_nodes <= 0) {
+    return -1;
+  }
+  if (closest_node == -1) {
     closest_node = ps_rand() % bnlist->num_nodes;
   }
-
-  ASSERT(closest_node != -1);
 
   return closest_node;
 }

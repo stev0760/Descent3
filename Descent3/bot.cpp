@@ -1577,6 +1577,12 @@ static void BotUpdateState(int bot_index) {
         Bots[bot_index].chasing_powerup_handle = tgt_handle;
         Bots[bot_index].chasing_powerup_timer = 0.0f;
       }
+      // Clear any active roaming goal so it doesn't conflict with the powerup goal.
+      // Two goals at the same priority pull in different directions → bot hovers in place.
+      int &rgi = Bots[bot_index].pursuit_goal_index;
+      if (rgi >= 0 && rgi < MAX_GOALS && obj->ai_info->goals[rgi].used)
+        GoalClearGoal(obj, &obj->ai_info->goals[rgi]);
+      rgi = -1;
       // Reset roaming state so we resume searching after collecting
       Bots[bot_index].explore_dest_room = -1;
       Bots[bot_index].explore_stuck_room = -1;
@@ -1948,13 +1954,22 @@ static void BotApplyThrust(int bot_index) {
   sideways *= speed_scale;
   vertical *= speed_scale;
 
+  // Sustained escape mode: negative stuck_timer means we're actively escaping (counts up to 0)
+  if (Bots[bot_index].stuck_timer < 0.0f) {
+    Bots[bot_index].stuck_timer += Frametime;
+    // Random lateral escape thrust while timer is negative
+    forward = -0.3f;
+    sideways = (sinf(Bots[bot_index].juke_phase * 3.0f) > 0) ? 1.0f : -1.0f;
+    vertical = 0.3f;
+  }
+
   // Stuck detection: escape after 3s at near-zero speed while applying thrust
   float current_speed = vm_GetMagnitude(&obj->mtype.phys_info.velocity);
   bool applying_thrust = (fabsf(forward) > 0.1f || fabsf(sideways) > 0.1f);
 
-  if (current_speed < 5.0f && applying_thrust) {
+  if (Bots[bot_index].stuck_timer >= 0.0f && current_speed < 5.0f && applying_thrust) {
     Bots[bot_index].stuck_timer += Frametime;
-  } else {
+  } else if (Bots[bot_index].stuck_timer >= 0.0f) {
     Bots[bot_index].stuck_timer = 0.0f;
   }
 
@@ -2013,18 +2028,19 @@ static void BotApplyThrust(int bot_index) {
       Bots[bot_index].explore_stuck_room = OBJECT_OUTSIDE(obj) ? -1 : obj->roomnum;
       Bots[bot_index].explore_dest_room = -1;
       Bots[bot_index].explore_room_timer = 0.0f;
-      LOG_DEBUG.printf("BOT: '%s' stuck escape — no portal available, clearing goal", Bots[bot_index].callsign);
+      LOG_DEBUG.printf("BOT: '%s' stuck escape — no portal, random lateral escape", Bots[bot_index].callsign);
     }
 
     // Record current room as stuck to avoid it in future explore picks
     if (!OBJECT_OUTSIDE(obj))
       BotRecordVisitedRoom(bot_index, obj->roomnum);
 
-    Bots[bot_index].stuck_timer = 0.0f;
+    Bots[bot_index].stuck_timer = -2.0f; // negative = sustained escape thrust for 2 seconds
     Bots[bot_index].room_progress_timer = 0.0f;
-    forward = -1.0f;
-    sideways = 0.0f;
-    vertical = 0.0f;
+    // Randomized escape direction — avoids repeatedly hitting the same geometry
+    forward = -0.5f + ((rand() % 100) / 100.0f) * 1.0f; // -0.5 to +0.5
+    sideways = (rand() % 2) ? 1.0f : -1.0f;
+    vertical = (rand() % 3 == 0) ? 0.5f : -0.3f;
     want_afterburner = false;
   } else if (Bots[bot_index].stuck_timer > 3.0f) {
     // Short stuck: reverse + strafe to clear geometry snag
