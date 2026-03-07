@@ -1587,7 +1587,11 @@ void do_physics_sim(object *obj) {
   // NOTE: These numbers limit the max collisions an object can have in a single frame
   if (count >= sim_loop_limit) {
     if (obj->type == OBJ_PLAYER) {
-      LOG_WARNING << "Too many collisions for player!";
+      static float last_warn_time = -1.0f;
+      if (Gametime - last_warn_time >= 1.0f) {
+        LOG_WARNING << "Too many collisions for player!";
+        last_warn_time = Gametime;
+      }
       obj->mtype.phys_info.velocity = vector{};
     }
   }
@@ -2402,7 +2406,11 @@ void do_walking_sim(object *obj) {
   // NOTE: These numbers limit the max collisions an object can have in a single frame
   if (count >= sim_loop_limit) {
     if (obj->type == OBJ_PLAYER) {
-      LOG_WARNING << "PHYSICS NOTE: Too many collisions for player!";
+      static float last_warn_time2 = -1.0f;
+      if (Gametime - last_warn_time2 >= 1.0f) {
+        LOG_WARNING << "PHYSICS NOTE: Too many collisions for player!";
+        last_warn_time2 = Gametime;
+      }
     }
   }
 
@@ -2552,6 +2560,7 @@ void phys_apply_force(object *obj, vector *force_vec, int16_t weapon_index) {
     return;
 
   if ((Game_mode & GM_MULTI) &&
+      // Bot players (CT_AI) are server-authoritative — allow force application on them.
       ((obj->type == OBJ_PLAYER && obj->id != Player_num &&
         !(Netgame.local_role == LR_SERVER && obj->control_type == CT_AI)) ||
        ((obj->type != OBJ_PLAYER && obj->type != OBJ_POWERUP) && Netgame.local_role != LR_SERVER)))

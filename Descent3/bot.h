@@ -20,6 +20,7 @@
 #define BOT_H
 
 #include "player_external_struct.h"
+#include "weapon_external.h"
 
 #define MAX_BOTS 16
 #define BOT_RESPAWN_DELAY 3.0f          // seconds after death before respawn
@@ -69,6 +70,7 @@
 #define BOT_HUNT_NO_LOS_TIMEOUT 15.0f
 #define BOT_HUNT_PROGRESS_THRESHOLD 10.0f // distance decrease (units) that counts as "making progress"
 #define BOT_RETARGET_COOLDOWN 2.0f        // seconds after HUNT timeout before re-acquiring targets
+#define BOT_HUNT_MIN_DURATION 3.0f        // minimum seconds in HUNT before dropping to EXPLORE (hysteresis)
 
 // Target blacklist (Phase 3.28) — prevents re-selecting unreachable targets during retarget cooldown.
 // When a target is blacklisted due to HUNT timeout, the bot cannot select it again until the
@@ -93,11 +95,10 @@
 #define BOT_WEAPON_CLOSERANGE_DIST 40.0f // combat dist (units) to apply close-range selection
 
 // Weapon-specific range overrides
-#define BOT_OMEGA_MAX_DIST 35.0f        // Omega Cannon (wb 9): leech beam, melee-range only
-#define BOT_MASS_DRIVER_MIN_DIST 100.0f // Mass Driver (wb 3): hitscan sniper, prefer at distance
-#define BOT_WB_OMEGA 9                  // battery index: Omega Cannon (slot 5b)
-#define BOT_WB_VAUSS 1                  // battery index: Vauss Cannon (slot 1b)
-#define BOT_WB_MASS_DRIVER 3            // battery index: Mass Driver (slot 2b)
+// Battery indices use *_INDEX constants from weapon_external.h:
+//   VAUSS_INDEX=1, MASSDRIVER_INDEX=6, OMEGA_INDEX=9, etc.
+#define BOT_OMEGA_MAX_DIST 35.0f        // Omega Cannon: leech beam, melee-range only
+#define BOT_MASS_DRIVER_MIN_DIST 100.0f // Mass Driver: hitscan sniper, prefer at distance
 
 // EXPLORE state room roaming (Phase 3.9)
 // Bots navigate portal-to-portal through the level searching for players and pickups.
@@ -123,10 +124,10 @@
 //   HUNT divert       — detours mid-hunt; medium radius, any upgrade worth grabbing
 #define BOT_POWERUP_INTERRUPT_RADIUS 150.0f // radius to interrupt active combat for a pickup
 #define BOT_POWERUP_INTERRUPT_PRIORITY 15   // (legacy — kept for reference; logic is now name-based)
-#define BOT_POWERUP_DIVERT_RADIUS 225.0f    // radius for a bot in HUNT to divert and grab a pickup
-#define BOT_POWERUP_DIVERT_PRIORITY 6       // minimum priority to trigger HUNT divert (weapons + game-changers)
-#define BOT_WEAK_DIVERT_PRIORITY 8          // WEAK bots divert for any primary weapon upgrade
-#define BOT_WEAK_DIVERT_RADIUS 250.0f       // WEAK bots scan wider for weapon diverts
+#define BOT_POWERUP_DIVERT_RADIUS 275.0f    // radius for a bot in HUNT to divert and grab a pickup
+#define BOT_POWERUP_DIVERT_PRIORITY 4       // minimum priority to trigger HUNT divert (any weapon worth grabbing)
+#define BOT_WEAK_DIVERT_PRIORITY 4          // WEAK bots divert for any weapon at all
+#define BOT_WEAK_DIVERT_RADIUS 350.0f       // WEAK bots scan very wide for weapon diverts
 #define BOT_WEAK_EXPLORE_SPEED 0.6f         // WEAK bots explore faster to find weapons (was 0.3×)
 #define BOT_WEAK_SEEK_RADIUS 500.0f         // WEAK bots scan further for powerups
 
@@ -180,7 +181,7 @@
 
 // Greedy powerup collection (Phase 3.15)
 // Bots in HUNT grab very close items without changing state; WEAK bots interrupt combat at wider range.
-#define BOT_HUNT_PICKUP_RADIUS 150.0f    // max dist to grab an item while hunting (wider corridor grab)
+#define BOT_HUNT_PICKUP_RADIUS 200.0f    // max dist to grab an item while hunting (wider corridor grab)
 #define BOT_WEAK_INTERRUPT_RADIUS 200.0f // WEAK bots break off combat for weapons within this range
 
 // Outdoor awareness scaling (Phase 3.15)
@@ -245,6 +246,7 @@ struct bot_info {
   float hunt_no_los_timer; // seconds in HUNT without line-of-sight; drop target when > threshold
   float hunt_last_dist;    // distance to target at last progress check; reset timer if closer
   float retarget_cooldown; // >0: suppress BotSelectTarget (after HUNT timeout, let bot explore)
+  float hunt_enter_time;   // Gametime when bot entered HUNT state (hysteresis — prevent rapid HUNT→EXPLORE)
 
   // Last-known target position (Phase 3.26) — guides EXPLORE toward doors/entrances after HUNT timeout
   vector last_target_pos; // position of target when it was dropped (or zero if none)

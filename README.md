@@ -10,7 +10,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Multiplayer Bots (Experimental)
 
-**Status:** Phase 3.26 — Pursuit Persistence & BOA Portal Navigation
+**Status:** Phase 3.30 — Greedy Powerup Collection & HUNT Hysteresis
 
 This fork introduces a **server-side multiplayer bot system** for Descent 3. These AI-controlled bots occupy real player slots on dedicated servers, appearing and acting as normal players.
 
@@ -23,7 +23,7 @@ This fork introduces a **server-side multiplayer bot system** for Descent 3. The
 *   **Weapon Mastery:**
     *   **Tactical Switching:** Bots switch between energy and ammo weapons based on resources, range, and combat situation. Omega Cannon at melee range, Mass Driver for sniping, Vauss/Plasma for mid-range dogfights.
     *   **Secondary Fire:** Missiles and rockets from close-range Concussion barrages to long-range Mega Missiles, with splash damage self-guards.
-    *   **Powerup Awareness:** Unarmed bots aggressively seek weapons. High-tier items like Invulnerability trigger combat interrupts.
+    *   **Greedy Powerup Collection:** Bots aggressively seek weapons with per-weapon priority rankings. Poorly armed bots (laser-only or no secondaries) will delay combat to grab nearby weapons, break off fights for any weapon upgrade, and scan wider areas. Even well-armed bots divert for high-value pickups like Super Laser, Plasma, or game-changing secondaries.
 *   **Equipment Loadout Awareness:** Bots self-classify into tiers (WEAK, GOOD, ELITE) based on their current equipment, adjusting aggression and retreat thresholds accordingly.
 *   **Stuck Recovery & Portal Navigation:** Bots detect when they're wedged in geometry and escalate through escape maneuvers (reverse + strafe), obstacle clearing (shooting destructibles), and BOA portal navigation (finding the correct doorway via the engine's room connectivity graph). When stuck pursuing a target across floors, bots locate the nearest portal toward the target instead of beelining through solid geometry.
 *   **Game Mode Support:** Works in Anarchy, Team Anarchy, Robo-Anarchy, and Co-op. Bots automatically balance teams and persist across level changes.
@@ -42,9 +42,10 @@ These commands are available in the dedicated server console (or via remote teln
 
 ### ⚠️ Known Issues
 
-*   **Navigation on extreme geometry:** Bots use BOA pathfinding for cross-domain navigation (indoor↔outdoor, underground↔surface). When stuck, they find the nearest correct portal via `BOA_GetNextRoom` + `BOA_DetermineStartRoomPortal`. Progress-based HUNT timeout prevents premature target drops. Maps with very tight or recessed spawn points may still cause brief stuck periods.
+*   **Navigation fine-tuning:** Bots use BOA pathfinding for cross-domain navigation (indoor↔outdoor, underground↔surface). Progress-based HUNT timeout and portal navigation handle most cases. Maps with very tight or recessed spawn points may still cause brief stuck periods. Pathfinding and behavior continue to be tuned across diverse maps.
 *   **Physics immunity (under investigation):** Some physics-based weapons may not affect bot movement as intended. Black Shark vortex is the primary suspect — bots appear to resist its pull effect. Mass Driver knockback may also be reduced. More testing is needed to confirm the scope and determine whether this is a bot-specific issue or a server-side physics limitation.
-*   **Weapon variety:** Bots select weapons based on damage output, fire rate, and range, which can result in heavy Vauss/Fusion usage when those are genuinely optimal. Selection logic accounts for energy vs. ammo economy and projectile speed, but further playtesting may reveal edge cases.
+*   **Client compatibility:** Tested with retail D3 v1.5 and PiccuEngine (Windows v1.5-compatible). Some PiccuEngine-specific issues observed (e.g., control takeover in robo-anarchy) that do not reproduce on vanilla clients. Further cross-client testing needed.
+*   **Weapon usage diversity:** Each weapon now has a unique pickup priority (Super Laser, Plasma, EMD rank highest). Bots select weapons based on damage output, fire rate, and range. Further playtesting may reveal maps where certain weapons are still under-collected.
 
 ### 🛠️ For Developers
 

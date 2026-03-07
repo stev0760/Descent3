@@ -207,16 +207,18 @@ static void BotSetPursuitGoal(int bot_index, vector *portal_pos = nullptr, int p
     return;
 
   // Find the next room toward target via BOA, then find the portal from current room.
+  // BOA_DetermineStartRoomPortal only works when at least one room is indoor (≤ Highest_room_index).
+  // When bot is outdoor, skip portal nav and use direct AIG_GET_TO_OBJ pursuit instead.
   int next_room = BOA_GetNextRoom(obj->roomnum, target->roomnum);
-  if (next_room != BOA_NO_PATH && next_room != BOA_INDEX(obj->roomnum)) {
+  if (!OBJECT_OUTSIDE(obj) && next_room != BOA_NO_PATH && next_room != BOA_INDEX(obj->roomnum)) {
     int portal_idx = BOA_DetermineStartRoomPortal(obj->roomnum, NULL, next_room, NULL);
     vector dest_pos;
     int dest_room = next_room;
 
-    if (!OBJECT_OUTSIDE(obj) && portal_idx >= 0 && portal_idx < Rooms[obj->roomnum].num_portals) {
+    if (portal_idx >= 0 && portal_idx < Rooms[obj->roomnum].num_portals) {
       dest_pos = Rooms[obj->roomnum].portals[portal_idx].path_pnt;
       dest_room = Rooms[obj->roomnum].portals[portal_idx].croom;
-    } else if (!OBJECT_OUTSIDE(obj)) {
+    } else {
       dest_pos = Rooms[obj->roomnum].path_pnt;
     }
 
@@ -231,7 +233,7 @@ static void BotSetPursuitGoal(int bot_index, vector *portal_pos = nullptr, int p
     return;
   }
 
-  // Same room or no path — use AIG_GET_TO_OBJ for direct pursuit.
+  // Outdoor bot, same room, or no path — use AIG_GET_TO_OBJ for direct pursuit.
   int gi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&target_handle, 2, 1.0f, GF_SPEED_ATTACK | GF_OBJ_IS_TARGET);
   Bots[bot_index].pursuit_goal_index = gi;
 }
@@ -301,8 +303,7 @@ static void BotSetFleeGoal(int bot_index) {
     }
   }
 
-  goal_info gi_info;
-  memset(&gi_info, 0, sizeof(gi_info));
+  goal_info gi_info{};
   gi_info.pos = flee_pos;
   gi_info.roomnum = flee_room;
 
@@ -344,8 +345,7 @@ static void BotSetEvadeGoal(int bot_index) {
     }
   }
 
-  goal_info gi_info;
-  memset(&gi_info, 0, sizeof(gi_info));
+  goal_info gi_info{};
   gi_info.pos = flee_pos;
   gi_info.roomnum = flee_room;
 
@@ -381,19 +381,15 @@ static void BotSelectBestWeapon(int bot_index) {
 
   // Omega Cannon (wb 9): leech beam — devastating at melee range, useless beyond it.
   // If we have it and the target is within melee distance, use it immediately.
-  bool has_omega = (Players[slot].weapon_flags & (1u << BOT_WB_OMEGA)) && energy > 10.0f;
+  bool has_omega = (Players[slot].weapon_flags & (1u << OMEGA_INDEX)) && energy > 10.0f;
   if (has_omega && dist < BOT_OMEGA_MAX_DIST) {
-    if (BOT_WB_OMEGA != Players[slot].weapon[PW_PRIMARY].index) {
+    if (OMEGA_INDEX != Players[slot].weapon[PW_PRIMARY].index) {
       LOG_DEBUG.printf("BOT: '%s' weapon switch: battery %d → %d (Omega melee, dist=%.0f)", Bots[bot_index].callsign,
-                       Players[slot].weapon[PW_PRIMARY].index, BOT_WB_OMEGA, dist);
-      Players[slot].weapon[PW_PRIMARY].index = BOT_WB_OMEGA;
+                       Players[slot].weapon[PW_PRIMARY].index, OMEGA_INDEX, dist);
+      Players[slot].weapon[PW_PRIMARY].index = OMEGA_INDEX;
     }
     return; // Omega at melee range overrides everything
   }
-
-  // Mass Driver (wb 3): hitscan sniper — check if we have it and it has ammo.
-  bool has_mass_driver =
-      (Players[slot].weapon_flags & (1u << BOT_WB_MASS_DRIVER)) && Players[slot].weapon_ammo[BOT_WB_MASS_DRIVER] > 0;
 
   // Categorize owned, usable, non-flare PRIMARY batteries (1-9 only; 10-19 are secondaries)
   // into three tactical buckets. Arrays sized for primary count only.
@@ -406,7 +402,7 @@ static void BotSelectBestWeapon(int bot_index) {
       continue;
 
     // Omega excluded from normal selection — only used at melee range (handled above)
-    if (wb == BOT_WB_OMEGA)
+    if (wb == OMEGA_INDEX)
       continue;
 
     otype_wb_info &wbinfo = Ships[ship_idx].static_wb[wb];
@@ -428,7 +424,7 @@ static void BotSelectBestWeapon(int bot_index) {
     if (uses_ammo) {
       ammo_wb[num_ammo++] = wb;
       // Hitscan/rapid-fire ammo weapons are also effective at long range
-      if (wb == BOT_WB_MASS_DRIVER || wb == BOT_WB_VAUSS)
+      if (wb == MASSDRIVER_INDEX || wb == VAUSS_INDEX)
         long_wb[num_long++] = wb;
     } else {
       float proj_speed = vm_GetMagnitude(&Weapons[weapon_id].phys_info.velocity);
@@ -478,13 +474,13 @@ static void BotSelectBestWeapon(int bot_index) {
     // Mass Driver excluded at medium range (save it for sniping)
     int all[10], num_all = 0;
     for (int i = 0; i < num_long; i++) {
-      if (long_wb[i] != BOT_WB_MASS_DRIVER)
+      if (long_wb[i] != MASSDRIVER_INDEX)
         all[num_all++] = long_wb[i];
     }
     for (int i = 0; i < num_close; i++)
       all[num_all++] = close_wb[i];
     for (int i = 0; i < num_ammo; i++) {
-      if (ammo_wb[i] != BOT_WB_MASS_DRIVER)
+      if (ammo_wb[i] != MASSDRIVER_INDEX)
         all[num_all++] = ammo_wb[i];
     }
     if (num_all > 0)
@@ -887,6 +883,7 @@ static void BotFireSecondaryAtPosition(int bot_index, vector *pos) {
 // Glass (TF_BREAKABLE portal faces) requires WF_MATTER_WEAPON to shatter.
 static void BotBreakGlassObstacle(int bot_index, vector *target_pos) {
   int slot = Bots[bot_index].player_slot;
+  int saved_primary = Players[slot].weapon[PW_PRIMARY].index;
 
   // Try secondary first — all secondaries are matter weapons (missiles, concussions)
   int sec_wb = Players[slot].weapon[PW_SECONDARY].index;
@@ -896,18 +893,20 @@ static void BotBreakGlassObstacle(int bot_index, vector *target_pos) {
     return;
   }
 
-  // Try Vauss (battery 2, ammo/matter weapon)
-  if (Players[slot].weapon_flags & (1u << 2)) {
-    Players[slot].weapon[PW_PRIMARY].index = 2;
+  // Try Vauss (battery 1, ammo/matter weapon)
+  if (Players[slot].weapon_flags & HAS_FLAG(VAUSS_INDEX)) {
+    Players[slot].weapon[PW_PRIMARY].index = VAUSS_INDEX;
     BotFireAtPosition(bot_index, target_pos);
+    Players[slot].weapon[PW_PRIMARY].index = saved_primary;
     LOG_DEBUG.printf("BOT: '%s' firing Vauss at glass obstacle", Bots[bot_index].callsign);
     return;
   }
 
-  // Try Mass Driver (battery 3, ammo/matter weapon)
-  if (Players[slot].weapon_flags & (1u << 3)) {
-    Players[slot].weapon[PW_PRIMARY].index = 3;
+  // Try Mass Driver (battery 6, ammo/matter weapon)
+  if (Players[slot].weapon_flags & HAS_FLAG(MASSDRIVER_INDEX)) {
+    Players[slot].weapon[PW_PRIMARY].index = MASSDRIVER_INDEX;
     BotFireAtPosition(bot_index, target_pos);
+    Players[slot].weapon[PW_PRIMARY].index = saved_primary;
     LOG_DEBUG.printf("BOT: '%s' firing Mass Driver at glass obstacle", Bots[bot_index].callsign);
     return;
   }
@@ -1026,8 +1025,7 @@ static void BotDoExploreRoaming(int bot_index) {
       GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
     pgi = -1;
 
-    goal_info gi_info;
-    memset(&gi_info, 0, sizeof(gi_info));
+    goal_info gi_info{};
     gi_info.pos = Bots[bot_index].last_target_pos;
     gi_info.roomnum = Bots[bot_index].last_target_room;
 
@@ -1044,11 +1042,12 @@ static void BotDoExploreRoaming(int bot_index) {
     return;
   }
 
-  // Build candidate list of room destinations
-  int candidates[MAX_ROOMS];
+  // Build candidate list of room destinations.
+  // Outdoor: bounded by MAX_PATH_PORTALS (40). Indoor: bounded by portal depth cap (24).
+  int candidates[MAX_PATH_PORTALS];
   int num_candidates = 0;
   // For outdoor bots, store portal entrance positions parallel to candidates[]
-  vector portal_pos[MAX_ROOMS];
+  vector portal_pos[MAX_PATH_PORTALS];
   bool is_outdoor = OBJECT_OUTSIDE(obj);
 
   if (is_outdoor) {
@@ -1121,8 +1120,9 @@ static void BotDoExploreRoaming(int bot_index) {
     }
   }
 
-  // Prefer uncrowded destinations (< 3 other bots already heading there)
-  int bot_heading[24] = {};
+  // Prefer uncrowded destinations (< 3 other bots already heading there).
+  // Outdoor path can have up to MAX_PATH_PORTALS (40) candidates; indoor caps at 24.
+  int bot_heading[MAX_PATH_PORTALS] = {};
   for (int b = 0; b < MAX_BOTS; b++) {
     if (!Bots[b].active || b == bot_index)
       continue;
@@ -1130,7 +1130,7 @@ static void BotDoExploreRoaming(int bot_index) {
       if (Bots[b].explore_dest_room == candidates[c])
         bot_heading[c]++;
   }
-  int uncrowded[24], num_uncrowded = 0;
+  int uncrowded[MAX_PATH_PORTALS], num_uncrowded = 0;
   for (int c = 0; c < num_candidates; c++)
     if (bot_heading[c] < 3)
       uncrowded[num_uncrowded++] = candidates[c];
@@ -1167,8 +1167,7 @@ static void BotDoExploreRoaming(int bot_index) {
     GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
   pgi = -1;
 
-  goal_info gi_info;
-  memset(&gi_info, 0, sizeof(gi_info));
+  goal_info gi_info{};
   gi_info.pos = dest_pos;
   gi_info.roomnum = dest_room;
 
@@ -1206,22 +1205,28 @@ static bool BotHasNoSecondaries(int bot_index) {
 // Used to adjust flee threshold, target selection bias, and rampage behavior.
 static int BotGetEquipmentRating(int bot_index) {
   int slot = Bots[bot_index].player_slot;
-  for (int wb = 4; wb <= 9; wb++) // Plasma/EMD/Fusion/Omega/Napalm/Microwave
-    if (Players[slot].weapon_flags & (1u << wb))
+  // ELITE: high-damage energy/area weapons (Microwave, Plasma, Fusion, Napalm, EMD, Omega)
+  static const int elite_wbs[] = {MICROWAVE_INDEX, PLASMA_INDEX, FUSION_INDEX, NAPALM_INDEX, EMD_INDEX, OMEGA_INDEX};
+  for (int wb : elite_wbs)
+    if (Players[slot].weapon_flags & HAS_FLAG(wb))
       return BOT_EQUIP_TIER_ELITE;
-  for (int wb = 1; wb <= 3; wb++) // Super Laser/Vauss/Mass Driver
-    if (Players[slot].weapon_flags & (1u << wb))
+  // GOOD: solid mid-tier weapons (Vauss, Super Laser, Mass Driver)
+  static const int good_wbs[] = {VAUSS_INDEX, SUPER_LASER_INDEX, MASSDRIVER_INDEX};
+  for (int wb : good_wbs)
+    if (Players[slot].weapon_flags & HAS_FLAG(wb))
       return BOT_EQUIP_TIER_GOOD;
   return BOT_EQUIP_TIER_WEAK;
 }
 
 // Classify a target player's primary weapon loadout into a tier.
 static int BotGetTargetEquipmentRating(int target_slot) {
-  for (int wb = 4; wb <= 9; wb++)
-    if (Players[target_slot].weapon_flags & (1u << wb))
+  static const int elite_wbs[] = {MICROWAVE_INDEX, PLASMA_INDEX, FUSION_INDEX, NAPALM_INDEX, EMD_INDEX, OMEGA_INDEX};
+  for (int wb : elite_wbs)
+    if (Players[target_slot].weapon_flags & HAS_FLAG(wb))
       return BOT_EQUIP_TIER_ELITE;
-  for (int wb = 1; wb <= 3; wb++)
-    if (Players[target_slot].weapon_flags & (1u << wb))
+  static const int good_wbs[] = {VAUSS_INDEX, SUPER_LASER_INDEX, MASSDRIVER_INDEX};
+  for (int wb : good_wbs)
+    if (Players[target_slot].weapon_flags & HAS_FLAG(wb))
       return BOT_EQUIP_TIER_GOOD;
   return BOT_EQUIP_TIER_WEAK;
 }
@@ -1236,23 +1241,20 @@ static int BotGetTargetEquipmentRating(int target_slot) {
 //   20  Mega Missile (always high — life-changing firepower)
 //   18  Black Shark  (always high — vortex one-shots clusters)
 //   16  Invulnerability (30s immunity — breaks missile locks, survive any fight)
-//   16  Vauss/Plasma/Super Laser/EMD when bare laser only
-//   15  Cyclone/Smart Missile when no secondaries
-//   13  Fusion/Omega/Microwave when bare laser only
-//   12  Napalm Rocket/Homing Missile when no secondaries
-//   11  Quad Laser (always an upgrade for energy weapons)
+//   16  Super Laser / Plasma when bare laser only
+//   15  Fusion when bare laser only; Cyclone/Smart when no secondaries
+//   14  EMD when bare laser only
+//   13  Microwave / Vauss when bare laser only
+//   12  Mass Driver / Napalm Rocket/Homing when no secondaries
+//   11  Napalm when bare laser only; Quad Laser (always an upgrade)
 //   10  Shields when critically low
-//   10  Napalm/Mass Driver when bare laser only
-//    9  Concussion/Mortar/Frag when no secondaries
-//    8  Energy when low; Vauss/Plasma etc. when already equipped (ammo/upgrade)
-//    7  Rapid Fire (30s fire-rate boost — strong in any fight)
-//    6  Cloak (30s invisibility — escape or stealth hunt)
-//    6  Fusion/Omega/Microwave when already equipped (ammo/upgrade)
-//    5  Cyclone/Smart Missile when already have some secondaries
-//    4  Napalm Rocket/Homing Missile when already have some secondaries
-//    4  Afterburner Cooler (passive mobility upgrade)
-//    3  Shields when not critically needed (cap 200 — always useful)
-//    3  Concussion/Mortar/Frag when already armed
+//    9  Super Laser when already equipped; Concussion/Mortar/Frag when no secondaries
+//    8  Plasma / Energy when low
+//    7  Fusion / EMD / Microwave / Rapid Fire when already equipped
+//    6  Vauss / Mass Driver / Cloak when already equipped
+//    5  Napalm / Cyclone/Smart when already equipped; Countermeasures
+//    4  Afterburner / Omega / Homing/Napalm Rocket when armed
+//    3  Shields / Concussion/Mortar/Frag when already armed
 //    2  Energy when not critically needed
 //    1  Any other powerup (Extra Life, keys, etc.)
 static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy, int min_priority = 0) {
@@ -1279,6 +1281,8 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
       continue;
 
     float dist = vm_VectorDistanceQuick(&obj->pos, &p->pos);
+    if (dist > seek_radius)
+      continue;
 
     // Name-based prioritization (case-insensitive substring match)
     const char *raw = Object_info[p->id].name;
@@ -1319,22 +1323,33 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
     else if (strstr(lower, "black shark") || strstr(lower, "blackshark"))
       priority = no_secondaries ? 22 : 18;
     else if (strstr(lower, "cyclone") || strstr(lower, "smart"))
-      priority = no_secondaries ? 15 : 8; // Cyclone/Smart are strong dogfighting secondaries
+      priority = no_secondaries ? 15 : 5; // strong dogfighting secondaries — worth restocking ammo
     else if (strstr(lower, "napalm rocket") || strstr(lower, "homing"))
-      priority = no_secondaries ? 12 : 4;
+      priority = no_secondaries ? 12 : 5;
     else if (strstr(lower, "concussion") || strstr(lower, "mortar") || strstr(lower, "frag"))
-      priority = no_secondaries ? 9 : 3;
+      priority = no_secondaries ? 9 : 4;
 
-    // --- Primary weapon upgrades (priority doubles when bot has only default Laser) ---
-    else if (strstr(lower, "plasma") || strstr(lower, "fusion") || strstr(lower, "super laser") ||
-             strstr(lower, "emd") || strstr(lower, "electro"))
-      priority = only_default ? 16 : 8;
-    else if (strstr(lower, "vauss") || strstr(lower, "microwave"))
-      priority = only_default ? 13 : 6;
+    // --- Primary weapon upgrades ---
+    // Each weapon gets a unique priority. Bare-laser bots get a large boost.
+    // Even well-armed bots should grab weapons they don't own yet (priority 5-9).
+    else if (strstr(lower, "super laser"))
+      priority = only_default ? 16 : 9; // excellent all-rounder — always worth grabbing
+    else if (strstr(lower, "plasma"))
+      priority = only_default ? 16 : 8; // rapid-fire energy — great DPS
+    else if (strstr(lower, "fusion"))
+      priority = only_default ? 15 : 7; // charged heavy hitter
+    else if (strstr(lower, "emd") || strstr(lower, "electro"))
+      priority = only_default ? 14 : 7; // tracking pulses — low aim requirement
+    else if (strstr(lower, "microwave"))
+      priority = only_default ? 13 : 7; // area damage, good vs groups
+    else if (strstr(lower, "vauss"))
+      priority = only_default ? 13 : 6; // ammo-based rapid fire
+    else if (strstr(lower, "mass driver"))
+      priority = only_default ? 12 : 6; // hitscan sniper
+    else if (strstr(lower, "napalm"))
+      priority = only_default ? 11 : 5; // area denial flamethrower
     else if (strstr(lower, "omega"))
-      priority = only_default ? 8 : 4; // Omega is situational (melee only) — lower pickup priority
-    else if (strstr(lower, "napalm") || strstr(lower, "mass driver"))
-      priority = only_default ? 10 : 4;
+      priority = only_default ? 8 : 4;  // situational melee-range leech beam
 
     // --- Countermeasure pickups (from death spew and spawn areas) ---
     else if (strstr(lower, "chaff") || strstr(lower, "betty") || strstr(lower, "seeker") || strstr(lower, "gunboy") ||
@@ -1399,8 +1414,11 @@ static bool BotShouldInterruptForPowerup(int bot_index) {
     if (strstr(lower, "invulner") || strstr(lower, "rapid"))
       return true;
 
-    // Tier B: game-changing secondaries — break off only if currently unarmed
-    if (no_secondaries && (strstr(lower, "mega") || strstr(lower, "black shark") || strstr(lower, "blackshark")))
+    // Tier B: game-changing secondaries — break off if bot has no secondaries at all
+    if (no_secondaries && (strstr(lower, "mega") || strstr(lower, "black shark") || strstr(lower, "blackshark") ||
+                           strstr(lower, "smart") || strstr(lower, "cyclone") || strstr(lower, "homing") ||
+                           strstr(lower, "concussion") || strstr(lower, "napalm rocket") || strstr(lower, "frag") ||
+                           strstr(lower, "mortar")))
       return true;
 
     // Tier C: survival — break off if critically low and a shield drop is right here
@@ -1479,9 +1497,10 @@ static void BotUpdateState(int bot_index) {
       for (int k = 0; lower[k]; k++)
         lower[k] = (char)tolower((unsigned char)lower[k]);
       bool is_weapon = !(strstr(lower, "shield") || strstr(lower, "energy"));
-      // Delay HUNT transition to grab weapons when bare — but NOT when enemy is already in combat range.
+      // Delay HUNT transition to grab weapons when poorly armed — but NOT when enemy is in combat range.
       // If a target is within BOT_CLOSERANGE_DIST they're essentially on top of us: engage immediately.
-      holding_for_weapon = is_weapon && BotHasOnlyDefaultPrimary(bot_index) && (dist > BOT_CLOSERANGE_DIST);
+      bool poorly_armed = BotHasOnlyDefaultPrimary(bot_index) || BotHasNoSecondaries(bot_index);
+      holding_for_weapon = is_weapon && poorly_armed && (dist > BOT_CLOSERANGE_DIST);
 
       // Refresh powerup pursuit goal each tick (powerup may disappear)
       int &pgi = Bots[bot_index].powerup_goal_index;
@@ -1489,7 +1508,7 @@ static void BotUpdateState(int bot_index) {
         GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
       pgi = -1;
       int tgt_handle = Objects[pu_obj].handle;
-      pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f, GF_SPEED_ATTACK | GF_USE_BLINE_IF_SEES_GOAL);
+      pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f, GF_SPEED_ATTACK);
       // Reset roaming state so we resume searching after collecting
       Bots[bot_index].explore_dest_room = -1;
       Bots[bot_index].explore_stuck_room = -1;
@@ -1533,12 +1552,16 @@ static void BotUpdateState(int bot_index) {
       Bots[bot_index].hunt_last_dist = dist;
     }
 
-    if (!has_target)
-      new_state = BOT_STATE_EXPLORE;
-    else if (Bots[bot_index].hunt_no_los_timer > BOT_HUNT_NO_LOS_TIMEOUT) {
+    if (!has_target) {
+      // Hysteresis: stay in HUNT for at least BOT_HUNT_MIN_DURATION before dropping to EXPLORE.
+      // Prevents rapid EXPLORE↔HUNT oscillation when target flickers in/out of detection.
+      float hunt_elapsed = Gametime - Bots[bot_index].hunt_enter_time;
+      if (hunt_elapsed >= BOT_HUNT_MIN_DURATION)
+        new_state = BOT_STATE_EXPLORE;
+    } else if (Bots[bot_index].hunt_no_los_timer > BOT_HUNT_NO_LOS_TIMEOUT) {
       // Chased this target for too long without getting closer — unreachable.
       // Blacklist the player slot to prevent re-selecting during retarget cooldown.
-      object *target = ObjGet(obj->ai_info->target_handle);
+      // (uses outer `target` from line 1433 — same handle, no shadow)
       if (target && target->type == OBJ_PLAYER && target->id >= 0 && target->id < MAX_NET_PLAYERS) {
         int blacklisted = -1;
         for (int b = 0; b < MAX_NET_PLAYERS; b++)
@@ -1583,7 +1606,7 @@ static void BotUpdateState(int bot_index) {
         if (pu_dist < BOT_HUNT_PICKUP_RADIUS) {
           int tgt_handle = Objects[pu_obj].handle;
           Bots[bot_index].powerup_goal_index = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f,
-                                                           GF_SPEED_ATTACK | GF_USE_BLINE_IF_SEES_GOAL);
+                                                           GF_SPEED_ATTACK);
         }
       }
     }
@@ -1664,7 +1687,8 @@ static void BotUpdateState(int bot_index) {
     case BOT_STATE_HUNT:
       Bots[bot_index].hunt_no_los_timer = 0.0f; // fresh hunt
       Bots[bot_index].hunt_last_dist = 0.0f;
-      Bots[bot_index].last_target_room = -1; // clear last-known pos when actively pursuing
+      Bots[bot_index].hunt_enter_time = Gametime; // hysteresis: track when HUNT started
+      Bots[bot_index].last_target_room = -1;      // clear last-known pos when actively pursuing
       BotSetPursuitGoal(bot_index);
       break;
     case BOT_STATE_COMBAT:
@@ -1862,7 +1886,7 @@ static void BotApplyThrust(int bot_index) {
     // the engine raycast pass through, so the bot "sees" the target and ignores BOA path nodes).
     // Fix: use BOA_GetNextRoom to find the correct portal toward the target, then navigate there.
     bool handled_via_portal = false;
-    if (Bots[bot_index].state == BOT_STATE_HUNT && obj->ai_info) {
+    if (Bots[bot_index].state == BOT_STATE_HUNT && obj->ai_info && !OBJECT_OUTSIDE(obj)) {
       object *target = ObjGet(obj->ai_info->target_handle);
       if (target) {
         int next_room = BOA_GetNextRoom(obj->roomnum, target->roomnum);
@@ -1880,7 +1904,7 @@ static void BotApplyThrust(int bot_index) {
             // Outdoor: use BOA_connect portal positions
             int cellnum = CELLNUM(obj->roomnum);
             int region = TERRAIN_REGION(cellnum);
-            dest_pos = obj->pos; // fallback
+            bool found_connect = false;
             for (int c = 0; c < BOA_num_connect[region]; c++) {
               if (BOA_INDEX(BOA_connect[region][c].roomnum) == next_room ||
                   BOA_connect[region][c].roomnum == next_room) {
@@ -1889,10 +1913,14 @@ static void BotApplyThrust(int bot_index) {
                 if (cr >= 0 && cr <= Highest_room_index && cp >= 0 && cp < Rooms[cr].num_portals) {
                   dest_pos = Rooms[cr].portals[cp].path_pnt;
                   dest_room = cr;
+                  found_connect = true;
                 }
                 break;
               }
             }
+            // No valid outdoor portal found — skip to generic stuck handler below
+            if (!found_connect)
+              goto stuck_generic_fallback;
           }
 
           // Save target info so we can re-acquire after reaching the portal
@@ -1905,8 +1933,7 @@ static void BotApplyThrust(int bot_index) {
           Bots[bot_index].state = BOT_STATE_EXPLORE;
           Bots[bot_index].retarget_cooldown = BOT_RETARGET_COOLDOWN;
 
-          goal_info gi_info;
-          memset(&gi_info, 0, sizeof(gi_info));
+          goal_info gi_info{};
           gi_info.pos = dest_pos;
           gi_info.roomnum = dest_room;
           Bots[bot_index].pursuit_goal_index =
@@ -1921,6 +1948,7 @@ static void BotApplyThrust(int bot_index) {
       }
     }
 
+  stuck_generic_fallback:
     if (!handled_via_portal) {
       // Generic stuck fallback: abandon all goals, drop target, explore.
       BotClearActiveGoal(bot_index);
@@ -2311,12 +2339,16 @@ static void BotRespawn(int bot_index) {
   Bots[bot_index].evade_timer = 0.0f;
   Bots[bot_index].hunt_no_los_timer = 0.0f;
   Bots[bot_index].hunt_last_dist = 0.0f;
+  Bots[bot_index].hunt_enter_time = 0.0f;
   Bots[bot_index].retarget_cooldown = 0.0f;
   Bots[bot_index].last_target_room = -1;
   vm_MakeZero(&Bots[bot_index].last_target_pos);
   Bots[bot_index].explore_dest_room = -1;
   Bots[bot_index].explore_stuck_room = -1;
   Bots[bot_index].explore_room_timer = 0.0f;
+  for (int t = 0; t < MAX_NET_PLAYERS; t++)
+    Bots[bot_index].target_blacklist[t] = -1;
+  Bots[bot_index].target_blacklist_timer = 0.0f;
   Bots[bot_index].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
   Bots[bot_index].powerup_interrupt_cooldown = 0.0f;
   Bots[bot_index].missile_evade_cooldown = 0.0f;
@@ -2349,6 +2381,7 @@ void BotInitAll() {
     Bots[i].evade_timer = 0.0f;
     Bots[i].hunt_no_los_timer = 0.0f;
     Bots[i].hunt_last_dist = 0.0f;
+    Bots[i].hunt_enter_time = 0.0f;
     Bots[i].retarget_cooldown = 0.0f;
     vm_MakeZero(&Bots[i].last_target_pos);
     Bots[i].last_target_room = -1;
@@ -2366,8 +2399,6 @@ void BotInitAll() {
     Bots[i].mine_dump_timer = 0.0f;
     Bots[i].mine_dump_remaining = 0;
     Bots[i].gunboy_cooldown = 0.0f;
-
-    Num_bots++;
   }
   Num_bots = 0;
   BotCacheCountermeasureIDs();
@@ -2398,6 +2429,7 @@ void BotReinitAll() {
     Bots[i].evade_timer = 0.0f;
     Bots[i].hunt_no_los_timer = 0.0f;
     Bots[i].hunt_last_dist = 0.0f;
+    Bots[i].hunt_enter_time = 0.0f;
     Bots[i].retarget_cooldown = 0.0f;
     Bots[i].last_target_room = -1;
     vm_MakeZero(&Bots[i].last_target_pos);
@@ -2607,12 +2639,16 @@ int BotAdd(const char *name, int ship_index) {
   Bots[bot_index].evade_timer = 0.0f;
   Bots[bot_index].hunt_no_los_timer = 0.0f;
   Bots[bot_index].hunt_last_dist = 0.0f;
+  Bots[bot_index].hunt_enter_time = 0.0f;
   Bots[bot_index].retarget_cooldown = 0.0f;
   Bots[bot_index].last_target_room = -1;
   vm_MakeZero(&Bots[bot_index].last_target_pos);
   Bots[bot_index].explore_dest_room = -1;
   Bots[bot_index].explore_stuck_room = -1;
   Bots[bot_index].explore_room_timer = 0.0f;
+  for (int t = 0; t < MAX_NET_PLAYERS; t++)
+    Bots[bot_index].target_blacklist[t] = -1;
+  Bots[bot_index].target_blacklist_timer = 0.0f;
   Bots[bot_index].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
   Bots[bot_index].powerup_interrupt_cooldown = 0.0f;
   Bots[bot_index].missile_evade_cooldown = 0.0f;
@@ -2697,12 +2733,16 @@ void BotDoFrame() {
       Bots[i].evade_timer = 0.0f;
       Bots[i].hunt_no_los_timer = 0.0f;
       Bots[i].hunt_last_dist = 0.0f;
+      Bots[i].hunt_enter_time = 0.0f;
       Bots[i].retarget_cooldown = 0.0f;
       Bots[i].last_target_room = -1;
       vm_MakeZero(&Bots[i].last_target_pos);
       Bots[i].explore_dest_room = -1;
       Bots[i].explore_stuck_room = -1;
       Bots[i].explore_room_timer = 0.0f;
+      for (int t = 0; t < MAX_NET_PLAYERS; t++)
+        Bots[i].target_blacklist[t] = -1;
+      Bots[i].target_blacklist_timer = 0.0f;
       Bots[i].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
       Bots[i].powerup_interrupt_cooldown = 0.0f;
       Bots[i].missile_evade_cooldown = 0.0f;

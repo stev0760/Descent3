@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Phase 3.26 complete — pursuit persistence, BOA portal navigation when stuck, beeline-through-floors fix.
+**Status:** Phase 3.30 complete — HUNT hysteresis, greedy powerup collection, collision log rate-limiting, beeline fix.
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -46,6 +46,8 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | 3.22b | **Behavior tweaks:** Fix flare fallback log, chaff/flare in EVADE/FLEE, mines in FLEE, countermeasure powerup priority (5), weapon priority rebalance (Fusion→top, Vauss→mid), lower divert thresholds. | Complete |
 | 3.24 | **Outdoor↔indoor navigation fix:** Outdoor bots navigate to portal entrance positions via `BOA_connect` instead of room centers (which are behind walls). HUNT LOS timeout (5s) drops unreachable through-wall targets. Stuck abandon clears AI target + blacklists destination room. Flee/evade guards for outdoor `Rooms[]` access. Congestion limit 2→3. Fixes 0-kill outdoor maps (towerofisengard, townofbree). | Complete |
 | 3.26 | **Pursuit persistence & portal navigation:** Progress-based HUNT timeout (15s, resets when closing distance). Last-known target position pursuit on timeout (BOA pathfinding to doors/entrances). Removed `GF_USE_BLINE_IF_SEES_GOAL` — prevents beelining through thin floors/ceilings. BOA portal navigation when stuck in HUNT (finds correct portal via `BOA_GetNextRoom` + `BOA_DetermineStartRoomPortal`). | Complete |
+| 3.29 | **Code review refactor + BOA crash fix:** Weapon index constants corrected (MASSDRIVER_INDEX=6, VAUSS_INDEX=1, OMEGA_INDEX=9). Buffer overflow fix in BotDoExploreRoaming outdoor path. `BOA_DetermineStartRoomPortal` crash guard (`!OBJECT_OUTSIDE(obj)`) at both BotSetPursuitGoal and BotApplyThrust stuck recovery. Equipment tier classification fixed. | Complete |
+| 3.30 | **HUNT hysteresis + greedy powerups + collision rate-limit:** HUNT minimum duration (3s) prevents EXPLORE↔HUNT oscillation. Removed `GF_USE_BLINE_IF_SEES_GOAL` from powerup goals (fixes wall-stuck loops). "Too many collisions" warnings rate-limited to 1/sec. Per-weapon pickup priorities (Super Laser=9, Plasma=8, etc.). Wider divert radii and lower thresholds. Poorly-armed bots hold EXPLORE for weapons. Combat interrupt expanded for all secondaries when unarmed. | Complete |
 | 4 | Difficulty levels, configuration UI | Not started |
 
 ## Files
@@ -72,6 +74,8 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | `Descent3/aistruct.h` | Raised `MAX_DYNAMIC_PATHS` 50→100→200; prevents pool exhaustion with many AI objects |
 | `Descent3/aipath.cpp` | Removed `ASSERT(0)` on path pool exhaustion → graceful `return false`; rate-limited log warning (once/sec) |
 | `Descent3/AIGoal.cpp` | OBJ_PLAYER guards in `AIG_SET_ANIM`/`AIG_FIRE_AT_OBJ`; stub cases; OBJ goal path failure retry throttle (0.5s) |
+| `physics/physics.cpp` | Rate-limited "Too many collisions for player!" warnings to once per second (was 21K+ per session) |
+| `physics/collide.cpp` | Bot-player collision handling |
 
 ## Console Commands
 

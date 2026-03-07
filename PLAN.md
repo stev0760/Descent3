@@ -30,6 +30,8 @@
 | 3.22b | **Behavior tweaks** — weapon priority rebalance, lower divert thresholds, countermeasure in EVADE/FLEE | Complete |
 | 3.24 | **Outdoor↔indoor nav fix** — portal entrance navigation via `BOA_connect`, HUNT LOS timeout, stuck blacklist | Complete |
 | 3.26 | **Pursuit persistence** — progress-based HUNT timeout, last-known-pos pursuit, beeline-through-floors fix, BOA portal nav when stuck | Complete |
+| 3.29 | **Code review refactor** — weapon index constants corrected, buffer overflow fix, BOA crash guard for outdoor bots | Complete |
+| 3.30 | **HUNT hysteresis + greedy powerups** — 3s min HUNT duration, per-weapon pickup priorities, wider divert radii, poorly-armed hold logic, collision log rate-limiting, beeline fix on powerup goals | Complete |
 | 4 | Difficulty levels, configuration UI | Not started |
 | 5 | High-fidelity 6DOF combat — tactical maneuvers, skill scaling | Not started |
 
@@ -67,7 +69,7 @@ Add server-side bot players to the D3 dedicated server engine. Bots occupy real 
 | `Descent3/bot.h` | Bot subsystem header: `bot_info` struct, constants, function prototypes |
 | `Descent3/bot.cpp` | Bot lifecycle: init, add, remove, per-frame update, AI configuration, FSM, combat, navigation, death/respawn |
 
-### Modified Files (10)
+### Modified Files (12)
 
 | File | Changes |
 |------|---------|
@@ -81,6 +83,8 @@ Add server-side bot players to the D3 dedicated server engine. Bots occupy real 
 | `netgames/dmfc/dmfcclient.cpp` | Replaced `ASSERT` in `OnPlayerReconnect` with warning log |
 | `Descent3/aistruct.h` | `MAX_DYNAMIC_PATHS` 50→200 |
 | `Descent3/aipath.cpp` | Removed `ASSERT(0)` on path pool exhaustion → graceful fallback + rate-limited warning |
+| `physics/physics.cpp` | "Too many collisions" warnings rate-limited to 1/sec at both sim-loop sites |
+| `physics/collide.cpp` | Bot-player collision handling |
 
 ### Unchanged Files (Leveraged As-Is)
 
@@ -642,6 +646,8 @@ The following phases originally planned as "Future Work" have been completed. Se
 - **Phase 3.22b (Behavior Tweaks):** Chaff/flare in EVADE/FLEE states, mines in FLEE, countermeasure powerup priority (5), Fusion promoted to top-tier weapon pickup, Vauss demoted to mid-tier, lower divert thresholds for broader weapon acquisition.
 - **Phase 3.24 (Outdoor↔Indoor Nav Fix):** Portal entrance navigation via `BOA_connect`, HUNT LOS timeout (5s), stuck destination blacklist, flee/evade outdoor guard, congestion limit 2→3.
 - **Phase 3.26 (Pursuit Persistence):** Progress-based HUNT timeout (15s, resets on closing distance), last-known target position pursuit on timeout, removed `GF_USE_BLINE_IF_SEES_GOAL` (prevents beelining through thin floors), BOA portal navigation when stuck in HUNT via `BOA_GetNextRoom` + `BOA_DetermineStartRoomPortal`.
+- **Phase 3.29 (Code Review Refactor):** Weapon index constants corrected (`MASSDRIVER_INDEX=6`, `VAUSS_INDEX=1`, `OMEGA_INDEX=9`). Buffer overflow fix in `BotDoExploreRoaming` outdoor path. `BOA_DetermineStartRoomPortal` crash guard (`!OBJECT_OUTSIDE(obj)`). Equipment tier classification fixed. Zero crashes in 14min 3-level playtest.
+- **Phase 3.30 (HUNT Hysteresis + Greedy Powerups):** `BOT_HUNT_MIN_DURATION=3.0f` prevents rapid EXPLORE↔HUNT oscillation (was 137 cycles in 14min). Removed `GF_USE_BLINE_IF_SEES_GOAL` from powerup goals (fixes wall-stuck loops). "Too many collisions" warnings rate-limited to 1/sec (was 21K+/session). Per-weapon pickup priorities (Super Laser=9, Plasma=8, Fusion/EMD/Microwave=7, Vauss/Mass Driver=6, Napalm=5 when equipped). Wider divert radii (275u/350u). Lower divert thresholds (priority 4). Poorly-armed bots (no secondaries OR laser-only) hold EXPLORE for weapon pickups. Combat interrupt Tier B expanded to all secondary weapons when unarmed.
 
 ## Future Work
 
@@ -656,7 +662,9 @@ The following phases originally planned as "Future Work" have been completed. Se
 
 ## Known Issues
 
+- **Pathfinding and behavior fine-tuning:** Navigation and combat behavior continue to require tuning across diverse maps. Bots may still get stuck on complex geometry or oscillate between states in edge cases. HUNT hysteresis (Phase 3.30) significantly reduced EXPLORE↔HUNT oscillation but further testing is needed.
+- **Client compatibility:** Tested with retail D3 v1.5 and PiccuEngine (Windows v1.5-compatible). Some PiccuEngine-specific issues observed (e.g., control takeover in robo-anarchy) that do not reproduce on vanilla clients. BNode assertions fire on campaign levels in robo-anarchy (pre-existing engine issue — campaign levels lack multiplayer BNode data). Further cross-client testing needed.
 - **Physics immunity (under investigation):** Some physics-based weapons may not affect bot movement as intended. Black Shark vortex is the primary suspect — bots appear to resist its pull effect. Mass Driver knockback may also be reduced. More testing is needed to determine whether this is a bot-specific issue or a server-side physics limitation.
-- **Navigation on extreme geometry:** The stuck recovery system (Phase 3.21) with BOA portal navigation (Phase 3.26) handles most cases. Bots now find correct portals when stuck underground. Maps with very tight or recessed spawn points may still need bots to reverse further before re-orienting. Further tuning is ongoing.
-- **Weapon variety:** Bots select weapons based on damage output, fire rate, and range, which can result in heavy Vauss/Fusion usage when those are genuinely optimal. Selection logic accounts for energy vs. ammo economy and projectile speed, but further playtesting may reveal edge cases.
+- **Weapon usage diversity:** Each weapon now has a unique pickup priority (Phase 3.30). Bots should pick up Super Laser, Plasma, EMD, and Napalm more aggressively. Further playtesting will confirm whether the per-weapon priority system resolves the under-collection of these weapons.
+- **EVADE underutilized:** Only 2 COMBAT→EVADE transitions observed in 14min playtest. EVADE requires both prolonged combat (20s) and low shields (<60%), which may be too restrictive.
 - **Team rebalancing:** Bots are assigned teams at creation time. If humans join/leave, teams can become unbalanced.

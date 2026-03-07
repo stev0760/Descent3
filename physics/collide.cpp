@@ -896,6 +896,8 @@ static void check_lg_inform(object *A, object *B);
 bool IsOKToApplyForce(object *objp) {
   if (Game_mode & GM_MULTI) {
     if (objp->type == OBJ_PLAYER) {
+      // Allow force on bot players (CT_AI) on the server — they are server-authoritative.
+      // Clients never match this (they are not LR_SERVER and bot objects are CT_NONE client-side).
       if (objp != Player_object && !(Netgame.local_role == LR_SERVER && objp->control_type == CT_AI))
         return false;
     } else {

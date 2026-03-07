@@ -7,7 +7,7 @@ Current implementation status is in `BOTS_DEVEL.md`. Physics model reference is 
 
 ## Current Status
 
-**Phase 3.20 complete** — Bot out-of-bounds fix. `OF_FORCE_CEILING_CHECK` enables engine ceiling collision for bot objects; altitude soft cap prevents ceiling-pinning thrust loops.
+**Phase 3.30 complete** — HUNT hysteresis (3s min duration), greedy powerup collection (per-weapon priorities, wider divert radii, poorly-armed hold logic), collision warning rate-limiting, `GF_USE_BLINE_IF_SEES_GOAL` removed from powerup goals.
 
 For the full phase history and roadmap, see `BOTS_DEVEL.md`.
 
@@ -26,6 +26,8 @@ For the full phase history and roadmap, see `BOTS_DEVEL.md`.
 | `Descent3/dedicated_server.cpp` | Console commands: `addbot`, `removebot`, `removebots`, `botlist`, `botstat`, `botmov` |
 | `Descent3/aistruct.h` | `MAX_DYNAMIC_PATHS` raised 50→100→200 |
 | `Descent3/aipath.cpp` | Path pool exhaustion: `ASSERT(0)` → graceful `return false`; rate-limited log warning (once/sec) |
+| `physics/physics.cpp` | "Too many collisions" warnings rate-limited to 1/sec at both sim-loop sites |
+| `physics/collide.cpp` | Bot-player collision handling |
 | `netgames/dmfc/dmfcclient.cpp` | `OnPlayerReconnect` ASSERT replaced with warning log |
 
 ---
@@ -75,10 +77,12 @@ float   stuck_timer;              // seconds at near-zero speed with thrust appl
 // State timers
 float   combat_idle_timer;    // triggers EVADE after BOT_EVADE_COMBAT_TIMEOUT
 float   evade_timer;          // counts down from BOT_EVADE_DURATION
+float   hunt_enter_time;      // Gametime when HUNT was entered (hysteresis — min 3s before EXPLORE)
 
 // EXPLORE roaming
 int     explore_dest_room;    // current navigation destination room, -1 = none
 float   explore_room_timer;   // time budget for current destination
+int     explore_stuck_room;   // last room blacklisted due to stuck — skipped on next pick
 
 // Countermeasure (reserved — real countermeasures are inventory items, not weapon batteries)
 float   countermeasure_timer;
@@ -113,11 +117,11 @@ for each active bot:
 ## Behavioral FSM
 
 ```
-EXPLORE ──(has_target && !holding_for_weapon)──► HUNT
-        ◄──(no target)──────────────────────────
+EXPLORE ──(has_target && !poorly_armed_holding)─► HUNT
+        ◄──(no target && hunt_elapsed ≥ 3s)──────
 HUNT    ──(dist < FIRE_RANGE && has_LOS)────────► COMBAT
         ──(low_shields)──────────────────────────► FLEE
-        ◄──(no target)────────────────────────── EXPLORE
+        ◄──(no target && hunt_elapsed ≥ 3s)──── EXPLORE
 COMBAT  ──(dist > COMBAT_EXIT_RANGE)────────────► HUNT
         ──(low_shields)──────────────────────────► FLEE
         ──(combat_idle_timer > EVADE_TIMEOUT)────► EVADE
@@ -147,7 +151,7 @@ EVADE   ──(evade_timer <= 0)────────────────
 | GOOD (1) | Batteries 1–3 | 20% shields | neutral |
 | ELITE (2) | Batteries 4–9 | 12% shields | −60 vs weak enemies (hunts them) |
 
-`holding_for_weapon`: when a WEAK bot has a weapon pickup nearby, delays EXPLORE→HUNT. Overridden if enemy is within `BOT_CLOSERANGE_DIST` (70u) — bot engages immediately rather than staying passive.
+`holding_for_weapon`: when a poorly armed bot (WEAK primary OR no secondaries) has a weapon pickup nearby, delays EXPLORE→HUNT. Overridden if enemy is within `BOT_CLOSERANGE_DIST` (70u) — bot engages immediately rather than staying passive.
 
 ---
 
@@ -268,18 +272,18 @@ Tactical hierarchy per FSM tick and when weapon runs dry:
 
 ### Weapon Battery Map (PyroGL standard ship)
 
-| Battery | Weapon | Tier | Notes |
-|---------|--------|------|-------|
-| 0 | Laser | — | Always available, default |
-| 1 | Super Laser | GOOD | |
-| 2 | Vauss | GOOD | Ammo-based |
-| 3 | Mass Driver | GOOD | Ammo-based |
-| 4 | Napalm | ELITE | |
-| 5 | Microwave | ELITE | |
-| 6 | Plasma | ELITE | |
-| 7 | EMD Gun | ELITE | |
-| 8 | Fusion | ELITE | |
-| 9 | Omega | ELITE | |
+| Battery | Index Constant | Weapon | Tier | Notes |
+|---------|----------------|--------|------|-------|
+| 0 | — | Laser | — | Always available, default |
+| 1 | `VAUSS_INDEX` | Vauss | GOOD | Ammo-based, rapid fire |
+| 2 | `MICROWAVE_INDEX` | Microwave | ELITE | Energy, area damage |
+| 3 | `PLASMA_INDEX` | Plasma | ELITE | Energy, rapid fire |
+| 4 | `FUSION_INDEX` | Fusion | ELITE | Energy, charged heavy |
+| 5 | `SUPER_LASER_INDEX` | Super Laser | GOOD | Energy, excellent all-rounder |
+| 6 | `MASSDRIVER_INDEX` | Mass Driver | GOOD | Ammo-based, hitscan sniper |
+| 7 | `NAPALM_INDEX` | Napalm | ELITE | Energy, area denial |
+| 8 | `EMD_INDEX` | EMD Gun | ELITE | Energy, tracking pulses |
+| 9 | `OMEGA_INDEX` | Omega | ELITE | Energy, melee-range leech beam |
 | 10 | Concussion | Secondary | Dumbfire; barrage 20–180u |
 | 11 | Homing | Secondary | Tracking |
 | 12 | Impact Mortar | Secondary | Dumbfire |
@@ -296,7 +300,7 @@ Tactical hierarchy per FSM tick and when weapon runs dry:
 
 ## Powerup Priority System (`BotFindBestPowerup`)
 
-Scans within `BOT_POWERUP_SEEK_RADIUS = 350u`. Higher score = more urgent.
+Scans within `BOT_POWERUP_SEEK_RADIUS = 350u` (WEAK bots: 500u). Higher score = more urgent.
 
 | Priority | Condition |
 |----------|-----------|
@@ -304,37 +308,32 @@ Scans within `BOT_POWERUP_SEEK_RADIUS = 350u`. Higher score = more urgent.
 | 22 | Black Shark, no secondaries |
 | 20 | Mega Missile (always) |
 | 18 | Black Shark (always) |
-| 16 | Vauss/Plasma/EMD/Super Laser/Electro — BARE bot only |
-| 15 | Cyclone/Smart, no secondaries |
-| 13 | Fusion/Omega/Microwave — BARE bot only |
-| 12 | Napalm Rocket/Homing, no secondaries |
-| 10 | Shield (need_shields = shields < 30%) |
-| 10 | Napalm/Mass Driver — BARE bot only |
-| 9 | Concussion/Mortar/Frag, no secondaries |
-| 8 | Energy (need_energy = energy < 25) |
-| 6–8 | Tier-2/3 primaries when already equipped |
+| 16 | Invulnerability (always); Super Laser / Plasma (bare bot) |
+| 15 | Fusion (bare bot); Cyclone/Smart (no secondaries) |
+| 14 | EMD (bare bot) |
+| 13 | Microwave / Vauss (bare bot) |
+| 12 | Mass Driver (bare bot); Napalm Rocket/Homing (no secondaries) |
+| 11 | Napalm (bare bot); Quad Laser (always) |
+| 10 | Shield (shields < 30%) |
+| 9 | Super Laser (equipped); Concussion/Mortar/Frag (no secondaries) |
+| 8 | Plasma (equipped); Energy (low); Omega (bare bot) |
+| 7 | Fusion / EMD / Microwave (equipped); Rapid Fire (always) |
+| 6 | Vauss / Mass Driver (equipped); Cloak (always) |
+| 5 | Napalm (equipped); Cyclone/Smart/Homing/NapalmRocket (armed); Countermeasures |
+| 4 | Omega / Afterburner (equipped); Concussion/Mortar/Frag (armed) |
+| 3 | Shield (not critical) |
+| 2 | Energy (not critical) |
 | 1 | Anything else |
 
-`BotFindBestPowerup` takes a `min_priority` parameter — items at or below the threshold are skipped. HUNT divert uses `min_priority = BOT_POWERUP_DIVERT_PRIORITY (15)`.
+`BotFindBestPowerup` takes a `min_priority` parameter — items at or below the threshold are skipped. HUNT divert uses `min_priority = BOT_POWERUP_DIVERT_PRIORITY (4)`.
 
-**Instant-activation items (Phase 3.12 additions):**
-
-| Priority | Item | Condition |
-|----------|------|-----------|
-| 16 | Invulnerability | always |
-| 11 | Quad Laser | always |
-| 7 | Rapid Fire | always |
-| 6 | Cloak | always |
-| 4 | Afterburner Cooler | always |
-| 3 | Shield Boost | not critical need |
-| 2 | Energy Boost | not critical need |
-
-Combat interrupt: `BotShouldInterruptForPowerup()` uses a **3-tier system** within `BOT_POWERUP_INTERRUPT_RADIUS = 120u`:
+Combat interrupt: `BotShouldInterruptForPowerup()` uses a **4-tier system** within `BOT_POWERUP_INTERRUPT_RADIUS = 150u` (WEAK bots: 200u):
 - **Tier A:** Invulnerability, Rapid Fire — always break off combat
-- **Tier B:** Mega Missile, Black Shark — break off only when bot has no secondaries
+- **Tier B:** Any secondary weapon — break off when bot has no secondaries at all
 - **Tier C:** Shield Boost — break off only when critically low on shields
+- **Tier D:** Any primary weapon — break off only when bot has only default Laser (WEAK)
 
-Both COMBAT interrupt and HUNT divert set `powerup_interrupt_cooldown = BOT_POWERUP_INTERRUPT_COOLDOWN (6 s)` to prevent thrashing.
+Both COMBAT interrupt and HUNT divert set `powerup_interrupt_cooldown` to prevent thrashing (WEAK: 3s, others: 6s).
 
 ---
 
@@ -427,10 +426,15 @@ BOT_AB_ENERGY_MIN          15.0f
 BOT_EVADE_COMBAT_TIMEOUT    20.0f   // seconds in COMBAT before EVADE (also requires shields < 60%)
 BOT_EVADE_DURATION          3.5f
 
-// Powerup interrupt/divert (Phase 3.12)
+// Powerup interrupt/divert (Phase 3.12, tuned Phase 3.30)
 BOT_POWERUP_INTERRUPT_COOLDOWN  6.0f   // seconds before next interrupt/divert allowed
-BOT_POWERUP_DIVERT_RADIUS      175.0f  // HUNT-state divert scan radius
-BOT_POWERUP_DIVERT_PRIORITY     15     // minimum priority to trigger HUNT divert
+BOT_POWERUP_DIVERT_RADIUS      275.0f  // HUNT-state divert scan radius
+BOT_POWERUP_DIVERT_PRIORITY      4     // minimum priority to trigger HUNT divert
+BOT_WEAK_DIVERT_RADIUS         350.0f  // WEAK bots scan very wide for weapon diverts
+BOT_WEAK_DIVERT_PRIORITY         4     // WEAK bots divert for any weapon at all
+
+// HUNT hysteresis (Phase 3.30)
+BOT_HUNT_MIN_DURATION           3.0f   // minimum seconds in HUNT before dropping to EXPLORE
 
 // Secondary aim
 BOT_SECONDARY_AIM_DOT        0.7f   // looser than primary (missiles track)
@@ -447,7 +451,7 @@ BOT_OUTGUNNED_PENALTY       80.0f   // weak vs elite: score increase (avoid)
 
 // Missile evasion (Phase 3.15)
 BOT_MISSILE_SCAN_COOLDOWN   1.0f    // seconds between homing missile scans
-BOT_HUNT_PICKUP_RADIUS    100.0f    // grab items while hunting without state change
+BOT_HUNT_PICKUP_RADIUS    200.0f    // grab items while hunting without state change
 BOT_WEAK_INTERRUPT_RADIUS 200.0f    // WEAK bots break combat for weapons
 
 // Outdoor scaling (Phase 3.15)
@@ -498,7 +502,10 @@ gi = -1;
 // Then add (goal index returned; -1 on failure)
 int tgt_handle = Objects[target_objnum].handle;
 gi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f,
-                 GF_SPEED_ATTACK | GF_OBJ_IS_TARGET | GF_USE_BLINE_IF_SEES_GOAL);
+                 GF_SPEED_ATTACK | GF_OBJ_IS_TARGET);
+// NOTE: GF_USE_BLINE_IF_SEES_GOAL removed from powerup goals (Phase 3.30) —
+// caused wall-stuck loops when beelining through thin geometry. Still used for
+// pursuit goals (target tracking) where beeline is appropriate with LOS.
 ```
 
 ### Goal clear (do NOT set goal.type = 0 directly)
