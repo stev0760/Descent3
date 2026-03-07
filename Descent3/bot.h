@@ -178,6 +178,7 @@
 // before it can divert/interrupt again. This allows the bot to collect the item and re-engage
 // without immediately being yanked out of COMBAT on the next tick.
 #define BOT_POWERUP_INTERRUPT_COOLDOWN 6.0f
+#define BOT_POWERUP_CHASE_TIMEOUT 8.0f  // seconds chasing same powerup before giving up (Phase 4.03)
 
 // Homing missile evasion (Phase 3.15)
 // Scans Objects[] for OBJ_WEAPON with PF_HOMING tracking the bot's handle.
@@ -291,6 +292,10 @@ struct bot_info {
   float mine_dump_timer;   // >0: rapid-dumping mines, counts down between drops
   int mine_dump_remaining; // mines left in current dump burst
   float gunboy_cooldown;   // cooldown for gunboy placement
+
+  // Powerup chase tracking (Phase 4.03) — detect when chasing an unreachable powerup
+  int chasing_powerup_handle;  // handle of powerup being pursued, or OBJECT_HANDLE_NONE
+  float chasing_powerup_timer; // seconds spent chasing current powerup without collecting it
 };
 
 extern bot_info Bots[MAX_BOTS];
