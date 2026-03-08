@@ -53,6 +53,10 @@ BotName1 "Reaper"
 BotName2 "Phantom"
 BotName3 "Viper"
 BotName4 "Shadow"
+BotShip1 "Pyro-GL"
+BotShip2 "Phoenix"
+BotShip3 "Magnum-AHT"
+BotShip4 "Pyro-GL"
 ```
 
 **Implementation approach:**
@@ -65,6 +69,47 @@ BotName4 "Shadow"
 - Should bots auto-respawn if manually removed? (Probably not — admin intent)
 - Should `BotCount` be a live CVar (changeable mid-game) or load-time only?
 - How to handle `BotCount > MAX_BOTS` or `BotCount > available_slots`?
+
+### 5.1b: Ship Selection (Priority: High)
+
+Admins should be able to assign each bot a specific ship. The game supports multiple ships with different physics, weapon loadouts, and visual models.
+
+**Available ships:**
+
+| Ship | Notes |
+|------|-------|
+| Pyro-GL | Default ship. Standard all-rounder. |
+| Phoenix | Faster, lighter. Different weapon battery layout. |
+| Magnum-AHT | Heavy/tanky. Higher mass and thrust. |
+| Black Pyro | Mercenary expansion ship. Only available if Mercenary is installed (`MercInstalled()` in `init.h`). |
+
+**Current state:**
+- `BotAdd(const char *name, int ship_index = 0)` already accepts a ship index
+- `FindShipName(const char *name)` in `ship.h` resolves name → index
+- `Ships[i].used` indicates which ships are loaded
+- `PlayerSetShipPermission()` controls which ships players may use — bots should respect `AllowedShips` server config
+- All bot code reads physics from `Ships[Players[slot].ship_index]` — ship selection propagates automatically to thrust, mass, drag, weapon batteries
+
+**Config:**
+```ini
+BotCount 4
+BotShip1 "Pyro-GL"
+BotShip2 "Phoenix"
+BotShip3 "Magnum-AHT"
+BotShip4 "Black Pyro"
+```
+
+**Implementation approach:**
+- Add `CVAR_BOT_SHIP1..N` (string) CVars, parsed at config load
+- At bot spawn time: `FindShipName(configured_name)` → validate `Ships[idx].used` → pass to `BotAdd()`
+- If ship not found or not allowed: fall back to `DEFAULT_SHIP` ("Pyro-GL") with a log warning
+- Black Pyro availability: check `MercInstalled()` before allowing
+- Console command: `addbot <name> [ship]` — extend existing command to accept optional ship name
+
+**Key questions:**
+- Should `BotCacheShipPhysics()` be called again if ship changes mid-game? (Yes — it caches per-ship physics constants)
+- Do all ships have identical weapon battery layouts? (No — different ships may have different `static_wb[]` entries. `BotSelectBestWeapon` iterates batteries 0–9 which should work for all ships, but weapon availability varies)
+- Should bots auto-select weapons differently per ship? (Future work — for now the generic weapon selection loop handles it)
 
 ### 5.2: Difficulty Levels (Priority: Medium)
 
@@ -115,8 +160,9 @@ Extend admin tooling for live management:
 
 | Command | Description |
 |---------|-------------|
-| `botadd <name> [team] [difficulty]` | Add with optional team and difficulty |
+| `addbot <name> [ship]` | Add with optional ship name (extends existing command) |
 | `botteam <index> <team>` | Move a bot to a different team |
+| `botship <index> <ship>` | Change a bot's ship (respawns with new ship) |
 | `botdifficulty <index\|all> <level>` | Change difficulty mid-game |
 | `botrebalance` | Force immediate team rebalance |
 | `botstats` | Summary: total kills, deaths, powerups collected per bot |
