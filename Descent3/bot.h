@@ -245,8 +245,9 @@ struct bot_info {
   float afterburner_burst_timer;
 
   // EVADE state timers (Phase 3.8)
-  float combat_idle_timer; // seconds spent in COMBAT state; triggers EVADE when > BOT_EVADE_COMBAT_TIMEOUT
-  float evade_timer;       // counts down from BOT_EVADE_DURATION while in EVADE state
+  float combat_idle_timer;   // seconds spent in COMBAT state; triggers EVADE when > BOT_EVADE_COMBAT_TIMEOUT
+  float combat_no_los_timer; // seconds in COMBAT without LOS; drop to HUNT when > 3s (Phase 4.05)
+  float evade_timer;         // counts down from BOT_EVADE_DURATION while in EVADE state
 
   // HUNT LOS timeout (Phase 3.24, progress-based Phase 3.26)
   float hunt_no_los_timer; // seconds in HUNT without line-of-sight; drop target when > threshold

@@ -1283,14 +1283,15 @@ static int BotGetTargetEquipmentRating(int target_slot) {
 //    3  Shields / Concussion/Mortar/Frag when already armed
 //    2  Energy when not critically needed
 //    1  Any other powerup (Extra Life, keys, etc.)
-// Check if the bot can see a specific position (FVI raycast — no object collision, just walls).
+// Check if the bot can physically reach a position (FVI raycast with ship-sized radius).
+// Uses rad=2.5f so rays don't pass through gaps too small for the bot to fly through.
 static bool BotCanSeePos(object *obj, vector *target_pos) {
   fvi_query fq{};
   fvi_info hit{};
   fq.p0 = &obj->pos;
   fq.p1 = target_pos;
   fq.startroom = obj->roomnum;
-  fq.rad = 0.0f;
+  fq.rad = 2.5f; // approximate ship half-width — filters tiny openings
   fq.thisobjnum = OBJNUM(obj);
   fq.ignore_obj_list = nullptr;
   fq.flags = FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS | FQ_IGNORE_MOVING_OBJECTS;
@@ -1722,8 +1723,11 @@ static void BotUpdateState(int bot_index) {
     else if (low_shields)
       new_state = BOT_STATE_FLEE;
     else if (dist > combat_exit)
-      new_state = BOT_STATE_HUNT; // LOS loss alone doesn't exit COMBAT (avoids oscillation)
-    else if (Bots[bot_index].combat_idle_timer > BOT_EVADE_COMBAT_TIMEOUT && shields < max_shields * 0.60f)
+      new_state = BOT_STATE_HUNT; // target moved out of range — re-pursue
+    else if (!has_los && Bots[bot_index].combat_no_los_timer > 3.0f) {
+      // Stuck fighting through a wall — drop to HUNT which will re-navigate around the obstacle.
+      new_state = BOT_STATE_HUNT;
+    } else if (Bots[bot_index].combat_idle_timer > BOT_EVADE_COMBAT_TIMEOUT && shields < max_shields * 0.60f)
       new_state = BOT_STATE_EVADE; // prolonged combat AND taking losses — break off to regroup
     else if (BotShouldInterruptForPowerup(bot_index)) {
       // WEAK bots use shorter cooldown — they interrupt more aggressively to arm up
@@ -1776,7 +1780,8 @@ static void BotUpdateState(int bot_index) {
       BotSetPursuitGoal(bot_index);
       break;
     case BOT_STATE_COMBAT:
-      Bots[bot_index].combat_idle_timer = 0.0f; // fresh combat engagement
+      Bots[bot_index].combat_idle_timer = 0.0f;
+      Bots[bot_index].combat_no_los_timer = 0.0f; // fresh combat engagement
       BotSetCombatGoal(bot_index);
       BotSelectBestWeapon(bot_index); // equip best available weapon on entry
       break;
@@ -1785,7 +1790,8 @@ static void BotUpdateState(int bot_index) {
       break;
     case BOT_STATE_EVADE:
       Bots[bot_index].evade_timer = BOT_EVADE_DURATION;
-      Bots[bot_index].combat_idle_timer = 0.0f; // prevent immediate re-trigger
+      Bots[bot_index].combat_idle_timer = 0.0f;
+      Bots[bot_index].combat_no_los_timer = 0.0f; // prevent immediate re-trigger
       BotSetEvadeGoal(bot_index);
       break;
     }
@@ -2414,6 +2420,7 @@ static void BotRespawn(int bot_index) {
   Bots[bot_index].juke_phase = 0.0f;
   Bots[bot_index].stuck_timer = 0.0f;
   Bots[bot_index].combat_idle_timer = 0.0f;
+  Bots[bot_index].combat_no_los_timer = 0.0f;
   Bots[bot_index].evade_timer = 0.0f;
   Bots[bot_index].hunt_no_los_timer = 0.0f;
   Bots[bot_index].hunt_last_dist = 0.0f;
@@ -2461,6 +2468,7 @@ void BotInitAll() {
     Bots[i].stuck_timer = 0.0f;
     Bots[i].afterburner_burst_timer = 0.0f;
     Bots[i].combat_idle_timer = 0.0f;
+    Bots[i].combat_no_los_timer = 0.0f;
     Bots[i].evade_timer = 0.0f;
     Bots[i].hunt_no_los_timer = 0.0f;
     Bots[i].hunt_last_dist = 0.0f;
@@ -2518,6 +2526,7 @@ void BotReinitAll() {
     Bots[i].juke_phase = 0.0f;
     Bots[i].stuck_timer = 0.0f;
     Bots[i].combat_idle_timer = 0.0f;
+    Bots[i].combat_no_los_timer = 0.0f;
     Bots[i].evade_timer = 0.0f;
     Bots[i].hunt_no_los_timer = 0.0f;
     Bots[i].hunt_last_dist = 0.0f;
@@ -2735,6 +2744,7 @@ int BotAdd(const char *name, int ship_index) {
   Bots[bot_index].juke_phase = 0.0f;
   Bots[bot_index].stuck_timer = 0.0f;
   Bots[bot_index].combat_idle_timer = 0.0f;
+  Bots[bot_index].combat_no_los_timer = 0.0f;
   Bots[bot_index].evade_timer = 0.0f;
   Bots[bot_index].hunt_no_los_timer = 0.0f;
   Bots[bot_index].hunt_last_dist = 0.0f;
@@ -2836,6 +2846,7 @@ void BotDoFrame() {
       Bots[i].chasing_powerup_timer = 0.0f;
       Bots[i].state = BOT_STATE_EXPLORE;
       Bots[i].combat_idle_timer = 0.0f;
+      Bots[i].combat_no_los_timer = 0.0f;
       Bots[i].evade_timer = 0.0f;
       Bots[i].hunt_no_los_timer = 0.0f;
       Bots[i].hunt_last_dist = 0.0f;
@@ -2890,8 +2901,15 @@ void BotDoFrame() {
     }
 
     // Per-frame state timer updates
-    if (Bots[i].state == BOT_STATE_COMBAT)
+    if (Bots[i].state == BOT_STATE_COMBAT) {
       Bots[i].combat_idle_timer += Frametime;
+      // Track time in COMBAT without LOS — detect wall-fighting
+      object *tgt = obj->ai_info ? ObjGet(obj->ai_info->target_handle) : nullptr;
+      if (tgt && !BotHasLOS(obj, tgt))
+        Bots[i].combat_no_los_timer += Frametime;
+      else
+        Bots[i].combat_no_los_timer = 0.0f;
+    }
     else if (Bots[i].state == BOT_STATE_EVADE)
       Bots[i].evade_timer -= Frametime;
     else if (Bots[i].state == BOT_STATE_EXPLORE && Bots[i].explore_room_timer > 0.0f)
