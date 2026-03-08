@@ -71,7 +71,7 @@
 #define BOT_HUNT_PROGRESS_THRESHOLD 10.0f // distance decrease (units) that counts as "making progress"
 #define BOT_RETARGET_COOLDOWN 5.0f        // seconds after HUNT drop before re-acquiring targets (Phase 4.01: 2→5)
 #define BOT_HUNT_MIN_DURATION 3.0f        // minimum seconds in HUNT before dropping to EXPLORE (hysteresis)
-#define BOT_HUNT_BLIND_MAX_DIST 150.0f    // max distance to enter HUNT without LOS (Phase 4.02: 400→150, complex maps have walls at 300u+)
+#define BOT_HUNT_BLIND_MAX_DIST 300.0f    // max distance to enter HUNT without LOS (Phase 4.06: 150→300, 150 too tight for open maps)
 
 // Target blacklist (Phase 3.28) — prevents re-selecting unreachable targets during retarget cooldown.
 // When a target is blacklisted due to HUNT timeout, the bot cannot select it again until the
@@ -178,7 +178,9 @@
 // before it can divert/interrupt again. This allows the bot to collect the item and re-engage
 // without immediately being yanked out of COMBAT on the next tick.
 #define BOT_POWERUP_INTERRUPT_COOLDOWN 6.0f
-#define BOT_POWERUP_CHASE_TIMEOUT 8.0f  // seconds chasing same powerup before giving up (Phase 4.03)
+#define BOT_POWERUP_CHASE_TIMEOUT 8.0f   // seconds chasing same powerup before giving up (Phase 4.03)
+#define BOT_POWERUP_THRUST_RADIUS 50.0f // direct-thrust override distance for close visible powerups (Phase 4.06)
+#define BOT_POWERUP_STALE_CHASE 4.0f    // seconds chasing without collecting before treating chase as stale (Phase 4.06)
 
 // Homing missile evasion (Phase 3.15)
 // Scans Objects[] for OBJ_WEAPON with PF_HOMING tracking the bot's handle.

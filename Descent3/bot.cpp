@@ -1299,6 +1299,62 @@ static bool BotCanSeePos(object *obj, vector *target_pos) {
   return (hit_type == HIT_NONE || hit_type == HIT_OBJECT);
 }
 
+// Phase 4.06: Check if a powerup can actually be collected by this bot.
+// Mirrors the game's pickup logic in multisafe.cpp — in multiplayer, primary weapons
+// already owned are NOT picked up (item stays in world), and unique items like
+// Quad Laser, Afterburner, Invulnerability, and Cloak can't be re-collected.
+static bool BotCanCollectPowerup(int bot_index, object *powerup) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  const char *pname = Object_info[powerup->id].name;
+
+  // Primary weapons: can't pick up if already have the weapon in multiplayer
+  // Name→weapon_index mapping mirrors powerup_data_primary[] in multisafe.cpp
+  static const struct { const char *name; int weapon_index; } primaries[] = {
+    {"Vauss", VAUSS_INDEX}, {"Napalm", NAPALM_INDEX}, {"EMDlauncher", EMD_INDEX},
+    {"Microwave", MICROWAVE_INDEX}, {"MassDriver", MASSDRIVER_INDEX},
+    {"SuperLaser", SUPER_LASER_INDEX}, {"Plasmacannon", PLASMA_INDEX},
+    {"Fusioncannon", FUSION_INDEX}, {"Omegacannon", OMEGA_INDEX},
+  };
+  for (auto &p : primaries) {
+    if (!stricmp(pname, p.name)) {
+      return !(Players[slot].weapon_flags & HAS_FLAG(p.weapon_index));
+    }
+  }
+
+  // Quad Laser: can't pick up if already have quad flag
+  if (!stricmp(pname, "QuadLaser")) {
+    return !(obj->dynamic_wb[LASER_INDEX].flags & DWBF_QUAD);
+  }
+
+  // Afterburner: can't pick up if already in inventory
+  if (!stricmp(pname, "Afterburner")) {
+    int ab_id = FindObjectIDName("Afterburner");
+    if (ab_id != -1)
+      return Players[slot].inventory.GetTypeIDCount(OBJ_POWERUP, ab_id) == 0;
+  }
+
+  // Invulnerability: can't pick up if already invulnerable
+  if (!stricmp(pname, "Invulnerability")) {
+    return !(Players[slot].flags & PLAYER_FLAGS_INVULNERABLE);
+  }
+
+  // Cloak: can't pick up if already cloaked
+  if (!stricmp(pname, "Cloak")) {
+    if (obj->effect_info)
+      return !((obj->effect_info->type_flags & EF_FADING_OUT) || (obj->effect_info->type_flags & EF_CLOAKED));
+    return true;
+  }
+
+  // Shield: can't pick up if at max
+  if (!stricmp(pname, "Shield")) {
+    return obj->shields < MAX_SHIELDS;
+  }
+
+  // Everything else (secondaries, ammo, energy, countermeasures): always collectible
+  return true;
+}
+
 static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy, int min_priority = 0) {
   int slot = Bots[bot_index].player_slot;
   object *obj = &Objects[Players[slot].objnum];
@@ -1326,6 +1382,10 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
     if (p->flags & (OF_DEAD | OF_DESTROYED))
       continue;
     if (p->handle == blacklisted_handle)
+      continue;
+
+    // Phase 4.06: skip powerups the bot can't actually collect (already owned primaries, etc.)
+    if (!BotCanCollectPowerup(bot_index, p))
       continue;
 
     float dist = vm_VectorDistanceQuick(&obj->pos, &p->pos);
@@ -1465,6 +1525,12 @@ static bool BotShouldInterruptForPowerup(int bot_index) {
     if (dist >= interrupt_radius)
       continue;
 
+    // Phase 4.06: skip powerups the bot can't collect or reach
+    if (!BotCanCollectPowerup(bot_index, p))
+      continue;
+    if (!BotCanSeePos(obj, &p->pos))
+      continue;
+
     const char *raw = Object_info[p->id].name;
     char lower[64] = {};
     strncpy(lower, raw, sizeof(lower) - 1);
@@ -1600,7 +1666,10 @@ static void BotUpdateState(int bot_index) {
     // Transition to HUNT only when the target is reachable and we're not busy collecting.
     // Phase 4.02: if actively pursuing a powerup, only interrupt for enemies with LOS at close range.
     // This prevents bots from abandoning powerup pickups for blind chases behind walls.
-    bool chasing_powerup = (Bots[bot_index].powerup_goal_index >= 0);
+    // Phase 4.06: a chase is "stale" if we've been chasing > 4s without collecting —
+    // don't let a stuck powerup chase permanently suppress engagement.
+    bool chasing_powerup = (Bots[bot_index].powerup_goal_index >= 0) &&
+                           (Bots[bot_index].chasing_powerup_timer < BOT_POWERUP_STALE_CHASE);
     bool urgent_threat = (has_los && dist < BOT_CLOSERANGE_DIST);
     if (has_target && !holding_for_weapon && !chasing_powerup && (has_los || dist < BOT_HUNT_BLIND_MAX_DIST))
       new_state = BOT_STATE_HUNT;
@@ -1724,8 +1793,9 @@ static void BotUpdateState(int bot_index) {
       new_state = BOT_STATE_FLEE;
     else if (dist > combat_exit)
       new_state = BOT_STATE_HUNT; // target moved out of range — re-pursue
-    else if (!has_los && Bots[bot_index].combat_no_los_timer > 3.0f) {
+    else if (!has_los && Bots[bot_index].combat_no_los_timer > 5.0f) {
       // Stuck fighting through a wall — drop to HUNT which will re-navigate around the obstacle.
+      // Phase 4.06: 3s→5s — 3s was too aggressive, caused premature disengagement behind pillars.
       new_state = BOT_STATE_HUNT;
     } else if (Bots[bot_index].combat_idle_timer > BOT_EVADE_COMBAT_TIMEOUT && shields < max_shields * 0.60f)
       new_state = BOT_STATE_EVADE; // prolonged combat AND taking losses — break off to regroup
@@ -1895,6 +1965,24 @@ static void BotApplyThrust(int bot_index) {
       speed_scale = 1.0f;
       if (is_outdoor || equip <= BOT_EQUIP_TIER_WEAK)
         want_afterburner = true; // WEAK bots burst toward weapons even indoors
+
+      // Phase 4.06: Direct thrust override for close visible powerups.
+      // The engine's AIG_GET_TO_OBJ goal reduces thrust near the destination ("close enough"),
+      // so bots hover at 20-50u without actually collecting. Override movement_dir to beeline
+      // directly at the powerup when it's within BOT_POWERUP_THRUST_RADIUS and visible.
+      object *pu = ObjGet(Bots[bot_index].chasing_powerup_handle);
+      if (pu && pu->type == OBJ_POWERUP) {
+        float pu_dist = vm_VectorDistanceQuick(&obj->pos, &pu->pos);
+        if (pu_dist < BOT_POWERUP_THRUST_RADIUS && pu_dist > 1.0f && BotCanSeePos(obj, &pu->pos)) {
+          // Direct beeline: decompose vector-to-powerup into local axes
+          vector to_pu = pu->pos - obj->pos;
+          vm_NormalizeVector(&to_pu);
+          forward = vm_DotProduct(&to_pu, &obj->orient.fvec);
+          sideways = vm_DotProduct(&to_pu, &obj->orient.rvec);
+          vertical = vm_DotProduct(&to_pu, &obj->orient.uvec);
+          speed_scale = 1.0f;
+        }
+      }
     } else {
       speed_scale = (equip <= BOT_EQUIP_TIER_WEAK) ? BOT_WEAK_EXPLORE_SPEED : 0.3f;
     }
