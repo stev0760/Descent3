@@ -35,6 +35,7 @@ ctest --preset linux -C Debug
 - **`BOTS_DEVEL.md`** — phase history and roadmap. Update when a phase completes.
 - **`NAV_OVERHAUL.md`** — Phase 4.0 navigation overhaul: research synthesis, root cause analysis, engine pathfinding pipeline reference, and implementation plan. **Read this before modifying navigation code.**
 - **`PATHFINDING_CODEBASE_EXPLORE.md`** — Guide-bot navigation analysis: how single-player bots navigate complex passages vs. our multiplayer bots. Research input for `NAV_OVERHAUL.md`.
+- **`BOT_MANAGEMENT.md`** — Phase 5 planning: config-file rosters, difficulty levels, auto-rebalancing, enhanced console commands. **Read this before modifying bot management code.**
 - **`PLAN.md`** — original Phase 0 design document and full phase roadmap.
 - **`D3_MOVEMENT_PHYSICS.md`** — engine physics constants and packet flag reference.
 
