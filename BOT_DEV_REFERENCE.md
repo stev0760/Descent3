@@ -7,7 +7,7 @@ Current implementation status is in `BOTS_DEVEL.md`. Physics model reference is 
 
 ## Current Status
 
-**Phase 4.01 complete** — Anti-oscillation tuning: LOS/distance gate on EXPLORE→HUNT (blind chases capped at 400u), retarget cooldown on HUNT→EXPLORE (5s), room-progress timeout 8→12s. Fixes EXPLORE↔HUNT oscillation and powerup regression from Phase 4.0's map-wide exploration. See `NAV_OVERHAUL.md` for design rationale.
+**Phase 4.06 complete** — Navigation & powerup overhaul. Phases 4.01–4.06 addressed EXPLORE↔HUNT oscillation, powerup collection failures, engagement regression, and uncollectible-item loops. Key features: `BotCanCollectPowerup()` filter (mirrors game pickup logic), direct powerup thrust within 50u, `BotCanSeePos()` ship-width FVI raycast, COMBAT no-LOS timeout (5s), `BOT_HUNT_BLIND_MAX_DIST=300u`. See `NAV_OVERHAUL.md` for 4.0 design rationale.
 
 For the full phase history and roadmap, see `BOTS_DEVEL.md`.
 
@@ -76,8 +76,13 @@ float   stuck_timer;              // seconds at near-zero speed with thrust appl
 
 // State timers
 float   combat_idle_timer;    // triggers EVADE after BOT_EVADE_COMBAT_TIMEOUT
+float   combat_no_los_timer;  // seconds in COMBAT without LOS; >5s → drop to HUNT (Phase 4.05)
 float   evade_timer;          // counts down from BOT_EVADE_DURATION
 float   hunt_enter_time;      // Gametime when HUNT was entered (hysteresis — min 3s before EXPLORE)
+
+// Powerup chase tracking (Phase 4.03)
+int     chasing_powerup_handle;  // handle of powerup being pursued, or OBJECT_HANDLE_NONE
+float   chasing_powerup_timer;   // seconds spent chasing current powerup without collecting it
 
 // EXPLORE roaming (Phase 3.9, overhauled Phase 4.0)
 int     explore_dest_room;    // current navigation destination room, -1 = none
@@ -103,9 +108,11 @@ for each active bot:
   3. if PLAYER_FLAGS_DEAD|DYING → set awaiting_respawn, reset state, continue
   4. Sound alerting: EXPLORE + nearby enemy using afterburner → force immediate retarget
   5. Per-frame timers:
-       combat_idle_timer += Frametime  (in COMBAT)
-       evade_timer       -= Frametime  (in EVADE)
-       explore_room_timer-= Frametime  (in EXPLORE)
+       combat_idle_timer    += Frametime  (in COMBAT)
+       combat_no_los_timer  += Frametime  (in COMBAT without LOS; reset if LOS restored)
+       evade_timer          -= Frametime  (in EVADE)
+       explore_room_timer   -= Frametime  (in EXPLORE)
+       chasing_powerup_timer+= Frametime  (when chasing same powerup handle)
        countermeasure_timer -= Frametime
   5b. Room-change progress tracking (Phase 4.0, EXPLORE/HUNT only):
        if roomnum changed → BotRecordVisitedRoom(), reset room_progress_timer
@@ -126,16 +133,19 @@ for each active bot:
 ## Behavioral FSM
 
 ```
-EXPLORE ──(has_target && !poorly_armed_holding    ─► HUNT
-           && (has_LOS || dist < 400u))
+EXPLORE ──(has_target && !holding_for_weapon      ─► HUNT
+           && !fresh_powerup_chase
+           && (has_LOS || dist < 300u))
+        ──(chasing_powerup && urgent_threat)──────► HUNT  (enemy within 70u + LOS)
         ◄──(no target && hunt_elapsed ≥ 3s)──────
 HUNT    ──(dist < FIRE_RANGE && has_LOS)────────► COMBAT
         ──(low_shields)──────────────────────────► FLEE
         ◄──(no target && hunt_elapsed ≥ 3s)──── EXPLORE
 COMBAT  ──(dist > COMBAT_EXIT_RANGE)────────────► HUNT
+        ──(!has_LOS for 5s)──────────────────────► HUNT  (re-navigate around wall)
         ──(low_shields)──────────────────────────► FLEE
         ──(combat_idle_timer > EVADE_TIMEOUT)────► EVADE
-        ──(Mega/BlackShark nearby)───────────────► EXPLORE
+        ──(collectible Mega/BlackShark nearby)───► EXPLORE
 FLEE    ──(shields_recovered || dist > FLEE_DIST)► HUNT
         ◄──(no target)────────────────────────── EXPLORE
 EVADE   ──(evade_timer <= 0)─────────────────────► HUNT or EXPLORE
@@ -367,11 +377,17 @@ Scans within `BOT_POWERUP_SEEK_RADIUS = 350u` (WEAK bots: 500u). Higher score = 
 
 `BotFindBestPowerup` takes a `min_priority` parameter — items at or below the threshold are skipped. HUNT divert uses `min_priority = BOT_POWERUP_DIVERT_PRIORITY (4)`.
 
+**Collectibility filter (Phase 4.06):** `BotCanCollectPowerup()` is called before scoring each item. In multiplayer, primary weapons already owned cannot be re-collected (item stays in world). Also filters: Quad Laser (if `DWBF_QUAD` set), Afterburner (if in inventory), Invulnerability/Cloak (if active), Shield (if at `MAX_SHIELDS`). Prevents bots from endlessly chasing items they can't pick up.
+
+**Direct thrust (Phase 4.06):** In `BotApplyThrust`, when EXPLORE with a visible powerup within `BOT_POWERUP_THRUST_RADIUS` (50u), overrides engine `movement_dir` with direct beeline vector to the powerup. Solves "last mile" problem where engine goal system reduces thrust near destination.
+
 Combat interrupt: `BotShouldInterruptForPowerup()` uses a **4-tier system** within `BOT_POWERUP_INTERRUPT_RADIUS = 150u` (WEAK bots: 200u):
 - **Tier A:** Invulnerability, Rapid Fire — always break off combat
 - **Tier B:** Any secondary weapon — break off when bot has no secondaries at all
 - **Tier C:** Shield Boost — break off only when critically low on shields
 - **Tier D:** Any primary weapon — break off only when bot has only default Laser (WEAK)
+
+Phase 4.06: interrupt now requires `BotCanCollectPowerup()` (skip already-owned) AND `BotCanSeePos()` (ship-width LOS). Prevents breaking off combat for unreachable or uncollectible items.
 
 Both COMBAT interrupt and HUNT divert set `powerup_interrupt_cooldown` to prevent thrashing (WEAK: 3s, others: 6s).
 
@@ -491,8 +507,11 @@ BOT_EXPLORE_ROOM_TIME_MAX  20.0f    // max seconds for far-away explore destinat
 BOT_EXPLORE_MAX_CANDIDATES 16       // max rooms to sample per destination pick
 BOT_VISITED_ROOM_COUNT     12       // circular buffer size for recently visited rooms
 BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT 12.0f // no room change for this long → pick new destination (Phase 4.01: 8→12)
-BOT_HUNT_BLIND_MAX_DIST    400.0f  // max distance to enter HUNT without LOS (Phase 4.01)
+BOT_HUNT_BLIND_MAX_DIST    300.0f  // max distance to enter HUNT without LOS (Phase 4.06: 150→300)
 BOT_RETARGET_COOLDOWN        5.0f  // seconds after HUNT drop before re-acquiring targets (Phase 4.01: 2→5)
+BOT_POWERUP_CHASE_TIMEOUT    8.0f  // seconds chasing same powerup before blacklisting (Phase 4.03)
+BOT_POWERUP_THRUST_RADIUS  50.0f   // direct beeline thrust distance for close visible powerups (Phase 4.06)
+BOT_POWERUP_STALE_CHASE      4.0f  // seconds before stale chase stops suppressing HUNT (Phase 4.06)
 
 // Equipment scoring (Phase 3.11)
 BOT_RAMPAGE_AGRO_BONUS      60.0f   // elite vs weak: score reduction (prefer)
@@ -552,9 +571,10 @@ gi = -1;
 int tgt_handle = Objects[target_objnum].handle;
 gi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f,
                  GF_SPEED_ATTACK | GF_OBJ_IS_TARGET);
-// NOTE: GF_USE_BLINE_IF_SEES_GOAL removed from powerup goals (Phase 3.30) —
-// caused wall-stuck loops when beelining through thin geometry. Still used for
-// pursuit goals (target tracking) where beeline is appropriate with LOS.
+// NOTE: GF_USE_BLINE_IF_SEES_GOAL restored for powerup goals (Phase 4.03) with
+// BotCanSeePos() LOS pre-filter (rad=2.5). Direct thrust override within 50u
+// (Phase 4.06) solves "last mile" collection. BotCanCollectPowerup() skips
+// already-owned items. Still used for pursuit goals (target tracking).
 ```
 
 ### Goal clear (do NOT set goal.type = 0 directly)

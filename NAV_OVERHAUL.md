@@ -1,6 +1,6 @@
 # Navigation Overhaul — Phase 4.0
 
-**Status:** Planning
+**Status:** Complete (Phase 4.0 implemented, refined through 4.06)
 **Prerequisite reading:** `BOT_DEV_REFERENCE.md`, `PATHFINDING_CODEBASE_EXPLORE.md`
 **Key files:** `Descent3/bot.cpp`, `Descent3/bot.h`, `Descent3/AImain.cpp`, `Descent3/aipath.cpp`, `Descent3/AIGoal.cpp`, `Descent3/BOA.h`
 

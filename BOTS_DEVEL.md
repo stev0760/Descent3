@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Phase 4.01 complete — anti-oscillation tuning. See `NAV_OVERHAUL.md` for design rationale.
+**Status:** Phase 4.06 complete — powerup collection overhaul, engagement regression fix, uncollectible-item filter. See `NAV_OVERHAUL.md` for design rationale.
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -50,6 +50,11 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | 3.30 | **HUNT hysteresis + greedy powerups + collision rate-limit:** HUNT minimum duration (3s) prevents EXPLORE↔HUNT oscillation. Removed `GF_USE_BLINE_IF_SEES_GOAL` from powerup goals (fixes wall-stuck loops). "Too many collisions" warnings rate-limited to 1/sec. Per-weapon pickup priorities (Super Laser=9, Plasma=8, etc.). Wider divert radii and lower thresholds. Poorly-armed bots hold EXPLORE for weapons. Combat interrupt expanded for all secondaries when unarmed. | Complete |
 | 4.0 | **Navigation overhaul:** BOA-driven long-range exploration (map-wide random room sampling), engine pathfinding integration (`AIG_GET_TO_OBJ` replaces manual portal-by-portal pursuit), room-change progress tracking (8s timeout), smart portal-based stuck escape, visited-room memory (12-room circular buffer). See `NAV_OVERHAUL.md`. | Complete |
 | 4.01 | **Anti-oscillation tuning:** LOS/distance gate on EXPLORE→HUNT (blind chases capped at `BOT_HUNT_BLIND_MAX_DIST=400u`), retarget cooldown on HUNT→EXPLORE (`BOT_RETARGET_COOLDOWN` 2→5s), room-progress timeout 8→12s. Fixes EXPLORE↔HUNT oscillation (35.7→expected <10 E→H/min) and powerup pickup regression caused by 0.5s EXPLORE phases being too short for `BotFindBestPowerup()`. | Complete |
+| 4.02 | **Powerup-first exploration:** `BOT_HUNT_BLIND_MAX_DIST` 400→150, powerup-first exploration (suppress EXPLORE→HUNT when chasing powerup), clear roaming goal when targeting powerup to prevent competing goals. | Complete |
+| 4.03 | **Powerup collection overhaul:** `BotCanSeePos()` FVI raycast with ship-width radius, LOS-weighted composite scoring in `BotFindBestPowerup()` (10× bonus for visible items), `GF_USE_BLINE_IF_SEES_GOAL` restored for powerup goals with LOS pre-filter, powerup chase timeout (8s per-item). | Complete |
+| 4.04 | **Competing goals fix + BNode crash:** Clear pursuit_goal when targeting powerup (prevents two goals at same priority pulling in opposite directions), graceful return -1 in `BNode_FindClosestLocalBNode` for rooms with zero BNodes (campaign crash fix), sustained 2s random lateral escape thrust for spawn-stuck bots. | Complete |
+| 4.05 | **LOS through geometry + wall-fighting:** `BotCanSeePos` FVI radius 0→2.5 (filters tiny geometry gaps), COMBAT no-LOS timeout (3s) drops bots fighting through walls to HUNT for re-navigation. | Complete |
+| 4.06 | **Uncollectible-item filter + engagement fix:** `BotCanCollectPowerup()` mirrors game pickup logic — skips already-owned primaries, Quad Laser, Afterburner, active Invuln/Cloak, max shields. Direct powerup thrust override within 50u. `BOT_HUNT_BLIND_MAX_DIST` 150→300. Stale chase (>4s) no longer suppresses engagement. COMBAT no-LOS timeout 3→5s. Powerup interrupt requires LOS + collectibility check. | Complete |
 | 5 | **Bot management & server architecture:** Config-file rosters, difficulty levels, remote admin, auto-rebalancing, server orchestration. | Not started |
 | 6 | **Advanced features:** CTF/Monsterball awareness, team coordination, 6DOF maneuvers, movement capture, bot personalities. | Not started |
 | 4 | Difficulty levels, configuration UI | Not started |
@@ -669,7 +674,7 @@ Investigation revealed that bots were missing from the end-of-level scoreboard b
 - **AI pathfinding exhaustion** — When too many bots are stuck or colliding, the dynamic path pool (`AIPathGetDPathSlot`) can be exhausted, triggering an assertion in `aipath.cpp:533`. This occurs when the server is overloaded with bots in confined spaces. A proper fix should be addressed alongside Phase 2 navigation improvements rather than modifying `aipath.cpp` directly.
 - **Bots fly out of bounds (sky) in outdoor levels** — Very apparent in custom level sets such as "Fellowship" (level 3) which has lots of wide open space but low bounding area to contain players. The current OOB guard in `BotApplyThrust()` only fires when the bot is fully outside the terrain cell grid, which does not catch bots that remain within the X/Z grid but fly to extreme Y altitudes.
 - **Physics immunity to certain weapons** — Previously observed but appears to have been resolved. Bots now respond to Mass Driver knockback and Black Shark vortex physics forces.
-- **Sporadic and transient state oscillation/locking** — Bots may try to engage targets through thin walls/floors. Phase 3.26 mitigates via progress-based HUNT timeout (15s). Phase 4.01 gates EXPLORE→HUNT on LOS or proximity (<400u) and adds 5s retarget cooldown on HUNT drop, preventing rapid blind-chase oscillation on complex maps.
+- **Sporadic and transient state oscillation/locking** — Bots may try to engage targets through thin walls/floors. Phase 3.26 mitigates via progress-based HUNT timeout (15s). Phase 4.01 gates EXPLORE→HUNT on LOS or proximity, Phase 4.05 adds COMBAT no-LOS timeout (5s). Phase 4.06 widens blind HUNT gate to 300u for better engagement on open maps while stale powerup chases (>4s) no longer suppress HUNT transitions.
 - **Dynamic path pool exhaustion** — With 6+ bots, `MAX_DYNAMIC_PATHS=100` is insufficient. The pool fills up and produces millions of "Out of dynamic paths" log errors per session. Paths are allocated but not freed fast enough, degrading navigation and inflating log files. Needs investigation into path slot lifecycle and possible pool size increase.
 - **Complex geometry navigation** — Largely addressed by Phases 3.24–3.26. Bots now use BOA_connect for outdoor↔indoor transitions, portal entrance positions instead of room centers, and BOA portal navigation when stuck. Afterburner is suppressed while stuck. Edge cases remain on maps with very tight openings or unusual portal geometry.
 - **Weapon under-utilization** — Plasma, EMD, and Super Laser are picked up but under-selected relative to Vauss/Fusion/Microwave. The tactical weapon hierarchy may need rebalancing in the medium-range energy weapon band.
@@ -684,8 +689,18 @@ Implemented all four changes from `NAV_OVERHAUL.md`. Key improvements:
 
 1. **BOA-driven long-range exploration** — `BotDoExploreRoaming()` randomly samples rooms across the entire map, validates with `BOA_GetNextRoom`, scores by visited/crowded/random. Eliminated shallow 2-portal-deep explore.
 2. **Engine pathfinding integration** — `BotSetPursuitGoal()` uses `AIG_GET_TO_OBJ` with target handle. Engine handles all BOA+BNode routing. Removed manual portal-by-portal navigation.
-3. **Room-change progress tracking** — Per-frame room tracking with 8s timeout catches stuck bots that speed-based detection misses (moving but going nowhere).
+3. **Room-change progress tracking** — Per-frame room tracking with 12s timeout catches stuck bots that speed-based detection misses (moving but going nowhere).
 4. **Smart stuck escape** — Portal enumeration preferring unvisited rooms. Blind reverse is last resort. `BOT_STUCK_ABANDON_TIME` reduced 7s→5s.
+
+### Phases 4.01–4.06: Navigation & Powerup Tuning (Complete)
+
+Iterative playtest-driven refinements across multiple maps (Fellowship, BBQ, Fury, Mega Factory):
+
+- **4.01–4.02:** Anti-oscillation tuning. LOS/distance gate on EXPLORE→HUNT, retarget cooldown, powerup-first exploration.
+- **4.03:** Powerup collection overhaul. `BotCanSeePos()` ship-width FVI raycast, LOS-weighted scoring, `GF_USE_BLINE_IF_SEES_GOAL` restored for visible powerups, per-item chase timeout (8s).
+- **4.04:** Competing goals fix (clear roaming goal when targeting powerup), BNode crash guard for rooms with zero nodes (campaign maps), sustained escape thrust for spawn-stuck bots.
+- **4.05:** FVI radius 0→2.5 in `BotCanSeePos` (filters tiny geometry gaps), COMBAT no-LOS timeout drops wall-fighters to HUNT.
+- **4.06:** `BotCanCollectPowerup()` skips already-owned items (mirrors `HandleWeaponPowerups`/`HandleCommonPowerups` logic). Direct powerup thrust override within 50u. `BOT_HUNT_BLIND_MAX_DIST` 150→300 (engagement regression fix). Stale powerup chases no longer suppress HUNT. Powerup interrupt requires LOS + collectibility.
 
 ### Phase 5: Bot Management & Server Architecture (Next)
 
