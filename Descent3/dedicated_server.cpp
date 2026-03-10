@@ -203,6 +203,10 @@ static cvar_entry CVars[] = {
     {"SetLevel", CVAR_TYPE_INT, NULL, -1, -1, CVAR_GAMEINIT | CVAR_GAMEPLAY},                                 // 33
     {"SetDifficulty", CVAR_TYPE_INT, NULL, 0, 4, CVAR_GAMEINIT},                                              // 34
     {"MOTD", CVAR_TYPE_STRING, &Multi_message_of_the_day, -1, HUD_MESSAGE_LENGTH * 2, CVAR_GAMEINIT},         // 35
+    // Bot config file path — "BotConfig=bots.cfg" in dedicated.cfg points to a separate
+    // bot roster file using the same Key=Value syntax. Parsed by BotLoadRosterFile() after
+    // the first level loads. If absent, no bots are auto-spawned (backwards compatible).
+    {"BotConfig", CVAR_TYPE_STRING, Bot_config_file, -1, 259, CVAR_GAMEINIT},                                // 36
 };
 
 #define CVAR_TIMELIMIT 1
@@ -355,6 +359,10 @@ int LoadServerConfigFile() {
   }
 
   inf.Close();
+
+  // BotConfig path resolution is deferred to BotLoadRosterFile() at level-load time,
+  // when base directories are guaranteed to be registered. The CVar stores the raw
+  // value from dedicated.cfg (e.g., "bots.cfg").
 
   if (!RunServerConfigs())
     return 0;
@@ -723,13 +731,38 @@ void ParseLine(char *srcline, char *command, char *operand, int cmdlen, int oprl
 static bool DedicatedHandleBotCommand(const char *command, const char *operand) {
   if (stricmp(command, "addbot") == 0) {
     char botname[CALLSIGN_LEN + 1] = "Bot";
+    int ship_index = 0;
+
     if (operand[0]) {
-      strncpy(botname, operand, CALLSIGN_LEN);
-      botname[CALLSIGN_LEN] = '\0';
+      // Parse: addbot <name> [ship]
+      // Copy operand so we can tokenize it
+      char op_copy[255];
+      strncpy(op_copy, operand, 254);
+      op_copy[254] = '\0';
+
+      // First token is the bot name
+      char *name_tok = strtok(op_copy, " \t");
+      if (name_tok) {
+        strncpy(botname, name_tok, CALLSIGN_LEN - BOT_NAME_PREFIX_LEN);
+        botname[CALLSIGN_LEN - BOT_NAME_PREFIX_LEN] = '\0';
+
+        // Second token (optional) is the ship alias
+        char *ship_tok = strtok(NULL, " \t");
+        if (ship_tok) {
+          int resolved = BotResolveShipAlias(ship_tok);
+          if (resolved >= 0) {
+            ship_index = resolved;
+          } else {
+            PrintDedicatedMessage("Unknown ship '%s', using default. Valid: pyro, phoenix, magnum, blackpyro\n",
+                                  ship_tok);
+          }
+        }
+      }
     }
-    int idx = BotAdd(botname);
+    int idx = BotAdd(botname, ship_index);
     if (idx >= 0)
-      PrintDedicatedMessage("Bot '%s' added in slot %d\n", Bots[idx].callsign, Bots[idx].player_slot);
+      PrintDedicatedMessage("Bot '%s' added in slot %d (ship=%s)\n", Bots[idx].callsign, Bots[idx].player_slot,
+                            Ships[Bots[idx].ship_index].name);
     else
       PrintDedicatedMessage("Failed to add bot (server full or max bots reached)\n");
     return true;
@@ -807,6 +840,10 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     } else {
       PrintDedicatedMessage("Usage: botmov on|off  (current: %s)\n", Bot_debug_movement ? "on" : "off");
     }
+    return true;
+  }
+  if (stricmp(command, "servercaps") == 0) {
+    BotPrintServerCaps();
     return true;
   }
   return false;

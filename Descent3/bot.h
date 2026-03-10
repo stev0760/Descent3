@@ -305,7 +305,12 @@ extern bot_info Bots[MAX_BOTS];
 extern int Num_bots;
 extern bool Bot_debug_movement; // When true, log bot+player velocity every ~0.5s
 
+// Bot name prefix — prepended to all bot callsigns for identification
+#define BOT_NAME_PREFIX "[BOT] "
+#define BOT_NAME_PREFIX_LEN 6 // strlen("[BOT] ")
+
 // Add a bot to the game. Returns bot index (into Bots[]) or -1 on failure.
+// Ship can be specified by index, or use BotResolveShipAlias() to get index from a name string.
 int BotAdd(const char *name, int ship_index = 0);
 
 // Remove a specific bot by its Bots[] index.
@@ -322,6 +327,39 @@ void BotInitAll();
 
 // Shutdown bot subsystem (call at server shutdown / level end).
 void BotShutdownAll();
+
+// Resolve a ship alias (e.g., "pyro", "phoenix", "magnum", "blackpyro") to a ship index.
+// Also accepts full names ("Pyro-GL", "Magnum-AHT", "Black Pyro"). Returns -1 if not found.
+int BotResolveShipAlias(const char *alias);
+
+// --- Bot roster config (Phase 5.1) ---
+//
+// Bot roster is configured via an external file referenced by "BotConfig=<file>" in
+// dedicated.cfg. The BotConfig CVar is handled by the standard D3 CVar system — no
+// special parsing needed in the config loader.
+//
+// The bot config file uses the same Key=Value syntax as dedicated.cfg:
+//   BotCount=4
+//   BotName1=Reaper
+//   BotShip1=phoenix
+//
+// If BotConfig is absent or empty, the server runs without auto-spawned bots — fully
+// backwards compatible. Bots can still be added manually via "addbot" console/telnet.
+//
+// Ship aliases: pyro, phoenix, magnum, blackpyro (full names also accepted).
+// All bot callsigns are automatically prefixed with "[BOT] ".
+
+// Storage for the BotConfig CVar — set by dedicated.cfg, read after level load.
+// This is extern so the CVar system in dedicated_server.cpp can point to it directly.
+extern char Bot_config_file[260];
+
+// Load bot roster from the config file specified by Bot_config_file.
+// Called once after the first level loads. Subsequent levels use BotReinitAll().
+// If Bot_config_file is empty or the file doesn't exist, does nothing.
+void BotLoadRosterFile();
+
+// Print server capabilities response for remote administration handshake.
+void BotPrintServerCaps();
 
 // Reinitialize all active bots after a level transition.
 void BotReinitAll();

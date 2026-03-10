@@ -22,6 +22,7 @@
 #include "bot.h"
 #include <climits>
 #include <cmath>
+#include <filesystem>
 #include "multi.h"
 #include "multi_server.h"
 #include "player.h"
@@ -45,11 +46,18 @@
 #include "objinfo.h"
 #include "terrain.h"
 #include "BOA.h"
+#include "cfile.h"
+#include "dedicated_server.h"
+#include "init.h"
 #include "log.h"
 
 bot_info Bots[MAX_BOTS];
 int Num_bots = 0;
 bool Bot_debug_movement = false; // Toggle with "botmov on/off" console command
+
+// --- Bot roster config (Phase 5.1) ---
+char Bot_config_file[260] = {};           // CVar storage — set by "BotConfig=<file>" in dedicated.cfg
+static bool Bot_roster_spawned = false;   // true after first level auto-spawn
 
 // Forward declarations for functions not exposed in headers
 extern void MultiSendPlayerEnteredGame(int which);
@@ -2744,8 +2752,8 @@ int BotAdd(const char *name, int ship_index) {
   NetPlayers[slot].addr.port = 0;
 
   // --- Set up Players slot ---
-  strncpy(Players[slot].callsign, name, CALLSIGN_LEN);
-  Players[slot].callsign[CALLSIGN_LEN] = '\0';
+  // Prepend [BOT] tag to the callsign so bots are identifiable in the scoreboard
+  snprintf(Players[slot].callsign, CALLSIGN_LEN + 1, "%s%s", BOT_NAME_PREFIX, name);
   Players[slot].ship_index = ship_index;
   Players[slot].flags = 0;
   Players[slot].rank = -1.0f;
@@ -2814,8 +2822,7 @@ int BotAdd(const char *name, int ship_index) {
   // --- Populate bot_info record ---
   Bots[bot_index].active = true;
   Bots[bot_index].player_slot = slot;
-  strncpy(Bots[bot_index].callsign, name, CALLSIGN_LEN);
-  Bots[bot_index].callsign[CALLSIGN_LEN] = '\0';
+  snprintf(Bots[bot_index].callsign, CALLSIGN_LEN + 1, "%s%s", BOT_NAME_PREFIX, name);
   Bots[bot_index].ship_index = ship_index;
   Bots[bot_index].death_time = 0.0f;
   Bots[bot_index].awaiting_respawn = false;
@@ -3191,4 +3198,160 @@ bool BotIsPlayerSlot(int player_slot) {
   if (player_slot < 0 || player_slot >= MAX_NET_PLAYERS)
     return false;
   return (NetPlayers[player_slot].flags & NPF_BOT) != 0;
+}
+
+// --- Ship alias resolver (Phase 5.1) ---
+
+int BotResolveShipAlias(const char *alias) {
+  if (!alias || !alias[0])
+    return -1;
+
+  // Map shorthand aliases to full ship names
+  static const struct {
+    const char *alias;
+    const char *full_name;
+  } ship_aliases[] = {
+      {"pyro", "Pyro-GL"},
+      {"phoenix", "Phoenix"},
+      {"magnum", "Magnum-AHT"},
+      {"blackpyro", "Black Pyro"},
+  };
+
+  for (auto &sa : ship_aliases) {
+    if (stricmp(alias, sa.alias) == 0) {
+      int idx = FindShipName(sa.full_name);
+      if (idx >= 0 && Ships[idx].used)
+        return idx;
+      return -1;
+    }
+  }
+
+  // Fall through to full name lookup (e.g., "Pyro-GL", "Magnum-AHT", "Black Pyro")
+  int idx = FindShipName(alias);
+  if (idx >= 0 && Ships[idx].used)
+    return idx;
+  return -1;
+}
+
+// --- Bot roster config parsing (Phase 5.1) ---
+
+// Load bot roster from the config file specified by Bot_config_file (set via "BotConfig="
+// CVar in dedicated.cfg). Uses the same Key=Value syntax as dedicated.cfg:
+//   BotCount=4
+//   BotName1=Reaper
+//   BotShip1=phoenix
+//
+// Calls the same BotAdd() that the "addbot" console command uses — no separate code path.
+// Called once after the first level loads. Does nothing if Bot_config_file is empty.
+void BotLoadRosterFile() {
+  if (Bot_roster_spawned || !Bot_config_file[0])
+    return;
+  Bot_roster_spawned = true;
+
+  // Resolve the config path using D3's base directory search at level-load time,
+  // when base directories are guaranteed to be registered. This handles cwd changes
+  // during engine init — cf_LocatePath() searches the executable/install directory.
+  std::filesystem::path resolved = cf_LocatePath(Bot_config_file);
+  std::string open_path = resolved.empty() ? Bot_config_file : resolved.string();
+
+  FILE *fp = fopen(open_path.c_str(), "r");
+  if (!fp) {
+    LOG_WARNING.printf("BOT CONFIG: Could not open '%s'", open_path.c_str());
+    PrintDedicatedMessage("BOT CONFIG: Could not open '%s'\n", open_path.c_str());
+    return;
+  }
+
+  LOG_INFO.printf("BOT CONFIG: Loading roster from '%s'", open_path.c_str());
+  PrintDedicatedMessage("Loading bot roster from '%s'\n", open_path.c_str());
+
+  // Parse Key=Value entries — same format as dedicated.cfg
+  int bot_count = 0;
+  char names[MAX_BOTS][CALLSIGN_LEN + 1] = {};
+  char ships[MAX_BOTS][32] = {};
+  char line[256];
+
+  while (fgets(line, sizeof(line), fp)) {
+    char *p = line;
+    while (*p == ' ' || *p == '\t')
+      p++;
+    if (*p == ';' || *p == '#' || *p == '\0' || *p == '\n')
+      continue;
+
+    char *eq = strchr(p, '=');
+    if (!eq)
+      continue;
+    *eq = '\0';
+    char *key = p;
+    char *val = eq + 1;
+
+    // Trim key and value whitespace
+    int klen = strlen(key);
+    while (klen > 0 && (key[klen - 1] == ' ' || key[klen - 1] == '\t'))
+      key[--klen] = '\0';
+    while (*val == ' ' || *val == '\t')
+      val++;
+    int vlen = strlen(val);
+    while (vlen > 0 && (val[vlen - 1] == ' ' || val[vlen - 1] == '\t' || val[vlen - 1] == '\r' ||
+                        val[vlen - 1] == '\n'))
+      val[--vlen] = '\0';
+
+    if (stricmp(key, "BotCount") == 0) {
+      bot_count = atoi(val);
+      if (bot_count < 0)
+        bot_count = 0;
+      if (bot_count > MAX_BOTS)
+        bot_count = MAX_BOTS;
+    } else if (strnicmp(key, "BotName", 7) == 0 && key[7] >= '1' && key[7] <= '9') {
+      int num = atoi(&key[7]);
+      if (num >= 1 && num <= MAX_BOTS) {
+        strncpy(names[num - 1], val, CALLSIGN_LEN - BOT_NAME_PREFIX_LEN);
+        names[num - 1][CALLSIGN_LEN - BOT_NAME_PREFIX_LEN] = '\0';
+      }
+    } else if (strnicmp(key, "BotShip", 7) == 0 && key[7] >= '1' && key[7] <= '9') {
+      int num = atoi(&key[7]);
+      if (num >= 1 && num <= MAX_BOTS) {
+        strncpy(ships[num - 1], val, 31);
+        ships[num - 1][31] = '\0';
+      }
+    }
+  }
+  fclose(fp);
+
+  if (bot_count <= 0) {
+    LOG_INFO << "BOT CONFIG: BotCount=0 or missing, no bots to spawn";
+    return;
+  }
+
+  // Spawn bots via BotAdd() — same function the "addbot" console command calls
+  LOG_INFO.printf("BOT CONFIG: Spawning %d bots", bot_count);
+  for (int i = 0; i < bot_count; i++) {
+    char name[CALLSIGN_LEN + 1];
+    if (names[i][0])
+      strncpy(name, names[i], sizeof(name) - 1);
+    else
+      snprintf(name, sizeof(name), "Bot%d", i + 1);
+    name[sizeof(name) - 1] = '\0';
+
+    int ship_index = 0;
+    if (ships[i][0]) {
+      int resolved = BotResolveShipAlias(ships[i]);
+      if (resolved >= 0)
+        ship_index = resolved;
+      else
+        LOG_WARNING.printf("BOT CONFIG: Unknown ship '%s' for bot %d, using default", ships[i], i + 1);
+    }
+
+    int idx = BotAdd(name, ship_index);
+    if (idx >= 0)
+      PrintDedicatedMessage("  Bot '%s' spawned (ship=%s, slot=%d)\n", Bots[idx].callsign,
+                            Ships[Bots[idx].ship_index].name, Bots[idx].player_slot);
+    else
+      PrintDedicatedMessage("  Failed to spawn bot '%s'\n", name);
+  }
+}
+
+void BotPrintServerCaps() {
+  // Build feature list based on what's compiled in
+  // For now, "bots" and "roster" are always present in this fork
+  PrintDedicatedMessage("SERVERCAPS version=1 features=bots,roster,ships\n");
 }

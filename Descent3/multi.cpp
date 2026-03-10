@@ -6452,8 +6452,11 @@ bool MultiStartNewLevel(int level) {
   CallGameDLL(EVT_GAMELEVELSTART, &DLLInfo);
 
   // Restore bot AI state after level transition (objects were destroyed and recreated)
-  if (Netgame.local_role == LR_SERVER)
+  if (Netgame.local_role == LR_SERVER) {
     BotReinitAll();
+    // Auto-spawn configured bot roster on first level load (Phase 5.1)
+    BotLoadRosterFile();
+  }
 
   return true;
 }

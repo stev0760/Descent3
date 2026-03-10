@@ -1,6 +1,6 @@
 # Phase 5: Bot Management & Server Administration
 
-**Status:** Planning
+**Status:** Phase 5.1 complete
 **Prerequisite reading:** `BOT_DEV_REFERENCE.md`, `BOTS_DEVEL.md`
 **Key files:** `Descent3/bot.h`, `Descent3/bot.cpp`, `Descent3/dedicated_server.cpp`
 
@@ -14,12 +14,13 @@ Bot setup is entirely manual. Server admins must type `addbot <name>` for each b
 
 | Command | Description |
 |---------|-------------|
-| `addbot <name>` | Add a single bot with optional name (default: "Bot") |
+| `addbot <name> [ship]` | Add a bot with optional name and ship alias (default: "Bot", Pyro-GL) |
 | `removebot <index>` | Remove bot by Bots[] index |
 | `removebots` | Remove all bots |
 | `botlist` | List active bots with slot/state info |
 | `botstat [index\|all]` | Real-time physics/state debugging |
 | `botmov on\|off` | Toggle movement debug logging |
+| `servercaps` | Print server capabilities for remote admin handshake |
 
 ### Current Architecture
 
@@ -34,82 +35,105 @@ Bot setup is entirely manual. Server admins must type `addbot <name>` for each b
 
 ## Goals
 
-### 5.1: Config-File Bot Roster (Priority: High)
+### 5.1: Config-File Bot Roster (Priority: High) — IMPLEMENTED
 
-Auto-spawn bots on server start from `dedicated.cfg` without manual console commands.
+Auto-spawn bots on server start without manual console commands. Uses the same `Key=Value` syntax as the standard `dedicated.cfg` format — all D3 server configuration follows a single consistent convention.
 
-**Minimum viable:**
+**Hybrid config model:**
+
+Bot roster entries can live directly in `dedicated.cfg` (inline) or in a separate file referenced by `BotConfig=`. Both use identical `Key=Value` syntax. A server with no `BotCount` (or `BotCount=0`) runs without bots — fully backwards compatible.
+
+**Option A — Inline in dedicated.cfg:**
 ```ini
-# In dedicated.cfg
-BotCount 4
+; dedicated.cfg — bot entries alongside standard server config
+PPS=28
+MaxPlayers=13
+GameName=BotTestServer
+MissionName=fellowship.mn3
+Scriptname=anarchy.d3m
+ConnectionName=Direct TCP~IP
+BotCount=4
+BotName1=Reaper
+BotName2=Phantom
+BotName3=Viper
+BotName4=Shadow
+BotShip1=pyro
+BotShip2=phoenix
+BotShip3=magnum
+BotShip4=pyro
 ```
 
-Spawns 4 bots with default names ("Bot1", "Bot2", ...) after the first level loads.
-
-**Extended:**
+**Option B — Separate bot config file:**
 ```ini
-BotCount 4
-BotName1 "Reaper"
-BotName2 "Phantom"
-BotName3 "Viper"
-BotName4 "Shadow"
-BotShip1 "Pyro-GL"
-BotShip2 "Phoenix"
-BotShip3 "Magnum-AHT"
-BotShip4 "Pyro-GL"
+; dedicated.cfg — references external bot roster
+PPS=28
+MaxPlayers=13
+GameName=BotTestServer
+MissionName=fellowship.mn3
+Scriptname=anarchy.d3m
+ConnectionName=Direct TCP~IP
+BotConfig=bots.cfg
+```
+```ini
+; bots.cfg — swappable roster preset, same Key=Value syntax
+BotCount=4
+BotName1=Reaper
+BotName2=Phantom
+BotName3=Viper
+BotName4=Shadow
+BotShip1=pyro
+BotShip2=phoenix
+BotShip3=magnum
+BotShip4=pyro
 ```
 
-**Implementation approach:**
-- Add new CVars: `CVAR_BOT_COUNT` (int), `CVAR_BOT_NAME1..N` (string)
-- In `MultiStartNewLevel()` or the post-level-load hook, call `BotAdd()` for each configured bot if `Num_bots == 0` (first load only — `BotReinitAll` handles subsequent levels)
-- Names stored in a static array; indexed by bot creation order
-- Team assignment uses existing round-robin logic
+All bot callsigns are automatically prefixed with `[BOT] ` for identification (e.g., "[BOT] Reaper").
 
-**Key questions:**
-- Should bots auto-respawn if manually removed? (Probably not — admin intent)
-- Should `BotCount` be a live CVar (changeable mid-game) or load-time only?
-- How to handle `BotCount > MAX_BOTS` or `BotCount > available_slots`?
+**Implementation:**
+- Config parsed via `BotParseCfgFile()` — a second pass of the config file after CVar loading (bot entries aren't CVars; the InfFile/CVar system doesn't expose unrecognized commands)
+- If `BotConfig=<file>` is found in `dedicated.cfg`, that file is parsed for roster entries; otherwise bot entries are read from `dedicated.cfg` itself
+- `BotSpawnRoster()` called from `MultiStartNewLevel()` after `BotReinitAll()` — spawns once on first level load; subsequent levels use `BotReinitAll()` to preserve bots
+- Names stored in static arrays indexed by bot number (1-based in config, 0-based in storage)
+- Team assignment uses existing round-robin logic in `BotAdd()`
+- `BotCount` clamped to `MAX_BOTS` (16); missing `BotNameN` defaults to "BotN"
 
-### 5.1b: Ship Selection (Priority: High)
+### 5.1b: Ship Selection (Priority: High) — IMPLEMENTED
 
-Admins should be able to assign each bot a specific ship. The game supports multiple ships with different physics, weapon loadouts, and visual models.
+Admins can assign each bot a specific ship via config or console command.
 
-**Available ships:**
+**Available ships and aliases:**
 
-| Ship | Notes |
-|------|-------|
-| Pyro-GL | Default ship. Standard all-rounder. |
-| Phoenix | Faster, lighter. Different weapon battery layout. |
-| Magnum-AHT | Heavy/tanky. Higher mass and thrust. |
-| Black Pyro | Mercenary expansion ship. Only available if Mercenary is installed (`MercInstalled()` in `init.h`). |
+| Ship | Config/Console Alias | Notes |
+|------|---------------------|-------|
+| Pyro-GL | `pyro` | Default ship. Standard all-rounder. |
+| Phoenix | `phoenix` | Faster, lighter. Different weapon battery layout. |
+| Magnum-AHT | `magnum` | Heavy/tanky. Higher mass and thrust. |
+| Black Pyro | `blackpyro` | Mercenary expansion ship. Only available if Mercenary is installed. |
 
-**Current state:**
-- `BotAdd(const char *name, int ship_index = 0)` already accepts a ship index
-- `FindShipName(const char *name)` in `ship.h` resolves name → index
-- `Ships[i].used` indicates which ships are loaded
-- `PlayerSetShipPermission()` controls which ships players may use — bots should respect `AllowedShips` server config
-- All bot code reads physics from `Ships[Players[slot].ship_index]` — ship selection propagates automatically to thrust, mass, drag, weapon batteries
+Full names (e.g., `Pyro-GL`, `Magnum-AHT`, `Black Pyro`) also accepted. Aliases are case-insensitive.
 
 **Config:**
 ```ini
-BotCount 4
-BotShip1 "Pyro-GL"
-BotShip2 "Phoenix"
-BotShip3 "Magnum-AHT"
-BotShip4 "Black Pyro"
+BotCount=4
+BotShip1=pyro
+BotShip2=phoenix
+BotShip3=magnum
+BotShip4=blackpyro
 ```
 
-**Implementation approach:**
-- Add `CVAR_BOT_SHIP1..N` (string) CVars, parsed at config load
-- At bot spawn time: `FindShipName(configured_name)` → validate `Ships[idx].used` → pass to `BotAdd()`
-- If ship not found or not allowed: fall back to `DEFAULT_SHIP` ("Pyro-GL") with a log warning
-- Black Pyro availability: check `MercInstalled()` before allowing
-- Console command: `addbot <name> [ship]` — extend existing command to accept optional ship name
+**Console/Telnet:**
+```
+addbot Reaper phoenix
+addbot Shadow magnum
+addbot Ghost blackpyro
+```
 
-**Key questions:**
-- Should `BotCacheShipPhysics()` be called again if ship changes mid-game? (Yes — it caches per-ship physics constants)
-- Do all ships have identical weapon battery layouts? (No — different ships may have different `static_wb[]` entries. `BotSelectBestWeapon` iterates batteries 0–9 which should work for all ships, but weapon availability varies)
-- Should bots auto-select weapons differently per ship? (Future work — for now the generic weapon selection loop handles it)
+**Implementation:**
+- `BotResolveShipAlias()` maps shorthand aliases → `FindShipName()` → validated ship index
+- `addbot <name> [ship]` extended to accept optional ship alias as second argument
+- Config uses `BotShipN=alias` entries parsed alongside `BotNameN`
+- Invalid/unavailable ships fall back to default (Pyro-GL) with a log warning
+- All bot code reads physics from `Ships[Players[slot].ship_index]` — ship selection propagates automatically to thrust, mass, drag, weapon batteries
 
 ### 5.2: Difficulty Levels (Priority: Medium)
 
@@ -183,11 +207,13 @@ Track per-bot performance across sessions for tuning and diagnostics.
 
 ## Implementation Order
 
-1. **5.1 Config-file roster** — highest impact, enables unattended servers
-2. **5.3 Auto-rebalancing** — most requested quality-of-life feature
-3. **5.2 Difficulty levels** — improves gameplay variety
-4. **5.4 Enhanced console** — admin convenience
-5. **5.5 Statistics** — diagnostic tooling
+1. ~~**5.6 `servercaps` handshake**~~ ✅ Implemented
+2. ~~**5.1 Config-file roster**~~ ✅ Implemented
+3. ~~**5.1b Ship selection**~~ ✅ Implemented
+4. **5.3 Auto-rebalancing** — most requested quality-of-life feature
+5. **5.2 Difficulty levels** — improves gameplay variety
+6. **5.4 Enhanced console** — admin convenience
+7. **5.5 Statistics** — diagnostic tooling
 
 ---
 
@@ -195,11 +221,66 @@ Track per-bot performance across sessions for tuning and diagnostics.
 
 | Risk | Mitigation |
 |------|------------|
-| CVar system has limited capacity | Check `DedicatedServerLex[]` size; may need to extend |
-| Bot names with spaces in config | Use quoted string parsing (already supported for some CVars) |
+| ~~CVar system has limited capacity~~ | Resolved: bot config uses separate second-pass parser, not CVars |
+| Bot names with spaces in config | Config parser strips quotes; recommend no-space names to match D3 conventions |
 | Difficulty scaling feels artificial | Start with aim accuracy + reaction delay only; add more knobs if needed |
 | Auto-rebalance disrupts gameplay | Add cooldown, only move bots (never humans), announce in chat |
 | Per-bot difficulty in config is verbose | Support global `BotDifficulty` with optional per-bot overrides |
+
+---
+
+## 5.6: Remote Administration Handshake (Priority: High — Foundation) — IMPLEMENTED
+
+**Context:** There is no modern server administration tool for Descent 3 — unlike DXX-Rebirth and other retro FPS communities, D3 server admins are limited to the raw telnet console. A companion **web administration application** will be built as a separate project to provide a browser-based UI for managing D3 dedicated servers, including bot management. That project is **out of scope** here, but we need to ensure the D3 server side is designed for remote manageability.
+
+**Compatibility requirement:** The web admin must work with both bot-enabled (this fork) and vanilla D3 v1.5 servers. It communicates via the existing **telnet** interface (D3's remote console). On vanilla servers, bot management (and any other extended features) will be disabled/greyed out in the web UI.
+
+### Capability Handshake: `servercaps`
+
+We introduce a general-purpose `servercaps` command that any fork or mod can use to advertise extended features. Bot support is one such feature. This convention can be adopted by the wider community if others extend D3 in similar ways.
+
+**Server-side command:**
+```
+servercaps
+```
+
+**Response on this fork (bot-enabled):**
+```
+SERVERCAPS version=1 features=bots,roster,ships,difficulty,rebalance,botstats
+```
+
+**Response on vanilla D3:**
+```
+Unknown command: servercaps
+```
+
+The web admin sends `servercaps` on connect. If it gets a structured `SERVERCAPS` response, it enables UI sections for the advertised features. If it gets an error or no response, extended features stay greyed out.
+
+### Design Principles
+
+- **Version field:** `version=1` allows future protocol evolution without breaking older web admin versions
+- **Feature flags:** Comma-separated list of supported capabilities. Any fork can add its own flags (e.g., `bots`, `custom_maps`, `anticheat`). The web admin only enables UI for recognized flags.
+- **Backward-compatible:** Adding a new console command doesn't break vanilla clients — unrecognized commands already produce an error response
+- **Stateless:** Each `servercaps` query returns current state — no persistent handshake session required
+- **Community convention:** By using a generic `servercaps` rather than bot-specific naming, other modders can adopt the same pattern for their own extensions
+
+### Bot Feature Flags
+
+| Flag | Phase | Description |
+|------|-------|-------------|
+| `bots` | — | Core bot support is present |
+| `roster` | 5.1 | Config-file bot roster (auto-spawn) |
+| `ships` | 5.1b | Bot ship selection |
+| `difficulty` | 5.2 | Difficulty levels |
+| `rebalance` | 5.3 | Auto team rebalancing |
+| `botstats` | 5.5 | Bot statistics tracking |
+
+### Implementation Notes
+
+- Add `servercaps` to `DedHandleIO()` command dispatch in `dedicated_server.cpp`
+- Response format is plain text, one line, parseable by simple string splitting
+- As each feature is implemented, add its flag to the `servercaps` response
+- The web admin project will be a separate repository with its own tech stack
 
 ---
 

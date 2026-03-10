@@ -10,9 +10,9 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Multiplayer Bots (Experimental)
 
-**Status:** Phase 4.06 — Navigation & Powerup Overhaul Complete
+**Status:** Phase 5.1 — Bot Management & Config Roster
 
-This fork introduces a **server-side multiplayer bot system** for Descent 3. These AI-controlled bots occupy real player slots on dedicated servers, appearing and acting as normal players.
+This fork introduces a **server-side multiplayer bot system** for Descent 3. These AI-controlled bots occupy real player slots on dedicated servers, appearing and acting as normal players. All bots are tagged with `[BOT]` in their callsign for easy identification.
 
 **No client mods required.** Retail D3 v1.5 clients can connect and play against these bots immediately.
 
@@ -27,31 +27,63 @@ This fork introduces a **server-side multiplayer bot system** for Descent 3. The
 *   **Equipment Loadout Awareness:** Bots self-classify into tiers (WEAK, GOOD, ELITE) based on their current equipment, adjusting aggression and retreat thresholds accordingly.
 *   **Robust Navigation:** Engine-integrated BOA+BNode pathfinding for multi-room routing. Map-wide explore destinations with visited-room memory prevent clustering. Room-change progress tracking catches stuck bots early. Smart portal-based escape with sustained lateral thrust frees bots from complex geometry. Ship-width FVI raycasts prevent bots from targeting items through gaps too small to fly through.
 *   **Game Mode Support:** Works in Anarchy, Team Anarchy, Robo-Anarchy, and Co-op. Bots automatically balance teams and persist across level changes.
+*   **Ship Selection:** Bots can pilot any available ship — Pyro-GL, Phoenix, Magnum-AHT, or Black Pyro (if Mercenary expansion is installed).
 
-### How to Use
+### Server Configuration
+
+Bots can be configured automatically via config file or managed live via console/telnet. Bot config uses the same `Key=Value` syntax as `dedicated.cfg`.
+
+**Option A — Inline in dedicated.cfg:**
+```ini
+BotCount=4
+BotName1=Reaper
+BotName2=Phantom
+BotShip1=phoenix
+BotShip2=magnum
+```
+
+**Option B — Separate bot config file:**
+```ini
+; In dedicated.cfg
+BotConfig=bots.cfg
+```
+```ini
+; bots.cfg — same Key=Value syntax
+BotCount=4
+BotName1=Reaper
+BotShip1=phoenix
+```
+
+A server with no `BotCount` (or `BotCount=0`) runs without bots — fully backwards compatible with vanilla D3 server configs.
+
+**Ship aliases:** `pyro`, `phoenix`, `magnum`, `blackpyro` (full names like `Pyro-GL` also accepted).
+
+### Console Commands
 
 These commands are available in the dedicated server console (or via remote telnet):
 
 | Command | Description |
 | :--- | :--- |
-| `addbot <name>` | Adds a bot with the given name (default: "Bot"). |
+| `addbot <name> [ship]` | Adds a bot with optional name and ship (e.g., `addbot Reaper phoenix`). |
 | `removebot <index>` | Removes a specific bot (use `botlist` to find the index). |
 | `removebots` | Removes all active bots. |
 | `botlist` | Displays a list of all current bots and their status. |
 | `botstat [index\|all]` | Displays real-time physics/state data for debugging. |
+| `servercaps` | Prints server capabilities for remote admin tool handshake. |
 
 ### Known Issues
 
 *   **Navigation edge cases:** Tested on Bedlam, Fellowship, BBQ, Fury, Mega Factory, and D3 campaign levels. Most maps work well but complex multi-level geometry may still have edge cases.
 *   **Client compatibility:** Tested with retail D3 v1.5 and PiccuEngine (Windows v1.5-compatible). Some PiccuEngine-specific issues observed in robo-anarchy that do not reproduce on vanilla clients.
 *   **Weapon usage diversity:** Plasma, EMD, and Super Laser are sometimes under-selected relative to Vauss/Fusion/Microwave. The tactical weapon hierarchy may need further tuning.
-*   **Team rebalancing:** Teams are statically assigned at bot creation time. Dynamic rebalancing when humans join/leave is planned for Phase 5.
+*   **Team rebalancing:** Teams are statically assigned at bot creation time. Dynamic rebalancing when humans join/leave is planned.
 
 ### For Developers
 
 For a deep dive into the architecture, FSM logic, and implementation history, see:
 *   [BOTS_DEVEL.md](BOTS_DEVEL.md) — Phase history and roadmap
 *   [BOT_DEV_REFERENCE.md](BOT_DEV_REFERENCE.md) — Architecture, FSM, constants, engine API patterns
+*   [BOT_MANAGEMENT.md](BOT_MANAGEMENT.md) — Phase 5 bot management: config, ships, difficulty, remote admin
 *   [NAV_OVERHAUL.md](NAV_OVERHAUL.md) — Phase 4.0 navigation design rationale
 
 ## Contributing
