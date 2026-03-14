@@ -211,6 +211,25 @@
 #define BOT_MAX_ALTITUDE_ABOVE_GROUND 200.0f // max height above terrain before suppressing climb
 #define BOT_ALTITUDE_CEILING_MARGIN 50.0f    // suppress upward thrust this far below Ceiling_height
 
+enum BotDifficulty {
+  BOT_DIFF_TRAINEE = 0,
+  BOT_DIFF_ROOKIE = 1,
+  BOT_DIFF_HOTSHOT = 2, // default / baseline
+  BOT_DIFF_ACE = 3,
+  BOT_DIFF_INSANE = 4,
+  BOT_DIFF_COUNT = 5,
+};
+
+struct BotDifficultyParams {
+  float aim_error_deg;        // max angular offset added to aim (degrees)
+  float fire_delay;           // seconds after acquiring target before first shot
+  float flee_pct_scale;       // multiplier on flee thresholds (>1 = flees earlier)
+  float juke_amplitude_scale; // multiplier on juke amplitudes
+  float juke_frequency_scale; // multiplier on juke frequency
+  float dodge_percent;        // ai_info->dodge_percent (0.0–1.0)
+  float turn_rate_scale;      // multiplier on dynamic turn rates
+};
+
 enum BotState {
   BOT_STATE_EXPLORE, // No target. Roam level, collect powerups, react to sounds.
   BOT_STATE_HUNT,    // Has target, out of range or no LOS. Pursue.
@@ -299,6 +318,12 @@ struct bot_info {
   // Powerup chase tracking (Phase 4.03) — detect when chasing an unreachable powerup
   int chasing_powerup_handle;  // handle of powerup being pursued, or OBJECT_HANDLE_NONE
   float chasing_powerup_timer; // seconds spent chasing current powerup without collecting it
+
+  // Difficulty system (Phase 5.2)
+  BotDifficulty difficulty;  // this bot's difficulty level
+  float fire_delay_timer;    // counts down after target acquired; fires when <= 0
+  int fire_delay_target;     // handle of target the delay was started for
+  float aim_wander_phase;    // smooth sinusoidal aim offset phase (like juke_phase)
 };
 
 extern bot_info Bots[MAX_BOTS];
@@ -311,7 +336,15 @@ extern bool Bot_debug_movement; // When true, log bot+player velocity every ~0.5
 
 // Add a bot to the game. Returns bot index (into Bots[]) or -1 on failure.
 // Ship can be specified by index, or use BotResolveShipAlias() to get index from a name string.
-int BotAdd(const char *name, int ship_index = 0);
+int BotAdd(const char *name, int ship_index = 0, BotDifficulty difficulty = BOT_DIFF_HOTSHOT);
+
+// Resolve a difficulty name string to a BotDifficulty enum value.
+// Accepts: "trainee", "rookie", "hotshot", "ace", "insane" (case-insensitive), or "0"–"4".
+// Unrecognized → BOT_DIFF_HOTSHOT.
+BotDifficulty BotResolveDifficulty(const char *str);
+
+// Returns the display name for a difficulty level.
+const char *BotDifficultyName(BotDifficulty d);
 
 // Remove a specific bot by its Bots[] index.
 void BotRemove(int bot_index);
@@ -366,5 +399,12 @@ void BotReinitAll();
 
 // Returns true if the given player slot is occupied by a bot.
 bool BotIsPlayerSlot(int player_slot);
+
+// Change a bot's difficulty at runtime. Resets fire delay timer and updates AI dodge_percent.
+void BotSetDifficulty(int bot_index, BotDifficulty diff);
+
+// Set/get the default difficulty for newly added bots.
+void BotSetDefaultDifficulty(BotDifficulty diff);
+BotDifficulty BotGetDefaultDifficulty();
 
 #endif // BOT_H

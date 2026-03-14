@@ -32,9 +32,15 @@
 | 3.26 | **Pursuit persistence** — progress-based HUNT timeout, last-known-pos pursuit, beeline-through-floors fix, BOA portal nav when stuck | Complete |
 | 3.29 | **Code review refactor** — weapon index constants corrected, buffer overflow fix, BOA crash guard for outdoor bots | Complete |
 | 3.30 | **HUNT hysteresis + greedy powerups** — 3s min HUNT duration, per-weapon pickup priorities, wider divert radii, poorly-armed hold logic, collision log rate-limiting, beeline fix on powerup goals | Complete |
-| 4.0 | **Navigation overhaul** — BOA-driven long-range exploration, engine pathfinding integration, room-change progress tracking, smart stuck escape | Not started |
-| 5 | **Bot management & server architecture** — config-file bot rosters, remote admin, difficulty levels, auto-rebalancing, server orchestration | Not started |
+| 4.0–4.06 | **Navigation overhaul** — BOA-driven exploration, engine pathfinding, room-change tracking, stuck escape, powerup filter | Complete |
+| 5.1 | **Bot management** — config-file rosters, ship selection, `[BOT]` prefix, `$servercaps`, `$` command prefix | Complete |
+| 5.2 | **Difficulty levels** — Trainee/Rookie/Hotshot/Ace/Insane, 7 scaling parameters, config + console | Complete |
+| 5.3 | **Auto-rebalancing** — dynamic team adjustment when humans join/leave | Not started |
 | 6 | **Advanced features** — CTF/Monsterball awareness, team coordination, 6DOF maneuvers, movement capture | Not started |
+
+## Beta Release Milestone
+
+Target: community beta release with configurable difficulty levels. Current bots play at approximately Hotshot-to-Ace level. Difficulty levels (Phase 5.2) are the priority feature — community playtesting will inform tuning of the difficulty parameters. See `BOT_MANAGEMENT.md` §5.2 for tier definitions.
 
 ## Goal
 

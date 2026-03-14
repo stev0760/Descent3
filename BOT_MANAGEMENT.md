@@ -1,6 +1,6 @@
 # Phase 5: Bot Management & Server Administration
 
-**Status:** Phase 5.1 complete
+**Status:** Phase 5.2 complete
 **Prerequisite reading:** `BOT_DEV_REFERENCE.md`, `BOTS_DEVEL.md`
 **Key files:** `Descent3/bot.h`, `Descent3/bot.cpp`, `Descent3/dedicated_server.cpp`
 
@@ -16,13 +16,14 @@ All bot commands use the `$` prefix, consistent with other server admin commands
 
 | Command | Description |
 |---------|-------------|
-| `$addbot <name> [ship]` | Add a bot with optional name and ship alias (default: "Bot", Pyro-GL) |
+| `$addbot <name> [ship] [difficulty]` | Add a bot with optional name, ship, and difficulty |
 | `$removebot <index>` | Remove bot by Bots[] index |
 | `$removebots` | Remove all bots |
 | `$botlist` | List active bots with slot/state info |
 | `$botstat [index\|all]` | Real-time physics/state debugging |
 | `$botmov on\|off` | Toggle movement debug logging |
 | `$servercaps` | Print server capabilities for remote admin handshake |
+| `$botdifficulty <index\|all> <level>` | Change difficulty mid-game |
 | `$bothelp` | List all bot commands |
 
 ### Current Architecture
@@ -138,31 +139,41 @@ $addbot Ghost blackpyro
 - Invalid/unavailable ships fall back to default (Pyro-GL) with a log warning
 - All bot code reads physics from `Ships[Players[slot].ship_index]` — ship selection propagates automatically to thrust, mass, drag, weapon batteries
 
-### 5.2: Difficulty Levels (Priority: Medium)
+### 5.2: Difficulty Levels (Priority: Medium) — IMPLEMENTED
 
-Scale bot combat effectiveness to match player skill. This affects the "feel" of playing against bots — currently all bots play at the same (high) level.
+Scale bot combat effectiveness to match player skill via 7 independent parameters scaled by difficulty tier.
 
-**Proposed tiers:**
+**Tiers** (matching D3 single-player difficulty names):
 
-| Level | Aim accuracy | Reaction delay | Aggression | Notes |
-|-------|-------------|----------------|------------|-------|
-| ROOKIE | 60% | 0.5s fire delay | Low flee threshold, wide dodge | Forgiving for new players |
-| HOTSHOT | 80% | 0.2s fire delay | Standard | Current behavior baseline |
-| ACE | 95% | 0.1s fire delay | Aggressive, low flee threshold | Challenging |
-| INSANE | 100% | 0s (instant) | Rampage mode, minimal flee | Expert-level opponent |
+| Level | Aim Error | Fire Delay | Flee Scale | Juke Amp | Juke Freq | Dodge% | Turn Scale |
+|-------|-----------|------------|------------|----------|-----------|--------|------------|
+| TRAINEE | 12° | 0.8s | 1.8× | 0.4× | 0.6× | 20% | 0.6× |
+| ROOKIE | 7° | 0.5s | 1.4× | 0.6× | 0.8× | 50% | 0.8× |
+| HOTSHOT | 3° | 0.2s | 1.0× | 1.0× | 1.0× | 100% | 1.0× |
+| ACE | 1° | 0.1s | 0.7× | 1.2× | 1.2× | 100% | 1.1× |
+| INSANE | 0° | 0.0s | 0.4× | 1.5× | 1.5× | 100% | 1.2× |
 
-**Implementation levers:**
-- **Aim accuracy:** Add random angular offset to `BotUpdateAimDirection()` lead calculation. Scale offset by difficulty.
-- **Reaction delay:** Add per-bot `fire_delay_timer` — after acquiring LOS, wait N seconds before first shot. Currently bots fire instantly on LOS.
-- **Aggression:** Scale `BOT_FLEE_SHIELD_PCT` and equipment tier thresholds per difficulty. ROOKIE flees at 40%, INSANE at 10%.
-- **Dodge competence:** Scale `BOT_JUKE_AMPLITUDE_COMBAT` and `BOT_JUKE_FREQUENCY` — ROOKIE bots juke less, INSANE bots juke more aggressively.
+**Implementation (6 behavior scaling points):**
+- **Aim error:** Smooth sinusoidal offset in `BotUpdateAimDirection()` — `aim_wander_phase` advances at 0.7 Hz
+- **Fire reaction delay:** Per-target timer in `BotDoFiring()`/`BotDoSecondaryFiring()` — resets on target change, not LOS loss
+- **Flee threshold:** Equipment-tier flee percentage multiplied by `flee_pct_scale` in `BotUpdateState()`
+- **Juke amplitude/frequency:** Scales `BOT_JUKE_AMPLITUDE_*` and phase advancement in `BotApplyThrust()`
+- **Dodge percent:** `ai_info->dodge_percent` set from params in `BotConfigureAI()`
+- **Turn rate:** Dynamic turn rate multiplied by `turn_rate_scale` in `BotApplyThrust()`
 
 **Config:**
 ```ini
-BotDifficulty HOTSHOT
-# or per-bot:
-BotDifficulty1 ACE
-BotDifficulty2 ROOKIE
+BotDifficulty=HOTSHOT        ; global default
+BotDifficulty1=ACE           ; per-bot override
+BotDifficulty2=TRAINEE
+```
+
+**Console:**
+```
+$addbot Reaper pyro ace
+$botdifficulty 0 trainee     ; change bot 0 mid-game
+$botdifficulty all insane    ; change all bots + default
+$botlist                     ; shows difficulty per bot
 ```
 
 ### 5.3: Auto-Rebalancing (Priority: Medium)
@@ -213,8 +224,8 @@ Track per-bot performance across sessions for tuning and diagnostics.
 1. ~~**5.6 `$servercaps` handshake**~~ ✅ Implemented
 2. ~~**5.1 Config-file roster**~~ ✅ Implemented
 3. ~~**5.1b Ship selection**~~ ✅ Implemented
-4. **5.3 Auto-rebalancing** — most requested quality-of-life feature
-5. **5.2 Difficulty levels** — improves gameplay variety
+4. **5.2 Difficulty levels** — priority for beta release, improves gameplay variety
+5. **5.3 Auto-rebalancing** — quality-of-life feature for team modes
 6. **5.4 Enhanced console** — admin convenience
 7. **5.5 Statistics** — diagnostic tooling
 

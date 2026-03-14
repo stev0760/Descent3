@@ -23,10 +23,10 @@ This fork introduces a **server-side multiplayer bot system** for Descent 3. The
 *   **Weapon Mastery:**
     *   **Tactical Switching:** Bots switch between energy and ammo weapons based on resources, range, and combat situation. Omega Cannon at melee range, Mass Driver for sniping, Vauss/Plasma for mid-range dogfights.
     *   **Secondary Fire:** Missiles and rockets from close-range Concussion barrages to long-range Mega Missiles, with splash damage self-guards.
-    *   **Smart Powerup Collection:** Bots seek weapons with per-weapon priority rankings and LOS-weighted scoring. A collectibility filter prevents bots from chasing items they already own (primary weapons, Quad Laser, Afterburner). Poorly armed bots delay combat to grab nearby weapons, break off fights for weapon upgrades, and scan wider areas. Direct thrust steering ensures bots fly into close powerups rather than hovering near them.
+    *   **Smart Powerup Collection:** Bots seek weapons with per-weapon priority rankings and LOS-weighted scoring. A collectibility filter prevents bots from chasing items they already own (primary weapons, Quad Laser, Afterburner, etc). Poorly armed bots delay combat to grab nearby weapons, break off fights for weapon upgrades, and scan wider areas. Direct thrust steering ensures bots fly into close powerups rather than hovering near them.
 *   **Equipment Loadout Awareness:** Bots self-classify into tiers (WEAK, GOOD, ELITE) based on their current equipment, adjusting aggression and retreat thresholds accordingly.
 *   **Robust Navigation:** Engine-integrated BOA+BNode pathfinding for multi-room routing. Map-wide explore destinations with visited-room memory prevent clustering. Room-change progress tracking catches stuck bots early. Smart portal-based escape with sustained lateral thrust frees bots from complex geometry. Ship-width FVI raycasts prevent bots from targeting items through gaps too small to fly through.
-*   **Game Mode Support:** Works in Anarchy, Team Anarchy, Robo-Anarchy, and Co-op. Bots automatically balance teams and persist across level changes.
+*   **Game Mode Support:** Works in Anarchy, Team Anarchy, Robo-Anarchy, with pending work on Co-op and advanced game-mode awareness. Bots persist across level changes.
 *   **Ship Selection:** Bots can pilot any available ship — Pyro-GL, Phoenix, Magnum-AHT, or Black Pyro (if Mercenary expansion is installed).
 
 ### Server Configuration
@@ -74,8 +74,8 @@ These commands are available in the dedicated server console (or via remote teln
 
 ### Known Issues
 
-*   **Navigation edge cases:** Tested on Bedlam, Fellowship, BBQ, Fury, Mega Factory, and D3 campaign levels. Most maps work well but complex multi-level geometry may still have edge cases.
-*   **Client compatibility:** Tested with retail D3 v1.5 and PiccuEngine (Windows v1.5-compatible). Some PiccuEngine-specific issues observed in robo-anarchy that do not reproduce on vanilla clients.
+*   **Navigation edge cases:** Tested on a wide variety of level sets, both vanilla and custom. Most maps work well but complex multi-level geometry may still have edge cases, especially within outdoor structures.
+*   **Client compatibility:** Tested with retail D3 v1.5 and PiccuEngine (Windows v1.5-compatible).
 *   **Weapon usage diversity:** Plasma, EMD, and Super Laser are sometimes under-selected relative to Vauss/Fusion/Microwave. The tactical weapon hierarchy may need further tuning.
 *   **Team rebalancing:** Teams are statically assigned at bot creation time. Dynamic rebalancing when humans join/leave is planned.
 

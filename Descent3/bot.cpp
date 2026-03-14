@@ -59,6 +59,27 @@ bool Bot_debug_movement = false; // Toggle with "$botmov on/off" console command
 char Bot_config_file[260] = {};           // CVar storage — set by "BotConfig=<file>" in dedicated.cfg
 static bool Bot_roster_spawned = false;   // true after first level auto-spawn
 
+// --- Difficulty system (Phase 5.2) ---
+// Parameter table: per-difficulty scaling constants.
+// Hotshot = baseline (close to current behavior). Default when no config is specified.
+static const BotDifficultyParams kDiffParams[BOT_DIFF_COUNT] = {
+    // TRAINEE:  aim_err  fire_delay  flee_scale  juke_amp  juke_freq  dodge   turn_scale
+    {12.0f, 0.8f, 1.8f, 0.4f, 0.6f, 0.2f, 0.6f},
+    // ROOKIE:
+    {7.0f, 0.5f, 1.4f, 0.6f, 0.8f, 0.5f, 0.8f},
+    // HOTSHOT:
+    {3.0f, 0.2f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
+    // ACE:
+    {1.0f, 0.1f, 0.7f, 1.2f, 1.2f, 1.0f, 1.1f},
+    // INSANE:
+    {0.0f, 0.0f, 0.4f, 1.5f, 1.5f, 1.0f, 1.2f},
+};
+static BotDifficulty Bot_default_difficulty = BOT_DIFF_HOTSHOT;
+
+static const BotDifficultyParams *BotGetDiffParams(int bot_index) {
+  return &kDiffParams[Bots[bot_index].difficulty];
+}
+
 // Forward declarations for functions not exposed in headers
 extern void MultiSendPlayerEnteredGame(int which);
 extern void MultiSendRenewPlayer(int slot);
@@ -103,7 +124,9 @@ static void BotCacheShipPhysics(int bot_index) {
 // Configure a bot's AI after PlayerSetControlToAI has been called.
 // Movement goals still run for ORIENTATION only — max_delta_velocity=0 prevents velocity changes.
 // Thrust-based movement is driven by BotApplyThrust() each frame.
-static void BotConfigureAI(int player_slot) {
+// Takes bot_index (Bots[] index), NOT player_slot.
+static void BotConfigureAI(int bot_index) {
+  int player_slot = Bots[bot_index].player_slot;
   object *obj = &Objects[Players[player_slot].objnum];
   if (!obj->ai_info)
     return;
@@ -122,7 +145,8 @@ static void BotConfigureAI(int player_slot) {
 
   // Enable AI dodge system — fires on AIN_OBJ_FIRED notification for CT_AI objects.
   // PlayerSetControlToAI sets dodge_percent=0 which disables dodge entirely.
-  obj->ai_info->dodge_percent = 1.0f;     // 100% chance to attempt dodge per incoming shot
+  // Difficulty scales dodge_percent: Trainee=0.2, Rookie=0.5, Hotshot+=1.0
+  obj->ai_info->dodge_percent = BotGetDiffParams(bot_index)->dodge_percent;
   obj->ai_info->dodge_vel_percent = 1.0f; // full dodge speed
   obj->ai_info->life_preservation = 0.8f; // high self-preservation → longer residual dodge
 
@@ -556,6 +580,20 @@ static void BotDoSecondaryFiring(int bot_index) {
 
   if (!BotHasLOS(obj, target))
     return;
+
+  // Reuse the primary fire delay timer — both weapons wait for the same reaction time (Phase 5.2)
+  {
+    const BotDifficultyParams *dp = BotGetDiffParams(bot_index);
+    if (dp->fire_delay > 0.0f) {
+      int target_handle = target->handle;
+      if (Bots[bot_index].fire_delay_target != target_handle) {
+        Bots[bot_index].fire_delay_timer = dp->fire_delay;
+        Bots[bot_index].fire_delay_target = target_handle;
+      }
+      if (Bots[bot_index].fire_delay_timer > 0.0f)
+        return; // still warming up — primary BotDoFiring ticks the timer
+    }
+  }
 
   vector to_target = target->pos - obj->pos;
   float dist = vm_GetMagnitude(&to_target);
@@ -1616,6 +1654,7 @@ static void BotUpdateState(int bot_index) {
   float flee_pct = (bot_equip >= BOT_EQUIP_TIER_ELITE)  ? BOT_RAMPAGE_FLEE_PCT
                    : (bot_equip == BOT_EQUIP_TIER_WEAK) ? BOT_WEAK_FLEE_PCT
                                                         : BOT_FLEE_SHIELD_PCT;
+  flee_pct *= BotGetDiffParams(bot_index)->flee_pct_scale;
   bool low_shields = (shields < max_shields * flee_pct);
 
   switch (old_state) {
@@ -1914,6 +1953,16 @@ static void BotUpdateAimDirection(int bot_index) {
     }
   }
 
+  // Difficulty-scaled aim error: smooth sinusoidal offset produces lazy-arc drift
+  const BotDifficultyParams *dp = BotGetDiffParams(bot_index);
+  if (dp->aim_error_deg > 0.0f) {
+    float error_rad = dp->aim_error_deg * (3.14159f / 180.0f);
+    float offset_scale = tanf(error_rad) * dist;
+    float phase = Bots[bot_index].aim_wander_phase;
+    aim_pos = aim_pos + obj->orient.rvec * (sinf(phase) * offset_scale) +
+              obj->orient.uvec * (cosf(phase * 1.3f) * offset_scale);
+  }
+
   // Steer AI orient system toward the lead position
   obj->ai_info->last_see_target_pos = aim_pos;
 
@@ -1956,11 +2005,14 @@ static void BotApplyThrust(int bot_index) {
   float dist_to_target = target ? vm_VectorDistanceQuick(&obj->pos, &target->pos) : 1e30f;
   bool is_outdoor = OBJECT_OUTSIDE(obj);
 
-  // Dynamic turn rate: tighter close-quarters tracking (Phase 3.11)
+  // Dynamic turn rate: tighter close-quarters tracking (Phase 3.11), scaled by difficulty
   {
-    int turn_rate = (dist_to_target < BOT_CLOSERANGE_DIST) ? BOT_CLOSERANGE_TURNRATE
-                    : (dist_to_target < BOT_MIDRANGE_DIST) ? BOT_MIDRANGE_TURNRATE
-                                                           : BOT_LONGRANGE_TURNRATE;
+    float tr_scale = BotGetDiffParams(bot_index)->turn_rate_scale;
+    int turn_rate = (int)((dist_to_target < BOT_CLOSERANGE_DIST) ? BOT_CLOSERANGE_TURNRATE * tr_scale
+                          : (dist_to_target < BOT_MIDRANGE_DIST) ? BOT_MIDRANGE_TURNRATE * tr_scale
+                                                                  : BOT_LONGRANGE_TURNRATE * tr_scale);
+    if (turn_rate > 65535)
+      turn_rate = 65535;
     obj->ai_info->max_turn_rate = turn_rate;
   }
 
@@ -2033,23 +2085,29 @@ static void BotApplyThrust(int bot_index) {
   }
 
   // Additive juke oscillation — only in COMBAT, FLEE, and EVADE (not explore or hunt)
+  // Amplitude and frequency scaled by difficulty (Phase 5.2)
   if (Bots[bot_index].state == BOT_STATE_COMBAT || Bots[bot_index].state == BOT_STATE_FLEE ||
       Bots[bot_index].state == BOT_STATE_EVADE) {
+    const BotDifficultyParams *dp = BotGetDiffParams(bot_index);
+    float amp = dp->juke_amplitude_scale;
     float juke_sideways = sinf(Bots[bot_index].juke_phase);
     if (Bots[bot_index].state == BOT_STATE_COMBAT) {
-      sideways += juke_sideways * BOT_JUKE_AMPLITUDE_COMBAT;
-      vertical += cosf(Bots[bot_index].juke_phase * 1.3f) * BOT_VERTICAL_JUKE_AMPLITUDE;
+      sideways += juke_sideways * BOT_JUKE_AMPLITUDE_COMBAT * amp;
+      vertical += cosf(Bots[bot_index].juke_phase * 1.3f) * BOT_VERTICAL_JUKE_AMPLITUDE * amp;
     } else {
       // FLEE and EVADE use the same evasive juke pattern
-      sideways += juke_sideways * BOT_JUKE_AMPLITUDE_FLEE;
-      vertical += cosf(Bots[bot_index].juke_phase * 0.5f) * BOT_VERTICAL_JUKE_AMPLITUDE;
+      sideways += juke_sideways * BOT_JUKE_AMPLITUDE_FLEE * amp;
+      vertical += cosf(Bots[bot_index].juke_phase * 0.5f) * BOT_VERTICAL_JUKE_AMPLITUDE * amp;
     }
   }
 
-  // Update juke phase
-  Bots[bot_index].juke_phase += Frametime * BOT_JUKE_FREQUENCY * 2.0f * 3.14159f;
-  if (Bots[bot_index].juke_phase > 6.28318f)
-    Bots[bot_index].juke_phase -= 6.28318f;
+  // Update juke phase (frequency scaled by difficulty)
+  {
+    float freq = BotGetDiffParams(bot_index)->juke_frequency_scale;
+    Bots[bot_index].juke_phase += Frametime * BOT_JUKE_FREQUENCY * freq * 2.0f * 3.14159f;
+    if (Bots[bot_index].juke_phase > 6.28318f)
+      Bots[bot_index].juke_phase -= 6.28318f;
+  }
 
   // Apply speed scaling
   forward *= speed_scale;
@@ -2430,6 +2488,23 @@ static void BotDoFiring(int bot_index) {
   if (!BotHasLOS(obj, target))
     return;
 
+  // Fire reaction delay (Phase 5.2): lower difficulties have a delay before first shot on a new target.
+  // Timer only resets on target change, NOT on LOS loss — prevents exploits.
+  {
+    const BotDifficultyParams *dp = BotGetDiffParams(bot_index);
+    if (dp->fire_delay > 0.0f) {
+      int target_handle = target->handle;
+      if (Bots[bot_index].fire_delay_target != target_handle) {
+        Bots[bot_index].fire_delay_timer = dp->fire_delay;
+        Bots[bot_index].fire_delay_target = target_handle;
+      }
+      if (Bots[bot_index].fire_delay_timer > 0.0f) {
+        Bots[bot_index].fire_delay_timer -= Frametime;
+        return;
+      }
+    }
+  }
+
   vector to_target = target->pos - obj->pos;
   float dist = vm_GetMagnitude(&to_target);
   if (dist > BOT_FIRE_RANGE)
@@ -2502,7 +2577,7 @@ static void BotRespawn(int bot_index) {
 
   // ResetPlayerObject() sets CT_NONE for non-local players, so re-apply AI control.
   PlayerSetControlToAI(slot, 50.0f);
-  BotConfigureAI(slot);
+  BotConfigureAI(bot_index);
 
   Bots[bot_index].awaiting_respawn = false;
   Bots[bot_index].pursuit_goal_index = -1;
@@ -2541,6 +2616,9 @@ static void BotRespawn(int bot_index) {
   Bots[bot_index].mine_dump_timer = 0.0f;
   Bots[bot_index].mine_dump_remaining = 0;
   Bots[bot_index].gunboy_cooldown = 0.0f;
+  Bots[bot_index].fire_delay_timer = 0.0f;
+  Bots[bot_index].fire_delay_target = OBJECT_HANDLE_NONE;
+  // Don't reset aim_wander_phase — continuous across respawns
   Bots[bot_index].last_target_update = 0.0f; // force immediate re-target after respawn
   BotSelectBestWeapon(bot_index);            // equip best primary weapon on respawn
   BotSelectBestSecondary(bot_index);         // equip best secondary weapon on respawn
@@ -2644,6 +2722,9 @@ void BotReinitAll() {
     Bots[i].mine_dump_timer = 0.0f;
     Bots[i].mine_dump_remaining = 0;
     Bots[i].gunboy_cooldown = 0.0f;
+    Bots[i].fire_delay_timer = 0.0f;
+    Bots[i].fire_delay_target = OBJECT_HANDLE_NONE;
+    // difficulty persists across levels — don't reset
 
     // Restore NetPlayers sequence (level end sets NETSEQ_WAITING_FOR_LEVEL)
     NetPlayers[slot].sequence = NETSEQ_PLAYING;
@@ -2675,7 +2756,7 @@ void BotReinitAll() {
 
     // Restore AI control (MultiDoPlayerEnteredGame calls ResetPlayerObject which sets CT_NONE)
     PlayerSetControlToAI(slot, 50.0f);
-    BotConfigureAI(slot);
+    BotConfigureAI(i);
     BotCacheShipPhysics(i);
 
     // Mark server-owned
@@ -2699,7 +2780,7 @@ void BotReinitAll() {
   BotCacheCountermeasureIDs();
 }
 
-int BotAdd(const char *name, int ship_index) {
+int BotAdd(const char *name, int ship_index, BotDifficulty difficulty) {
   // Find a free bot_info slot
   int bot_index = -1;
   for (int i = 0; i < MAX_BOTS; i++) {
@@ -2797,7 +2878,7 @@ int BotAdd(const char *name, int ship_index) {
 
   // Now apply AI control AFTER the re-init from MultiSendPlayerEnteredGame.
   PlayerSetControlToAI(slot, 50.0f);
-  BotConfigureAI(slot);
+  BotConfigureAI(bot_index);
 
   // Cache ship physics template for thrust-based movement (must be after BotConfigureAI)
   // bot_index is used here, and ship_index is already validated above
@@ -2824,6 +2905,10 @@ int BotAdd(const char *name, int ship_index) {
   Bots[bot_index].player_slot = slot;
   snprintf(Bots[bot_index].callsign, CALLSIGN_LEN + 1, "%s%s", BOT_NAME_PREFIX, name);
   Bots[bot_index].ship_index = ship_index;
+  Bots[bot_index].difficulty = difficulty;
+  Bots[bot_index].fire_delay_timer = 0.0f;
+  Bots[bot_index].fire_delay_target = OBJECT_HANDLE_NONE;
+  Bots[bot_index].aim_wander_phase = (float)(bot_index * 1.7f); // stagger per bot
   Bots[bot_index].death_time = 0.0f;
   Bots[bot_index].awaiting_respawn = false;
   Bots[bot_index].last_target_update = 0.0f;
@@ -3095,6 +3180,11 @@ void BotDoFrame() {
     if (Bots[i].gunboy_cooldown > 0.0f)
       Bots[i].gunboy_cooldown -= Frametime;
 
+    // Advance aim wander phase for difficulty-based aim error (Phase 5.2)
+    Bots[i].aim_wander_phase += Frametime * 0.7f * 2.0f * 3.14159f;
+    if (Bots[i].aim_wander_phase > 6.28318f)
+      Bots[i].aim_wander_phase -= 6.28318f;
+
     // Per-frame: continue rapid mine dump if mid-burst
     if (Bots[i].mine_dump_remaining > 0)
       BotDeployMines(i);
@@ -3268,6 +3358,9 @@ void BotLoadRosterFile() {
   int bot_count = 0;
   char names[MAX_BOTS][CALLSIGN_LEN + 1] = {};
   char ships[MAX_BOTS][32] = {};
+  BotDifficulty diffs[MAX_BOTS];
+  for (int i = 0; i < MAX_BOTS; i++)
+    diffs[i] = BOT_DIFF_COUNT; // sentinel = "not set"
   char line[256];
 
   while (fgets(line, sizeof(line), fp)) {
@@ -3313,6 +3406,15 @@ void BotLoadRosterFile() {
         strncpy(ships[num - 1], val, 31);
         ships[num - 1][31] = '\0';
       }
+    } else if (stricmp(key, "BotDifficulty") == 0) {
+      // Global default difficulty for all bots
+      Bot_default_difficulty = BotResolveDifficulty(val);
+      LOG_INFO.printf("BOT CONFIG: Default difficulty set to %s", BotDifficultyName(Bot_default_difficulty));
+    } else if (strnicmp(key, "BotDifficulty", 13) == 0 && key[13] >= '1' && key[13] <= '9') {
+      // Per-bot difficulty override (e.g., BotDifficulty1=ace)
+      int num = atoi(&key[13]);
+      if (num >= 1 && num <= MAX_BOTS)
+        diffs[num - 1] = BotResolveDifficulty(val);
     }
   }
   fclose(fp);
@@ -3341,17 +3443,61 @@ void BotLoadRosterFile() {
         LOG_WARNING.printf("BOT CONFIG: Unknown ship '%s' for bot %d, using default", ships[i], i + 1);
     }
 
-    int idx = BotAdd(name, ship_index);
+    BotDifficulty diff = (diffs[i] < BOT_DIFF_COUNT) ? diffs[i] : Bot_default_difficulty;
+    int idx = BotAdd(name, ship_index, diff);
     if (idx >= 0)
-      PrintDedicatedMessage("  Bot '%s' spawned (ship=%s, slot=%d)\n", Bots[idx].callsign,
-                            Ships[Bots[idx].ship_index].name, Bots[idx].player_slot);
+      PrintDedicatedMessage("  Bot '%s' spawned (ship=%s, diff=%s, slot=%d)\n", Bots[idx].callsign,
+                            Ships[Bots[idx].ship_index].name, BotDifficultyName(Bots[idx].difficulty),
+                            Bots[idx].player_slot);
     else
       PrintDedicatedMessage("  Failed to spawn bot '%s'\n", name);
   }
 }
 
+// --- Difficulty utilities (Phase 5.2) ---
+
+BotDifficulty BotResolveDifficulty(const char *str) {
+  if (!str || !str[0])
+    return Bot_default_difficulty;
+
+  // Accept numeric "0"–"4"
+  if (str[0] >= '0' && str[0] <= '4' && str[1] == '\0')
+    return (BotDifficulty)(str[0] - '0');
+
+  static const struct {
+    const char *name;
+    BotDifficulty diff;
+  } names[] = {
+      {"trainee", BOT_DIFF_TRAINEE}, {"rookie", BOT_DIFF_ROOKIE}, {"hotshot", BOT_DIFF_HOTSHOT},
+      {"ace", BOT_DIFF_ACE},         {"insane", BOT_DIFF_INSANE},
+  };
+  for (auto &n : names) {
+    if (stricmp(str, n.name) == 0)
+      return n.diff;
+  }
+  return BOT_DIFF_HOTSHOT; // unrecognized → default
+}
+
+const char *BotDifficultyName(BotDifficulty d) {
+  static const char *names[] = {"Trainee", "Rookie", "Hotshot", "Ace", "Insane"};
+  if (d >= 0 && d < BOT_DIFF_COUNT)
+    return names[d];
+  return "Unknown";
+}
+
+void BotSetDifficulty(int bot_index, BotDifficulty diff) {
+  if (bot_index < 0 || bot_index >= MAX_BOTS || !Bots[bot_index].active)
+    return;
+  Bots[bot_index].difficulty = diff;
+  Bots[bot_index].fire_delay_timer = 0.0f;
+  BotConfigureAI(bot_index); // update dodge_percent
+}
+
+void BotSetDefaultDifficulty(BotDifficulty diff) { Bot_default_difficulty = diff; }
+
+BotDifficulty BotGetDefaultDifficulty() { return Bot_default_difficulty; }
+
 void BotPrintServerCaps() {
   // Build feature list based on what's compiled in
-  // For now, "bots" and "roster" are always present in this fork
-  PrintDedicatedMessage("SERVERCAPS version=1 features=bots,roster,ships\n");
+  PrintDedicatedMessage("SERVERCAPS version=1 features=bots,roster,ships,difficulty\n");
 }

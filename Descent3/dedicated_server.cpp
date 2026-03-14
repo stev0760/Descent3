@@ -732,6 +732,7 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
   if (stricmp(command, "addbot") == 0) {
     char botname[CALLSIGN_LEN + 1] = "Bot";
     int ship_index = 0;
+    BotDifficulty diff = BotGetDefaultDifficulty();
 
     if (operand[0]) {
       // Parse: addbot <name> [ship]
@@ -756,13 +757,19 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
             PrintDedicatedMessage("Unknown ship '%s', using default. Valid: pyro, phoenix, magnum, blackpyro\n",
                                   ship_tok);
           }
+
+          // Third token (optional) is the difficulty
+          char *diff_tok = strtok(NULL, " \t");
+          if (diff_tok)
+            diff = BotResolveDifficulty(diff_tok);
         }
       }
     }
-    int idx = BotAdd(botname, ship_index);
+    int idx = BotAdd(botname, ship_index, diff);
     if (idx >= 0)
-      PrintDedicatedMessage("Bot '%s' added in slot %d (ship=%s)\n", Bots[idx].callsign, Bots[idx].player_slot,
-                            Ships[Bots[idx].ship_index].name);
+      PrintDedicatedMessage("Bot '%s' added in slot %d (ship=%s, diff=%s)\n", Bots[idx].callsign,
+                            Bots[idx].player_slot, Ships[Bots[idx].ship_index].name,
+                            BotDifficultyName(Bots[idx].difficulty));
     else
       PrintDedicatedMessage("Failed to add bot (server full or max bots reached)\n");
     return true;
@@ -792,7 +799,9 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     } else {
       for (int i = 0; i < MAX_BOTS; i++) {
         if (Bots[i].active)
-          PrintDedicatedMessage("  Bot %d: '%s' slot=%d %s\n", i, Bots[i].callsign, Bots[i].player_slot,
+          PrintDedicatedMessage("  Bot %d: '%s' slot=%d ship=%s diff=%s %s\n", i, Bots[i].callsign,
+                                Bots[i].player_slot, Ships[Bots[i].ship_index].name,
+                                BotDifficultyName(Bots[i].difficulty),
                                 Bots[i].awaiting_respawn ? "(dead)" : "(alive)");
       }
     }
@@ -842,16 +851,56 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     }
     return true;
   }
+  if (stricmp(command, "botdifficulty") == 0) {
+    if (!operand[0]) {
+      PrintDedicatedMessage("Usage: $botdifficulty <index|all> <level>\n");
+      PrintDedicatedMessage("Levels: trainee, rookie, hotshot, ace, insane (or 0-4)\n");
+      return true;
+    }
+    char op_copy[255];
+    strncpy(op_copy, operand, 254);
+    op_copy[254] = '\0';
+    char *idx_tok = strtok(op_copy, " \t");
+    char *lvl_tok = strtok(NULL, " \t");
+    if (!idx_tok || !lvl_tok) {
+      PrintDedicatedMessage("Usage: $botdifficulty <index|all> <level>\n");
+      return true;
+    }
+    BotDifficulty new_diff = BotResolveDifficulty(lvl_tok);
+    bool do_all = (stricmp(idx_tok, "all") == 0);
+    if (do_all) {
+      BotSetDefaultDifficulty(new_diff);
+      for (int i = 0; i < MAX_BOTS; i++) {
+        if (!Bots[i].active)
+          continue;
+        BotSetDifficulty(i, new_diff);
+        PrintDedicatedMessage("  Bot %d '%s' → %s\n", i, Bots[i].callsign, BotDifficultyName(new_diff));
+      }
+      PrintDedicatedMessage("Default difficulty set to %s\n", BotDifficultyName(new_diff));
+    } else {
+      int idx = atoi(idx_tok);
+      if (idx >= 0 && idx < MAX_BOTS && Bots[idx].active) {
+        BotSetDifficulty(idx, new_diff);
+        PrintDedicatedMessage("Bot %d '%s' → %s\n", idx, Bots[idx].callsign, BotDifficultyName(new_diff));
+      } else {
+        PrintDedicatedMessage("Invalid bot index %d\n", idx);
+      }
+    }
+    return true;
+  }
   if (stricmp(command, "servercaps") == 0) {
     BotPrintServerCaps();
     return true;
   }
   if (stricmp(command, "bothelp") == 0) {
     PrintDedicatedMessage("Bot commands:\n");
-    PrintDedicatedMessage("  $addbot <name> [ship]  - Add a bot (ships: pyro, phoenix, magnum, blackpyro)\n");
+    PrintDedicatedMessage("  $addbot <name> [ship] [difficulty] - Add a bot\n");
+    PrintDedicatedMessage("    ships: pyro, phoenix, magnum, blackpyro\n");
+    PrintDedicatedMessage("    difficulty: trainee, rookie, hotshot, ace, insane\n");
     PrintDedicatedMessage("  $removebot <index>     - Remove a specific bot\n");
     PrintDedicatedMessage("  $removebots            - Remove all bots\n");
     PrintDedicatedMessage("  $botlist               - List active bots\n");
+    PrintDedicatedMessage("  $botdifficulty <index|all> <level> - Change difficulty\n");
     PrintDedicatedMessage("  $botstat [index|all]   - Show bot status details\n");
     PrintDedicatedMessage("  $botmov on|off         - Toggle movement debug logging\n");
     PrintDedicatedMessage("  $servercaps            - Print server capabilities\n");
