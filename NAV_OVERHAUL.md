@@ -221,21 +221,21 @@ Both tracks run independently. Whichever fires first triggers recovery.
 
 ### Unit Testing (Per-Change)
 
-1. **Change 1** — `addbot` on Fellowship (large, complex). Watch for:
+1. **Change 1** — `$addbot` on Fellowship (large, complex). Watch for:
    - Bot room distribution across the map (should be spread, not clustered)
    - Time between explore destination changes (should vary with distance)
    - visited_rooms buffer preventing revisit loops
 
-2. **Change 2** — `addbot` on multi-room indoor maps. Watch for:
+2. **Change 2** — `$addbot` on multi-room indoor maps. Watch for:
    - HUNT pathfinding through multiple rooms (not stopping at each portal)
    - No wall-hugging or beelining through thin geometry
    - Smooth room-to-room transitions
 
-3. **Change 3** — `addbot` on maps with dead-end rooms. Watch for:
+3. **Change 3** — `$addbot` on maps with dead-end rooms. Watch for:
    - Room progress timer catching oscillation before speed-based timer
    - Appropriate timeout scaling (8s is generous enough for large rooms)
 
-4. **Change 4** — `addbot` in confined areas. Watch for:
+4. **Change 4** — `$addbot` in confined areas. Watch for:
    - Intelligent portal selection (not going back the way it came)
    - Dead-end escape via reverse (fallback path)
 

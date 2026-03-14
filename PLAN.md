@@ -10,7 +10,7 @@
 | 1.5 | Combat polish — energy/ammo drain, auto weapon switch on empty | Complete |
 | 2 | Smart targeting — game mode awareness, target diversity, robot targeting, team persistence | Complete |
 | 3 | Combat behaviors — FSM (explore/hunt/combat/flee), LOS gating, circle-strafe, flee | Complete |
-| Mov | Movement testing infra — velocity tuning, logging, `botstat`/`botmov`, MPF_THRUSTED | Complete |
+| Mov | Movement testing infra — velocity tuning, logging, `$botstat`/`$botmov`, MPF_THRUSTED | Complete |
 | 3.5 | Thrust-based physics — real inertia, tri-chording, afterburner, lateral evasion | Complete |
 | 3.6 | Navigation — engine `movement_dir` integration, `AIF_AVOID_WALLS`, `AIF_AUTO_AVOID_FRIENDS`, BOA repair | Complete |
 | 3.7 | Behavior polish — burst afterburner, EXPLORE state, sound reactivity, portal flee | Complete |
@@ -49,7 +49,7 @@ Add server-side bot players to the D3 dedicated server engine. Bots occupy real 
 - Wanders around the map using existing AI goal system
 - Can be killed and auto-respawns after a delay
 - Does NOT break any existing multiplayer functionality
-- Dedicated server console commands: `addbot`, `removebot`, `removebots`, `botlist`
+- Dedicated server console commands: `$addbot`, `$removebot`, `$removebots`, `$botlist`
 
 **Implemented in later phases:**
 - Weapon firing (Phase 1) — `WBFireBattery()` with `Ships[].static_wb`
@@ -77,7 +77,7 @@ Add server-side bot players to the D3 dedicated server engine. Bots occupy real 
 | `Descent3/multi_external.h` | `NPF_BOT` flag (128) |
 | `Descent3/multi_server.cpp` | NPF_BOT guards on network sends, disconnect logic, `BotDoFrame()` hook in `MultiDoServerFrame()` |
 | `Descent3/multi.cpp` | NPF_BOT guards in packet send functions, `BotReinitAll()` call in `MultiStartNewLevel()`, `MakeBOA()` repair |
-| `Descent3/dedicated_server.cpp` | Console commands: `addbot`, `removebot`, `removebots`, `botlist`, `botstat`, `botmov` |
+| `Descent3/dedicated_server.cpp` | Console commands: `$addbot`, `$removebot`, `$removebots`, `$botlist`, `$botstat`, `$botmov`, `$servercaps`, `$bothelp` |
 | `Descent3/AImain.cpp` | OBJ_PLAYER guards (animation, weapons), PTMC targeting fix, bot thrust preservation |
 | `Descent3/AIGoal.cpp` | OBJ_PLAYER guards in `AIG_SET_ANIM`/`AIG_FIRE_AT_OBJ`; stub goal cases; OBJ goal retry throttle |
 | `Descent3/CMakeLists.txt` | Added `bot.h` and `bot.cpp` to build |
@@ -372,34 +372,11 @@ In the per-player loop of `MultiDoServerFrame()` that handles `NetPlayers[i].seq
 In `ParseLine()` (~line 696), add bot management commands:
 
 ```cpp
-else if (!stricmp(command, "addbot")) {
-    char botname[CALLSIGN_LEN + 1] = "Bot";
-    if (args && args[0]) {
-        strncpy(botname, args, CALLSIGN_LEN);
-        botname[CALLSIGN_LEN] = '\0';
-    }
-    int idx = BotAdd(botname);
-    if (idx >= 0)
-        PrintDedicatedMessage("Bot '%s' added in slot %d\n", botname, Bots[idx].player_slot);
-    else
-        PrintDedicatedMessage("Failed to add bot (server full or max bots reached)\n");
-}
-else if (!stricmp(command, "removebot")) {
-    if (args && args[0]) {
-        // Remove by name or index
-        // ... implementation
-    }
-}
-else if (!stricmp(command, "removebots")) {
-    BotRemoveAll();
-    PrintDedicatedMessage("All bots removed\n");
-}
-else if (!stricmp(command, "botlist")) {
-    for (int i = 0; i < MAX_BOTS; i++) {
-        if (Bots[i].active)
-            PrintDedicatedMessage("  Bot %d: '%s' slot=%d\n", i, Bots[i].callsign, Bots[i].player_slot);
-    }
-}
+// Bot commands use '$' prefix and are handled by DedicatedHandleBotCommand().
+// The '$' is stripped before dispatch, so the handler matches bare names:
+//   $addbot   → command="addbot"
+//   $botlist  → command="botlist"
+// See DedicatedHandleBotCommand() for full implementation.
 ```
 
 ### Step 6: Modify `CMakeLists.txt`
@@ -445,8 +422,8 @@ All of these are Phase 1 work. For Phase 0, `AIF_DISABLE_FIRING` keeps the bot s
 
 1. **Build**: Compile the engine fork with bot changes
 2. **Launch dedicated server**: Start with a standard Anarchy config
-3. **Console test**: Type `addbot TestBot` in the server console
-4. **Verify server-side**: `botlist` shows the bot; no crashes
+3. **Console test**: Type `$addbot TestBot` in the server console
+4. **Verify server-side**: `$botlist` shows the bot; no crashes
 5. **Connect retail client**: Launch unmodified D3 v1.5, connect to localhost
 6. **Verify client-side**:
    - Bot appears in player list / scoreboard with "TestBot" callsign
@@ -457,7 +434,7 @@ All of these are Phase 1 work. For Phase 0, `AIF_DISABLE_FIRING` keeps the bot s
    - No crashes, no disconnects, no visual glitches
 7. **Multi-client test**: Connect 2+ retail clients simultaneously with bots
 8. **Stress test**: Add max bots (16), verify no slot corruption
-9. **Remove test**: `removebot 0`, verify bot disappears from all clients
+9. **Remove test**: `$removebot 0`, verify bot disappears from all clients
 10. **Full lifecycle**: Add bots, play for 5+ minutes, remove bots, disconnect/reconnect clients
 
 ---
@@ -612,13 +589,13 @@ Replaced simple "beeline and fire" with a 5-state FSM. Extensively playtested ac
 |------|--------|
 | `bot.h` | Added `afterburner_timer` field to `bot_info`; `Bot_debug_movement` extern |
 | `bot.cpp` | `max_velocity` 30→50, `max_delta_velocity` 20→40 (Priority 1); movement logging in `BotDoFrame()` |
-| `dedicated_server.cpp` | `botstat [index\|all]` and `botmov on\|off` console commands |
+| `dedicated_server.cpp` | `$botstat [index\|all]` and `$botmov on\|off` console commands |
 | `multi.cpp` | `MPF_THRUSTED` set for bots with velocity > 1.0 units/s |
 
 ### Console Commands
-- `botstat [index|all]` — print bot velocity, speed, state, shields, target
-- `botmov on|off` — toggle per-frame BOTMOV/PLRMOV speed logging to debug log
-- `botlist` — list active bots with slot and alive/dead status
+- `$botstat [index|all]` — print bot velocity, speed, state, shields, target
+- `$botmov on|off` — toggle per-frame BOTMOV/PLRMOV speed logging to debug log
+- `$botlist` — list active bots with slot and alive/dead status
 
 ### Log Format
 ```

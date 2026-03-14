@@ -21,7 +21,7 @@ Your role is to act as a **companion and secondary coding assistant**. The user 
 - **`BOTS_DEVEL.md`** — phase history, current status, and roadmap.
 - **`NAV_OVERHAUL.md`** — Phase 4.0 navigation overhaul: research synthesis, root cause analysis, engine pathfinding pipeline reference, and implementation plan. **Read this before modifying navigation code.**
 - **`PATHFINDING_CODEBASE_EXPLORE.md`** — Guide-bot navigation analysis: how single-player bots navigate complex passages. Research input for `NAV_OVERHAUL.md`.
-- **`BOT_MANAGEMENT.md`** — Phase 5 planning and implementation: config-file rosters, ship selection, difficulty levels, auto-rebalancing, `servercaps` handshake. **Read this before modifying bot management code.**
+- **`BOT_MANAGEMENT.md`** — Phase 5 planning and implementation: config-file rosters, ship selection, difficulty levels, auto-rebalancing, `$servercaps` handshake. **Read this before modifying bot management code.**
 - **`PLAN.md`** — original Phase 0 design document and full phase roadmap.
 - **`D3_MOVEMENT_PHYSICS.md`** — engine physics constants and multiplayer packet flag reference.
 - **`CLAUDE.md`** — primary AI's instruction set: build commands and engine architecture overview.
@@ -74,10 +74,11 @@ Key capabilities implemented through Phase 5.1:
 - Config-file bot roster with hybrid config model (Phase 5.1)
 - Ship selection with shorthand aliases: pyro, phoenix, magnum, blackpyro (Phase 5.1)
 - `[BOT]` callsign prefix for bot identification (Phase 5.1)
-- `servercaps` telnet handshake for remote admin tools (Phase 5.1)
+- `$servercaps` telnet handshake for remote admin tools (Phase 5.1)
+- All bot commands use `$` prefix (e.g., `$addbot`, `$botlist`, `$bothelp`)
 
 ### Current Focus: Phase 5 Implementation
-Phase 5.1 (config roster, ship selection, servercaps) is implemented. Next: difficulty levels, auto-rebalancing, enhanced console commands.
+Phase 5.1 (config roster, ship selection, `$servercaps`) is implemented. Next: difficulty levels, auto-rebalancing, enhanced console commands.
 
 ### Bot Configuration
 Bot config uses the same `Key=Value` syntax as `dedicated.cfg`. Can be inline or in a separate file via `BotConfig=bots.cfg`. See `BOT_MANAGEMENT.md` for full details.

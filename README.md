@@ -64,12 +64,13 @@ These commands are available in the dedicated server console (or via remote teln
 
 | Command | Description |
 | :--- | :--- |
-| `addbot <name> [ship]` | Adds a bot with optional name and ship (e.g., `addbot Reaper phoenix`). |
-| `removebot <index>` | Removes a specific bot (use `botlist` to find the index). |
-| `removebots` | Removes all active bots. |
-| `botlist` | Displays a list of all current bots and their status. |
-| `botstat [index\|all]` | Displays real-time physics/state data for debugging. |
-| `servercaps` | Prints server capabilities for remote admin tool handshake. |
+| `$addbot <name> [ship]` | Adds a bot with optional name and ship (e.g., `$addbot Reaper phoenix`). |
+| `$removebot <index>` | Removes a specific bot (use `$botlist` to find the index). |
+| `$removebots` | Removes all active bots. |
+| `$botlist` | Displays a list of all current bots and their status. |
+| `$botstat [index\|all]` | Displays real-time physics/state data for debugging. |
+| `$servercaps` | Prints server capabilities for remote admin tool handshake. |
+| `$bothelp` | Lists all bot commands. |
 
 ### Known Issues
 

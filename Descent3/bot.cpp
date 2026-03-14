@@ -53,7 +53,7 @@
 
 bot_info Bots[MAX_BOTS];
 int Num_bots = 0;
-bool Bot_debug_movement = false; // Toggle with "botmov on/off" console command
+bool Bot_debug_movement = false; // Toggle with "$botmov on/off" console command
 
 // --- Bot roster config (Phase 5.1) ---
 char Bot_config_file[260] = {};           // CVar storage — set by "BotConfig=<file>" in dedicated.cfg
@@ -3241,7 +3241,7 @@ int BotResolveShipAlias(const char *alias) {
 //   BotName1=Reaper
 //   BotShip1=phoenix
 //
-// Calls the same BotAdd() that the "addbot" console command uses — no separate code path.
+// Calls the same BotAdd() that the "$addbot" console command uses — no separate code path.
 // Called once after the first level loads. Does nothing if Bot_config_file is empty.
 void BotLoadRosterFile() {
   if (Bot_roster_spawned || !Bot_config_file[0])
@@ -3322,7 +3322,7 @@ void BotLoadRosterFile() {
     return;
   }
 
-  // Spawn bots via BotAdd() — same function the "addbot" console command calls
+  // Spawn bots via BotAdd() — same function the "$addbot" console command calls
   LOG_INFO.printf("BOT CONFIG: Spawning %d bots", bot_count);
   for (int i = 0; i < bot_count; i++) {
     char name[CALLSIGN_LEN + 1];

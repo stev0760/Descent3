@@ -777,7 +777,7 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
         PrintDedicatedMessage("Invalid bot index %d\n", idx);
       }
     } else {
-      PrintDedicatedMessage("Usage: removebot <index>\n");
+      PrintDedicatedMessage("Usage: $removebot <index>\n");
     }
     return true;
   }
@@ -838,12 +838,24 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
       Bot_debug_movement = false;
       PrintDedicatedMessage("Bot movement logging OFF\n");
     } else {
-      PrintDedicatedMessage("Usage: botmov on|off  (current: %s)\n", Bot_debug_movement ? "on" : "off");
+      PrintDedicatedMessage("Usage: $botmov on|off  (current: %s)\n", Bot_debug_movement ? "on" : "off");
     }
     return true;
   }
   if (stricmp(command, "servercaps") == 0) {
     BotPrintServerCaps();
+    return true;
+  }
+  if (stricmp(command, "bothelp") == 0) {
+    PrintDedicatedMessage("Bot commands:\n");
+    PrintDedicatedMessage("  $addbot <name> [ship]  - Add a bot (ships: pyro, phoenix, magnum, blackpyro)\n");
+    PrintDedicatedMessage("  $removebot <index>     - Remove a specific bot\n");
+    PrintDedicatedMessage("  $removebots            - Remove all bots\n");
+    PrintDedicatedMessage("  $botlist               - List active bots\n");
+    PrintDedicatedMessage("  $botstat [index|all]   - Show bot status details\n");
+    PrintDedicatedMessage("  $botmov on|off         - Toggle movement debug logging\n");
+    PrintDedicatedMessage("  $servercaps            - Print server capabilities\n");
+    PrintDedicatedMessage("  $bothelp               - Show this help\n");
     return true;
   }
   return false;
@@ -877,6 +889,13 @@ void DoDedicatedServerFrame() {
     return;
 
   if (str[0] == '$') {
+    // Try bot commands first (they live in the engine, not the game DLL)
+    char bot_cmd[255] = {};
+    char bot_operand[255] = {};
+    ParseLine(str + 1, bot_cmd, bot_operand, 255, 255);
+    if (bot_cmd[0] && DedicatedHandleBotCommand(bot_cmd, bot_operand))
+      return;
+    // Not a bot command — pass to game DLL
     DLLInfo.input_string = str;
     CallGameDLL(EVT_CLIENT_INPUT_STRING, &DLLInfo);
     return;
@@ -885,9 +904,6 @@ void DoDedicatedServerFrame() {
   ParseLine(str, command, operand, 255, 255);
 
   if (!command[0])
-    return;
-
-  if (DedicatedHandleBotCommand(command, operand))
     return;
 
   int index = DedicatedServerLex(command);
@@ -1123,6 +1139,15 @@ void DedicatedReadTelnet(void) {
               // Process the string
               PrintDedicatedMessage("[%s] %s\n", inet_ntoa(conn->addr.sin_addr), conn->input);
               if (conn->input[0] == '$') {
+                // Try bot commands first (they live in the engine, not the game DLL)
+                char bot_cmd[255] = {};
+                char bot_operand[255] = {};
+                ParseLine(conn->input + 1, bot_cmd, bot_operand, 255, 255);
+                if (bot_cmd[0] && DedicatedHandleBotCommand(bot_cmd, bot_operand)) {
+                  conn->input[0] = '\0';
+                  return;
+                }
+                // Not a bot command — pass to game DLL
                 DLLInfo.input_string = conn->input;
                 CallGameDLL(EVT_CLIENT_INPUT_STRING, &DLLInfo);
                 conn->input[0] = '\0';
@@ -1132,9 +1157,6 @@ void DedicatedReadTelnet(void) {
               ParseLine(conn->input, command, operand, 255, 255);
               conn->input[0] = '\0';
               if (!command[0])
-                return;
-
-              if (DedicatedHandleBotCommand(command, operand))
                 return;
 
               int index = DedicatedServerLex(command);

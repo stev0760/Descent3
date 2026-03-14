@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Phase 5.1 complete — config-file bot roster, ship selection, `[BOT]` name prefix, `servercaps` telnet command. See `BOT_MANAGEMENT.md` for design rationale.
+**Status:** Phase 5.1 complete — config-file bot roster, ship selection, `[BOT]` name prefix, `$servercaps` telnet command. All bot commands use `$` prefix. See `BOT_MANAGEMENT.md` for design rationale.
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -25,7 +25,7 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | 1 | Weapon firing and combat AI (target pursuit, shooting) | Complete |
 | 2 | Smart targeting — game mode awareness, target diversity, robot targeting, team persistence | Complete |
 | 3 | Combat behaviors — FSM (wander/hunt/combat/flee), LOS gating, circle-strafe, flee | Complete |
-| Mov | Movement testing infra — velocity tuning, logging, `botstat`/`botmov`, MPF_THRUSTED | Complete — live tested |
+| Mov | Movement testing infra — velocity tuning, logging, `$botstat`/`$botmov`, MPF_THRUSTED | Complete — live tested |
 | 3.5 | Realistic movement — thrust-based physics, inertia, afterburner, tri-chording | Complete |
 | 3.6 | Navigation — engine `movement_dir` integration, `AIF_AVOID_WALLS`, `AIF_AUTO_AVOID_FRIENDS`, BOA repair | Complete |
 | 3.7 | Behavior polish — burst afterburner, EXPLORE state, sound reactivity, portal flee, juke only in COMBAT/FLEE | Complete |
@@ -55,7 +55,7 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | 4.04 | **Competing goals fix + BNode crash:** Clear pursuit_goal when targeting powerup (prevents two goals at same priority pulling in opposite directions), graceful return -1 in `BNode_FindClosestLocalBNode` for rooms with zero BNodes (campaign crash fix), sustained 2s random lateral escape thrust for spawn-stuck bots. | Complete |
 | 4.05 | **LOS through geometry + wall-fighting:** `BotCanSeePos` FVI radius 0→2.5 (filters tiny geometry gaps), COMBAT no-LOS timeout (3s) drops bots fighting through walls to HUNT for re-navigation. | Complete |
 | 4.06 | **Uncollectible-item filter + engagement fix:** `BotCanCollectPowerup()` mirrors game pickup logic — skips already-owned primaries, Quad Laser, Afterburner, active Invuln/Cloak, max shields. Direct powerup thrust override within 50u. `BOT_HUNT_BLIND_MAX_DIST` 150→300. Stale chase (>4s) no longer suppresses engagement. COMBAT no-LOS timeout 3→5s. Powerup interrupt requires LOS + collectibility check. | Complete |
-| 5.1 | **Bot management — config roster, ship selection, `[BOT]` prefix, `servercaps`:** `BotConfig=bots.cfg` CVar in `dedicated.cfg` (or inline bot entries), `BotLoadRosterFile()` Key=Value parser calls `BotAdd()`, ship aliases (`pyro`/`phoenix`/`magnum`/`blackpyro`), `[BOT] ` callsign prefix, `servercaps` telnet command for remote admin handshake, `addbot <name> [ship]` extended syntax. | Complete |
+| 5.1 | **Bot management — config roster, ship selection, `[BOT]` prefix, `$servercaps`:** `BotConfig=bots.cfg` CVar in `dedicated.cfg` (or inline bot entries), `BotLoadRosterFile()` Key=Value parser calls `BotAdd()`, ship aliases (`pyro`/`phoenix`/`magnum`/`blackpyro`), `[BOT] ` callsign prefix, `$servercaps` telnet command for remote admin handshake, `$addbot <name> [ship]` extended syntax. All bot commands now use `$` prefix for consistency with game DLL commands. | Complete |
 | 5 | **Bot management (remaining):** Difficulty levels, remote admin, auto-rebalancing, server orchestration. | Not started |
 | 6 | **Advanced features:** CTF/Monsterball awareness, team coordination, 6DOF maneuvers, movement capture, bot personalities. | Not started |
 | 4 | Difficulty levels, configuration UI | Not started |
@@ -76,7 +76,7 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | `Descent3/multi_external.h` | Added `NPF_BOT` flag (128) |
 | `Descent3/multi_server.cpp` | NPF_BOT guards on network sends, disconnect logic, `BotDoFrame()` hook in `MultiDoServerFrame()`, guards in `MultiSendClientExecuteDLL()` and `MultiSendGenericNonVis()` |
 | `Descent3/multi.cpp` | NPF_BOT guards in `MultiSendFullPacket()`, `MultiSendFullReliablePacket()`, `MultiSendSpecialPacket()`, `MultiSendMessageToPlayer()`, multisafe send path, missile release broadcast; `BotReinitAll()` + `BotLoadRosterFile()` call in `MultiStartNewLevel()` |
-| `Descent3/dedicated_server.cpp` | Console commands: `addbot <name> [ship]`, `removebot`, `removebots`, `botlist`, `servercaps` (via local console and remote telnet); `BotConfig` CVar for bot roster config file path |
+| `Descent3/dedicated_server.cpp` | Console commands: `$addbot <name> [ship]`, `$removebot`, `$removebots`, `$botlist`, `$servercaps`, `$bothelp` (via local console and remote telnet); `BotConfig` CVar for bot roster config file path |
 | `Descent3/AImain.cpp` | OBJ_PLAYER guards in `AIDoFrame()` to skip `ai_do_animation()`, spray/on-off weapons, and `do_awareness_based_anim_stuff()` — prevents `Object_info[obj->id]` crash for player objects; Phase 2: PTMC multiplayer targeting loop bypasses `BOA_IsVisible` (via direct distance check) so map-placed robots (gunboys) can acquire player targets; Phase 3.5: skip thrust zeroing and drag compensation for bot objects (preserves `BotApplyThrust()` values for physics integration) |
 | `Descent3/AIGoal.cpp` | OBJ_PLAYER guard in `AIG_SET_ANIM` and `AIG_FIRE_AT_OBJ` goal cases; added `AIG_GET_AWAY_FROM_OBJ` and `AIG_MOVE_AROUND_OBJ` to `GoalAddGoal` switch |
 | `Descent3/CMakeLists.txt` | Added `bot.h` and `bot.cpp` to build |
@@ -101,12 +101,14 @@ Connect with `telnet localhost 2092` and enter your password.
 
 | Command | Description |
 |---------|-------------|
-| `addbot <name>` | Add a bot with the given callsign (default name: "Bot") |
-| `removebot <index>` | Remove bot by its index (shown in `botlist`) |
-| `removebots` | Remove all active bots |
-| `botlist` | List all active bots with index, callsign, slot, and alive/dead status |
-| `botstat [index\|all]` | Print real-time snapshot: speed, velocity vector, state, shields, current target |
-| `botmov on\|off` | Toggle per-frame `BOTMOV`/`PLRMOV` speed logging to the debug log (~every 0.5s) |
+| `$addbot <name>` | Add a bot with the given callsign (default name: "Bot") |
+| `$removebot <index>` | Remove bot by its index (shown in `$botlist`) |
+| `$removebots` | Remove all active bots |
+| `$botlist` | List all active bots with index, callsign, slot, and alive/dead status |
+| `$botstat [index\|all]` | Print real-time snapshot: speed, velocity vector, state, shields, current target |
+| `$botmov on\|off` | Toggle per-frame `BOTMOV`/`PLRMOV` speed logging to the debug log (~every 0.5s) |
+| `$servercaps` | Print server capabilities for remote admin handshake |
+| `$bothelp` | List all bot commands |
 
 ## How It Works
 
@@ -651,7 +653,7 @@ Use `-tempdir` to avoid cache lock conflicts when running both server and client
 - **Thrust-based movement is new and needs live testing** — Phase 3.5 thrust physics replaces the old CT_AI velocity control. Ship template values (mass, drag, full_thrust) vary per ship and may need tuning if bots feel too fast/slow on specific ships.
 - **Gunboy targeting issue** — The Phase 2 `AImain.cpp` fix allows gunboys to acquire player targets (bypasses `BOA_IsVisible`), but they still don't fire. Likely blocked by a separate condition in `ai_fire()` or weapon battery configuration. Revisit in future phase.
 - **Navigation** — Phase 4.0 overhauled navigation: bots now pick destinations from across the entire map (not just 2 portals deep), pursuit uses `AIG_GET_TO_OBJ` letting the engine handle BOA+BNode routing, and room-change progress tracking catches stuck/oscillation. Smart portal-based stuck escape replaces blind reverse. Complex multi-level maps may still have edge cases requiring playtest tuning.
-- **Team assignment is static** — Bots are assigned to a team at `addbot` time based on current counts. If human players join or leave after bots are added, teams may become unbalanced. Dynamic rebalancing is future work.
+- **Team assignment is static** — Bots are assigned to a team at `$addbot` time based on current counts. If human players join or leave after bots are added, teams may become unbalanced. Dynamic rebalancing is future work.
 - **Congestion penalty is player-only** — The 80-unit diversity penalty only applies to player targets, not robot targets. In co-op, all bots may still converge on the same robot.
 - **Scoreboard tracking** — Fixed in Phase 0.5. Bots now appear on the end-of-level scoreboard. See "Scoreboard Tracking" section below.
 

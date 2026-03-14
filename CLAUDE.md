@@ -35,7 +35,7 @@ ctest --preset linux -C Debug
 - **`BOTS_DEVEL.md`** — phase history and roadmap. Update when a phase completes.
 - **`NAV_OVERHAUL.md`** — Phase 4.0 navigation overhaul: research synthesis, root cause analysis, engine pathfinding pipeline reference, and implementation plan. **Read this before modifying navigation code.**
 - **`PATHFINDING_CODEBASE_EXPLORE.md`** — Guide-bot navigation analysis: how single-player bots navigate complex passages vs. our multiplayer bots. Research input for `NAV_OVERHAUL.md`.
-- **`BOT_MANAGEMENT.md`** — Phase 5 planning and implementation: config-file rosters, ship selection, difficulty levels, auto-rebalancing, `servercaps` handshake. **Read this before modifying bot management code.**
+- **`BOT_MANAGEMENT.md`** — Phase 5 planning and implementation: config-file rosters, ship selection, difficulty levels, auto-rebalancing, `$servercaps` handshake. **Read this before modifying bot management code.**
 - **`PLAN.md`** — original Phase 0 design document and full phase roadmap.
 - **`D3_MOVEMENT_PHYSICS.md`** — engine physics constants and packet flag reference.
 
@@ -55,6 +55,8 @@ Bot roster config uses the same `Key=Value` syntax as `dedicated.cfg`. Two optio
 - **Separate file:** Add `BotConfig=bots.cfg` to `dedicated.cfg` and put bot entries in `bots.cfg`
 
 A server with no `BotCount` (or `BotCount=0`) runs without bots — fully backwards compatible. Ship aliases: `pyro`, `phoenix`, `magnum`, `blackpyro`. All bot names are prefixed with `[BOT] ` automatically.
+
+All bot console commands use the `$` prefix (e.g., `$addbot`, `$botlist`, `$bothelp`). Type `$bothelp` for a full list.
 
 ## Architecture
 

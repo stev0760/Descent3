@@ -344,7 +344,7 @@ int BotResolveShipAlias(const char *alias);
 //   BotShip1=phoenix
 //
 // If BotConfig is absent or empty, the server runs without auto-spawned bots — fully
-// backwards compatible. Bots can still be added manually via "addbot" console/telnet.
+// backwards compatible. Bots can still be added manually via "$addbot" console/telnet.
 //
 // Ship aliases: pyro, phoenix, magnum, blackpyro (full names also accepted).
 // All bot callsigns are automatically prefixed with "[BOT] ".
