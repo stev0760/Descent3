@@ -32,10 +32,14 @@ This fork introduces a **server-side multiplayer bot system** for Descent 3. The
 
 ### Server Configuration
 
-Bots can be configured automatically via config file or managed live via console/telnet. Bot config uses the same `Key=Value` syntax as `dedicated.cfg`.
+Bots are configured via a separate config file referenced from `dedicated.cfg`, and can be managed live via console/telnet.
 
-**Option A — Inline in dedicated.cfg:**
 ```ini
+; In dedicated.cfg — add this line to enable bots
+BotConfig=bots.cfg
+```
+```ini
+; bots.cfg — bot roster config (Key=Value syntax)
 BotCount=4
 BotDifficulty=HOTSHOT
 BotName1=Reaper
@@ -46,21 +50,7 @@ BotDifficulty1=ACE
 BotDifficulty2=TRAINEE
 ```
 
-**Option B — Separate bot config file:**
-```ini
-; In dedicated.cfg
-BotConfig=bots.cfg
-```
-```ini
-; bots.cfg — same Key=Value syntax
-BotCount=4
-BotDifficulty=ROOKIE
-BotName1=Reaper
-BotShip1=phoenix
-BotDifficulty1=ACE
-```
-
-A server with no `BotCount` (or `BotCount=0`) runs without bots — fully backwards compatible with vanilla D3 server configs.
+A server with no `BotConfig` line runs without bots — fully backwards compatible with vanilla D3 server configs.
 
 **Ship aliases:** `pyro`, `phoenix`, `magnum`, `blackpyro` (full names like `Pyro-GL` also accepted).
 

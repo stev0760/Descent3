@@ -43,31 +43,11 @@ All bot commands use the `$` prefix, consistent with other server admin commands
 
 Auto-spawn bots on server start without manual console commands. Uses the same `Key=Value` syntax as the standard `dedicated.cfg` format — all D3 server configuration follows a single consistent convention.
 
-**Hybrid config model:**
+**Config model:**
 
-Bot roster entries can live directly in `dedicated.cfg` (inline) or in a separate file referenced by `BotConfig=`. Both use identical `Key=Value` syntax. A server with no `BotCount` (or `BotCount=0`) runs without bots — fully backwards compatible.
+Bot roster is configured via a separate file referenced by `BotConfig=` in `dedicated.cfg`. Bot keys (`BotCount`, `BotName*`, etc.) are NOT recognized in `dedicated.cfg` itself — only `BotConfig=` is a registered CVar. A server with no `BotConfig` line runs without bots — fully backwards compatible.
 
-**Option A — Inline in dedicated.cfg:**
-```ini
-; dedicated.cfg — bot entries alongside standard server config
-PPS=28
-MaxPlayers=13
-GameName=BotTestServer
-MissionName=fellowship.mn3
-Scriptname=anarchy.d3m
-ConnectionName=Direct TCP~IP
-BotCount=4
-BotName1=Reaper
-BotName2=Phantom
-BotName3=Viper
-BotName4=Shadow
-BotShip1=pyro
-BotShip2=phoenix
-BotShip3=magnum
-BotShip4=pyro
-```
-
-**Option B — Separate bot config file:**
+**Setup — Separate bot config file:**
 ```ini
 ; dedicated.cfg — references external bot roster
 PPS=28
@@ -94,8 +74,8 @@ BotShip4=pyro
 All bot callsigns are automatically prefixed with `[BOT] ` for identification (e.g., "[BOT] Reaper").
 
 **Implementation:**
-- Config parsed via `BotParseCfgFile()` — a second pass of the config file after CVar loading (bot entries aren't CVars; the InfFile/CVar system doesn't expose unrecognized commands)
-- If `BotConfig=<file>` is found in `dedicated.cfg`, that file is parsed for roster entries; otherwise bot entries are read from `dedicated.cfg` itself
+- Config parsed via `BotLoadRosterFile()` in `bot.cpp` — reads the file specified by `BotConfig=` CVar using standalone `fopen()`/`fgets()` parsing (not the CVar system)
+- `BotConfig=<file>` in `dedicated.cfg` stores the path in `Bot_config_file[]`; `BotLoadRosterFile()` resolves it via `cf_LocatePath()` at level-load time
 - `BotSpawnRoster()` called from `MultiStartNewLevel()` after `BotReinitAll()` — spawns once on first level load; subsequent levels use `BotReinitAll()` to preserve bots
 - Names stored in static arrays indexed by bot number (1-based in config, 0-based in storage)
 - Team assignment uses existing round-robin logic in `BotAdd()`

@@ -808,7 +808,7 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     return true;
   }
   if (stricmp(command, "botstat") == 0) {
-    static const char *state_names[] = {"WANDER", "HUNT", "COMBAT", "FLEE"};
+    static const char *state_names[] = {"EXPLORE", "HUNT", "COMBAT", "FLEE", "EVADE"};
     bool any = false;
     bool do_all = (operand[0] == '\0' || stricmp(operand, "all") == 0);
     int single_idx = do_all ? -1 : atoi(operand);

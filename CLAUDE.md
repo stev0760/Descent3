@@ -50,9 +50,9 @@ Claude Code should regularly review server logs to diagnose any debug feedback f
 
 ## Bot Configuration
 
-Bot roster config uses the same `Key=Value` syntax as `dedicated.cfg`. Two options:
-- **Inline:** Add `BotCount=`, `BotName*=`, `BotShip*=`, `BotDifficulty*=` directly in `dedicated.cfg`
-- **Separate file:** Add `BotConfig=bots.cfg` to `dedicated.cfg` and put bot entries in `bots.cfg`
+Bot roster config uses a separate `Key=Value` config file referenced from `dedicated.cfg`:
+- Add `BotConfig=bots.cfg` to `dedicated.cfg`, then put `BotCount=`, `BotName*=`, `BotShip*=`, `BotDifficulty*=` in `bots.cfg`
+- Bot keys (`BotCount`, `BotName*`, etc.) are NOT recognized in `dedicated.cfg` itself — only `BotConfig=` is parsed there
 
 A server with no `BotCount` (or `BotCount=0`) runs without bots — fully backwards compatible. Ship aliases: `pyro`, `phoenix`, `magnum`, `blackpyro`. All bot names are prefixed with `[BOT] ` automatically.
 
