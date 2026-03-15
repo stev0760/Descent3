@@ -224,7 +224,7 @@ Track per-bot performance across sessions for tuning and diagnostics.
 1. ~~**5.6 `$servercaps` handshake**~~ ✅ Implemented
 2. ~~**5.1 Config-file roster**~~ ✅ Implemented
 3. ~~**5.1b Ship selection**~~ ✅ Implemented
-4. **5.2 Difficulty levels** — priority for beta release, improves gameplay variety
+4. ~~**5.2 Difficulty levels**~~ ✅ Implemented
 5. **5.3 Auto-rebalancing** — quality-of-life feature for team modes
 6. **5.4 Enhanced console** — admin convenience
 7. **5.5 Statistics** — diagnostic tooling

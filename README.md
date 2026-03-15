@@ -10,7 +10,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Multiplayer Bots (Experimental)
 
-**Status:** Phase 5.2 — Bot Difficulty Levels
+**Status:** Phase 5.2 Complete — Bot Difficulty Levels
 
 This fork introduces a **server-side multiplayer bot system** for Descent 3. These AI-controlled bots occupy real player slots on dedicated servers, appearing and acting as normal players. All bots are tagged with `[BOT]` in their callsign for easy identification.
 

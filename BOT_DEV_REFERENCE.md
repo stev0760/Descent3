@@ -7,7 +7,7 @@ Current implementation status is in `BOTS_DEVEL.md`. Physics model reference is 
 
 ## Current Status
 
-**Phase 4.06 complete** — Navigation & powerup overhaul. Phases 4.01–4.06 addressed EXPLORE↔HUNT oscillation, powerup collection failures, engagement regression, and uncollectible-item loops. Key features: `BotCanCollectPowerup()` filter (mirrors game pickup logic), direct powerup thrust within 50u, `BotCanSeePos()` ship-width FVI raycast, COMBAT no-LOS timeout (5s), `BOT_HUNT_BLIND_MAX_DIST=300u`. See `NAV_OVERHAUL.md` for 4.0 design rationale.
+**Phase 5.2 complete** — Difficulty levels (Trainee/Rookie/Hotshot/Ace/Insane) with 7 scaling parameters. Phase 5.1: config-file roster, ship selection, `[BOT]` prefix. Phases 4.01–4.06: navigation & powerup overhaul. See `BOT_MANAGEMENT.md` §5.2 for difficulty tier definitions.
 
 For the full phase history and roadmap, see `BOTS_DEVEL.md`.
 
@@ -229,13 +229,13 @@ Multiplayer maps often lack precomputed BOA data (`BOA_mine_checksum == 0`).
 `MakeBOA()` is called in `MultiStartNewLevel()` when the checksum is zero to rebuild the graph.
 Without this, `BOA_GetNextRoom` returns `BOA_NO_PATH` and bots cannot pathfind.
 
-### AI Flags Set on Bots (`BotConfigureAI`)
+### AI Flags Set on Bots (`BotConfigureAI(bot_index)`)
 
 | Flag | Effect |
 |------|--------|
 | `AIF_AVOID_WALLS` | Engine raycasts nearby geometry and adds repulsion to `movement_dir` |
 | `AIF_AUTO_AVOID_FRIENDS` | Repels bot from friendly ships; requires `avoid_friends_distance = 40.0f` (PlayerSetControlToAI sets it to 0 — must override) |
-| `AIF_DODGE` | Engine sidesteps incoming projectiles reactively |
+| `AIF_DODGE` | Engine sidesteps incoming projectiles reactively; `dodge_percent` scaled by difficulty (Phase 5.2) |
 | `AIF_PERSISTANT` | Goal set survives across frames (required for all bot goals) |
 | `AIF_DISABLE_FIRING` | Engine never calls `ai_fire()` — bot code fires explicitly via `WBFireBattery()` |
 | `AIF_FORCE_AWARENESS` | Bot is always fully aware; no awareness decay |

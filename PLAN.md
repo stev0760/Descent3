@@ -40,7 +40,7 @@
 
 ## Beta Release Milestone
 
-Target: community beta release with configurable difficulty levels. Current bots play at approximately Hotshot-to-Ace level. Difficulty levels (Phase 5.2) are the priority feature — community playtesting will inform tuning of the difficulty parameters. See `BOT_MANAGEMENT.md` §5.2 for tier definitions.
+Target: community beta release with configurable difficulty levels. Phase 5.2 (difficulty levels) is complete — 5 tiers with 7 scaling parameters. Hotshot is the default baseline. Community playtesting will inform tuning of the difficulty parameters. See `BOT_MANAGEMENT.md` §5.2 for tier definitions.
 
 ## Goal
 
@@ -62,8 +62,8 @@ Add server-side bot players to the D3 dedicated server engine. Bots occupy real 
 - Combat AI / target pursuit (Phase 1) — `AIG_GET_TO_OBJ` goals
 - Smart targeting / game mode awareness (Phase 2) — enemy filtering, congestion penalty, robot targets
 - Combat behaviors (Phase 3) — FSM with LOS gating, circle-strafe, flee
-- Difficulty levels (Phase 4) — not started
-- Frontend/configuration UI (Phase 4) — not started
+- Difficulty levels (Phase 5.2) — complete
+- Frontend/configuration UI — not started
 
 ---
 
