@@ -23,6 +23,7 @@
 #include <climits>
 #include <cmath>
 #include <filesystem>
+#include "d3_version.h"
 #include "multi.h"
 #include "multi_server.h"
 #include "player.h"
@@ -3499,5 +3500,6 @@ BotDifficulty BotGetDefaultDifficulty() { return Bot_default_difficulty; }
 
 void BotPrintServerCaps() {
   // Build feature list based on what's compiled in
-  PrintDedicatedMessage("SERVERCAPS version=1 features=bots,roster,ships,difficulty\n");
+  PrintDedicatedMessage("SERVERCAPS version=1 fork=%s fork_version=%d.%d.%d features=bots,roster,ships,difficulty\n",
+                        D3_FORK_NAME, D3_FORK_VER_MAJOR, D3_FORK_VER_MINOR, D3_FORK_VER_PATCH);
 }

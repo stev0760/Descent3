@@ -265,7 +265,7 @@ $servercaps
 
 **Response on this fork (bot-enabled):**
 ```
-SERVERCAPS version=1 features=bots,roster,ships,difficulty,rebalance,botstats
+SERVERCAPS version=1 fork=Matcen fork_version=0.8.0 features=bots,roster,ships,difficulty,rebalance,botstats
 ```
 
 **Response on vanilla D3:**
