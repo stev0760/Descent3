@@ -156,21 +156,46 @@ $botdifficulty all insane    ; change all bots + default
 $botlist                     ; shows difficulty per bot
 ```
 
-### 5.3: Auto-Rebalancing (Priority: Medium)
+### 5.3: Bot Population Management (Priority: Medium)
 
-Dynamically adjust teams when humans join or leave to maintain fair team sizes.
+Dynamically add/remove bots to maintain a target player count as humans join and leave. Standard expected behavior for 24/7 bot-enabled servers.
 
-**Current behavior:** Bots are assigned to the smallest team at `BotAdd()` time. If a human leaves, the team imbalance is not corrected.
+**Note:** Team *balancing* (moving players between teams) is already handled natively by DMFC's `$balance` and `$autobalance` commands, which work correctly with bots. Phase 5.3 is specifically about bot *population* management — ensuring the right number of bots are in the game.
 
-**Proposed behavior:**
-- On player disconnect: check team sizes. If imbalanced by > 1, move a bot from the larger team.
-- On player connect: if the joining player's team would be oversized, move a bot to the other team or remove one.
-- Moving a bot between teams: update `Bots[i].intended_team`, `Players[slot].team`, and fire DMFC team-change events.
-- Cooldown: don't rebalance more than once per 10 seconds to avoid thrashing.
+**Current behavior:** Bots are spawned at server start via config roster and persist. If a human joins, the server can fill up. If humans leave, the game is depopulated. No automatic adjustment.
+
+**Hard constraint — bots must never fill the server:**
+D3 clients see a full server in the browser and cannot connect. Bots must *never* occupy 100% of player slots. The population manager enforces a ceiling: `max bots = MaxPlayers - BotReservedSlots` (minimum 1 reserved). If enough humans join to fill the server naturally, all bots are removed — that's expected. But bots alone can never prevent a human from joining.
+
+**Target behavior:**
+- **Target player count** (`BotTargetPlayers=` config key): Server admin sets a desired total player count (e.g., 8). The system maintains this by adding/removing bots as humans join/leave.
+- **On human connect**: Remove a bot to make room before the new player fully joins. The server always has at least `BotReservedSlots` open slots, so the client never sees "server full" due to bots.
+- **On human disconnect**: If total players drops below the target, add a bot to fill the gap. Use the roster config for bot names/ships/difficulty, cycling through available names.
+- **Slot reservation** (`BotReservedSlots=` config key, default 4, minimum 1): Always keep N slots free for humans. Bots will never fill the server beyond `MaxPlayers - BotReservedSlots`. Clamped to minimum 1 — it is never valid to have 0 reserved slots when bots are active.
+- **Cooldown**: Don't add/remove bots more than once per 5 seconds to avoid thrashing during rapid join/leave.
+- **Manual override**: `$addbot` and `$removebot` still work and bypass the population manager. Admin can also disable auto-management with `$botpopulation off`.
+
+**Config keys (in bot config file):**
+```ini
+BotTargetPlayers=8       ; desired total player count (0 = disabled, use fixed roster)
+BotReservedSlots=4       ; slots always kept free for humans (default 4, minimum 1)
+```
+
+**Console commands:**
+```
+$botpopulation [on|off|status]   ; toggle or query auto-population management
+$botpopulation target <n>        ; change target count live
+$botpopulation reserve <n>       ; change reserved slots live
+```
 
 **Hook points:**
-- `MultiDoServerFrame()` already runs `BotDoFrame()` — add a periodic rebalance check (every 5s)
-- `MultiDisconnectPlayer()` or `EVT_CLIENT_GAMELEAVESSERVER` — trigger immediate rebalance
+- `MultiDoServerFrame()` already runs `BotDoFrame()` — add a periodic population check (every 5s)
+- `MultiDisconnectPlayer()` — trigger immediate bot-add check
+- Player join handler — trigger immediate bot-remove check
+
+**Interaction with DMFC team balancing:**
+- After adding/removing a bot, DMFC's `$autobalance` (if enabled) will handle team placement for the new bot or rebalance remaining players.
+- Our `BotAdd()` round-robin already assigns new bots to the smallest team, consistent with DMFC's approach.
 
 ### 5.4: Enhanced Console Commands (Priority: Low)
 

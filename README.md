@@ -8,11 +8,11 @@ To build the game, follow build instructions in the [BUILD.md](BUILD.md) file.
 
 Build or runtime issues should be reported on our [GitHub tracker](https://github.com/DescentDevelopers/Descent3/issues).
 
-## Multiplayer Bots (Experimental)
+## Matcen — Multiplayer Bots (Experimental)
 
-**Status:** Phase 5.2 Complete — Bot Difficulty Levels
+**Version:** Matcen 0.8.0 | **Status:** Phase 5.2 Complete — Bot Difficulty Levels
 
-This fork introduces a **server-side multiplayer bot system** for Descent 3. These AI-controlled bots occupy real player slots on dedicated servers, appearing and acting as normal players. All bots are tagged with `[BOT]` in their callsign for easy identification.
+This fork — "Matcen" — adds a **server-side multiplayer bot system** to Descent 3. Bots occupy real player slots on dedicated servers, appearing and acting as normal players. All bots are tagged with `[BOT]` in their callsign for easy identification.
 
 **No client mods required.** Retail D3 v1.5 clients can connect and play against these bots immediately.
 

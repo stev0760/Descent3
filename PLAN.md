@@ -35,12 +35,33 @@
 | 4.0–4.06 | **Navigation overhaul** — BOA-driven exploration, engine pathfinding, room-change tracking, stuck escape, powerup filter | Complete |
 | 5.1 | **Bot management** — config-file rosters, ship selection, `[BOT]` prefix, `$servercaps`, `$` command prefix | Complete |
 | 5.2 | **Difficulty levels** — Trainee/Rookie/Hotshot/Ace/Insane, 7 scaling parameters, config + console | Complete |
-| 5.3 | **Auto-rebalancing** — dynamic team adjustment when humans join/leave | Not started |
+| 5.3 | **Bot population management** — target player count, add/remove bots on human join/leave, slot reservation | Not started |
+| 5.4 | **Client UI** — in-game bot match setup (bot count, difficulty, ship selection from multiplayer menus) | Not started |
+| R1 | **Community release prep** — versioning, fork identity, version display, release packaging | In progress |
 | 6 | **Advanced features** — CTF/Monsterball awareness, team coordination, 6DOF maneuvers, movement capture | Not started |
 
-## Beta Release Milestone
+## Community Release Milestone
 
-Target: community beta release with configurable difficulty levels. Phase 5.2 (difficulty levels) is complete — 5 tiers with 7 scaling parameters. Hotshot is the default baseline. Community playtesting will inform tuning of the difficulty parameters. See `BOT_MANAGEMENT.md` §5.2 for tier definitions.
+**Goal:** First public release and community announcement (Reddit, Discord, Descent forums). Exit "stealth mode."
+
+**Release checklist:**
+- ~~Versioning nomenclature~~ — semver, starting at 0.8.0 (1.0.0 = all modes working, client UI, solid navigation)
+- ~~Fork identity~~ — "Matcen" (after the Materialization Center robot spawner). Main menu displays `Ver 1.6.0 | Matcen 0.8.0 <git-hash>`
+- Release packaging: Windows + Linux builds. macOS deferred to community contributors (no test device available).
+- Companion web admin app (D3_WEB_ADMIN_SPEC.md) planned for simultaneous release
+- Cloud-hosted server for immediate play-testing
+- VS 2026 build fix (already done by secondary agent, needs commit/push)
+
+**What ships with R1:**
+- All bot AI (Phases 0–4.06)
+- Bot management (5.1 config roster, 5.2 difficulty levels)
+- Bot population management (5.3)
+- Client UI for bot matches (5.4) — in-game setup without needing a dedicated server
+- Dedicated server with bots works with: vanilla D3 v1.5 clients, PiccuEngine clients, open-source D3 clients
+
+**Known issues (acceptable for R1):**
+- Co-op mode broken (PiccuEngine clients can't connect; fork clients can join but bots are frozen — likely AI goal/pathfinding regression). NOT a priority — defer to post-release.
+- Weapon under-utilization: Plasma and EMD rarely selected. Revisit in behavior tuning pass.
 
 ## Goal
 
@@ -76,7 +97,7 @@ Add server-side bot players to the D3 dedicated server engine. Bots occupy real 
 | `Descent3/bot.h` | Bot subsystem header: `bot_info` struct, constants, function prototypes |
 | `Descent3/bot.cpp` | Bot lifecycle: init, add, remove, per-frame update, AI configuration, FSM, combat, navigation, death/respawn |
 
-### Modified Files (12)
+### Modified Files (16)
 
 | File | Changes |
 |------|---------|
@@ -92,6 +113,10 @@ Add server-side bot players to the D3 dedicated server engine. Bots occupy real 
 | `Descent3/aipath.cpp` | Removed `ASSERT(0)` on path pool exhaustion → graceful fallback + rate-limited warning |
 | `physics/physics.cpp` | "Too many collisions" warnings rate-limited to 1/sec at both sim-loop sites |
 | `physics/collide.cpp` | Bot-player collision handling |
+| `lib/d3_version.h.in` | Added `D3_FORK_NAME`, `D3_FORK_VER_MAJOR/MINOR/PATCH` defines for Matcen fork identity |
+| `CMakeLists.txt` | Added `MATCEN_VERSION_MAJOR/MINOR/PATCH` variables (0.8.0), passed through to `CheckGit.cmake` |
+| `Descent3/mmItem.cpp` | Main menu version display: `Ver 1.6.0 | Matcen 0.8.0 <hash>` |
+| `Descent3/sdlmain.cpp` | Startup log includes Matcen fork name and version |
 
 ### Unchanged Files (Leveraged As-Is)
 

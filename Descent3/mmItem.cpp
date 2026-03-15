@@ -435,18 +435,20 @@ void mmInterface::CopyrightText() {
     strcat(type, "Ver");
   }
 
-  int x = Max_window_w - 164, y = Max_window_h - 29; // was -128 and -16
+  int x = Max_window_w - 280, y = Max_window_h - 29; // was -128, then -164
 
   // attempt to print text nicely.
   grtext_SetFont(BRIEFING_FONT);
   grtext_SetAlpha(192);
   grtext_SetColor(GR_RGB(255, 32, 32));
 
-  grtext_Printf(x, y, "%s %d.%d.%d %s", type, Program_version.major,
-                Program_version.minor, Program_version.build, D3_GIT_HASH);
+  grtext_Printf(x, y, "%s %d.%d.%d | %s %d.%d.%d %s", type, Program_version.major,
+                Program_version.minor, Program_version.build, D3_FORK_NAME, D3_FORK_VER_MAJOR,
+                D3_FORK_VER_MINOR, D3_FORK_VER_PATCH, D3_GIT_HASH);
   grtext_SetFlags(GRTEXTFLAG_SHADOW);
-  grtext_Printf(x, y, "%s %d.%d.%d %s", type, Program_version.major,
-                Program_version.minor, Program_version.build, D3_GIT_HASH);
+  grtext_Printf(x, y, "%s %d.%d.%d | %s %d.%d.%d %s", type, Program_version.major,
+                Program_version.minor, Program_version.build, D3_FORK_NAME, D3_FORK_VER_MAJOR,
+                D3_FORK_VER_MINOR, D3_FORK_VER_PATCH, D3_GIT_HASH);
 
   grtext_Flush();
 }
