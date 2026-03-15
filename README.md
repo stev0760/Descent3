@@ -10,7 +10,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Multiplayer Bots (Experimental)
 
-**Status:** Phase 5.1 — Bot Management & Config Roster
+**Status:** Phase 5.2 — Bot Difficulty Levels
 
 This fork introduces a **server-side multiplayer bot system** for Descent 3. These AI-controlled bots occupy real player slots on dedicated servers, appearing and acting as normal players. All bots are tagged with `[BOT]` in their callsign for easy identification.
 
@@ -28,6 +28,7 @@ This fork introduces a **server-side multiplayer bot system** for Descent 3. The
 *   **Robust Navigation:** Engine-integrated BOA+BNode pathfinding for multi-room routing. Map-wide explore destinations with visited-room memory prevent clustering. Room-change progress tracking catches stuck bots early. Smart portal-based escape with sustained lateral thrust frees bots from complex geometry. Ship-width FVI raycasts prevent bots from targeting items through gaps too small to fly through.
 *   **Game Mode Support:** Works in Anarchy, Team Anarchy, Robo-Anarchy, with pending work on Co-op and advanced game-mode awareness. Bots persist across level changes.
 *   **Ship Selection:** Bots can pilot any available ship — Pyro-GL, Phoenix, Magnum-AHT, or Black Pyro (if Mercenary expansion is installed).
+*   **Configurable Difficulty:** Five difficulty levels — Trainee, Rookie, Hotshot (default), Ace, and Insane — scale aim accuracy, reaction time, evasive movement, dodge ability, flee aggression, and turn rate. Set globally or per-bot via config or mid-game console commands.
 
 ### Server Configuration
 
@@ -36,10 +37,13 @@ Bots can be configured automatically via config file or managed live via console
 **Option A — Inline in dedicated.cfg:**
 ```ini
 BotCount=4
+BotDifficulty=HOTSHOT
 BotName1=Reaper
 BotName2=Phantom
 BotShip1=phoenix
 BotShip2=magnum
+BotDifficulty1=ACE
+BotDifficulty2=TRAINEE
 ```
 
 **Option B — Separate bot config file:**
@@ -50,13 +54,17 @@ BotConfig=bots.cfg
 ```ini
 ; bots.cfg — same Key=Value syntax
 BotCount=4
+BotDifficulty=ROOKIE
 BotName1=Reaper
 BotShip1=phoenix
+BotDifficulty1=ACE
 ```
 
 A server with no `BotCount` (or `BotCount=0`) runs without bots — fully backwards compatible with vanilla D3 server configs.
 
 **Ship aliases:** `pyro`, `phoenix`, `magnum`, `blackpyro` (full names like `Pyro-GL` also accepted).
+
+**Difficulty levels:** `trainee`, `rookie`, `hotshot` (default), `ace`, `insane`. Set globally with `BotDifficulty=` or per-bot with `BotDifficulty1=`, etc.
 
 ### Console Commands
 
@@ -64,10 +72,11 @@ These commands are available in the dedicated server console (or via remote teln
 
 | Command | Description |
 | :--- | :--- |
-| `$addbot <name> [ship]` | Adds a bot with optional name and ship (e.g., `$addbot Reaper phoenix`). |
+| `$addbot <name> [ship] [difficulty]` | Adds a bot with optional name, ship, and difficulty (e.g., `$addbot Reaper phoenix ace`). |
 | `$removebot <index>` | Removes a specific bot (use `$botlist` to find the index). |
 | `$removebots` | Removes all active bots. |
-| `$botlist` | Displays a list of all current bots and their status. |
+| `$botlist` | Displays a list of all current bots with ship, difficulty, and status. |
+| `$botdifficulty <index\|all> <level>` | Changes difficulty mid-game (e.g., `$botdifficulty all insane`). |
 | `$botstat [index\|all]` | Displays real-time physics/state data for debugging. |
 | `$servercaps` | Prints server capabilities for remote admin tool handshake. |
 | `$bothelp` | Lists all bot commands. |

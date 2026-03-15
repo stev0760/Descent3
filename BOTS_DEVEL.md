@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Phase 5.1 complete — config-file bot roster, ship selection, `[BOT]` name prefix, `$servercaps` telnet command. All bot commands use `$` prefix. See `BOT_MANAGEMENT.md` for design rationale.
+**Status:** Phase 5.2 complete — difficulty levels (Trainee/Rookie/Hotshot/Ace/Insane) with 7 scaling parameters. Phase 5.1: config-file bot roster, ship selection, `[BOT]` name prefix, `$servercaps` telnet command. All bot commands use `$` prefix. See `BOT_MANAGEMENT.md` for design rationale.
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -56,9 +56,9 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | 4.05 | **LOS through geometry + wall-fighting:** `BotCanSeePos` FVI radius 0→2.5 (filters tiny geometry gaps), COMBAT no-LOS timeout (3s) drops bots fighting through walls to HUNT for re-navigation. | Complete |
 | 4.06 | **Uncollectible-item filter + engagement fix:** `BotCanCollectPowerup()` mirrors game pickup logic — skips already-owned primaries, Quad Laser, Afterburner, active Invuln/Cloak, max shields. Direct powerup thrust override within 50u. `BOT_HUNT_BLIND_MAX_DIST` 150→300. Stale chase (>4s) no longer suppresses engagement. COMBAT no-LOS timeout 3→5s. Powerup interrupt requires LOS + collectibility check. | Complete |
 | 5.1 | **Bot management — config roster, ship selection, `[BOT]` prefix, `$servercaps`:** `BotConfig=bots.cfg` CVar in `dedicated.cfg` (or inline bot entries), `BotLoadRosterFile()` Key=Value parser calls `BotAdd()`, ship aliases (`pyro`/`phoenix`/`magnum`/`blackpyro`), `[BOT] ` callsign prefix, `$servercaps` telnet command for remote admin handshake, `$addbot <name> [ship]` extended syntax. All bot commands now use `$` prefix for consistency with game DLL commands. | Complete |
-| 5 | **Bot management (remaining):** Difficulty levels, remote admin, auto-rebalancing, server orchestration. | Not started |
+| 5.2 | **Difficulty levels:** `BotDifficulty` enum (Trainee/Rookie/Hotshot/Ace/Insane), `BotDifficultyParams` struct with 7 scaling parameters (aim error, fire delay, flee scale, juke amplitude/frequency, dodge percent, turn rate). Config: `BotDifficulty=` (global), `BotDifficultyN=` (per-bot). Console: `$addbot <name> [ship] [difficulty]`, `$botdifficulty <index\|all> <level>`. Refactored `BotConfigureAI()` to take `bot_index`. `$botlist` shows difficulty. `$servercaps` includes `difficulty` feature. | Complete |
+| 5 | **Bot management (remaining):** Remote admin, auto-rebalancing, server orchestration. | Not started |
 | 6 | **Advanced features:** CTF/Monsterball awareness, team coordination, 6DOF maneuvers, movement capture, bot personalities. | Not started |
-| 4 | Difficulty levels, configuration UI | Not started |
 
 ## Files
 
@@ -705,10 +705,17 @@ Iterative playtest-driven refinements across multiple maps (Fellowship, BBQ, Fur
 - **4.05:** FVI radius 0→2.5 in `BotCanSeePos` (filters tiny geometry gaps), COMBAT no-LOS timeout drops wall-fighters to HUNT.
 - **4.06:** `BotCanCollectPowerup()` skips already-owned items (mirrors `HandleWeaponPowerups`/`HandleCommonPowerups` logic). Direct powerup thrust override within 50u. `BOT_HUNT_BLIND_MAX_DIST` 150→300 (engagement regression fix). Stale powerup chases no longer suppress HUNT. Powerup interrupt requires LOS + collectibility.
 
-### Phase 5: Bot Management & Server Architecture (Next)
+### Phase 5: Bot Management & Server Architecture
 
-- Config-file bot rosters (auto-spawn on server start)
-- Difficulty levels (accuracy, reaction time, aggression, navigation)
+**5.1 (Complete):** Config-file bot rosters, ship selection, `[BOT]` prefix, `$servercaps`.
+
+**5.2 (Complete):** Difficulty levels — 5 tiers (Trainee/Rookie/Hotshot/Ace/Insane) with 7 independent scaling parameters:
+- Aim error (12°→0°), fire reaction delay (0.8s→0s), flee threshold scale (1.8×→0.4×)
+- Juke amplitude (0.4×→1.5×), juke frequency (0.6×→1.5×), dodge percent (20%→100%), turn rate (0.6×→1.2×)
+- Config: `BotDifficulty=` global, `BotDifficultyN=` per-bot. Console: `$botdifficulty`, extended `$addbot`.
+- `BotConfigureAI()` refactored from `player_slot` to `bot_index` parameter.
+
+**Remaining:**
 - Remote administration (team selection, skill overrides, hot-reload)
 - Auto-rebalancing (dynamic team adjustment when humans join/leave)
 - Server orchestration (multi-instance management, match templates)
