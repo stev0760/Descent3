@@ -3449,6 +3449,7 @@ void MultiLeaveGame() {
 
   SetFunctionMode(MENU_MODE);
   if (Netgame.local_role == LR_SERVER) {
+    BotShutdownAll();
     gspy_EndGame();
   }
 
@@ -6456,6 +6457,8 @@ bool MultiStartNewLevel(int level) {
     BotReinitAll();
     // Auto-spawn configured bot roster on first level load (Phase 5.1)
     BotLoadRosterFile();
+    // Auto-spawn bots from UI roster (Phase 5.4 — client-hosted games)
+    BotSpawnFromUI();
   }
 
   return true;

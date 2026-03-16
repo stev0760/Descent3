@@ -60,6 +60,12 @@ bool Bot_debug_movement = false; // Toggle with "$botmov on/off" console command
 char Bot_config_file[260] = {};           // CVar storage — set by "BotConfig=<file>" in dedicated.cfg
 static bool Bot_roster_spawned = false;   // true after first level auto-spawn
 
+// --- Delayed UI bot spawn (Phase 5.4) ---
+// Listen server bots spawn a few seconds after level load so the host has time to manage teams.
+#define BOT_UI_SPAWN_DELAY 3.0f
+static bool Bot_ui_spawn_pending = false;
+static float Bot_ui_spawn_time = 0.0f;
+
 // --- Difficulty system (Phase 5.2) ---
 // Parameter table: per-difficulty scaling constants.
 // Hotshot = baseline (close to current behavior). Default when no config is specified.
@@ -82,6 +88,7 @@ static const BotDifficultyParams *BotGetDiffParams(int bot_index) {
 }
 
 // Forward declarations for functions not exposed in headers
+static void BotDoUISpawn();
 extern void MultiSendPlayerEnteredGame(int which);
 extern void MultiSendRenewPlayer(int slot);
 extern void MultiSendPlayerDisconnect(int slot);
@@ -2675,9 +2682,14 @@ void BotInitAll() {
   }
   Num_bots = 0;
   BotCacheCountermeasureIDs();
+  BotUISettingsInit();
 }
 
-void BotShutdownAll() { BotRemoveAll(); }
+void BotShutdownAll() {
+  BotRemoveAll();
+  Bot_roster_spawned = false;    // allow re-spawn in next game session
+  Bot_ui_spawn_pending = false;  // cancel any pending delayed spawn
+}
 
 void BotReinitAll() {
   for (int i = 0; i < MAX_BOTS; i++) {
@@ -2877,6 +2889,11 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty) {
   // which calls ResetPlayerObject() again, resetting control_type to CT_NONE and wiping AI goals.
   MultiSendPlayerEnteredGame(slot);
 
+  // --- Populate bot_info fields needed by BotConfigureAI (reads player_slot, difficulty) ---
+  Bots[bot_index].active = true;
+  Bots[bot_index].player_slot = slot;
+  Bots[bot_index].difficulty = difficulty;
+
   // Now apply AI control AFTER the re-init from MultiSendPlayerEnteredGame.
   PlayerSetControlToAI(slot, 50.0f);
   BotConfigureAI(bot_index);
@@ -2900,13 +2917,9 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty) {
   Players[slot].team = chosen_team;
 
   LOG_DEBUG.printf("BOT: Finished adding bot '%s' in slot %d, team=%d", name, slot, chosen_team);
-
-  // --- Populate bot_info record ---
-  Bots[bot_index].active = true;
-  Bots[bot_index].player_slot = slot;
   snprintf(Bots[bot_index].callsign, CALLSIGN_LEN + 1, "%s%s", BOT_NAME_PREFIX, name);
   Bots[bot_index].ship_index = ship_index;
-  Bots[bot_index].difficulty = difficulty;
+  // difficulty already set above (before BotConfigureAI)
   Bots[bot_index].fire_delay_timer = 0.0f;
   Bots[bot_index].fire_delay_target = OBJECT_HANDLE_NONE;
   Bots[bot_index].aim_wander_phase = (float)(bot_index * 1.7f); // stagger per bot
@@ -2997,6 +3010,11 @@ void BotRemoveAll() {
 }
 
 void BotDoFrame() {
+  // Delayed UI bot spawn — wait for the host to settle into the level
+  if (Bot_ui_spawn_pending && Gametime >= Bot_ui_spawn_time) {
+    BotDoUISpawn();
+  }
+
   static int mov_log_counter = 0;
 
   for (int i = 0; i < MAX_BOTS; i++) {
@@ -3502,4 +3520,68 @@ void BotPrintServerCaps() {
   // Build feature list based on what's compiled in
   PrintDedicatedMessage("SERVERCAPS version=1 fork=%s fork_version=%d.%d.%d features=bots,roster,ships,difficulty\n",
                         D3_FORK_NAME, D3_FORK_VER_MAJOR, D3_FORK_VER_MINOR, D3_FORK_VER_PATCH);
+}
+
+// --- Bot UI roster (Phase 5.4) ---
+
+static const char *kDefaultBotNames[BOT_UI_MAX_BOTS] = {"Reaper",  "Phantom", "Viper",   "Shadow",
+                                                         "Blaze",   "Rogue",   "Havoc",   "Spectre",
+                                                         "Wraith",  "Talon",   "Fury",    "Ghost",
+                                                         "Striker", "Nova",    "Tempest", "Apex"};
+
+BotUISettings Bot_ui_settings;
+
+void BotUISettingsInit() {
+  Bot_ui_settings.bot_count = 0;
+  Bot_ui_settings.default_difficulty = BOT_DIFF_HOTSHOT;
+  for (int i = 0; i < BOT_UI_MAX_BOTS; i++) {
+    BotUIRosterEntry *e = &Bot_ui_settings.roster[i];
+    strncpy(e->name, kDefaultBotNames[i], CALLSIGN_LEN - 1);
+    e->name[CALLSIGN_LEN - 1] = '\0';
+    strncpy(e->ship_alias, "Pyro-GL", sizeof(e->ship_alias) - 1);
+    e->ship_alias[sizeof(e->ship_alias) - 1] = '\0';
+    e->difficulty = BOT_DIFF_COUNT; // sentinel = "use default"
+    e->enabled = true;
+  }
+}
+
+void BotSpawnFromUI() {
+  if (Bot_roster_spawned || Bot_ui_settings.bot_count <= 0)
+    return;
+  // Only for client-hosted games — dedicated servers use BotLoadRosterFile() instead
+  if (Bot_config_file[0])
+    return;
+  Bot_roster_spawned = true;
+
+  // Delay spawn so the host player can manage teams, review the lobby, etc.
+  Bot_ui_spawn_pending = true;
+  Bot_ui_spawn_time = Gametime + BOT_UI_SPAWN_DELAY;
+  LOG_INFO.printf("BOT UI: %d bots will spawn in %.0f seconds", Bot_ui_settings.bot_count, BOT_UI_SPAWN_DELAY);
+}
+
+// Actually spawn the bots from UI roster data. Called from BotDoFrame() after delay.
+static void BotDoUISpawn() {
+  Bot_ui_spawn_pending = false;
+  LOG_INFO.printf("BOT UI: Spawning %d bots from UI roster", Bot_ui_settings.bot_count);
+  for (int i = 0; i < Bot_ui_settings.bot_count; i++) {
+    BotUIRosterEntry *e = &Bot_ui_settings.roster[i];
+    // Fall back to canned default name if the user left the field empty
+    const char *name = (e->name[0] != '\0') ? e->name : kDefaultBotNames[i];
+    int ship = BotResolveShipAlias(e->ship_alias);
+    if (ship < 0)
+      ship = 0;
+    BotDifficulty diff = (e->difficulty < BOT_DIFF_COUNT) ? e->difficulty : Bot_ui_settings.default_difficulty;
+    int idx = BotAdd(name, ship, diff);
+    if (idx >= 0)
+      LOG_INFO.printf("BOT UI: Bot '%s' spawned (ship=%s, diff=%s, slot=%d)", Bots[idx].callsign,
+                      Ships[Bots[idx].ship_index].name, BotDifficultyName(Bots[idx].difficulty), Bots[idx].player_slot);
+    else
+      LOG_WARNING.printf("BOT UI: Failed to spawn bot '%s'", name);
+  }
+}
+
+const char *BotShipAliasFromIndex(int ship_index) {
+  if (ship_index < 0 || ship_index >= MAX_SHIPS || !Ships[ship_index].used)
+    return "Pyro-GL";
+  return Ships[ship_index].name;
 }

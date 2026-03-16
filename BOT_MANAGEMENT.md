@@ -1,6 +1,6 @@
 # Phase 5: Bot Management & Server Administration
 
-**Status:** Phase 5.2 complete
+**Status:** Phase 5.4 complete
 **Prerequisite reading:** `BOT_DEV_REFERENCE.md`, `BOTS_DEVEL.md`
 **Key files:** `Descent3/bot.h`, `Descent3/bot.cpp`, `Descent3/dedicated_server.cpp`
 
@@ -197,20 +197,39 @@ $botpopulation reserve <n>       ; change reserved slots live
 - After adding/removing a bot, DMFC's `$autobalance` (if enabled) will handle team placement for the new bot or rebalance remaining players.
 - Our `BotAdd()` round-robin already assigns new bots to the smallest team, consistent with DMFC's approach.
 
-### 5.4: Enhanced Console Commands (Priority: Low)
+### 5.4: Client UI for Bot Match Setup (Priority: High) — IMPLEMENTED
+
+In-game "Bot Settings" screen accessible from the Start a New Game flow (Direct TCP/IP → Start a New Game). Allows listen server hosts to configure bots without touching config files.
+
+**UI elements:**
+- **Bot Count** — edit box (0–16)
+- **Default Difficulty** — listbox (Trainee/Rookie/Hotshot/Ace/Insane)
+- **Per-bot roster** — name edit, ship cycling hotspot, difficulty cycling hotspot
+- **Done/Cancel** buttons
+
+**Implementation:**
+- `MultiBotSettingsMenu()` in `multi_ui.cpp` — full-screen UI following existing D3 UI patterns
+- "Bot Settings" button added between Multiplayer Options and Save Settings in `StartMultiplayerGameMenu()` (`con_dll.h`)
+- DLL API export via `fp[115]` in `multi_dll_mgr.cpp`
+- Bot settings saved/loaded in `.mps` files (`multi_save_setting.cpp`) — backwards compatible
+- `BotUISettings` struct and `BotSpawnFromUI()` in `bot.h`/`bot.cpp`
+- Delayed spawn (3s) so host can manage teams before bots join
+- Priority: UI settings → config file → no bots (listen server vs dedicated server)
+
+**Bug fix (init-order):** `BotAdd()` called `BotConfigureAI(bot_index)` before `Bots[bot_index].player_slot` was set, causing it to silently configure slot 0 (host) instead of the bot. Result: bots spawned without thrust physics, firing, awareness, or dodge — "asleep" until first death+respawn. Fixed by moving `player_slot` and `difficulty` initialization before `BotConfigureAI()`.
+
+### 5.5: Enhanced Console Commands (Priority: Low)
 
 Extend admin tooling for live management:
 
 | Command | Description |
 |---------|-------------|
-| `$addbot <name> [ship]` | Add with optional ship name (extends existing command) |
 | `$botteam <index> <team>` | Move a bot to a different team |
 | `$botship <index> <ship>` | Change a bot's ship (respawns with new ship) |
-| `$botdifficulty <index\|all> <level>` | Change difficulty mid-game |
 | `$botrebalance` | Force immediate team rebalance |
 | `$botstats` | Summary: total kills, deaths, powerups collected per bot |
 
-### 5.5: Persistent Bot Statistics (Priority: Low)
+### 5.6: Persistent Bot Statistics (Priority: Low)
 
 Track per-bot performance across sessions for tuning and diagnostics.
 
@@ -230,9 +249,10 @@ Track per-bot performance across sessions for tuning and diagnostics.
 2. ~~**5.1 Config-file roster**~~ ✅ Implemented
 3. ~~**5.1b Ship selection**~~ ✅ Implemented
 4. ~~**5.2 Difficulty levels**~~ ✅ Implemented
-5. **5.3 Auto-rebalancing** — quality-of-life feature for team modes
-6. **5.4 Enhanced console** — admin convenience
-7. **5.5 Statistics** — diagnostic tooling
+5. ~~**5.4 Client UI for bot match setup**~~ ✅ Implemented
+6. **5.3 Auto-rebalancing** — quality-of-life feature for team modes
+7. **5.5 Enhanced console** — admin convenience
+8. **5.6 Statistics** — diagnostic tooling
 
 ---
 
@@ -265,7 +285,7 @@ $servercaps
 
 **Response on this fork (bot-enabled):**
 ```
-SERVERCAPS version=1 fork=Matcen fork_version=0.8.0 features=bots,roster,ships,difficulty,rebalance,botstats
+SERVERCAPS version=1 fork=Matcen fork_version=0.8.2 features=bots,roster,ships,difficulty,rebalance,botstats
 ```
 
 **Response on vanilla D3:**

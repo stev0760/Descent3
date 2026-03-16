@@ -32,6 +32,7 @@ extern int MultiDLLGameStarting;
 void MultiDoConfigLoad(void);
 void MultiDoConfigSave(void);
 void MultiGameOptionsMenu(int alloptions);
+void MultiBotSettingsMenu();
 int ReturnMultiplayerGameMenu(void);
 int MultiLevelSelection(void);
 bool DoPlayerMouselookCheck(uint32_t flags);

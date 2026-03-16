@@ -70,6 +70,7 @@
 #include <cstdio>
 #include <filesystem>
 
+#include "bot.h"
 #include "cfile.h"
 #include "log.h"
 #include "multi.h"
@@ -120,6 +121,20 @@ int MultiSaveSettings(const std::filesystem::path &filename) {
   cf_WriteString(cf, szoutput);
   snprintf(szoutput, sizeof(szoutput), "DIFFICULTY\t%d", Netgame.difficulty);
   cf_WriteString(cf, szoutput);
+
+  // Bot UI roster settings (Phase 5.4)
+  snprintf(szoutput, sizeof(szoutput), "BOTCOUNT\t%d", Bot_ui_settings.bot_count);
+  cf_WriteString(cf, szoutput);
+  snprintf(szoutput, sizeof(szoutput), "BOTDEFAULTDIFF\t%d", (int)Bot_ui_settings.default_difficulty);
+  cf_WriteString(cf, szoutput);
+  for (i = 0; i < Bot_ui_settings.bot_count && i < BOT_UI_MAX_BOTS; i++) {
+    snprintf(szoutput, sizeof(szoutput), "BOTNAME%d\t%s", i + 1, Bot_ui_settings.roster[i].name);
+    cf_WriteString(cf, szoutput);
+    snprintf(szoutput, sizeof(szoutput), "BOTSHIP%d\t%s", i + 1, Bot_ui_settings.roster[i].ship_alias);
+    cf_WriteString(cf, szoutput);
+    snprintf(szoutput, sizeof(szoutput), "BOTDIFF%d\t%d", i + 1, (int)Bot_ui_settings.roster[i].difficulty);
+    cf_WriteString(cf, szoutput);
+  }
 
   for (i = 0; i < MAX_OBJECT_IDS; i++) {
     if (Object_info[i].type == OBJ_POWERUP) {
@@ -264,6 +279,56 @@ int MultiLoadSettings(const std::filesystem::path &filename) {
       Netgame.difficulty = atoi(tokval);
       if ((Netgame.difficulty > 4) || (Netgame.difficulty < 0))
         Netgame.difficulty = 0;
+    } else if (stricmp(toklabel, "BOTCOUNT") == 0) {
+      Bot_ui_settings.bot_count = atoi(tokval);
+      if (Bot_ui_settings.bot_count < 0)
+        Bot_ui_settings.bot_count = 0;
+      if (Bot_ui_settings.bot_count > BOT_UI_MAX_BOTS)
+        Bot_ui_settings.bot_count = BOT_UI_MAX_BOTS;
+    } else if (stricmp(toklabel, "BOTDEFAULTDIFF") == 0) {
+      int d = atoi(tokval);
+      if (d >= 0 && d < BOT_DIFF_COUNT)
+        Bot_ui_settings.default_difficulty = (BotDifficulty)d;
+    } else if (strnicmp(toklabel, "BOTNAME", 7) == 0 && toklabel[7] >= '1' && toklabel[7] <= '9') {
+      int num = atoi(&toklabel[7]);
+      if (num >= 1 && num <= BOT_UI_MAX_BOTS) {
+        // Reconstruct full name (may contain spaces)
+        char buf[CALLSIGN_LEN];
+        strncpy(buf, tokval, sizeof(buf) - 1);
+        buf[sizeof(buf) - 1] = '\0';
+        tokval = strtok(NULL, seps);
+        while (tokval) {
+          strncat(buf, " ", sizeof(buf) - strlen(buf) - 1);
+          strncat(buf, tokval, sizeof(buf) - strlen(buf) - 1);
+          tokval = strtok(NULL, seps);
+        }
+        strncpy(Bot_ui_settings.roster[num - 1].name, buf, CALLSIGN_LEN - 1);
+        Bot_ui_settings.roster[num - 1].name[CALLSIGN_LEN - 1] = '\0';
+      }
+    } else if (strnicmp(toklabel, "BOTSHIP", 7) == 0 && toklabel[7] >= '1' && toklabel[7] <= '9') {
+      int num = atoi(&toklabel[7]);
+      if (num >= 1 && num <= BOT_UI_MAX_BOTS) {
+        // Reconstruct full name (may contain spaces, e.g. "Black Pyro")
+        char buf[32];
+        strncpy(buf, tokval, sizeof(buf) - 1);
+        buf[sizeof(buf) - 1] = '\0';
+        tokval = strtok(NULL, seps);
+        while (tokval) {
+          strncat(buf, " ", sizeof(buf) - strlen(buf) - 1);
+          strncat(buf, tokval, sizeof(buf) - strlen(buf) - 1);
+          tokval = strtok(NULL, seps);
+        }
+        strncpy(Bot_ui_settings.roster[num - 1].ship_alias, buf,
+                sizeof(Bot_ui_settings.roster[num - 1].ship_alias) - 1);
+        Bot_ui_settings.roster[num - 1].ship_alias[sizeof(Bot_ui_settings.roster[num - 1].ship_alias) - 1] = '\0';
+      }
+    } else if (strnicmp(toklabel, "BOTDIFF", 7) == 0 && toklabel[7] >= '1' && toklabel[7] <= '9') {
+      int num = atoi(&toklabel[7]);
+      if (num >= 1 && num <= BOT_UI_MAX_BOTS) {
+        int d = atoi(tokval);
+        if (d >= 0 && d <= BOT_DIFF_COUNT)
+          Bot_ui_settings.roster[num - 1].difficulty = (BotDifficulty)d;
+      }
     } else {
       LOG_WARNING.printf("Unknown line in multiplayer config file %s\t%s", toklabel, tokval);
     }

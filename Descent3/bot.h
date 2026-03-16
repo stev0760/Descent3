@@ -23,6 +23,7 @@
 #include "weapon_external.h"
 
 #define MAX_BOTS 16
+#define BOT_UI_MAX_BOTS 16
 #define BOT_RESPAWN_DELAY 3.0f          // seconds after death before respawn
 #define BOT_TARGET_UPDATE_INTERVAL 0.5f // seconds between target search runs
 #define BOT_FIRE_RANGE 200.0f           // max distance (units) to fire primary weapon
@@ -406,5 +407,35 @@ void BotSetDifficulty(int bot_index, BotDifficulty diff);
 // Set/get the default difficulty for newly added bots.
 void BotSetDefaultDifficulty(BotDifficulty diff);
 BotDifficulty BotGetDefaultDifficulty();
+
+// --- Bot UI roster (Phase 5.4) ---
+// Client-hosted games populate this from the Bot Settings screen.
+// Dedicated servers use BotLoadRosterFile() instead.
+
+struct BotUIRosterEntry {
+  char name[CALLSIGN_LEN];
+  char ship_alias[32];
+  BotDifficulty difficulty;
+  bool enabled;
+};
+
+struct BotUISettings {
+  int bot_count;
+  BotDifficulty default_difficulty;
+  BotUIRosterEntry roster[BOT_UI_MAX_BOTS];
+};
+
+extern BotUISettings Bot_ui_settings;
+
+// Initialize Bot_ui_settings with sensible defaults.
+void BotUISettingsInit();
+
+// Spawn bots from UI roster data (client-hosted games).
+// Called from MultiStartNewLevel(). Does nothing if bot_count <= 0 or already spawned.
+void BotSpawnFromUI();
+
+// Returns the ship alias string for a ship index (e.g., "Pyro-GL", "Phoenix").
+// Returns "Pyro-GL" if the index is invalid.
+const char *BotShipAliasFromIndex(int ship_index);
 
 #endif // BOT_H

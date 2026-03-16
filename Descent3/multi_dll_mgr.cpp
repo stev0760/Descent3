@@ -523,6 +523,7 @@ void GetMultiAPI(multi_api *api) {
   api->fp[112] = (int *)cf_LocatePath;
   api->fp[113] = (int *)cf_LocateMultiplePaths;
   api->fp[114] = (int *)cf_GetWritableBaseDirectory;
+  api->fp[115] = (int *)MultiBotSettingsMenu;
 
   // Variable pointers
   api->vp[0] = (int *)&Player_num;

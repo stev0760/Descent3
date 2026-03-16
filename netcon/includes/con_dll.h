@@ -655,6 +655,9 @@ msn_CheckGetMission_fp DLLmsn_CheckGetMission;
 typedef void (*MultiGameOptionsMenu_fp)(int alloptions);
 MultiGameOptionsMenu_fp DLLMultiGameOptionsMenu;
 
+typedef void (*MultiBotSettingsMenu_fp)(void);
+MultiBotSettingsMenu_fp DLLMultiBotSettingsMenu;
+
 // Loads a dynamic module into memory for use.
 // Returns true on success, false otherwise
 typedef bool (*mod_LoadModule_fp)(module *handle, const std::filesystem::path &modfilename, int flags);
@@ -988,6 +991,7 @@ void CommonDLLInit(int *api_func) {
   DLLcf_LocatePath = (cf_LocatePath_fp)API.fp[112];
   DLLcf_LocateMultiplePaths = (cf_LocateMultiplePaths_fp)API.fp[113];
   DLLcf_GetWritableBaseDirectory = (cf_GetWritableBaseDirectory_fp)API.fp[114];
+  DLLMultiBotSettingsMenu = (MultiBotSettingsMenu_fp)API.fp[115];
 
   DLLMPlayers = (player *)API.players;
   DLLNetgame = (netgame_info *)API.netgame;
@@ -1159,6 +1163,15 @@ int StartMultiplayerGameMenu() {
                                     cury, 180, 30, UIF_FIT | UIF_CENTER);
   cury += 18;
 
+  // Bot Settings button
+  auto bot_settings_txt_on = DLLCreateNewUITextItem("Bot Settings", UICOL_HOTSPOT_HI, -1);
+  auto bot_settings_txt_off = DLLCreateNewUITextItem("Bot Settings", UICOL_HOTSPOT_LO, -1);
+
+  int bot_settings_button = id;
+  auto bot_settings_hs = DLLHotSpotCreate(main_wnd, id++, KEY_B, bot_settings_txt_off, bot_settings_txt_on, 10, cury,
+                                          180, 30, UIF_FIT | UIF_CENTER);
+  cury += 18;
+
   // cancel button
 
   int save_button = id;
@@ -1284,6 +1297,10 @@ int StartMultiplayerGameMenu() {
     if (res == option_button) {
       DLLNewUIWindowClose(main_wnd);
       MultiplayerOptionsMenu();
+      DLLNewUIWindowOpen(main_wnd);
+    } else if (res == bot_settings_button) {
+      DLLNewUIWindowClose(main_wnd);
+      DLLMultiBotSettingsMenu();
       DLLNewUIWindowOpen(main_wnd);
     } else if (res == start_button) {
       // Get Game name
@@ -1459,12 +1476,15 @@ int StartMultiplayerGameMenu() {
   DLLRemoveUITextItem(save_settings_txt_off);
   DLLRemoveUITextItem(load_settings_txt_on);
   DLLRemoveUITextItem(load_settings_txt_off);
+  DLLRemoveUITextItem(bot_settings_txt_on);
+  DLLRemoveUITextItem(bot_settings_txt_off);
 
   DLLRemoveUITextItem(start_text);
 
   DLLDeleteUIItem(start_title);
   DLLDeleteUIItem(save_hs);
   DLLDeleteUIItem(load_hs);
+  DLLDeleteUIItem(bot_settings_hs);
   DLLDeleteUIItem(main_wnd);
   DLLDeleteUIItem(game_name);
   DLLDeleteUIItem(list_1);
