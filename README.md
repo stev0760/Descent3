@@ -10,9 +10,9 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Matcen — Multiplayer Bots (Experimental)
 
-**Version:** Matcen 0.8.0 | **Status:** Phase 5.2 Complete — Bot Difficulty Levels
+**Version:** Matcen 0.8.2 | **Status:** Phase 5.4 Complete — Client UI for Bot Match Setup
 
-This fork — "Matcen" — adds a **server-side multiplayer bot system** to Descent 3. Bots occupy real player slots on dedicated servers, appearing and acting as normal players. All bots are tagged with `[BOT]` in their callsign for easy identification.
+This fork — "Matcen" — adds a **server-side multiplayer bot system** to Descent 3. Bots occupy real player slots on dedicated servers or listen servers, appearing and acting as normal players. All bots are tagged with `[BOT]` in their callsign for easy identification.
 
 **No client mods required.** Retail D3 v1.5 clients can connect and play against these bots immediately.
 
@@ -29,10 +29,11 @@ This fork — "Matcen" — adds a **server-side multiplayer bot system** to Desc
 *   **Game Mode Support:** Works in Anarchy, Team Anarchy, Robo-Anarchy, with pending work on Co-op and advanced game-mode awareness. Bots persist across level changes.
 *   **Ship Selection:** Bots can pilot any available ship — Pyro-GL, Phoenix, Magnum-AHT, or Black Pyro (if Mercenary expansion is installed).
 *   **Configurable Difficulty:** Five difficulty levels — Trainee, Rookie, Hotshot (default), Ace, and Insane — scale aim accuracy, reaction time, evasive movement, dodge ability, flee aggression, and turn rate. Set globally or per-bot via config or mid-game console commands.
+*   **In-Game Bot Setup (Listen Server):** A "Bot Settings" screen in the Start a New Game flow lets hosts configure bots without touching config files — set bot count, names, ships, and per-bot difficulty from the UI. Settings save/load with `.mps` multiplayer presets.
 
 ### Server Configuration
 
-Bots are configured via a separate config file referenced from `dedicated.cfg`, and can be managed live via console/telnet.
+Bots are configured via a separate config file referenced from `dedicated.cfg`, and can be managed live via console/telnet. For listen servers (hosting from the client), use the in-game Bot Settings screen instead.
 
 ```ini
 ; In dedicated.cfg — add this line to enable bots

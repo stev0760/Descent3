@@ -101,6 +101,10 @@ Enforced by `.clang-format` (LLVM-based):
 - Include sort order is preserved (not auto-sorted)
 - Format with: `clang-format -i <file>` or `tools/formatter.sh`
 
+## Documentation Updates
+
+When committing feature work, bug fixes, or version bumps, **always update `README.md`** alongside `BOTS_DEVEL.md` and `BOT_MANAGEMENT.md`. The README is user-facing and must reflect the current version, feature set, and status.
+
 ## CI
 
 Matrix builds across Windows (MSVC), macOS (universal), Linux (GCC), and Linux ARM64 cross-compile. CI uses `BUILD_TESTING=ON` and `ENABLE_LOGGER=ON`. Workflows in `.github/workflows/`.
