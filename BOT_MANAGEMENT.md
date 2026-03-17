@@ -203,12 +203,15 @@ In-game "Bot Settings" screen accessible from the Start a New Game flow (Direct 
 
 **UI elements:**
 - **Bot Count** — edit box (0–16)
-- **Default Difficulty** — listbox (Trainee/Rookie/Hotshot/Ace/Insane)
-- **Per-bot roster** — name edit, ship cycling hotspot, difficulty cycling hotspot
+- **Default Difficulty** — cycling hotspot (Trainee/Rookie/Hotshot/Ace/Insane)
+- **Roster listbox** — scrollable list of bots (up to 16), single-click to select
+- **Detail panel** — name edit, ship cycling hotspot, per-bot difficulty cycling hotspot for selected bot
 - **Done/Cancel** buttons
 
-**Implementation:**
-- `MultiBotSettingsMenu()` in `multi_ui.cpp` — full-screen UI following existing D3 UI patterns
+**Implementation (redesigned in 0.8.3 — master-detail layout):**
+- `MultiBotSettingsMenu()` in `multi_ui.cpp` — `NewUIWindow` with `multimain.ogf` background image (metallic border)
+- Master-detail pattern: `newuiListBox` roster on left, detail panel (name/ship/difficulty) on right
+- `SetSelectChangeCallback` forces `DoUI()` return on single-click selection change
 - "Bot Settings" button added between Multiplayer Options and Save Settings in `StartMultiplayerGameMenu()` (`con_dll.h`)
 - DLL API export via `fp[115]` in `multi_dll_mgr.cpp`
 - Bot settings saved/loaded in `.mps` files (`multi_save_setting.cpp`) — backwards compatible
@@ -285,7 +288,7 @@ $servercaps
 
 **Response on this fork (bot-enabled):**
 ```
-SERVERCAPS version=1 fork=Matcen fork_version=0.8.2 features=bots,roster,ships,difficulty,rebalance,botstats
+SERVERCAPS version=1 fork=Matcen fork_version=0.8.3 features=bots,roster,ships,difficulty,rebalance,botstats
 ```
 
 **Response on vanilla D3:**

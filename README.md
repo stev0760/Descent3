@@ -10,7 +10,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Matcen — Multiplayer Bots (Experimental)
 
-**Version:** Matcen 0.8.2 | **Status:** Phase 5.4 Complete — Client UI for Bot Match Setup
+**Version:** Matcen 0.8.3 | **Status:** Phase 5.4 Complete — Bot Settings UI Redesign
 
 This fork — "Matcen" — adds a **server-side multiplayer bot system** to Descent 3. Bots occupy real player slots on dedicated servers or listen servers, appearing and acting as normal players. All bots are tagged with `[BOT]` in their callsign for easy identification.
 
@@ -29,7 +29,7 @@ This fork — "Matcen" — adds a **server-side multiplayer bot system** to Desc
 *   **Game Mode Support:** Works in Anarchy, Team Anarchy, Robo-Anarchy, with pending work on Co-op and advanced game-mode awareness. Bots persist across level changes.
 *   **Ship Selection:** Bots can pilot any available ship — Pyro-GL, Phoenix, Magnum-AHT, or Black Pyro (if Mercenary expansion is installed).
 *   **Configurable Difficulty:** Five difficulty levels — Trainee, Rookie, Hotshot (default), Ace, and Insane — scale aim accuracy, reaction time, evasive movement, dodge ability, flee aggression, and turn rate. Set globally or per-bot via config or mid-game console commands.
-*   **In-Game Bot Setup (Listen Server):** A "Bot Settings" screen in the Start a New Game flow lets hosts configure bots without touching config files — set bot count, names, ships, and per-bot difficulty from the UI. Settings save/load with `.mps` multiplayer presets.
+*   **In-Game Bot Setup (Listen Server):** A "Bot Settings" screen in the Start a New Game flow lets hosts configure bots without touching config files — master-detail layout with scrollable roster (up to 16 bots), per-bot name/ship/difficulty editing, and global defaults. Settings save/load with `.mps` multiplayer presets.
 
 ### Server Configuration
 

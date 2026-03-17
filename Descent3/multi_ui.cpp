@@ -1637,151 +1637,223 @@ static void BotEnsureUIDefaults() {
   }
 }
 
-#define BOT_SET_TITLE_Y 25
-#define BOT_SET_COUNT_Y 55
-#define BOT_SET_ROSTER_Y 160
-#define BOT_SET_ROW_HEIGHT 20
-#define BOT_SET_COL_NUM 30
-#define BOT_SET_COL_NAME 55
-#define BOT_SET_COL_SHIP 230
-#define BOT_SET_COL_DIFF 370
+// --- Layout constants (master-detail) ---
+// Vertical positions (full-screen NewUIWindow, matching multiplayer menu style)
+#define BOT_SET_TITLE_Y 30
+#define BOT_SET_CTRL_Y 75
+#define BOT_SET_HDR_Y 110
+#define BOT_SET_CONTENT_Y 128
+
+// Label vertical offset to center with NewUIEdit capsule art (~30px tall).
+// For label+hotspot rows, use 0 (both are plain text at the same Y).
+#define BOT_SET_EDIT_LABEL_OFS 10
+
+// Left panel — roster listbox
+#define BOT_SET_LIST_X 40
+#define BOT_SET_LIST_W 224
+#define BOT_SET_LIST_H 224
+
+// Right panel — detail editor
+#define BOT_SET_DETAIL_LBL_X 300
+#define BOT_SET_DETAIL_VAL_X 395
+
+// Detail field vertical offsets (from BOT_SET_CONTENT_Y) — 38px spacing
+// gives room for edit capsule height without overlap
+#define BOT_SET_NAME_OFS 0
+#define BOT_SET_SHIP_OFS 38
+#define BOT_SET_PDIFF_OFS 68
+
+// Controls row
+#define BOT_SET_COUNT_LBL_X 40
+#define BOT_SET_COUNT_EDIT_X 160
+#define BOT_SET_DEFDIFF_LBL_X 300
+#define BOT_SET_DEFDIFF_HS_X 400
+
+// Buttons
+#define BOT_SET_BTN_Y 390
+#define BOT_SET_BTN_SPACING 25
+
+// Gadget IDs
 #define BOT_SET_DONE_ID 200
 #define BOT_SET_CANCEL_ID 201
 #define BOT_SET_COUNT_EDIT_ID 202
-#define BOT_SET_DIFF_LIST_ID 203
-#define BOT_SET_SHIP_BASE_ID 300
-#define BOT_SET_DIFF_BASE_ID 350
-#define BOT_SET_NAME_BASE_ID 400
+#define BOT_SET_DEF_DIFF_ID 203
+#define BOT_SET_ROSTER_LB_ID 204
+#define BOT_SET_NAME_EDIT_ID 210
+#define BOT_SET_SHIP_HS_ID 211
+#define BOT_SET_PDIFF_HS_ID 212
 
-// Helper: get difficulty display name for a per-bot difficulty value
+// Difficulty display names (for per-bot cycling — includes "Default" sentinel)
 static const char *BotDiffDisplayName(BotDifficulty d) {
   if (d >= BOT_DIFF_COUNT)
     return "Default";
   return BotDifficultyName(d);
 }
 
+// Listbox selection-change callback — forces DoUI() to return so we can update the detail panel
+extern int UI_frame_result;
+static void BotRosterSelChanged(int index) { UI_frame_result = BOT_SET_ROSTER_LB_ID; }
+
 void MultiBotSettingsMenu() {
   BotEnsureUIDefaults();
 
-  // Save current state in case user cancels
+  // Save current state for Cancel restore
   BotUISettings saved = Bot_ui_settings;
 
+  // --- Window (full-screen with multiplayer border art) ---
   rendering_state rs;
   rend_GetRenderState(&rs);
 
   NewUIWindow main_wnd;
   main_wnd.Create(0, 0, rs.screen_width, rs.screen_height, UIF_PROCESS_ALL);
+  NewUIWindowLoadBackgroundImage(&main_wnd, "multimain.ogf");
 
-  // Title
+  // --- Title ---
   UITextItem title_text(BIG_BRIEFING_FONT, "Bot Settings", UICOL_WINDOW_TITLE);
   UIText title;
   title.Create(&main_wnd, &title_text, 0, BOT_SET_TITLE_Y, UIF_CENTER);
 
-  // Bot Count
+  // --- Controls row: Bot Count + Default Difficulty ---
   UITextItem count_label_text("Bot Count:", UICOL_TEXT_NORMAL);
   UIText count_label;
-  count_label.Create(&main_wnd, &count_label_text, 40, BOT_SET_COUNT_Y + 3, 0);
+  count_label.Create(&main_wnd, &count_label_text, BOT_SET_COUNT_LBL_X, BOT_SET_CTRL_Y + BOT_SET_EDIT_LABEL_OFS, 0);
 
   NewUIEdit count_edit;
-  count_edit.Create(&main_wnd, BOT_SET_COUNT_EDIT_ID, 140, BOT_SET_COUNT_Y, 50, 15, 0);
+  count_edit.Create(&main_wnd, BOT_SET_COUNT_EDIT_ID, BOT_SET_COUNT_EDIT_X, BOT_SET_CTRL_Y, 100, 15, UIED_NUMBERS);
   char count_str[8];
   snprintf(count_str, sizeof(count_str), "%d", Bot_ui_settings.bot_count);
   count_edit.SetText(count_str);
 
-  // Default Difficulty listbox — selecting a difficulty sets ALL bots to that level.
-  // Per-bot overrides can be done by cycling individual bot difficulties afterward.
-  UITextItem def_diff_label_text("Default Difficulty:", UICOL_TEXT_NORMAL);
-  UIText def_diff_label;
-  def_diff_label.Create(&main_wnd, &def_diff_label_text, 300, BOT_SET_COUNT_Y - 10, 0);
+  UITextItem diff_label_text("Difficulty:", UICOL_TEXT_NORMAL);
+  UIText diff_label;
+  diff_label.Create(&main_wnd, &diff_label_text, BOT_SET_DEFDIFF_LBL_X, BOT_SET_CTRL_Y + BOT_SET_EDIT_LABEL_OFS, 0);
 
-  UITextItem diff_items[BOT_DIFF_COUNT];
-  diff_items[0] = UITextItem(TXT_TRAINEE, GR_LIGHTGRAY);
-  diff_items[1] = UITextItem(TXT_ROOKIE, GR_LIGHTGRAY);
-  diff_items[2] = UITextItem(TXT_HOTSHOT, GR_LIGHTGRAY);
-  diff_items[3] = UITextItem(TXT_ACE, GR_LIGHTGRAY);
-  diff_items[4] = UITextItem(TXT_INSANE, GR_LIGHTGRAY);
+  const char *def_diff_name = BotDifficultyName(Bot_ui_settings.default_difficulty);
+  UITextItem def_diff_on(def_diff_name, UICOL_HOTSPOT_HI);
+  UITextItem def_diff_off(def_diff_name, UICOL_HOTSPOT_LO);
+  UIHotspot def_diff_hs;
+  def_diff_hs.Create(&main_wnd, BOT_SET_DEF_DIFF_ID, 0, &def_diff_off, &def_diff_on, BOT_SET_DEFDIFF_HS_X,
+                     BOT_SET_CTRL_Y + BOT_SET_EDIT_LABEL_OFS, 100, 18, UIF_FIT);
 
-  NewUIListBox def_diff_list;
-  def_diff_list.SetSelectedColor(UICOL_LISTBOX_HI);
-  def_diff_list.SetHiliteColor(UICOL_LISTBOX_HI);
-  def_diff_list.Create(&main_wnd, BOT_SET_DIFF_LIST_ID, 300, BOT_SET_COUNT_Y + 5, 160, 80, UILB_NOSORT);
-  for (int i = 0; i < BOT_DIFF_COUNT; i++)
-    def_diff_list.AddItem(&diff_items[i]);
+  // --- Section headers ---
+  UITextItem hdr_roster("Roster", UICOL_WINDOW_TITLE);
+  UIText hdr_roster_txt;
+  hdr_roster_txt.Create(&main_wnd, &hdr_roster, BOT_SET_LIST_X, BOT_SET_HDR_Y, 0);
 
-  // Select current default
-  if (Bot_ui_settings.default_difficulty >= 0 && Bot_ui_settings.default_difficulty < BOT_DIFF_COUNT)
-    def_diff_list.SelectItem(&diff_items[Bot_ui_settings.default_difficulty]);
+  UITextItem hdr_detail("Details", UICOL_WINDOW_TITLE);
+  UIText hdr_detail_txt;
+  hdr_detail_txt.Create(&main_wnd, &hdr_detail, BOT_SET_DETAIL_LBL_X, BOT_SET_HDR_Y, 0);
 
-  // Track last selected difficulty to detect changes
-  int last_diff_sel = (int)Bot_ui_settings.default_difficulty;
+  // --- Left panel: roster listbox ---
+  newuiListBox roster_lb;
+  roster_lb.Create(&main_wnd, BOT_SET_ROSTER_LB_ID, BOT_SET_LIST_X, BOT_SET_CONTENT_Y, BOT_SET_LIST_W,
+                   BOT_SET_LIST_H, UILB_NOSORT);
+  roster_lb.SetSelectChangeCallback(BotRosterSelChanged);
 
-  // Column headers
-  UITextItem hdr_num("#", UICOL_TEXT_NORMAL);
-  UITextItem hdr_name("Name", UICOL_TEXT_NORMAL);
-  UITextItem hdr_ship("Ship", UICOL_TEXT_NORMAL);
-  UITextItem hdr_diff("Difficulty", UICOL_TEXT_NORMAL);
+  // Helper: rebuild roster list entries from Bot_ui_settings
+  auto RebuildRosterList = [&]() {
+    roster_lb.RemoveAll();
+    char entry[64];
+    for (int i = 0; i < Bot_ui_settings.bot_count; i++) {
+      snprintf(entry, sizeof(entry), "%d. %s", i + 1, Bot_ui_settings.roster[i].name);
+      roster_lb.AddItem(entry);
+    }
+  };
 
-  int hdr_y = BOT_SET_ROSTER_Y - 18;
-  UIText hdr_num_txt, hdr_name_txt, hdr_ship_txt, hdr_diff_txt;
-  hdr_num_txt.Create(&main_wnd, &hdr_num, BOT_SET_COL_NUM, hdr_y, 0);
-  hdr_name_txt.Create(&main_wnd, &hdr_name, BOT_SET_COL_NAME, hdr_y, 0);
-  hdr_ship_txt.Create(&main_wnd, &hdr_ship, BOT_SET_COL_SHIP, hdr_y, 0);
-  hdr_diff_txt.Create(&main_wnd, &hdr_diff, BOT_SET_COL_DIFF, hdr_y, 0);
+  RebuildRosterList();
 
-  // Per-bot roster rows (up to 8 visible on screen)
-  int max_visible = 8;
-  UIText row_num_txt[8];
-  UITextItem row_num_items[8];
-  NewUIEdit row_name_edits[8];
-  UIHotspot row_ship_hs[8];
-  UITextItem row_ship_on[8];
-  UITextItem row_ship_off[8];
-  UIHotspot row_diff_hs[8];
-  UITextItem row_diff_on[8];
-  UITextItem row_diff_off[8];
+  // --- Right panel: detail fields ---
+  // Name row (label + edit field — use edit label offset)
+  UITextItem name_lbl_text("Name:", UICOL_TEXT_NORMAL);
+  UIText name_lbl;
+  name_lbl.Create(&main_wnd, &name_lbl_text, BOT_SET_DETAIL_LBL_X,
+                  BOT_SET_CONTENT_Y + BOT_SET_NAME_OFS + BOT_SET_EDIT_LABEL_OFS, 0);
 
-  char num_bufs[8][4];
+  NewUIEdit name_edit;
+  name_edit.Create(&main_wnd, BOT_SET_NAME_EDIT_ID, BOT_SET_DETAIL_VAL_X, BOT_SET_CONTENT_Y + BOT_SET_NAME_OFS, 150,
+                   15, 0);
 
-  for (int i = 0; i < max_visible; i++) {
-    int y = BOT_SET_ROSTER_Y + i * BOT_SET_ROW_HEIGHT;
+  // Ship row (label + hotspot — both plain text, same Y)
+  UITextItem ship_lbl_text("Ship:", UICOL_TEXT_NORMAL);
+  UIText ship_lbl;
+  ship_lbl.Create(&main_wnd, &ship_lbl_text, BOT_SET_DETAIL_LBL_X, BOT_SET_CONTENT_Y + BOT_SET_SHIP_OFS, 0);
 
-    // Row number
-    snprintf(num_bufs[i], sizeof(num_bufs[i]), "%d", i + 1);
-    row_num_items[i] = UITextItem(num_bufs[i], UICOL_TEXT_NORMAL);
-    row_num_txt[i].Create(&main_wnd, &row_num_items[i], BOT_SET_COL_NUM, y + 3, 0);
+  UITextItem ship_on("---", UICOL_HOTSPOT_HI);
+  UITextItem ship_off("---", UICOL_HOTSPOT_LO);
+  UIHotspot ship_hs;
+  ship_hs.Create(&main_wnd, BOT_SET_SHIP_HS_ID, 0, &ship_off, &ship_on, BOT_SET_DETAIL_VAL_X,
+                 BOT_SET_CONTENT_Y + BOT_SET_SHIP_OFS, 130, 18, UIF_FIT);
 
-    // Name edit — pre-populated from canned defaults
-    row_name_edits[i].Create(&main_wnd, BOT_SET_NAME_BASE_ID + i, BOT_SET_COL_NAME, y, 160, 15, 0);
-    row_name_edits[i].SetText(Bot_ui_settings.roster[i].name);
+  // Per-bot difficulty row (label + hotspot — both plain text, same Y)
+  UITextItem pdiff_lbl_text("Difficulty:", UICOL_TEXT_NORMAL);
+  UIText pdiff_lbl;
+  pdiff_lbl.Create(&main_wnd, &pdiff_lbl_text, BOT_SET_DETAIL_LBL_X, BOT_SET_CONTENT_Y + BOT_SET_PDIFF_OFS, 0);
 
-    // Ship cycling hotspot
-    const char *ship_name = Bot_ui_settings.roster[i].ship_alias;
-    row_ship_on[i] = UITextItem(ship_name, UICOL_HOTSPOT_HI);
-    row_ship_off[i] = UITextItem(ship_name, UICOL_HOTSPOT_LO);
-    row_ship_hs[i].Create(&main_wnd, BOT_SET_SHIP_BASE_ID + i, 0, &row_ship_off[i], &row_ship_on[i], BOT_SET_COL_SHIP,
-                           y, 130, 18, UIF_FIT);
+  UITextItem pdiff_on("---", UICOL_HOTSPOT_HI);
+  UITextItem pdiff_off("---", UICOL_HOTSPOT_LO);
+  UIHotspot pdiff_hs;
+  pdiff_hs.Create(&main_wnd, BOT_SET_PDIFF_HS_ID, 0, &pdiff_off, &pdiff_on, BOT_SET_DETAIL_VAL_X,
+                  BOT_SET_CONTENT_Y + BOT_SET_PDIFF_OFS, 120, 18, UIF_FIT);
 
-    // Per-bot difficulty cycling hotspot
-    const char *diff_name = BotDiffDisplayName(Bot_ui_settings.roster[i].difficulty);
-    row_diff_on[i] = UITextItem(diff_name, UICOL_HOTSPOT_HI);
-    row_diff_off[i] = UITextItem(diff_name, UICOL_HOTSPOT_LO);
-    row_diff_hs[i].Create(&main_wnd, BOT_SET_DIFF_BASE_ID + i, 0, &row_diff_off[i], &row_diff_on[i], BOT_SET_COL_DIFF,
-                           y, 100, 18, UIF_FIT);
+  // Track currently selected bot (-1 = none)
+  int selected_bot = -1;
+
+  // Helper: save detail panel edits back to roster
+  auto SaveDetailPanel = [&](int sel) {
+    if (sel < 0 || sel >= Bot_ui_settings.bot_count)
+      return;
+    char name_buf[CALLSIGN_LEN];
+    name_edit.GetText(name_buf, sizeof(name_buf));
+    strncpy(Bot_ui_settings.roster[sel].name, name_buf, CALLSIGN_LEN - 1);
+    Bot_ui_settings.roster[sel].name[CALLSIGN_LEN - 1] = '\0';
+    // Ship and difficulty are saved immediately on hotspot click (no flush needed)
+  };
+
+  // Helper: load detail panel from roster entry
+  auto LoadDetailPanel = [&](int sel) {
+    if (sel < 0 || sel >= Bot_ui_settings.bot_count) {
+      // No selection — show placeholder
+      name_edit.SetText("");
+      ship_on = UITextItem("---", UICOL_HOTSPOT_HI);
+      ship_off = UITextItem("---", UICOL_HOTSPOT_LO);
+      ship_hs.SetStates(&ship_off, &ship_on);
+      pdiff_on = UITextItem("---", UICOL_HOTSPOT_HI);
+      pdiff_off = UITextItem("---", UICOL_HOTSPOT_LO);
+      pdiff_hs.SetStates(&pdiff_off, &pdiff_on);
+      return;
+    }
+    name_edit.SetText(Bot_ui_settings.roster[sel].name);
+
+    const char *sname = Bot_ui_settings.roster[sel].ship_alias;
+    ship_on = UITextItem(sname, UICOL_HOTSPOT_HI);
+    ship_off = UITextItem(sname, UICOL_HOTSPOT_LO);
+    ship_hs.SetStates(&ship_off, &ship_on);
+
+    const char *dname = BotDiffDisplayName(Bot_ui_settings.roster[sel].difficulty);
+    pdiff_on = UITextItem(dname, UICOL_HOTSPOT_HI);
+    pdiff_off = UITextItem(dname, UICOL_HOTSPOT_LO);
+    pdiff_hs.SetStates(&pdiff_off, &pdiff_on);
+  };
+
+  // Select first bot if available
+  if (Bot_ui_settings.bot_count > 0) {
+    selected_bot = 0;
+    roster_lb.SetCurrentIndex(0);
+    LoadDetailPanel(0);
   }
 
-  // Done and Cancel buttons
-  int btn_y = BOT_SET_ROSTER_Y + max_visible * BOT_SET_ROW_HEIGHT + 15;
+  // --- Done and Cancel buttons ---
   UITextItem done_on(TXT_DONE, UICOL_HOTSPOT_HI);
   UITextItem done_off(TXT_DONE, UICOL_HOTSPOT_LO);
   UITextItem cancel_on(TXT_CANCEL, UICOL_HOTSPOT_HI);
   UITextItem cancel_off(TXT_CANCEL, UICOL_HOTSPOT_LO);
 
   UIHotspot done_hs;
-  done_hs.Create(&main_wnd, BOT_SET_DONE_ID, KEY_ENTER, &done_off, &done_on, 0, btn_y, 180, 30,
+  done_hs.Create(&main_wnd, BOT_SET_DONE_ID, KEY_ENTER, &done_off, &done_on, 0, BOT_SET_BTN_Y, 180, 22,
                  UIF_FIT | UIF_CENTER);
   UIHotspot cancel_hs;
-  cancel_hs.Create(&main_wnd, BOT_SET_CANCEL_ID, KEY_ESC, &cancel_off, &cancel_on, 0, btn_y + 22, 180, 30,
-                   UIF_FIT | UIF_CENTER);
+  cancel_hs.Create(&main_wnd, BOT_SET_CANCEL_ID, KEY_ESC, &cancel_off, &cancel_on, 0,
+                   BOT_SET_BTN_Y + BOT_SET_BTN_SPACING, 180, 22, UIF_FIT | UIF_CENTER);
 
   main_wnd.Open();
 
@@ -1789,23 +1861,26 @@ void MultiBotSettingsMenu() {
   while (!exit_menu) {
     int res = DoUI();
 
-    // Detect default difficulty listbox change — propagate to all per-bot displays
-    int cur_diff_sel = def_diff_list.GetSelectedIndex();
-    if (cur_diff_sel != last_diff_sel && cur_diff_sel >= 0 && cur_diff_sel < BOT_DIFF_COUNT) {
-      last_diff_sel = cur_diff_sel;
-      Bot_ui_settings.default_difficulty = (BotDifficulty)cur_diff_sel;
-      // Update all per-bot difficulties to match (user can override individually after)
-      for (int i = 0; i < max_visible && i < BOT_UI_MAX_BOTS; i++) {
-        Bot_ui_settings.roster[i].difficulty = (BotDifficulty)cur_diff_sel;
-        const char *name = BotDifficultyName((BotDifficulty)cur_diff_sel);
-        row_diff_on[i] = UITextItem(name, UICOL_HOTSPOT_HI);
-        row_diff_off[i] = UITextItem(name, UICOL_HOTSPOT_LO);
-        row_diff_hs[i].SetStates(&row_diff_on[i], &row_diff_off[i]);
-      }
+    if (res == NEWUIRES_FORCEQUIT) {
+      Bot_ui_settings = saved;
+      break;
     }
 
-    if (res == BOT_SET_DONE_ID) {
-      // Read bot count
+    // --- Listbox selection changed (single click or arrow keys) ---
+    if (res == BOT_SET_ROSTER_LB_ID) {
+      int lb_sel = roster_lb.GetCurrentIndex();
+      if (lb_sel != selected_bot && lb_sel >= 0 && lb_sel < Bot_ui_settings.bot_count) {
+        SaveDetailPanel(selected_bot);
+        RebuildRosterList();
+        roster_lb.SetCurrentIndex(lb_sel);
+        selected_bot = lb_sel;
+        LoadDetailPanel(selected_bot);
+      }
+      continue;
+    }
+
+    // --- Count edit committed (Enter in the count field) ---
+    if (res == BOT_SET_COUNT_EDIT_ID) {
       char buf[8];
       count_edit.GetText(buf, sizeof(buf));
       int count = atoi(buf);
@@ -1813,56 +1888,99 @@ void MultiBotSettingsMenu() {
         count = 0;
       if (count > BOT_UI_MAX_BOTS)
         count = BOT_UI_MAX_BOTS;
-      // Clamp to max_players - 1 (host takes one slot)
+      if (count > Netgame.max_players - 1)
+        count = Netgame.max_players - 1;
+
+      SaveDetailPanel(selected_bot);
+      Bot_ui_settings.bot_count = count;
+      RebuildRosterList();
+
+      // Adjust selection
+      if (count == 0) {
+        selected_bot = -1;
+      } else if (selected_bot >= count) {
+        selected_bot = count - 1;
+      } else if (selected_bot < 0) {
+        selected_bot = 0;
+      }
+      if (selected_bot >= 0)
+        roster_lb.SetCurrentIndex(selected_bot);
+      LoadDetailPanel(selected_bot);
+
+      // Update the edit field with clamped value
+      snprintf(buf, sizeof(buf), "%d", count);
+      count_edit.SetText(buf);
+      continue;
+    }
+
+    // --- Done ---
+    if (res == BOT_SET_DONE_ID) {
+      SaveDetailPanel(selected_bot);
+      // Read and clamp final bot count
+      char buf[8];
+      count_edit.GetText(buf, sizeof(buf));
+      int count = atoi(buf);
+      if (count < 0)
+        count = 0;
+      if (count > BOT_UI_MAX_BOTS)
+        count = BOT_UI_MAX_BOTS;
       if (count > Netgame.max_players - 1)
         count = Netgame.max_players - 1;
       Bot_ui_settings.bot_count = count;
-
-      // Read default difficulty
-      int sel = def_diff_list.GetSelectedIndex();
-      if (sel >= 0 && sel < BOT_DIFF_COUNT)
-        Bot_ui_settings.default_difficulty = (BotDifficulty)sel;
-
-      // Read per-bot names from edit fields
-      for (int i = 0; i < max_visible && i < BOT_UI_MAX_BOTS; i++) {
-        char name_buf[CALLSIGN_LEN];
-        row_name_edits[i].GetText(name_buf, sizeof(name_buf));
-        strncpy(Bot_ui_settings.roster[i].name, name_buf, CALLSIGN_LEN - 1);
-        Bot_ui_settings.roster[i].name[CALLSIGN_LEN - 1] = '\0';
-      }
       exit_menu = true;
-    } else if (res == BOT_SET_CANCEL_ID) {
+      continue;
+    }
+
+    // --- Cancel ---
+    if (res == BOT_SET_CANCEL_ID) {
       Bot_ui_settings = saved;
       exit_menu = true;
+      continue;
     }
 
-    // Handle ship cycling
-    for (int i = 0; i < max_visible; i++) {
-      if (res == BOT_SET_SHIP_BASE_ID + i) {
-        int next = BotCycleShipIndex(Bot_ui_settings.roster[i].ship_alias);
-        strncpy(Bot_ui_settings.roster[i].ship_alias, kBotShipNames[next],
-                sizeof(Bot_ui_settings.roster[i].ship_alias) - 1);
-        Bot_ui_settings.roster[i].ship_alias[sizeof(Bot_ui_settings.roster[i].ship_alias) - 1] = '\0';
-        row_ship_on[i] = UITextItem(kBotShipNames[next], UICOL_HOTSPOT_HI);
-        row_ship_off[i] = UITextItem(kBotShipNames[next], UICOL_HOTSPOT_LO);
-        row_ship_hs[i].SetStates(&row_ship_on[i], &row_ship_off[i]);
-        break;
-      }
+    // --- Default difficulty cycling ---
+    if (res == BOT_SET_DEF_DIFF_ID) {
+      int next = ((int)Bot_ui_settings.default_difficulty + 1) % BOT_DIFF_COUNT;
+      Bot_ui_settings.default_difficulty = (BotDifficulty)next;
+      const char *name = BotDifficultyName((BotDifficulty)next);
+      def_diff_on = UITextItem(name, UICOL_HOTSPOT_HI);
+      def_diff_off = UITextItem(name, UICOL_HOTSPOT_LO);
+      def_diff_hs.SetStates(&def_diff_off, &def_diff_on);
+      // Update detail panel if current bot uses "Default"
+      if (selected_bot >= 0 && Bot_ui_settings.roster[selected_bot].difficulty >= BOT_DIFF_COUNT)
+        LoadDetailPanel(selected_bot);
+      continue;
     }
 
-    // Handle per-bot difficulty cycling (overrides the default)
-    for (int i = 0; i < max_visible; i++) {
-      if (res == BOT_SET_DIFF_BASE_ID + i) {
-        BotDifficulty cur = Bot_ui_settings.roster[i].difficulty;
-        // Cycle through actual difficulties only (no "Default" — the listbox IS the default setter)
-        int next = ((int)cur + 1) % BOT_DIFF_COUNT;
-        Bot_ui_settings.roster[i].difficulty = (BotDifficulty)next;
-        const char *name = BotDifficultyName((BotDifficulty)next);
-        row_diff_on[i] = UITextItem(name, UICOL_HOTSPOT_HI);
-        row_diff_off[i] = UITextItem(name, UICOL_HOTSPOT_LO);
-        row_diff_hs[i].SetStates(&row_diff_on[i], &row_diff_off[i]);
-        break;
-      }
+    // --- Ship cycling (detail panel) ---
+    if (res == BOT_SET_SHIP_HS_ID && selected_bot >= 0) {
+      int next = BotCycleShipIndex(Bot_ui_settings.roster[selected_bot].ship_alias);
+      strncpy(Bot_ui_settings.roster[selected_bot].ship_alias, kBotShipNames[next],
+              sizeof(Bot_ui_settings.roster[selected_bot].ship_alias) - 1);
+      Bot_ui_settings.roster[selected_bot].ship_alias[sizeof(Bot_ui_settings.roster[selected_bot].ship_alias) - 1] =
+          '\0';
+      ship_on = UITextItem(kBotShipNames[next], UICOL_HOTSPOT_HI);
+      ship_off = UITextItem(kBotShipNames[next], UICOL_HOTSPOT_LO);
+      ship_hs.SetStates(&ship_off, &ship_on);
+      continue;
+    }
+
+    // --- Per-bot difficulty cycling (detail panel) ---
+    if (res == BOT_SET_PDIFF_HS_ID && selected_bot >= 0) {
+      BotDifficulty cur = Bot_ui_settings.roster[selected_bot].difficulty;
+      int next;
+      if (cur >= BOT_DIFF_COUNT)
+        next = 0; // Default → Trainee
+      else if (cur == BOT_DIFF_COUNT - 1)
+        next = BOT_DIFF_COUNT; // Insane → Default (sentinel)
+      else
+        next = (int)cur + 1;
+      Bot_ui_settings.roster[selected_bot].difficulty = (BotDifficulty)next;
+      const char *dname = BotDiffDisplayName((BotDifficulty)next);
+      pdiff_on = UITextItem(dname, UICOL_HOTSPOT_HI);
+      pdiff_off = UITextItem(dname, UICOL_HOTSPOT_LO);
+      pdiff_hs.SetStates(&pdiff_off, &pdiff_on);
+      continue;
     }
   }
 
