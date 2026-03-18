@@ -222,10 +222,14 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
 
   list(APPEND CMAKE_LIBRARY_PATH "lib/win" "lib/win/DirectX/${CMAKE_CXX_COMPILER_ARCHITECTURE_ID}")
   add_compile_options("$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CXX>>:/EHsc;/RTC1;/W3;/nologo;/c;/Zi;/TP;/errorReport:prompt>")
-  add_compile_options("$<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:CXX>>:/GL;/FD;/EHsc;/W3;/nologo;/c;/Zi;/TP;/errorReport:prompt>")
+  add_compile_options("$<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:CXX>>:/FD;/EHsc;/W3;/nologo;/c;/Zi;/TP;/errorReport:prompt>")
 
   add_link_options("/SAFESEH:NO;/NODEFAULTLIB:LIBC")
-  add_link_options("$<$<CONFIG:Release>:/LTCG>")
+  # MSVC 19.50+ (VS 2026) does not reliably embed CRT default-lib pragmas in Release
+  # builds. Explicitly declare the three CRT import libs so the linker finds them
+  # regardless of MSVC version. Also removes /GL (Whole Program Optimization) which
+  # produces LTCG IR objects that trigger this issue; /O2 optimization is retained.
+  add_link_options("$<$<CONFIG:Release>:/DEFAULTLIB:msvcrt;/DEFAULTLIB:vcruntime;/DEFAULTLIB:ucrt>")
 
   add_compile_definitions(WIN32 _CRT_SECURE_NO_WARNINGS _CRT_SECURE_NO_DEPRECATE _CRT_NONSTDC_NO_DEPRECATE)
 
