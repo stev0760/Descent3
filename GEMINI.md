@@ -10,20 +10,23 @@ Your role is to act as a **companion and secondary coding assistant**. The user 
 
 ## Core Mandates
 
-- **Familiarize Yourself:** Upon initialization, read `BOT_DEV_REFERENCE.md` and `BOTS_DEVEL.md` to understand the current implementation state, architecture, and known issues.
-- **BOT_DEV_REFERENCE.md is the source of truth** for bot architecture, FSM design, engine API patterns, constants, and critical gotchas. Consult it before proposing or reviewing any bot code change.
+- **Familiarize Yourself:** Upon initialization, read `matcen-docs/BOT_DEV_REFERENCE.md` and `matcen-docs/BOTS_DEVEL.md` to understand the current implementation state, architecture, and known issues.
+- **`matcen-docs/BOT_DEV_REFERENCE.md` is the source of truth** for bot architecture, FSM design, engine API patterns, constants, and critical gotchas. Consult it before proposing or reviewing any bot code change.
 - **Consult Existing Work:** Refer to `CLAUDE.md` for build commands and engine-level architectural notes.
 - **User Is Lead:** The user directs the workflow. Await instructions before taking action.
 
 ## Key Project Files for Review
 
-- **`BOT_DEV_REFERENCE.md`** — living developer reference: architecture, FSM, constants, engine API patterns, critical gotchas. **Primary reference for bot work.**
-- **`BOTS_DEVEL.md`** — phase history, current status, and roadmap.
-- **`NAV_OVERHAUL.md`** — Phase 4.0 navigation overhaul: research synthesis, root cause analysis, engine pathfinding pipeline reference, and implementation plan. **Read this before modifying navigation code.**
-- **`PATHFINDING_CODEBASE_EXPLORE.md`** — Guide-bot navigation analysis: how single-player bots navigate complex passages. Research input for `NAV_OVERHAUL.md`.
-- **`BOT_MANAGEMENT.md`** — Phase 5 planning and implementation: config-file rosters, ship selection, difficulty levels, auto-rebalancing, `$servercaps` handshake. **Read this before modifying bot management code.**
-- **`PLAN.md`** — original Phase 0 design document and full phase roadmap.
-- **`D3_MOVEMENT_PHYSICS.md`** — engine physics constants and multiplayer packet flag reference.
+All Matcen fork documentation lives in **`matcen-docs/`**:
+
+- **`matcen-docs/BOT_DEV_REFERENCE.md`** — living developer reference: architecture, FSM, constants, engine API patterns, critical gotchas. **Primary reference for bot work.**
+- **`matcen-docs/BOTS_DEVEL.md`** — phase history, current status, and roadmap.
+- **`matcen-docs/NAV_OVERHAUL.md`** — Phase 4.0 navigation overhaul: research synthesis, root cause analysis, engine pathfinding pipeline reference, and implementation plan. **Read this before modifying navigation code.**
+- **`matcen-docs/PATHFINDING_CODEBASE_EXPLORE.md`** — Guide-bot navigation analysis: how single-player bots navigate complex passages. Research input for `NAV_OVERHAUL.md`.
+- **`matcen-docs/BOT_MANAGEMENT.md`** — Phase 5 planning and implementation: config-file rosters, ship selection, difficulty levels, auto-rebalancing, `$servercaps` handshake. **Read this before modifying bot management code.**
+- **`matcen-docs/PLAN.md`** — original Phase 0 design document and full phase roadmap.
+- **`matcen-docs/D3_MOVEMENT_PHYSICS.md`** — engine physics constants and multiplayer packet flag reference.
+- **`matcen-docs/D3_PYRODECK_SPEC.md`** — specification for the D3 Pyrodeck companion web admin tool.
 - **`CLAUDE.md`** — primary AI's instruction set: build commands and engine architecture overview.
 
 ## Build & Test Commands

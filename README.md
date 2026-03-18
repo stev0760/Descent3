@@ -82,10 +82,10 @@ These commands are available in the dedicated server console (or via remote teln
 ### For Developers
 
 For a deep dive into the architecture, FSM logic, and implementation history, see:
-*   [BOTS_DEVEL.md](BOTS_DEVEL.md) — Phase history and roadmap
-*   [BOT_DEV_REFERENCE.md](BOT_DEV_REFERENCE.md) — Architecture, FSM, constants, engine API patterns
-*   [BOT_MANAGEMENT.md](BOT_MANAGEMENT.md) — Phase 5 bot management: config, ships, difficulty, remote admin
-*   [NAV_OVERHAUL.md](NAV_OVERHAUL.md) — Phase 4.0 navigation design rationale
+*   [BOTS_DEVEL.md](matcen-docs/BOTS_DEVEL.md) — Phase history and roadmap
+*   [BOT_DEV_REFERENCE.md](matcen-docs/BOT_DEV_REFERENCE.md) — Architecture, FSM, constants, engine API patterns
+*   [BOT_MANAGEMENT.md](matcen-docs/BOT_MANAGEMENT.md) — Phase 5 bot management: config, ships, difficulty, remote admin
+*   [NAV_OVERHAUL.md](matcen-docs/NAV_OVERHAUL.md) — Phase 4.0 navigation design rationale
 
 ## Contributing
 Anyone can contribute! We have an active Discord presence at [Descent Developer Network](https://discord.gg/GNy5CUQ). Patches should be submitted on GitHub.

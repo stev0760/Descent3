@@ -48,7 +48,7 @@
 - ~~Versioning nomenclature~~ — semver, starting at 0.8.0 (1.0.0 = all modes working, client UI, solid navigation)
 - ~~Fork identity~~ — "Matcen" (after the Materialization Center robot spawner). Main menu displays `Ver 1.6.0 | Matcen 0.8.0 <git-hash>`
 - Release packaging: Windows + Linux builds. macOS deferred to community contributors (no test device available).
-- Companion web admin app (D3_WEB_ADMIN_SPEC.md) planned for simultaneous release
+- Companion web admin app ([D3_PYRODECK_SPEC.md](D3_PYRODECK_SPEC.md)) planned for simultaneous release
 - Cloud-hosted server for immediate play-testing
 - VS 2026 build fix (already done by secondary agent, needs commit/push)
 

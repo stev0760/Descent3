@@ -31,13 +31,17 @@ ctest --preset linux -C Debug
 ```
 
 # Project Tracking and Reference Files
-- **`BOT_DEV_REFERENCE.md`** — living developer reference: architecture, FSM, constants, engine API patterns, critical gotchas. **Read this before modifying bot code.**
-- **`BOTS_DEVEL.md`** — phase history and roadmap. Update when a phase completes.
-- **`NAV_OVERHAUL.md`** — Phase 4.0 navigation overhaul: research synthesis, root cause analysis, engine pathfinding pipeline reference, and implementation plan. **Read this before modifying navigation code.**
-- **`PATHFINDING_CODEBASE_EXPLORE.md`** — Guide-bot navigation analysis: how single-player bots navigate complex passages vs. our multiplayer bots. Research input for `NAV_OVERHAUL.md`.
-- **`BOT_MANAGEMENT.md`** — Phase 5 planning and implementation: config-file rosters, ship selection, difficulty levels, auto-rebalancing, `$servercaps` handshake. **Read this before modifying bot management code.**
-- **`PLAN.md`** — original Phase 0 design document and full phase roadmap.
-- **`D3_MOVEMENT_PHYSICS.md`** — engine physics constants and packet flag reference.
+
+All Matcen fork documentation lives in **`matcen-docs/`**:
+
+- **`matcen-docs/BOT_DEV_REFERENCE.md`** — living developer reference: architecture, FSM, constants, engine API patterns, critical gotchas. **Read this before modifying bot code.**
+- **`matcen-docs/BOTS_DEVEL.md`** — phase history and roadmap. Update when a phase completes.
+- **`matcen-docs/NAV_OVERHAUL.md`** — Phase 4.0 navigation overhaul: research synthesis, root cause analysis, engine pathfinding pipeline reference, and implementation plan. **Read this before modifying navigation code.**
+- **`matcen-docs/PATHFINDING_CODEBASE_EXPLORE.md`** — Guide-bot navigation analysis: how single-player bots navigate complex passages vs. our multiplayer bots. Research input for `NAV_OVERHAUL.md`.
+- **`matcen-docs/BOT_MANAGEMENT.md`** — Phase 5 planning and implementation: config-file rosters, ship selection, difficulty levels, auto-rebalancing, `$servercaps` handshake. **Read this before modifying bot management code.**
+- **`matcen-docs/PLAN.md`** — original Phase 0 design document and full phase roadmap.
+- **`matcen-docs/D3_MOVEMENT_PHYSICS.md`** — engine physics constants and packet flag reference.
+- **`matcen-docs/D3_PYRODECK_SPEC.md`** — specification for the D3 Pyrodeck companion web admin tool. **Update this when telnet commands or output formats change.**
 
 Useful CMake options: `BUILD_TESTING=OFF`, `ENABLE_LOGGER=OFF`, `FORCE_PORTABLE_INSTALL=ON`, `FATAL_GL_ERRORS=OFF`. Output goes to `builds/<preset>/build/<config>/`.
 
@@ -103,7 +107,7 @@ Enforced by `.clang-format` (LLVM-based):
 
 ## Documentation Updates
 
-When committing feature work, bug fixes, or version bumps, **always update `README.md`** alongside `BOTS_DEVEL.md` and `BOT_MANAGEMENT.md`. The README is user-facing and must reflect the current version, feature set, and status.
+When committing feature work, bug fixes, or version bumps, **always update `README.md`** alongside `matcen-docs/BOTS_DEVEL.md` and `matcen-docs/BOT_MANAGEMENT.md`. The README is user-facing and must reflect the current version, feature set, and status.
 
 ## CI
 
