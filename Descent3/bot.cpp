@@ -2983,16 +2983,27 @@ void BotRemove(int bot_index) {
   DLLInfo.it_handle = Objects[Players[slot].objnum].handle;
   CallGameDLL(EVT_GAMEPLAYERDISCONNECT, &DLLInfo);
 
+  // Spew inventory as pickups (same as human player disconnect)
+  if (NetPlayers[slot].sequence == NETSEQ_PLAYING) {
+    PlayerSpewInventory(&Objects[Players[slot].objnum], true, true);
+  }
+
   // Broadcast disconnect to clients so they remove the bot from their player list
   MultiSendPlayerDisconnect(slot);
 
   // Ghost the player object (makes invisible, no collision)
   MultiMakePlayerGhost(slot);
 
+  // Clear guidebot and player markers (same as human player disconnect)
+  MultiClearGuidebot(slot);
+  extern void MultiClearPlayerMarkers(int slot);
+  MultiClearPlayerMarkers(slot);
+
   // Clear the slot
   NetPlayers[slot].flags = 0;
   NetPlayers[slot].sequence = NETSEQ_PREGAME;
   NetPlayers[slot].reliable_socket = INVALID_SOCKET;
+  Players[slot].flags = 0;
 
   LOG_INFO.printf("BOT: Removed '%s' from slot %d", Bots[bot_index].callsign, slot);
 
@@ -3007,6 +3018,14 @@ void BotRemoveAll() {
     if (Bots[i].active)
       BotRemove(i);
   }
+}
+
+int BotFindBySlot(int player_slot) {
+  for (int i = 0; i < MAX_BOTS; i++) {
+    if (Bots[i].active && Bots[i].player_slot == player_slot)
+      return i;
+  }
+  return -1;
 }
 
 void BotDoFrame() {

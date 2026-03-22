@@ -45,6 +45,22 @@ All Matcen fork documentation lives in **`matcen-docs/`**:
 
 Useful CMake options: `BUILD_TESTING=OFF`, `ENABLE_LOGGER=OFF`, `FORCE_PORTABLE_INSTALL=ON`, `FATAL_GL_ERRORS=OFF`. Output goes to `builds/<preset>/build/<config>/`.
 
+## Deployment / Testing Builds
+
+To run a build outside the dev environment, copy these files into the game data directory:
+
+```
+<game root>/
+├── Descent3                           # main executable
+├── netgames/*.d3m                     # game mode modules (anarchy, team anarchy, etc.)
+├── online/
+│   └── Direct TCP~IP.d3c             # connection module (HOG archive containing the .so/.dll)
+├── d3-linux.hog                       # primary game data (platform-specific)
+└── ...other data files...
+```
+
+The `online/Direct TCP~IP.d3c` file is critical — the raw `.so`/`.dll` from `netcon/lanclient/` is packed into this HOG archive by the build system. Without it, multiplayer connection options (and menus like Bot Settings) won't appear.
+
 
 # User server launch command
 ./Descent3 -dedicated ./dedicated.cfg 2>&1 | tee $PROJECT_DIR/server.log

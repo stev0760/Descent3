@@ -353,6 +353,9 @@ void BotRemove(int bot_index);
 // Remove all active bots.
 void BotRemoveAll();
 
+// Find the Bots[] index for a given player slot, or -1 if not a bot.
+int BotFindBySlot(int player_slot);
+
 // Per-frame update: keep-alive, death detection, respawn. Called from MultiDoServerFrame().
 void BotDoFrame();
 

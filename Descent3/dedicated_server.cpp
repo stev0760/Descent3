@@ -939,9 +939,13 @@ void DoDedicatedServerFrame() {
 
   if (str[0] == '$') {
     // Try bot commands first (they live in the engine, not the game DLL)
+    // Copy before ParseLine — strtok() inserts null bytes into srcline,
+    // which would truncate str before the game DLL sees it.
+    char bot_parse_buf[255] = {};
+    strncpy(bot_parse_buf, str + 1, sizeof(bot_parse_buf) - 1);
     char bot_cmd[255] = {};
     char bot_operand[255] = {};
-    ParseLine(str + 1, bot_cmd, bot_operand, 255, 255);
+    ParseLine(bot_parse_buf, bot_cmd, bot_operand, 255, 255);
     if (bot_cmd[0] && DedicatedHandleBotCommand(bot_cmd, bot_operand))
       return;
     // Not a bot command — pass to game DLL
@@ -1189,9 +1193,13 @@ void DedicatedReadTelnet(void) {
               PrintDedicatedMessage("[%s] %s\n", inet_ntoa(conn->addr.sin_addr), conn->input);
               if (conn->input[0] == '$') {
                 // Try bot commands first (they live in the engine, not the game DLL)
+                // Copy input before ParseLine — strtok() inserts null bytes into srcline,
+                // which would truncate conn->input before the game DLL sees it.
+                char bot_parse_buf[255] = {};
+                strncpy(bot_parse_buf, conn->input + 1, sizeof(bot_parse_buf) - 1);
                 char bot_cmd[255] = {};
                 char bot_operand[255] = {};
-                ParseLine(conn->input + 1, bot_cmd, bot_operand, 255, 255);
+                ParseLine(bot_parse_buf, bot_cmd, bot_operand, 255, 255);
                 if (bot_cmd[0] && DedicatedHandleBotCommand(bot_cmd, bot_operand)) {
                   conn->input[0] = '\0';
                   return;

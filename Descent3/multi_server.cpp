@@ -1083,6 +1083,15 @@ void MultiDisconnectDeadPlayers() {
 void MultiDisconnectPlayer(int slot) {
   ASSERT(Netgame.local_role == LR_SERVER);
 
+  // If this is a bot, route through BotRemove which handles full cleanup
+  // (ghost, DLL notify, inventory spew, network broadcast, Bots[] record).
+  // This covers $kick, timeouts, and any other path that disconnects a bot.
+  int bot_idx = BotFindBySlot(slot);
+  if (bot_idx >= 0) {
+    BotRemove(bot_idx);
+    return;
+  }
+
   DLLInfo.me_handle = DLLInfo.it_handle = Objects[Players[slot].objnum].handle;
   CallGameDLL(EVT_GAMEPLAYERDISCONNECT, &DLLInfo);
 
@@ -1091,9 +1100,7 @@ void MultiDisconnectPlayer(int slot) {
     if (NetPlayers[slot].file_xfer_flags != NETFILE_NONE) {
       MultiCancelFile(slot, NetPlayers[slot].custom_file_seq, NetPlayers[slot].file_xfer_who);
     }
-    if (!(NetPlayers[slot].flags & NPF_BOT)) {
-      nw_CloseSocket(&NetPlayers[slot].reliable_socket);
-    }
+    nw_CloseSocket(&NetPlayers[slot].reliable_socket);
 
     if (NetPlayers[slot].sequence == NETSEQ_PLAYING) {
       PlayerSpewInventory(&Objects[Players[slot].objnum], true, true);

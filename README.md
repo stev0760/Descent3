@@ -10,7 +10,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Matcen — Multiplayer Bots (Experimental)
 
-**Version:** Matcen 0.8.3 | **Status:** Phase 5.4 Complete — Bot Settings UI Redesign
+**Version:** Matcen 0.8.4 | **Status:** Bug fixes — command parsing, bot kick cleanup
 
 This fork — "Matcen" — adds a **server-side multiplayer bot system** to Descent 3. Bots occupy real player slots on dedicated servers or listen servers, appearing and acting as normal players. All bots are tagged with `[BOT]` in their callsign for easy identification.
 
