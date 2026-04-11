@@ -593,26 +593,18 @@ vm_VectorDistanceQuick(&a, &b)  // distance (uses squared then sqrt — not "qui
 
 ---
 
-## Active Investigations
+## Notes
 
-### Plasma / EMD under-utilization (long-standing)
+### Plasma / EMD under-utilization (FIXED in 0.8.5)
 
-**Symptom:** Bots never actively seek Plasma Cannon or EMD and never visibly switch to them in combat. User-observed pickups appear accidental, and killed bots do not drop Plasma in their death spew.
+**Root cause:** `BotSelectBestWeapon` read `gp_weapon_index[0]` directly for every battery. Plasma and EMD fire from wing gunpoints (index > 0 in the poly model), so `gp_weapon_index[0]` was 0 for both. The `weapon_id <= 0` guard filtered them before bucket assignment — they could never be selected regardless of ownership.
 
-**Key finding — death spew is NOT a pickup signal.** `PlayerSpewInventory` in multiplayer (`Descent3/Player.cpp:2917`) only spews `weapon[PW_PRIMARY].index` — the *currently selected* primary — not all `weapon_flags`. A bot that owns Plasma (bit 3 set) but never switches to it will drop only Laser on death. So "no Plasma in spew" does not prove the pickup path failed; it proves the selection path did not equip Plasma at time of death.
+**Fix:** Added `BotGetWbWeaponId(int slot, int wb_index)` helper (above `BotSelectBestWeapon` in `bot.cpp`) that mirrors `GetWeaponFromIndex()` in `weapon.cpp` — iterates `pm->poly_wb[0].num_gps` checking `gp_fire_masks[cur_firing_mask]` to find the first active gunpoint and returns its weapon ID. Applied at 4 sites: classification loop, `pick_best` lambda, `BotDoFiring` lead-aim, secondary lead-aim.
 
-**Pickup path (verified by code read):** `physics/collide.cpp` → `NO_COLLISION(OBJ_PLAYER, OBJ_POWERUP)` → `Osiris_CallEvent(powerup, EVT_COLLIDE)` → `GenericScript::CallEvent` → `MSafe_DoPowerup` → `HandleWeaponPowerups` → `AddWeaponToPlayer(slot, weap_index, ...)`. `AddWeaponToPlayer` unconditionally sets `weapon_flags |= HAS_FLAG(weap_index)` at `Descent3/weapon.cpp:840`; the `slot == Player_num` gate only affects `AutoSelectWeapon`, not flag update. This path should work for bot slots on a dedicated server.
+**Key gotcha — death spew is NOT a pickup signal.** `PlayerSpewInventory` in multiplayer (`Descent3/Player.cpp:2917`) only spews `weapon[PW_PRIMARY].index` — the currently selected primary — not all `weapon_flags`. A bot that owns Plasma (bit 3 set) but never selects it will drop only Laser on death.
 
-**Selection gate:** `BotSelectBestWeapon` is called only on COMBAT entry, weapon-empty, and respawn. It is not called on pickup. A bot that acquires Plasma mid-combat will not re-evaluate until its next COMBAT entry. In a test session with 130+ HUNT→COMBAT transitions, zero `"weapon switch"` lines appeared in `plasma-testing.log`, meaning `best_wb == current` on every call — most likely `best_wb == 0` (Laser).
+**Confirmed fixed:** 757 Plasma picks observed in post-fix test session (was 0 in prior sessions).
 
-**Diagnostic (added, Matcen 0.8.5-dev):** Single `LOG_DEBUG` line at end of `BotSelectBestWeapon` (`Descent3/bot.cpp` ~line 537) logging `flags`, `E`, `d`, `num_long/num_close/num_ammo`, `pick`, `cur`. One line per selection call (~130/session). Interpretation:
-- `flags=0x1` every call → pickup path broken for bots; re-examine OSIRIS dispatch for bot slots.
-- `flags=0x9` but `long=0 close=0` → Plasma filtered during classification (check `Ships[ship].static_wb[3].gp_weapon_index[0]` and velocity bucketing thresholds).
-- `pick=3 cur=0` persistent → `weapon[PW_PRIMARY].index` overwritten elsewhere after assignment.
-- `pick=0` despite Plasma bucketed → `pick_best` DPS scoring favours Laser (unlikely — known bug area).
-
-**Test server:** KegD3 / Skybox, powerups disallowed except `Plasmacannon`. Log file: `plasma-testing.log`.
-
-### `$setpps` clamp raised (Matcen 0.8.5-dev)
+### `$setpps` clamp raised (Matcen 0.8.5)
 
 `DMFCInputCommand_SetPPS` in `netgames/dmfc/dmfcinputcommand.cpp:727` previously clamped packets-per-second to `[1, 20]`, which capped bot fire-rate telemetry and PiccuEngine client smoothness at 20 PPS. Clamp raised to `[2, 40]`. Requires dmfc + netcon rebuild (`Direct TCP~IP.d3c`).

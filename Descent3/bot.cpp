@@ -40,6 +40,7 @@
 #include "game2dll.h"
 #include "d3events.h"
 #include "robotfire.h"
+#include "polymodel.h"
 #include "vecmat.h"
 #include "findintersection.h"
 #include "room.h"
@@ -399,6 +400,22 @@ static void BotSetEvadeGoal(int bot_index) {
   Bots[bot_index].combat_goal_index = gi;
 }
 
+// Return the weapon ID that battery wb_index actually fires, mirroring GetWeaponFromIndex()
+// in weapon.cpp. gp_weapon_index[0] is not always the active gunpoint — batteries like Plasma
+// and EMD fire from wing gunpoints (index > 0). Iterating via gp_fire_masks finds the right one.
+static int BotGetWbWeaponId(int slot, int wb_index) {
+  ship *sp = &Ships[Players[slot].ship_index];
+  otype_wb_info *wb = &sp->static_wb[wb_index];
+  object *pobj = &Objects[Players[slot].objnum];
+  poly_model *pm = &Poly_models[pobj->rtype.pobj_info.model_num];
+  dynamic_wb_info *dyn_wb = &pobj->dynamic_wb[wb_index];
+  for (int k = 0; k < pm->poly_wb[0].num_gps; k++) {
+    if (wb->gp_fire_masks[dyn_wb->cur_firing_mask] & (0x01 << k))
+      return wb->gp_weapon_index[k];
+  }
+  return 0;
+}
+
 // Select the best weapon battery for the current tactical situation.
 //
 // Decision tree (from d3-weapons-expert tactical hierarchy):
@@ -451,12 +468,9 @@ static void BotSelectBestWeapon(int bot_index) {
     if (wb == OMEGA_INDEX)
       continue;
 
-    otype_wb_info &wbinfo = Ships[ship_idx].static_wb[wb];
-    int weapon_id = wbinfo.gp_weapon_index[0];
+    int weapon_id = BotGetWbWeaponId(slot, wb);
     if (weapon_id <= 0 || weapon_id >= MAX_WEAPONS)
       continue;
-    if (weapon_id == FLARE_INDEX)
-      continue; // never use flares in combat
 
     bool uses_ammo = Ships[ship_idx].max_ammo[wb] > 0;
     bool has_ammo = Players[slot].weapon_ammo[wb] > 0;
@@ -489,7 +503,7 @@ static void BotSelectBestWeapon(int bot_index) {
     float best_score = -1.0f;
     for (int i = 0; i < n; i++) {
       otype_wb_info &info = Ships[ship_idx].static_wb[arr[i]];
-      int wid = info.gp_weapon_index[0];
+      int wid = BotGetWbWeaponId(slot, arr[i]);
       float dmg = (wid > 0 && wid < MAX_WEAPONS) ? Weapons[wid].player_damage : 0.0f;
       // Rapid-fire weapons get a DPS bias (gp_fire_wait is per-shot interval)
       if (info.gp_fire_wait[0] < 0.2f)
@@ -533,13 +547,6 @@ static void BotSelectBestWeapon(int bot_index) {
       best_wb = pick_best(all, num_all);
     // else: stay on battery 0 (default Laser)
   }
-
-  // Plasma/EMD investigation diagnostic: one line per selection call. Captures weapon_flags
-  // (did pickup path set the bit?), bucket counts (did classification include it?), and the
-  // picked battery vs. currently equipped. ~1 line per COMBAT entry, not per-frame.
-  LOG_DEBUG.printf("BOT: '%s' wpn_pick: flags=0x%x E=%.0f d=%.0f long=%d close=%d ammo=%d pick=%d cur=%d",
-                   Bots[bot_index].callsign, Players[slot].weapon_flags, energy, dist, num_long, num_close, num_ammo,
-                   best_wb, Players[slot].weapon[PW_PRIMARY].index);
 
   if (best_wb != Players[slot].weapon[PW_PRIMARY].index) {
     LOG_DEBUG.printf("BOT: '%s' weapon switch: battery %d → %d (energy=%.0f dist=%.0f)", Bots[bot_index].callsign,
@@ -655,7 +662,7 @@ static void BotDoSecondaryFiring(int bot_index) {
     // Dumbfire — use lead targeting to compensate for travel time
     float target_speed = vm_GetMagnitude(&target->mtype.phys_info.velocity);
     if (target_speed > 2.0f) {
-      int weapon_id = wb->gp_weapon_index[0];
+      int weapon_id = BotGetWbWeaponId(bot_slot, wb_index);
       if (weapon_id > 0 && weapon_id < MAX_WEAPONS) {
         float proj_speed = vm_GetMagnitude(&Weapons[weapon_id].phys_info.velocity);
         if (proj_speed > 1.0f)
@@ -2534,7 +2541,7 @@ static void BotDoFiring(int bot_index) {
   // Fall back to direct aim if target is stationary or weapon has no travel time.
   int wb_index = Players[bot_slot].weapon[PW_PRIMARY].index;
   otype_wb_info *wb = &Ships[Players[bot_slot].ship_index].static_wb[wb_index];
-  int weapon_id = wb->gp_weapon_index[0];
+  int weapon_id = BotGetWbWeaponId(bot_slot, wb_index);
 
   vector aim_pos = target->pos;
   float target_speed = vm_GetMagnitude(&target->mtype.phys_info.velocity);

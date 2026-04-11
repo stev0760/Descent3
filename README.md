@@ -10,7 +10,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Matcen — Multiplayer Bots (Experimental)
 
-**Version:** Matcen 0.8.5-dev | **Status:** In development — Plasma/EMD selection investigation diagnostic, `$setpps` clamp raised to 2–40
+**Version:** Matcen 0.8.5 | **Status:** In development — Plasma/EMD weapon selection fix, `$setpps` clamp raised to 2–40
 
 This fork — "Matcen" — adds a **server-side multiplayer bot system** to Descent 3. Bots occupy real player slots on dedicated servers or listen servers, appearing and acting as normal players. All bots are tagged with `[BOT]` in their callsign for easy identification.
 
@@ -76,7 +76,7 @@ These commands are available in the dedicated server console (or via remote teln
 
 *   **Navigation edge cases:** Tested on a wide variety of level sets, both vanilla and custom. Most maps work well but complex multi-level geometry may still have edge cases, especially within outdoor structures.
 *   **Client compatibility:** Tested with retail D3 v1.5 and PiccuEngine (Windows v1.5-compatible).
-*   **Weapon usage diversity:** Plasma, EMD, and Super Laser are sometimes under-selected relative to Vauss/Fusion/Microwave. The tactical weapon hierarchy may need further tuning.
+*   **Weapon usage diversity:** Weapon selection hierarchy may need further tuning as more combat data is gathered.
 *   **Team rebalancing:** Teams are statically assigned at bot creation time. Dynamic rebalancing when humans join/leave is planned.
 
 ### For Developers

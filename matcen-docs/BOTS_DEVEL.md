@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Matcen 0.8.5-dev — Plasma/EMD selection investigation diagnostic added to `BotSelectBestWeapon`; `$setpps` clamp raised from 1–20 to 2–40; version suffix display in main menu + startup log for testing client/server mismatch detection. Prior (0.8.4): telnet command parsing fix (`strtok` mutation), bot kick cleanup (kicked bots now route through `BotRemove`). Phase 5.4 complete. See `BOT_MANAGEMENT.md` for design rationale.
+**Status:** Matcen 0.8.5 — Fixed Plasma/EMD never being selected: `BotSelectBestWeapon` was reading `gp_weapon_index[0]` directly instead of iterating gunpoints via `gp_fire_masks`; Plasma/EMD fire from wing gunpoints (index > 0) so `gp[0]` was always 0, causing them to be filtered. Fixed with `BotGetWbWeaponId()` helper mirroring `GetWeaponFromIndex()`. Also: `$setpps` clamp raised from 1–20 to 2–40. Prior (0.8.4): telnet command parsing fix (`strtok` mutation), bot kick cleanup (kicked bots now route through `BotRemove`). Phase 5.4 complete. See `BOT_MANAGEMENT.md` for design rationale.
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -540,7 +540,7 @@ Mild EXPLORE→HUNT→EXPLORE oscillation observed when bots have a target but n
 
 3. **NaN/infinity distance in weapon switch (1 occurrence):** `dist=1e30` garbage value in `BotSelectBestWeapon` — fell back to Laser correctly, but the distance computation produced a corrupt float. Likely a stale target handle after respawn.
 
-4. **Weapon under-utilization:** Bots pick up Plasma, EMD, and Super Laser but don't switch to them often enough. Vauss and Fusion dominate the weapon switch logs. The tactical weapon hierarchy may be biased toward ammo/fast-projectile weapons at the expense of energy weapons in the medium-range band.
+4. **Weapon under-utilization (FIXED in 0.8.5):** Plasma and EMD were never selected despite being owned. Root cause: `BotSelectBestWeapon` read `gp_weapon_index[0]` directly — these weapons fire from wing gunpoints (index > 0), so `gp[0]=0` caused them to be filtered every time. Fixed by `BotGetWbWeaponId()` which mirrors `GetWeaponFromIndex()` and iterates gunpoints via `gp_fire_masks`. Confirmed working in post-fix test (757 Plasma picks in one session). Weapon hierarchy may still benefit from further tuning as more data is gathered.
 
 5. **Missile evasion working:** 52 homing missile detection events across the session, with successful EVADE transitions. At least one "can't shake Smart missile" event (test4 vs test6), confirming Smart missiles are harder to evade as intended.
 
@@ -692,7 +692,7 @@ Investigation revealed that bots were missing from the end-of-level scoreboard b
 - **Sporadic and transient state oscillation/locking** — Bots may try to engage targets through thin walls/floors. Phase 3.26 mitigates via progress-based HUNT timeout (15s). Phase 4.01 gates EXPLORE→HUNT on LOS or proximity, Phase 4.05 adds COMBAT no-LOS timeout (5s). Phase 4.06 widens blind HUNT gate to 300u for better engagement on open maps while stale powerup chases (>4s) no longer suppress HUNT transitions.
 - **Dynamic path pool exhaustion** — With 6+ bots, `MAX_DYNAMIC_PATHS=100` is insufficient. The pool fills up and produces millions of "Out of dynamic paths" log errors per session. Paths are allocated but not freed fast enough, degrading navigation and inflating log files. Needs investigation into path slot lifecycle and possible pool size increase.
 - **Complex geometry navigation** — Largely addressed by Phases 3.24–3.26. Bots now use BOA_connect for outdoor↔indoor transitions, portal entrance positions instead of room centers, and BOA portal navigation when stuck. Afterburner is suppressed while stuck. Edge cases remain on maps with very tight openings or unusual portal geometry.
-- **Weapon under-utilization** — Plasma and EMD are never visibly selected in combat. Super Laser was previously in this bucket but is now observed being used. Investigation in progress — see "Plasma / EMD under-utilization" in `BOT_DEV_REFERENCE.md` for the probe added in Matcen 0.8.5-dev. Key insight: death-spew inspection is not a reliable pickup signal because `PlayerSpewInventory` only spews the currently selected primary in multiplayer, not all owned.
+- **Weapon under-utilization (FIXED 0.8.5)** — Plasma and EMD were never selected in combat. Root cause: `gp_weapon_index[0]` is 0 for wing-mounted weapons; the `weapon_id <= 0` guard filtered them before bucket assignment. Fixed with `BotGetWbWeaponId()` that iterates `gp_fire_masks` to find the active gunpoint, mirroring `GetWeaponFromIndex()` in weapon.cpp. Confirmed: 757 Plasma picks in post-fix test session. Note: death-spew inspection is not a reliable pickup signal — `PlayerSpewInventory` only spews the currently selected primary in multiplayer, not all owned weapons.
 
 ## Future Work
 
