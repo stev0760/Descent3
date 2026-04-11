@@ -121,6 +121,21 @@ Enforced by `.clang-format` (LLVM-based):
 - Include sort order is preserved (not auto-sorted)
 - Format with: `clang-format -i <file>` or `tools/formatter.sh`
 
+## Versioning
+
+Matcen uses a `0.8.xx` scheme (patch increments per release). `0.9` is reserved for a near-full-compatibility milestone. Version is set in `CMakeLists.txt` (`MATCEN_VERSION_MAJOR/MINOR/PATCH`) and propagated through `cmake/CheckGit.cmake` → `lib/d3_version.h.in` → the binary.
+
+### `-dev` Suffix Convention
+
+A `-dev` suffix (`MATCEN_VERSION_SUFFIX` in `CMakeLists.txt`) is used **only while actively chasing a specific untested bug or regression** — never for stable releases or normal feature work. Purpose: when the suffix is visible in the main menu (`Ver 1.6.0 | Matcen 0.8.x-dev <hash>`), it is an immediate signal that the running build is an in-progress diagnostic and any connected client may be mismatched.
+
+Rules:
+- Add `-dev` when starting investigation that changes observable behavior (diagnostic logging, speculative fixes, experimental tuning) and the work has not yet been validated in a test session.
+- `-dev` commits may or may not be pushed to `origin` — sometimes committed locally just for tracking. This is fine.
+- **Remove the suffix and increment the patch version** once the bug is confirmed fixed and tested. Do not leave `-dev` in a release commit.
+- **`$servercaps` always uses the numeric version only** (`fork_version=X.Y.Z`). Do not include the suffix in `BotPrintServerCaps()` — the D3 Pyrodeck parser expects a clean semver string.
+- When removing the suffix, update `README.md`, `BOTS_DEVEL.md`, and `BOT_MANAGEMENT.md` as usual.
+
 ## Documentation Updates
 
 When committing feature work, bug fixes, or version bumps, **always update `README.md`** alongside `matcen-docs/BOTS_DEVEL.md` and `matcen-docs/BOT_MANAGEMENT.md`. The README is user-facing and must reflect the current version, feature set, and status.
