@@ -238,8 +238,9 @@ int main(int argc, char *argv[]) {
   }
   InitLog(log_level, FindArg("-logfile"), enable_winconsole);
 
-  LOG_INFO.printf("Welcome to Descent 3 v%d.%d.%d | %s %d.%d.%d %s", D3_MAJORVER, D3_MINORVER, D3_BUILD,
-                  D3_FORK_NAME, D3_FORK_VER_MAJOR, D3_FORK_VER_MINOR, D3_FORK_VER_PATCH, D3_GIT_HASH);
+  LOG_INFO.printf("Welcome to Descent 3 v%d.%d.%d | %s %d.%d.%d%s %s", D3_MAJORVER, D3_MINORVER, D3_BUILD,
+                  D3_FORK_NAME, D3_FORK_VER_MAJOR, D3_FORK_VER_MINOR, D3_FORK_VER_PATCH, D3_FORK_VER_SUFFIX,
+                  D3_GIT_HASH);
 
 #ifdef DEDICATED
   setenv("SDL_VIDEODRIVER", "dummy", 1);

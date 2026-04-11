@@ -534,6 +534,13 @@ static void BotSelectBestWeapon(int bot_index) {
     // else: stay on battery 0 (default Laser)
   }
 
+  // Plasma/EMD investigation diagnostic: one line per selection call. Captures weapon_flags
+  // (did pickup path set the bit?), bucket counts (did classification include it?), and the
+  // picked battery vs. currently equipped. ~1 line per COMBAT entry, not per-frame.
+  LOG_DEBUG.printf("BOT: '%s' wpn_pick: flags=0x%x E=%.0f d=%.0f long=%d close=%d ammo=%d pick=%d cur=%d",
+                   Bots[bot_index].callsign, Players[slot].weapon_flags, energy, dist, num_long, num_close, num_ammo,
+                   best_wb, Players[slot].weapon[PW_PRIMARY].index);
+
   if (best_wb != Players[slot].weapon[PW_PRIMARY].index) {
     LOG_DEBUG.printf("BOT: '%s' weapon switch: battery %d → %d (energy=%.0f dist=%.0f)", Bots[bot_index].callsign,
                      Players[slot].weapon[PW_PRIMARY].index, best_wb, energy, dist);

@@ -727,10 +727,10 @@ void DMFCInputCommand_SetPPS(const char *input_string) {
     return;
   }
 
-  if (d < 1)
-    d = 1;
-  if (d > 20)
-    d = 20;
+  if (d < 2)
+    d = 2;
+  if (d > 40)
+    d = 40;
   basethis->Netgame->packets_per_second = d;
 
   DLLAddHUDMessage(DTXT_PPSSETMSG, d);

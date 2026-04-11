@@ -33,10 +33,11 @@ project(Descent3
   VERSION 1.6.0
 )
 
-# Matcen fork version (semver)
+# Matcen fork version (semver with optional pre-release suffix)
 set(MATCEN_VERSION_MAJOR 0)
 set(MATCEN_VERSION_MINOR 8)
-set(MATCEN_VERSION_PATCH 4)
+set(MATCEN_VERSION_PATCH 5)
+set(MATCEN_VERSION_SUFFIX "-dev")
 
 if (${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})
   message(FATAL_ERROR "In-source builds are not supported. Please run CMake with a different build path.")
@@ -173,6 +174,7 @@ add_custom_command(
     -D MATCEN_VERSION_MAJOR=${MATCEN_VERSION_MAJOR}
     -D MATCEN_VERSION_MINOR=${MATCEN_VERSION_MINOR}
     -D MATCEN_VERSION_PATCH=${MATCEN_VERSION_PATCH}
+    -D MATCEN_VERSION_SUFFIX=${MATCEN_VERSION_SUFFIX}
     -P ${PROJECT_SOURCE_DIR}/cmake/CheckGit.cmake
   WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
 )

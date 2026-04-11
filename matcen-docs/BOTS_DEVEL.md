@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Matcen 0.8.4 — Bug fixes: telnet command parsing (`strtok` mutation broke DMFC command arguments), bot kick cleanup (kicked bots now route through `BotRemove` with full player-equivalent cleanup including inventory spew). Phase 5.4 complete. See `BOT_MANAGEMENT.md` for design rationale.
+**Status:** Matcen 0.8.5-dev — Plasma/EMD selection investigation diagnostic added to `BotSelectBestWeapon`; `$setpps` clamp raised from 1–20 to 2–40; version suffix display in main menu + startup log for testing client/server mismatch detection. Prior (0.8.4): telnet command parsing fix (`strtok` mutation), bot kick cleanup (kicked bots now route through `BotRemove`). Phase 5.4 complete. See `BOT_MANAGEMENT.md` for design rationale.
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -692,7 +692,7 @@ Investigation revealed that bots were missing from the end-of-level scoreboard b
 - **Sporadic and transient state oscillation/locking** — Bots may try to engage targets through thin walls/floors. Phase 3.26 mitigates via progress-based HUNT timeout (15s). Phase 4.01 gates EXPLORE→HUNT on LOS or proximity, Phase 4.05 adds COMBAT no-LOS timeout (5s). Phase 4.06 widens blind HUNT gate to 300u for better engagement on open maps while stale powerup chases (>4s) no longer suppress HUNT transitions.
 - **Dynamic path pool exhaustion** — With 6+ bots, `MAX_DYNAMIC_PATHS=100` is insufficient. The pool fills up and produces millions of "Out of dynamic paths" log errors per session. Paths are allocated but not freed fast enough, degrading navigation and inflating log files. Needs investigation into path slot lifecycle and possible pool size increase.
 - **Complex geometry navigation** — Largely addressed by Phases 3.24–3.26. Bots now use BOA_connect for outdoor↔indoor transitions, portal entrance positions instead of room centers, and BOA portal navigation when stuck. Afterburner is suppressed while stuck. Edge cases remain on maps with very tight openings or unusual portal geometry.
-- **Weapon under-utilization** — Plasma, EMD, and Super Laser are picked up but under-selected relative to Vauss/Fusion/Microwave. The tactical weapon hierarchy may need rebalancing in the medium-range energy weapon band.
+- **Weapon under-utilization** — Plasma and EMD are never visibly selected in combat. Super Laser was previously in this bucket but is now observed being used. Investigation in progress — see "Plasma / EMD under-utilization" in `BOT_DEV_REFERENCE.md` for the probe added in Matcen 0.8.5-dev. Key insight: death-spew inspection is not a reliable pickup signal because `PlayerSpewInventory` only spews the currently selected primary in multiplayer, not all owned.
 
 ## Future Work
 
