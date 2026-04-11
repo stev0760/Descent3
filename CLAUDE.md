@@ -132,7 +132,7 @@ A `-dev` suffix (`MATCEN_VERSION_SUFFIX` in `CMakeLists.txt`) is used **only whi
 Rules:
 - Add `-dev` when starting investigation that changes observable behavior (diagnostic logging, speculative fixes, experimental tuning) and the work has not yet been validated in a test session.
 - `-dev` commits may or may not be pushed to `origin` — sometimes committed locally just for tracking. This is fine.
-- **Remove the suffix and increment the patch version** once the bug is confirmed fixed and tested. Do not leave `-dev` in a release commit.
+- **Remove the suffix, keep the patch number** once the bug is confirmed fixed and tested. The patch was already incremented when `-dev` was introduced — stripping the suffix produces the stable release of that same version (e.g. `0.8.5-dev` → `0.8.5`). Only increment the patch further for a subsequent separate fix or feature.
 - **`$servercaps` always uses the numeric version only** (`fork_version=X.Y.Z`). Do not include the suffix in `BotPrintServerCaps()` — the D3 Pyrodeck parser expects a clean semver string.
 - When removing the suffix, update `README.md`, `BOTS_DEVEL.md`, and `BOT_MANAGEMENT.md` as usual.
 
