@@ -10,7 +10,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Matcen — Multiplayer Bots (Experimental)
 
-**Version:** Matcen 0.8.5 | **Status:** In development — Plasma/EMD weapon selection fix, `$setpps` clamp raised to 2–40
+> **Matcen 0.8.5** — stable release
 
 This fork — "Matcen" — adds a **server-side multiplayer bot system** to Descent 3. Bots occupy real player slots on dedicated servers or listen servers, appearing and acting as normal players. All bots are tagged with `[BOT]` in their callsign for easy identification.
 
@@ -18,18 +18,15 @@ This fork — "Matcen" — adds a **server-side multiplayer bot system** to Desc
 
 ### Key Features
 
-*   **Dangerous Combat AI:** Bots use a 5-state Finite State Machine (EXPLORE, HUNT, COMBAT, FLEE, EVADE) with per-frame predictive lead aiming. They track where targets *will be*, not where they are — projectiles actually connect. Circle-strafing, afterburner pursuit, and evasive maneuvers make dogfights intense.
-*   **Physics-Based Movement:** Bots obey the same physics laws as players — inertia, momentum, and tri-chording. They use afterburners to chase or escape, evade homing missiles with chaff + afterburner bursts, and navigate level geometry using the engine's pathfinding.
-*   **Weapon Mastery:**
-    *   **Tactical Switching:** Bots switch between energy and ammo weapons based on resources, range, and combat situation. Omega Cannon at melee range, Mass Driver for sniping, Vauss/Plasma for mid-range dogfights.
-    *   **Secondary Fire:** Missiles and rockets from close-range Concussion barrages to long-range Mega Missiles, with splash damage self-guards.
-    *   **Smart Powerup Collection:** Bots seek weapons with per-weapon priority rankings and LOS-weighted scoring. A collectibility filter prevents bots from chasing items they already own (primary weapons, Quad Laser, Afterburner, etc). Poorly armed bots delay combat to grab nearby weapons, break off fights for weapon upgrades, and scan wider areas. Direct thrust steering ensures bots fly into close powerups rather than hovering near them.
-*   **Equipment Loadout Awareness:** Bots self-classify into tiers (WEAK, GOOD, ELITE) based on their current equipment, adjusting aggression and retreat thresholds accordingly.
-*   **Robust Navigation:** Engine-integrated BOA+BNode pathfinding for multi-room routing. Map-wide explore destinations with visited-room memory prevent clustering. Room-change progress tracking catches stuck bots early. Smart portal-based escape with sustained lateral thrust frees bots from complex geometry. Ship-width FVI raycasts prevent bots from targeting items through gaps too small to fly through.
-*   **Game Mode Support:** Works in Anarchy, Team Anarchy, Robo-Anarchy, with pending work on Co-op and advanced game-mode awareness. Bots persist across level changes.
-*   **Ship Selection:** Bots can pilot any available ship — Pyro-GL, Phoenix, Magnum-AHT, or Black Pyro (if Mercenary expansion is installed).
-*   **Configurable Difficulty:** Five difficulty levels — Trainee, Rookie, Hotshot (default), Ace, and Insane — scale aim accuracy, reaction time, evasive movement, dodge ability, flee aggression, and turn rate. Set globally or per-bot via config or mid-game console commands.
-*   **In-Game Bot Setup (Listen Server):** A "Bot Settings" screen in the Start a New Game flow lets hosts configure bots without touching config files — master-detail layout with scrollable roster (up to 16 bots), per-bot name/ship/difficulty editing, and global defaults. Settings save/load with `.mps` multiplayer presets.
+*   **Combat AI:** 5-state FSM (EXPLORE, HUNT, COMBAT, FLEE, EVADE) with predictive lead aiming. Bots circle-strafe, use afterburners to chase or escape, and dodge homing missiles with chaff bursts.
+*   **Full Physics:** Bots obey the same inertia, momentum, and tri-chord physics as human players.
+*   **Weapon System:** Tactical primary switching (energy vs. ammo based on range and resources), secondary fire with splash-damage guards, and smart powerup collection with LOS scoring.
+*   **Loadout Awareness:** Bots self-classify into WEAK/GOOD/ELITE tiers and adjust aggression accordingly — poorly-armed bots hunt upgrades before engaging.
+*   **Navigation:** Engine-integrated BOA+BNode pathfinding with visited-room memory to prevent clustering and portal-based unstuck recovery.
+*   **Game Modes:** Anarchy, Team Anarchy, and Robo-Anarchy. Bots persist across level transitions.
+*   **Ship Selection:** Pyro-GL, Phoenix, Magnum-AHT, or Black Pyro (requires Mercenary expansion).
+*   **Difficulty:** Five levels (Trainee → Insane) scaling aim, reaction time, evasion, and turn rate. Set globally or per-bot.
+*   **In-Game Setup:** "Bot Settings" screen in the listen-server flow — scrollable roster for up to 16 bots, per-bot name/ship/difficulty, saves with `.mps` presets.
 
 ### Server Configuration
 
