@@ -227,10 +227,12 @@ Extend admin tooling for live management:
 
 | Command | Description |
 |---------|-------------|
-| `$botteam <index> <team>` | Move a bot to a different team |
-| `$botship <index> <ship>` | Change a bot's ship (respawns with new ship) |
-| `$botrebalance` | Force immediate team rebalance |
-| `$botstats` | Summary: total kills, deaths, powerups collected per bot |
+| `$botship <index> <ship>` | Change a bot's ship mid-game (respawns with new ship) |
+| `$botstats` | Summary: total kills, deaths, powerups collected per bot (debugging aid) |
+
+**Dropped from original scope:**
+- `$botteam` — team management is already handled by vanilla DMFC `$balance`/`$autobalance` commands, which work correctly with bots.
+- `$botrebalance` — same; vanilla forced rebalance covers this.
 
 ### 5.6: Persistent Bot Statistics (Priority: Low)
 
