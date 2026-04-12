@@ -2807,7 +2807,7 @@ void BotReinitAll() {
   BotCacheCountermeasureIDs();
 }
 
-int BotAdd(const char *name, int ship_index, BotDifficulty difficulty) {
+int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desired_team) {
   // Find a free bot_info slot
   int bot_index = -1;
   for (int i = 0; i < MAX_BOTS; i++) {
@@ -2872,19 +2872,32 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty) {
   InitPlayerNewGame(slot); // Resets team to -1
   InitPlayerNewLevel(slot);
 
-  // Assign to the team with the fewest current members; default to 0 in non-team modes.
+  // Assign team. In non-team modes (Num_teams <= 1), team is always 0 regardless of request.
+  // In team modes: honor desired_team if valid, otherwise auto-balance to smallest team.
   int chosen_team = 0;
   if (Num_teams > 1) {
-    int team_counts[MAX_TEAMS] = {};
-    for (int i = 0; i < MAX_NET_PLAYERS; i++) {
-      if ((NetPlayers[i].flags & NPF_CONNECTED) && Players[i].team >= 0 && Players[i].team < MAX_TEAMS)
-        team_counts[Players[i].team]++;
-    }
-    int min_count = INT_MAX;
-    for (int t = 0; t < Num_teams && t < MAX_TEAMS; t++) {
-      if (team_counts[t] < min_count) {
-        min_count = team_counts[t];
-        chosen_team = t;
+    if (desired_team >= 0 && desired_team < Num_teams) {
+      // Forced team assignment from config or console.
+      chosen_team = desired_team;
+    } else {
+      if (desired_team >= 0) {
+        // Requested team is out of range for the current game — warn and auto-balance.
+        LOG_WARNING.printf("BOT: desired_team=%d out of range for %d-team game — auto-balancing '%s'", desired_team,
+                           Num_teams, name);
+        PrintDedicatedMessage("BOT: team %d out of range for %d-team game — auto-balancing '%s'\n", desired_team + 1,
+                              Num_teams, name);
+      }
+      int team_counts[MAX_TEAMS] = {};
+      for (int i = 0; i < MAX_NET_PLAYERS; i++) {
+        if ((NetPlayers[i].flags & NPF_CONNECTED) && Players[i].team >= 0 && Players[i].team < MAX_TEAMS)
+          team_counts[Players[i].team]++;
+      }
+      int min_count = INT_MAX;
+      for (int t = 0; t < Num_teams && t < MAX_TEAMS; t++) {
+        if (team_counts[t] < min_count) {
+          min_count = team_counts[t];
+          chosen_team = t;
+        }
       }
     }
   }
@@ -3411,8 +3424,11 @@ void BotLoadRosterFile() {
   char names[MAX_BOTS][CALLSIGN_LEN + 1] = {};
   char ships[MAX_BOTS][32] = {};
   BotDifficulty diffs[MAX_BOTS];
-  for (int i = 0; i < MAX_BOTS; i++)
+  int teams[MAX_BOTS];
+  for (int i = 0; i < MAX_BOTS; i++) {
     diffs[i] = BOT_DIFF_COUNT; // sentinel = "not set"
+    teams[i] = -1;             // sentinel = auto-balance
+  }
   char line[256];
 
   while (fgets(line, sizeof(line), fp)) {
@@ -3467,6 +3483,11 @@ void BotLoadRosterFile() {
       int num = atoi(&key[13]);
       if (num >= 1 && num <= MAX_BOTS)
         diffs[num - 1] = BotResolveDifficulty(val);
+    } else if (strnicmp(key, "BotTeam", 7) == 0 && key[7] >= '1' && key[7] <= '9') {
+      // Per-bot team assignment (e.g., BotTeam1=2 means Team 2, stored as 0-indexed 1)
+      int num = atoi(&key[7]);
+      if (num >= 1 && num <= MAX_BOTS)
+        teams[num - 1] = BotResolveTeam(val);
     }
   }
   fclose(fp);
@@ -3496,11 +3517,11 @@ void BotLoadRosterFile() {
     }
 
     BotDifficulty diff = (diffs[i] < BOT_DIFF_COUNT) ? diffs[i] : Bot_default_difficulty;
-    int idx = BotAdd(name, ship_index, diff);
+    int idx = BotAdd(name, ship_index, diff, teams[i]);
     if (idx >= 0)
-      PrintDedicatedMessage("  Bot '%s' spawned (ship=%s, diff=%s, slot=%d)\n", Bots[idx].callsign,
+      PrintDedicatedMessage("  Bot '%s' spawned (ship=%s, diff=%s, team=%d, slot=%d)\n", Bots[idx].callsign,
                             Ships[Bots[idx].ship_index].name, BotDifficultyName(Bots[idx].difficulty),
-                            Bots[idx].player_slot);
+                            Players[Bots[idx].player_slot].team + 1, Bots[idx].player_slot);
     else
       PrintDedicatedMessage("  Failed to spawn bot '%s'\n", name);
   }
@@ -3528,6 +3549,19 @@ BotDifficulty BotResolveDifficulty(const char *str) {
       return n.diff;
   }
   return BOT_DIFF_HOTSHOT; // unrecognized → default
+}
+
+// --- Team utilities ---
+
+// Accepts "1"–"4" (1-indexed, matching bots.cfg convention).
+// Returns 0-indexed team (0–3), or -1 for auto-balance on unrecognized input.
+int BotResolveTeam(const char *str) {
+  if (!str || !str[0])
+    return -1;
+  int v = atoi(str);
+  if (v >= 1 && v <= MAX_TEAMS)
+    return v - 1;
+  return -1;
 }
 
 const char *BotDifficultyName(BotDifficulty d) {
@@ -3575,6 +3609,7 @@ void BotUISettingsInit() {
     e->ship_alias[sizeof(e->ship_alias) - 1] = '\0';
     e->difficulty = BOT_DIFF_COUNT; // sentinel = "use default"
     e->enabled = true;
+    e->team = -1; // auto-balance
   }
 }
 
@@ -3604,7 +3639,7 @@ static void BotDoUISpawn() {
     if (ship < 0)
       ship = 0;
     BotDifficulty diff = (e->difficulty < BOT_DIFF_COUNT) ? e->difficulty : Bot_ui_settings.default_difficulty;
-    int idx = BotAdd(name, ship, diff);
+    int idx = BotAdd(name, ship, diff, e->team);
     if (idx >= 0)
       LOG_INFO.printf("BOT UI: Bot '%s' spawned (ship=%s, diff=%s, slot=%d)", Bots[idx].callsign,
                       Ships[Bots[idx].ship_index].name, BotDifficultyName(Bots[idx].difficulty), Bots[idx].player_slot);

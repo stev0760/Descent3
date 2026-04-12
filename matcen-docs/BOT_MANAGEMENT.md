@@ -1,6 +1,6 @@
 # Phase 5: Bot Management & Server Administration
 
-**Status:** Phase 5.4 complete
+**Status:** Phase 5.5 complete
 **Prerequisite reading:** `BOT_DEV_REFERENCE.md`, `BOTS_DEVEL.md`
 **Key files:** `Descent3/bot.h`, `Descent3/bot.cpp`, `Descent3/dedicated_server.cpp`
 
@@ -78,7 +78,7 @@ All bot callsigns are automatically prefixed with `[BOT] ` for identification (e
 - `BotConfig=<file>` in `dedicated.cfg` stores the path in `Bot_config_file[]`; `BotLoadRosterFile()` resolves it via `cf_LocatePath()` at level-load time
 - `BotSpawnRoster()` called from `MultiStartNewLevel()` after `BotReinitAll()` — spawns once on first level load; subsequent levels use `BotReinitAll()` to preserve bots
 - Names stored in static arrays indexed by bot number (1-based in config, 0-based in storage)
-- Team assignment uses existing round-robin logic in `BotAdd()`
+- Team assignment: auto-balance by default; `BotTeam<n>=` overrides (see §5.5)
 - `BotCount` clamped to `MAX_BOTS` (16); missing `BotNameN` defaults to "BotN"
 
 ### 5.1b: Ship Selection (Priority: High) — IMPLEMENTED
@@ -221,7 +221,43 @@ In-game "Bot Settings" screen accessible from the Start a New Game flow (Direct 
 
 **Bug fix (init-order):** `BotAdd()` called `BotConfigureAI(bot_index)` before `Bots[bot_index].player_slot` was set, causing it to silently configure slot 0 (host) instead of the bot. Result: bots spawned without thrust physics, firing, awareness, or dodge — "asleep" until first death+respawn. Fixed by moving `player_slot` and `difficulty` initialization before `BotConfigureAI()`.
 
-### 5.5: Enhanced Console Commands (Priority: Low)
+### 5.5: Per-Bot Team Pre-Assignment — IMPLEMENTED (Matcen 0.8.6)
+
+Operators can pre-assign bots to specific teams in `bots.cfg` or via console, rather than relying solely on auto-balance. Designed for servers running up to 4-team games and managed by the Pyrodeck companion tool.
+
+**Config (`bots.cfg`):**
+```ini
+BotCount=4
+BotName1=Reaper
+BotTeam1=1        ; Team 1
+BotName2=Phantom
+BotTeam2=1        ; Team 1
+BotName3=Viper
+BotTeam3=2        ; Team 2
+BotName4=Shadow
+BotTeam4=2        ; Team 2
+; Omit BotTeam<n> for auto-balance
+```
+
+**Console:**
+```
+$addbot Reaper pyro hotshot 2    ← team is 4th optional arg, 1-indexed
+```
+
+**Behavior:**
+- Teams are **1-indexed** in config and console (`1`–`4`); stored 0-indexed internally.
+- Out-of-range team value: warns and auto-balances. Does not crash or clamp silently.
+- Non-team game modes (anarchy, etc.): `BotTeam<n>` is silently ignored — no effect.
+- `.mps` listen-server presets: `BOTTEAM<n>` key saved/loaded for completeness.
+
+**Implementation:**
+- `BotAdd()` gains `int desired_team = -1` parameter; -1 = auto-balance.
+- `BotResolveTeam(const char *)` parallels `BotResolveDifficulty()` — `"1"`–`"4"` → 0-indexed, else -1.
+- `BotUIRosterEntry` gains `int team` field (default -1).
+- `BotLoadRosterFile()` parses `BotTeam<n>=` keys.
+- `BotSpawnFromUI()` and `BotDoUISpawn()` pass `e->team` through to `BotAdd()`.
+
+### 5.5b: Enhanced Console Commands (Priority: Low)
 
 Extend admin tooling for live management:
 
@@ -255,9 +291,10 @@ Track per-bot performance across sessions for tuning and diagnostics.
 3. ~~**5.1b Ship selection**~~ ✅ Implemented
 4. ~~**5.2 Difficulty levels**~~ ✅ Implemented
 5. ~~**5.4 Client UI for bot match setup**~~ ✅ Implemented
-6. **5.3 Auto-rebalancing** — quality-of-life feature for team modes
-7. **5.5 Enhanced console** — admin convenience
-8. **5.6 Statistics** — diagnostic tooling
+6. ~~**5.5 Per-bot team pre-assignment**~~ ✅ Implemented
+7. **5.3 Auto-rebalancing** — quality-of-life feature for team modes
+8. **5.5b Enhanced console** — admin convenience
+9. **5.6 Statistics** — diagnostic tooling
 
 ---
 

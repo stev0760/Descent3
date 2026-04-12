@@ -728,6 +728,14 @@ Iterative playtest-driven refinements across multiple maps (Fellowship, BBQ, Fur
 - Config: `BotDifficulty=` global, `BotDifficultyN=` per-bot. Console: `$botdifficulty`, extended `$addbot`.
 - `BotConfigureAI()` refactored from `player_slot` to `bot_index` parameter.
 
+**5.5 (Complete — Matcen 0.8.6):** Per-bot team pre-assignment.
+- Config: `BotTeam<n>=1..4` (1-indexed; 1=Team1/Red … 4=Team4/Yellow). Omit for auto-balance.
+- Console: `$addbot <name> [ship] [difficulty] [team]` — optional 4th token.
+- Out-of-range team values warn and auto-balance. Silent no-op in non-team game modes.
+- `.mps` listen-server preset: `BOTTEAM<n>` key saved/loaded for completeness.
+- `BotResolveTeam()` parallels `BotResolveDifficulty()` — `"1"`–`"4"` → 0-indexed, else -1 (auto).
+- Designed for Pyrodeck companion tool which writes `BotTeam<n>=` lines into `bots.cfg`.
+
 **Remaining:**
 - Remote administration (team selection, skill overrides, hot-reload)
 - Auto-rebalancing (dynamic team adjustment when humans join/leave)

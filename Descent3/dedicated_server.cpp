@@ -733,6 +733,7 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     char botname[CALLSIGN_LEN + 1] = "Bot";
     int ship_index = 0;
     BotDifficulty diff = BotGetDefaultDifficulty();
+    int desired_team = -1;
 
     if (operand[0]) {
       // Parse: addbot <name> [ship]
@@ -760,16 +761,22 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
 
           // Third token (optional) is the difficulty
           char *diff_tok = strtok(NULL, " \t");
-          if (diff_tok)
+          if (diff_tok) {
             diff = BotResolveDifficulty(diff_tok);
+
+            // Fourth token (optional) is the team (1-indexed, e.g. "2" = Team 2)
+            char *team_tok = strtok(NULL, " \t");
+            if (team_tok)
+              desired_team = BotResolveTeam(team_tok);
+          }
         }
       }
     }
-    int idx = BotAdd(botname, ship_index, diff);
+    int idx = BotAdd(botname, ship_index, diff, desired_team);
     if (idx >= 0)
-      PrintDedicatedMessage("Bot '%s' added in slot %d (ship=%s, diff=%s)\n", Bots[idx].callsign,
+      PrintDedicatedMessage("Bot '%s' added in slot %d (ship=%s, diff=%s, team=%d)\n", Bots[idx].callsign,
                             Bots[idx].player_slot, Ships[Bots[idx].ship_index].name,
-                            BotDifficultyName(Bots[idx].difficulty));
+                            BotDifficultyName(Bots[idx].difficulty), Players[Bots[idx].player_slot].team + 1);
     else
       PrintDedicatedMessage("Failed to add bot (server full or max bots reached)\n");
     return true;
@@ -894,7 +901,7 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
   }
   if (stricmp(command, "bothelp") == 0) {
     PrintDedicatedMessage("Bot commands:\n");
-    PrintDedicatedMessage("  $addbot <name> [ship] [difficulty] - Add a bot\n");
+    PrintDedicatedMessage("  $addbot <name> [ship] [difficulty] [team] - Add a bot (team: 1-4)\n");
     PrintDedicatedMessage("    ships: pyro, phoenix, magnum, blackpyro\n");
     PrintDedicatedMessage("    difficulty: trainee, rookie, hotshot, ace, insane\n");
     PrintDedicatedMessage("  $removebot <index>     - Remove a specific bot\n");

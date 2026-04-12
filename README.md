@@ -10,7 +10,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Matcen — Multiplayer Bots (Experimental)
 
-> **Matcen 0.8.5** — stable release
+> **Matcen 0.8.6** — in development
 
 This fork — "Matcen" — adds a **server-side multiplayer bot system** to Descent 3. Bots occupy real player slots on dedicated servers or listen servers, appearing and acting as normal players. All bots are tagged with `[BOT]` in their callsign for easy identification.
 
@@ -26,6 +26,7 @@ This fork — "Matcen" — adds a **server-side multiplayer bot system** to Desc
 *   **Game Modes:** Anarchy, Team Anarchy, and Robo-Anarchy. Bots persist across level transitions.
 *   **Ship Selection:** Pyro-GL, Phoenix, Magnum-AHT, or Black Pyro (requires Mercenary expansion).
 *   **Difficulty:** Five levels (Trainee → Insane) scaling aim, reaction time, evasion, and turn rate. Set globally or per-bot.
+*   **Team Assignment:** Pre-assign bots to specific teams in the config (`BotTeam1=2`) or at the console (`$addbot Reaper pyro hotshot 2`). Out-of-range values auto-balance. Ignored in non-team modes.
 *   **In-Game Setup:** "Bot Settings" screen in the listen-server flow — scrollable roster for up to 16 bots, per-bot name/ship/difficulty, saves with `.mps` presets.
 
 ### Server Configuration
@@ -42,10 +43,16 @@ BotCount=4
 BotDifficulty=HOTSHOT
 BotName1=Reaper
 BotName2=Phantom
+BotName3=Viper
+BotName4=Shadow
 BotShip1=phoenix
 BotShip2=magnum
 BotDifficulty1=ACE
 BotDifficulty2=TRAINEE
+BotTeam1=1
+BotTeam2=1
+BotTeam3=2
+BotTeam4=2
 ```
 
 A server with no `BotConfig` line runs without bots — fully backwards compatible with vanilla D3 server configs.
@@ -54,13 +61,15 @@ A server with no `BotConfig` line runs without bots — fully backwards compatib
 
 **Difficulty levels:** `trainee`, `rookie`, `hotshot` (default), `ace`, `insane`. Set globally with `BotDifficulty=` or per-bot with `BotDifficulty1=`, etc.
 
+**Team assignment:** `BotTeam<n>=1..4` (1-indexed). Omit for auto-balance. Out-of-range values auto-balance with a warning. Has no effect in non-team game modes (anarchy, etc.).
+
 ### Console Commands
 
 These commands are available in the dedicated server console (or via remote telnet):
 
 | Command | Description |
 | :--- | :--- |
-| `$addbot <name> [ship] [difficulty]` | Adds a bot with optional name, ship, and difficulty (e.g., `$addbot Reaper phoenix ace`). |
+| `$addbot <name> [ship] [difficulty] [team]` | Adds a bot with optional ship, difficulty, and team (1–4). E.g., `$addbot Reaper phoenix ace 2`. |
 | `$removebot <index>` | Removes a specific bot (use `$botlist` to find the index). |
 | `$removebots` | Removes all active bots. |
 | `$botlist` | Displays a list of all current bots with ship, difficulty, and status. |
@@ -74,7 +83,7 @@ These commands are available in the dedicated server console (or via remote teln
 *   **Navigation edge cases:** Tested on a wide variety of level sets, both vanilla and custom. Most maps work well but complex multi-level geometry may still have edge cases, especially within outdoor structures.
 *   **Client compatibility:** Tested with retail D3 v1.5 and PiccuEngine (Windows v1.5-compatible).
 *   **Weapon usage diversity:** Weapon selection hierarchy may need further tuning as more combat data is gathered.
-*   **Team rebalancing:** Teams are statically assigned at bot creation time. Dynamic rebalancing when humans join/leave is planned.
+*   **Team rebalancing:** Teams can be pre-assigned per-bot in config. Dynamic rebalancing when humans join/leave is planned.
 
 ### For Developers
 

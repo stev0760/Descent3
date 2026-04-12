@@ -337,12 +337,18 @@ extern bool Bot_debug_movement; // When true, log bot+player velocity every ~0.5
 
 // Add a bot to the game. Returns bot index (into Bots[]) or -1 on failure.
 // Ship can be specified by index, or use BotResolveShipAlias() to get index from a name string.
-int BotAdd(const char *name, int ship_index = 0, BotDifficulty difficulty = BOT_DIFF_HOTSHOT);
+// desired_team: 0-indexed team (0=Team1, 1=Team2, 2=Team3, 3=Team4), or -1 for auto-balance.
+int BotAdd(const char *name, int ship_index = 0, BotDifficulty difficulty = BOT_DIFF_HOTSHOT,
+           int desired_team = -1);
 
 // Resolve a difficulty name string to a BotDifficulty enum value.
 // Accepts: "trainee", "rookie", "hotshot", "ace", "insane" (case-insensitive), or "0"–"4".
 // Unrecognized → BOT_DIFF_HOTSHOT.
 BotDifficulty BotResolveDifficulty(const char *str);
+
+// Resolve a team number string to a 0-indexed team value.
+// Accepts: "1"–"4" (1-indexed, matches bots.cfg convention). Returns -1 (auto-balance) for anything else.
+int BotResolveTeam(const char *str);
 
 // Returns the display name for a difficulty level.
 const char *BotDifficultyName(BotDifficulty d);
@@ -420,6 +426,7 @@ struct BotUIRosterEntry {
   char ship_alias[32];
   BotDifficulty difficulty;
   bool enabled;
+  int team; // 0-indexed team (0–3), or -1 for auto-balance
 };
 
 struct BotUISettings {

@@ -134,6 +134,10 @@ int MultiSaveSettings(const std::filesystem::path &filename) {
     cf_WriteString(cf, szoutput);
     snprintf(szoutput, sizeof(szoutput), "BOTDIFF%d\t%d", i + 1, (int)Bot_ui_settings.roster[i].difficulty);
     cf_WriteString(cf, szoutput);
+    if (Bot_ui_settings.roster[i].team >= 0) {
+      snprintf(szoutput, sizeof(szoutput), "BOTTEAM%d\t%d", i + 1, Bot_ui_settings.roster[i].team + 1);
+      cf_WriteString(cf, szoutput);
+    }
   }
 
   for (i = 0; i < MAX_OBJECT_IDS; i++) {
@@ -329,6 +333,10 @@ int MultiLoadSettings(const std::filesystem::path &filename) {
         if (d >= 0 && d <= BOT_DIFF_COUNT)
           Bot_ui_settings.roster[num - 1].difficulty = (BotDifficulty)d;
       }
+    } else if (strnicmp(toklabel, "BOTTEAM", 7) == 0 && toklabel[7] >= '1' && toklabel[7] <= '9') {
+      int num = atoi(&toklabel[7]);
+      if (num >= 1 && num <= BOT_UI_MAX_BOTS)
+        Bot_ui_settings.roster[num - 1].team = BotResolveTeam(tokval);
     } else {
       LOG_WARNING.printf("Unknown line in multiplayer config file %s\t%s", toklabel, tokval);
     }
