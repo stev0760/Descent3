@@ -159,6 +159,12 @@ static void BotConfigureAI(int bot_index) {
   obj->ai_info->dodge_vel_percent = 1.0f; // full dodge speed
   obj->ai_info->life_preservation = 0.8f; // high self-preservation → longer residual dodge
 
+  // Enable hearing — PlayerSetControlToAI memsets ai_info to zero, leaving hearing=0 (deaf).
+  // The engine's AIN_HEAR_NOISE handler (AImain.cpp:3127) uses hearing as a multiplier on
+  // AI_SOUND_SHORT_DIST (60 units): effective radius = 60 * hearing. At 1.0 bots hear weapon
+  // fire, afterburner, and other player noise at the same range as single-player robots.
+  obj->ai_info->hearing = 1.0f;
+
   // Restore real ship physics values (PlayerSetControlToAI sets drag=0.1, clears PF_USES_THRUST)
   int ship_idx = Players[player_slot].ship_index;
   obj->mtype.phys_info.mass = Ships[ship_idx].phys_info.mass;
@@ -202,6 +208,48 @@ static bool BotHasLOS(object *obj, object *target) {
   int hit_type = fvi_FindIntersection(&fq, &hit);
   // HIT_NONE = clear path, HIT_OBJECT = hit an object (target or another player) — still valid
   return (hit_type == HIT_NONE || hit_type == HIT_OBJECT);
+}
+
+// Window for "recently fired" cloak reveal — audible muzzle flash/report window.
+// Short enough that a player who stops firing can still evade; long enough to span
+// typical burst cadence (e.g., Vauss ~0.1s between shots).
+#define BOT_CLOAK_RECENT_FIRE_WINDOW 1.0f
+
+// Cloak visibility check — mirrors engine's AIDetermineObjVisLevel (AImain.cpp:1646)
+// with an additional reveal for weapon fire (audible, maps to the engine's own
+// AIN_HEAR_NOISE broadcast at 60 units for any weapon discharge).
+// Returns true if the target is visible/detectable to the bot: not cloaked, or cloaked
+// but revealed by afterburner, headlight aimed at bot, napalm, or recent weapon fire.
+// Powerup-pickup reveals are NOT covered — engine doesn't emit noise on pickup.
+static bool BotCanSeeTarget(object *bot_obj, object *target) {
+  if (!target || !target->effect_info)
+    return true; // no effect info means no cloak possible
+  if (!(target->effect_info->type_flags & EF_CLOAKED))
+    return true; // not cloaked — fully visible
+
+  // Cloaked: invisible by default. Check for reveals.
+  // Napalmed = always visible (strongest tell, +1.75 in engine)
+  if (target->effect_info->type_flags & EF_NAPALMED)
+    return true;
+
+  if (target->type == OBJ_PLAYER) {
+    // Afterburner on = detectable (engine gives +1.0 vis)
+    if (Players[target->id].flags & PLAYER_FLAGS_AFTERBURN_ON)
+      return true;
+    // Recently fired a weapon = detectable (audible report/muzzle flash).
+    // Set on the server by WBFireBattery for both local and remote OBJ_PLAYER fire.
+    if (Gametime - Players[target->id].last_fire_weapon_time < BOT_CLOAK_RECENT_FIRE_WINDOW)
+      return true;
+    // Headlight aimed at bot = detectable (engine uses dot > 0.965, ~15° cone)
+    if (Players[target->id].flags & PLAYER_FLAGS_HEADLIGHT) {
+      vector from_target = bot_obj->pos - target->pos;
+      vm_NormalizeVector(&from_target);
+      if (vm_DotProduct(&target->orient.fvec, &from_target) > 0.965f)
+        return true;
+    }
+  }
+
+  return false; // fully cloaked, no reveals
 }
 
 // Record a room in the bot's visited-rooms circular buffer (Phase 4.0 anti-oscillation).
@@ -599,6 +647,10 @@ static void BotDoSecondaryFiring(int bot_index) {
   } else if (target->flags & (OF_DEAD | OF_DESTROYED)) {
     return;
   }
+
+  // Don't fire at cloaked targets
+  if (!BotCanSeeTarget(obj, target))
+    return;
 
   if (!BotHasLOS(obj, target))
     return;
@@ -1666,7 +1718,9 @@ static void BotUpdateState(int bot_index) {
   float shields = obj->shields;
   float max_shields = INITIAL_SHIELDS; // from player_external.h
   bool has_target = (target != nullptr);
-  bool has_los = has_target && BotHasLOS(obj, target);
+  // Cloak breaks LOS — bot can't see where to shoot, but target is retained so the engine's
+  // AIN_HEAR_NOISE pipeline can still refresh positional tracking when the target fires/AB's.
+  bool has_los = has_target && BotCanSeeTarget(obj, target) && BotHasLOS(obj, target);
   bool shields_recovered = (shields > max_shields * BOT_FLEE_RECOVER_PCT);
   bool low_energy = (Players[slot].energy < BOT_LOW_ENERGY);
 
@@ -2416,6 +2470,9 @@ static void BotSelectTarget(int bot_index) {
       continue;
     if (!BotIsPlayerEnemy(bot_index, i))
       continue;
+    // Skip cloaked players unless revealed (afterburner, headlight, napalm)
+    if (!BotCanSeeTarget(obj, &Objects[Players[i].objnum]))
+      continue;
 
     // Skip blacklisted targets — unreachable enemies from previous HUNT timeout.
     bool is_blacklisted = false;
@@ -2505,6 +2562,10 @@ static void BotDoFiring(int bot_index) {
   } else if (target->flags & (OF_DEAD | OF_DESTROYED)) {
     return;
   }
+
+  // Don't fire at cloaked targets
+  if (!BotCanSeeTarget(obj, target))
+    return;
 
   // Don't fire through walls
   if (!BotHasLOS(obj, target))
