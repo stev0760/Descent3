@@ -354,8 +354,11 @@ The web admin sends `$servercaps` on connect. If it gets a structured `SERVERCAP
 | `roster` | 5.1 | Config-file bot roster (auto-spawn) |
 | `ships` | 5.1b | Bot ship selection |
 | `difficulty` | 5.2 | Difficulty levels |
+| `teams` | 5.5 | Per-bot team pre-assignment |
 | `rebalance` | 5.3 | Auto team rebalancing |
-| `botstats` | 5.5 | Bot statistics tracking |
+| `squad_orders` | 6.0 | Squad order framework (attack/defend/follow) |
+| `ctf` | 6.1 | CTF game mode awareness |
+| `botstats` | 5.5b | Bot statistics tracking |
 
 ### Implementation Notes
 

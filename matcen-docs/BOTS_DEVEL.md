@@ -742,10 +742,114 @@ Iterative playtest-driven refinements across multiple maps (Fellowship, BBQ, Fur
 - Server orchestration (multi-instance management, match templates)
 - Persistent bot statistics (K/D, weapon usage, map coverage)
 
-### Phase 6: Advanced Features
+### Phase 6: Squad Orders & Game Mode Awareness
 
-- Game mode awareness: CTF, Monsterball, Co-op squad orders
-- Team coordination: roles, map control, coordinated pushes
-- 6DOF maneuvers: barrel rolls, Immelmann turns, advanced evasion
-- Movement capture: record human traces for PID tuning
-- Bot personalities: per-bot aggression, caution, weapon preference
+The existing 5-state FSM (EXPLORE/HUNT/COMBAT/FLEE/EVADE) handles deathmatch well, but objective modes require strategic decisions no reactive FSM can make autonomously. Squad orders are an **enabling layer** — without them, CTF/Co-op/Entropy bots will make baffling strategic choices. Human-directed orders turn bots from autonomous curiosities into force multipliers.
+
+**Key insight from UT research (2026-04-13):** Unreal Tournament's TeamAI/SquadAI two-tier pattern is the proven architecture. Individual bots stay simple; squad-level logic handles coordination. The UT text menu (V → select bot → select order) was widely considered too slow for combat — D3's 6DOF movement demands an even faster system.
+
+#### 6.0: Squad Order Framework (Priority: Critical — enables all objective modes)
+
+Two-tier architecture inspired by UT2004's TeamAI/SquadAI, adapted for 6DOF:
+
+```
+TeamAI (per-team, strategic layer)
+├── AttackSquad   (push objectives — flag grab, room capture, ball push)
+├── DefenseSquad  (guard home objectives — flag room, controlled rooms)
+└── FreelanceSquad (autonomous FSM as today — default when no orders given)
+
+Player issues orders → modifies squad assignment and priority weights
+Individual bots retain FSM but objective priorities shift based on squad role
+```
+
+**Order vocabulary:**
+- `Attack` — push toward objective (flag, control point, ball, enemy territory)
+- `Defend` — hold near defensive positions, prioritize area denial
+- `Follow Me` — trail the ordering player, engage their targets
+- `Freelance` — fully autonomous (current FSM behavior, the sensible default)
+- Mode-specific orders layer on top (e.g., "Get the Flag", "Return the Flag")
+
+**Input paths — two tiers, chat-first design:**
+
+The order system MUST work across all D3-compatible clients (retail v1.5, PiccuEngine, Matcen client). PiccuEngine is currently the superior client for controls and graphics, and Matcen may eventually be ported to it. Therefore:
+
+**Tier 1: Chat commands (universal, required baseline)**
+- Player types `!attack`, `!defend`, `!follow`, `!freelance` in multiplayer chat
+- Server-side bot code intercepts incoming chat messages and translates to squad orders
+- Bots respond in chat to acknowledge: `[BOT] Reaper: Attacking!`, `[BOT] Phantom: Defending`
+- Works on ANY D3-compatible client — PiccuEngine, retail v1.5, Matcen client
+- Chat parsing is foundational infrastructure — also enables bot callouts (flag status, enemy spotted, taunts)
+- This tier must be fully functional before any HUD work begins
+
+**Tier 2: HUD quick-access overlay (Matcen client enhancement)**
+- Single key opens a compact HUD overlay (player retains full 6DOF flight control)
+- Tap 1–4 to select a squad/bot, then A/D/F for Attack/Defend/Follow
+- Three keypresses total, direct bindings, no menu navigation
+- Alternatively: single key cycles squad presets (All Attack / Balanced / All Defend)
+- Sends the same underlying squad commands as chat — just a faster UI layer
+- Only available on Matcen-built clients; degrades gracefully to chat on other clients
+
+**6DOF-specific challenges (novel design — no prior art):**
+- "Defend this room" means monitoring a 3D sphere of portal approach vectors, not watching two doorways. Room portals become the defensive orientation points.
+- Squad formations in tunnel geometry: bots must maintain relative positions in 3D space through varying corridor sizes. Closest analog is space combat games (Freespace/Wing Commander) but those are open-space, not tunnel-based.
+- "Hold position" in zero-G with inertia requires active station-keeping thrust, not just standing still.
+- Must infer strategic positions from geometry — no level-designer-placed nav hints (unlike UT's DefensePoint/AssaultPath). BOA room connectivity and portal geometry become the implicit strategic map.
+
+#### 6.1: CTF — Capture the Flag (Priority: High — first objective mode)
+
+The single most iconic organized-play mode from D3's competitive era. 4-team CTF already proven working (0.8.6 Test 9). Infrastructure overlap with powerup tracking system is high — the flag is a trackable world object.
+
+**Bot behaviors needed:**
+- `FLAG_CARRIER` state: bot has flag, prioritize returning to own base, use afterburner aggressively, avoid engagement when possible
+- `FLAG_ESCORT` state: trail the flag carrier, engage pursuers, body-block
+- `FLAG_DEFENDER` state: patrol near own flag room, intercept enemy flag runners
+- `FLAG_ATTACKER` state: navigate to enemy flag room, grab flag, flee toward home
+- Flag status awareness: know when own flag is taken (switch defenders to pursuit), when enemy flag is home vs. dropped
+
+**Game mode constraints (from 0.8.6 test report):**
+- CTF supports 2–4 teams, but 4-team requires mission with `GOALS4` keyword
+- `CheckMissionForScript` enforces team count at game start — graceful degradation
+
+**Integration with squad system:** Attack squad → FLAG_ATTACKER/FLAG_ESCORT. Defense squad → FLAG_DEFENDER. Natural split.
+
+#### 6.2: Co-op (Priority: High — requires squad orders)
+
+Currently broken (bots frozen — likely AI goal/pathfinding regression from earlier phases). Squad orders are basically mandatory: the core gameplay is "follow the human through the mission." Without a Follow Me order, co-op bots are purposeless.
+
+**Bot behaviors needed:**
+- `FOLLOW_LEADER` state: trail the human player through mission levels, engage hostiles on sight
+- `HOLD_POSITION` state: guard a room or chokepoint while the human explores ahead
+- Mission trigger awareness: bots must not block scripted mission progression (doors, switches, cinematics)
+- Friendly fire discipline: distinguish mission robots from allied players
+
+**Blocker:** The co-op freeze bug must be diagnosed and fixed first. This is a prerequisite.
+
+#### 6.3: Entropy (Priority: Medium — 2-team room capture)
+
+Area-control mode: teams capture rooms by occupying them. Hardcoded to 2 teams. Navigation system is already strong enough to reach and occupy rooms.
+
+**Bot behaviors needed:**
+- Room ownership awareness: know which rooms belong to which team
+- `CAPTURE` state: navigate to enemy/neutral room, remain inside to flip control
+- `CONTEST` state: enter enemy-held room to interrupt capture
+- Area denial: prioritize defending captured rooms near own territory
+
+#### 6.4: Monsterball (Priority: Medium — ball physics)
+
+Push a ball into the enemy goal. Simpler than CTF in some ways (no "return to base" leg), harder in others (ball physics prediction, passing).
+
+**Bot behaviors needed:**
+- Ball tracking: detect ball position, predict trajectory
+- `BALL_PUSH` state: navigate to ball, apply thrust in goal direction
+- `GOAL_DEFENSE` state: position between ball and own goal
+- Passing concept: intentionally push ball toward a better-positioned teammate (advanced)
+
+#### 6.5: Hoard (Priority: Low — complex accumulation strategy)
+
+Collect orbs and guard the hoard. Passive accumulation vs. active aggression tradeoff is the hardest to get right.
+
+#### 6.x: Other Advanced Features (Deferred)
+
+- **6DOF maneuvers:** barrel rolls, perpendicular strafing, Immelmann turns, advanced evasion patterns
+- **Movement capture:** record human player traces to tune bot thrust/drag PID controllers
+- **Bot personalities:** per-bot aggression, caution, weapon preference, movement style, and **taunt system integration** (D3's audio taunt clips played on kills, flag captures, squad acknowledgements — makes bots feel alive)

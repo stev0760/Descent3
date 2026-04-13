@@ -78,6 +78,15 @@ These commands are available in the dedicated server console (or via remote teln
 | `$servercaps` | Prints server capabilities for remote admin tool handshake. |
 | `$bothelp` | Lists all bot commands. |
 
+### Roadmap
+
+The next major milestone is **squad orders and game mode awareness** — giving players the ability to direct bots via a quick-access HUD overlay, enabling objective modes that require strategic coordination:
+
+*   **Squad Orders** — Attack/Defend/Follow Me commands. Chat-based input (`!attack`, `!defend`) works on all clients including PiccuEngine; optional Matcen-client HUD overlay for faster access. Adapted from UT2004's TeamAI/SquadAI pattern for 6DOF.
+*   **CTF** — First objective mode. Flag tracking, attack/defense squad split, escort behavior. 4-team already proven.
+*   **Co-op** — Follow-the-leader squad behavior for mission play. Requires fixing the current co-op freeze bug.
+*   **Entropy / Monsterball** — Area control and ball-push modes.
+
 ### Known Issues
 
 *   **Navigation edge cases:** Tested on a wide variety of level sets, both vanilla and custom. Most maps work well but complex multi-level geometry may still have edge cases, especially within outdoor structures.

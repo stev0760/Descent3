@@ -681,13 +681,25 @@ Server administration and configuration improvements for managing multiplayer in
 - **Server orchestration:** Scripts/tools for managing multiple dedicated server instances with different bot configurations. Match templates for different game modes.
 - **Persistent bot statistics:** Track per-bot kill/death ratios, weapon usage, and map coverage across sessions for tuning and diagnostics.
 
-### Phase 6: Advanced Features
+### Phase 6: Squad Orders & Game Mode Awareness
 
-- **Game mode awareness:** CTF (flag running, base defense, escort), Monsterball (ball control, passing), Co-op (follow players, squad orders).
-- **Team coordination:** Role assignment (attacker/defender/roamer), map control strategies, coordinated pushes, callout system.
-- **6DOF maneuvers:** Barrel rolls, perpendicular strafing, Immelmann turns, advanced evasion patterns.
-- **Movement capture:** Record human player movement traces to tune bot thrust/drag PID controllers. Statistical analysis of speed, acceleration, turn rate distributions per behavioral context.
-- **Granular bot characters:** Adjustable stats per bot (aggression, caution, weapon preference, movement style). Bot "personalities" that create varied gameplay.
+Squad orders are an **enabling layer** for all objective modes — without human-directed orders, bots in CTF/Co-op/Entropy will make baffling strategic decisions that no reactive FSM can handle alone. Architecture inspired by UT2004's TeamAI/SquadAI two-tier system, adapted for 6DOF.
+
+**Implementation order (each builds on the previous):**
+
+1. **6.0 Squad Order Framework** — TeamAI/SquadAI architecture, **chat-command input as baseline** (`!attack`, `!defend`, `!follow` — works on all clients including PiccuEngine), optional Matcen-client HUD overlay as Tier 2 enhancement, 6DOF-aware positioning (room portals as defensive orientation, station-keeping thrust). The enabling layer.
+2. **6.1 CTF** — First objective mode. Flag as trackable object (reuses powerup tracking infra). Attack/defense squad split. 4-team already proven working.
+3. **6.2 Co-op** — Requires squad orders (Follow Me is mandatory). Co-op freeze bug must be fixed first. Mission trigger awareness.
+4. **6.3 Entropy** — 2-team room capture. Area-control awareness, room ownership tracking.
+5. **6.4 Monsterball** — Ball physics prediction, goal defense, passing concept.
+6. **6.5 Hoard** — Accumulation vs. aggression tradeoff. Complex, deferred.
+
+**Deferred advanced features:**
+- 6DOF maneuvers (barrel rolls, Immelmann turns, advanced evasion)
+- Movement capture (record human traces for PID tuning)
+- Bot personalities (per-bot aggression, caution, weapon preference)
+
+See `BOTS_DEVEL.md` Phase 6 for full design detail, UT research notes, and 6DOF-specific challenges.
 
 ## Known Issues
 
