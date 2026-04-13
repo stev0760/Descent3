@@ -311,6 +311,29 @@ or weapon_id is invalid. Falls back to direct aim (no lead) in all guard cases.
 - **Flares (`FLARE_INDEX = 20`) must never be fired** in combat or countermeasure logic. Flares are illumination tools only.
 - **Real countermeasures** (Gunboy, Seeker Mine, Bouncing Betty) are inventory items, not weapon batteries. Deployment is a future feature.
 
+### Cloak Detection / Perception (`BotCanSeeTarget`)
+
+Single source of truth for "can the bot perceive this target." Mirrors the engine's `AIDetermineObjVisLevel` (AImain.cpp:1646) with reveal conditions applied in this order:
+
+1. No `effect_info` or not cloaked → visible (early out)
+2. `EF_NAPALMED` → visible (engine's +1.75 vis weight, strongest tell)
+3. `PLAYER_FLAGS_AFTERBURN_ON` → visible
+4. Recent weapon fire: `Gametime - Players[id].last_fire_weapon_time < BOT_CLOAK_RECENT_FIRE_WINDOW` (1.0s) → visible
+5. `PLAYER_FLAGS_HEADLIGHT` AND headlight aimed at bot (`dot(target->orient.fvec, from_target) > 0.965`) → visible
+6. Otherwise → not visible
+
+Call sites: `BotSelectTarget` (skip cloaked when picking new target), FSM `has_los` computation (cloak fails LOS so bot won't commit to COMBAT), `BotDoFiring` + `BotDoSecondaryFiring` (don't shoot invisible targets).
+
+**Do not clear the target handle when cloak is detected.** Target retention lets the engine's `AIN_HEAR_NOISE` pipeline keep the bot's `last_see_target_pos` and `awareness` fresh while the target is cloaked. If the target fires, AB's, or napalms themselves, `BotCanSeeTarget` re-grants visibility and the bot re-engages without having to re-acquire.
+
+### Hearing
+
+`BotConfigureAI()` sets `ai_info->hearing = 1.0f` (matching engine default robot hearing). Without this, `PlayerSetControlToAI()`'s memset leaves bots deaf — the engine's noise listener loop (AImain.cpp:3138) tests `distance < max_dist * hearing`, so any bot with `hearing=0.0` is filtered out even though they pass the `CT_AI` check.
+
+With hearing enabled, bots receive `AISeeTarget(bot, false)` calls when nearby players fire, engage afterburner, or cycle inventory within `AI_SOUND_SHORT_DIST` (60 units). This bumps `awareness = AWARE_MOSTLY` and updates `last_hear_target_time`. Note: the engine's `AISeeTarget` updates the bot's `last_see_target_pos` to its *current target* position, not the noise source — so hearing currently refreshes awareness of an already-acquired target but doesn't itself cause new-target acquisition. Active "investigate unknown noise" behavior is a future layer.
+
+**Not covered:** Powerup pickups don't emit `AIN_HEAR_NOISE` in the engine (only inventory cycling does).
+
 ### Primary Weapon Selection (`BotSelectBestWeapon`)
 
 Tactical hierarchy per FSM tick and when weapon runs dry:
