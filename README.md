@@ -10,7 +10,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Matcen — Multiplayer Bots (Experimental)
 
-> **Matcen 0.8.6** — in development
+> **Matcen 0.8.6** — stable release
 
 This fork — "Matcen" — adds a **server-side multiplayer bot system** to Descent 3. Bots occupy real player slots on dedicated servers or listen servers, appearing and acting as normal players. All bots are tagged with `[BOT]` in their callsign for easy identification.
 
@@ -61,7 +61,7 @@ A server with no `BotConfig` line runs without bots — fully backwards compatib
 
 **Difficulty levels:** `trainee`, `rookie`, `hotshot` (default), `ace`, `insane`. Set globally with `BotDifficulty=` or per-bot with `BotDifficulty1=`, etc.
 
-**Team assignment:** `BotTeam<n>=1..4` (1-indexed). Omit for auto-balance. Out-of-range values auto-balance with a warning. Has no effect in non-team game modes (anarchy, etc.).
+**Team assignment:** `BotTeam<n>=1..4` (1-indexed). Omit for auto-balance. Values `1`–`4` that exceed the game's active team count produce a warning and auto-balance. Values outside `1`–`4` silently auto-balance (no warning — they can never be valid). Has no effect in non-team game modes (anarchy, etc.).
 
 ### Console Commands
 

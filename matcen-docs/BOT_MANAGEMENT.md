@@ -246,7 +246,8 @@ $addbot Reaper pyro hotshot 2    ← team is 4th optional arg, 1-indexed
 
 **Behavior:**
 - Teams are **1-indexed** in config and console (`1`–`4`); stored 0-indexed internally.
-- Out-of-range team value: warns and auto-balances. Does not crash or clamp silently.
+- Out-of-range team value (`1`–`4` exceeds game's active `Num_teams`): warns and auto-balances.
+- Values outside `1`–`4` (e.g. `5`, `0`, non-numeric): `BotResolveTeam()` returns -1 immediately — silent auto-balance, no warning. These can never be valid in any supported mode.
 - Non-team game modes (anarchy, etc.): `BotTeam<n>` is silently ignored — no effect.
 - `.mps` listen-server presets: `BOTTEAM<n>` key saved/loaded for completeness.
 

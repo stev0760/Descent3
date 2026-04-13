@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Matcen 0.8.5 — Fixed Plasma/EMD never being selected: `BotSelectBestWeapon` was reading `gp_weapon_index[0]` directly instead of iterating gunpoints via `gp_fire_masks`; Plasma/EMD fire from wing gunpoints (index > 0) so `gp[0]` was always 0, causing them to be filtered. Fixed with `BotGetWbWeaponId()` helper mirroring `GetWeaponFromIndex()`. Also: `$setpps` clamp raised from 1–20 to 2–40. Prior (0.8.4): telnet command parsing fix (`strtok` mutation), bot kick cleanup (kicked bots now route through `BotRemove`). Phase 5.4 complete. See `BOT_MANAGEMENT.md` for design rationale.
+**Status:** Matcen 0.8.6 — Per-bot team pre-assignment (`BotTeam<n>=` in `bots.cfg`, optional team arg to `$addbot`). All 11 team assignment test scenarios pass. Phase 5.5 complete. Prior (0.8.5): Fixed Plasma/EMD never being selected (`BotGetWbWeaponId()` fix), `$setpps` clamp raised to 2–40. See `BOT_MANAGEMENT.md` for design rationale.
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
