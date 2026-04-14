@@ -989,16 +989,21 @@ void OnPrintScores(int level) {
   }
 
   memset(buffer, ' ', 256);
+  // upstream $scores truncation fix: floor numeric columns so multi-digit K/D/S aren't clipped
+  const size_t NUM_COL_MIN_WIDTH = 4;
   pos[0] = 0;
   t = len[0] = 30; // give ample room for pilot name
   pos[1] = pos[0] + t + 1;
   t = len[1] = strlen(TXT_POINTS);
   pos[2] = pos[1] + t + 1;
   t = len[2] = strlen(TXT_KILLS_SHORT);
+  if (len[2] < NUM_COL_MIN_WIDTH) len[2] = t = NUM_COL_MIN_WIDTH;
   pos[3] = pos[2] + t + 1;
   t = len[3] = strlen(TXT_DEATHS_SHORT);
+  if (len[3] < NUM_COL_MIN_WIDTH) len[3] = t = NUM_COL_MIN_WIDTH;
   pos[4] = pos[3] + t + 1;
   t = len[4] = strlen(TXT_SUICIDES_SHORT);
+  if (len[4] < NUM_COL_MIN_WIDTH) len[4] = t = NUM_COL_MIN_WIDTH;
   pos[5] = pos[4] + t + 1;
   t = len[5] = strlen(TXT_PING);
 

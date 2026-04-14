@@ -499,16 +499,22 @@ void OnPrintScores(int level) {
   size_t t;
   size_t pos[6];
   size_t len[6];
+  // upstream $scores truncation fix: floor numeric columns for %d[%d] level+overall data
+  const size_t NUM_COL_MIN_WIDTH = 8;
   pos[0] = 0;
   t = len[0] = 20; // give ample room for pilot name
   pos[1] = pos[0] + t + 1;
   t = len[1] = strlen(TXT_POINTS);
+  if (len[1] < NUM_COL_MIN_WIDTH) len[1] = t = NUM_COL_MIN_WIDTH;
   pos[2] = pos[1] + t + 1;
   t = len[2] = strlen(TXT_KILLS);
+  if (len[2] < NUM_COL_MIN_WIDTH) len[2] = t = NUM_COL_MIN_WIDTH;
   pos[3] = pos[2] + t + 1;
   t = len[3] = strlen(TXT_DEATHS);
+  if (len[3] < NUM_COL_MIN_WIDTH) len[3] = t = NUM_COL_MIN_WIDTH;
   pos[4] = pos[3] + t + 1;
   t = len[4] = strlen(TXT_SUICIDES);
+  if (len[4] < NUM_COL_MIN_WIDTH) len[4] = t = NUM_COL_MIN_WIDTH;
   pos[5] = pos[4] + t + 1;
   t = len[5] = strlen(TXT_PING);
 
