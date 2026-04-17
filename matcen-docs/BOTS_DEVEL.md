@@ -830,12 +830,14 @@ The single most iconic organized-play mode from D3's competitive era. 4-team CTF
 
 **Difficulty: Medium.** Flag is a world object (trackable like powerups). Goal rooms are queryable via `DLLGetGoalRoomForTeam()`. Main challenge is role coordination (who attacks, who defends) and flag-state awareness (home/carried/dropped).
 
+**Manual description:** Two to four teams compete. Each team has a base with a flag. Grab an opposing team's flag and return to your own base — touch your own flag to score a capture. Flag carriers spew the flag on death. If a teammate touches a spewed friendly flag, it returns to base instantly.
+
 **Bot behaviors needed:**
-- `FLAG_CARRIER` state: bot has flag, prioritize returning to own base, use afterburner aggressively, avoid engagement when possible
+- `FLAG_CARRIER` state: bot has flag, prioritize returning to own base and touching own flag to score, use afterburner aggressively, avoid engagement when possible
 - `FLAG_ESCORT` state: trail the flag carrier, engage pursuers, body-block
-- `FLAG_DEFENDER` state: patrol near own flag room, intercept enemy flag runners
+- `FLAG_DEFENDER` state: patrol near own flag room, intercept enemy flag runners; touch spewed friendly flag to return it instantly
 - `FLAG_ATTACKER` state: navigate to enemy flag room, grab flag, flee toward home
-- Flag status awareness: know when own flag is taken (switch defenders to pursuit), when enemy flag is home vs. dropped
+- Flag status awareness: know when own flag is taken (switch defenders to pursuit), when enemy flag is home vs. carried vs. dropped
 
 **Game mode constraints (from 0.8.6 test report):**
 - CTF supports 2–4 teams, but 4-team requires mission with `GOALS4` keyword
@@ -845,62 +847,67 @@ The single most iconic organized-play mode from D3's competitive era. 4-team CTF
 
 #### 6.2: Hyper-Anarchy (Priority: 2 — quick win)
 
-FFA anarchy with a HyperOrb power item. Kills while holding the orb score escalating bonus points (2–5 pts). Orb drops on death, teleports to random rooms periodically.
+FFA anarchy with a HyperOrb power item. The orb spawns randomly throughout the level. Players who hold the orb receive bonus points for each successive kill. The orb spews from any player killed while carrying it. The player who destroys the orb carrier also earns bonus points. Orb teleports to a random room periodically if unclaimed.
 
 **Difficulty: Low.** Bots already fight well in anarchy. The only new behavior is orb awareness — a single trackable object (like a powerup). No teams, no rooms to track, no complex state.
 
 **Bot behaviors needed:**
 - Orb awareness: detect HyperOrb world object (`HyperOrbID`), navigate to pick it up when free
-- Orb-carrier aggression: when holding the orb, play more aggressively (lower flee threshold) to maximize kill streak bonus
-- Target priority: prioritize killing the orb carrier (`WhoHasOrb`) for the bonus point drop
+- Orb-carrier aggression: when holding the orb, play more aggressively (lower flee threshold) to maximize successive kill bonus
+- Target priority: prioritize killing the orb carrier (`WhoHasOrb`) — the killer earns bonus points too
 - No team logic needed — pure FFA with a special item
 
 **Smallest behavioral delta from current bot code.** Primary new code: orb object scan + priority bias in `BotSelectTarget`.
 
 #### 6.3: Hoard (Priority: 3 — collection + delivery)
 
-Classic "collect tokens, deliver to score" mode seen across many FPS titles (Headhunters in Halo, Kill Confirmed in CoD). Hoard Orbs are scattered around the map; players collect them via collision, then enter a goal room to cash in. Die and you lose all carried orbs.
+Anarchy variant where **no points are awarded for kills**. Each time a player is killed, a hoard orb spews along with any other orbs they were carrying. Collect orbs, then carry them to a base to score. Up to 12 orbs can be carried at once, and scoring multiple orbs simultaneously ramps up drastically (max 78 points for 12 orbs). Classic collect-and-deliver pattern (similar to Headhunters in Halo).
 
-**Difficulty: Low-Medium.** Orb pickup already works (powerup collection infrastructure). Goal rooms queryable via `DLLGetGoalRoomForTeam()`. Main new behavior is the collect-then-deliver loop and knowing when to cash in vs. keep collecting.
+**Difficulty: Low-Medium.** Orb pickup already works (powerup collection infrastructure). Goal rooms queryable via `DLLGetGoalRoomForTeam()`. Main new behavior is the collect-then-deliver loop and knowing when to cash in vs. keep collecting. The exponential scoring reward for batching orbs creates a compelling risk/reward decision.
 
 **Bot behaviors needed:**
 - Orb collection: seek and pick up Hoard Orbs (existing powerup pickup infrastructure)
 - Goal room navigation: when carrying orbs, navigate to nearest goal room to score
-- Cash-in threshold: decide when to deliver (risk/reward — more orbs = higher score but total loss on death)
-- Configurable minimum orb count to score (`HoardMinimumOrbCount` server setting)
-- Orb carrier targeting: players carrying many orbs are high-value targets (they spill orbs on death)
+- Cash-in threshold: decide when to deliver (risk/reward — more orbs = exponentially higher score, but total loss on death; 12 orbs = 78 pts vs 12×1 = 12 pts scored individually)
+- Max carry: 12 orbs
+- Kill incentive: kills spew the victim's orbs — targeting orb-heavy players is high-value even though kills themselves score zero
 
 #### 6.4: Entropy (Priority: 4 — area control with virus transport)
 
-2-team room capture mode with no clear analogue in other FPS games. Teams own "lab" rooms that generate virus pickups. Players collect enemy viruses and deliver them to enemy rooms to take them over. Room ownership shifts dynamically throughout the match. Kill streaks increase carry capacity (`NumberOfKillsSinceLastDeath * VIRUS_PER_KILL`), creating an incentive loop between fighting and capturing.
+2-team level-control mode with no clear analogue in other FPS games. Each team has three types of mini-bases: **refueling centers** (energy regen), **repair centers** (shield regen), and **virus producers** (generate virus powerups). Bases only function for their owning team — opposing players take heavy damage inside enemy bases. To capture an enemy base: collect 5 virus powerups from your team's virus producers, enter an enemy mini-base, and **remain perfectly still for 5 seconds**. Captured bases convert to the capturing team's base type. If all virus producers of one team are captured, a remaining energy/repair center auto-converts to a virus producer (prevents lockout). **Win condition: capture ALL enemy mini-bases.** Kill streaks increase virus carry capacity (`NumberOfKillsSinceLastDeath * VIRUS_PER_KILL`), creating an incentive loop between fighting and capturing.
 
 **Difficulty: Medium-High.** The most mechanically complex objective mode. Involves:
+- Three base types with distinct functions (refuel, repair, virus production)
 - Room ownership tracking: `RoomList[]` with `RF_SPECIAL1`/`RF_SPECIAL4` flags for team ownership
-- Virus pickup/delivery: `TeamVirii[][]` arrays track per-team virus objects; players collect enemy viruses and deposit them in enemy rooms
+- Virus pickup/delivery: `TeamVirii[][]` arrays track per-team virus objects
 - Carry capacity tied to kill streaks — fighting well directly enables faster captures
-- Takeover mechanic (`SPID_TAKEOVER` packets) — rooms flip when enough viruses are deposited
-- Strategic room selection: which room to attack, which to defend, frontline awareness
+- Capture mechanic: collect 5 viruses, enter enemy base, hold still 5 seconds (`SPID_TAKEOVER`)
+- Bases damage opposing players inside — bots must not linger in enemy bases without viruses
+- Auto-conversion safety net: if all virus producers lost, one base auto-converts
+- Win condition is total capture, not majority — strategic room targeting matters
 
 **Bot behaviors needed:**
-- Room ownership awareness: know which rooms belong to which team, detect ownership changes
-- `CAPTURE` state: collect enemy viruses, navigate to enemy room, deposit to flip ownership
-- `DEFEND` state: patrol own rooms, intercept enemy virus carriers
-- Strategic room targeting: prioritize rooms based on connectivity, defensibility, frontline position
-- Virus carry management: balance collecting vs. depositing vs. fighting
+- Base type awareness: distinguish refuel/repair/virus-producer bases and their team ownership
+- `COLLECT_VIRUS` state: navigate to own team's virus producers, collect 5 viruses
+- `CAPTURE` state: with 5+ viruses, navigate to enemy base, stop all thrust for 5 seconds to capture
+- `DEFEND` state: patrol own bases (especially virus producers), intercept enemy virus carriers
+- Damage awareness: avoid lingering in enemy bases without capture intent
+- Strategic base targeting: prioritize capturing virus producers (denies enemy virus production), then other base types
+- Virus carry management: balance collecting vs. capturing vs. fighting for carry capacity
 
 **Why it matters:** Entropy requires enough players on both sides for the room-control tug-of-war to be interesting. The mode works, but assembling that many humans for a niche mode hasn't been realistic for years. Bots that understand Entropy's mechanics will make this game mode easily accessible for the first time in a long time — a potential signature feature for Matcen.
 
 #### 6.5: Monsterball (Priority: 5 — ball physics R&D)
 
-Push a ball into the enemy goal. Simpler than CTF in some ways (no "return to base" leg), harder in others (ball physics prediction, passing).
+Two teams attempt to propel a large ball into **their own** goals. Each team uses weapons and/or direct ship contact to push the Monster Ball from its spawning point into their own goal. Score as many goals as possible.
 
-**Difficulty: High.** The ball is pushed by weapon impacts (`HandleMonsterballCollideWithWeapon`), meaning bots need to *shoot the ball in the right direction* — weapon-as-tool is fundamentally different from weapon-as-combat. Requires directional aim solving (where to shoot the ball from to push it goalward), positional play (goaltending), and possibly passing concepts.
+**Difficulty: High.** The ball is pushed by weapon impacts (`HandleMonsterballCollideWithWeapon`) and direct ship collision, meaning bots need to *shoot or ram the ball in the right direction* — weapon-as-tool is fundamentally different from weapon-as-combat. Requires directional aim solving (where to position relative to ball to push it goalward), positional play (blocking opponents), and possibly passing concepts.
 
 **Bot behaviors needed:**
 - Ball tracking: detect ball position, predict trajectory from physics
-- `BALL_PUSH` state: position behind ball relative to goal, fire weapons to push toward enemy goal
-- `GOAL_DEFENSE` state: position between ball and own goal, intercept incoming pushes
-- Directional aim: compute firing angle to push ball toward target (novel — no existing infrastructure)
+- `BALL_PUSH` state: position on far side of ball from own goal, fire weapons or ram to push toward own goal
+- `GOAL_DEFENSE` state: position between ball and own goal when opponents are pushing, block/redirect
+- Directional aim: compute firing angle or approach vector to push ball toward own goal (novel — no existing infrastructure)
 - Passing concept: intentionally push ball toward a better-positioned teammate (advanced, post-MVP)
 
 **May require dedicated R&D phase** for the ball-push aim solving.
