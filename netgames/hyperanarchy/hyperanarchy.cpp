@@ -563,10 +563,10 @@ void OnPrintScores(int level) {
   t = len[5] = strlen(TXT_PING);
 
   memcpy(&buffer[pos[0]], TXT_PILOT, strlen(TXT_PILOT));
-  memcpy(&buffer[pos[1]], TXT_SCORE, len[1]);
-  memcpy(&buffer[pos[2]], TXT_KILLS, len[2]);
-  memcpy(&buffer[pos[3]], TXT_DEATHS, len[3]);
-  memcpy(&buffer[pos[4]], TXT_SUICIDES, len[4]);
+  memcpy(&buffer[pos[1]], TXT_SCORE, strlen(TXT_SCORE));
+  memcpy(&buffer[pos[2]], TXT_KILLS, strlen(TXT_KILLS));
+  memcpy(&buffer[pos[3]], TXT_DEATHS, strlen(TXT_DEATHS));
+  memcpy(&buffer[pos[4]], TXT_SUICIDES, strlen(TXT_SUICIDES));
   memcpy(&buffer[pos[5]], TXT_PING, len[5]);
   buffer[pos[5] + len[5] + 1] = '\n';
   buffer[pos[5] + len[5] + 2] = '\0';

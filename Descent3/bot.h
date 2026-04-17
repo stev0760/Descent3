@@ -325,6 +325,9 @@ struct bot_info {
   float fire_delay_timer;    // counts down after target acquired; fires when <= 0
   int fire_delay_target;     // handle of target the delay was started for
   float aim_wander_phase;    // smooth sinusoidal aim offset phase (like juke_phase)
+
+  // Chat command system (Phase 6.0)
+  float last_chat_reply_time; // Gametime of last chat reply (throttle)
 };
 
 extern bot_info Bots[MAX_BOTS];

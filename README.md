@@ -10,7 +10,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Matcen — Multiplayer Bots (Experimental)
 
-> **Matcen 0.8.7** — stable release
+> **Matcen 0.8.8** — `$scores` regression fix + chat command system Stage 1 (`!ping`)
 
 This fork — "Matcen" — adds a **server-side multiplayer bot system** to Descent 3. Bots occupy real player slots on dedicated servers or listen servers, appearing and acting as normal players. All bots are tagged with `[BOT]` in their callsign for easy identification.
 
@@ -24,7 +24,8 @@ This fork — "Matcen" — adds a **server-side multiplayer bot system** to Desc
 *   **Weapon System:** Tactical primary switching (energy vs. ammo based on range and resources), secondary fire with splash-damage guards, and smart powerup collection with LOS scoring.
 *   **Loadout Awareness:** Bots self-classify into WEAK/GOOD/ELITE tiers and adjust aggression accordingly — poorly-armed bots hunt upgrades before engaging.
 *   **Navigation:** Engine-integrated BOA+BNode pathfinding with visited-room memory to prevent clustering and portal-based unstuck recovery.
-*   **Game Modes:** Anarchy, Team Anarchy, and Robo-Anarchy. Bots persist across level transitions.
+*   **Game Modes:** Anarchy, Team Anarchy, and Robo-Anarchy. Bots persist across level transitions. Objective mode support (CTF, Hyper-Anarchy, Hoard, Entropy, Monsterball) is on the roadmap.
+*   **Chat Commands:** Bots respond to `!` prefixed commands in multiplayer chat. Currently: `!ping` proof-of-life (all-chat, team-chat, or DM to individual bots via slot number). Works on all D3-compatible clients.
 *   **Ship Selection:** Pyro-GL, Phoenix, Magnum-AHT, or Black Pyro (requires Mercenary expansion).
 *   **Difficulty:** Five levels (Trainee → Insane) scaling aim, reaction time, evasion, and turn rate. Set globally or per-bot.
 *   **Team Assignment:** Pre-assign bots to specific teams in the config (`BotTeam1=2`) or at the console (`$addbot Reaper pyro hotshot 2`). Out-of-range values auto-balance. Ignored in non-team modes.
@@ -85,8 +86,11 @@ The next major milestone is **squad orders and game mode awareness** — giving 
 
 *   **Squad Orders** — Attack/Defend/Follow Me commands. Chat-based input (`!attack`, `!defend`) works on all clients including PiccuEngine; optional Matcen-client HUD overlay for faster access. Adapted from UT2004's TeamAI/SquadAI pattern for 6DOF.
 *   **CTF** — First objective mode. Flag tracking, attack/defense squad split, escort behavior. 4-team already proven.
-*   **Co-op** — Follow-the-leader squad behavior for mission play. Requires fixing the current co-op freeze bug.
-*   **Entropy / Monsterball** — Area control and ball-push modes.
+*   **Hyper-Anarchy** — HyperOrb awareness (seek orb, aggressive play while holding, target orb carrier).
+*   **Hoard** — Orb collection and goal room delivery.
+*   **Entropy** — Virus transport and room capture. A unique D3 mode with no clear FPS analogue — bots will make it easily accessible for the first time in years.
+*   **Monsterball** — Ball-push physics and positional play.
+*   **Co-op** — Follow-the-leader squad behavior for mission play. Deferred post-launch due to complexity.
 
 ### Known Issues
 
@@ -101,6 +105,7 @@ For a deep dive into the architecture, FSM logic, and implementation history, se
 *   [BOTS_DEVEL.md](matcen-docs/BOTS_DEVEL.md) — Phase history and roadmap
 *   [BOT_DEV_REFERENCE.md](matcen-docs/BOT_DEV_REFERENCE.md) — Architecture, FSM, constants, engine API patterns
 *   [BOT_MANAGEMENT.md](matcen-docs/BOT_MANAGEMENT.md) — Phase 5 bot management: config, ships, difficulty, remote admin
+*   [CHAT_COMMANDS.md](matcen-docs/CHAT_COMMANDS.md) — Chat command system: research, verb taxonomy, staged rollout
 *   [NAV_OVERHAUL.md](matcen-docs/NAV_OVERHAUL.md) — Phase 4.0 navigation design rationale
 
 ## Contributing

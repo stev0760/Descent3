@@ -3,6 +3,7 @@ set(HEADERS
   AIMain.h
   BOA.h
   bot.h
+  bot_chat.h
   Briefing.h
   BriefingParse.h
   ConfigItem.h
@@ -155,6 +156,7 @@ set(CPPS
   bnode.cpp
   BOA.cpp
   bot.cpp
+  bot_chat.cpp
   Briefing.cpp
   BriefingParse.cpp
   bsp.cpp

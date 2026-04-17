@@ -3051,6 +3051,7 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   Bots[bot_index].mine_dump_timer = 0.0f;
   Bots[bot_index].mine_dump_remaining = 0;
   Bots[bot_index].gunboy_cooldown = 0.0f;
+  Bots[bot_index].last_chat_reply_time = 0.0f;
   BotCacheShipPhysics(bot_index);
   BotSelectBestSecondary(bot_index); // equip best secondary weapon at spawn
   Num_bots++;

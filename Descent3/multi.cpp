@@ -1683,6 +1683,7 @@
 #include "multi_world_state.h"
 #include "ObjScript.h"
 #include "audiotaunts.h"
+#include "bot_chat.h"
 #include "marker.h"
 #include "weather.h"
 #include "doorway.h"
@@ -4996,12 +4997,16 @@ void MultiDoMessageToServer(uint8_t *data) {
   MULTI_ASSERT_NOMESSAGE(Netgame.local_role == LR_SERVER);
   SKIP_HEADER(data, &count);
 
-  /* uint8_t slot = */ MultiGetByte(data, &count);
+  uint8_t slot = MultiGetByte(data, &count);
   int towho = (int8_t)MultiGetByte(data, &count);
   uint8_t len = MultiGetByte(data, &count);
 
   memcpy(message, &data[count], len);
   count += len;
+
+  // Dispatch to bot chat system before rebroadcasting to humans.
+  // NOTE: listen-server host messages bypass this path (go through SendOffHUDInputMessage directly).
+  BotOnChatMessage(slot, towho, message);
 
   MultiSendMessageFromServer(GR_RGB(0, 128, 255), message, towho);
 }

@@ -1,9 +1,9 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Matcen 0.8.7 — Cloak detection + hearing awareness (Phase 6.0). Bots now honor player cloaking with reveal conditions (afterburner, headlight, napalm, recent weapon fire) and participate in the engine's `AIN_HEAR_NOISE` pipeline. Also shipped: upstream `$scores` column-truncation fix across 7 netgame DLLs (see [UPSTREAM_PATCHES.md](UPSTREAM_PATCHES.md)). Prior (0.8.6): Per-bot team pre-assignment (`BotTeam<n>=`, `$addbot ... <team>`). See `BOT_MANAGEMENT.md` for design rationale.
+**Status:** Matcen 0.8.8 — `$scores` header-overlap regression fix (all 7 netgame DLLs) + chat command system Stage 1 (`!ping` proof-of-life, all-chat/team-chat/DM routing, listen-server + dedicated server paths). Last stable: 0.8.7 (cloak detection + hearing awareness).
 
-Next release (0.9.0) will bundle chat commands + initial game-mode awareness (CTF objective tracking, squad orders).
+Next milestone: 0.8.9 (squad roles + Tier 1 chat verbs), then 0.9.0 (game-mode awareness — CTF, Hyper-Anarchy, Hoard).
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -62,9 +62,11 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | 5.4 | **Client UI for bot match setup:** "Bot Settings" button in Start a New Game screen (listen server). Master-detail layout: scrollable roster listbox (up to 16 bots) with detail panel for name/ship/difficulty editing. Bot count edit, default difficulty hotspot. Save/load bot settings in `.mps` files. DLL API export (`MultiBotSettingsMenu` via `fp[115]`). Delayed spawn (3s) so host can manage teams. Fix: `BotAdd` init-order bug — `BotConfigureAI` was called before `Bots[].player_slot` was set, causing bots to spawn "asleep" (no thrust, no firing, no awareness) until first death+respawn. UI redesigned in 0.8.3 from fixed 8-row tabular layout to master-detail with `newuiListBox` + `multimain.ogf` background. | Complete |
 | R1 | **Fork identity & versioning:** Fork named "Matcen" (after Materialization Centers). Semver 0.8.0. Version display in main menu (`Ver 1.6.0 | Matcen 0.8.0 <hash>`) and startup log. `D3_FORK_NAME`/`D3_FORK_VER_*` defines in `d3_version.h.in`, `MATCEN_VERSION_*` CMake variables passed through `CheckGit.cmake`. | Complete |
 | 0.8.4 | **Bug fixes — command parsing & bot kick cleanup:** (1) `strtok()` in `ParseLine()` mutated telnet/console input buffer before DMFC saw it, breaking all `$`-prefixed game commands with arguments (`$kick`, `$ban`, `$team`, etc.). Fix: copy to scratch buffer before parsing bot commands. Both telnet and local console paths fixed. (2) `$kick` on a bot called `MultiDisconnectPlayer()` which ghosted the object but left `Bots[].active = true` — ghost bot kept firing invisibly ("weapon doubling"). Fix: `MultiDisconnectPlayer()` now detects bot slots via `BotFindBySlot()` and routes through `BotRemove()` for full cleanup. `BotRemove()` upgraded with `PlayerSpewInventory()`, `MultiClearGuidebot()`, `MultiClearPlayerMarkers()`, and `Players[].flags` reset — matching human player disconnect parity. | Complete |
+| 0.8.8 | **`$scores` header-overlap regression fix:** 0.8.7's column-width floor added `if (len[i] < NUM_COL_MIN_WIDTH) len[i] = NUM_COL_MIN_WIDTH;` but left the header `memcpy(&buffer[pos[i]], TXT_X, len[i])` unchanged — so for 1-char headers (`K`/`D`/`S`) it copied 4 bytes from a 2-byte string, writing a `\0` into the header buffer. `DPrintf` then stopped before the terminating `\n`, and the next data row was printed on the same physical line, breaking Pyrodeck's row parser. Fix: header memcpy now uses `strlen(TXT_X)` directly; floored `len[i]` is only used for column positioning. Same change in all 7 netgame DLLs (including hyperanarchy/hoard where floored `Kills`/`Deaths` also read 2–3 bytes past the literal). See [UPSTREAM_PATCHES.md](UPSTREAM_PATCHES.md). | Complete (Matcen 0.8.8) |
 | 6.0 | **Cloak detection + hearing awareness:** New `BotCanSeeTarget()` helper mirrors engine's `AIDetermineObjVisLevel` (AImain.cpp:1646) with cloak reveals: afterburner, headlight aimed at bot (dot > 0.965), napalm, and recent weapon fire (1.0s window via `Players[].last_fire_weapon_time`). Applied at `BotSelectTarget`, FSM LOS computation, and both firing paths (`BotDoFiring` / `BotDoSecondaryFiring`). Target handle is retained when a target cloaks so the engine's noise pipeline can still refresh positional tracking. Also sets `ai_info->hearing = 1.0f` in `BotConfigureAI()` — `PlayerSetControlToAI()`'s memset left bots deaf, so they never received `AIN_HEAR_NOISE` awareness bumps despite being valid `CT_AI` listeners. User-validated feel: "completely correct for how Descent should behave." Server-side only, no protocol changes. | Complete (Matcen 0.8.7) |
+| 6.0s1 | **Chat command system — Stage 1:** `bot_chat.cpp`/`bot_chat.h` module. `!ping` proof-of-life with all-chat, team-chat, and DM routing. Listen-server path via `hudmessage.cpp` hook. Per-bot throttle, anti-recursion, DM dispatch filtering by player slot. See [CHAT_COMMANDS.md](CHAT_COMMANDS.md). | Complete (Matcen 0.8.8) |
 | 5 | **Bot management (remaining):** Remote admin, auto-rebalancing, server orchestration. | Not started |
-| 6 | **Advanced features:** CTF/Monsterball awareness, team coordination, 6DOF maneuvers, movement capture, bot personalities. | Not started |
+| 6 | **Game mode awareness + squad orders:** CTF, Hyper-Anarchy, Hoard, Entropy, Monsterball, Co-op (deferred post-launch). See game mode priority table in Phase 6 section below. | In progress (Stage 1 chat complete) |
 
 ## Files
 
@@ -74,6 +76,9 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 |------|---------|
 | `Descent3/bot.h` | Bot subsystem header: `bot_info` struct, constants, function prototypes |
 | `Descent3/bot.cpp` | Bot lifecycle: init, add, remove, per-frame update, AI configuration, death/respawn |
+| `Descent3/bot_chat.h` | Chat command system header: `BotOnChatMessage()` interface, cooldown constant |
+| `Descent3/bot_chat.cpp` | Chat command processing: `!` prefix parser, verb dispatch, `BotSendChatReply()` with per-bot throttle |
+| `matcen-docs/CHAT_COMMANDS.md` | Chat command system design doc: research, syntax, verb taxonomy, staged rollout |
 
 ### Modified Files
 
@@ -81,7 +86,7 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 |------|---------|
 | `Descent3/multi_external.h` | Added `NPF_BOT` flag (128) |
 | `Descent3/multi_server.cpp` | NPF_BOT guards on network sends, disconnect logic, `BotDoFrame()` hook in `MultiDoServerFrame()`, guards in `MultiSendClientExecuteDLL()` and `MultiSendGenericNonVis()` |
-| `Descent3/multi.cpp` | NPF_BOT guards in `MultiSendFullPacket()`, `MultiSendFullReliablePacket()`, `MultiSendSpecialPacket()`, `MultiSendMessageToPlayer()`, multisafe send path, missile release broadcast; `BotReinitAll()` + `BotLoadRosterFile()` call in `MultiStartNewLevel()` |
+| `Descent3/multi.cpp` | NPF_BOT guards in `MultiSendFullPacket()`, `MultiSendFullReliablePacket()`, `MultiSendSpecialPacket()`, `MultiSendMessageToPlayer()`, multisafe send path, missile release broadcast; `BotReinitAll()` + `BotLoadRosterFile()` call in `MultiStartNewLevel()`; `BotOnChatMessage()` hook in `MultiDoMessageToServer()` for dedicated server chat dispatch |
 | `Descent3/dedicated_server.cpp` | Console commands: `$addbot <name> [ship]`, `$removebot`, `$removebots`, `$botlist`, `$servercaps`, `$bothelp` (via local console and remote telnet); `BotConfig` CVar for bot roster config file path |
 | `Descent3/AImain.cpp` | OBJ_PLAYER guards in `AIDoFrame()` to skip `ai_do_animation()`, spray/on-off weapons, and `do_awareness_based_anim_stuff()` — prevents `Object_info[obj->id]` crash for player objects; Phase 2: PTMC multiplayer targeting loop bypasses `BOA_IsVisible` (via direct distance check) so map-placed robots (gunboys) can acquire player targets; Phase 3.5: skip thrust zeroing and drag compensation for bot objects (preserves `BotApplyThrust()` values for physics integration) |
 | `Descent3/AIGoal.cpp` | OBJ_PLAYER guard in `AIG_SET_ANIM` and `AIG_FIRE_AT_OBJ` goal cases; added `AIG_GET_AWAY_FROM_OBJ` and `AIG_MOVE_AROUND_OBJ` to `GoalAddGoal` switch |
@@ -101,6 +106,14 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | `Descent3/multi_dll_mgr.cpp` | Export `MultiBotSettingsMenu` via DLL API table `fp[115]` |
 | `Descent3/multi_save_setting.cpp` | Save/load bot settings (`BOTCOUNT`, `BOTDEFAULTDIFF`, per-bot name/ship/diff) in `.mps` files |
 | `netcon/includes/con_dll.h` | "Bot Settings" button in `StartMultiplayerGameMenu()`, `DLLMultiBotSettingsMenu` wrapper |
+| `Descent3/hudmessage.cpp` | `BotOnChatMessage()` hook for listen-server host chat (F8 general + Ctrl+F8 team paths) |
+| `netgames/anarchy/anarchy.cpp` | `$scores` header memcpy fix (upstream patch) |
+| `netgames/ctf/ctf.cpp` | `$scores` header memcpy fix (upstream patch) |
+| `netgames/entropy/EntropyBase.cpp` | `$scores` header memcpy fix (upstream patch) |
+| `netgames/hoard/hoard.cpp` | `$scores` header memcpy fix (upstream patch) |
+| `netgames/hyperanarchy/hyperanarchy.cpp` | `$scores` header memcpy fix (upstream patch) |
+| `netgames/roboanarchy/roboanarchy.cpp` | `$scores` header memcpy fix (upstream patch) |
+| `netgames/tanarchy/tanarchy.cpp` | `$scores` header memcpy fix (upstream patch) |
 
 ## Console Commands
 
@@ -798,9 +811,24 @@ The order system MUST work across all D3-compatible clients (retail v1.5, PiccuE
 - "Hold position" in zero-G with inertia requires active station-keeping thrust, not just standing still.
 - Must infer strategic positions from geometry — no level-designer-placed nav hints (unlike UT's DefensePoint/AssaultPath). BOA room connectivity and portal geometry become the implicit strategic map.
 
-#### 6.1: CTF — Capture the Flag (Priority: High — first objective mode)
+#### Game Mode Priority Order
+
+Revised 2026-04-16. Ordered by: CTF first (user priority), then implementation difficulty.
+
+| Priority | Mode | Difficulty | Key challenge |
+|----------|------|-----------|---------------|
+| 1 | CTF | Medium | Role coordination, flag-state awareness |
+| 2 | Hyper-Anarchy | Low | Single special object (HyperOrb), minimal delta from anarchy |
+| 3 | Hoard | Low-Medium | Collect-then-deliver loop, risk/reward timing |
+| 4 | Entropy | Medium-High | Room ownership tracking, virus transport, strategic room selection |
+| 5 | Monsterball | High | Ball physics prediction, weapon-as-tool aim solving |
+| 6 | Co-op | Very High | Mission scripting, frozen-bot bug blocker. Deferred post-launch |
+
+#### 6.1: CTF — Capture the Flag (Priority: 1 — first objective mode)
 
 The single most iconic organized-play mode from D3's competitive era. 4-team CTF already proven working (0.8.6 Test 9). Infrastructure overlap with powerup tracking system is high — the flag is a trackable world object.
+
+**Difficulty: Medium.** Flag is a world object (trackable like powerups). Goal rooms are queryable via `DLLGetGoalRoomForTeam()`. Main challenge is role coordination (who attacks, who defends) and flag-state awareness (home/carried/dropped).
 
 **Bot behaviors needed:**
 - `FLAG_CARRIER` state: bot has flag, prioritize returning to own base, use afterburner aggressively, avoid engagement when possible
@@ -815,9 +843,73 @@ The single most iconic organized-play mode from D3's competitive era. 4-team CTF
 
 **Integration with squad system:** Attack squad → FLAG_ATTACKER/FLAG_ESCORT. Defense squad → FLAG_DEFENDER. Natural split.
 
-#### 6.2: Co-op (Priority: High — requires squad orders)
+#### 6.2: Hyper-Anarchy (Priority: 2 — quick win)
+
+FFA anarchy with a HyperOrb power item. Kills while holding the orb score escalating bonus points (2–5 pts). Orb drops on death, teleports to random rooms periodically.
+
+**Difficulty: Low.** Bots already fight well in anarchy. The only new behavior is orb awareness — a single trackable object (like a powerup). No teams, no rooms to track, no complex state.
+
+**Bot behaviors needed:**
+- Orb awareness: detect HyperOrb world object (`HyperOrbID`), navigate to pick it up when free
+- Orb-carrier aggression: when holding the orb, play more aggressively (lower flee threshold) to maximize kill streak bonus
+- Target priority: prioritize killing the orb carrier (`WhoHasOrb`) for the bonus point drop
+- No team logic needed — pure FFA with a special item
+
+**Smallest behavioral delta from current bot code.** Primary new code: orb object scan + priority bias in `BotSelectTarget`.
+
+#### 6.3: Hoard (Priority: 3 — collection + delivery)
+
+Classic "collect tokens, deliver to score" mode seen across many FPS titles (Headhunters in Halo, Kill Confirmed in CoD). Hoard Orbs are scattered around the map; players collect them via collision, then enter a goal room to cash in. Die and you lose all carried orbs.
+
+**Difficulty: Low-Medium.** Orb pickup already works (powerup collection infrastructure). Goal rooms queryable via `DLLGetGoalRoomForTeam()`. Main new behavior is the collect-then-deliver loop and knowing when to cash in vs. keep collecting.
+
+**Bot behaviors needed:**
+- Orb collection: seek and pick up Hoard Orbs (existing powerup pickup infrastructure)
+- Goal room navigation: when carrying orbs, navigate to nearest goal room to score
+- Cash-in threshold: decide when to deliver (risk/reward — more orbs = higher score but total loss on death)
+- Configurable minimum orb count to score (`HoardMinimumOrbCount` server setting)
+- Orb carrier targeting: players carrying many orbs are high-value targets (they spill orbs on death)
+
+#### 6.4: Entropy (Priority: 4 — area control with virus transport)
+
+2-team room capture mode with no clear analogue in other FPS games. Teams own "lab" rooms that generate virus pickups. Players collect enemy viruses and deliver them to enemy rooms to take them over. Room ownership shifts dynamically throughout the match. Kill streaks increase carry capacity (`NumberOfKillsSinceLastDeath * VIRUS_PER_KILL`), creating an incentive loop between fighting and capturing.
+
+**Difficulty: Medium-High.** The most mechanically complex objective mode. Involves:
+- Room ownership tracking: `RoomList[]` with `RF_SPECIAL1`/`RF_SPECIAL4` flags for team ownership
+- Virus pickup/delivery: `TeamVirii[][]` arrays track per-team virus objects; players collect enemy viruses and deposit them in enemy rooms
+- Carry capacity tied to kill streaks — fighting well directly enables faster captures
+- Takeover mechanic (`SPID_TAKEOVER` packets) — rooms flip when enough viruses are deposited
+- Strategic room selection: which room to attack, which to defend, frontline awareness
+
+**Bot behaviors needed:**
+- Room ownership awareness: know which rooms belong to which team, detect ownership changes
+- `CAPTURE` state: collect enemy viruses, navigate to enemy room, deposit to flip ownership
+- `DEFEND` state: patrol own rooms, intercept enemy virus carriers
+- Strategic room targeting: prioritize rooms based on connectivity, defensibility, frontline position
+- Virus carry management: balance collecting vs. depositing vs. fighting
+
+**Why it matters:** Entropy requires enough players on both sides for the room-control tug-of-war to be interesting. The mode works, but assembling that many humans for a niche mode hasn't been realistic for years. Bots that understand Entropy's mechanics will make this game mode easily accessible for the first time in a long time — a potential signature feature for Matcen.
+
+#### 6.5: Monsterball (Priority: 5 — ball physics R&D)
+
+Push a ball into the enemy goal. Simpler than CTF in some ways (no "return to base" leg), harder in others (ball physics prediction, passing).
+
+**Difficulty: High.** The ball is pushed by weapon impacts (`HandleMonsterballCollideWithWeapon`), meaning bots need to *shoot the ball in the right direction* — weapon-as-tool is fundamentally different from weapon-as-combat. Requires directional aim solving (where to shoot the ball from to push it goalward), positional play (goaltending), and possibly passing concepts.
+
+**Bot behaviors needed:**
+- Ball tracking: detect ball position, predict trajectory from physics
+- `BALL_PUSH` state: position behind ball relative to goal, fire weapons to push toward enemy goal
+- `GOAL_DEFENSE` state: position between ball and own goal, intercept incoming pushes
+- Directional aim: compute firing angle to push ball toward target (novel — no existing infrastructure)
+- Passing concept: intentionally push ball toward a better-positioned teammate (advanced, post-MVP)
+
+**May require dedicated R&D phase** for the ball-push aim solving.
+
+#### 6.6: Co-op (Priority: 6 — deferred post-launch)
 
 Currently broken (bots frozen — likely AI goal/pathfinding regression from earlier phases). Squad orders are basically mandatory: the core gameplay is "follow the human through the mission." Without a Follow Me order, co-op bots are purposeless.
+
+**Difficulty: Very High.** Fundamentally different from PvP modes. Requires mission scripting awareness (triggers, doors, switches, cinematics), the frozen-bot bug to be diagnosed first, and careful behavior to avoid breaking scripted mission progression. Deferred post-launch due to complexity and the prerequisite bug fix.
 
 **Bot behaviors needed:**
 - `FOLLOW_LEADER` state: trail the human player through mission levels, engage hostiles on sight
@@ -826,30 +918,6 @@ Currently broken (bots frozen — likely AI goal/pathfinding regression from ear
 - Friendly fire discipline: distinguish mission robots from allied players
 
 **Blocker:** The co-op freeze bug must be diagnosed and fixed first. This is a prerequisite.
-
-#### 6.3: Entropy (Priority: Medium — 2-team room capture)
-
-Area-control mode: teams capture rooms by occupying them. Hardcoded to 2 teams. Navigation system is already strong enough to reach and occupy rooms.
-
-**Bot behaviors needed:**
-- Room ownership awareness: know which rooms belong to which team
-- `CAPTURE` state: navigate to enemy/neutral room, remain inside to flip control
-- `CONTEST` state: enter enemy-held room to interrupt capture
-- Area denial: prioritize defending captured rooms near own territory
-
-#### 6.4: Monsterball (Priority: Medium — ball physics)
-
-Push a ball into the enemy goal. Simpler than CTF in some ways (no "return to base" leg), harder in others (ball physics prediction, passing).
-
-**Bot behaviors needed:**
-- Ball tracking: detect ball position, predict trajectory
-- `BALL_PUSH` state: navigate to ball, apply thrust in goal direction
-- `GOAL_DEFENSE` state: position between ball and own goal
-- Passing concept: intentionally push ball toward a better-positioned teammate (advanced)
-
-#### 6.5: Hoard (Priority: Low — complex accumulation strategy)
-
-Collect orbs and guard the hoard. Passive accumulation vs. active aggression tradeoff is the hardest to get right.
 
 #### 6.x: Other Advanced Features (Deferred)
 

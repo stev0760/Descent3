@@ -348,6 +348,7 @@
 #include "controls.h"
 #include "Mission.h"
 #include "sounds.h"
+#include "bot_chat.h"
 #include "hlsoundlib.h"
 #include "args.h"
 #include "pserror.h"
@@ -852,9 +853,10 @@ void SendOffHUDInputMessage() {
           }
         }
 
-        if (Netgame.local_role == LR_SERVER)
+        if (Netgame.local_role == LR_SERVER) {
+          BotOnChatMessage(Player_num, to_who, str);
           MultiSendMessageFromServer(GR_RGB(0, 128, 255), str, to_who);
-        else
+        } else
           MultiSendMessageToServer(0, str, to_who);
       } break;
       case HUD_MESSAGE_TEAM: {
@@ -878,9 +880,10 @@ void SendOffHUDInputMessage() {
           snprintf(str, sizeof(str), "[%s]: %s", Players[Player_num].callsign, HudInputMessage);
         }
 
-        if (Netgame.local_role == LR_SERVER)
+        if (Netgame.local_role == LR_SERVER) {
+          BotOnChatMessage(Player_num, team, str);
           MultiSendMessageFromServer(GR_RGB(0, 128, 255), str, team);
-        else
+        } else
           MultiSendMessageToServer(0, str, team);
       } break;
       }

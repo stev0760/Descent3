@@ -39,6 +39,7 @@ All Matcen fork documentation lives in **`matcen-docs/`**:
 - **`matcen-docs/NAV_OVERHAUL.md`** — Phase 4.0 navigation overhaul: research synthesis, root cause analysis, engine pathfinding pipeline reference, and implementation plan. **Read this before modifying navigation code.**
 - **`matcen-docs/PATHFINDING_CODEBASE_EXPLORE.md`** — Guide-bot navigation analysis: how single-player bots navigate complex passages vs. our multiplayer bots. Research input for `NAV_OVERHAUL.md`.
 - **`matcen-docs/BOT_MANAGEMENT.md`** — Phase 5 planning and implementation: config-file rosters, ship selection, difficulty levels, auto-rebalancing, `$servercaps` handshake. **Read this before modifying bot management code.**
+- **`matcen-docs/CHAT_COMMANDS.md`** — Phase 6.0 chat command system: cross-genre research synthesis, verb taxonomy (4 tiers), staged rollout plan, engine integration points. **Read this before modifying bot chat code.**
 - **`matcen-docs/PLAN.md`** — original Phase 0 design document and full phase roadmap.
 - **`matcen-docs/D3_MOVEMENT_PHYSICS.md`** — engine physics constants and packet flag reference.
 - **`matcen-docs/D3_PYRODECK_SPEC.md`** — specification for the D3 Pyrodeck companion web admin tool. **Update this when telnet commands or output formats change.**

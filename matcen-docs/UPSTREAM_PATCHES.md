@@ -18,7 +18,7 @@ the patch text in this document is sufficient — no need to merge from Matcen.
 
 | # | Bug | Affected | Status (Matcen) | Status (Upstream) |
 | :--- | :--- | :--- | :--- | :--- |
-| 1 | `$scores` numeric column truncation | 7 netgame DLLs | Fixed (Matcen 0.8.7) | Not submitted |
+| 1 | `$scores` numeric column truncation | 7 netgame DLLs | Fixed (Matcen 0.8.7, header-overlap regression fixed 0.8.8) | Not submitted |
 
 ---
 
@@ -125,6 +125,25 @@ and `Score` columns in pattern-A files are 6 chars wide and fit `%d` output
 fine — not touched. In pattern-B files the Score column uses `%d[%d]` too, so
 also floor `len[1]` at 8.
 
+**Header memcpy bounds (required).** The original `memcpy(&buffer[pos[i]],
+TXT_HEADER, len[i])` copies `len[i]` bytes from the header string. Once
+`len[i]` is floored above `strlen(header)`, that memcpy reads past the string's
+null terminator — writing a `\0` (or adjacent rodata garbage) into the header
+row and truncating it before the trailing `\n`. The next `DPrintf` row then
+appears on the same physical line as the header. Fix by changing each floored
+column's header memcpy to use the literal string length instead:
+
+```cpp
+// Before
+memcpy(&buffer[pos[2]], TXT_KILLS_SHORT, len[2]);
+// After
+memcpy(&buffer[pos[2]], TXT_KILLS_SHORT, strlen(TXT_KILLS_SHORT));
+```
+
+Column positions still use the floored `len[i]`; only the header memcpy length
+changes. The surrounding `memset(buffer, ' ', 256)` pads the column with
+spaces.
+
 ### Caveats
 
 - Ping column (`len[5]`) is `Ping` = 4 chars. Ping values are typically
@@ -144,7 +163,11 @@ source.
 
 ### Status
 
-- **Matcen:** Fixed in 0.8.7.
+- **Matcen:** Fixed in 0.8.7. 0.8.7 shipped with a header-memcpy regression
+  that overlapped the first row onto the header; fixed in 0.8.8 by switching
+  the header memcpy to use the literal `strlen(TXT_X)` rather than the
+  floored `len[i]`. Anyone cherry-picking this patch should take both changes
+  together.
 - **DescentDevelopers/Descent3:** Not submitted. Candidate for PR.
 - **PiccuEngine:** Not submitted. Same fix applies verbatim (source confirmed
   identical at `netgames/anarchy/anarchy.cpp:770-775` and sibling files).

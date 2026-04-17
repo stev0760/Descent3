@@ -1655,9 +1655,9 @@ void OnPrintScores(int level) {
 
   memcpy(&buffer[pos[0]], TXT_PILOT, strlen(TXT_PILOT));
   memcpy(&buffer[pos[1]], TXT_POINTS, len[1]);
-  memcpy(&buffer[pos[2]], TXT_KILLS_SHORT, len[2]);
-  memcpy(&buffer[pos[3]], TXT_DEATHS_SHORT, len[3]);
-  memcpy(&buffer[pos[4]], TXT_SUICIDES_SHORT, len[4]);
+  memcpy(&buffer[pos[2]], TXT_KILLS_SHORT, strlen(TXT_KILLS_SHORT));
+  memcpy(&buffer[pos[3]], TXT_DEATHS_SHORT, strlen(TXT_DEATHS_SHORT));
+  memcpy(&buffer[pos[4]], TXT_SUICIDES_SHORT, strlen(TXT_SUICIDES_SHORT));
   memcpy(&buffer[pos[5]], TXT_PING, len[5]);
   buffer[pos[5] + len[5] + 1] = '\n';
   buffer[pos[5] + len[5] + 2] = '\0';
