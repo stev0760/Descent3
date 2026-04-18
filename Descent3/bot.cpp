@@ -291,6 +291,24 @@ static void BotClearActiveGoal(int bot_index) {
   Bots[bot_index].chasing_powerup_timer = 0.0f;
 }
 
+// Force a bot into escort mode: clear target + all goals + force EXPLORE + retarget cooldown.
+// Called from !follow and !cover handlers so the order takes effect immediately rather than
+// waiting for the bot to naturally exit HUNT/COMBAT on its own.
+void BotForceEscortMode(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  if (obj->ai_info)
+    AISetTarget(obj, OBJECT_HANDLE_NONE);
+  BotClearActiveGoal(bot_index);
+  Bots[bot_index].state = BOT_STATE_EXPLORE;
+  Bots[bot_index].retarget_cooldown = BOT_RETARGET_COOLDOWN;
+  Bots[bot_index].hunt_no_los_timer = 0.0f;
+  Bots[bot_index].combat_idle_timer = 0.0f;
+  Bots[bot_index].evade_timer = 0.0f;
+  Bots[bot_index].explore_dest_room = -1;
+  Bots[bot_index].explore_room_timer = 0.0f;
+}
+
 // Set a pursuit goal for the bot's current AI target.
 // Phase 4.0: Uses AIG_GET_TO_OBJ and lets the engine build the full BOA+BNode path via
 // GoalDoFrame → AIPathAllocPath. The engine handles multi-room routing automatically.
@@ -1138,11 +1156,11 @@ static bool BotNavigateToFollowTarget(int bot_index) {
   if (!obj->ai_info)
     return false;
 
-  // Don't spam goal updates when already close enough
+  // Don't spam goal updates when right on top of the target
   object *tgt_obj = &Objects[Players[target_slot].objnum];
   float dist = vm_VectorDistanceQuick(&obj->pos, &tgt_obj->pos);
-  if (dist < 80.0f)
-    return true; // close enough — let it idle
+  if (dist < 40.0f)
+    return true; // tight escort — stay this close
 
   int &pgi = Bots[bot_index].pursuit_goal_index;
   if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
@@ -1778,6 +1796,20 @@ static void BotUpdateState(int bot_index) {
 
   switch (old_state) {
   case BOT_STATE_EXPLORE: {
+    // Escort roles take priority over powerup collection and roaming.
+    // Navigate to the followed/covered player; FOLLOW only fights back when attacked,
+    // COVER engages freely so it can kill threats near the protected player.
+    if (Bots[bot_index].squad_role == SQUAD_FOLLOW || Bots[bot_index].squad_role == SQUAD_COVER) {
+      BotNavigateToFollowTarget(bot_index);
+      if (Bots[bot_index].squad_role == SQUAD_FOLLOW) {
+        if (has_target && has_los && dist < BOT_CLOSERANGE_DIST * 2.0f)
+          new_state = BOT_STATE_HUNT;
+      } else {
+        if (has_target && (has_los || dist < BOT_HUNT_BLIND_MAX_DIST))
+          new_state = BOT_STATE_HUNT;
+      }
+      break;
+    }
     // Always seek powerups — even when transitioning to HUNT (fix: was skipped when has_target)
     bool need_sh = (shields < max_shields * BOT_LOW_SHIELDS_PCT);
     int pu_obj = BotFindBestPowerup(bot_index, need_sh, low_energy);
@@ -1827,10 +1859,7 @@ static void BotUpdateState(int bot_index) {
       if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info && obj->ai_info->goals[pgi].used)
         GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
       pgi = -1;
-      bool following = (Bots[bot_index].squad_role == SQUAD_FOLLOW ||
-                        Bots[bot_index].squad_role == SQUAD_COVER);
-      if (!following || !BotNavigateToFollowTarget(bot_index))
-        BotDoExploreRoaming(bot_index);
+      BotDoExploreRoaming(bot_index);
     }
     // Transition to HUNT only when the target is reachable and we're not busy collecting.
     // Phase 4.02: if actively pursuing a powerup, only interrupt for enemies with LOS at close range.
@@ -1840,16 +1869,10 @@ static void BotUpdateState(int bot_index) {
     bool chasing_powerup = (Bots[bot_index].powerup_goal_index >= 0) &&
                            (Bots[bot_index].chasing_powerup_timer < BOT_POWERUP_STALE_CHASE);
     bool urgent_threat = (has_los && dist < BOT_CLOSERANGE_DIST);
-    if (Bots[bot_index].squad_role == SQUAD_FOLLOW) {
-      // FOLLOW: only engage enemies that are already right on top of us
-      if (has_target && urgent_threat)
-        new_state = BOT_STATE_HUNT;
-    } else {
-      if (has_target && !holding_for_weapon && !chasing_powerup && (has_los || dist < BOT_HUNT_BLIND_MAX_DIST))
-        new_state = BOT_STATE_HUNT;
-      else if (has_target && !holding_for_weapon && chasing_powerup && urgent_threat)
-        new_state = BOT_STATE_HUNT; // enemy right on top of us — drop everything and fight
-    }
+    if (has_target && !holding_for_weapon && !chasing_powerup && (has_los || dist < BOT_HUNT_BLIND_MAX_DIST))
+      new_state = BOT_STATE_HUNT;
+    else if (has_target && !holding_for_weapon && chasing_powerup && urgent_threat)
+      new_state = BOT_STATE_HUNT; // enemy right on top of us — drop everything and fight
     break;
   }
 
@@ -1929,6 +1952,14 @@ static void BotUpdateState(int bot_index) {
       AISetTarget(obj, OBJECT_HANDLE_NONE);
       Bots[bot_index].retarget_cooldown = 3.0f;
       new_state = BOT_STATE_EXPLORE;
+    }
+    // SQUAD_FOLLOW: abort hunt if target isn't right on top of us — return to following
+    if (new_state == BOT_STATE_HUNT && Bots[bot_index].squad_role == SQUAD_FOLLOW) {
+      if (!has_los || dist > BOT_CLOSERANGE_DIST * 2.0f) {
+        AISetTarget(obj, OBJECT_HANDLE_NONE);
+        Bots[bot_index].retarget_cooldown = 3.0f;
+        new_state = BOT_STATE_EXPLORE;
+      }
     }
 
     // Opportunistic powerup grab while hunting (no state change — just set a secondary goal)

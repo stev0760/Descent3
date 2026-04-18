@@ -29,6 +29,7 @@
 #include "game.h"
 #include "objinfo.h"
 #include "AIMain.h"
+#include "AIGoal.h"
 #include "log.h"
 
 #include <cstring>
@@ -201,6 +202,7 @@ static void BotHandleAttack(int bot_index, int from_pnum, int towho, int force_t
 
   Bots[bot_index].squad_role = SQUAD_ATTACK;
   Bots[bot_index].squad_target_slot = -1;
+  Bots[bot_index].retarget_cooldown = 0.0f; // force immediate target re-evaluation
 
   // If a specific target was requested, force-set the AI target handle
   if (force_target_slot >= 0 && force_target_slot < MAX_NET_PLAYERS &&
@@ -256,9 +258,7 @@ static void BotHandleFollow(int bot_index, int from_pnum, int towho) {
 
   Bots[bot_index].squad_role = SQUAD_FOLLOW;
   Bots[bot_index].squad_target_slot = from_pnum;
-  // Reset explore state so follow navigation kicks in immediately
-  Bots[bot_index].explore_dest_room = -1;
-  Bots[bot_index].explore_room_timer = 0.0f;
+  BotForceEscortMode(bot_index); // abandon current hunt/combat, start navigating immediately
 
   char reply[128];
   snprintf(reply, sizeof(reply), "%s: Following!", Bots[bot_index].callsign);
@@ -275,8 +275,7 @@ static void BotHandleCover(int bot_index, int from_pnum, int towho) {
 
   Bots[bot_index].squad_role = SQUAD_COVER;
   Bots[bot_index].squad_target_slot = from_pnum;
-  Bots[bot_index].explore_dest_room = -1;
-  Bots[bot_index].explore_room_timer = 0.0f;
+  BotForceEscortMode(bot_index);
 
   char reply[128];
   snprintf(reply, sizeof(reply), "%s: Covering you!", Bots[bot_index].callsign);

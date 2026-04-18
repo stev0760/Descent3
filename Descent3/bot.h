@@ -435,6 +435,11 @@ void BotSetDifficulty(int bot_index, BotDifficulty diff);
 // Returns the display name for a squad role (e.g., "Freelance", "Attack", "Defend").
 const char *BotSquadRoleName(BotSquadRole r);
 
+// Force a bot into escort mode immediately: clears AI target, clears all goals, forces EXPLORE,
+// and sets a retarget cooldown so the bot doesn't immediately re-acquire a stuck enemy.
+// Called from !follow and !cover handlers so the order takes effect right away.
+void BotForceEscortMode(int bot_index);
+
 // Set/get the default difficulty for newly added bots.
 void BotSetDefaultDifficulty(BotDifficulty diff);
 BotDifficulty BotGetDefaultDifficulty();
