@@ -331,6 +331,9 @@ static void BotDispatchVerb(int bot_index, int from_pnum, int towho, const char 
 
 // Match a bot base-name against a string (case-insensitive, exact base-name match).
 // Bot callsigns have the " [BOT]" suffix — strip it before comparing.
+// Prefix match: "shad" matches "Shadow [BOT]", "reap" matches "Reaper [BOT]".
+// Mirrors D3's own DM routing (hudmessage.cpp GetMessageDestination).
+// First matching bot wins when multiple bots share a prefix.
 static bool BotBaseNameMatch(int bot_index, const char *candidate) {
   const char *cs = Bots[bot_index].callsign;
   int full_len = (int)strlen(cs);
@@ -339,7 +342,9 @@ static bool BotBaseNameMatch(int bot_index, const char *candidate) {
       strcmp(cs + full_len - BOT_NAME_SUFFIX_LEN, BOT_NAME_SUFFIX) == 0)
     base_len -= BOT_NAME_SUFFIX_LEN;
   int cand_len = (int)strlen(candidate);
-  return (base_len == cand_len) && (strnicmp(cs, candidate, base_len) == 0);
+  if (cand_len == 0 || cand_len > base_len)
+    return false;
+  return strnicmp(cs, candidate, cand_len) == 0;
 }
 
 // Resolve command targets and dispatch to each matching bot.
