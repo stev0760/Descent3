@@ -2185,6 +2185,18 @@ static void BotApplyThrust(int bot_index) {
 
   switch (Bots[bot_index].state) {
   case BOT_STATE_EXPLORE: {
+    // Escort roles: full speed + afterburner to close distance, matching HUNT behavior.
+    if (Bots[bot_index].squad_role == SQUAD_FOLLOW || Bots[bot_index].squad_role == SQUAD_COVER) {
+      speed_scale = 1.0f;
+      int tslot = Bots[bot_index].squad_target_slot;
+      if (tslot >= 0 && tslot < MAX_NET_PLAYERS && (NetPlayers[tslot].flags & NPF_CONNECTED) &&
+          !(Players[tslot].flags & (PLAYER_FLAGS_DEAD | PLAYER_FLAGS_DYING))) {
+        float follow_dist = vm_VectorDistanceQuick(&obj->pos, &Objects[Players[tslot].objnum].pos);
+        if (follow_dist > 150.0f)
+          want_afterburner = true;
+      }
+      break;
+    }
     // Full speed when actively chasing a powerup; slow when roaming.
     // WEAK bots explore faster and use AB bursts even indoors to grab weapons quickly.
     int equip = BotGetEquipmentRating(bot_index);
@@ -2904,7 +2916,9 @@ void BotReinitAll() {
     Bots[i].fire_delay_timer = 0.0f;
     Bots[i].fire_delay_target = OBJECT_HANDLE_NONE;
     Bots[i].last_chat_reply_time = 0.0f; // Gametime resets on level transition — must clear or throttle fires permanently
-    // difficulty and squad_role persist across levels — don't reset
+    Bots[i].squad_role = SQUAD_FREELANCE;
+    Bots[i].squad_target_slot = -1;
+    // difficulty persists across levels — don't reset
 
     // Restore NetPlayers sequence (level end sets NETSEQ_WAITING_FOR_LEVEL)
     NetPlayers[slot].sequence = NETSEQ_PLAYING;
