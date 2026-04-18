@@ -2872,7 +2872,8 @@ void BotReinitAll() {
     Bots[i].gunboy_cooldown = 0.0f;
     Bots[i].fire_delay_timer = 0.0f;
     Bots[i].fire_delay_target = OBJECT_HANDLE_NONE;
-    // difficulty persists across levels — don't reset
+    Bots[i].last_chat_reply_time = 0.0f; // Gametime resets on level transition — must clear or throttle fires permanently
+    // difficulty and squad_role persist across levels — don't reset
 
     // Restore NetPlayers sequence (level end sets NETSEQ_WAITING_FOR_LEVEL)
     NetPlayers[slot].sequence = NETSEQ_PLAYING;
