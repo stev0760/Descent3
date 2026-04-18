@@ -221,6 +221,16 @@ enum BotDifficulty {
   BOT_DIFF_COUNT = 5,
 };
 
+// Squad role assigned via chat commands (Phase 6.0 Stage 2).
+// Persists through death and level transitions until overridden.
+enum BotSquadRole {
+  SQUAD_FREELANCE = 0, // autonomous FSM (default)
+  SQUAD_ATTACK,        // aggression-biased: lower flee threshold, proactive engagement
+  SQUAD_DEFEND,        // hold-position: higher flee threshold, limited pursuit range
+  SQUAD_FOLLOW,        // escort: navigate to squad_target_slot, engage only if attacked
+  SQUAD_COVER,         // protect: navigate to squad_target_slot, actively engage threats
+};
+
 struct BotDifficultyParams {
   float aim_error_deg;        // max angular offset added to aim (degrees)
   float fire_delay;           // seconds after acquiring target before first shot
@@ -328,15 +338,21 @@ struct bot_info {
 
   // Chat command system (Phase 6.0)
   float last_chat_reply_time; // Gametime of last chat reply (throttle)
+
+  // Squad orders (Phase 6.0 Stage 2) — persist through death and level transitions
+  BotSquadRole squad_role;  // current squad order
+  int squad_target_slot;    // for FOLLOW/COVER: player slot to follow/protect (-1 = sender)
 };
 
 extern bot_info Bots[MAX_BOTS];
 extern int Num_bots;
 extern bool Bot_debug_movement; // When true, log bot+player velocity every ~0.5s
 
-// Bot name prefix — prepended to all bot callsigns for identification
-#define BOT_NAME_PREFIX "[BOT] "
-#define BOT_NAME_PREFIX_LEN 6 // strlen("[BOT] ")
+// Bot name suffix — appended to all bot callsigns for identification.
+// Suffix (not prefix) so D3's prefix-matched DM routing (hudmessage.cpp
+// GetMessageDestination) resolves "<botname>: ..." against the bot's actual name.
+#define BOT_NAME_SUFFIX " [BOT]"
+#define BOT_NAME_SUFFIX_LEN 6 // strlen(" [BOT]")
 
 // Add a bot to the game. Returns bot index (into Bots[]) or -1 on failure.
 // Ship can be specified by index, or use BotResolveShipAlias() to get index from a name string.
@@ -393,7 +409,7 @@ int BotResolveShipAlias(const char *alias);
 // backwards compatible. Bots can still be added manually via "$addbot" console/telnet.
 //
 // Ship aliases: pyro, phoenix, magnum, blackpyro (full names also accepted).
-// All bot callsigns are automatically prefixed with "[BOT] ".
+// All bot callsigns are automatically suffixed with " [BOT]".
 
 // Storage for the BotConfig CVar — set by dedicated.cfg, read after level load.
 // This is extern so the CVar system in dedicated_server.cpp can point to it directly.
@@ -415,6 +431,9 @@ bool BotIsPlayerSlot(int player_slot);
 
 // Change a bot's difficulty at runtime. Resets fire delay timer and updates AI dodge_percent.
 void BotSetDifficulty(int bot_index, BotDifficulty diff);
+
+// Returns the display name for a squad role (e.g., "Freelance", "Attack", "Defend").
+const char *BotSquadRoleName(BotSquadRole r);
 
 // Set/get the default difficulty for newly added bots.
 void BotSetDefaultDifficulty(BotDifficulty diff);

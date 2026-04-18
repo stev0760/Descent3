@@ -1119,6 +1119,44 @@ static void BotDoStuckClear(int bot_index) {
   }
 }
 
+// SQUAD_FOLLOW / SQUAD_COVER navigation: steer toward the followed/covered player.
+// Called from the EXPLORE branch of BotUpdateState when no powerup goal is active.
+// Returns false if the follow target is unavailable (caller falls back to normal roaming).
+static bool BotNavigateToFollowTarget(int bot_index) {
+  int target_slot = Bots[bot_index].squad_target_slot;
+  if (target_slot < 0 || target_slot >= MAX_NET_PLAYERS)
+    return false;
+  if (!(NetPlayers[target_slot].flags & NPF_CONNECTED))
+    return false;
+  if (Players[target_slot].flags & (PLAYER_FLAGS_DEAD | PLAYER_FLAGS_DYING))
+    return false;
+  if (Objects[Players[target_slot].objnum].type != OBJ_PLAYER)
+    return false;
+
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  if (!obj->ai_info)
+    return false;
+
+  // Don't spam goal updates when already close enough
+  object *tgt_obj = &Objects[Players[target_slot].objnum];
+  float dist = vm_VectorDistanceQuick(&obj->pos, &tgt_obj->pos);
+  if (dist < 80.0f)
+    return true; // close enough — let it idle
+
+  int &pgi = Bots[bot_index].pursuit_goal_index;
+  if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+    GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+
+  int tgt_handle = tgt_obj->handle;
+  pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f,
+                    GF_SPEED_ATTACK | GF_USE_BLINE_IF_SEES_GOAL);
+
+  Bots[bot_index].explore_dest_room = -1;
+  Bots[bot_index].explore_room_timer = 0.0f;
+  return true;
+}
+
 // Navigate the bot portal-to-portal through the level when in EXPLORE state with no nearby pickups.
 // Picks a random reachable room from the current position and sets AIG_GET_TO_POS toward it.
 // Called from BotUpdateState() every 0.5s tick when no powerup goal is active.
@@ -1731,6 +1769,11 @@ static void BotUpdateState(int bot_index) {
                    : (bot_equip == BOT_EQUIP_TIER_WEAK) ? BOT_WEAK_FLEE_PCT
                                                         : BOT_FLEE_SHIELD_PCT;
   flee_pct *= BotGetDiffParams(bot_index)->flee_pct_scale;
+  // Squad-role flee bias: attack orders make bots fight harder; defend orders make them retreat sooner
+  if (Bots[bot_index].squad_role == SQUAD_ATTACK)
+    flee_pct *= 0.5f;
+  else if (Bots[bot_index].squad_role == SQUAD_DEFEND)
+    flee_pct = std::min(flee_pct * 1.5f, 0.60f);
   bool low_shields = (shields < max_shields * flee_pct);
 
   switch (old_state) {
@@ -1779,12 +1822,15 @@ static void BotUpdateState(int bot_index) {
       Bots[bot_index].explore_room_timer = 0.0f;
     } else {
       // No powerup nearby — clear any stale goal index (powerup may have just been collected)
-      // and roam room-to-room searching for targets and items.
+      // and navigate: follow target (FOLLOW/COVER) or roam room-to-room (FREELANCE/ATTACK/DEFEND).
       int &pgi = Bots[bot_index].powerup_goal_index;
       if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info && obj->ai_info->goals[pgi].used)
         GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
       pgi = -1;
-      BotDoExploreRoaming(bot_index);
+      bool following = (Bots[bot_index].squad_role == SQUAD_FOLLOW ||
+                        Bots[bot_index].squad_role == SQUAD_COVER);
+      if (!following || !BotNavigateToFollowTarget(bot_index))
+        BotDoExploreRoaming(bot_index);
     }
     // Transition to HUNT only when the target is reachable and we're not busy collecting.
     // Phase 4.02: if actively pursuing a powerup, only interrupt for enemies with LOS at close range.
@@ -1794,10 +1840,16 @@ static void BotUpdateState(int bot_index) {
     bool chasing_powerup = (Bots[bot_index].powerup_goal_index >= 0) &&
                            (Bots[bot_index].chasing_powerup_timer < BOT_POWERUP_STALE_CHASE);
     bool urgent_threat = (has_los && dist < BOT_CLOSERANGE_DIST);
-    if (has_target && !holding_for_weapon && !chasing_powerup && (has_los || dist < BOT_HUNT_BLIND_MAX_DIST))
-      new_state = BOT_STATE_HUNT;
-    else if (has_target && !holding_for_weapon && chasing_powerup && urgent_threat)
-      new_state = BOT_STATE_HUNT; // enemy right on top of us — drop everything and fight
+    if (Bots[bot_index].squad_role == SQUAD_FOLLOW) {
+      // FOLLOW: only engage enemies that are already right on top of us
+      if (has_target && urgent_threat)
+        new_state = BOT_STATE_HUNT;
+    } else {
+      if (has_target && !holding_for_weapon && !chasing_powerup && (has_los || dist < BOT_HUNT_BLIND_MAX_DIST))
+        new_state = BOT_STATE_HUNT;
+      else if (has_target && !holding_for_weapon && chasing_powerup && urgent_threat)
+        new_state = BOT_STATE_HUNT; // enemy right on top of us — drop everything and fight
+    }
     break;
   }
 
@@ -1870,6 +1922,14 @@ static void BotUpdateState(int bot_index) {
       new_state = BOT_STATE_FLEE;
     else if (dist < combat_entry && has_los)
       new_state = BOT_STATE_COMBAT;
+
+    // SQUAD_DEFEND: don't pursue targets beyond effective fire range — hold position
+    if (new_state == BOT_STATE_HUNT && Bots[bot_index].squad_role == SQUAD_DEFEND &&
+        dist > BOT_FIRE_RANGE * 1.5f) {
+      AISetTarget(obj, OBJECT_HANDLE_NONE);
+      Bots[bot_index].retarget_cooldown = 3.0f;
+      new_state = BOT_STATE_EXPLORE;
+    }
 
     // Opportunistic powerup grab while hunting (no state change — just set a secondary goal)
     // Picks up very close items that barely detour the hunt path.
@@ -2921,8 +2981,12 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   NetPlayers[slot].addr.port = 0;
 
   // --- Set up Players slot ---
-  // Prepend [BOT] tag to the callsign so bots are identifiable in the scoreboard
-  snprintf(Players[slot].callsign, CALLSIGN_LEN + 1, "%s%s", BOT_NAME_PREFIX, name);
+  // Append " [BOT]" suffix to the callsign so bots are identifiable in the scoreboard.
+  // Suffix (not prefix) so DM routing ("<name>: ...") prefix-matches the bot's actual name.
+  // Truncate the base name to leave room for the 6-char suffix; snprintf alone would truncate
+  // the suffix off the tail instead of the name.
+  snprintf(Players[slot].callsign, CALLSIGN_LEN + 1, "%.*s%s", CALLSIGN_LEN - BOT_NAME_SUFFIX_LEN, name,
+           BOT_NAME_SUFFIX);
   Players[slot].ship_index = ship_index;
   Players[slot].flags = 0;
   Players[slot].rank = -1.0f;
@@ -3005,7 +3069,8 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   Players[slot].team = chosen_team;
 
   LOG_DEBUG.printf("BOT: Finished adding bot '%s' in slot %d, team=%d", name, slot, chosen_team);
-  snprintf(Bots[bot_index].callsign, CALLSIGN_LEN + 1, "%s%s", BOT_NAME_PREFIX, name);
+  snprintf(Bots[bot_index].callsign, CALLSIGN_LEN + 1, "%.*s%s", CALLSIGN_LEN - BOT_NAME_SUFFIX_LEN, name,
+           BOT_NAME_SUFFIX);
   Bots[bot_index].ship_index = ship_index;
   // difficulty already set above (before BotConfigureAI)
   Bots[bot_index].fire_delay_timer = 0.0f;
@@ -3052,6 +3117,8 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   Bots[bot_index].mine_dump_remaining = 0;
   Bots[bot_index].gunboy_cooldown = 0.0f;
   Bots[bot_index].last_chat_reply_time = 0.0f;
+  Bots[bot_index].squad_role = SQUAD_FREELANCE;
+  Bots[bot_index].squad_target_slot = -1;
   BotCacheShipPhysics(bot_index);
   BotSelectBestSecondary(bot_index); // equip best secondary weapon at spawn
   Num_bots++;
@@ -3527,8 +3594,8 @@ void BotLoadRosterFile() {
     } else if (strnicmp(key, "BotName", 7) == 0 && key[7] >= '1' && key[7] <= '9') {
       int num = atoi(&key[7]);
       if (num >= 1 && num <= MAX_BOTS) {
-        strncpy(names[num - 1], val, CALLSIGN_LEN - BOT_NAME_PREFIX_LEN);
-        names[num - 1][CALLSIGN_LEN - BOT_NAME_PREFIX_LEN] = '\0';
+        strncpy(names[num - 1], val, CALLSIGN_LEN - BOT_NAME_SUFFIX_LEN);
+        names[num - 1][CALLSIGN_LEN - BOT_NAME_SUFFIX_LEN] = '\0';
       }
     } else if (strnicmp(key, "BotShip", 7) == 0 && key[7] >= '1' && key[7] <= '9') {
       int num = atoi(&key[7]);
@@ -3631,6 +3698,16 @@ const char *BotDifficultyName(BotDifficulty d) {
   if (d >= 0 && d < BOT_DIFF_COUNT)
     return names[d];
   return "Unknown";
+}
+
+const char *BotSquadRoleName(BotSquadRole r) {
+  switch (r) {
+  case SQUAD_ATTACK: return "Attack";
+  case SQUAD_DEFEND: return "Defend";
+  case SQUAD_FOLLOW: return "Follow";
+  case SQUAD_COVER: return "Cover";
+  default: return "Freelance";
+  }
 }
 
 void BotSetDifficulty(int bot_index, BotDifficulty diff) {
