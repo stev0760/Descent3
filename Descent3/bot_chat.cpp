@@ -81,8 +81,10 @@ static bool BotFindCommand(const char *msg, char *verb, size_t vsize, char *args
 static bool BotShouldObey(int bot_index, int from_pnum) {
   int bot_team = Players[Bots[bot_index].player_slot].team;
   int sender_team = Players[from_pnum].team;
+  // FFA (team == -1) means no team relationships — bots are autonomous and ignore all orders.
+  // Same treatment as an enemy-team bot in a team mode.
   if (bot_team < 0 || sender_team < 0)
-    return true; // FFA — everyone can command
+    return false;
   return bot_team == sender_team;
 }
 
@@ -346,13 +348,19 @@ static bool BotBaseNameMatch(int bot_index, const char *candidate) {
 static void BotResolveAndDispatch(int from_pnum, int towho, const char *verb, const char *args,
                                   int force_target_slot) {
   if (towho >= 0) {
-    // DM — find the one bot that owns this player slot
+    // DM — find the one bot that owns this player slot; a single refusal reply is fine in FFA
     for (int i = 0; i < MAX_BOTS; i++) {
       if (Bots[i].active && Bots[i].player_slot == towho) {
         BotDispatchVerb(i, from_pnum, towho, verb, args, force_target_slot);
         break;
       }
     }
+    return;
+  }
+
+  // Broadcast path: silently drop in FFA — no team context means no reply flood
+  if (Players[from_pnum].team < 0) {
+    LOG_DEBUG.printf("BOT CHAT: Player %d is in FFA (team<0), broadcast command ignored", from_pnum);
     return;
   }
 
