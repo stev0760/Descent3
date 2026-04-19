@@ -68,13 +68,17 @@ Chosen over `/bot` (5 chars, more typing) and bare natural-language (false posit
 
 ```
 !verb              → all your bots (team-scoped in team modes, all bots otherwise)
-!verb <botname>    → single bot by callsign (minus [BOT] prefix, case-insensitive)
+!verb <botname>    → single bot by callsign (minus ` [BOT]` suffix, case-insensitive)
 !verb all          → all bots regardless of team
-<botname>: !verb   → DM shortcut via engine name-parser (auto-routed, no prefix needed for DMs)
+<botname>: !verb   → DM shortcut via engine name-parser (auto-routed by index or name prefix)
 ```
 
-Bot callsign matching: exact match against `Bots[].name` (the raw name without `[BOT] ` prefix),
+Bot callsign matching: exact match against `Bots[].name` (the raw name without ` [BOT]` suffix),
 case-insensitive. Partial matching deferred — exact only in MVP to avoid ambiguity.
+
+Engine DM routing (`hudmessage.cpp:GetMessageDestination`) prefix-matches the typed text
+against `Players[].callsign`; placing `[BOT]` as a suffix means `reaper:` still matches
+`Reaper [BOT]`. Numeric slot indices (`2:`) also work.
 
 ### Reply audience policy
 
@@ -111,16 +115,16 @@ over ~500ms intervals to prevent chat spam. Cooldown is per-bot, not global.
 
 | Verb | Intent | Bot response example | References |
 |---|---|---|---|
-| `ping` | Proof of life (diagnostic, permanent) | `[BOT] Reaper: Pong!` | Scaffold + legacy diagnostic |
-| `status` / `report` | Report current state (military style) | `[BOT] Reaper: Freelance, HP 84, hunting Viper` | Q3, UT, X-Wing |
-| `attack` | Aggression-biased FSM | `[BOT] Reaper: Attacking!` | Universal |
-| `attack target` | Focus speaker's current target | `[BOT] Reaper: Targeting Viper!` | X-Wing, WC, FS2 |
-| `defend` | Hold-position / retreat-biased | `[BOT] Reaper: Defending!` | UT, FS2, R6 |
-| `cover` | Protect speaker (or named player) | `[BOT] Reaper: Covering you!` | Universal (6/6 refs) |
-| `follow` | Escort speaker (or named player) | `[BOT] Reaper: Following!` | Q3, FS2, WC |
-| `freelance` | Cancel orders, autonomous FSM | `[BOT] Reaper: Going freelance.` | UT, Q3, FS2 |
+| `ping` | Proof of life (diagnostic, permanent) | `Reaper [BOT]: Pong!` | Scaffold + legacy diagnostic |
+| `status` / `report` | Report current state (military style) | `Reaper [BOT]: Freelance, HP 84, hunting Viper` | Q3, UT, X-Wing |
+| `attack` | Aggression-biased FSM | `Reaper [BOT]: Attacking!` | Universal |
+| `target` | Focus speaker's nearest enemy | `Reaper [BOT]: Targeting Viper!` | X-Wing, WC, FS2 |
+| `defend` | Hold-position / retreat-biased | `Reaper [BOT]: Defending!` | UT, FS2, R6 |
+| `cover` | Protect speaker (or named player) | `Reaper [BOT]: Covering you!` | Universal (6/6 refs) |
+| `follow` | Escort speaker (or named player) | `Reaper [BOT]: Following!` | Q3, FS2, WC |
+| `freelance` | Cancel orders, autonomous FSM | `Reaper [BOT]: Going freelance.` | UT, Q3, FS2 |
 
-`stop` and `dismiss` are aliases for `freelance`.
+`stop` and `dismiss` are aliases for `freelance`. `attack target` is a legacy alias for `target`.
 
 ### Tier 2 — Tactical + game-mode (0.9.0)
 
@@ -180,16 +184,16 @@ MultiSendMessageFromServer(...);                // existing: rebroadcast to huma
 - `BotParseChatCommand(msg)` — detect `!` prefix, extract verb + args.
 - `BotResolveChatTargets(from_pnum, towho, args)` — determine which bot(s) to address.
 - `BotDispatchChatCommand(bot_index, from_pnum, verb, args)` — verb router. Stage 1: `ping` only.
-- `BotSendChatReply(bot_index, msg, towho)` — format `[BOT] Name: text`, call
+- `BotSendChatReply(bot_index, msg, towho)` — format `Name [BOT]: text`, call
   `MultiSendMessageFromServer()`. Enforce per-bot throttle.
 
 **Stage 1 verb:** `ping` only. Three scopes, all team-agnostic:
 
 | Scope | Input | Response | Channel |
 |---|---|---|---|
-| All-chat | F8: `!ping` | Each bot: `[BOT] Reaper: Pong!` | All-chat (visible to everyone) |
-| Team-chat | Ctrl+F8: `!ping` | Team bots: `[BOT] Reaper: Pong!` | Team-chat (private to team) |
-| DM | F8: `reaper: !ping` | `[BOT] Reaper: Pong, Steve!` | DM back to sender only |
+| All-chat | F8: `!ping` | Each bot: `Reaper [BOT]: Pong!` | All-chat (visible to everyone) |
+| Team-chat | Ctrl+F8: `!ping` | Team bots: `Reaper [BOT]: Pong!` | Team-chat (private to team) |
+| DM | F8: `reaper: !ping` | `Reaper [BOT]: Pong, Steve!` | DM back to sender only |
 
 DM ping personalizes the response with the sender's callsign. All-chat and team-chat pings
 use the standard `Pong!` response. `!ping` is the only verb that ignores team restrictions —

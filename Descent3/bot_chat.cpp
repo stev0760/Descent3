@@ -457,8 +457,14 @@ void BotOnChatMessage(int from_pnum, int towho, const char *message) {
   if (strcmp(verb, "report") == 0)
     strcpy(verb, "status");
 
-  // "attack target" → force-target the sender's nearest enemy
+  // Force-target the sender's nearest enemy
   int force_target_slot = -1;
+  // "!target" — shorthand for "attack my nearest enemy"
+  if (strcmp(verb, "target") == 0) {
+    force_target_slot = BotGetSenderNearestEnemy(from_pnum);
+    strcpy(verb, "attack");
+  }
+  // "!attack target" — legacy form, same behavior
   if (strcmp(verb, "attack") == 0) {
     if (strnicmp(args, "target", 6) == 0 && (args[6] == '\0' || isspace((unsigned char)args[6]))) {
       force_target_slot = BotGetSenderNearestEnemy(from_pnum);
