@@ -76,17 +76,15 @@ static bool BotFindCommand(const char *msg, char *verb, size_t vsize, char *args
 // ---------------------------------------------------------------------------
 
 // Returns true if the bot should obey an order from from_pnum.
-// In FFA (team < 0) all players can command all bots.
-// In team modes, only same-team players are obeyed.
+// Requires a team game (Num_teams > 1) and same team. Non-team modes (Anarchy, etc.)
+// have no team relationships — bots are autonomous and ignore all squad orders.
 // NOTE: !ping bypasses this — it always responds (handled at call site).
 static bool BotShouldObey(int bot_index, int from_pnum) {
+  if (Num_teams <= 1)
+    return false;
   int bot_team = Players[Bots[bot_index].player_slot].team;
   int sender_team = Players[from_pnum].team;
-  // FFA (team == -1) means no team relationships — bots are autonomous and ignore all orders.
-  // Same treatment as an enemy-team bot in a team mode.
-  if (bot_team < 0 || sender_team < 0)
-    return false;
-  return bot_team == sender_team;
+  return bot_team >= 0 && sender_team >= 0 && bot_team == sender_team;
 }
 
 // ---------------------------------------------------------------------------
@@ -362,9 +360,9 @@ static void BotResolveAndDispatch(int from_pnum, int towho, const char *verb, co
     return;
   }
 
-  // Broadcast path: silently drop in FFA — no team context means no reply flood
-  if (Players[from_pnum].team < 0) {
-    LOG_DEBUG.printf("BOT CHAT: Player %d is in FFA (team<0), broadcast command ignored", from_pnum);
+  // Broadcast path: silently drop in non-team modes — no team context means no meaningful targets
+  if (Num_teams <= 1) {
+    LOG_DEBUG.printf("BOT CHAT: Not a team mode, broadcast command ignored");
     return;
   }
 
