@@ -10,9 +10,9 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Matcen — Multiplayer Bots (Experimental)
 
-> **Matcen 0.8.8** — `$scores` regression fix + chat command system Stage 1 (`!ping`)
+> **Matcen 0.8.9-dev** — `[BOT]` moved to callsign suffix so DMs can address bots by name
 
-This fork — "Matcen" — adds a **server-side multiplayer bot system** to Descent 3. Bots occupy real player slots on dedicated servers or listen servers, appearing and acting as normal players. All bots are tagged with `[BOT]` in their callsign for easy identification.
+This fork — "Matcen" — adds a **server-side multiplayer bot system** to Descent 3. Bots occupy real player slots on dedicated servers or listen servers, appearing and acting as normal players. All bots are tagged with ` [BOT]` as a callsign suffix for easy identification.
 
 **No client mods required.** Retail D3 v1.5 clients can connect and play against these bots immediately.
 

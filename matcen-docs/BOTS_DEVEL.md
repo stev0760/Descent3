@@ -1,9 +1,9 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Matcen 0.8.8 — `$scores` header-overlap regression fix (all 7 netgame DLLs) + chat command system Stage 1 (`!ping` proof-of-life, all-chat/team-chat/DM routing, listen-server + dedicated server paths). Last stable: 0.8.7 (cloak detection + hearing awareness).
+**Status:** Matcen 0.8.9-dev — `[BOT]` callsign tag moved from prefix to suffix so D3's prefix-matched DM routing resolves typed `<botname>:` against the bot's actual name (enabler for Tier 1 chat verb work). Last stable: 0.8.8 (`$scores` regression fix + chat Stage 1).
 
-Next milestone: 0.8.9 (squad roles + Tier 1 chat verbs), then 0.9.0 (game-mode awareness — CTF, Hyper-Anarchy, Hoard).
+Next milestone: 0.8.9 (suffix rename + Tier 1 chat verbs + squad roles), then 0.9.0 (game-mode awareness — CTF, Hyper-Anarchy, Hoard).
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -65,6 +65,7 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | 0.8.8 | **`$scores` header-overlap regression fix:** 0.8.7's column-width floor added `if (len[i] < NUM_COL_MIN_WIDTH) len[i] = NUM_COL_MIN_WIDTH;` but left the header `memcpy(&buffer[pos[i]], TXT_X, len[i])` unchanged — so for 1-char headers (`K`/`D`/`S`) it copied 4 bytes from a 2-byte string, writing a `\0` into the header buffer. `DPrintf` then stopped before the terminating `\n`, and the next data row was printed on the same physical line, breaking Pyrodeck's row parser. Fix: header memcpy now uses `strlen(TXT_X)` directly; floored `len[i]` is only used for column positioning. Same change in all 7 netgame DLLs (including hyperanarchy/hoard where floored `Kills`/`Deaths` also read 2–3 bytes past the literal). See [UPSTREAM_PATCHES.md](UPSTREAM_PATCHES.md). | Complete (Matcen 0.8.8) |
 | 6.0 | **Cloak detection + hearing awareness:** New `BotCanSeeTarget()` helper mirrors engine's `AIDetermineObjVisLevel` (AImain.cpp:1646) with cloak reveals: afterburner, headlight aimed at bot (dot > 0.965), napalm, and recent weapon fire (1.0s window via `Players[].last_fire_weapon_time`). Applied at `BotSelectTarget`, FSM LOS computation, and both firing paths (`BotDoFiring` / `BotDoSecondaryFiring`). Target handle is retained when a target cloaks so the engine's noise pipeline can still refresh positional tracking. Also sets `ai_info->hearing = 1.0f` in `BotConfigureAI()` — `PlayerSetControlToAI()`'s memset left bots deaf, so they never received `AIN_HEAR_NOISE` awareness bumps despite being valid `CT_AI` listeners. User-validated feel: "completely correct for how Descent should behave." Server-side only, no protocol changes. | Complete (Matcen 0.8.7) |
 | 6.0s1 | **Chat command system — Stage 1:** `bot_chat.cpp`/`bot_chat.h` module. `!ping` proof-of-life with all-chat, team-chat, and DM routing. Listen-server path via `hudmessage.cpp` hook. Per-bot throttle, anti-recursion, DM dispatch filtering by player slot. See [CHAT_COMMANDS.md](CHAT_COMMANDS.md). | Complete (Matcen 0.8.8) |
+| 6.0s1a | **`[BOT]` tag moved to suffix** (`BOT_NAME_PREFIX` → `BOT_NAME_SUFFIX`, value `" [BOT]"`). Enables DM routing by bot name: `hudmessage.cpp:GetMessageDestination` prefix-matches typed text against `Players[].callsign`, so a callsign like `Reaper [BOT]` matches `reaper:` but `[BOT] Reaper` did not. Base names are now truncated to `CALLSIGN_LEN - 6` = 13 chars before the suffix is appended (snprintf `%.*s%s`) — otherwise tail-truncation would drop the suffix instead of the name. Updated `bot.h`, `bot.cpp` (both `Players[].callsign` and `Bots[].callsign` writes), `bot_chat.cpp`, `dedicated_server.cpp`. | In progress (Matcen 0.8.9-dev) |
 | 5 | **Bot management (remaining):** Remote admin, auto-rebalancing, server orchestration. | Not started |
 | 6 | **Game mode awareness + squad orders:** CTF, Hyper-Anarchy, Hoard, Entropy, Monsterball, Co-op (deferred post-launch). See game mode priority table in Phase 6 section below. | In progress (Stage 1 chat complete) |
 
@@ -792,7 +793,7 @@ The order system MUST work across all D3-compatible clients (retail v1.5, PiccuE
 **Tier 1: Chat commands (universal, required baseline)**
 - Player types `!attack`, `!defend`, `!follow`, `!freelance` in multiplayer chat
 - Server-side bot code intercepts incoming chat messages and translates to squad orders
-- Bots respond in chat to acknowledge: `[BOT] Reaper: Attacking!`, `[BOT] Phantom: Defending`
+- Bots respond in chat to acknowledge: `Reaper [BOT]: Attacking!`, `Phantom [BOT]: Defending`
 - Works on ANY D3-compatible client — PiccuEngine, retail v1.5, Matcen client
 - Chat parsing is foundational infrastructure — also enables bot callouts (flag status, enemy spotted, taunts)
 - This tier must be fully functional before any HUD work begins

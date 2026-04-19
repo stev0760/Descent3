@@ -71,7 +71,7 @@ BotShip3=magnum
 BotShip4=pyro
 ```
 
-All bot callsigns are automatically prefixed with `[BOT] ` for identification (e.g., "[BOT] Reaper").
+All bot callsigns are automatically suffixed with ` [BOT]` for identification (e.g., "Reaper [BOT]"). Suffix rather than prefix so D3's prefix-matched DM routing (`hudmessage.cpp` `GetMessageDestination`) resolves typed `<botname>: ...` against the bot's actual name. Base names are truncated to `CALLSIGN_LEN - 6` = 13 chars to leave room for the suffix.
 
 **Implementation:**
 - Config parsed via `BotLoadRosterFile()` in `bot.cpp` — reads the file specified by `BotConfig=` CVar using standalone `fopen()`/`fgets()` parsing (not the CVar system)

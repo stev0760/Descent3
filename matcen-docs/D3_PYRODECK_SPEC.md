@@ -191,7 +191,7 @@ These commands exist in the fork. The web admin sends them as plain text over Te
 
 **`$addbot <name> [ship] [difficulty]`**
 Add a bot. Ship and difficulty parameters optional. Ships: `pyro`, `phoenix`, `magnum`, `blackpyro`. Difficulty: `trainee`, `rookie`, `hotshot` (default), `ace`, `insane`.
-Output on success: `Bot '[BOT] <name>' added in slot <N> (ship=<ship>, diff=<difficulty>)`
+Output on success: `Bot '<name> [BOT]' added in slot <N> (ship=<ship>, diff=<difficulty>)`
 Output on failure: `Failed to add bot (server full or max bots reached)`
 
 **`$removebot <index>`**
@@ -206,8 +206,8 @@ Remove all bots. Output: `All bots removed`
 **`$botlist`**
 List active bots. Output format (timeout-based collection):
 ```
-  Bot 0: '[BOT] Phantom' slot=2 ship=Pyro-GL diff=Hotshot (alive)
-  Bot 1: '[BOT] Viper' slot=3 ship=Phoenix diff=Ace (dead)
+  Bot 0: 'Phantom [BOT]' slot=2 ship=Pyro-GL diff=Hotshot (alive)
+  Bot 1: 'Viper [BOT]' slot=3 ship=Phoenix diff=Ace (dead)
 ```
 No terminator — use timeout-based collection (~200ms silence). Empty list returns `No bots active`.
 Fields: bot index, callsign, player slot, ship name, difficulty name, alive/dead status.
@@ -223,8 +223,8 @@ Extra line when `all`: `Default difficulty set to <difficulty>`
 **`$botstat [index|all]`**
 Show bot status. Output format (timeout-based collection):
 ```
-  Bot 0 '[BOT] Phantom' slot=2 state=COMBAT speed=10.3 vel=(0.0,-7.2,7.3) shields=100 target=[BOT] Viper
-  Bot 1 '[BOT] Viper' slot=3 state=EXPLORE speed=51.6 vel=(36.3,-2.5,36.5) shields=43 target=(none)
+  Bot 0 'Phantom [BOT]' slot=2 state=COMBAT speed=10.3 vel=(0.0,-7.2,7.3) shields=100 target=Viper [BOT]
+  Bot 1 'Viper [BOT]' slot=3 state=EXPLORE speed=51.6 vel=(36.3,-2.5,36.5) shields=43 target=(none)
 ```
 Fields: `slot=` (player slot index), `state=` (EXPLORE/HUNT/COMBAT/FLEE/EVADE), `speed=`, `vel=`, `shields=`, `target=`.
 
@@ -244,13 +244,13 @@ These are vanilla D3 commands (present in all D3 builds) that the web admin call
 Player scoreboard. Output format (timeout-based collection):
 ```
 Pilot                Points K D S Ping
-[BOT] Viper:         5      6 1 1 0
-[BOT] Shadow:        4      6 2 2 0
-[BOT] Phantom:       0      0 8 0 0
-*[BOT] Reaper:       0      0 0 0 ---
+Viper [BOT]:         5      6 1 1 0
+Shadow [BOT]:        4      6 2 2 0
+Phantom [BOT]:       0      0 8 0 0
+*Reaper [BOT]:       0      0 0 0 ---
 ```
 - `*` prefix = observer/disconnected slot — exclude from active count
-- Bot players identified by `[BOT]` prefix in name
+- Bot players identified by ` [BOT]` suffix in name
 - Ping `---` = no network connection (bots always show this)
 - First line is the header; skip for data parsing
 - Column layout varies by game type (anarchy shown above). Team anarchy, CTF, etc. have different columns. Parser should handle variable column counts gracefully.
@@ -402,7 +402,7 @@ Complete end-to-end loop: browser → server and back.
 **Players Panel** (requires `roster` feature flag)
 - Parse `$scores` output into a player table.
 - Show: name, points, kills, deaths, suicides, ping.
-- Bot rows visually distinguished (identified by `[BOT]` prefix, ping `---`).
+- Bot rows visually distinguished (identified by ` [BOT]` suffix, ping `---`).
 - Refresh button; auto-refresh on a configurable interval (default 5s).
 - Action buttons per human player row: Kick, Ban.
 - Ban list viewer: `$banlist` → table with Remove button per entry.

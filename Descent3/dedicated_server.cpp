@@ -745,8 +745,8 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
       // First token is the bot name
       char *name_tok = strtok(op_copy, " \t");
       if (name_tok) {
-        strncpy(botname, name_tok, CALLSIGN_LEN - BOT_NAME_PREFIX_LEN);
-        botname[CALLSIGN_LEN - BOT_NAME_PREFIX_LEN] = '\0';
+        strncpy(botname, name_tok, CALLSIGN_LEN - BOT_NAME_SUFFIX_LEN);
+        botname[CALLSIGN_LEN - BOT_NAME_SUFFIX_LEN] = '\0';
 
         // Second token (optional) is the ship alias
         char *ship_tok = strtok(NULL, " \t");

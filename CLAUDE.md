@@ -75,7 +75,7 @@ Bot roster config uses a separate `Key=Value` config file referenced from `dedic
 - Add `BotConfig=bots.cfg` to `dedicated.cfg`, then put `BotCount=`, `BotName*=`, `BotShip*=`, `BotDifficulty*=` in `bots.cfg`
 - Bot keys (`BotCount`, `BotName*`, etc.) are NOT recognized in `dedicated.cfg` itself — only `BotConfig=` is parsed there
 
-A server with no `BotCount` (or `BotCount=0`) runs without bots — fully backwards compatible. Ship aliases: `pyro`, `phoenix`, `magnum`, `blackpyro`. All bot names are prefixed with `[BOT] ` automatically.
+A server with no `BotCount` (or `BotCount=0`) runs without bots — fully backwards compatible. Ship aliases: `pyro`, `phoenix`, `magnum`, `blackpyro`. All bot names are suffixed with ` [BOT]` automatically (suffix so D3's prefix-matched DM routing resolves `<botname>:` to the bot).
 
 Difficulty levels: `trainee`, `rookie`, `hotshot` (default), `ace`, `insane`. Set globally with `BotDifficulty=` or per-bot with `BotDifficulty1=`, etc. Change mid-game with `$botdifficulty`.
 
