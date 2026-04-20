@@ -10,7 +10,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Matcen — Multiplayer Bots (Experimental)
 
-> **Matcen 0.8.9-dev** — `[BOT]` moved to callsign suffix so DMs can address bots by name
+> **Matcen 0.8.9** — chat command system Stage 2: squad roles + Tier 1 verbs (`!attack`, `!target`, `!defend`, `!follow`, `!cover`, `!freelance`, `!status`)
 
 This fork — "Matcen" — adds a **server-side multiplayer bot system** to Descent 3. Bots occupy real player slots on dedicated servers or listen servers, appearing and acting as normal players. All bots are tagged with ` [BOT]` as a callsign suffix for easy identification.
 
@@ -25,7 +25,7 @@ This fork — "Matcen" — adds a **server-side multiplayer bot system** to Desc
 *   **Loadout Awareness:** Bots self-classify into WEAK/GOOD/ELITE tiers and adjust aggression accordingly — poorly-armed bots hunt upgrades before engaging.
 *   **Navigation:** Engine-integrated BOA+BNode pathfinding with visited-room memory to prevent clustering and portal-based unstuck recovery.
 *   **Game Modes:** Anarchy, Team Anarchy, and Robo-Anarchy. Bots persist across level transitions. Objective mode support (CTF, Hyper-Anarchy, Hoard, Entropy, Monsterball) is on the roadmap.
-*   **Chat Commands:** Bots respond to `!` prefixed commands in multiplayer chat. Currently: `!ping` proof-of-life (all-chat, team-chat, or DM to individual bots via slot number). Works on all D3-compatible clients.
+*   **Chat Commands:** Bots respond to `!` prefixed commands in multiplayer chat (team modes). Full Tier 1 squad orders: `!attack`, `!target`, `!defend`, `!follow`, `!cover`, `!freelance`, `!status`, `!ping`. Supports all-chat, team-chat, and DM addressing (by name prefix or slot). Works on all D3-compatible clients.
 *   **Ship Selection:** Pyro-GL, Phoenix, Magnum-AHT, or Black Pyro (requires Mercenary expansion).
 *   **Difficulty:** Five levels (Trainee → Insane) scaling aim, reaction time, evasion, and turn rate. Set globally or per-bot.
 *   **Team Assignment:** Pre-assign bots to specific teams in the config (`BotTeam1=2`) or at the console (`$addbot Reaper pyro hotshot 2`). Out-of-range values auto-balance. Ignored in non-team modes.
