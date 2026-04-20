@@ -19,8 +19,6 @@
 #ifndef BOT_CHAT_H
 #define BOT_CHAT_H
 
-#include <cstdint>
-
 #define BOT_CHAT_REPLY_COOLDOWN 2.0f
 
 void BotOnChatMessage(int from_pnum, int towho, const char *message);

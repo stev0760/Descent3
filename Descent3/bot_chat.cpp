@@ -27,15 +27,12 @@
 #include "player_external.h"
 #include "object.h"
 #include "game.h"
-#include "objinfo.h"
 #include "AIMain.h"
-#include "AIGoal.h"
 #include "log.h"
 
 #include <cstring>
 #include <cstdio>
 #include <cctype>
-#include <algorithm>
 
 static void BotSendChatReply(int bot_index, const char *text, int towho);
 
@@ -92,7 +89,7 @@ static bool BotShouldObey(int bot_index, int from_pnum) {
 // ---------------------------------------------------------------------------
 
 // Find the nearest enemy player to from_pnum (proxy for "sender's current target").
-// Used by !attack target.
+// Used by !target (and legacy !attack target).
 static int BotGetSenderNearestEnemy(int from_pnum) {
   if (Objects[Players[from_pnum].objnum].type != OBJ_PLAYER)
     return -1;
