@@ -299,6 +299,12 @@ static void BotHandleFreelance(int bot_index, int from_pnum, int towho) {
 
 static void BotDispatchVerb(int bot_index, int from_pnum, int towho, const char *verb,
                             const char *args, int force_target_slot) {
+  // Non-team modes (Anarchy, Hyper-Anarchy, Monsterball, Hoard, Co-op) have no squad
+  // relationships — silently drop every verb except !ping. This covers the DM path;
+  // the broadcast path is already blocked upstream in BotResolveAndDispatch.
+  if (Num_teams <= 1 && strcmp(verb, "ping") != 0)
+    return;
+
   if (strcmp(verb, "ping") == 0) {
     // ping is always obeyed regardless of team
     BotHandlePing(bot_index, from_pnum, towho);
@@ -347,7 +353,8 @@ static bool BotBaseNameMatch(int bot_index, const char *candidate) {
 static void BotResolveAndDispatch(int from_pnum, int towho, const char *verb, const char *args,
                                   int force_target_slot) {
   if (towho >= 0) {
-    // DM — find the one bot that owns this player slot; a single refusal reply is fine in FFA
+    // DM — find the one bot that owns this player slot. In non-team modes the dispatch
+    // layer (BotDispatchVerb) silently drops every non-ping verb, so Anarchy stays quiet.
     for (int i = 0; i < MAX_BOTS; i++) {
       if (Bots[i].active && Bots[i].player_slot == towho) {
         BotDispatchVerb(i, from_pnum, towho, verb, args, force_target_slot);
@@ -357,8 +364,10 @@ static void BotResolveAndDispatch(int from_pnum, int towho, const char *verb, co
     return;
   }
 
-  // Broadcast path: silently drop in non-team modes — no team context means no meaningful targets
-  if (Num_teams <= 1) {
+  // Broadcast path: in non-team modes there's no squad context, so drop every verb
+  // except !ping — letting Pong! echo back is a harmless easter egg and useful
+  // proof-of-life for admins on Anarchy servers.
+  if (Num_teams <= 1 && strcmp(verb, "ping") != 0) {
     LOG_DEBUG.printf("BOT CHAT: Not a team mode, broadcast command ignored");
     return;
   }

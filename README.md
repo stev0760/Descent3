@@ -10,7 +10,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Matcen — Multiplayer Bots (Experimental)
 
-> **Matcen 0.8.9** — chat command system Stage 2: squad roles + Tier 1 verbs (`!attack`, `!target`, `!defend`, `!follow`, `!cover`, `!freelance`, `!status`)
+> **Matcen 0.8.10** — non-team modes (Anarchy, Hyper-Anarchy, Hoard, Monsterball, Co-op) now silently drop all squad chat verbs except `!ping`. Previous release (0.8.9): chat command system Stage 2 — squad roles + Tier 1 verbs (`!attack`, `!target`, `!defend`, `!follow`, `!cover`, `!freelance`, `!status`)
 
 This fork — "Matcen" — adds a **server-side multiplayer bot system** to Descent 3. Bots occupy real player slots on dedicated servers or listen servers, appearing and acting as normal players. All bots are tagged with ` [BOT]` as a callsign suffix for easy identification.
 

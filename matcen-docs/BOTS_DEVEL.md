@@ -1,9 +1,9 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Matcen 0.8.9 — chat command system Stage 2: squad roles + Tier 1 verbs (`!attack`, `!target`, `!defend`, `!follow`, `!cover`, `!freelance`, `!status`, `!ping`). `[BOT]` tag moved to callsign suffix for DM-by-name routing. Last stable: 0.8.8 (`$scores` regression fix + chat Stage 1).
+**Status:** Matcen 0.8.10 — hotfix: non-team modes (Anarchy, Hyper-Anarchy, Hoard, Monsterball, Co-op) silently drop all squad chat verbs except `!ping`. DM path no longer emits a refusal taunt in non-team modes; matches the broadcast-path behavior. Last stable: 0.8.9 (chat Stage 2 — squad roles + Tier 1 verbs, `[BOT]` suffix).
 
-Next milestone: 0.9.0 (game-mode awareness — CTF, Hyper-Anarchy, Hoard).
+Next milestone: 0.9.0 (game-mode awareness — CTF + Hyper-Anarchy).
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -67,6 +67,7 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | 6.0s1 | **Chat command system — Stage 1:** `bot_chat.cpp`/`bot_chat.h` module. `!ping` proof-of-life with all-chat, team-chat, and DM routing. Listen-server path via `hudmessage.cpp` hook. Per-bot throttle, anti-recursion, DM dispatch filtering by player slot. See [CHAT_COMMANDS.md](CHAT_COMMANDS.md). | Complete (Matcen 0.8.8) |
 | 6.0s1a | **`[BOT]` tag moved to suffix** (`BOT_NAME_PREFIX` → `BOT_NAME_SUFFIX`, value `" [BOT]"`). Enables DM routing by bot name: `hudmessage.cpp:GetMessageDestination` prefix-matches typed text against `Players[].callsign`, so a callsign like `Reaper [BOT]` matches `reaper:` but `[BOT] Reaper` did not. Base names are now truncated to `CALLSIGN_LEN - 6` = 13 chars before the suffix is appended (snprintf `%.*s%s`) — otherwise tail-truncation would drop the suffix instead of the name. Updated `bot.h`, `bot.cpp` (both `Players[].callsign` and `Bots[].callsign` writes), `bot_chat.cpp`, `dedicated_server.cpp`. | Complete (Matcen 0.8.9) |
 | 6.0s2 | **Chat command system — Stage 2:** Squad role enum (`SQUAD_FREELANCE/ATTACK/DEFEND/FOLLOW/COVER`) + full Tier 1 verb surface. `!attack` (aggression bias), `!target` (focus sender's nearest enemy; `!attack target` alias), `!defend` (retreat bias), `!follow`/`!cover` (escort with immediate `BotForceEscortMode` unstick, full speed + afterburner, `AIG_GET_TO_OBJ` + `GF_USE_BLINE_IF_SEES_GOAL`), `!freelance`/`!stop`/`!dismiss` (cancel orders), `!status`/`!report` (HP + role + state + target). Team affinity enforced (same-team only; FFA broadcasts silently dropped, DMs get single refusal). Partial name addressing (`!cover shad` → Shadow). Squad roles reset on level transition. `last_chat_reply_time` cleared in `BotReinitAll` (Gametime resets to 0 on level transition — prevents permanent throttle block). | Complete (Matcen 0.8.9) |
+| 6.0s2fix | **Anarchy chat-verb hotfix:** `BotResolveAndDispatch` already dropped broadcast verbs in non-team modes (`Num_teams <= 1`), but the DM path routed directly to `BotDispatchVerb` which then ran `BotHandleXxx()` and emitted the "Not taking orders from you!" taunt via `BotShouldObey()`. Anarchy/Hyper-Anarchy/Hoard/Monsterball/Co-op are FFA — squad orders have no meaning, so the taunt is noise. Fix: single-line guard at top of `BotDispatchVerb` — `if (Num_teams <= 1 && strcmp(verb, "ping") != 0) return;`. `!ping` still responds (team-agnostic diagnostic, by design). | Complete (Matcen 0.8.10) |
 | 5 | **Bot management (remaining):** Remote admin, auto-rebalancing, server orchestration. | Not started |
 | 6 | **Game mode awareness + squad orders:** CTF, Hyper-Anarchy, Hoard, Entropy, Monsterball, Co-op (deferred post-launch). See game mode priority table in Phase 6 section below. | In progress (Stage 1 chat complete) |
 

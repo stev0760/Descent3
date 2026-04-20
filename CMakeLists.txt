@@ -36,7 +36,7 @@ project(Descent3
 # Matcen fork version (semver with optional pre-release suffix)
 set(MATCEN_VERSION_MAJOR 0)
 set(MATCEN_VERSION_MINOR 8)
-set(MATCEN_VERSION_PATCH 9)
+set(MATCEN_VERSION_PATCH 10)
 set(MATCEN_VERSION_SUFFIX "")
 
 if (${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})
@@ -159,12 +159,17 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
   set(HOG_NAME "win")
 endif()
 
-# rebuild d3_version.h every time
-add_custom_target(get_git_hash ALL)
+# Regenerate d3_version.h on every build so git-hash + Matcen version stay
+# in sync with source. The "ghost" output (__always_regenerate_version) is
+# listed but never created by the command, which forces Ninja/Make to treat
+# this rule as permanently dirty and re-run it before any consumer's compile.
+# Consumers (Descent3 target) depend on get_git_hash via add_dependencies(),
+# and on d3_version.h transitively through CMake's implicit include scanner.
+set(D3_VERSION_HEADER ${PROJECT_BINARY_DIR}/lib/d3_version.h)
+set(D3_VERSION_GHOST  ${PROJECT_BINARY_DIR}/lib/__always_regenerate_version)
 
 add_custom_command(
-  POST_BUILD
-  TARGET get_git_hash
+  OUTPUT ${D3_VERSION_HEADER} ${D3_VERSION_GHOST}
   COMMAND ${CMAKE_COMMAND}
     -D SOURCE_DIR=${PROJECT_SOURCE_DIR}
     -D TARGET_DIR=${PROJECT_BINARY_DIR}
@@ -176,8 +181,16 @@ add_custom_command(
     -D MATCEN_VERSION_PATCH=${MATCEN_VERSION_PATCH}
     -D MATCEN_VERSION_SUFFIX=${MATCEN_VERSION_SUFFIX}
     -P ${PROJECT_SOURCE_DIR}/cmake/CheckGit.cmake
+  DEPENDS
+    ${PROJECT_SOURCE_DIR}/lib/d3_version.h.in
+    ${PROJECT_SOURCE_DIR}/cmake/CheckGit.cmake
   WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+  COMMENT "Regenerating d3_version.h (Matcen fork version + git hash)"
+  VERBATIM
 )
+
+add_custom_target(get_git_hash ALL DEPENDS ${D3_VERSION_HEADER})
+set_source_files_properties(${D3_VERSION_HEADER} PROPERTIES GENERATED TRUE)
 
 install(
   FILES CHANGELOG.md USAGE.md README.md BUILD.md LICENSE THIRD_PARTY.md
