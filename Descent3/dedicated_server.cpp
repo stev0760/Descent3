@@ -132,6 +132,7 @@
 #include "hud.h"
 #include "networking.h"
 #include "bot.h"
+#include "bot_objective.h"
 #include "object.h"
 #include "vecmat.h"
 
@@ -904,6 +905,10 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
                           Netgame.scriptname, Num_teams);
     return true;
   }
+  if (stricmp(command, "botobj") == 0) {
+    BotPrintObjectiveState();
+    return true;
+  }
   if (stricmp(command, "bothelp") == 0) {
     PrintDedicatedMessage("Bot commands:\n");
     PrintDedicatedMessage("  $addbot <name> [ship] [difficulty] [team] - Add a bot (team: 1-4)\n");
@@ -916,6 +921,7 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     PrintDedicatedMessage("  $botstat [index|all]   - Show bot status details\n");
     PrintDedicatedMessage("  $botmov on|off         - Toggle movement debug logging\n");
     PrintDedicatedMessage("  $botmode               - Show detected game mode\n");
+    PrintDedicatedMessage("  $botobj                - Show objective state (CTF flags, orbs, etc.)\n");
     PrintDedicatedMessage("  $servercaps            - Print server capabilities\n");
     PrintDedicatedMessage("  $bothelp               - Show this help\n");
     return true;

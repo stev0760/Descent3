@@ -20,6 +20,7 @@
 // Bots occupy real player slots and appear as normal players to retail clients.
 
 #include "bot.h"
+#include "bot_objective.h"
 #include <climits>
 #include <cmath>
 #include <filesystem>
@@ -2931,6 +2932,7 @@ const char *BotGameModeName(BotGameMode mode) {
 
 void BotReinitAll() {
   BotDetectGameMode();
+  BotInitObjectiveState();
 
   for (int i = 0; i < MAX_BOTS; i++) {
     if (!Bots[i].active)
@@ -3296,6 +3298,14 @@ void BotDoFrame() {
   // Delayed UI bot spawn — wait for the host to settle into the level
   if (Bot_ui_spawn_pending && Gametime >= Bot_ui_spawn_time) {
     BotDoUISpawn();
+  }
+
+  // Objective state polling — shared across all bots, runs on a 0.5s interval.
+  // Gametime resets to 0 on level transitions, so detect that and force an immediate poll.
+  static float last_objective_poll = -1.0f;
+  if (Gametime < last_objective_poll || Gametime - last_objective_poll > BOT_OBJECTIVE_POLL_INTERVAL) {
+    BotPollObjectiveState();
+    last_objective_poll = Gametime;
   }
 
   static int mov_log_counter = 0;
