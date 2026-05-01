@@ -56,6 +56,7 @@
 bot_info Bots[MAX_BOTS];
 int Num_bots = 0;
 bool Bot_debug_movement = false; // Toggle with "$botmov on/off" console command
+BotGameMode Bot_game_mode = BGM_UNKNOWN;
 
 // --- Bot roster config (Phase 5.1) ---
 char Bot_config_file[260] = {};           // CVar storage — set by "BotConfig=<file>" in dedicated.cfg
@@ -2869,7 +2870,68 @@ void BotShutdownAll() {
   Bot_ui_spawn_pending = false;  // cancel any pending delayed spawn
 }
 
+// ---------------------------------------------------------------------------
+// Game mode detection (Phase 7.0)
+// ---------------------------------------------------------------------------
+
+static void BotDetectGameMode() {
+  // Co-op is flagged, not scripted — check first
+  if (Netgame.flags & NF_COOP) {
+    Bot_game_mode = BGM_COOP;
+    return;
+  }
+
+  // Strip optional .d3m extension from scriptname for matching
+  char name[NETGAME_SCRIPT_LEN];
+  strncpy(name, Netgame.scriptname, sizeof(name) - 1);
+  name[sizeof(name) - 1] = '\0';
+  int len = (int)strlen(name);
+  if (len > 4 && stricmp(name + len - 4, ".d3m") == 0)
+    name[len - 4] = '\0';
+
+  if (stricmp(name, "anarchy") == 0)
+    Bot_game_mode = BGM_ANARCHY;
+  else if (stricmp(name, "team anarchy") == 0)
+    Bot_game_mode = BGM_TEAM_ANARCHY;
+  else if (stricmp(name, "robo-anarchy") == 0)
+    Bot_game_mode = BGM_ROBO_ANARCHY;
+  else if (stricmp(name, "ctf") == 0)
+    Bot_game_mode = BGM_CTF;
+  else if (stricmp(name, "hyper-anarchy") == 0)
+    Bot_game_mode = BGM_HYPERANARCHY;
+  else if (stricmp(name, "hoard") == 0)
+    Bot_game_mode = BGM_HOARD;
+  else if (stricmp(name, "entropy") == 0)
+    Bot_game_mode = BGM_ENTROPY;
+  else if (stricmp(name, "monsterball") == 0)
+    Bot_game_mode = BGM_MONSTERBALL;
+  else
+    Bot_game_mode = BGM_UNKNOWN;
+
+  LOG_DEBUG.printf("BOT: Detected game mode: %s (scriptname='%s')", BotGameModeName(Bot_game_mode),
+                   Netgame.scriptname);
+}
+
+BotGameMode BotGetGameMode() { return Bot_game_mode; }
+
+const char *BotGameModeName(BotGameMode mode) {
+  switch (mode) {
+  case BGM_ANARCHY: return "Anarchy";
+  case BGM_TEAM_ANARCHY: return "Team Anarchy";
+  case BGM_ROBO_ANARCHY: return "Robo-Anarchy";
+  case BGM_COOP: return "Co-op";
+  case BGM_CTF: return "CTF";
+  case BGM_HYPERANARCHY: return "Hyper-Anarchy";
+  case BGM_HOARD: return "Hoard";
+  case BGM_ENTROPY: return "Entropy";
+  case BGM_MONSTERBALL: return "Monsterball";
+  default: return "Unknown";
+  }
+}
+
 void BotReinitAll() {
+  BotDetectGameMode();
+
   for (int i = 0; i < MAX_BOTS; i++) {
     if (!Bots[i].active)
       continue;

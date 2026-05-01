@@ -4,7 +4,7 @@ Phase 6.0 infrastructure: chat-based bot command system. Enables squad orders, g
 awareness, and bot personality expression. Foundational layer for all objective-mode work
 (CTF, Entropy, Co-op, Monsterball).
 
-**Status:** Stage 2 complete (Matcen 0.8.9). Squad roles + Tier 1 verbs. `!ping` proof-of-life validated on dedicated server + listen server, all three channels. Matcen 0.8.10 added a non-team-mode guard: in Anarchy / Hyper-Anarchy / Hoard / Monsterball / Co-op all non-`!ping` verbs are silently dropped in both broadcast and DM paths (previously DMs emitted a refusal taunt). Stage 3 (game-mode awareness + Tier 2 verbs) targets 0.9.0.
+**Status:** Stage 2 complete (Matcen 0.8.9), Stage 3 (game-mode awareness) in progress. `!ping` validated. Matcen 0.8.10 added non-team-mode guard (silent drop in Anarchy/Hyper-Anarchy/Hoard/Monsterball/Co-op). Matcen 0.8.11-dev adds `BotGameMode` enum + `$botmode` diagnostic. Stage 3 (CTF + Hyper-Anarchy objective state + mode-aware FSM + Tier 2 verbs) targets 0.9.0.
 
 ## Research Summary
 

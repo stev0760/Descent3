@@ -212,6 +212,21 @@
 #define BOT_MAX_ALTITUDE_ABOVE_GROUND 200.0f // max height above terrain before suppressing climb
 #define BOT_ALTITUDE_CEILING_MARGIN 50.0f    // suppress upward thrust this far below Ceiling_height
 
+// Game mode detection (Phase 7.0) — cached at level start from Netgame.scriptname.
+// Keeps string compares off the hot path; FSM and objective code switch on this enum.
+enum BotGameMode {
+  BGM_ANARCHY,
+  BGM_TEAM_ANARCHY,
+  BGM_ROBO_ANARCHY,
+  BGM_COOP,
+  BGM_CTF,
+  BGM_HYPERANARCHY,
+  BGM_HOARD,
+  BGM_ENTROPY,
+  BGM_MONSTERBALL,
+  BGM_UNKNOWN,
+};
+
 enum BotDifficulty {
   BOT_DIFF_TRAINEE = 0,
   BOT_DIFF_ROOKIE = 1,
@@ -347,6 +362,7 @@ struct bot_info {
 extern bot_info Bots[MAX_BOTS];
 extern int Num_bots;
 extern bool Bot_debug_movement; // When true, log bot+player velocity every ~0.5s
+extern BotGameMode Bot_game_mode;
 
 // Bot name suffix — appended to all bot callsigns for identification.
 // Suffix (not prefix) so D3's prefix-matched DM routing (hudmessage.cpp
@@ -425,6 +441,12 @@ void BotPrintServerCaps();
 
 // Reinitialize all active bots after a level transition.
 void BotReinitAll();
+
+// Returns the current game mode (cached at level start).
+BotGameMode BotGetGameMode();
+
+// Returns the display name for a game mode.
+const char *BotGameModeName(BotGameMode mode);
 
 // Returns true if the given player slot is occupied by a bot.
 bool BotIsPlayerSlot(int player_slot);

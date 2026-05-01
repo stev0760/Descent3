@@ -899,6 +899,11 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     BotPrintServerCaps();
     return true;
   }
+  if (stricmp(command, "botmode") == 0) {
+    PrintDedicatedMessage("Game mode: %s (scriptname='%s', teams=%d)\n", BotGameModeName(BotGetGameMode()),
+                          Netgame.scriptname, Num_teams);
+    return true;
+  }
   if (stricmp(command, "bothelp") == 0) {
     PrintDedicatedMessage("Bot commands:\n");
     PrintDedicatedMessage("  $addbot <name> [ship] [difficulty] [team] - Add a bot (team: 1-4)\n");
@@ -910,6 +915,7 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     PrintDedicatedMessage("  $botdifficulty <index|all> <level> - Change difficulty\n");
     PrintDedicatedMessage("  $botstat [index|all]   - Show bot status details\n");
     PrintDedicatedMessage("  $botmov on|off         - Toggle movement debug logging\n");
+    PrintDedicatedMessage("  $botmode               - Show detected game mode\n");
     PrintDedicatedMessage("  $servercaps            - Print server capabilities\n");
     PrintDedicatedMessage("  $bothelp               - Show this help\n");
     return true;
