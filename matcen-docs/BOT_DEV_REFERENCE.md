@@ -19,8 +19,8 @@ For the full phase history and roadmap, see `BOTS_DEVEL.md`.
 |------|---------|
 | `Descent3/bot.h` | `bot_info` struct, all constants, public API |
 | `Descent3/bot.cpp` | Full bot implementation — lifecycle, FSM, firing, movement |
-| `Descent3/bot_objective.h` | `BotObjectiveState` struct, `BotFlagState` enum, polling API |
-| `Descent3/bot_objective.cpp` | Objective-state polling — CTF flags, Hyper-Anarchy/Hoard orbs, Monsterball |
+| `Descent3/bot_objective.h` | `BotObjectiveState` struct, `BotFlagState` enum, `BotObjectiveLean`, polling + FSM bias API |
+| `Descent3/bot_objective.cpp` | Objective-state polling + mode-aware FSM: `BotGetObjectiveRoom()`, `BotGetObjectiveTargetBias()`, `BotAssignObjectiveLeans()` |
 | `Descent3/multi_server.cpp` | `BotDoFrame()` hook in `MultiDoServerFrame()`; NPF_BOT send guards |
 | `Descent3/multi.cpp` | `BotReinitAll()` in `MultiStartNewLevel()`; `MakeBOA()` call; send guards |
 | `Descent3/AImain.cpp` | OBJ_PLAYER guards in `AIDoFrame()`; bot thrust-zeroing skip; gunboy fix |

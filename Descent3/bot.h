@@ -246,6 +246,12 @@ enum BotSquadRole {
   SQUAD_COVER,         // protect: navigate to squad_target_slot, actively engage threats
 };
 
+enum BotObjectiveLean {
+  BOT_LEAN_BALANCED = 0, // no objective lean (non-objective modes or FOLLOW/COVER)
+  BOT_LEAN_ATTACK,       // FREELANCE bots lean toward offense (flag grabbing, orb chasing)
+  BOT_LEAN_DEFEND,       // FREELANCE bots lean toward defense (flag guarding)
+};
+
 struct BotDifficultyParams {
   float aim_error_deg;        // max angular offset added to aim (degrees)
   float fire_delay;           // seconds after acquiring target before first shot
@@ -357,6 +363,9 @@ struct bot_info {
   // Squad orders (Phase 6.0 Stage 2) — persist through death and level transitions
   BotSquadRole squad_role;  // current squad order
   int squad_target_slot;    // for FOLLOW/COVER: player slot to follow/protect (-1 = sender)
+
+  // Objective-mode lean (Phase 6.0 Stage 3) — assigned at level start, affects FREELANCE nav
+  BotObjectiveLean objective_lean;
 };
 
 extern bot_info Bots[MAX_BOTS];

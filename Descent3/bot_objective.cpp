@@ -29,6 +29,7 @@
 #include "objinfo.h"
 #include "Inventory.h"
 #include "room.h"
+#include "vecmat.h"
 #include "dedicated_server.h"
 #include "log.h"
 
@@ -327,5 +328,167 @@ void BotPrintObjectiveState() {
   default:
     PrintDedicatedMessage("  No objective state for this mode.\n");
     break;
+  }
+
+  // Show bot objective leans
+  static const char *lean_names[] = {"balanced", "attack", "defend"};
+  bool any_lean = false;
+  for (int i = 0; i < MAX_BOTS; i++) {
+    if (!Bots[i].active)
+      continue;
+    if (!any_lean) {
+      PrintDedicatedMessage("Bot leans:\n");
+      any_lean = true;
+    }
+    int obj_room = BotGetObjectiveRoom(i);
+    PrintDedicatedMessage("  %s: lean=%s nav_room=%d\n", Bots[i].callsign, lean_names[Bots[i].objective_lean],
+                          obj_room);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Mode-aware FSM integration
+// ---------------------------------------------------------------------------
+
+#define BOT_OBJ_CARRIER_BIAS -400.0f
+#define BOT_OBJ_HYPER_CARRIER_BIAS -300.0f
+
+static int BotGetObjectiveRoom_CTF(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  int my_team = Players[slot].team;
+  if (my_team < 0 || my_team >= BOT_MAX_TEAMS)
+    return -1;
+
+  int num_teams = Num_teams > BOT_MAX_TEAMS ? BOT_MAX_TEAMS : Num_teams;
+  BotSquadRole role = Bots[bot_index].squad_role;
+
+  // FOLLOW/COVER: escort logic handles navigation, no objective override
+  if (role == SQUAD_FOLLOW || role == SQUAD_COVER)
+    return -1;
+
+  // Any role carrying an enemy flag must rush home — universal, not role-specific
+  for (int t = 0; t < num_teams; t++) {
+    if (t == my_team)
+      continue;
+    if (Bot_objective.flag_carrier_slot[t] == slot) {
+      LOG_DEBUG.printf("BOT OBJ: '%s' carrying team %d flag -> heading home (room %d)", Bots[bot_index].callsign, t,
+                       Bot_objective.goal_room[my_team]);
+      return Bot_objective.goal_room[my_team];
+    }
+  }
+
+  // Determine effective role for FREELANCE bots
+  BotSquadRole effective = role;
+  if (role == SQUAD_FREELANCE) {
+    // Reactive: if our flag is dropped, recover it regardless of lean
+    if (Bot_objective.flag_state[my_team] == FLAG_DROPPED && Bot_objective.flag_room[my_team] >= 0)
+      return Bot_objective.flag_room[my_team];
+    // If our flag is carried, let target selection handle the carrier — no nav override
+    if (Bot_objective.flag_state[my_team] == FLAG_CARRIED)
+      return -1;
+    effective = (Bots[bot_index].objective_lean == BOT_LEAN_DEFEND) ? SQUAD_DEFEND : SQUAD_ATTACK;
+  }
+
+  if (effective == SQUAD_ATTACK) {
+    // Find nearest available enemy flag (at_home or dropped)
+    object *obj = &Objects[Players[slot].objnum];
+    int best_room = -1;
+    float best_dist = 1e30f;
+    for (int t = 0; t < num_teams; t++) {
+      if (t == my_team)
+        continue;
+      int room = -1;
+      if (Bot_objective.flag_state[t] == FLAG_AT_HOME)
+        room = Bot_objective.goal_room[t];
+      else if (Bot_objective.flag_state[t] == FLAG_DROPPED)
+        room = Bot_objective.flag_room[t];
+      if (room < 0 || !Rooms[room].used)
+        continue;
+      float dist = vm_VectorDistanceQuick(&obj->pos, &Rooms[room].path_pnt);
+      if (dist < best_dist) {
+        best_dist = dist;
+        best_room = room;
+      }
+    }
+    return best_room;
+  }
+
+  if (effective == SQUAD_DEFEND) {
+    if (Bot_objective.flag_state[my_team] == FLAG_DROPPED && Bot_objective.flag_room[my_team] >= 0)
+      return Bot_objective.flag_room[my_team];
+    return Bot_objective.goal_room[my_team];
+  }
+
+  return -1;
+}
+
+static int BotGetObjectiveRoom_HyperAnarchy(int bot_index) {
+  if (Bot_objective.hyper_objnum >= 0 && Bot_objective.hyper_room >= 0) {
+    if (Rooms[Bot_objective.hyper_room].used)
+      return Bot_objective.hyper_room;
+  }
+  return -1;
+}
+
+static int BotGetObjectiveRoom_Monsterball(int bot_index) {
+  if (Bot_objective.monsterball_objnum >= 0 && Bot_objective.monsterball_room >= 0) {
+    if (Rooms[Bot_objective.monsterball_room].used)
+      return Bot_objective.monsterball_room;
+  }
+  return -1;
+}
+
+int BotGetObjectiveRoom(int bot_index) {
+  switch (BotGetGameMode()) {
+  case BGM_CTF:
+    return BotGetObjectiveRoom_CTF(bot_index);
+  case BGM_HYPERANARCHY:
+    return BotGetObjectiveRoom_HyperAnarchy(bot_index);
+  case BGM_MONSTERBALL:
+    return BotGetObjectiveRoom_Monsterball(bot_index);
+  default:
+    return -1;
+  }
+}
+
+float BotGetObjectiveTargetBias(int bot_index, int target_slot) {
+  BotGameMode mode = BotGetGameMode();
+
+  if (mode == BGM_CTF) {
+    int my_team = Players[Bots[bot_index].player_slot].team;
+    if (my_team < 0 || my_team >= BOT_MAX_TEAMS)
+      return 0.0f;
+    // Strong preference for the enemy carrying our flag
+    if (Bot_objective.flag_state[my_team] == FLAG_CARRIED && Bot_objective.flag_carrier_slot[my_team] == target_slot)
+      return BOT_OBJ_CARRIER_BIAS;
+    return 0.0f;
+  }
+
+  if (mode == BGM_HYPERANARCHY) {
+    if (Bot_objective.hyper_carrier_slot >= 0 && Bot_objective.hyper_carrier_slot == target_slot)
+      return BOT_OBJ_HYPER_CARRIER_BIAS;
+    return 0.0f;
+  }
+
+  return 0.0f;
+}
+
+void BotAssignObjectiveLeans() {
+  BotGameMode mode = BotGetGameMode();
+  bool needs_lean = (mode == BGM_CTF);
+
+  int attack_count = 0;
+  for (int i = 0; i < MAX_BOTS; i++) {
+    if (!Bots[i].active)
+      continue;
+    if (!needs_lean || Bots[i].squad_role != SQUAD_FREELANCE) {
+      Bots[i].objective_lean = BOT_LEAN_BALANCED;
+      continue;
+    }
+    // Alternate: first FREELANCE bot gets attack, next gets defend, etc.
+    Bots[i].objective_lean = (attack_count % 2 == 0) ? BOT_LEAN_ATTACK : BOT_LEAN_DEFEND;
+    attack_count++;
+    LOG_DEBUG.printf("BOT OBJ: '%s' assigned lean: %s", Bots[i].callsign,
+                     Bots[i].objective_lean == BOT_LEAN_ATTACK ? "attack" : "defend");
   }
 }

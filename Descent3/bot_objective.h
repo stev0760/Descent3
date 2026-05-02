@@ -62,4 +62,19 @@ void BotPollObjectiveState();
 // Print objective state to console (for $botobj diagnostic).
 void BotPrintObjectiveState();
 
+// Preferred navigation room for objective-driven explore roaming.
+// Returns a room index the bot should navigate toward, or -1 if no objective applies.
+// Called from BotDoExploreRoaming() to short-circuit random room selection.
+int BotGetObjectiveRoom(int bot_index);
+
+// Target selection bias for objective-relevant enemies.
+// Returns a score adjustment (negative = prefer target, positive = avoid).
+// Applied additively in BotSelectTarget().
+float BotGetObjectiveTargetBias(int bot_index, int target_slot);
+
+// Assign attack/defend leans to FREELANCE bots for objective-mode navigation.
+// Alternates bots between BOT_LEAN_ATTACK and BOT_LEAN_DEFEND so they spread.
+// Called from BotReinitAll() after BotInitObjectiveState().
+void BotAssignObjectiveLeans();
+
 #endif // BOT_OBJECTIVE_H

@@ -839,9 +839,10 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
         else if (tgt)
           tgt_name = "(robot)";
       }
-      PrintDedicatedMessage("  Bot %d '%s' slot=%d state=%s speed=%.1f vel=(%.1f,%.1f,%.1f) shields=%.0f target=%s\n",
-                            i, Bots[i].callsign, slot, state_names[Bots[i].state], speed, vel.x(), vel.y(), vel.z(),
-                            obj->shields, tgt_name);
+      static const char *lean_names[] = {"balanced", "attack", "defend"};
+      PrintDedicatedMessage("  Bot %d '%s' slot=%d state=%s role=%s lean=%s speed=%.1f shields=%.0f target=%s\n", i,
+                            Bots[i].callsign, slot, state_names[Bots[i].state], BotSquadRoleName(Bots[i].squad_role),
+                            lean_names[Bots[i].objective_lean], speed, obj->shields, tgt_name);
     }
     if (!any)
       PrintDedicatedMessage("No bots active (or invalid index)\n");

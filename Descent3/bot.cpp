@@ -1224,6 +1224,30 @@ static void BotDoExploreRoaming(int bot_index) {
     return;
   }
 
+  // Objective-mode navigation: if the game mode suggests a specific room, go there.
+  // If already at the objective room, hold position (don't fall through to random sampling).
+  int obj_room = BotGetObjectiveRoom(bot_index);
+  if (obj_room >= 0 && Rooms[obj_room].used) {
+    if (obj_room == obj->roomnum)
+      return;
+
+    int &pgi = Bots[bot_index].pursuit_goal_index;
+    if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+      GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+    pgi = -1;
+
+    goal_info gi_info{};
+    gi_info.pos = Rooms[obj_room].path_pnt;
+    gi_info.roomnum = obj_room;
+
+    pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
+    Bots[bot_index].explore_dest_room = obj_room;
+    Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
+
+    LOG_DEBUG.printf("BOT: '%s' objective nav -> room %d", Bots[bot_index].callsign, obj_room);
+    return;
+  }
+
   // --- Phase 4.0: BOA-driven long-range explore destinations ---
   // Instead of looking 1-2 portals deep, sample rooms from across the entire map.
   // Validate reachability via BOA before assigning goals. Prefer unvisited, uncrowded rooms.
@@ -2610,6 +2634,8 @@ static void BotSelectTarget(int bot_index) {
     else if (bot_rating == BOT_EQUIP_TIER_WEAK && tgt_rating >= BOT_EQUIP_TIER_ELITE)
       score += BOT_OUTGUNNED_PENALTY; // underarmed: avoid the elite
 
+    score += BotGetObjectiveTargetBias(bot_index, i);
+
     if (score < best_score) {
       best_score = score;
       best_player_slot = i;
@@ -2982,6 +3008,7 @@ void BotReinitAll() {
     Bots[i].last_chat_reply_time = 0.0f; // Gametime resets on level transition — must clear or throttle fires permanently
     Bots[i].squad_role = SQUAD_FREELANCE;
     Bots[i].squad_target_slot = -1;
+    Bots[i].objective_lean = BOT_LEAN_BALANCED;
     // difficulty persists across levels — don't reset
 
     // Restore NetPlayers sequence (level end sets NETSEQ_WAITING_FOR_LEVEL)
@@ -3036,6 +3063,7 @@ void BotReinitAll() {
                      Players[slot].team);
   }
   BotCacheCountermeasureIDs();
+  BotAssignObjectiveLeans();
 }
 
 int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desired_team) {
@@ -3229,6 +3257,7 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   Bots[bot_index].last_chat_reply_time = 0.0f;
   Bots[bot_index].squad_role = SQUAD_FREELANCE;
   Bots[bot_index].squad_target_slot = -1;
+  Bots[bot_index].objective_lean = BOT_LEAN_BALANCED;
   BotCacheShipPhysics(bot_index);
   BotSelectBestSecondary(bot_index); // equip best secondary weapon at spawn
   Num_bots++;
