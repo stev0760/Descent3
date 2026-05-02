@@ -1,9 +1,9 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Matcen 0.8.11-dev — game-mode awareness + objective polling + mode-aware FSM. `BotGameMode` enum, `BotDetectGameMode()`, `BotObjectiveState` polling, `BotGetObjectiveRoom()`/`BotGetObjectiveTargetBias()` FSM integration. Last stable: 0.8.10 (non-team-mode verb silence hotfix).
+**Status:** Matcen 0.8.11-dev �� game-mode awareness + objective polling + mode-aware FSM + Tier 2 chat verbs. `BotGameMode` enum, `BotDetectGameMode()`, `BotObjectiveState` polling, `BotGetObjectiveRoom()`/`BotGetObjectiveTargetBias()` FSM integration, Tier 2 verbs (`!hunt`, `!regroup`/`!form up`, `!attack flag`, `!defend flag`). Last stable: 0.8.10 (non-team-mode verb silence hotfix).
 
-Next milestone: 0.9.0 (CTF + Hyper-Anarchy objective state + mode-aware FSM + Tier 2 chat verbs).
+Next milestone: 0.9.0 — strip `-dev` after CTF smoke test validates objective navigation + Tier 2 verbs.
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -71,6 +71,7 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | 6.0s3 | **Game-mode detection layer:** `BotGameMode` enum (BGM_ANARCHY through BGM_MONSTERBALL), `Bot_game_mode` global, `BotDetectGameMode()` (strips `.d3m`, case-insensitive match on `Netgame.scriptname` + `NF_COOP` check), `BotGetGameMode()` / `BotGameModeName()`, `$botmode` diagnostic console command. Called from `BotReinitAll()` at level start. | Complete (Matcen 0.8.11-dev) |
 | 6.0s3a | **Objective-state polling module:** `bot_objective.h`/`bot_objective.cpp` — `BotObjectiveState` struct tracks per-mode state: CTF flags (3-state: at_home/dropped/carried + carrier slot + goal rooms via `GetGoalRoomForTeam()`), Hyper-Anarchy orb (carrier slot or free position), Hoard (per-player inventory count), Monsterball (position). Object type IDs cached at level start via `FindObjectIDName()`. `BotPollObjectiveState()` scans `Objects[]` + `Players[].inventory` on 0.5s interval from `BotDoFrame()`. `$botobj` diagnostic console command. | Complete (Matcen 0.8.11-dev) |
 | 6.0s3b | **Mode-aware FSM integration:** `BotGetObjectiveRoom()` steers explore roaming toward objective-relevant rooms (CTF: enemy flag / home base / flag recovery; Hyper-Anarchy: free orb; Monsterball: ball room). `BotGetObjectiveTargetBias()` gives strong targeting preference to flag/orb carriers (`-400`/`-300` score bonus). `BotObjectiveLean` enum (`BOT_LEAN_ATTACK`/`DEFEND`) assigned to FREELANCE bots at level start — alternates offense/defense so bots spread across objectives. FREELANCE bots react to dropped own-flags regardless of lean. `$botstat` shows role + lean, `$botobj` shows per-bot nav targets. | Complete (Matcen 0.8.11-dev) |
+| 6.0s3c | **Tier 2 chat verbs:** `!hunt <name>` (team-agnostic named targeting via `BotFindPlayerByName()` prefix match — works in FFA like `!ping`), `!regroup`/`!form up`/`!formup` (alias to `!follow` — converge on speaker), `!attack flag`/`!defend flag` (CTF-aware reply variants: "On the flag!" / "Guarding the flag!" in CTF, standard reply otherwise — behavior identical to `!attack`/`!defend` since FSM integration handles objective nav). `!get <powerup>` deferred (requires powerup awareness subsystem). | Complete (Matcen 0.8.11-dev) |
 | 5 | **Bot management (remaining):** Remote admin, auto-rebalancing, server orchestration. | Not started |
 | 6 | **Game mode awareness + squad orders:** CTF, Hyper-Anarchy, Hoard, Entropy, Monsterball, Co-op (deferred post-launch). See game mode priority table in Phase 6 section below. | In progress (Stage 1 chat complete) |
 

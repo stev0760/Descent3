@@ -16,7 +16,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-// Bot chat command system — Stage 2: squad roles + Tier 1 verbs.
+// Bot chat command system — Stage 3: Tier 2 tactical verbs + game-mode awareness.
 // See matcen-docs/CHAT_COMMANDS.md for full design.
 
 #include "bot_chat.h"
@@ -117,6 +117,32 @@ static int BotGetSenderNearestEnemy(int from_pnum) {
     }
   }
   return best_slot;
+}
+
+// Find a player slot by callsign prefix match. Skips self, disconnected, and
+// teammates (in team modes). Strips [BOT] suffix before matching.
+static int BotFindPlayerByName(int from_pnum, const char *name) {
+  int name_len = (int)strlen(name);
+  if (name_len == 0)
+    return -1;
+  for (int i = 0; i < MAX_NET_PLAYERS; i++) {
+    if (i == from_pnum)
+      continue;
+    if (!(NetPlayers[i].flags & NPF_CONNECTED))
+      continue;
+    int sender_team = Players[from_pnum].team;
+    int cand_team = Players[i].team;
+    if (sender_team >= 0 && cand_team == sender_team)
+      continue;
+    const char *cs = Players[i].callsign;
+    int cs_len = (int)strlen(cs);
+    int base_len = cs_len;
+    if (cs_len > BOT_NAME_SUFFIX_LEN && strcmp(cs + cs_len - BOT_NAME_SUFFIX_LEN, BOT_NAME_SUFFIX) == 0)
+      base_len -= BOT_NAME_SUFFIX_LEN;
+    if (name_len <= base_len && strnicmp(cs, name, name_len) == 0)
+      return i;
+  }
+  return -1;
 }
 
 // ---------------------------------------------------------------------------
@@ -293,6 +319,85 @@ static void BotHandleFreelance(int bot_index, int from_pnum, int towho) {
   BotSendChatReply(bot_index, reply, (towho >= 0) ? from_pnum : towho);
 }
 
+static void BotHandleHunt(int bot_index, int from_pnum, int towho, int target_slot) {
+  if (Num_teams > 1 && !BotShouldObey(bot_index, from_pnum)) {
+    char reply[128];
+    snprintf(reply, sizeof(reply), "%s: Not taking orders from you!", Bots[bot_index].callsign);
+    BotSendChatReply(bot_index, reply, (towho >= 0) ? from_pnum : towho);
+    return;
+  }
+
+  if (Num_teams > 1) {
+    Bots[bot_index].squad_role = SQUAD_ATTACK;
+    Bots[bot_index].squad_target_slot = -1;
+  }
+  Bots[bot_index].retarget_cooldown = 0.0f;
+
+  if (target_slot >= 0 && target_slot < MAX_NET_PLAYERS &&
+      (NetPlayers[target_slot].flags & NPF_CONNECTED) &&
+      !(Players[target_slot].flags & (PLAYER_FLAGS_DEAD | PLAYER_FLAGS_DYING)) &&
+      Objects[Players[target_slot].objnum].type == OBJ_PLAYER) {
+    int slot = Bots[bot_index].player_slot;
+    object *obj = &Objects[Players[slot].objnum];
+    if (obj->ai_info) {
+      AISetTarget(obj, Objects[Players[target_slot].objnum].handle);
+      if (Bots[bot_index].state == BOT_STATE_EXPLORE)
+        Bots[bot_index].state = BOT_STATE_HUNT;
+    }
+  }
+
+  char reply[128];
+  if (target_slot >= 0) {
+    const char *tcs = Players[target_slot].callsign;
+    int tlen = (int)strlen(tcs);
+    if (tlen > BOT_NAME_SUFFIX_LEN && strcmp(tcs + tlen - BOT_NAME_SUFFIX_LEN, BOT_NAME_SUFFIX) == 0)
+      tlen -= BOT_NAME_SUFFIX_LEN;
+    snprintf(reply, sizeof(reply), "%s: Hunting %.*s!", Bots[bot_index].callsign, tlen, tcs);
+  } else {
+    snprintf(reply, sizeof(reply), "%s: Hunting!", Bots[bot_index].callsign);
+  }
+  BotSendChatReply(bot_index, reply, (towho >= 0) ? from_pnum : towho);
+}
+
+static void BotHandleAttackFlag(int bot_index, int from_pnum, int towho) {
+  if (!BotShouldObey(bot_index, from_pnum)) {
+    char reply[128];
+    snprintf(reply, sizeof(reply), "%s: Not taking orders from you!", Bots[bot_index].callsign);
+    BotSendChatReply(bot_index, reply, (towho >= 0) ? from_pnum : towho);
+    return;
+  }
+
+  Bots[bot_index].squad_role = SQUAD_ATTACK;
+  Bots[bot_index].squad_target_slot = -1;
+  Bots[bot_index].retarget_cooldown = 0.0f;
+
+  char reply[128];
+  if (BotGetGameMode() == BGM_CTF)
+    snprintf(reply, sizeof(reply), "%s: On the flag!", Bots[bot_index].callsign);
+  else
+    snprintf(reply, sizeof(reply), "%s: Attacking!", Bots[bot_index].callsign);
+  BotSendChatReply(bot_index, reply, (towho >= 0) ? from_pnum : towho);
+}
+
+static void BotHandleDefendFlag(int bot_index, int from_pnum, int towho) {
+  if (!BotShouldObey(bot_index, from_pnum)) {
+    char reply[128];
+    snprintf(reply, sizeof(reply), "%s: Not taking orders from you!", Bots[bot_index].callsign);
+    BotSendChatReply(bot_index, reply, (towho >= 0) ? from_pnum : towho);
+    return;
+  }
+
+  Bots[bot_index].squad_role = SQUAD_DEFEND;
+  Bots[bot_index].squad_target_slot = -1;
+
+  char reply[128];
+  if (BotGetGameMode() == BGM_CTF)
+    snprintf(reply, sizeof(reply), "%s: Guarding the flag!", Bots[bot_index].callsign);
+  else
+    snprintf(reply, sizeof(reply), "%s: Defending!", Bots[bot_index].callsign);
+  BotSendChatReply(bot_index, reply, (towho >= 0) ? from_pnum : towho);
+}
+
 // ---------------------------------------------------------------------------
 // Verb dispatch (single bot)
 // ---------------------------------------------------------------------------
@@ -300,13 +405,11 @@ static void BotHandleFreelance(int bot_index, int from_pnum, int towho) {
 static void BotDispatchVerb(int bot_index, int from_pnum, int towho, const char *verb,
                             const char *args, int force_target_slot) {
   // Non-team modes (Anarchy, Hyper-Anarchy, Monsterball, Hoard, Co-op) have no squad
-  // relationships — silently drop every verb except !ping. This covers the DM path;
-  // the broadcast path is already blocked upstream in BotResolveAndDispatch.
-  if (Num_teams <= 1 && strcmp(verb, "ping") != 0)
+  // relationships — silently drop every verb except team-agnostic ones (ping, hunt).
+  if (Num_teams <= 1 && strcmp(verb, "ping") != 0 && strcmp(verb, "hunt") != 0)
     return;
 
   if (strcmp(verb, "ping") == 0) {
-    // ping is always obeyed regardless of team
     BotHandlePing(bot_index, from_pnum, towho);
   } else if (strcmp(verb, "status") == 0) {
     BotHandleStatus(bot_index, from_pnum, towho);
@@ -320,8 +423,13 @@ static void BotDispatchVerb(int bot_index, int from_pnum, int towho, const char 
     BotHandleCover(bot_index, from_pnum, towho);
   } else if (strcmp(verb, "freelance") == 0) {
     BotHandleFreelance(bot_index, from_pnum, towho);
+  } else if (strcmp(verb, "hunt") == 0) {
+    BotHandleHunt(bot_index, from_pnum, towho, force_target_slot);
+  } else if (strcmp(verb, "attackflag") == 0) {
+    BotHandleAttackFlag(bot_index, from_pnum, towho);
+  } else if (strcmp(verb, "defendflag") == 0) {
+    BotHandleDefendFlag(bot_index, from_pnum, towho);
   }
-  // Unknown verbs are silently ignored
   (void)args;
 }
 
@@ -365,9 +473,8 @@ static void BotResolveAndDispatch(int from_pnum, int towho, const char *verb, co
   }
 
   // Broadcast path: in non-team modes there's no squad context, so drop every verb
-  // except !ping — letting Pong! echo back is a harmless easter egg and useful
-  // proof-of-life for admins on Anarchy servers.
-  if (Num_teams <= 1 && strcmp(verb, "ping") != 0) {
+  // except team-agnostic ones (ping, hunt).
+  if (Num_teams <= 1 && strcmp(verb, "ping") != 0 && strcmp(verb, "hunt") != 0) {
     LOG_DEBUG.printf("BOT CHAT: Not a team mode, broadcast command ignored");
     return;
   }
@@ -462,6 +569,16 @@ void BotOnChatMessage(int from_pnum, int towho, const char *message) {
     strcpy(verb, "freelance");
   if (strcmp(verb, "report") == 0)
     strcpy(verb, "status");
+  if (strcmp(verb, "regroup") == 0 || strcmp(verb, "formup") == 0)
+    strcpy(verb, "follow");
+  if (strcmp(verb, "form") == 0 &&
+      strnicmp(args, "up", 2) == 0 && (args[2] == '\0' || isspace((unsigned char)args[2]))) {
+    strcpy(verb, "follow");
+    const char *rest = args + 2;
+    while (*rest && isspace((unsigned char)*rest))
+      rest++;
+    memmove(args, rest, strlen(rest) + 1);
+  }
 
   // Force-target the sender's nearest enemy
   int force_target_slot = -1;
@@ -474,12 +591,43 @@ void BotOnChatMessage(int from_pnum, int towho, const char *message) {
   if (strcmp(verb, "attack") == 0) {
     if (strnicmp(args, "target", 6) == 0 && (args[6] == '\0' || isspace((unsigned char)args[6]))) {
       force_target_slot = BotGetSenderNearestEnemy(from_pnum);
-      // Shift args past "target" so addressing resolver sees the bot name (if any)
       const char *rest = args + 6;
       while (*rest && isspace((unsigned char)*rest))
         rest++;
       memmove(args, rest, strlen(rest) + 1);
     }
+  }
+
+  // "!hunt <name>" — target a specific enemy by callsign prefix
+  if (strcmp(verb, "hunt") == 0 && args[0] != '\0') {
+    char target_name[CALLSIGN_LEN + 1];
+    int ni = 0;
+    const char *p = args;
+    while (*p && !isspace((unsigned char)*p) && ni < (int)sizeof(target_name) - 1)
+      target_name[ni++] = *p++;
+    target_name[ni] = '\0';
+    force_target_slot = BotFindPlayerByName(from_pnum, target_name);
+    while (*p && isspace((unsigned char)*p))
+      p++;
+    memmove(args, p, strlen(p) + 1);
+  }
+
+  // "!attack flag" / "!defend flag" — CTF-aware reply variants
+  if (strcmp(verb, "attack") == 0 &&
+      strnicmp(args, "flag", 4) == 0 && (args[4] == '\0' || isspace((unsigned char)args[4]))) {
+    strcpy(verb, "attackflag");
+    const char *rest = args + 4;
+    while (*rest && isspace((unsigned char)*rest))
+      rest++;
+    memmove(args, rest, strlen(rest) + 1);
+  }
+  if (strcmp(verb, "defend") == 0 &&
+      strnicmp(args, "flag", 4) == 0 && (args[4] == '\0' || isspace((unsigned char)args[4]))) {
+    strcpy(verb, "defendflag");
+    const char *rest = args + 4;
+    while (*rest && isspace((unsigned char)*rest))
+      rest++;
+    memmove(args, rest, strlen(rest) + 1);
   }
 
   BotResolveAndDispatch(from_pnum, towho, verb, args, force_target_slot);

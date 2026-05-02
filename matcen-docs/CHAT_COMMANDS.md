@@ -4,7 +4,7 @@ Phase 6.0 infrastructure: chat-based bot command system. Enables squad orders, g
 awareness, and bot personality expression. Foundational layer for all objective-mode work
 (CTF, Entropy, Co-op, Monsterball).
 
-**Status:** Stage 2 complete (Matcen 0.8.9), Stage 3 (game-mode awareness) in progress. `!ping` validated. Matcen 0.8.10 added non-team-mode guard (silent drop in Anarchy/Hyper-Anarchy/Hoard/Monsterball/Co-op). Matcen 0.8.11-dev adds `BotGameMode` enum + `$botmode` diagnostic + `BotObjectiveState` polling module (`bot_objective.h`/`.cpp`) — CTF 3-state flags, Hyper-Anarchy orb, Hoard per-player counts, Monsterball position. `$botobj` diagnostic. FSM integration: `BotGetObjectiveRoom()` + `BotGetObjectiveTargetBias()` + `BotObjectiveLean` for FREELANCE bots. Next: Tier 2 verbs (`!hunt`, `!get`, `!regroup`, `!attack flag`, `!defend flag`) → 0.9.0.
+**Status:** Stage 3 in progress (Matcen 0.8.11-dev). Stages 1-2 complete (0.8.8-0.8.9). Matcen 0.8.10 added non-team-mode guard. Matcen 0.8.11-dev adds game-mode detection (`BotGameMode`, `$botmode`), objective-state polling (`bot_objective.h`/`.cpp` — CTF flags, Hyper-Anarchy orb, Hoard counts, Monsterball), FSM integration (`BotGetObjectiveRoom()` + `BotGetObjectiveTargetBias()` + `BotObjectiveLean`), and Tier 2 verbs: `!hunt <name>` (team-agnostic named targeting), `!regroup`/`!form up` (converge on speaker), `!attack flag`/`!defend flag` (CTF-aware reply variants). `!get <powerup>` deferred (requires powerup awareness). Next: CTF smoke test, then strip `-dev` for 0.9.0.
 
 ## Research Summary
 
