@@ -1424,6 +1424,64 @@ static void BotDoExploreRoaming(int bot_index) {
                    BotHasVisitedRoom(bot_index, dest_room) ? " revisit" : " new");
 }
 
+// Dedicated carrier navigation — called every EXPLORE tick when carrying an enemy flag.
+// Bypasses BotDoExploreRoaming entirely to avoid the early-return guard and last_target_room redirect.
+static void BotDoCarrierNav(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  if (!obj->ai_info)
+    return;
+
+  // Clear any stale powerup goal that could pull against home nav
+  int &pugi = Bots[bot_index].powerup_goal_index;
+  if (pugi >= 0 && pugi < MAX_GOALS && obj->ai_info->goals[pugi].used)
+    GoalClearGoal(obj, &obj->ai_info->goals[pugi]);
+  pugi = -1;
+  Bots[bot_index].chasing_powerup_handle = OBJECT_HANDLE_NONE;
+  Bots[bot_index].chasing_powerup_timer = 0.0f;
+
+  int obj_room = BotGetObjectiveRoom(bot_index);
+  if (obj_room < 0 || !Rooms[obj_room].used) {
+    BotDoExploreRoaming(bot_index);
+    return;
+  }
+
+  // Already at home base — try score beeline through the flag object
+  if (obj_room == obj->roomnum) {
+    int flag_objnum = BotGetHomeFlagObjnum(bot_index);
+    if (flag_objnum >= 0) {
+      int &pgi = Bots[bot_index].pursuit_goal_index;
+      if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+        GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+      int flag_handle = Objects[flag_objnum].handle;
+      pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&flag_handle, 2, 1.0f,
+                        GF_SPEED_ATTACK | GF_USE_BLINE_IF_SEES_GOAL);
+      LOG_DEBUG.printf("BOT CTF: '%s' score beeline -> home flag obj %d", Bots[bot_index].callsign, flag_objnum);
+    } else {
+      LOG_DEBUG.printf("BOT CTF: '%s' at home base, waiting for flag return", Bots[bot_index].callsign);
+    }
+    return;
+  }
+
+  // Navigate to home base — refresh goal every tick so HUNT re-entry doesn't lose it
+  int &pgi = Bots[bot_index].pursuit_goal_index;
+  if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+    GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+  pgi = -1;
+
+  goal_info gi_info{};
+  gi_info.pos = Rooms[obj_room].path_pnt;
+  gi_info.roomnum = obj_room;
+
+  pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
+  Bots[bot_index].explore_dest_room = obj_room;
+  Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
+  Bots[bot_index].last_target_room = -1;
+
+  LOG_DEBUG.printf("BOT CTF: '%s' carrier nav room %d -> home %d", Bots[bot_index].callsign,
+                   OBJECT_OUTSIDE(obj) ? -1 : obj->roomnum, obj_room);
+}
+
 // Returns true if the bot has no primary weapon beyond the default Laser (battery 0).
 // Used to boost weapon pickup priority when the bot just spawned with bare equipment.
 static bool BotHasOnlyDefaultPrimary(int bot_index) {
@@ -1848,6 +1906,14 @@ static void BotUpdateState(int bot_index) {
 
   switch (old_state) {
   case BOT_STATE_EXPLORE: {
+    // Flag carrier override: rush home, skip powerups and escort duties.
+    // Must be checked first — carriers always prioritize scoring.
+    if (BotIsCarryingEnemyFlag(bot_index)) {
+      BotDoCarrierNav(bot_index);
+      if (has_target && has_los && dist < BOT_CLOSERANGE_DIST)
+        new_state = BOT_STATE_HUNT;
+      break;
+    }
     // Escort roles take priority over powerup collection and roaming.
     // Navigate to the followed/covered player; FOLLOW only fights back when attacked,
     // COVER engages freely so it can kill threats near the protected player.
@@ -1921,12 +1987,7 @@ static void BotUpdateState(int bot_index) {
     bool chasing_powerup = (Bots[bot_index].powerup_goal_index >= 0) &&
                            (Bots[bot_index].chasing_powerup_timer < BOT_POWERUP_STALE_CHASE);
     bool urgent_threat = (has_los && dist < BOT_CLOSERANGE_DIST);
-    bool carrying_flag = BotIsCarryingEnemyFlag(bot_index);
-    if (carrying_flag) {
-      // Flag carrier: only enter HUNT for close-range threats — priority is getting home
-      if (has_target && urgent_threat)
-        new_state = BOT_STATE_HUNT;
-    } else if (has_target && !holding_for_weapon && !chasing_powerup && (has_los || dist < BOT_HUNT_BLIND_MAX_DIST))
+    if (has_target && !holding_for_weapon && !chasing_powerup && (has_los || dist < BOT_HUNT_BLIND_MAX_DIST))
       new_state = BOT_STATE_HUNT;
     else if (has_target && !holding_for_weapon && chasing_powerup && urgent_threat)
       new_state = BOT_STATE_HUNT;
@@ -3410,6 +3471,15 @@ void BotDoFrame() {
 
     // Check if the bot just died
     if (Players[slot].flags & (PLAYER_FLAGS_DEAD | PLAYER_FLAGS_DYING)) {
+      if (BotIsCarryingEnemyFlag(i)) {
+        object *dobj = &Objects[Players[slot].objnum];
+        int home_room = BotGetObjectiveRoom(i);
+        float home_dist = (home_room >= 0 && Rooms[home_room].used)
+                              ? vm_VectorDistanceQuick(&dobj->pos, &Rooms[home_room].path_pnt)
+                              : -1.0f;
+        LOG_DEBUG.printf("BOT CTF: '%s' DIED carrying flag! dist_to_home=%.0f room=%d home=%d",
+                         Bots[i].callsign, home_dist, OBJECT_OUTSIDE(dobj) ? -1 : dobj->roomnum, home_room);
+      }
       Bots[i].awaiting_respawn = true;
       Bots[i].death_time = Gametime;
       Bots[i].pursuit_goal_index = -1;

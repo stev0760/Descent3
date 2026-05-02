@@ -10,7 +10,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Matcen — Multiplayer Bots (Experimental)
 
-> **Matcen 0.8.11-dev** — game-mode awareness: `BotGameMode` enum, `BotDetectGameMode()`, `$botmode` diagnostic command. 0.9.0 will add CTF + Hyper-Anarchy objective state and mode-aware FSM. Previous release (0.8.10): non-team modes silently drop all squad chat verbs except `!ping`.
+> **Matcen 0.8.11** — game-mode awareness + CTF support: objective polling, mode-aware FSM, Tier 2 chat verbs, CTF behavior (flag stealing, carrier rush home, score beeline, defender retarget on flag theft). Bots actively play CTF — stealing flags, rushing home to score, and defending their base. Previous release (0.8.10): non-team-mode verb silence hotfix.
 
 This fork — "Matcen" — adds a **server-side multiplayer bot system** to Descent 3. Bots occupy real player slots on dedicated servers or listen servers, appearing and acting as normal players. All bots are tagged with ` [BOT]` as a callsign suffix for easy identification.
 
