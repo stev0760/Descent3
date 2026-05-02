@@ -1,9 +1,9 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Matcen 0.8.11-dev �� game-mode awareness + objective polling + mode-aware FSM + Tier 2 chat verbs. `BotGameMode` enum, `BotDetectGameMode()`, `BotObjectiveState` polling, `BotGetObjectiveRoom()`/`BotGetObjectiveTargetBias()` FSM integration, Tier 2 verbs (`!hunt`, `!regroup`/`!form up`, `!attack flag`, `!defend flag`). Last stable: 0.8.10 (non-team-mode verb silence hotfix).
+**Status:** Matcen 0.8.11-dev �� game-mode awareness + objective polling + mode-aware FSM + Tier 2 chat verbs. `BotGameMode` enum, `BotDetectGameMode()`, `BotObjectiveState` polling, `BotGetObjectiveRoom()`/`BotGetObjectiveTargetBias()` FSM integration, Tier 2 verbs (`!hunt`, `!regroup`/`!form up`, `!attack flag`, `!defend flag`). CTF behavior tuning: smart flag filter (`BotIsFlagPowerup`/`BotCanCollectPowerup` — skip own AT_HOME, allow DROPPED for returns), carrier state suppression (stay EXPLORE, HUNT only for urgent threats), score beeline (`AIG_GET_TO_OBJ` + bline on home flag), wait-at-home when own flag stolen, forced defender retarget on flag theft, carrier thrust override (full speed + AB). Last stable: 0.8.10 (non-team-mode verb silence hotfix).
 
-Next milestone: 0.9.0 — strip `-dev` after CTF smoke test validates objective navigation + Tier 2 verbs.
+Next milestone: 0.9.0 — strip `-dev` after CTF smoke test validates carrier rush, flag returns, defender retarget, and score beeline.
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -72,8 +72,9 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | 6.0s3a | **Objective-state polling module:** `bot_objective.h`/`bot_objective.cpp` — `BotObjectiveState` struct tracks per-mode state: CTF flags (3-state: at_home/dropped/carried + carrier slot + goal rooms via `GetGoalRoomForTeam()`), Hyper-Anarchy orb (carrier slot or free position), Hoard (per-player inventory count), Monsterball (position). Object type IDs cached at level start via `FindObjectIDName()`. `BotPollObjectiveState()` scans `Objects[]` + `Players[].inventory` on 0.5s interval from `BotDoFrame()`. `$botobj` diagnostic console command. | Complete (Matcen 0.8.11-dev) |
 | 6.0s3b | **Mode-aware FSM integration:** `BotGetObjectiveRoom()` steers explore roaming toward objective-relevant rooms (CTF: enemy flag / home base / flag recovery; Hyper-Anarchy: free orb; Monsterball: ball room). `BotGetObjectiveTargetBias()` gives strong targeting preference to flag/orb carriers (`-400`/`-300` score bonus). `BotObjectiveLean` enum (`BOT_LEAN_ATTACK`/`DEFEND`) assigned to FREELANCE bots at level start — alternates offense/defense so bots spread across objectives. FREELANCE bots react to dropped own-flags regardless of lean. `$botstat` shows role + lean, `$botobj` shows per-bot nav targets. | Complete (Matcen 0.8.11-dev) |
 | 6.0s3c | **Tier 2 chat verbs:** `!hunt <name>` (team-agnostic named targeting via `BotFindPlayerByName()` prefix match — works in FFA like `!ping`), `!regroup`/`!form up`/`!formup` (alias to `!follow` — converge on speaker), `!attack flag`/`!defend flag` (CTF-aware reply variants: "On the flag!" / "Guarding the flag!" in CTF, standard reply otherwise — behavior identical to `!attack`/`!defend` since FSM integration handles objective nav). `!get <powerup>` deferred (requires powerup awareness subsystem). | Complete (Matcen 0.8.11-dev) |
+| 6.1ctf | **CTF behavior tuning:** Smart flag filter (`BotIsFlagPowerup`/`BotCanCollectPowerup` — skip own AT_HOME, allow DROPPED for returns), carrier state suppression (stay EXPLORE, HUNT only for urgent threats), score beeline (`AIG_GET_TO_OBJ` + bline on home flag), wait-at-home (0.3f drift when own flag stolen), forced defender retarget on flag theft (`Prev_flag_state` transition detection), carrier thrust override (full speed + AB when scoring, slow drift when waiting). Three new helpers: `BotIsFlagPowerup()`, `BotIsCarryingEnemyFlag()`, `BotGetHomeFlagObjnum()`. | Complete (Matcen 0.8.11-dev) — pending smoke test |
 | 5 | **Bot management (remaining):** Remote admin, auto-rebalancing, server orchestration. | Not started |
-| 6 | **Game mode awareness + squad orders:** CTF, Hyper-Anarchy, Hoard, Entropy, Monsterball, Co-op (deferred post-launch). See game mode priority table in Phase 6 section below. | In progress (Stage 1 chat complete) |
+| 6 | **Game mode awareness + squad orders:** CTF, Hyper-Anarchy, Hoard, Entropy, Monsterball, Co-op (deferred post-launch). See game mode priority table in Phase 6 section below. | In progress (CTF tuning complete, pending test) |
 
 ## Files
 
@@ -853,6 +854,8 @@ The single most iconic organized-play mode from D3's competitive era. 4-team CTF
 - `CheckMissionForScript` enforces team count at game start — graceful degradation
 
 **Integration with squad system:** Attack squad → FLAG_ATTACKER/FLAG_ESCORT. Defense squad → FLAG_DEFENDER. Natural split.
+
+**Implementation status (0.8.11-dev):** Core CTF behaviors implemented via objective-state polling (`BotPollCTF`) + FSM integration + flag helpers. Smart flag filter in `BotCanCollectPowerup` (own AT_HOME skipped, DROPPED allowed for returns). Carrier state suppression keeps carriers in EXPLORE (HUNT only for urgent threats). Score beeline uses `AIG_GET_TO_OBJ` + bline flag when carrier reaches home base. Carrier thrust override: full speed + AB when scoring possible, 0.3f drift when waiting for own flag return. Forced defender retarget on flag theft via `Prev_flag_state` transition detection. `BotObjectiveLean` alternates ATTACK/DEFEND for FREELANCE bots. `FLAG_ESCORT` (auto-escort of carrier) deferred — existing target bias + retarget should be tested first. Pending CTF smoke test.
 
 #### 6.2: Hyper-Anarchy (Priority: 2 — quick win)
 
