@@ -37,6 +37,7 @@ BotObjectiveState Bot_objective;
 
 // Cached object type IDs — resolved once per level via FindObjectIDName().
 static int Obj_flag_id[BOT_MAX_TEAMS] = {-1, -1, -1, -1};
+static BotFlagState Prev_flag_state[BOT_MAX_TEAMS] = {FLAG_UNKNOWN, FLAG_UNKNOWN, FLAG_UNKNOWN, FLAG_UNKNOWN};
 static int Obj_hyper_id = -1;
 static int Obj_hoard_id = -1;
 static int Obj_monsterball_id = -1;
@@ -60,6 +61,8 @@ static void BotResetObjectiveState() {
 
 void BotInitObjectiveState() {
   BotResetObjectiveState();
+  for (int i = 0; i < BOT_MAX_TEAMS; i++)
+    Prev_flag_state[i] = FLAG_UNKNOWN;
 
   Obj_flag_id[0] = -1;
   Obj_flag_id[1] = -1;
@@ -111,6 +114,9 @@ void BotInitObjectiveState() {
 // ---------------------------------------------------------------------------
 
 static void BotPollCTF() {
+  for (int t = 0; t < BOT_MAX_TEAMS; t++)
+    Prev_flag_state[t] = Bot_objective.flag_state[t];
+
   // Phase 1: find free flag powerups in the world
   for (int t = 0; t < BOT_MAX_TEAMS; t++) {
     Bot_objective.flag_objnum[t] = -1;
@@ -154,6 +160,27 @@ static void BotPollCTF() {
         if (Players[s].inventory.CheckItem(OBJ_POWERUP, Obj_flag_id[t])) {
           Bot_objective.flag_carrier_slot[t] = s;
           break;
+        }
+      }
+    }
+  }
+
+  // Forced retarget: when a team's flag transitions from AT_HOME to stolen (CARRIED/DROPPED),
+  // clear retarget cooldown on that team's bots so defenders immediately re-evaluate targets.
+  int num_teams = Num_teams > BOT_MAX_TEAMS ? BOT_MAX_TEAMS : Num_teams;
+  for (int t = 0; t < num_teams; t++) {
+    if (Prev_flag_state[t] == FLAG_AT_HOME &&
+        (Bot_objective.flag_state[t] == FLAG_CARRIED || Bot_objective.flag_state[t] == FLAG_DROPPED)) {
+      LOG_DEBUG.printf("BOT OBJ: team %d flag stolen! Clearing retarget cooldowns for defenders", t);
+      for (int b = 0; b < MAX_BOTS; b++) {
+        if (!Bots[b].active)
+          continue;
+        if (Players[Bots[b].player_slot].team != t)
+          continue;
+        if (Bots[b].squad_role == SQUAD_DEFEND || Bots[b].objective_lean == BOT_LEAN_DEFEND ||
+            Bots[b].squad_role == SQUAD_FREELANCE) {
+          Bots[b].retarget_cooldown = 0.0f;
+          Bots[b].last_target_update = 0.0f;
         }
       }
     }
@@ -471,6 +498,47 @@ float BotGetObjectiveTargetBias(int bot_index, int target_slot) {
   }
 
   return 0.0f;
+}
+
+bool BotIsFlagPowerup(int powerup_id, int *out_team) {
+  if (BotGetGameMode() != BGM_CTF)
+    return false;
+  for (int t = 0; t < BOT_MAX_TEAMS; t++) {
+    if (Obj_flag_id[t] >= 0 && powerup_id == Obj_flag_id[t]) {
+      if (out_team)
+        *out_team = t;
+      return true;
+    }
+  }
+  return false;
+}
+
+bool BotIsCarryingEnemyFlag(int bot_index) {
+  if (BotGetGameMode() != BGM_CTF)
+    return false;
+  int slot = Bots[bot_index].player_slot;
+  int my_team = Players[slot].team;
+  if (my_team < 0 || my_team >= BOT_MAX_TEAMS)
+    return false;
+  int num_teams = Num_teams > BOT_MAX_TEAMS ? BOT_MAX_TEAMS : Num_teams;
+  for (int t = 0; t < num_teams; t++) {
+    if (t == my_team)
+      continue;
+    if (Bot_objective.flag_carrier_slot[t] == slot)
+      return true;
+  }
+  return false;
+}
+
+int BotGetHomeFlagObjnum(int bot_index) {
+  if (BotGetGameMode() != BGM_CTF)
+    return -1;
+  int my_team = Players[Bots[bot_index].player_slot].team;
+  if (my_team < 0 || my_team >= BOT_MAX_TEAMS)
+    return -1;
+  if (Bot_objective.flag_state[my_team] != FLAG_AT_HOME)
+    return -1;
+  return Bot_objective.flag_objnum[my_team];
 }
 
 void BotAssignObjectiveLeans() {

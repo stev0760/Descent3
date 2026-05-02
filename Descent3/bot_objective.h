@@ -77,4 +77,15 @@ float BotGetObjectiveTargetBias(int bot_index, int target_slot);
 // Called from BotReinitAll() after BotInitObjectiveState().
 void BotAssignObjectiveLeans();
 
+// Returns true if the given powerup object ID is a CTF flag, and sets *out_team to the team index.
+// Returns false (and leaves *out_team untouched) for non-flag powerups or non-CTF modes.
+bool BotIsFlagPowerup(int powerup_id, int *out_team);
+
+// Returns true if the bot is currently carrying an enemy team's flag.
+bool BotIsCarryingEnemyFlag(int bot_index);
+
+// Returns the Objects[] index of the bot's home flag when it's free (AT_HOME or DROPPED), or -1.
+// Used for score-beeline goal targeting.
+int BotGetHomeFlagObjnum(int bot_index);
+
 #endif // BOT_OBJECTIVE_H

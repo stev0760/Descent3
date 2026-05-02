@@ -1228,8 +1228,24 @@ static void BotDoExploreRoaming(int bot_index) {
   // If already at the objective room, hold position (don't fall through to random sampling).
   int obj_room = BotGetObjectiveRoom(bot_index);
   if (obj_room >= 0 && Rooms[obj_room].used) {
-    if (obj_room == obj->roomnum)
+    if (obj_room == obj->roomnum) {
+      // Score beeline: carrier at home base with home flag present — fly through it to score.
+      if (BotIsCarryingEnemyFlag(bot_index)) {
+        int flag_objnum = BotGetHomeFlagObjnum(bot_index);
+        if (flag_objnum >= 0) {
+          int &pgi = Bots[bot_index].pursuit_goal_index;
+          if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+            GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+          int flag_handle = Objects[flag_objnum].handle;
+          pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&flag_handle, 2, 1.0f,
+                            GF_SPEED_ATTACK | GF_USE_BLINE_IF_SEES_GOAL);
+          LOG_DEBUG.printf("BOT: '%s' score beeline -> home flag obj %d", Bots[bot_index].callsign, flag_objnum);
+        } else {
+          LOG_DEBUG.printf("BOT: '%s' at home base, waiting for flag return", Bots[bot_index].callsign);
+        }
+      }
       return;
+    }
 
     int &pgi = Bots[bot_index].pursuit_goal_index;
     if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
@@ -1509,6 +1525,16 @@ static bool BotCanCollectPowerup(int bot_index, object *powerup) {
   int slot = Bots[bot_index].player_slot;
   object *obj = &Objects[Players[slot].objnum];
   const char *pname = Object_info[powerup->id].name;
+
+  // CTF: own-team flag at home can't be meaningfully collected — skip it to stop defenders orbiting.
+  // Own-team flag DROPPED is allowed (flag return). Enemy flags always allowed.
+  int flag_team = -1;
+  if (BotIsFlagPowerup(powerup->id, &flag_team)) {
+    int my_team = Players[slot].team;
+    if (flag_team == my_team && Bot_objective.flag_state[my_team] == FLAG_AT_HOME)
+      return false;
+    return true;
+  }
 
   // Primary weapons: can't pick up if already have the weapon in multiplayer
   // Name→weapon_index mapping mirrors powerup_data_primary[] in multisafe.cpp
@@ -1895,10 +1921,15 @@ static void BotUpdateState(int bot_index) {
     bool chasing_powerup = (Bots[bot_index].powerup_goal_index >= 0) &&
                            (Bots[bot_index].chasing_powerup_timer < BOT_POWERUP_STALE_CHASE);
     bool urgent_threat = (has_los && dist < BOT_CLOSERANGE_DIST);
-    if (has_target && !holding_for_weapon && !chasing_powerup && (has_los || dist < BOT_HUNT_BLIND_MAX_DIST))
+    bool carrying_flag = BotIsCarryingEnemyFlag(bot_index);
+    if (carrying_flag) {
+      // Flag carrier: only enter HUNT for close-range threats — priority is getting home
+      if (has_target && urgent_threat)
+        new_state = BOT_STATE_HUNT;
+    } else if (has_target && !holding_for_weapon && !chasing_powerup && (has_los || dist < BOT_HUNT_BLIND_MAX_DIST))
       new_state = BOT_STATE_HUNT;
     else if (has_target && !holding_for_weapon && chasing_powerup && urgent_threat)
-      new_state = BOT_STATE_HUNT; // enemy right on top of us — drop everything and fight
+      new_state = BOT_STATE_HUNT;
     break;
   }
 
@@ -2220,6 +2251,27 @@ static void BotApplyThrust(int bot_index) {
         float follow_dist = vm_VectorDistanceQuick(&obj->pos, &Objects[Players[tslot].objnum].pos);
         if (follow_dist > 150.0f)
           want_afterburner = true;
+      }
+      break;
+    }
+    // Flag carrier: full speed + afterburner to rush home; beeline to home flag when close
+    if (BotIsCarryingEnemyFlag(bot_index)) {
+      int flag_objnum = BotGetHomeFlagObjnum(bot_index);
+      if (flag_objnum >= 0) {
+        speed_scale = 1.0f;
+        want_afterburner = true;
+        object *flag = &Objects[flag_objnum];
+        float flag_dist = vm_VectorDistanceQuick(&obj->pos, &flag->pos);
+        if (flag_dist < BOT_POWERUP_THRUST_RADIUS && flag_dist > 1.0f && BotCanSeePos(obj, &flag->pos)) {
+          vector to_flag = flag->pos - obj->pos;
+          vm_NormalizeVector(&to_flag);
+          forward = vm_DotProduct(&to_flag, &obj->orient.fvec);
+          sideways = vm_DotProduct(&to_flag, &obj->orient.rvec);
+          vertical = vm_DotProduct(&to_flag, &obj->orient.uvec);
+        }
+      } else {
+        // Home flag not present — wait at base, slow drift
+        speed_scale = 0.3f;
       }
       break;
     }
