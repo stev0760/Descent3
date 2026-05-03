@@ -1,9 +1,9 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Matcen 0.8.13-dev — Hyper-Anarchy game mode awareness. Orb carrier aggression, HyperOrb pickup priority, carrier flee suppression.
+**Status:** Matcen 0.8.13 — Hyper-Anarchy game mode awareness. Orb carrier aggression, HyperOrb pickup priority, carrier flee suppression.
 
-Next milestone: 0.8.13 stable — Hyper-Anarchy + code cleanup, then Hoard.
+Next milestone: code cleanup + Hoard objective behavior.
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 

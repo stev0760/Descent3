@@ -10,7 +10,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Matcen — Multiplayer Bots (Experimental)
 
-> **Matcen 0.8.13-dev** — Hyper-Anarchy game mode awareness: orb carrier aggression (kills are worth more — fight aggressively), HyperOrb top-priority pickup, carrier flee suppression, full-speed carrier roaming. Previous release (0.8.12): CTF role auto-assignment with team-size-aware ratios and flag-state-reactive lean switching.
+> **Matcen 0.8.13** — Hyper-Anarchy game mode awareness: orb carrier aggression (kills are worth more — fight aggressively), HyperOrb top-priority pickup, carrier flee suppression, full-speed carrier roaming. Previous release (0.8.12): CTF role auto-assignment with team-size-aware ratios and flag-state-reactive lean switching.
 
 This fork — "Matcen" — adds a **server-side multiplayer bot system** to Descent 3. Bots occupy real player slots on dedicated servers or listen servers, appearing and acting as normal players. All bots are tagged with ` [BOT]` as a callsign suffix for easy identification.
 
