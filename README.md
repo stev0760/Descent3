@@ -82,12 +82,9 @@ These commands are available in the dedicated server console (or via remote teln
 
 ### Roadmap
 
-The next major milestone is **squad orders and game mode awareness** — giving players the ability to direct bots via a quick-access HUD overlay, enabling objective modes that require strategic coordination:
+The next milestone is **additional objective mode support** and code cleanup to generalize the carrier/objective abstractions established by CTF and Hyper-Anarchy:
 
-*   **Squad Orders** — Attack/Defend/Follow Me commands. Chat-based input (`!attack`, `!defend`) works on all clients including PiccuEngine; optional Matcen-client HUD overlay for faster access. Adapted from UT2004's TeamAI/SquadAI pattern for 6DOF.
-*   **CTF** — First objective mode. Flag tracking, attack/defense squad split, escort behavior. 4-team already proven.
-*   **Hyper-Anarchy** — HyperOrb awareness (seek orb, aggressive play while holding, target orb carrier).
-*   **Hoard** — Orb collection and goal room delivery.
+*   **Hoard** — Orb collection and goal room delivery. Next in line.
 *   **Entropy** — Virus transport and room capture. A unique D3 mode with no clear FPS analogue — bots will make it easily accessible for the first time in years.
 *   **Monsterball** — Ball-push physics and positional play.
 *   **Co-op** — Follow-the-leader squad behavior for mission play. Deferred post-launch due to complexity.
