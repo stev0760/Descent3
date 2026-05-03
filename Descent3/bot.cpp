@@ -1687,8 +1687,12 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
 
     int priority = 0;
 
+    // --- Game mode objectives (highest priority — these ARE the game) ---
+    if (strstr(lower, "hyperorb"))
+      priority = 25; // Hyper-Anarchy objective — the entire scoring mechanic revolves around this
+
     // --- Instant-activation power-ups (activate on pickup; no inventory storage) ---
-    if (strstr(lower, "invulner"))
+    else if (strstr(lower, "invulner"))
       priority = 16; // 30s immunity — break off almost anything for this
     else if (strstr(lower, "rapid"))
       priority = 7; // 30s rapid fire — strong boost in any fight
@@ -1823,8 +1827,8 @@ static bool BotShouldInterruptForPowerup(int bot_index) {
     for (int k = 0; lower[k]; k++)
       lower[k] = (char)tolower((unsigned char)lower[k]);
 
-    // Tier A: instant power-ups — always break off (30s invulnerability/rapid fire is huge)
-    if (strstr(lower, "invulner") || strstr(lower, "rapid"))
+    // Tier A: game objectives and instant power-ups — always break off
+    if (strstr(lower, "hyperorb") || strstr(lower, "invulner") || strstr(lower, "rapid"))
       return true;
 
     // Tier B: game-changing secondaries — break off if bot has no secondaries at all
@@ -1902,6 +1906,10 @@ static void BotUpdateState(int bot_index) {
     flee_pct *= 0.5f;
   else if (Bots[bot_index].squad_role == SQUAD_DEFEND)
     flee_pct = std::min(flee_pct * 1.5f, 0.60f);
+  // Hyper-Anarchy orb carrier: every kill earns bonus points, so fight aggressively.
+  // Use min() so already-aggressive bots (ELITE+ATTACK at 0.06) aren't made *less* aggressive.
+  if (BotIsCarryingHyperOrb(bot_index))
+    flee_pct = std::min(flee_pct, BOT_RAMPAGE_FLEE_PCT);
   bool low_shields = (shields < max_shields * flee_pct);
 
   switch (old_state) {
@@ -1998,8 +2006,12 @@ static void BotUpdateState(int bot_index) {
     // don't let a stuck powerup chase permanently suppress engagement.
     bool chasing_powerup = (Bots[bot_index].powerup_goal_index >= 0) &&
                            (Bots[bot_index].chasing_powerup_timer < BOT_POWERUP_STALE_CHASE);
+    // Hyper-Anarchy orb carrier: kills are worth more, so always prioritize engagement.
+    // Powerup chasing never suppresses HUNT transition — grab items opportunistically only.
+    bool ha_carrier = BotIsCarryingHyperOrb(bot_index);
     bool urgent_threat = (has_los && dist < BOT_CLOSERANGE_DIST);
-    if (has_target && !holding_for_weapon && !chasing_powerup && (has_los || dist < BOT_HUNT_BLIND_MAX_DIST))
+    if (has_target && !holding_for_weapon && (!chasing_powerup || ha_carrier) &&
+        (has_los || dist < BOT_HUNT_BLIND_MAX_DIST))
       new_state = BOT_STATE_HUNT;
     else if (has_target && !holding_for_weapon && chasing_powerup && urgent_threat)
       new_state = BOT_STATE_HUNT;
@@ -2362,6 +2374,12 @@ static void BotApplyThrust(int bot_index) {
         // Home flag not present — wait at base, slow drift
         speed_scale = 0.3f;
       }
+      break;
+    }
+    // Hyper-Anarchy orb carrier: full speed — actively hunting for kills, not casual roaming.
+    if (BotIsCarryingHyperOrb(bot_index)) {
+      speed_scale = 1.0f;
+      want_afterburner = is_outdoor;
       break;
     }
     // Full speed when actively chasing a powerup; slow when roaming.

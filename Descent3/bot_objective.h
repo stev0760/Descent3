@@ -88,4 +88,7 @@ bool BotIsCarryingEnemyFlag(int bot_index);
 // Used for score-beeline goal targeting.
 int BotGetHomeFlagObjnum(int bot_index);
 
+// Returns true if the bot is currently carrying the Hyper-Anarchy orb.
+bool BotIsCarryingHyperOrb(int bot_index);
+
 #endif // BOT_OBJECTIVE_H

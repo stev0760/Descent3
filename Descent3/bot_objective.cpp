@@ -586,6 +586,12 @@ int BotGetHomeFlagObjnum(int bot_index) {
   return Bot_objective.flag_objnum[my_team];
 }
 
+bool BotIsCarryingHyperOrb(int bot_index) {
+  if (BotGetGameMode() != BGM_HYPERANARCHY)
+    return false;
+  return Bot_objective.hyper_carrier_slot == Bots[bot_index].player_slot;
+}
+
 void BotAssignObjectiveLeans() {
   BotGameMode mode = BotGetGameMode();
   bool needs_lean = (mode == BGM_CTF);
