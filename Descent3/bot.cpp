@@ -1504,8 +1504,8 @@ static bool BotHasNoSecondaries(int bot_index) {
 }
 
 // Classify this bot's primary weapon loadout into a tier.
-// Used to adjust flee threshold, target selection bias, and rampage behavior.
-static int BotGetEquipmentRating(int bot_index) {
+// Used to adjust flee threshold, target selection bias, rampage behavior, and CTF role assignment.
+int BotGetEquipmentRating(int bot_index) {
   int slot = Bots[bot_index].player_slot;
   // ELITE: high-damage energy/area weapons (Microwave, Plasma, Fusion, Napalm, EMD, Omega)
   static const int elite_wbs[] = {MICROWAVE_INDEX, PLASMA_INDEX, FUSION_INDEX, NAPALM_INDEX, EMD_INDEX, OMEGA_INDEX};
@@ -1930,7 +1930,19 @@ static void BotUpdateState(int bot_index) {
     }
     // Always seek powerups — even when transitioning to HUNT (fix: was skipped when has_target)
     bool need_sh = (shields < max_shields * BOT_LOW_SHIELDS_PCT);
-    int pu_obj = BotFindBestPowerup(bot_index, need_sh, low_energy);
+    // Well-equipped CTF defenders near their base don't chase powerups — hold position.
+    // Foraging exemption: WEAK defenders can seek powerups until armed (bot_equip < GOOD).
+    bool suppress_powerup = false;
+    if (BotGetGameMode() == BGM_CTF && Bots[bot_index].squad_role == SQUAD_FREELANCE &&
+        Bots[bot_index].objective_lean == BOT_LEAN_DEFEND && bot_equip >= BOT_EQUIP_TIER_GOOD) {
+      int home_room = BotGetObjectiveRoom(bot_index);
+      if (home_room >= 0 && Rooms[home_room].used) {
+        float home_dist = vm_VectorDistanceQuick(&obj->pos, &Rooms[home_room].path_pnt);
+        if (home_dist < BOT_FIRE_RANGE * 2.0f)
+          suppress_powerup = true;
+      }
+    }
+    int pu_obj = suppress_powerup ? -1 : BotFindBestPowerup(bot_index, need_sh, low_energy);
     bool holding_for_weapon = false;
     if (pu_obj >= 0) {
       // Check if this powerup is a weapon (not health/energy)
@@ -2070,6 +2082,22 @@ static void BotUpdateState(int bot_index) {
       AISetTarget(obj, OBJECT_HANDLE_NONE);
       Bots[bot_index].retarget_cooldown = 3.0f;
       new_state = BOT_STATE_EXPLORE;
+    }
+    // FREELANCE/DEFEND-lean in CTF: same leash as SQUAD_DEFEND.
+    // Two exceptions: (1) own flag stolen — pursue the carrier regardless of distance;
+    // (2) weak equipment — let the bot roam and arm up before holding position.
+    if (new_state == BOT_STATE_HUNT && BotGetGameMode() == BGM_CTF &&
+        Bots[bot_index].squad_role == SQUAD_FREELANCE &&
+        Bots[bot_index].objective_lean == BOT_LEAN_DEFEND && dist > BOT_FIRE_RANGE * 1.5f) {
+      int my_team = Players[slot].team;
+      bool own_flag_safe = (my_team >= 0 && my_team < BOT_MAX_TEAMS &&
+                            Bot_objective.flag_state[my_team] == FLAG_AT_HOME);
+      bool well_equipped = (bot_equip >= BOT_EQUIP_TIER_GOOD);
+      if (own_flag_safe && well_equipped) {
+        AISetTarget(obj, OBJECT_HANDLE_NONE);
+        Bots[bot_index].retarget_cooldown = 3.0f;
+        new_state = BOT_STATE_EXPLORE;
+      }
     }
     // SQUAD_FOLLOW: abort hunt if target isn't right on top of us — return to following
     if (new_state == BOT_STATE_HUNT && Bots[bot_index].squad_role == SQUAD_FOLLOW) {

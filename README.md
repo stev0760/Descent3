@@ -10,7 +10,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Matcen — Multiplayer Bots (Experimental)
 
-> **Matcen 0.8.11** — game-mode awareness + CTF support: objective polling, mode-aware FSM, Tier 2 chat verbs, CTF behavior (flag stealing, carrier rush home, score beeline, defender retarget on flag theft). Bots actively play CTF — stealing flags, rushing home to score, and defending their base. Previous release (0.8.10): non-team-mode verb silence hotfix.
+> **Matcen 0.8.12** — CTF role auto-assignment: team-size-aware attack/defend ratios (Q3A-derived), flag-state-reactive role switching (flag stolen → flip attacker to retrieval; flag returned → restore ratio), defender anti-bait leash (FREELANCE/DEFEND-lean bots hold position with foraging exemption for under-armed bots), attacker retrieval redirect when own flag is carried. Previous release (0.8.11): CTF carrier nav fix + active scoring.
 
 This fork — "Matcen" — adds a **server-side multiplayer bot system** to Descent 3. Bots occupy real player slots on dedicated servers or listen servers, appearing and acting as normal players. All bots are tagged with ` [BOT]` as a callsign suffix for easy identification.
 

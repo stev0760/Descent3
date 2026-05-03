@@ -466,6 +466,10 @@ void BotSetDifficulty(int bot_index, BotDifficulty diff);
 // Returns the display name for a squad role (e.g., "Freelance", "Attack", "Defend").
 const char *BotSquadRoleName(BotSquadRole r);
 
+// Classify this bot's primary weapon loadout into BOT_EQUIP_TIER_WEAK/GOOD/ELITE.
+// Used by bot_objective.cpp to prefer well-armed bots for the DEFEND lean assignment.
+int BotGetEquipmentRating(int bot_index);
+
 // Force a bot into escort mode immediately: clears AI target, clears all goals, forces EXPLORE,
 // and sets a retarget cooldown so the bot doesn't immediately re-acquire a stuck enemy.
 // Called from !follow and !cover handlers so the order takes effect right away.

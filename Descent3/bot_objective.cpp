@@ -185,6 +185,48 @@ static void BotPollCTF() {
       }
     }
   }
+
+  // Role adjustment on flag state transitions
+  for (int t = 0; t < num_teams; t++) {
+    bool flag_just_stolen = (Prev_flag_state[t] == FLAG_AT_HOME &&
+                             (Bot_objective.flag_state[t] == FLAG_CARRIED ||
+                              Bot_objective.flag_state[t] == FLAG_DROPPED));
+    bool flag_just_returned = ((Prev_flag_state[t] == FLAG_CARRIED || Prev_flag_state[t] == FLAG_DROPPED) &&
+                               Bot_objective.flag_state[t] == FLAG_AT_HOME);
+
+    if (flag_just_stolen) {
+      // Flip the FREELANCE/ATTACK-lean bot nearest to home base to DEFEND for retrieval
+      int best_bot = -1;
+      float best_dist = 1e30f;
+      int home_room = Bot_objective.goal_room[t];
+      for (int b = 0; b < MAX_BOTS; b++) {
+        if (!Bots[b].active || Bots[b].squad_role != SQUAD_FREELANCE)
+          continue;
+        if (Players[Bots[b].player_slot].team != t || Bots[b].objective_lean != BOT_LEAN_ATTACK)
+          continue;
+        if (home_room >= 0 && Rooms[home_room].used) {
+          object *bobj = &Objects[Players[Bots[b].player_slot].objnum];
+          float d = vm_VectorDistanceQuick(&bobj->pos, &Rooms[home_room].path_pnt);
+          if (d < best_dist) {
+            best_dist = d;
+            best_bot = b;
+          }
+        } else if (best_bot < 0) {
+          best_bot = b;
+        }
+      }
+      if (best_bot >= 0) {
+        Bots[best_bot].objective_lean = BOT_LEAN_DEFEND;
+        LOG_DEBUG.printf("BOT OBJ: '%s' ATTACK->DEFEND (team %d flag stolen)", Bots[best_bot].callsign, t);
+      }
+    }
+
+    if (flag_just_returned) {
+      LOG_DEBUG.printf("BOT OBJ: team %d flag returned — reassigning objective leans", t);
+      BotAssignObjectiveLeans();
+      break; // BotAssignObjectiveLeans handles all teams; no need to iterate further
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -417,6 +459,9 @@ static int BotGetObjectiveRoom_CTF(int bot_index) {
   }
 
   if (effective == SQUAD_ATTACK) {
+    // Own flag stolen — drop offensive nav, let -400 targeting bias drive toward carrier
+    if (Bot_objective.flag_state[my_team] == FLAG_CARRIED)
+      return -1;
     // Find nearest available enemy flag (at_home or dropped)
     object *obj = &Objects[Players[slot].objnum];
     int best_room = -1;
@@ -545,18 +590,65 @@ void BotAssignObjectiveLeans() {
   BotGameMode mode = BotGetGameMode();
   bool needs_lean = (mode == BGM_CTF);
 
-  int attack_count = 0;
+  // Clear all leans first
   for (int i = 0; i < MAX_BOTS; i++) {
     if (!Bots[i].active)
       continue;
-    if (!needs_lean || Bots[i].squad_role != SQUAD_FREELANCE) {
+    if (!needs_lean || Bots[i].squad_role != SQUAD_FREELANCE)
       Bots[i].objective_lean = BOT_LEAN_BALANCED;
-      continue;
+  }
+
+  if (!needs_lean)
+    return;
+
+  // Team-size-aware ratio table (Q3A-derived). Only FREELANCE bots are assigned;
+  // ATTACK/DEFEND/FOLLOW/COVER squad roles set via chat commands are never overridden.
+  int num_teams = Num_teams > BOT_MAX_TEAMS ? BOT_MAX_TEAMS : Num_teams;
+  for (int t = 0; t < num_teams; t++) {
+    // Collect FREELANCE bot indices on this team
+    int team_bots[MAX_BOTS];
+    int n = 0;
+    for (int i = 0; i < MAX_BOTS; i++) {
+      if (!Bots[i].active || Bots[i].squad_role != SQUAD_FREELANCE)
+        continue;
+      if (Players[Bots[i].player_slot].team != t)
+        continue;
+      team_bots[n++] = i;
     }
-    // Alternate: first FREELANCE bot gets attack, next gets defend, etc.
-    Bots[i].objective_lean = (attack_count % 2 == 0) ? BOT_LEAN_ATTACK : BOT_LEAN_DEFEND;
-    attack_count++;
-    LOG_DEBUG.printf("BOT OBJ: '%s' assigned lean: %s", Bots[i].callsign,
-                     Bots[i].objective_lean == BOT_LEAN_ATTACK ? "attack" : "defend");
+    if (n == 0)
+      continue;
+
+    // Determine defender count
+    int num_def;
+    switch (n) {
+    case 1: num_def = 0; break;
+    case 2: num_def = 1; break;
+    case 3: num_def = 1; break;
+    case 4: num_def = 1; break;
+    case 5: num_def = 2; break;
+    default: num_def = n / 3; break;
+    }
+
+    // Sort by equipment tier descending so best-equipped bots get DEFEND
+    for (int i = 1; i < n; i++) {
+      int key = team_bots[i];
+      int key_eq = BotGetEquipmentRating(key);
+      int j = i - 1;
+      while (j >= 0 && BotGetEquipmentRating(team_bots[j]) < key_eq) {
+        team_bots[j + 1] = team_bots[j];
+        j--;
+      }
+      team_bots[j + 1] = key;
+    }
+
+    LOG_DEBUG.printf("BOT OBJ: team %d — %d FREELANCE bots, %d defender(s), %d attacker(s)", t, n, num_def,
+                     n - num_def);
+    for (int i = 0; i < n; i++) {
+      int bi = team_bots[i];
+      Bots[bi].objective_lean = (i < num_def) ? BOT_LEAN_DEFEND : BOT_LEAN_ATTACK;
+      LOG_DEBUG.printf("BOT OBJ: '%s' lean=%s (equip=%d)", Bots[bi].callsign,
+                       Bots[bi].objective_lean == BOT_LEAN_DEFEND ? "defend" : "attack",
+                       BotGetEquipmentRating(bi));
+    }
   }
 }
