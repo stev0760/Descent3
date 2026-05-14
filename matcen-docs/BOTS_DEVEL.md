@@ -77,6 +77,7 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | 6.2ha | **Hyper-Anarchy behavior:** `BotIsCarryingHyperOrb()` carrier detection, HyperOrb pickup priority boosted to 25 (game objective — highest tier), carrier aggression in FSM (bypasses `chasing_powerup` HUNT suppression so carrier always engages), carrier flee threshold suppressed to `BOT_RAMPAGE_FLEE_PCT` (kills are worth more — fight aggressively), `BotApplyThrust` carrier branch (full speed + outdoor AB while carrying), combat interrupt for free HyperOrb (Tier A — always break off to grab it). No `BotDoCarrierNav` analog — HA scoring is via kills anywhere, not rushing to a location. Existing scaffolding: `BotPollHyperAnarchy()` orb state polling, `BotGetObjectiveRoom_HyperAnarchy()` nav-to-free-orb, `BotGetObjectiveTargetBias()` -300 carrier targeting bias. | Complete (Matcen 0.8.13) |
 | 5 | **Bot management (remaining):** Remote admin, auto-rebalancing, server orchestration. | Not started |
 | 6 | **Game mode awareness + squad orders:** CTF, Hyper-Anarchy, Hoard, Entropy, Monsterball, Co-op (deferred post-launch). See game mode priority table in Phase 6 section below. | In progress (CTF + Hyper-Anarchy complete, Hoard next) |
+| 7 | **Navigation intelligence — layered steering:** Potential field local steering (wall-slam fix, velocity-scaled repulsion), dynamic flow fields (carrier pursuit, anti-clustering, powerup attractors). Additive layers on top of existing BOA+BNode engine pathfinding. | Not started |
 
 ## Files
 
@@ -720,6 +721,7 @@ Investigation revealed that bots were missing from the end-of-level scoreboard b
 - **Sporadic and transient state oscillation/locking** — Bots may try to engage targets through thin walls/floors. Phase 3.26 mitigates via progress-based HUNT timeout (15s). Phase 4.01 gates EXPLORE→HUNT on LOS or proximity, Phase 4.05 adds COMBAT no-LOS timeout (5s). Phase 4.06 widens blind HUNT gate to 300u for better engagement on open maps while stale powerup chases (>4s) no longer suppress HUNT transitions.
 - **Dynamic path pool exhaustion** — With 6+ bots, `MAX_DYNAMIC_PATHS=100` is insufficient. The pool fills up and produces millions of "Out of dynamic paths" log errors per session. Paths are allocated but not freed fast enough, degrading navigation and inflating log files. Needs investigation into path slot lifecycle and possible pool size increase.
 - **Complex geometry navigation** — Largely addressed by Phases 3.24–3.26. Bots now use BOA_connect for outdoor↔indoor transitions, portal entrance positions instead of room centers, and BOA portal navigation when stuck. Afterburner is suppressed while stuck. Edge cases remain on maps with very tight openings or unusual portal geometry.
+- **Afterburner wall-slamming ("headbanging")** — Bots afterburning toward a goal (HUNT pursuit, CTF carrier beeline, etc.) can repeatedly slam into walls when the pathfinding goal is on the other side of geometry they can't directly reach. The bot AB-charges the obstruction, bounces off, backs up slightly, then AB-charges again in a visible loop. Anti-stuck recovery does eventually trigger and reroutes, but the cycle can repeat for several seconds. Most noticeable in CTF and Team Anarchy on complex maps with indirect routes; less visible in chaotic FFA modes like Hyper-Anarchy. Root cause is likely that the AB thrust code in `BotApplyThrust()` fires based on goal direction without a LOS pre-check — the engine's `AIF_AVOID_WALLS` correction is too weak to overcome the AB thrust magnitude before collision. Fix will likely require predictive LOS gating before AB activation or braking when repeated wall collisions are detected. Potentially tricky since it interacts with engine-level wall avoidance.
 - **Weapon under-utilization (FIXED 0.8.5)** — Plasma and EMD were never selected in combat. Root cause: `gp_weapon_index[0]` is 0 for wing-mounted weapons; the `weapon_id <= 0` guard filtered them before bucket assignment. Fixed with `BotGetWbWeaponId()` that iterates `gp_fire_masks` to find the active gunpoint, mirroring `GetWeaponFromIndex()` in weapon.cpp. Confirmed: 757 Plasma picks in post-fix test session. Note: death-spew inspection is not a reliable pickup signal — `PlayerSpewInventory` only spews the currently selected primary in multiplayer, not all owned weapons.
 - **Bots ignore player cloaking (FIXED, Matcen 0.8.7)** — Fixed in Phase 6.0: `BotCanSeeTarget()` skips cloaked targets in selection/firing/LOS unless a reveal condition applies (afterburner, headlight, napalm, or recent weapon fire). Bots also enabled as full participants in the engine's `AIN_HEAR_NOISE` pipeline (`hearing = 1.0f`).
 
@@ -945,3 +947,57 @@ Currently broken (bots frozen — likely AI goal/pathfinding regression from ear
 - **6DOF maneuvers:** barrel rolls, perpendicular strafing, Immelmann turns, advanced evasion patterns
 - **Movement capture:** record human player traces to tune bot thrust/drag PID controllers
 - **Bot personalities:** per-bot aggression, caution, weapon preference, movement style, and **taunt system integration** (D3's audio taunt clips played on kills, flag captures, squad acknowledgements — makes bots feel alive)
+
+### Phase 7: Navigation Intelligence — Layered Steering
+
+The existing engine pathfinding (BOA room graph + BNode waypoints) is fundamentally sound — it is already hierarchical A*, and Phase 4.0 proved the algorithm was never the bottleneck. What's missing is two additive layers: **dynamic flow fields** for strategic room-level routing and **potential fields** for smooth local steering. Neither replaces the engine's `movement_dir` pipeline; both layer on top of it.
+
+**Motivation:** The "afterburner wall-slamming" known issue (see Known Issues) is the most visible symptom. Bots AB-charge toward pathfinding goals without LOS, overpowering the engine's `AIF_AVOID_WALLS` correction. More broadly, objective modes (CTF carrier pursuit, Hoard goal-room convergence) need per-objective routing that the static all-pairs BOA table cannot express dynamically.
+
+#### 7.1: Potential Field Steering Layer
+
+A local steering layer in `BotApplyThrust()` that blends wall-repulsive forces with the engine's path direction. Directly addresses the wall-slamming bug.
+
+**Core idea:** Cast rays from the bot in a fixed direction set, compute repulsive forces from nearby walls (Khatib inverse-square formulation), blend with the A* path direction.
+
+**Key design points:**
+- **Ray budget:** 14 rays per bot (6 axis-aligned + 8 diagonal). Stagger odd/even frames = 112 FVI calls/frame for 16 bots. Results cached 2–3 frames when bot hasn't moved/rotated significantly.
+- **Blend formula:** `final_dir = normalize(w_path * path_dir + w_field * field_dir)` with `w_path=0.7`, `w_field=0.3` baseline. `w_field` scales up when any ray reports a wall hit within 10 units.
+- **Velocity-scaled influence radius (wall-slam fix):** `d0_effective = d0_base + speed * lookahead_time`. At afterburner speeds (~60 units/frame), repulsion kicks in at 80+ units instead of the base 30. Bots literally cannot accelerate toward a nearby wall.
+- **Predictive braking:** Project position forward by `velocity * dt * N` frames. If projected position hits geometry (one extra FVI per bot per frame), blend in a strong counter-force immediately.
+- **Local minima mitigation:** The A* path eliminates most minima by keeping the attractive target at the next portal center. Fallback: random perturbation when velocity drops below threshold for N frames. Virtual waypoints (portal center offset toward more clearance) for persistent cases.
+- **Integration point:** In `BotApplyThrust()`, after reading `ai_info->movement_dir`, compute the potential field gradient and blend. The engine's `AIF_AVOID_WALLS` remains as a fallback — no engine-side changes needed.
+
+**Prior art:** Khatib (1986) formulation. Quake III bot uses simplified directional danger scores from raycasts. PX4/ArduPilot drone local planners. NASA SPHERES satellite proximity operations (closest analog to zero-G tunnel flight).
+
+#### 7.2: Dynamic Flow Fields
+
+Room-level cost fields for objective routing. The BOA table (`BOA_Array[MAX_ROOMS][MAX_ROOMS]`) is already a static all-pairs flow field — `BOA_GetNextRoom(here, goal)` is literally a flow field lookup. What's missing is dynamic single-source fields for moving goals and cost-blending for anti-clustering.
+
+**Data structure:**
+```cpp
+struct FlowField {
+  float cost[MAX_ROOMS];
+  int16_t next_room[MAX_ROOMS];
+  int source_room;
+  int timestamp;
+};
+```
+
+Maintain 3–5 simultaneous fields. Each recomputed via single-source Dijkstra over `BOA_cost_array` edge weights. ~200 rooms = sub-millisecond recomputation. Memory: ~2 KB per field, <10 KB total.
+
+**Concrete use cases:**
+- **Carrier pursuit (CTF/Hyper-Anarchy):** Dynamic field sourced at carrier's current room. Recomputed on room-change event (~0.1ms for 200 rooms). All pursuing bots read the same field.
+- **Goal room convergence (Hoard/CTF scoring):** Static field sourced at goal room(s). Recomputed only at level load.
+- **Powerup attractor:** Multi-source Dijkstra seeded from rooms containing unclaimed powerup clusters. Bots without a target drift toward the nearest cluster. Recomputed every 5–10 seconds.
+- **Anti-clustering overlay:** Per-room penalties proportional to bot count, merged with the goal field. Bots naturally spread across multiple approach corridors — anti-clustering falls out of the cost field rather than being a post-hoc penalty on targeting.
+
+**Explicitly out of scope:** Within-room volumetric 3D flow fields. The engine's `movement_dir` blending (BNode path following + wall avoidance + friend avoidance + dodge) already provides the local-steering layer. Voxelizing room interiors would be expensive and redundant.
+
+**Bot code integration:** `BotSetPursuitGoal()` and `BotDoExploreRoaming()` check for an active flow field matching the current objective. If present, read `flow_field.next_room[my_room]` instead of `BOA_GetNextRoom`. Falls back to BOA for goals without an active field.
+
+**Prior art / research:** Supreme Commander (2007, popularized flow fields for RTS), Planetary Annihilation (2014, spherical maps), Total War (crowd-density flow for formations). Slime mold (Physarum) algorithms (Nakagaki 2000, Tero 2010) solve similar network-optimization problems biologically but are impractical for real-time per-agent routing — flow fields over the existing BOA graph achieve the same result with guaranteed optimality and sub-millisecond update cost.
+
+#### Phase 7 Priority
+
+Phase 7 is independent of the Phase 6 game-mode work and can be pursued in parallel or after objective modes ship. **7.1 (potential fields) is higher priority** — it directly fixes the wall-slamming bug and improves all game modes. **7.2 (flow fields) is an optimization** — it enables smarter routing for objective modes but the existing BOA lookups work adequately for now.
