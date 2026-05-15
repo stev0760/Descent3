@@ -2206,7 +2206,10 @@ static void BotUpdateState(int bot_index) {
       }
     }
 
-    if (new_state == BOT_STATE_HUNT && Bots[bot_index].powerup_interrupt_cooldown <= 0.0f) {
+    bool hoard_cooldown_bypass =
+        (BotGetGameMode() == BGM_HOARD && Bots[bot_index].powerup_interrupt_cooldown > 0.0f);
+    if (new_state == BOT_STATE_HUNT &&
+        (Bots[bot_index].powerup_interrupt_cooldown <= 0.0f || hoard_cooldown_bypass)) {
       // Opportunistic pickup divert: WEAK bots divert for any weapon upgrade;
       // well-armed bots only divert for game-changers (Mega, Invulnerability, etc.)
       bool need_sh = (shields < max_shields * BOT_LOW_SHIELDS_PCT);
@@ -2216,7 +2219,8 @@ static void BotUpdateState(int bot_index) {
       if (pu_obj >= 0) {
         float pu_dist = vm_VectorDistanceQuick(&obj->pos, &Objects[pu_obj].pos);
         if (pu_dist <= divert_rad) {
-          Bots[bot_index].powerup_interrupt_cooldown = BOT_POWERUP_INTERRUPT_COOLDOWN;
+          float cooldown = hoard_cooldown_bypass ? BOT_HOARD_INTERRUPT_COOLDOWN : BOT_POWERUP_INTERRUPT_COOLDOWN;
+          Bots[bot_index].powerup_interrupt_cooldown = cooldown;
           new_state = BOT_STATE_EXPLORE; // brief detour to grab the item, then return to hunt
         }
       }
@@ -2247,6 +2251,23 @@ static void BotUpdateState(int bot_index) {
       float cooldown = (bot_equip <= BOT_EQUIP_TIER_WEAK) ? 3.0f : BOT_POWERUP_INTERRUPT_COOLDOWN;
       Bots[bot_index].powerup_interrupt_cooldown = cooldown;
       new_state = BOT_STATE_EXPLORE; // grab it then re-engage; cooldown prevents immediate re-trigger
+    } else if (BotGetGameMode() == BGM_HOARD && Bots[bot_index].powerup_interrupt_cooldown > 0.0f) {
+      int hoard_id = BotGetHoardOrbId();
+      if (hoard_id >= 0) {
+        for (int i = 0; i <= Highest_object_index; i++) {
+          object *p = &Objects[i];
+          if (p->type != OBJ_POWERUP || p->id != hoard_id)
+            continue;
+          if (p->flags & (OF_DEAD | OF_DESTROYED))
+            continue;
+          float d = vm_VectorDistanceQuick(&obj->pos, &p->pos);
+          if (d < BOT_POWERUP_INTERRUPT_RADIUS && BotCanSeePos(obj, &p->pos)) {
+            Bots[bot_index].powerup_interrupt_cooldown = BOT_HOARD_INTERRUPT_COOLDOWN;
+            new_state = BOT_STATE_EXPLORE;
+            break;
+          }
+        }
+      }
     }
     break;
   }

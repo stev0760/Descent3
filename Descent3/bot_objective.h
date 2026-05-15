@@ -32,11 +32,12 @@
 #define BOT_HOARD_CASHIN_CLOSE_DIST 150.0f
 #define BOT_HOARD_CASHIN_FAR_DIST 800.0f
 #define BOT_HOARD_CASHIN_CLOSE_THRESHOLD 3
-#define BOT_HOARD_CASHIN_FAR_THRESHOLD 10
+#define BOT_HOARD_CASHIN_FAR_THRESHOLD 8
 
 #define BOT_HOARD_CLUSTER_RADIUS 80.0f
 #define BOT_HOARD_MAX_WORLD_ORBS 96
 #define BOT_HOARD_ORB_SEEK_RADIUS 500.0f
+#define BOT_HOARD_INTERRUPT_COOLDOWN 0.5f
 
 enum BotFlagState {
   FLAG_AT_HOME,
@@ -114,5 +115,8 @@ bool BotIsHoardCarrier(int bot_index);
 
 // Returns the nearest valid Hoard goal room to the bot, or -1 if none.
 int BotGetNearestHoardGoalRoom(int bot_index);
+
+// Returns the cached Object_info ID for Hoard orbs, or -1 if not in Hoard mode.
+int BotGetHoardOrbId();
 
 #endif // BOT_OBJECTIVE_H

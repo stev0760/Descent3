@@ -528,9 +528,44 @@ static int BotGetObjectiveRoom_HyperAnarchy(int bot_index) {
 }
 
 static int BotGetObjectiveRoom_Hoard(int bot_index) {
-  if (!BotIsHoardCarrier(bot_index))
-    return -1;
-  return BotGetNearestHoardGoalRoom(bot_index);
+  if (BotIsHoardCarrier(bot_index))
+    return BotGetNearestHoardGoalRoom(bot_index);
+
+  // Non-carrier: navigate toward the densest nearby orb cluster
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  int best_room = -1;
+  float best_score = 0.0f;
+
+  for (int i = 0; i < Bot_objective.hoard_world_orb_count; i++) {
+    int oi = Bot_objective.hoard_world_orbs[i];
+    if (oi < 0 || Objects[oi].type != OBJ_POWERUP)
+      continue;
+    int orb_room = Objects[oi].roomnum;
+    if (orb_room < 0 || !Rooms[orb_room].used)
+      continue;
+
+    int cluster = 1;
+    for (int k = 0; k < Bot_objective.hoard_world_orb_count; k++) {
+      if (k == i)
+        continue;
+      int ok = Bot_objective.hoard_world_orbs[k];
+      if (ok < 0 || Objects[ok].type != OBJ_POWERUP)
+        continue;
+      float d = vm_VectorDistanceQuick(&Objects[oi].pos, &Objects[ok].pos);
+      if (d < BOT_HOARD_CLUSTER_RADIUS)
+        cluster++;
+    }
+
+    float dist = vm_VectorDistanceQuick(&obj->pos, &Rooms[orb_room].path_pnt);
+    float score = (float)cluster / (1.0f + dist / 200.0f);
+    if (score > best_score) {
+      best_score = score;
+      best_room = orb_room;
+    }
+  }
+
+  return best_room;
 }
 
 static int BotGetObjectiveRoom_Monsterball(int bot_index) {
@@ -676,6 +711,8 @@ int BotGetNearestHoardGoalRoom(int bot_index) {
   }
   return best_room;
 }
+
+int BotGetHoardOrbId() { return Obj_hoard_id; }
 
 void BotAssignObjectiveLeans() {
   BotGameMode mode = BotGetGameMode();
