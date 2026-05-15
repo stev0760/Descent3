@@ -55,6 +55,8 @@ static void BotResetObjectiveState() {
   Bot_objective.hyper_room = -1;
   for (int i = 0; i < BOT_MAX_PLAYERS; i++)
     Bot_objective.hoard_count[i] = 0;
+  for (int i = 0; i < BOT_MAX_TEAMS; i++)
+    Bot_objective.hoard_goal_rooms[i] = -1;
   Bot_objective.monsterball_objnum = -1;
   Bot_objective.monsterball_room = -1;
 }
@@ -96,7 +98,11 @@ void BotInitObjectiveState() {
 
   case BGM_HOARD:
     Obj_hoard_id = FindObjectIDName("Hoardorb");
-    LOG_DEBUG.printf("BOT OBJ: Hoard orb ID: %d", Obj_hoard_id);
+    for (int i = 0; i < BOT_MAX_TEAMS; i++)
+      Bot_objective.hoard_goal_rooms[i] = GetGoalRoomForTeam(i);
+    LOG_DEBUG.printf("BOT OBJ: Hoard orb ID: %d, goals: %d %d %d %d", Obj_hoard_id,
+                     Bot_objective.hoard_goal_rooms[0], Bot_objective.hoard_goal_rooms[1],
+                     Bot_objective.hoard_goal_rooms[2], Bot_objective.hoard_goal_rooms[3]);
     break;
 
   case BGM_MONSTERBALL:
@@ -377,11 +383,18 @@ void BotPrintObjectiveState() {
     break;
 
   case BGM_HOARD: {
+    PrintDedicatedMessage("  Goal rooms: %d %d %d %d\n", Bot_objective.hoard_goal_rooms[0],
+                          Bot_objective.hoard_goal_rooms[1], Bot_objective.hoard_goal_rooms[2],
+                          Bot_objective.hoard_goal_rooms[3]);
+    PrintDedicatedMessage("  Cash-in threshold: %d (near goal) to %d (far) orbs\n",
+                          BOT_HOARD_CASHIN_CLOSE_THRESHOLD, BOT_HOARD_CASHIN_FAR_THRESHOLD);
     PrintDedicatedMessage("  Hoard orb counts:\n");
     for (int s = 0; s < MAX_NET_PLAYERS; s++) {
       if (!(NetPlayers[s].flags & NPF_CONNECTED))
         continue;
-      PrintDedicatedMessage("    %s: %d orbs\n", Players[s].callsign, Bot_objective.hoard_count[s]);
+      int b = BotFindBySlot(s);
+      const char *carrier_tag = (b >= 0 && BotIsHoardCarrier(b)) ? " [CARRIER]" : "";
+      PrintDedicatedMessage("    %s: %d orbs%s\n", Players[s].callsign, Bot_objective.hoard_count[s], carrier_tag);
     }
     break;
   }
@@ -502,6 +515,12 @@ static int BotGetObjectiveRoom_HyperAnarchy(int bot_index) {
   return -1;
 }
 
+static int BotGetObjectiveRoom_Hoard(int bot_index) {
+  if (!BotIsHoardCarrier(bot_index))
+    return -1;
+  return BotGetNearestHoardGoalRoom(bot_index);
+}
+
 static int BotGetObjectiveRoom_Monsterball(int bot_index) {
   if (Bot_objective.monsterball_objnum >= 0 && Bot_objective.monsterball_room >= 0) {
     if (Rooms[Bot_objective.monsterball_room].used)
@@ -516,6 +535,8 @@ int BotGetObjectiveRoom(int bot_index) {
     return BotGetObjectiveRoom_CTF(bot_index);
   case BGM_HYPERANARCHY:
     return BotGetObjectiveRoom_HyperAnarchy(bot_index);
+  case BGM_HOARD:
+    return BotGetObjectiveRoom_Hoard(bot_index);
   case BGM_MONSTERBALL:
     return BotGetObjectiveRoom_Monsterball(bot_index);
   default:
@@ -540,6 +561,16 @@ float BotGetObjectiveTargetBias(int bot_index, int target_slot) {
     if (Bot_objective.hyper_carrier_slot >= 0 && Bot_objective.hyper_carrier_slot == target_slot)
       return BOT_OBJ_HYPER_CARRIER_BIAS;
     return 0.0f;
+  }
+
+  if (mode == BGM_HOARD) {
+    int count = Bot_objective.hoard_count[target_slot];
+    if (count <= 0)
+      return 0.0f;
+    float bias = BOT_HOARD_TARGET_BIAS_PER_ORB * count;
+    if (bias < BOT_HOARD_TARGET_BIAS_CAP)
+      bias = BOT_HOARD_TARGET_BIAS_CAP;
+    return bias;
   }
 
   return 0.0f;
@@ -590,6 +621,48 @@ bool BotIsCarryingHyperOrb(int bot_index) {
   if (BotGetGameMode() != BGM_HYPERANARCHY)
     return false;
   return Bot_objective.hyper_carrier_slot == Bots[bot_index].player_slot;
+}
+
+bool BotIsHoardCarrier(int bot_index) {
+  if (BotGetGameMode() != BGM_HOARD)
+    return false;
+  int slot = Bots[bot_index].player_slot;
+  int count = Bot_objective.hoard_count[slot];
+  if (count <= 0)
+    return false;
+  if (count >= BOT_HOARD_CASHIN_FAR_THRESHOLD)
+    return true;
+  int goal_room = BotGetNearestHoardGoalRoom(bot_index);
+  if (goal_room < 0)
+    return false;
+  object *obj = &Objects[Players[slot].objnum];
+  float dist = vm_VectorDistanceQuick(&obj->pos, &Rooms[goal_room].path_pnt);
+  float t = (dist - BOT_HOARD_CASHIN_CLOSE_DIST) / (BOT_HOARD_CASHIN_FAR_DIST - BOT_HOARD_CASHIN_CLOSE_DIST);
+  if (t < 0.0f)
+    t = 0.0f;
+  if (t > 1.0f)
+    t = 1.0f;
+  int threshold =
+      BOT_HOARD_CASHIN_CLOSE_THRESHOLD + (int)(t * (BOT_HOARD_CASHIN_FAR_THRESHOLD - BOT_HOARD_CASHIN_CLOSE_THRESHOLD));
+  return count >= threshold;
+}
+
+int BotGetNearestHoardGoalRoom(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  int best_room = -1;
+  float best_dist = 1e30f;
+  for (int i = 0; i < BOT_MAX_TEAMS; i++) {
+    int room = Bot_objective.hoard_goal_rooms[i];
+    if (room < 0 || !Rooms[room].used)
+      continue;
+    float dist = vm_VectorDistanceQuick(&obj->pos, &Rooms[room].path_pnt);
+    if (dist < best_dist) {
+      best_dist = dist;
+      best_room = room;
+    }
+  }
+  return best_room;
 }
 
 void BotAssignObjectiveLeans() {

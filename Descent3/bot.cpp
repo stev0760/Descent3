@@ -1482,6 +1482,43 @@ static void BotDoCarrierNav(int bot_index) {
                    OBJECT_OUTSIDE(obj) ? -1 : obj->roomnum, obj_room);
 }
 
+static void BotDoHoardCarrierNav(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  if (!obj->ai_info)
+    return;
+
+  int &pugi = Bots[bot_index].powerup_goal_index;
+  if (pugi >= 0 && pugi < MAX_GOALS && obj->ai_info->goals[pugi].used)
+    GoalClearGoal(obj, &obj->ai_info->goals[pugi]);
+  pugi = -1;
+  Bots[bot_index].chasing_powerup_handle = OBJECT_HANDLE_NONE;
+  Bots[bot_index].chasing_powerup_timer = 0.0f;
+
+  int obj_room = BotGetNearestHoardGoalRoom(bot_index);
+  if (obj_room < 0 || !Rooms[obj_room].used) {
+    BotDoExploreRoaming(bot_index);
+    return;
+  }
+
+  int &pgi = Bots[bot_index].pursuit_goal_index;
+  if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+    GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+  pgi = -1;
+
+  goal_info gi_info{};
+  gi_info.pos = Rooms[obj_room].path_pnt;
+  gi_info.roomnum = obj_room;
+
+  pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
+  Bots[bot_index].explore_dest_room = obj_room;
+  Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
+  Bots[bot_index].last_target_room = -1;
+
+  LOG_DEBUG.printf("BOT HOARD: '%s' carrier nav (%d orbs) room %d -> goal %d", Bots[bot_index].callsign,
+                   Bot_objective.hoard_count[slot], OBJECT_OUTSIDE(obj) ? -1 : obj->roomnum, obj_room);
+}
+
 // Returns true if the bot has no primary weapon beyond the default Laser (battery 0).
 // Used to boost weapon pickup priority when the bot just spawned with bare equipment.
 static bool BotHasOnlyDefaultPrimary(int bot_index) {
@@ -1594,6 +1631,11 @@ static bool BotCanCollectPowerup(int bot_index, object *powerup) {
     return true;
   }
 
+  // Hoard orbs: can't pick up at max capacity (12)
+  if (BotGetGameMode() == BGM_HOARD && !stricmp(pname, "Hoardorb")) {
+    return Bot_objective.hoard_count[slot] < BOT_HOARD_MAX_ORBS;
+  }
+
   // Primary weapons: can't pick up if already have the weapon in multiplayer
   // Name→weapon_index mapping mirrors powerup_data_primary[] in multisafe.cpp
   static const struct { const char *name; int weapon_index; } primaries[] = {
@@ -1688,7 +1730,9 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
     int priority = 0;
 
     // --- Game mode objectives (highest priority — these ARE the game) ---
-    if (strstr(lower, "hyperorb"))
+    if (strstr(lower, "hoardorb"))
+      priority = 25; // Hoard objective — orbs are the only way to score
+    else if (strstr(lower, "hyperorb"))
       priority = 25; // Hyper-Anarchy objective — the entire scoring mechanic revolves around this
 
     // --- Instant-activation power-ups (activate on pickup; no inventory storage) ---
@@ -1918,6 +1962,15 @@ static void BotUpdateState(int bot_index) {
     // Must be checked first — carriers always prioritize scoring.
     if (BotIsCarryingEnemyFlag(bot_index)) {
       BotDoCarrierNav(bot_index);
+      if (has_target && has_los && dist < BOT_CLOSERANGE_DIST)
+        new_state = BOT_STATE_HUNT;
+      break;
+    }
+    // Hoard carrier: enough orbs collected — rush to nearest goal room to cash in.
+    // Unlike HA carrier, Hoard carriers don't fight aggressively — death spews all orbs.
+    // Only engage threats that are directly blocking the path (close + visible).
+    if (BotIsHoardCarrier(bot_index)) {
+      BotDoHoardCarrierNav(bot_index);
       if (has_target && has_los && dist < BOT_CLOSERANGE_DIST)
         new_state = BOT_STATE_HUNT;
       break;
@@ -2380,6 +2433,12 @@ static void BotApplyThrust(int bot_index) {
     if (BotIsCarryingHyperOrb(bot_index)) {
       speed_scale = 1.0f;
       want_afterburner = is_outdoor;
+      break;
+    }
+    // Hoard carrier: full speed + afterburner to rush to the nearest goal room for cash-in.
+    if (BotIsHoardCarrier(bot_index)) {
+      speed_scale = 1.0f;
+      want_afterburner = true;
       break;
     }
     // Full speed when actively chasing a powerup; slow when roaming.

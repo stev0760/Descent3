@@ -36,8 +36,8 @@ project(Descent3
 # Matcen fork version (semver with optional pre-release suffix)
 set(MATCEN_VERSION_MAJOR 0)
 set(MATCEN_VERSION_MINOR 8)
-set(MATCEN_VERSION_PATCH 13)
-set(MATCEN_VERSION_SUFFIX "")
+set(MATCEN_VERSION_PATCH 14)
+set(MATCEN_VERSION_SUFFIX "-dev")
 
 if (${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})
   message(FATAL_ERROR "In-source builds are not supported. Please run CMake with a different build path.")

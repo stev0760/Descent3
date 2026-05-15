@@ -23,6 +23,17 @@
 #define BOT_MAX_TEAMS 4
 #define BOT_MAX_PLAYERS 32
 
+#define BOT_HOARD_MAX_ORBS 12
+#define BOT_HOARD_TARGET_BIAS_PER_ORB -35.0f
+#define BOT_HOARD_TARGET_BIAS_CAP -420.0f
+
+// Distance-aware cash-in: bots near a goal room cash in with fewer orbs.
+// Linear interpolation between thresholds based on distance to nearest goal.
+#define BOT_HOARD_CASHIN_CLOSE_DIST 150.0f
+#define BOT_HOARD_CASHIN_FAR_DIST 800.0f
+#define BOT_HOARD_CASHIN_CLOSE_THRESHOLD 1
+#define BOT_HOARD_CASHIN_FAR_THRESHOLD 6
+
 enum BotFlagState {
   FLAG_AT_HOME,
   FLAG_DROPPED,
@@ -44,7 +55,8 @@ struct BotObjectiveState {
   int hyper_room;         // roomnum of free orb, or -1
 
   // --- Hoard ---
-  int hoard_count[BOT_MAX_PLAYERS]; // per-player orb count in inventory
+  int hoard_count[BOT_MAX_PLAYERS];    // per-player orb count in inventory
+  int hoard_goal_rooms[BOT_MAX_TEAMS]; // cached GetGoalRoomForTeam(0..3) — any valid room is a score zone
 
   // --- Monsterball ---
   int monsterball_objnum; // Objects[] index of the ball, or -1
@@ -90,5 +102,11 @@ int BotGetHomeFlagObjnum(int bot_index);
 
 // Returns true if the bot is currently carrying the Hyper-Anarchy orb.
 bool BotIsCarryingHyperOrb(int bot_index);
+
+// Returns true if the bot's Hoard orb count meets the cash-in threshold.
+bool BotIsHoardCarrier(int bot_index);
+
+// Returns the nearest valid Hoard goal room to the bot, or -1 if none.
+int BotGetNearestHoardGoalRoom(int bot_index);
 
 #endif // BOT_OBJECTIVE_H
