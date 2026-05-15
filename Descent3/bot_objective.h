@@ -31,8 +31,12 @@
 // Linear interpolation between thresholds based on distance to nearest goal.
 #define BOT_HOARD_CASHIN_CLOSE_DIST 150.0f
 #define BOT_HOARD_CASHIN_FAR_DIST 800.0f
-#define BOT_HOARD_CASHIN_CLOSE_THRESHOLD 1
-#define BOT_HOARD_CASHIN_FAR_THRESHOLD 6
+#define BOT_HOARD_CASHIN_CLOSE_THRESHOLD 3
+#define BOT_HOARD_CASHIN_FAR_THRESHOLD 10
+
+#define BOT_HOARD_CLUSTER_RADIUS 80.0f
+#define BOT_HOARD_MAX_WORLD_ORBS 96
+#define BOT_HOARD_ORB_SEEK_RADIUS 500.0f
 
 enum BotFlagState {
   FLAG_AT_HOME,
@@ -57,6 +61,8 @@ struct BotObjectiveState {
   // --- Hoard ---
   int hoard_count[BOT_MAX_PLAYERS];    // per-player orb count in inventory
   int hoard_goal_rooms[BOT_MAX_TEAMS]; // cached GetGoalRoomForTeam(0..3) — any valid room is a score zone
+  int hoard_world_orbs[BOT_HOARD_MAX_WORLD_ORBS]; // Objects[] indices of free orbs in the world
+  int hoard_world_orb_count;                       // number of valid entries in hoard_world_orbs
 
   // --- Monsterball ---
   int monsterball_objnum; // Objects[] index of the ball, or -1

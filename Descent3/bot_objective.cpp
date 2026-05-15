@@ -57,6 +57,7 @@ static void BotResetObjectiveState() {
     Bot_objective.hoard_count[i] = 0;
   for (int i = 0; i < BOT_MAX_TEAMS; i++)
     Bot_objective.hoard_goal_rooms[i] = -1;
+  Bot_objective.hoard_world_orb_count = 0;
   Bot_objective.monsterball_objnum = -1;
   Bot_objective.monsterball_room = -1;
 }
@@ -283,6 +284,17 @@ static void BotPollHoard() {
     if (!(NetPlayers[s].flags & NPF_CONNECTED))
       continue;
     Bot_objective.hoard_count[s] = Players[s].inventory.GetTypeIDCount(OBJ_POWERUP, Obj_hoard_id);
+  }
+
+  // Cache world orb positions for cluster detection in BotFindBestPowerup
+  Bot_objective.hoard_world_orb_count = 0;
+  for (int i = 0; i <= Highest_object_index && Bot_objective.hoard_world_orb_count < BOT_HOARD_MAX_WORLD_ORBS; i++) {
+    object *obj = &Objects[i];
+    if (obj->type != OBJ_POWERUP || obj->id != Obj_hoard_id)
+      continue;
+    if (obj->flags & (OF_DEAD | OF_DESTROYED))
+      continue;
+    Bot_objective.hoard_world_orbs[Bot_objective.hoard_world_orb_count++] = i;
   }
 }
 

@@ -1690,8 +1690,10 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
   bool only_default = BotHasOnlyDefaultPrimary(bot_index);
   bool no_secondaries = BotHasNoSecondaries(bot_index);
 
-  // WEAK bots scan a wider radius to find weapons sooner; outdoor spaces scale up further
+  // WEAK bots scan a wider radius to find weapons sooner; Hoard bots sweep wide for orbs
   float seek_radius = only_default ? BOT_WEAK_SEEK_RADIUS : BOT_POWERUP_SEEK_RADIUS;
+  if (BotGetGameMode() == BGM_HOARD)
+    seek_radius = BOT_HOARD_ORB_SEEK_RADIUS;
   if (OBJECT_OUTSIDE(obj))
     seek_radius *= BOT_OUTDOOR_SEEK_MULTIPLIER;
 
@@ -1730,9 +1732,25 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
     int priority = 0;
 
     // --- Game mode objectives (highest priority — these ARE the game) ---
-    if (strstr(lower, "hoardorb"))
-      priority = 25; // Hoard objective — orbs are the only way to score
-    else if (strstr(lower, "hyperorb"))
+    if (strstr(lower, "hoardorb")) {
+      int capacity = BOT_HOARD_MAX_ORBS - Bot_objective.hoard_count[slot];
+      if (capacity <= 0) {
+        priority = 0;
+      } else {
+        int nearby = 0;
+        for (int k = 0; k < Bot_objective.hoard_world_orb_count; k++) {
+          int oi = Bot_objective.hoard_world_orbs[k];
+          if (oi == i || oi < 0 || Objects[oi].type != OBJ_POWERUP)
+            continue;
+          float d = vm_VectorDistanceQuick(&p->pos, &Objects[oi].pos);
+          if (d < BOT_HOARD_CLUSTER_RADIUS)
+            nearby++;
+        }
+        int effective = (nearby + 1) < capacity ? (nearby + 1) : capacity;
+        int tri = effective * (effective + 1) / 2;
+        priority = 25 + tri * 2;
+      }
+    } else if (strstr(lower, "hyperorb"))
       priority = 25; // Hyper-Anarchy objective — the entire scoring mechanic revolves around this
 
     // --- Instant-activation power-ups (activate on pickup; no inventory storage) ---
@@ -1872,7 +1890,7 @@ static bool BotShouldInterruptForPowerup(int bot_index) {
       lower[k] = (char)tolower((unsigned char)lower[k]);
 
     // Tier A: game objectives and instant power-ups — always break off
-    if (strstr(lower, "hyperorb") || strstr(lower, "invulner") || strstr(lower, "rapid"))
+    if (strstr(lower, "hoardorb") || strstr(lower, "hyperorb") || strstr(lower, "invulner") || strstr(lower, "rapid"))
       return true;
 
     // Tier B: game-changing secondaries — break off if bot has no secondaries at all
