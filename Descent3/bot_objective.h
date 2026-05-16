@@ -27,12 +27,15 @@
 #define BOT_HOARD_TARGET_BIAS_PER_ORB -35.0f
 #define BOT_HOARD_TARGET_BIAS_CAP -420.0f
 
-// Distance-aware cash-in: bots near a goal room cash in with fewer orbs.
-// Linear interpolation between thresholds based on distance to nearest goal.
-#define BOT_HOARD_CASHIN_CLOSE_DIST 150.0f
-#define BOT_HOARD_CASHIN_FAR_DIST 800.0f
-#define BOT_HOARD_CASHIN_CLOSE_THRESHOLD 3
-#define BOT_HOARD_CASHIN_FAR_THRESHOLD 8
+// Scarcity-adaptive cash-in: threshold scales with nearby orb supply.
+// More orbs nearby → greedier (aim for big multipliers). Scarce → cash in quickly.
+#define BOT_HOARD_CASHIN_BASE 3
+#define BOT_HOARD_CASHIN_GREED_DIVISOR 2
+#define BOT_HOARD_CASHIN_RICH_WORLD_ORBS 15
+#define BOT_HOARD_CASHIN_CLOSE_DIST 200.0f
+#define BOT_HOARD_CASHIN_MID_DIST 400.0f
+#define BOT_HOARD_CASHIN_LOW_SHIELDS 0.30f
+#define BOT_HOARD_CASHIN_MED_SHIELDS 0.50f
 
 #define BOT_HOARD_CLUSTER_RADIUS 80.0f
 #define BOT_HOARD_MAX_WORLD_ORBS 96
@@ -62,6 +65,7 @@ struct BotObjectiveState {
 
   // --- Hoard ---
   int hoard_count[BOT_MAX_PLAYERS];    // per-player orb count in inventory
+  bool hoard_is_carrier[BOT_MAX_PLAYERS]; // cached carrier decision, updated in BotPollHoard
   int hoard_goal_rooms[BOT_MAX_TEAMS]; // cached GetGoalRoomForTeam(0..3) — any valid room is a score zone
   int hoard_world_orbs[BOT_HOARD_MAX_WORLD_ORBS]; // Objects[] indices of free orbs in the world
   int hoard_world_orb_count;                       // number of valid entries in hoard_world_orbs

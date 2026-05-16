@@ -53,8 +53,10 @@ static void BotResetObjectiveState() {
   Bot_objective.hyper_carrier_slot = -1;
   Bot_objective.hyper_objnum = -1;
   Bot_objective.hyper_room = -1;
-  for (int i = 0; i < BOT_MAX_PLAYERS; i++)
+  for (int i = 0; i < BOT_MAX_PLAYERS; i++) {
     Bot_objective.hoard_count[i] = 0;
+    Bot_objective.hoard_is_carrier[i] = false;
+  }
   for (int i = 0; i < BOT_MAX_TEAMS; i++)
     Bot_objective.hoard_goal_rooms[i] = -1;
   Bot_objective.hoard_world_orb_count = 0;
@@ -273,9 +275,13 @@ static void BotPollHyperAnarchy() {
 // Hoard polling
 // ---------------------------------------------------------------------------
 
+static bool BotComputeHoardCarrier(int bot_index);
+
 static void BotPollHoard() {
-  for (int i = 0; i < BOT_MAX_PLAYERS; i++)
+  for (int i = 0; i < BOT_MAX_PLAYERS; i++) {
     Bot_objective.hoard_count[i] = 0;
+    Bot_objective.hoard_is_carrier[i] = false;
+  }
 
   if (Obj_hoard_id < 0)
     return;
@@ -295,6 +301,12 @@ static void BotPollHoard() {
     if (obj->flags & (OF_DEAD | OF_DESTROYED))
       continue;
     Bot_objective.hoard_world_orbs[Bot_objective.hoard_world_orb_count++] = i;
+  }
+
+  for (int i = 0; i < MAX_BOTS; i++) {
+    if (!Bots[i].active)
+      continue;
+    Bot_objective.hoard_is_carrier[Bots[i].player_slot] = BotComputeHoardCarrier(i);
   }
 }
 
@@ -398,8 +410,8 @@ void BotPrintObjectiveState() {
     PrintDedicatedMessage("  Goal rooms: %d %d %d %d\n", Bot_objective.hoard_goal_rooms[0],
                           Bot_objective.hoard_goal_rooms[1], Bot_objective.hoard_goal_rooms[2],
                           Bot_objective.hoard_goal_rooms[3]);
-    PrintDedicatedMessage("  Cash-in threshold: %d (near goal) to %d (far) orbs\n",
-                          BOT_HOARD_CASHIN_CLOSE_THRESHOLD, BOT_HOARD_CASHIN_FAR_THRESHOLD);
+    PrintDedicatedMessage("  Cash-in: adaptive (base=%d, world_orbs=%d)\n", BOT_HOARD_CASHIN_BASE,
+                          Bot_objective.hoard_world_orb_count);
     PrintDedicatedMessage("  Hoard orb counts:\n");
     for (int s = 0; s < MAX_NET_PLAYERS; s++) {
       if (!(NetPlayers[s].flags & NPF_CONNECTED))
@@ -670,28 +682,69 @@ bool BotIsCarryingHyperOrb(int bot_index) {
   return Bot_objective.hyper_carrier_slot == Bots[bot_index].player_slot;
 }
 
-bool BotIsHoardCarrier(int bot_index) {
-  if (BotGetGameMode() != BGM_HOARD)
-    return false;
+static bool BotComputeHoardCarrier(int bot_index) {
   int slot = Bots[bot_index].player_slot;
   int count = Bot_objective.hoard_count[slot];
   if (count <= 0)
     return false;
-  if (count >= BOT_HOARD_CASHIN_FAR_THRESHOLD)
+  if (count >= BOT_HOARD_MAX_ORBS)
     return true;
-  int goal_room = BotGetNearestHoardGoalRoom(bot_index);
-  if (goal_room < 0)
-    return false;
+
+  if (Bot_objective.hoard_is_carrier[slot])
+    return true;
+
+  if (Bot_objective.hoard_world_orb_count == 0)
+    return true;
+
   object *obj = &Objects[Players[slot].objnum];
-  float dist = vm_VectorDistanceQuick(&obj->pos, &Rooms[goal_room].path_pnt);
-  float t = (dist - BOT_HOARD_CASHIN_CLOSE_DIST) / (BOT_HOARD_CASHIN_FAR_DIST - BOT_HOARD_CASHIN_CLOSE_DIST);
-  if (t < 0.0f)
-    t = 0.0f;
-  if (t > 1.0f)
-    t = 1.0f;
-  int threshold =
-      BOT_HOARD_CASHIN_CLOSE_THRESHOLD + (int)(t * (BOT_HOARD_CASHIN_FAR_THRESHOLD - BOT_HOARD_CASHIN_CLOSE_THRESHOLD));
+  int nearby = 0;
+  for (int i = 0; i < Bot_objective.hoard_world_orb_count; i++) {
+    int oi = Bot_objective.hoard_world_orbs[i];
+    if (oi < 0 || Objects[oi].type != OBJ_POWERUP)
+      continue;
+    float d = vm_VectorDistanceQuick(&obj->pos, &Objects[oi].pos);
+    if (d < BOT_HOARD_ORB_SEEK_RADIUS)
+      nearby++;
+  }
+
+  int threshold = BOT_HOARD_CASHIN_BASE + nearby / BOT_HOARD_CASHIN_GREED_DIVISOR;
+
+  if (Bot_objective.hoard_world_orb_count > BOT_HOARD_CASHIN_RICH_WORLD_ORBS)
+    threshold += 1;
+
+  int goal_room = BotGetNearestHoardGoalRoom(bot_index);
+  if (goal_room >= 0) {
+    float dist = vm_VectorDistanceQuick(&obj->pos, &Rooms[goal_room].path_pnt);
+    if (dist < BOT_HOARD_CASHIN_CLOSE_DIST)
+      threshold -= 2;
+    else if (dist < BOT_HOARD_CASHIN_MID_DIST)
+      threshold -= 1;
+  }
+
+  int equip = BotGetEquipmentRating(bot_index);
+  if (equip >= BOT_EQUIP_TIER_ELITE)
+    threshold += 1;
+  else if (equip <= BOT_EQUIP_TIER_WEAK)
+    threshold -= 1;
+
+  float shields = obj->shields;
+  if (shields < INITIAL_SHIELDS * BOT_HOARD_CASHIN_LOW_SHIELDS)
+    threshold -= 2;
+  else if (shields < INITIAL_SHIELDS * BOT_HOARD_CASHIN_MED_SHIELDS)
+    threshold -= 1;
+
+  if (threshold < 2)
+    threshold = 2;
+  if (threshold > 11)
+    threshold = 11;
+
   return count >= threshold;
+}
+
+bool BotIsHoardCarrier(int bot_index) {
+  if (BotGetGameMode() != BGM_HOARD)
+    return false;
+  return Bot_objective.hoard_is_carrier[Bots[bot_index].player_slot];
 }
 
 int BotGetNearestHoardGoalRoom(int bot_index) {
