@@ -1994,6 +1994,12 @@ static void BotUpdateState(int bot_index) {
     // Only engage threats that are directly blocking the path (close + visible).
     if (BotIsHoardCarrier(bot_index)) {
       BotDoHoardCarrierNav(bot_index);
+      int goal_room = BotGetNearestHoardGoalRoom(bot_index);
+      float goal_dist = 1e30f;
+      if (goal_room >= 0)
+        goal_dist = vm_VectorDistanceQuick(&obj->pos, &Rooms[goal_room].path_pnt);
+      if (goal_dist < BOT_HOARD_CASHIN_CLOSE_DIST)
+        break;
       int orb_count = Bot_objective.hoard_count[Bots[bot_index].player_slot];
       float engage_dist = (orb_count >= BOT_HOARD_MAX_ORBS) ? 40.0f : BOT_CLOSERANGE_DIST;
       if (has_target && has_los && dist < engage_dist)
