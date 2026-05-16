@@ -1972,6 +1972,11 @@ static void BotUpdateState(int bot_index) {
   // Use min() so already-aggressive bots (ELITE+ATTACK at 0.06) aren't made *less* aggressive.
   if (BotIsCarryingHyperOrb(bot_index))
     flee_pct = std::min(flee_pct, BOT_RAMPAGE_FLEE_PCT);
+  if (BotGetGameMode() == BGM_HOARD) {
+    int orbs = Bot_objective.hoard_count[Bots[bot_index].player_slot];
+    if (orbs >= 5)
+      flee_pct = std::max(flee_pct, BOT_WEAK_FLEE_PCT);
+  }
   bool low_shields = (shields < max_shields * flee_pct);
 
   switch (old_state) {
@@ -1989,7 +1994,9 @@ static void BotUpdateState(int bot_index) {
     // Only engage threats that are directly blocking the path (close + visible).
     if (BotIsHoardCarrier(bot_index)) {
       BotDoHoardCarrierNav(bot_index);
-      if (has_target && has_los && dist < BOT_CLOSERANGE_DIST)
+      int orb_count = Bot_objective.hoard_count[Bots[bot_index].player_slot];
+      float engage_dist = (orb_count >= BOT_HOARD_MAX_ORBS) ? 40.0f : BOT_CLOSERANGE_DIST;
+      if (has_target && has_los && dist < engage_dist)
         new_state = BOT_STATE_HUNT;
       break;
     }
@@ -2080,11 +2087,15 @@ static void BotUpdateState(int bot_index) {
     // Hyper-Anarchy orb carrier: kills are worth more, so always prioritize engagement.
     // Powerup chasing never suppresses HUNT transition — grab items opportunistically only.
     bool ha_carrier = BotIsCarryingHyperOrb(bot_index);
+    // Hoard collection mode: when orbs exist in the world, suppress combat engagement.
+    // Only fight urgent threats (close + LOS). Reverts to normal anarchy when no orbs around.
+    bool hoard_collecting = (BotGetGameMode() == BGM_HOARD && Bot_objective.hoard_world_orb_count > 0 &&
+                             !BotIsHoardCarrier(bot_index));
     bool urgent_threat = (has_los && dist < BOT_CLOSERANGE_DIST);
-    if (has_target && !holding_for_weapon && (!chasing_powerup || ha_carrier) &&
+    if (has_target && !holding_for_weapon && (!chasing_powerup || ha_carrier) && !hoard_collecting &&
         (has_los || dist < BOT_HUNT_BLIND_MAX_DIST))
       new_state = BOT_STATE_HUNT;
-    else if (has_target && !holding_for_weapon && chasing_powerup && urgent_threat)
+    else if (has_target && !holding_for_weapon && (chasing_powerup || hoard_collecting) && urgent_threat)
       new_state = BOT_STATE_HUNT;
     break;
   }
@@ -2244,7 +2255,9 @@ static void BotUpdateState(int bot_index) {
       // Stuck fighting through a wall — drop to HUNT which will re-navigate around the obstacle.
       // Phase 4.06: 3s→5s — 3s was too aggressive, caused premature disengagement behind pillars.
       new_state = BOT_STATE_HUNT;
-    } else if (Bots[bot_index].combat_idle_timer > BOT_EVADE_COMBAT_TIMEOUT && shields < max_shields * 0.60f)
+    } else if (BotGetGameMode() == BGM_HOARD && Bots[bot_index].combat_idle_timer > BOT_HOARD_COMBAT_TIMEOUT)
+      new_state = BOT_STATE_EXPLORE;
+    else if (Bots[bot_index].combat_idle_timer > BOT_EVADE_COMBAT_TIMEOUT && shields < max_shields * 0.60f)
       new_state = BOT_STATE_EVADE; // prolonged combat AND taking losses — break off to regroup
     else if (BotShouldInterruptForPowerup(bot_index)) {
       // WEAK bots use shorter cooldown — they interrupt more aggressively to arm up
