@@ -1424,6 +1424,22 @@ static void BotDoExploreRoaming(int bot_index) {
                    BotHasVisitedRoom(bot_index, dest_room) ? " revisit" : " new");
 }
 
+static vector BotGetNearestPortalPoint(object *obj, int target_room) {
+  vector best = Rooms[target_room].path_pnt;
+  float best_dist = 1e30f;
+  for (int p = 0; p < Rooms[target_room].num_portals; p++) {
+    portal *pt = &Rooms[target_room].portals[p];
+    if (pt->flags & (PF_BLOCK | PF_TOO_SMALL_FOR_ROBOT))
+      continue;
+    float d = vm_VectorDistanceQuick(&obj->pos, &pt->path_pnt);
+    if (d < best_dist) {
+      best_dist = d;
+      best = pt->path_pnt;
+    }
+  }
+  return best;
+}
+
 // Dedicated carrier navigation — called every EXPLORE tick when carrying an enemy flag.
 // Bypasses BotDoExploreRoaming entirely to avoid the early-return guard and last_target_room redirect.
 static void BotDoCarrierNav(int bot_index) {
@@ -1470,7 +1486,7 @@ static void BotDoCarrierNav(int bot_index) {
   pgi = -1;
 
   goal_info gi_info{};
-  gi_info.pos = Rooms[obj_room].path_pnt;
+  gi_info.pos = BotGetNearestPortalPoint(obj, obj_room);
   gi_info.roomnum = obj_room;
 
   pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
@@ -1507,7 +1523,7 @@ static void BotDoHoardCarrierNav(int bot_index) {
   pgi = -1;
 
   goal_info gi_info{};
-  gi_info.pos = Rooms[obj_room].path_pnt;
+  gi_info.pos = BotGetNearestPortalPoint(obj, obj_room);
   gi_info.roomnum = obj_room;
 
   pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
@@ -1994,12 +2010,6 @@ static void BotUpdateState(int bot_index) {
     // Only engage threats that are directly blocking the path (close + visible).
     if (BotIsHoardCarrier(bot_index)) {
       BotDoHoardCarrierNav(bot_index);
-      int goal_room = BotGetNearestHoardGoalRoom(bot_index);
-      float goal_dist = 1e30f;
-      if (goal_room >= 0)
-        goal_dist = vm_VectorDistanceQuick(&obj->pos, &Rooms[goal_room].path_pnt);
-      if (goal_dist < BOT_HOARD_CASHIN_CLOSE_DIST)
-        break;
       int orb_count = Bot_objective.hoard_count[Bots[bot_index].player_slot];
       float engage_dist = (orb_count >= BOT_HOARD_MAX_ORBS) ? 40.0f : BOT_CLOSERANGE_DIST;
       if (has_target && has_los && dist < engage_dist)
