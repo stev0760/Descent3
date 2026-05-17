@@ -1526,6 +1526,12 @@ static void BotDoHoardCarrierNav(int bot_index) {
     return;
   }
 
+  // Still en route with a valid goal? Don't reset every tick — destabilizes the pathfinder.
+  int &pgi_check = Bots[bot_index].pursuit_goal_index;
+  bool goal_valid = (pgi_check >= 0 && pgi_check < MAX_GOALS && obj->ai_info->goals[pgi_check].used);
+  if (goal_valid && Bots[bot_index].explore_dest_room == obj_room && Bots[bot_index].explore_room_timer > 0.0f)
+    return;
+
   int &pgi = Bots[bot_index].pursuit_goal_index;
   if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
     GoalClearGoal(obj, &obj->ai_info->goals[pgi]);

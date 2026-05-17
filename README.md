@@ -10,7 +10,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Matcen — Multiplayer Bots (Experimental)
 
-> **Matcen 0.8.14** — Hoard game mode: scarcity-adaptive cash-in algorithm (threshold scales with nearby orb supply, world richness, distance, equipment, shields), portal-targeted carrier navigation for both Hoard and CTF modes, sticky carrier commitment, collection-first behavior with combat interrupts. Previous release (0.8.13): Hyper-Anarchy game mode awareness.
+> **Matcen 0.8.16-dev** — CTF flag-chasing prioritization: ATTACK bots suppress combat to push toward enemy flag (30u urgent-threat threshold), flag carriers rush home with tightened engagement (40u) and 3s combat timeout, home-room immunity (no fighting in scoring room), fumble rush (all bots pile on dropped enemy flags), flag powerup priority 30 with combat interrupt, `!getflag`/`!flag` chat commands. Previous: Hoard scarcity-adaptive cash-in (0.8.14), Hyper-Anarchy (0.8.13).
 
 This fork — "Matcen" — adds a **server-side multiplayer bot system** to Descent 3. Bots occupy real player slots on dedicated servers or listen servers, appearing and acting as normal players. All bots are tagged with ` [BOT]` as a callsign suffix for easy identification.
 
@@ -24,7 +24,7 @@ This fork — "Matcen" — adds a **server-side multiplayer bot system** to Desc
 *   **Weapon System:** Tactical primary switching (energy vs. ammo based on range and resources), secondary fire with splash-damage guards, and smart powerup collection with LOS scoring.
 *   **Loadout Awareness:** Bots self-classify into WEAK/GOOD/ELITE tiers and adjust aggression accordingly — poorly-armed bots hunt upgrades before engaging.
 *   **Navigation:** Engine-integrated BOA+BNode pathfinding with visited-room memory to prevent clustering and portal-based unstuck recovery.
-*   **Game Modes:** Anarchy, Team Anarchy, Robo-Anarchy, CTF (with role auto-assignment and portal-targeted carrier nav), Hyper-Anarchy (orb carrier aggression), and Hoard (scarcity-adaptive collect-and-deliver). Bots persist across level transitions. Further objective modes (Entropy, Monsterball) are on the roadmap.
+*   **Game Modes:** Anarchy, Team Anarchy, Robo-Anarchy, CTF (flag-chasing prioritization, carrier home-rush, fumble pile-on, role auto-assignment), Hyper-Anarchy (orb carrier aggression), and Hoard (scarcity-adaptive collect-and-deliver). Bots persist across level transitions. Further objective modes (Entropy, Monsterball) are on the roadmap.
 *   **Chat Commands:** Bots respond to `!` prefixed commands in multiplayer chat (team modes). Full Tier 1 squad orders: `!attack`, `!target`, `!defend`, `!follow`, `!cover`, `!freelance`, `!status`, `!ping`. Supports all-chat, team-chat, and DM addressing (by name prefix or slot). Works on all D3-compatible clients.
 *   **Ship Selection:** Pyro-GL, Phoenix, Magnum-AHT, or Black Pyro (requires Mercenary expansion).
 *   **Difficulty:** Five levels (Trainee → Insane) scaling aim, reaction time, evasion, and turn rate. Set globally or per-bot.
