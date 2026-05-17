@@ -36,7 +36,8 @@ All Matcen fork documentation lives in **`matcen-docs/`**:
 
 - **`matcen-docs/BOT_DEV_REFERENCE.md`** — living developer reference: architecture, FSM, constants, engine API patterns, critical gotchas. **Read this before modifying bot code.**
 - **`matcen-docs/BOTS_DEVEL.md`** — phase history and roadmap. Update when a phase completes.
-- **`matcen-docs/NAV_OVERHAUL.md`** — Phase 4.0 navigation overhaul: research synthesis, root cause analysis, engine pathfinding pipeline reference, and implementation plan. **Read this before modifying navigation code.**
+- **`matcen-docs/NAV_OVERHAUL.md`** — Phase 4.0 navigation overhaul: research synthesis, root cause analysis, engine pathfinding pipeline reference, and implementation plan.
+- **`matcen-docs/NAV_OVERHAUL_2.md`** — Phase 7 (version 0.9.0) navigation overhaul: potential field steering (wall-slam fix) + dynamic flow fields (strategic routing). Engine research, algorithm design, integration plan. **Read this before modifying navigation or steering code.**
 - **`matcen-docs/PATHFINDING_CODEBASE_EXPLORE.md`** — Guide-bot navigation analysis: how single-player bots navigate complex passages vs. our multiplayer bots. Research input for `NAV_OVERHAUL.md`.
 - **`matcen-docs/BOT_MANAGEMENT.md`** — Phase 5 planning and implementation: config-file rosters, ship selection, difficulty levels, auto-rebalancing, `$servercaps` handshake. **Read this before modifying bot management code.**
 - **`matcen-docs/CHAT_COMMANDS.md`** — Phase 6.0 chat command system: cross-genre research synthesis, verb taxonomy (4 tiers), staged rollout plan, engine integration points. **Read this before modifying bot chat code.**

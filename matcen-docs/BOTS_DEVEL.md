@@ -950,7 +950,9 @@ Currently broken (bots frozen — likely AI goal/pathfinding regression from ear
 - **Movement capture:** record human player traces to tune bot thrust/drag PID controllers
 - **Bot personalities:** per-bot aggression, caution, weapon preference, movement style, and **taunt system integration** (D3's audio taunt clips played on kills, flag captures, squad acknowledgements — makes bots feel alive)
 
-### Phase 7: Navigation Intelligence — Layered Steering
+### Phase 7: Navigation Intelligence — Layered Steering (Version 0.9.0)
+
+> **Full design document:** See `NAV_OVERHAUL_2.md` for complete algorithm specification, engine research, integration plan, and success metrics.
 
 The existing engine pathfinding (BOA room graph + BNode waypoints) is fundamentally sound — it is already hierarchical A*, and Phase 4.0 proved the algorithm was never the bottleneck. What's missing is two additive layers: **dynamic flow fields** for strategic room-level routing and **potential fields** for smooth local steering. Neither replaces the engine's `movement_dir` pipeline; both layer on top of it.
 
