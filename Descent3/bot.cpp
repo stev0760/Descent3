@@ -1442,6 +1442,8 @@ static vector BotGetNearestPortalPoint(object *obj, int target_room) {
 
 // Dedicated carrier navigation — called every EXPLORE tick when carrying an enemy flag.
 // Bypasses BotDoExploreRoaming entirely to avoid the early-return guard and last_target_room redirect.
+// Modeled after BotDoHoardCarrierNav: navigate to portal, let engine pathfind.
+// Once inside the home room, beeline to the flag object (touching it scores).
 static void BotDoCarrierNav(int bot_index) {
   int slot = Bots[bot_index].player_slot;
   object *obj = &Objects[Players[slot].objnum];
@@ -1462,7 +1464,7 @@ static void BotDoCarrierNav(int bot_index) {
     return;
   }
 
-  // Already at home base — try score beeline through the flag object
+  // Already at home base — beeline to the flag object (touching it scores)
   if (obj_room == obj->roomnum) {
     int flag_objnum = BotGetHomeFlagObjnum(bot_index);
     if (flag_objnum >= 0) {
@@ -1479,7 +1481,14 @@ static void BotDoCarrierNav(int bot_index) {
     return;
   }
 
-  // Navigate to home base — refresh goal every tick so HUNT re-entry doesn't lose it
+  // Not yet at home — still en route with a valid goal? Don't reset every tick.
+  // But if the goal was cleared (e.g., by HUNT/COMBAT interruption), re-create it.
+  int &pgi_check = Bots[bot_index].pursuit_goal_index;
+  bool goal_valid = (pgi_check >= 0 && pgi_check < MAX_GOALS && obj->ai_info->goals[pgi_check].used);
+  if (goal_valid && Bots[bot_index].explore_dest_room == obj_room && Bots[bot_index].explore_room_timer > 0.0f)
+    return;
+
+  // Navigate to home base via portal point (same approach as Hoard carrier nav)
   int &pgi = Bots[bot_index].pursuit_goal_index;
   if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
     GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
@@ -1748,7 +1757,10 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
     int priority = 0;
 
     // --- Game mode objectives (highest priority — these ARE the game) ---
-    if (strstr(lower, "hoardorb")) {
+    int flag_team = -1;
+    if (BotIsFlagPowerup(p->id, &flag_team)) {
+      priority = 30; // CTF flags are the #1 objective — always grab immediately
+    } else if (strstr(lower, "hoardorb")) {
       int capacity = BOT_HOARD_MAX_ORBS - Bot_objective.hoard_count[slot];
       if (capacity <= 0) {
         priority = 0;
@@ -1906,6 +1918,9 @@ static bool BotShouldInterruptForPowerup(int bot_index) {
       lower[k] = (char)tolower((unsigned char)lower[k]);
 
     // Tier A: game objectives and instant power-ups — always break off
+    int flag_team_chk = -1;
+    if (BotIsFlagPowerup(p->id, &flag_team_chk))
+      return true;
     if (strstr(lower, "hoardorb") || strstr(lower, "hyperorb") || strstr(lower, "invulner") || strstr(lower, "rapid"))
       return true;
 
@@ -2001,7 +2016,10 @@ static void BotUpdateState(int bot_index) {
     // Must be checked first — carriers always prioritize scoring.
     if (BotIsCarryingEnemyFlag(bot_index)) {
       BotDoCarrierNav(bot_index);
-      if (has_target && has_los && dist < BOT_CLOSERANGE_DIST)
+      // In home room: never fight — beeline to flag and score
+      int home_room = BotGetObjectiveRoom(bot_index);
+      bool at_home = (home_room >= 0 && obj->roomnum == home_room);
+      if (!at_home && has_target && has_los && dist < 40.0f)
         new_state = BOT_STATE_HUNT;
       break;
     }
@@ -2044,7 +2062,9 @@ static void BotUpdateState(int bot_index) {
           suppress_powerup = true;
       }
     }
-    int pu_obj = suppress_powerup ? -1 : BotFindBestPowerup(bot_index, need_sh, low_energy);
+    // Even suppressed defenders should grab flags (dropped own-flag returns it, enemy flag scores)
+    int pu_obj = suppress_powerup ? BotFindBestPowerup(bot_index, need_sh, low_energy, 29)
+                                  : BotFindBestPowerup(bot_index, need_sh, low_energy);
     bool holding_for_weapon = false;
     if (pu_obj >= 0) {
       // Check if this powerup is a weapon (not health/energy)
@@ -2107,11 +2127,38 @@ static void BotUpdateState(int bot_index) {
     // Only fight urgent threats (close + LOS). Reverts to normal anarchy when no orbs around.
     bool hoard_collecting = (BotGetGameMode() == BGM_HOARD && Bot_objective.hoard_world_orb_count > 0 &&
                              !BotIsHoardCarrier(bot_index));
-    bool urgent_threat = (has_los && dist < BOT_CLOSERANGE_DIST);
+    // CTF push mode: bots navigating to enemy flag suppress combat engagement.
+    // Applies to ATTACK-lean bots always, and ALL bots during a fumble rush.
+    bool ctf_pushing = false;
+    if (BotGetGameMode() == BGM_CTF && !BotIsCarryingEnemyFlag(bot_index)) {
+      BotSquadRole role = Bots[bot_index].squad_role;
+      bool is_attacker = (role == SQUAD_ATTACK) ||
+                         (role == SQUAD_FREELANCE && Bots[bot_index].objective_lean == BOT_LEAN_ATTACK);
+      if (is_attacker)
+        ctf_pushing = true;
+      // Fumble rush: any bot navigating to a dropped enemy flag also suppresses combat
+      if (!ctf_pushing) {
+        int my_team = Players[Bots[bot_index].player_slot].team;
+        int num_teams_chk = Num_teams > BOT_MAX_TEAMS ? BOT_MAX_TEAMS : Num_teams;
+        for (int t = 0; t < num_teams_chk; t++) {
+          if (t == my_team)
+            continue;
+          if (Bot_objective.flag_state[t] == FLAG_DROPPED) {
+            ctf_pushing = true;
+            break;
+          }
+        }
+      }
+    }
+    // CTF pushers use a much tighter threat threshold — only engage enemies physically blocking them.
+    // On tight maps, 70u covers entire corridors; 30u means essentially touching.
+    float urgent_dist = ctf_pushing ? 30.0f : BOT_CLOSERANGE_DIST;
+    bool urgent_threat = (has_los && dist < urgent_dist);
     if (has_target && !holding_for_weapon && (!chasing_powerup || ha_carrier) && !hoard_collecting &&
-        (has_los || dist < BOT_HUNT_BLIND_MAX_DIST))
+        !ctf_pushing && (has_los || dist < BOT_HUNT_BLIND_MAX_DIST))
       new_state = BOT_STATE_HUNT;
-    else if (has_target && !holding_for_weapon && (chasing_powerup || hoard_collecting) && urgent_threat)
+    else if (has_target && !holding_for_weapon && (chasing_powerup || hoard_collecting || ctf_pushing) &&
+             urgent_threat)
       new_state = BOT_STATE_HUNT;
     break;
   }
@@ -2217,6 +2264,14 @@ static void BotUpdateState(int bot_index) {
         new_state = BOT_STATE_EXPLORE;
       }
     }
+    // CTF carrier in home room: abort hunt immediately — must beeline to flag and score
+    if (BotGetGameMode() == BGM_CTF && BotIsCarryingEnemyFlag(bot_index)) {
+      int hunt_home = BotGetObjectiveRoom(bot_index);
+      if (hunt_home >= 0 && obj->roomnum == hunt_home) {
+        AISetTarget(obj, OBJECT_HANDLE_NONE);
+        new_state = BOT_STATE_EXPLORE;
+      }
+    }
 
     // Opportunistic powerup grab while hunting (no state change — just set a secondary goal)
     // Picks up very close items that barely detour the hunt path.
@@ -2271,8 +2326,22 @@ static void BotUpdateState(int bot_index) {
       // Stuck fighting through a wall — drop to HUNT which will re-navigate around the obstacle.
       // Phase 4.06: 3s→5s — 3s was too aggressive, caused premature disengagement behind pillars.
       new_state = BOT_STATE_HUNT;
+    } else if (BotGetGameMode() == BGM_CTF && BotIsCarryingEnemyFlag(bot_index)) {
+      // Carrier in home room: exit combat instantly to score
+      int cr_home = BotGetObjectiveRoom(bot_index);
+      if (cr_home >= 0 && obj->roomnum == cr_home)
+        new_state = BOT_STATE_EXPLORE;
+      else if (Bots[bot_index].combat_idle_timer > BOT_CTF_CARRIER_COMBAT_TIMEOUT)
+        new_state = BOT_STATE_EXPLORE;
     } else if (BotGetGameMode() == BGM_HOARD && Bots[bot_index].combat_idle_timer > BOT_HOARD_COMBAT_TIMEOUT)
       new_state = BOT_STATE_EXPLORE;
+    else if (BotGetGameMode() == BGM_CTF && Bots[bot_index].combat_idle_timer > BOT_CTF_ATTACK_COMBAT_TIMEOUT) {
+      BotSquadRole role = Bots[bot_index].squad_role;
+      bool is_attacker = (role == SQUAD_ATTACK) ||
+                         (role == SQUAD_FREELANCE && Bots[bot_index].objective_lean == BOT_LEAN_ATTACK);
+      if (is_attacker && !BotIsCarryingEnemyFlag(bot_index))
+        new_state = BOT_STATE_EXPLORE;
+    }
     else if (Bots[bot_index].combat_idle_timer > BOT_EVADE_COMBAT_TIMEOUT && shields < max_shields * 0.60f)
       new_state = BOT_STATE_EVADE; // prolonged combat AND taking losses — break off to regroup
     else if (BotShouldInterruptForPowerup(bot_index)) {

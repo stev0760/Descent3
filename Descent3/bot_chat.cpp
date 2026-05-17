@@ -612,23 +612,11 @@ void BotOnChatMessage(int from_pnum, int towho, const char *message) {
     memmove(args, p, strlen(p) + 1);
   }
 
-  // "!attack flag" / "!defend flag" — CTF-aware reply variants
-  if (strcmp(verb, "attack") == 0 &&
-      strnicmp(args, "flag", 4) == 0 && (args[4] == '\0' || isspace((unsigned char)args[4]))) {
+  // Single-word flag commands: !getflag, !flag, !defendflag
+  if (strcmp(verb, "getflag") == 0 || strcmp(verb, "flag") == 0)
     strcpy(verb, "attackflag");
-    const char *rest = args + 4;
-    while (*rest && isspace((unsigned char)*rest))
-      rest++;
-    memmove(args, rest, strlen(rest) + 1);
-  }
-  if (strcmp(verb, "defend") == 0 &&
-      strnicmp(args, "flag", 4) == 0 && (args[4] == '\0' || isspace((unsigned char)args[4]))) {
+  if (strcmp(verb, "guardflag") == 0)
     strcpy(verb, "defendflag");
-    const char *rest = args + 4;
-    while (*rest && isspace((unsigned char)*rest))
-      rest++;
-    memmove(args, rest, strlen(rest) + 1);
-  }
 
   BotResolveAndDispatch(from_pnum, towho, verb, args, force_target_slot);
 }

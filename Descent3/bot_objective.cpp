@@ -489,6 +489,26 @@ static int BotGetObjectiveRoom_CTF(int bot_index) {
     // Reactive: if our flag is dropped, recover it regardless of lean
     if (Bot_objective.flag_state[my_team] == FLAG_DROPPED && Bot_objective.flag_room[my_team] >= 0)
       return Bot_objective.flag_room[my_team];
+    // Fumble rush: enemy flag dropped + our flag safe = everyone goes for it
+    if (Bot_objective.flag_state[my_team] == FLAG_AT_HOME) {
+      object *obj = &Objects[Players[slot].objnum];
+      int fumble_room = -1;
+      float fumble_dist = 1e30f;
+      for (int t = 0; t < num_teams; t++) {
+        if (t == my_team)
+          continue;
+        if (Bot_objective.flag_state[t] == FLAG_DROPPED && Bot_objective.flag_room[t] >= 0 &&
+            Rooms[Bot_objective.flag_room[t]].used) {
+          float d = vm_VectorDistanceQuick(&obj->pos, &Rooms[Bot_objective.flag_room[t]].path_pnt);
+          if (d < fumble_dist) {
+            fumble_dist = d;
+            fumble_room = Bot_objective.flag_room[t];
+          }
+        }
+      }
+      if (fumble_room >= 0)
+        return fumble_room;
+    }
     // If our flag is carried, let target selection handle the carrier — no nav override
     if (Bot_objective.flag_state[my_team] == FLAG_CARRIED)
       return -1;
@@ -525,6 +545,17 @@ static int BotGetObjectiveRoom_CTF(int bot_index) {
   if (effective == SQUAD_DEFEND) {
     if (Bot_objective.flag_state[my_team] == FLAG_DROPPED && Bot_objective.flag_room[my_team] >= 0)
       return Bot_objective.flag_room[my_team];
+    // Fumble rush: enemy flag dropped + our flag safe = defenders join the pile
+    if (Bot_objective.flag_state[my_team] == FLAG_AT_HOME) {
+      object *obj = &Objects[Players[slot].objnum];
+      for (int t = 0; t < num_teams; t++) {
+        if (t == my_team)
+          continue;
+        if (Bot_objective.flag_state[t] == FLAG_DROPPED && Bot_objective.flag_room[t] >= 0 &&
+            Rooms[Bot_objective.flag_room[t]].used)
+          return Bot_objective.flag_room[t];
+      }
+    }
     return Bot_objective.goal_room[my_team];
   }
 
