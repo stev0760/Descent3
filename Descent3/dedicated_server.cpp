@@ -133,6 +133,7 @@
 #include "networking.h"
 #include "bot.h"
 #include "bot_objective.h"
+#include "bot_steering.h"
 #include "object.h"
 #include "vecmat.h"
 
@@ -860,6 +861,19 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     }
     return true;
   }
+  if (stricmp(command, "potentialfield") == 0) {
+    if (stricmp(operand, "on") == 0) {
+      Bot_potential_field_enabled = true;
+      PrintDedicatedMessage("Potential field steering ON\n");
+    } else if (stricmp(operand, "off") == 0) {
+      Bot_potential_field_enabled = false;
+      PrintDedicatedMessage("Potential field steering OFF\n");
+    } else {
+      PrintDedicatedMessage("Usage: $potentialfield on|off  (current: %s)\n",
+                            Bot_potential_field_enabled ? "on" : "off");
+    }
+    return true;
+  }
   if (stricmp(command, "botdifficulty") == 0) {
     if (!operand[0]) {
       PrintDedicatedMessage("Usage: $botdifficulty <index|all> <level>\n");
@@ -921,6 +935,7 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     PrintDedicatedMessage("  $botdifficulty <index|all> <level> - Change difficulty\n");
     PrintDedicatedMessage("  $botstat [index|all]   - Show bot status details\n");
     PrintDedicatedMessage("  $botmov on|off         - Toggle movement debug logging\n");
+    PrintDedicatedMessage("  $potentialfield on|off - Toggle potential field steering (Phase 7)\n");
     PrintDedicatedMessage("  $botmode               - Show detected game mode\n");
     PrintDedicatedMessage("  $botobj                - Show objective state (CTF flags, orbs, etc.)\n");
     PrintDedicatedMessage("  $servercaps            - Print server capabilities\n");

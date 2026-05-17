@@ -21,6 +21,7 @@
 
 #include "bot.h"
 #include "bot_objective.h"
+#include "bot_steering.h"
 #include <climits>
 #include <cmath>
 #include <filesystem>
@@ -2674,6 +2675,13 @@ static void BotApplyThrust(int bot_index) {
     if (Bots[bot_index].juke_phase > 6.28318f)
       Bots[bot_index].juke_phase -= 6.28318f;
   }
+
+  // Phase 7.1: Potential field steering — applied after FSM overrides and juke but before speed
+  // scaling. FSM branches set absolute directions (carrier beeline, powerup beeline, combat orbit)
+  // that the field must be able to correct. Correction needs full directional resolution before
+  // per-axis speed scaling collapses magnitudes. This layer supplements (not replaces) the engine's
+  // AIF_AVOID_WALLS which is already baked into movement_dir.
+  BotApplyPotentialField(bot_index, obj, forward, sideways, vertical);
 
   // Apply speed scaling
   forward *= speed_scale;

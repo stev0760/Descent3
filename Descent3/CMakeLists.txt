@@ -159,6 +159,7 @@ set(CPPS
   bot.cpp
   bot_chat.cpp
   bot_objective.cpp
+  bot_steering.cpp
   Briefing.cpp
   BriefingParse.cpp
   bsp.cpp
