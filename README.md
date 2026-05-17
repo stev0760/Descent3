@@ -10,7 +10,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Matcen — Multiplayer Bots (Experimental)
 
-> **Matcen 0.8.16-dev** — CTF flag-chasing prioritization: ATTACK bots suppress combat to push toward enemy flag (30u urgent-threat threshold), flag carriers rush home with tightened engagement (40u) and 3s combat timeout, home-room immunity (no fighting in scoring room), fumble rush (all bots pile on dropped enemy flags), flag powerup priority 30 with combat interrupt, `!getflag`/`!flag` chat commands. Previous: Hoard scarcity-adaptive cash-in (0.8.14), Hyper-Anarchy (0.8.13).
+> **Matcen 0.8.16** — CTF flag-chasing prioritization: ATTACK bots suppress combat to push toward enemy flag (30u urgent-threat threshold), flag carriers rush home with tightened engagement (40u) and 3s combat timeout, home-room immunity (no fighting in scoring room), fumble rush (all bots pile on dropped enemy flags), flag powerup priority 30 with combat interrupt, `!getflag`/`!flag` chat commands. Previous: Hoard scarcity-adaptive cash-in (0.8.14), Hyper-Anarchy (0.8.13).
 
 This fork — "Matcen" — adds a **server-side multiplayer bot system** to Descent 3. Bots occupy real player slots on dedicated servers or listen servers, appearing and acting as normal players. All bots are tagged with ` [BOT]` as a callsign suffix for easy identification.
 
