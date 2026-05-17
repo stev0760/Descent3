@@ -333,7 +333,9 @@ static void BotSetPursuitGoal(int bot_index, vector *portal_pos = nullptr, int p
   }
 
   // Use AIG_GET_TO_OBJ — the engine's AIPathAllocPath builds the full BOA+BNode path.
-  // GF_USE_BLINE_IF_SEES_GOAL is intentionally NOT set — it causes beelining through thin geometry.
+  // GF_USE_BLINE_IF_SEES_GOAL must NEVER be used — the engine's "sees goal" raycast passes through
+  // portals, so it reports visibility even when the physical ship can't fly a straight line there.
+  // This causes bots to beeline into walls on tight maps. Applies to ALL goal types globally.
   int target_handle = obj->ai_info->target_handle;
   if (target_handle == OBJECT_HANDLE_NONE)
     return;
@@ -1170,8 +1172,7 @@ static bool BotNavigateToFollowTarget(int bot_index) {
     GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
 
   int tgt_handle = tgt_obj->handle;
-  pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f,
-                    GF_SPEED_ATTACK | GF_USE_BLINE_IF_SEES_GOAL);
+  pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f, GF_SPEED_ATTACK | GF_OBJ_IS_TARGET);
 
   Bots[bot_index].explore_dest_room = -1;
   Bots[bot_index].explore_room_timer = 0.0f;
@@ -1238,9 +1239,8 @@ static void BotDoExploreRoaming(int bot_index) {
           if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
             GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
           int flag_handle = Objects[flag_objnum].handle;
-          pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&flag_handle, 2, 1.0f,
-                            GF_SPEED_ATTACK | GF_USE_BLINE_IF_SEES_GOAL);
-          LOG_DEBUG.printf("BOT: '%s' score beeline -> home flag obj %d", Bots[bot_index].callsign, flag_objnum);
+          pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&flag_handle, 2, 1.0f, GF_SPEED_ATTACK);
+          LOG_DEBUG.printf("BOT: '%s' score nav -> home flag obj %d", Bots[bot_index].callsign, flag_objnum);
         } else {
           LOG_DEBUG.printf("BOT: '%s' at home base, waiting for flag return", Bots[bot_index].callsign);
         }
@@ -1473,9 +1473,8 @@ static void BotDoCarrierNav(int bot_index) {
       if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
         GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
       int flag_handle = Objects[flag_objnum].handle;
-      pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&flag_handle, 2, 1.0f,
-                        GF_SPEED_ATTACK | GF_USE_BLINE_IF_SEES_GOAL);
-      LOG_DEBUG.printf("BOT CTF: '%s' score beeline -> home flag obj %d", Bots[bot_index].callsign, flag_objnum);
+      pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&flag_handle, 2, 1.0f, GF_SPEED_ATTACK);
+      LOG_DEBUG.printf("BOT CTF: '%s' score nav -> home flag obj %d", Bots[bot_index].callsign, flag_objnum);
     } else {
       LOG_DEBUG.printf("BOT CTF: '%s' at home base, waiting for flag return", Bots[bot_index].callsign);
     }
@@ -2092,10 +2091,7 @@ static void BotUpdateState(int bot_index) {
         GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
       pgi = -1;
       int tgt_handle = Objects[pu_obj].handle;
-      // Phase 4.03: GF_USE_BLINE_IF_SEES_GOAL lets bots fly straight at visible powerups
-      // instead of relying on BOA+BNode pathfinding which often can't route to object positions.
-      pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f,
-                        GF_SPEED_ATTACK | GF_USE_BLINE_IF_SEES_GOAL);
+      pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f, GF_SPEED_ATTACK);
       // Track which powerup we're chasing for timeout detection
       if (Bots[bot_index].chasing_powerup_handle != tgt_handle) {
         Bots[bot_index].chasing_powerup_handle = tgt_handle;
@@ -2289,8 +2285,8 @@ static void BotUpdateState(int bot_index) {
         float pu_dist = vm_VectorDistanceQuick(&obj->pos, &Objects[pu_obj].pos);
         if (pu_dist < BOT_HUNT_PICKUP_RADIUS) {
           int tgt_handle = Objects[pu_obj].handle;
-          Bots[bot_index].powerup_goal_index = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f,
-                                                           GF_SPEED_ATTACK | GF_USE_BLINE_IF_SEES_GOAL);
+          Bots[bot_index].powerup_goal_index =
+              GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f, GF_SPEED_ATTACK);
         }
       }
     }
@@ -3864,8 +3860,7 @@ void BotDoFrame() {
           if (pu_obj >= 0) {
             int tgt_handle = Objects[pu_obj].handle;
             Bots[i].powerup_goal_index =
-                GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f,
-                            GF_SPEED_ATTACK | GF_USE_BLINE_IF_SEES_GOAL);
+                GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f, GF_SPEED_ATTACK);
             Bots[i].chasing_powerup_handle = tgt_handle;
             Bots[i].chasing_powerup_timer = 0.0f;
             float pu_dist = vm_VectorDistanceQuick(&obj->pos, &Objects[pu_obj].pos);
