@@ -38,13 +38,21 @@
 #define BOT_PF_BLEND_SCALE 0.15f
 #define BOT_PF_BLEND_MAX 0.60f
 
+// Field opposition brake: when the field strongly opposes current thrust and the forward
+// ray confirms a wall ahead, suppress afterburner and reduce forward thrust.
+#define BOT_PF_BRAKE_OPPOSITION_DOT -0.4f // field vs thrust dot product threshold (opposing)
+#define BOT_PF_BRAKE_FORWARD_CLAMP 0.2f   // max forward thrust when braking
+
 // Runtime toggle (default OFF — enable with $potentialfield on)
 extern bool Bot_potential_field_enabled;
 
 // Apply potential field steering correction to thrust direction components.
 // Casts 5 forward-hemisphere rays, accumulates repulsive force from wall hits,
 // and blends the result with the current forward/sideways/vertical thrust.
+// If a wall is detected directly ahead while the bot is thrusting into it,
+// suppresses want_afterburner and reduces forward thrust.
 // Must be called AFTER FSM direction overrides and juke, BEFORE speed scaling.
-void BotApplyPotentialField(int bot_index, object *obj, float &forward, float &sideways, float &vertical);
+void BotApplyPotentialField(int bot_index, object *obj, float &forward, float &sideways, float &vertical,
+                            bool &want_afterburner);
 
 #endif // BOT_STEERING_H

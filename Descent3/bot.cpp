@@ -2681,7 +2681,7 @@ static void BotApplyThrust(int bot_index) {
   // that the field must be able to correct. Correction needs full directional resolution before
   // per-axis speed scaling collapses magnitudes. This layer supplements (not replaces) the engine's
   // AIF_AVOID_WALLS which is already baked into movement_dir.
-  BotApplyPotentialField(bot_index, obj, forward, sideways, vertical);
+  BotApplyPotentialField(bot_index, obj, forward, sideways, vertical, want_afterburner);
 
   // Apply speed scaling
   forward *= speed_scale;
