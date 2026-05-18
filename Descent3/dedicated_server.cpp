@@ -874,6 +874,18 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     }
     return true;
   }
+  if (stricmp(command, "flowfield") == 0) {
+    if (stricmp(operand, "on") == 0) {
+      Bot_flow_field_enabled = true;
+      PrintDedicatedMessage("Flow field navigation ON\n");
+    } else if (stricmp(operand, "off") == 0) {
+      Bot_flow_field_enabled = false;
+      PrintDedicatedMessage("Flow field navigation OFF\n");
+    } else {
+      PrintDedicatedMessage("Usage: $flowfield on|off  (current: %s)\n", Bot_flow_field_enabled ? "on" : "off");
+    }
+    return true;
+  }
   if (stricmp(command, "botdifficulty") == 0) {
     if (!operand[0]) {
       PrintDedicatedMessage("Usage: $botdifficulty <index|all> <level>\n");
@@ -935,7 +947,8 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     PrintDedicatedMessage("  $botdifficulty <index|all> <level> - Change difficulty\n");
     PrintDedicatedMessage("  $botstat [index|all]   - Show bot status details\n");
     PrintDedicatedMessage("  $botmov on|off         - Toggle movement debug logging\n");
-    PrintDedicatedMessage("  $potentialfield on|off - Toggle potential field steering (Phase 7)\n");
+    PrintDedicatedMessage("  $potentialfield on|off - Toggle potential field steering (Phase 7.1)\n");
+    PrintDedicatedMessage("  $flowfield on|off      - Toggle flow field navigation (Phase 7.2)\n");
     PrintDedicatedMessage("  $botmode               - Show detected game mode\n");
     PrintDedicatedMessage("  $botobj                - Show objective state (CTF flags, orbs, etc.)\n");
     PrintDedicatedMessage("  $servercaps            - Print server capabilities\n");

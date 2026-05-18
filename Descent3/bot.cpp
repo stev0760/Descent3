@@ -2438,6 +2438,42 @@ static void BotUpdateState(int bot_index) {
   }
 }
 
+// Phase 7.2: Compute the navigation goal room for flow field routing.
+// Shared by BotUpdateAimDirection (orient override) and BotApplyThrust (flow field steering).
+// Returns -1 if no goal room applies. Also covers HUNT state (target's room when hunting).
+static int BotGetNavGoalRoom(int bot_index) {
+  if (BotIsCarryingEnemyFlag(bot_index))
+    return BotGetObjectiveRoom(bot_index);
+  if (BotGetGameMode() == BGM_HOARD && BotIsHoardCarrier(bot_index))
+    return BotGetObjectiveRoom(bot_index);
+  if (Bots[bot_index].explore_dest_room >= 0)
+    return Bots[bot_index].explore_dest_room;
+  if (Bots[bot_index].chasing_powerup_handle != OBJECT_HANDLE_NONE) {
+    object *pu = ObjGet(Bots[bot_index].chasing_powerup_handle);
+    if (pu && pu->type == OBJ_POWERUP && !OBJECT_OUTSIDE(pu))
+      return pu->roomnum;
+  }
+  if (Bots[bot_index].squad_role == SQUAD_FOLLOW || Bots[bot_index].squad_role == SQUAD_COVER) {
+    int tgt_slot = Bots[bot_index].squad_target_slot;
+    if (tgt_slot >= 0 && tgt_slot < MAX_NET_PLAYERS && (NetPlayers[tgt_slot].flags & NPF_CONNECTED)) {
+      object *tgt = &Objects[Players[tgt_slot].objnum];
+      if (tgt->type == OBJ_PLAYER && !OBJECT_OUTSIDE(tgt))
+        return tgt->roomnum;
+    }
+  }
+  // HUNT state: use target's room so flow field guides the bot through portals to reach them
+  if (Bots[bot_index].state == BOT_STATE_HUNT) {
+    int slot = Bots[bot_index].player_slot;
+    object *obj = &Objects[Players[slot].objnum];
+    if (obj->ai_info) {
+      object *target = ObjGet(obj->ai_info->target_handle);
+      if (target && target->type != OBJ_GHOST && !OBJECT_OUTSIDE(target))
+        return target->roomnum;
+    }
+  }
+  return -1;
+}
+
 // Per-frame lead aim steering (Phase 3.16 accuracy fix).
 // Writes the predicted intercept position into ai_info->last_see_target_pos so that
 // AIDoOrient (GF_ORIENT_TARGET) turns the bot toward where the target WILL BE,
@@ -2449,7 +2485,24 @@ static void BotUpdateAimDirection(int bot_index) {
     return;
 
   object *target = ObjGet(obj->ai_info->target_handle);
-  if (!target || target->type == OBJ_GHOST)
+  bool has_valid_target = target && target->type != OBJ_GHOST;
+
+  // Phase 7.2: Orient override — when navigating via flow field and the bot can't see its
+  // target (or has no target), face the portal direction instead of the enemy. This ensures
+  // fvec aligns with the navigation goal so afterburner thrust pushes the bot the right way.
+  int nav_goal_room = BotGetNavGoalRoom(bot_index);
+  if (nav_goal_room >= 0) {
+    bool should_face_nav = !has_valid_target || !BotHasLOS(obj, target);
+    if (should_face_nav) {
+      vector flow_dir;
+      if (BotFlowFieldGetDirection(obj, nav_goal_room, &flow_dir)) {
+        obj->ai_info->last_see_target_pos = obj->pos + flow_dir * 200.0f;
+        return;
+      }
+    }
+  }
+
+  if (!has_valid_target)
     return;
 
   vector to_target = target->pos - obj->pos;
@@ -2504,9 +2557,19 @@ static void BotApplyThrust(int bot_index) {
   vector &mdir = obj->ai_info->movement_dir;
   float mdir_mag = vm_GetMagnitude(&mdir);
 
-  // Decompose world-space movement_dir into bot-local axes
+  // Phase 7.2: Flow field override — use portal-directed navigation instead of engine's
+  // movement_dir when we have a known goal room in a different room.
+  vector flow_dir;
+  int nav_goal_room = BotGetNavGoalRoom(bot_index);
+  bool using_flow_field = (nav_goal_room >= 0 && BotFlowFieldGetDirection(obj, nav_goal_room, &flow_dir));
+
+  // Decompose world-space direction into bot-local axes
   float forward = 0.0f, sideways = 0.0f, vertical = 0.0f;
-  if (mdir_mag > 0.01f) {
+  if (using_flow_field) {
+    forward = vm_DotProduct(&flow_dir, &obj->orient.fvec);
+    sideways = vm_DotProduct(&flow_dir, &obj->orient.rvec);
+    vertical = vm_DotProduct(&flow_dir, &obj->orient.uvec);
+  } else if (mdir_mag > 0.01f) {
     forward = vm_DotProduct(&mdir, &obj->orient.fvec);
     sideways = vm_DotProduct(&mdir, &obj->orient.rvec);
     vertical = vm_DotProduct(&mdir, &obj->orient.uvec);
@@ -2678,6 +2741,17 @@ static void BotApplyThrust(int bot_index) {
   // per-axis speed scaling collapses magnitudes. This layer supplements (not replaces) the engine's
   // AIF_AVOID_WALLS which is already baked into movement_dir.
   BotApplyPotentialField(bot_index, obj, forward, sideways, vertical, want_afterburner);
+
+  // AB facing gate: suppress afterburner when the bot isn't facing its desired travel direction.
+  // In 6DOF, AB thrust goes along fvec — if fvec points at an enemy while the bot wants to
+  // navigate a pipe, AB pushes it the wrong way. The orient override in BotUpdateAimDirection
+  // turns the bot to face the portal; this gate waits until alignment is close enough.
+  if (want_afterburner) {
+    vector desired_dir = using_flow_field ? flow_dir : mdir;
+    float facing_dot = vm_DotProduct(&obj->orient.fvec, &desired_dir);
+    if (facing_dot < BOT_AB_FACING_THRESHOLD)
+      want_afterburner = false;
+  }
 
   // Apply speed scaling
   forward *= speed_scale;

@@ -28,23 +28,38 @@
 
 // Ray parameters
 #define BOT_PF_RAY_COUNT 5
-#define BOT_PF_BASE_RADIUS 30.0f
-#define BOT_PF_LOOKAHEAD_TIME 0.5f
-#define BOT_PF_MIN_RADIUS 15.0f
-#define BOT_PF_MAX_RADIUS 120.0f
+#define BOT_PF_BASE_RADIUS 20.0f
+#define BOT_PF_LOOKAHEAD_TIME 0.4f
+#define BOT_PF_MIN_RADIUS 8.0f
+#define BOT_PF_MAX_RADIUS 80.0f
+
+// Force model
+#define BOT_PF_MAX_FORCE 5.0f // cap inverse-square at close range
 
 // Blend constants
-#define BOT_PF_BLEND_BASE 0.15f
-#define BOT_PF_BLEND_SCALE 0.15f
-#define BOT_PF_BLEND_MAX 0.60f
+#define BOT_PF_BLEND_BASE 0.12f
+#define BOT_PF_BLEND_SCALE 0.12f
+#define BOT_PF_BLEND_MAX 0.50f
+
+// Passage mode: when forward ray is clear but diagonals hit (narrow pipe/doorway),
+// dampen lateral forces to avoid overwhelming the bot in tight geometry.
+#define BOT_PF_PASSAGE_DAMPING 0.35f
+
+// Portal attraction: when hitting a wall head-on, pull toward the nearest portal
+// that aligns with the bot's intended movement direction.
+#define BOT_PF_PORTAL_ATTRACT_WEIGHT 0.5f
 
 // Field opposition brake: when the field strongly opposes current thrust and the forward
 // ray confirms a wall ahead, suppress afterburner and reduce forward thrust.
 #define BOT_PF_BRAKE_OPPOSITION_DOT -0.4f // field vs thrust dot product threshold (opposing)
 #define BOT_PF_BRAKE_FORWARD_CLAMP 0.2f   // max forward thrust when braking
 
-// Runtime toggle (default OFF — enable with $potentialfield on)
+// Runtime toggle (default ON — disable with $potentialfield off for comparison testing)
 extern bool Bot_potential_field_enabled;
+
+// Phase 7.2: Flow field navigation — portal-directed movement.
+// Runtime toggle (default ON — disable with $flowfield off)
+extern bool Bot_flow_field_enabled;
 
 // Apply potential field steering correction to thrust direction components.
 // Casts 5 forward-hemisphere rays, accumulates repulsive force from wall hits,
@@ -54,5 +69,13 @@ extern bool Bot_potential_field_enabled;
 // Must be called AFTER FSM direction overrides and juke, BEFORE speed scaling.
 void BotApplyPotentialField(int bot_index, object *obj, float &forward, float &sideways, float &vertical,
                             bool &want_afterburner);
+
+// Phase 7.2: Flow field direction override.
+// Given a bot's current position and a goal room, uses BOA to find the next room
+// in the shortest path, then returns the direction toward the connecting portal.
+// Returns true if a valid portal direction was computed (caller should use it
+// to override the engine's movement_dir). Returns false if the bot is already
+// in the goal room, outdoors, or no path exists.
+bool BotFlowFieldGetDirection(object *obj, int goal_room, vector *out_dir);
 
 #endif // BOT_STEERING_H

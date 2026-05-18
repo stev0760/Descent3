@@ -55,6 +55,7 @@
 #define BOT_AB_MIN_FUEL (BOT_AFTERBURNER_FUEL_MAX * 0.25f) // need >=25% fuel to start a burst
 #define BOT_AB_ENERGY_MIN 15.0f                            // don't start a burst below this energy level
 #define BOT_AB_RECHARGE_ENERGY_MIN 20.0f                   // need this much energy to recharge fuel at all
+#define BOT_AB_FACING_THRESHOLD 0.7f                       // min dot(fvec, desired_dir) to allow afterburner (~45°)
 
 // Sound awareness (Phase 3.7)
 #define BOT_HEAR_AB_RADIUS 200.0f // radius (units) to detect enemy afterburner noise
