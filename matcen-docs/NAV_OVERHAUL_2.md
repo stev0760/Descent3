@@ -1,8 +1,8 @@
 # Navigation Overhaul Phase 2 — Potential Fields & Flow Fields (Phase 7 / Version 0.9.0)
 
-**Status:** Planning
+**Status:** Phase 7.1 + 7.2 implemented and validated. Defense confirmed in CTF testing; offense (bot flag captures) still in progress. Dynamic flow field cost weighting deferred.
 **Prerequisite reading:** `NAV_OVERHAUL.md` (Phase 4.0, complete), `BOT_DEV_REFERENCE.md`, `PATHFINDING_CODEBASE_EXPLORE.md`, `D3_MOVEMENT_PHYSICS.md`
-**Key files:** `Descent3/bot.cpp` (`BotApplyThrust`), `Descent3/AImain.cpp` (`goal_do_avoid_walls`), `Descent3/BOA.h`, `physics/findintersection.h`
+**Key files:** `Descent3/bot_steering.h` (constants + API), `Descent3/bot_steering.cpp` (potential field + flow field), `Descent3/bot.cpp` (`BotGetNavGoalRoom`, `BotUpdateAimDirection`, `BotApplyThrust`), `Descent3/AImain.cpp` (`goal_do_avoid_walls`), `Descent3/BOA.h`, `physics/findintersection.h`
 
 ---
 
@@ -461,6 +461,54 @@ The potential field must react at **80-120 units** for AB speeds to give adequat
    - `BotGetNearestPortalPoint()` → direct room-center goals
    - Portal-targeted carrier nav → flow field + potential field handles it
    - Visited-room buffer → anti-clustering flow field subsumes this (keep buffer as secondary filter)
+
+---
+
+## Implementation Status
+
+### Phase 7.1: Potential Field Steering — COMPLETE
+
+Implemented in `bot_steering.cpp` / `bot_steering.h`. Simplified from the original 14-ray plan to
+5 forward-hemisphere rays (fvec + 4 forward diagonals). No ray caching or staggering — the 5 rays
+per bot per frame are cheap enough. No predictive brake projection — replaced by the simpler
+field opposition brake (checks if accumulated field opposes current thrust direction).
+
+**Key deviations from plan:**
+- 5 rays instead of 14 (rear rays unnecessary — bots rarely fly backward)
+- No ray cache (`BotPFRayCache`) — overhead not justified at 5 rays/bot/frame
+- Force model: capped inverse-square (max 5.0) instead of linear-at-contact + inverse-square. Eliminates discontinuity.
+- Passage damping (0.35×) added: when forward ray clear but diagonals hit, reduce field influence for fluid pipe traversal
+- Portal attraction added: when hitting wall head-on, pull toward nearest aligned portal exit. Three-way blend (path + repulsion + portal).
+- Constants tuned down from plan: BASE_RADIUS 30→20, LOOKAHEAD 0.5→0.4, MIN_RADIUS 15→8, MAX_RADIUS 120→80, BLEND_BASE 0.15→0.12, BLEND_SCALE 0.15→0.12, BLEND_MAX 0.60→0.50
+- Runtime toggle: `Bot_potential_field_enabled` (default ON), `$potentialfield on|off`
+
+### Phase 7.2: Flow Field Navigation — COMPLETE (Basic)
+
+Implemented as `BotFlowFieldGetDirection()` in `bot_steering.cpp` — a simpler approach than the
+planned Dijkstra flow field. Uses the existing BOA table directly: `BOA_GetNextRoom(current, goal)`
++ `BOA_DetermineStartRoomPortal(current, next)` to find the portal direction, rather than
+precomputing a full flow field per goal. This is sufficient because the BOA table already provides
+optimal paths — the missing piece was converting "next room" into "portal direction to fly toward."
+
+**Additional Phase 7.2 components (in `bot.cpp`):**
+- `BotGetNavGoalRoom()`: shared helper computing navigation goal room from game state (flag carrier → objective room, hoard carrier → objective room, powerup → powerup room, squad → target room, explore → dest room, HUNT → target room)
+- Orient override in `BotUpdateAimDirection()`: when flow field active AND no LOS to target, set `last_see_target_pos` toward portal direction. Bot faces its navigation goal instead of the enemy.
+- AB facing gate in `BotApplyThrust()`: suppress `want_afterburner` when `dot(fvec, desired_dir) < BOT_AB_FACING_THRESHOLD (0.7)`. Prevents AB thrust in the wrong direction.
+- `$flowfield on|off` console command in `dedicated_server.cpp`
+
+**Deferred from original 7.2 plan:**
+- Dijkstra flow field with dynamic cost weighting (enemy room penalties, anti-clustering)
+- Multi-source flow fields (powerup attractors)
+- Pre-computed static goal-room fields
+- Workaround removal (BotGetNearestPortalPoint, portal-targeted carrier nav, visited-room buffer)
+
+### Testing Results (2026-05-17, Sewer Rat + RudeAwakening CTF)
+
+- **Defense validated:** Bots correctly position near flag rooms, return stolen flags, kill human attackers. Human player (ace mcnasty) needed juke maneuvers and flanking to score.
+- **Offense still weak:** Zero bot captures across both levels. Bots pick up dropped flags (Ninja found Red Flag among debris) but don't reliably carry them home through complex geometry.
+- **Collision warnings reduced:** 99 "Too many collisions" (down from previous builds).
+- **Wall-slamming significantly reduced** compared to pre-Phase 7 builds.
+- **AB facing gate working:** Bots no longer afterburn backward out of pipes when carrying flags.
 
 ---
 

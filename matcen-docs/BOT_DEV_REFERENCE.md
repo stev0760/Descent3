@@ -7,7 +7,7 @@ Current implementation status is in `BOTS_DEVEL.md`. Physics model reference is 
 
 ## Current Status
 
-**Phase 5.2 complete** — Difficulty levels (Trainee/Rookie/Hotshot/Ace/Insane) with 7 scaling parameters. Phase 5.1: config-file roster, ship selection, `[BOT]` prefix. Phases 4.01–4.06: navigation & powerup overhaul. See `BOT_MANAGEMENT.md` §5.2 for difficulty tier definitions.
+**Phase 7.2 complete (0.9.0-dev)** — Potential field steering (5-ray wall avoidance, portal attraction, passage damping, opposition brake) + flow field navigation (BOA portal-directed movement) + orient override (face portal when navigating without LOS) + AB facing gate (suppress AB when fvec misaligned >45°). Defense validated in CTF; offense in progress. See `NAV_OVERHAUL_2.md` for design rationale.
 
 For the full phase history and roadmap, see `BOTS_DEVEL.md`.
 
@@ -21,11 +21,13 @@ For the full phase history and roadmap, see `BOTS_DEVEL.md`.
 | `Descent3/bot.cpp` | Full bot implementation — lifecycle, FSM, firing, movement |
 | `Descent3/bot_objective.h` | `BotObjectiveState` struct, `BotFlagState` enum, `BotObjectiveLean`, polling + FSM bias API |
 | `Descent3/bot_objective.cpp` | Objective-state polling + mode-aware FSM: `BotGetObjectiveRoom()`, `BotGetObjectiveTargetBias()`, `BotAssignObjectiveLeans()` |
+| `Descent3/bot_steering.h` | Phase 7 steering header: potential field constants (`BOT_PF_*`), flow field API, `Bot_potential_field_enabled`/`Bot_flow_field_enabled` toggles |
+| `Descent3/bot_steering.cpp` | `BotApplyPotentialField()` (5-ray repulsion + portal attraction + passage damping + opposition brake), `BotFlowFieldGetDirection()` (BOA-based portal-directed navigation) |
 | `Descent3/multi_server.cpp` | `BotDoFrame()` hook in `MultiDoServerFrame()`; NPF_BOT send guards |
 | `Descent3/multi.cpp` | `BotReinitAll()` in `MultiStartNewLevel()`; `MakeBOA()` call; send guards |
 | `Descent3/AImain.cpp` | OBJ_PLAYER guards in `AIDoFrame()`; bot thrust-zeroing skip; gunboy fix |
 | `Descent3/AIGoal.cpp` | OBJ_PLAYER guards in `AIG_FIRE_AT_OBJ`, `AIG_SET_ANIM`; stub cases; OBJ goal path failure retry throttle (0.5s) |
-| `Descent3/dedicated_server.cpp` | Console commands: `$addbot`, `$removebot`, `$removebots`, `$botlist`, `$botstat`, `$botmov`, `$botmode`, `$botobj`, `$servercaps`, `$bothelp` |
+| `Descent3/dedicated_server.cpp` | Console commands: `$addbot`, `$removebot`, `$removebots`, `$botlist`, `$botstat`, `$botmov`, `$potentialfield`, `$flowfield`, `$botmode`, `$botobj`, `$servercaps`, `$bothelp` |
 | `Descent3/aistruct.h` | `MAX_DYNAMIC_PATHS` raised 50→100→200 |
 | `Descent3/aipath.cpp` | Path pool exhaustion: `ASSERT(0)` → graceful `return false`; rate-limited log warning (once/sec) |
 | `physics/physics.cpp` | "Too many collisions" warnings rate-limited to 1/sec at both sim-loop sites |
@@ -124,8 +126,13 @@ for each active bot:
        BotUpdateState()       — evaluate transitions, set goals
        BotSelectBestWeapon()  — tactical primary weapon selection
        BotSelectBestSecondary()
-  7. BotUpdateAimDirection()  — per-frame lead aim: predict intercept pos, write to last_see_target_pos
-  8. BotApplyThrust()         — compute thrust from movement_dir + FSM; advance stuck_timer
+  7. BotUpdateAimDirection()  — per-frame lead aim: predict intercept pos, write to last_see_target_pos.
+                                Phase 7.2: orient override — if flow field active AND no LOS to target,
+                                face portal direction instead of enemy (enables correct AB thrust).
+  8. BotApplyThrust()         — compute thrust from movement_dir + FSM; advance stuck_timer.
+                                Phase 7.2: flow field overrides movement_dir via BotGetNavGoalRoom() +
+                                BotFlowFieldGetDirection(). Potential field (Phase 7.1) corrects thrust
+                                after FSM/juke. AB facing gate suppresses AB when fvec misaligned >45°.
   9. if stuck_timer > BOT_STUCK_FIGHT_TIMER → BotDoStuckClear()
  10. BotDoFiring() + BotDoSecondaryFiring()  — every frame, all states (internal guards)
 ```
@@ -194,6 +201,24 @@ EVADE   ──(evade_timer <= 0)────────────────
 `max_delta_velocity = 0`, the engine cannot overwrite velocity — but the `movement_dir` vector is
 still computed and valid. This is the key insight that makes the hybrid CT_AI+thrust approach work.
 
+**Phase 7.2 flow field override:** When the bot has a known goal room (`BotGetNavGoalRoom()` returns
+a valid room), `BotFlowFieldGetDirection()` uses `BOA_GetNextRoom` + `BOA_DetermineStartRoomPortal`
+to find the portal direction toward the goal. This overrides `movement_dir` decomposition. The
+engine's BNode path follower often points `movement_dir` at node positions that are through walls;
+the flow field points at the actual portal opening. Goal room computation covers: flag carriers,
+hoard carriers, powerup chasing, squad escort, explore destinations, and HUNT targets.
+
+**Orient override (Phase 7.2):** `BotUpdateAimDirection()` normally writes `last_see_target_pos`
+toward the enemy lead aim position, keeping `fvec` locked on the target. When using flow field AND
+the bot has no LOS to its target (or no target), the orient override sets `last_see_target_pos`
+toward the portal direction instead. This causes the engine's `AIDoOrientDefault` to turn the bot
+toward its navigation goal, so afterburner thrust pushes it the right way.
+
+**AB facing gate (Phase 7.2):** After potential field correction, if `want_afterburner` is true
+but `dot(fvec, desired_dir) < BOT_AB_FACING_THRESHOLD (0.7)`, AB is suppressed. The bot won't
+afterburn until it's roughly facing its travel direction (~45°). This prevents the "AB into wall"
+pattern where bots face enemies while trying to navigate corridors.
+
 ### Navigation Data Structures
 
 - **BOA (Basic Obstacle Avoidance):** Precomputed room-to-room connectivity table (`BOA_Array`).
@@ -250,9 +275,12 @@ Without this, `BOA_GetNextRoom` returns `BOA_NO_PATH` and bots cannot pathfind.
 Goals still handle **orientation** (rotthrust); thrust is written by `BotApplyThrust()` each frame.
 
 ```
-movement_dir (from AIDoFrame) → decompose into fvec/rvec/uvec dot products
+movement_dir (from AIDoFrame) OR flow_dir (from BotFlowFieldGetDirection, Phase 7.2)
+→ decompose into fvec/rvec/uvec dot products (forward/sideways/vertical)
 → scale by FSM speed_scale and state-specific overrides
 → additive juke oscillation (COMBAT/FLEE/EVADE only)
+→ BotApplyPotentialField() — 5-ray repulsion + portal attraction + opposition brake (Phase 7.1)
+→ AB facing gate — suppress want_afterburner if dot(fvec, desired_dir) < 0.7 (Phase 7.2)
 → afterburner thrust multiplier if want_afterburner && burst ready && fuel/energy sufficient
 → write to obj->mtype.phys_info.thrust
 → PF_USES_THRUST set: PhysicsDoFrame integrates thrust → velocity with real drag/mass

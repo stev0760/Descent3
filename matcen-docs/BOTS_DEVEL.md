@@ -1,9 +1,9 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Matcen 0.8.16 — CTF flag-chasing prioritization. HUNT suppression for ATTACK bots, carrier home-room immunity, fumble rush, flag combat interrupt.
+**Status:** Matcen 0.9.0-dev — Phase 7.2 flow field navigation + AB facing gate. Potential field steering, portal attraction, orient override, HUNT flow field coverage. Defense validated in CTF testing; offense still in progress.
 
-Next milestone: 0.9.0 (Phase 7 navigation overhaul — potential field steering + dynamic flow fields).
+Next milestone: 0.9.0 stable (further testing + offensive scoring improvements).
 
 This document tracks the design, implementation, and testing of the server-side multiplayer bot system for Descent 3. For the detailed Phase 0 implementation plan, see [PLAN.md](PLAN.md).
 
@@ -79,7 +79,9 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | 6.4ctf | **CTF flag-chasing prioritization (0.8.16):** `ctf_pushing` HUNT suppression for ATTACK-lean + fumble-rush bots (30u urgent-threat threshold vs normal 70u), carrier home-room immunity (suppress HUNT + instant COMBAT exit when in scoring room), tightened carrier engage distance (40u), 3s combat timeout for both attackers and carriers, fumble rush (all bots navigate to dropped enemy flag when own flag safe — FREELANCE nearest-distance, DEFEND any dropped), flag powerup priority 30 (highest tier) with combat interrupt, stable carrier nav (goal-validity check prevents per-tick reset after HUNT clears goals), `!getflag`/`!flag`/`!guardflag` chat command aliases (replaces multi-word `!attack flag` to avoid bot-name collision). | Complete (Matcen 0.8.16) |
 | 5 | **Bot management (remaining):** Remote admin, auto-rebalancing, server orchestration. | Not started |
 | 6 | **Game mode awareness + squad orders:** CTF, Hyper-Anarchy, Hoard, Entropy, Monsterball, Co-op (deferred post-launch). See game mode priority table in Phase 6 section below. | In progress (CTF + Hyper-Anarchy + Hoard complete, Entropy next) |
-| 7 | **Navigation intelligence — layered steering (0.9.0):** Potential field local steering (wall-slam fix, velocity-scaled repulsion), dynamic flow fields (carrier pursuit, anti-clustering, powerup attractors). Additive layers on top of existing BOA+BNode engine pathfinding. Major version bump — will refactor workarounds from earlier phases. | Not started |
+| 7.1 | **Potential field steering (0.9.0-dev):** 5 forward-hemisphere rays, velocity-scaled effective radius, capped inverse-square repulsion, passage detection (dampen lateral forces in narrow pipes), field opposition brake (suppress AB + clamp thrust when flying into walls), portal attraction (pull toward nearest aligned portal when hitting a wall head-on). Enabled by default; toggle with `$potentialfield on|off`. See `NAV_OVERHAUL_2.md`. | Complete |
+| 7.2 | **Flow field navigation + AB facing gate (0.9.0-dev):** `BotFlowFieldGetDirection()` uses BOA shortest-path to find portal direction toward goal room, overriding engine's BNode-based `movement_dir`. `BotGetNavGoalRoom()` shared helper covers flag carriers, hoard carriers, powerup chasing, squad escort, explore destinations, and HUNT targets. Orient override in `BotUpdateAimDirection`: when navigating via flow field without LOS to target, bot faces portal direction instead of enemy (ensures AB thrust pushes toward goal). AB facing gate: suppresses afterburner when `dot(fvec, desired_dir) < 0.7` (~45°). `$flowfield on|off` console command. New files: `bot_steering.cpp`, `bot_steering.h`. Tested on Sewer Rat and RudeAwakening CTF — defense validated (bots return flags, position near flag rooms, kill human attackers), offense still in progress (zero bot captures). | Complete |
+| 7 (remaining) | **Navigation tuning + offensive scoring:** Further AB/orient tuning, portal proximity threshold adjustment, offensive flag-run reliability. Dynamic flow field cost weighting (avoid enemy-occupied rooms, anti-clustering) is deferred. | In progress |
 
 ## Files
 
@@ -93,6 +95,8 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 | `Descent3/bot_chat.cpp` | Chat command processing: `!` prefix parser, verb dispatch, `BotSendChatReply()` with per-bot throttle |
 | `Descent3/bot_objective.h` | Objective-state polling header: `BotObjectiveState` struct, `BotFlagState` enum |
 | `Descent3/bot_objective.cpp` | Objective-state polling: CTF flags, Hyper-Anarchy/Hoard orbs, Monsterball, `$botobj` diagnostic |
+| `Descent3/bot_steering.h` | Phase 7 steering header: potential field constants, flow field API, runtime toggles |
+| `Descent3/bot_steering.cpp` | Phase 7 steering implementation: `BotApplyPotentialField()` (5-ray wall avoidance + portal attraction), `BotFlowFieldGetDirection()` (BOA portal-directed navigation) |
 | `matcen-docs/CHAT_COMMANDS.md` | Chat command system design doc: research, syntax, verb taxonomy, staged rollout |
 
 ### Modified Files

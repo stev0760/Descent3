@@ -10,7 +10,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Matcen — Multiplayer Bots (Experimental)
 
-> **Matcen 0.8.16** — CTF flag-chasing prioritization: ATTACK bots suppress combat to push toward enemy flag (30u urgent-threat threshold), flag carriers rush home with tightened engagement (40u) and 3s combat timeout, home-room immunity (no fighting in scoring room), fumble rush (all bots pile on dropped enemy flags), flag powerup priority 30 with combat interrupt, `!getflag`/`!flag` chat commands. Previous: Hoard scarcity-adaptive cash-in (0.8.14), Hyper-Anarchy (0.8.13).
+> **Matcen 0.9.0-dev** — Phase 7 navigation overhaul: potential field steering (5-ray wall avoidance, portal attraction, passage damping, opposition brake), flow field navigation (BOA portal-directed movement overriding engine's BNode path follower), orient override (bots face portal direction when navigating without LOS to target), afterburner facing gate (suppresses AB when ship isn't facing travel direction). Defense validated in CTF testing — bots position near flag rooms, return stolen flags, require human players to use juke maneuvers and flanking to score. Previous: CTF flag-chasing prioritization (0.8.16), Hoard scarcity-adaptive cash-in (0.8.14).
 
 This fork — "Matcen" — adds a **server-side multiplayer bot system** to Descent 3. Bots occupy real player slots on dedicated servers or listen servers, appearing and acting as normal players. All bots are tagged with ` [BOT]` as a callsign suffix for easy identification.
 
@@ -23,7 +23,7 @@ This fork — "Matcen" — adds a **server-side multiplayer bot system** to Desc
 *   **Full Physics:** Bots obey the same inertia, momentum, and tri-chord physics as human players.
 *   **Weapon System:** Tactical primary switching (energy vs. ammo based on range and resources), secondary fire with splash-damage guards, and smart powerup collection with LOS scoring.
 *   **Loadout Awareness:** Bots self-classify into WEAK/GOOD/ELITE tiers and adjust aggression accordingly — poorly-armed bots hunt upgrades before engaging.
-*   **Navigation:** Engine-integrated BOA+BNode pathfinding with visited-room memory to prevent clustering and portal-based unstuck recovery.
+*   **Navigation:** Engine-integrated BOA+BNode pathfinding with visited-room memory, potential field wall avoidance (5 forward-hemisphere rays with portal attraction), flow field navigation (BOA portal-directed movement), and afterburner facing gate (bots face their goal before thrusting).
 *   **Game Modes:** Anarchy, Team Anarchy, Robo-Anarchy, CTF (flag-chasing prioritization, carrier home-rush, fumble pile-on, role auto-assignment), Hyper-Anarchy (orb carrier aggression), and Hoard (scarcity-adaptive collect-and-deliver). Bots persist across level transitions. Further objective modes (Entropy, Monsterball) are on the roadmap.
 *   **Chat Commands:** Bots respond to `!` prefixed commands in multiplayer chat (team modes). Full Tier 1 squad orders: `!attack`, `!target`, `!defend`, `!follow`, `!cover`, `!freelance`, `!status`, `!ping`. Supports all-chat, team-chat, and DM addressing (by name prefix or slot). Works on all D3-compatible clients.
 *   **Ship Selection:** Pyro-GL, Phoenix, Magnum-AHT, or Black Pyro (requires Mercenary expansion).
@@ -78,13 +78,14 @@ These commands are available in the dedicated server console (or via remote teln
 | `$botdifficulty <index\|all> <level>` | Changes difficulty mid-game (e.g., `$botdifficulty all insane`). |
 | `$botstat [index\|all]` | Displays real-time physics/state data for debugging. |
 | `$servercaps` | Prints server capabilities for remote admin tool handshake. |
+| `$potentialfield on\|off` | Toggle potential field steering (wall avoidance layer). |
+| `$flowfield on\|off` | Toggle flow field navigation (portal-directed movement). |
 | `$bothelp` | Lists all bot commands. |
 
 ### Roadmap
 
-The next milestone is **additional objective mode support** and code cleanup to generalize the carrier/objective abstractions established by CTF and Hyper-Anarchy:
+The current focus is **0.9.0 stable** — further testing and tuning of Phase 7 navigation (especially offensive flag captures). After that:
 
-*   **Hoard** — Orb collection and goal room delivery. Next in line.
 *   **Entropy** — Virus transport and room capture. A unique D3 mode with no clear FPS analogue — bots will make it easily accessible for the first time in years.
 *   **Monsterball** — Ball-push physics and positional play.
 *   **Co-op** — Follow-the-leader squad behavior for mission play. Deferred post-launch due to complexity.
@@ -104,6 +105,7 @@ For a deep dive into the architecture, FSM logic, and implementation history, se
 *   [BOT_MANAGEMENT.md](matcen-docs/BOT_MANAGEMENT.md) — Phase 5 bot management: config, ships, difficulty, remote admin
 *   [CHAT_COMMANDS.md](matcen-docs/CHAT_COMMANDS.md) — Chat command system: research, verb taxonomy, staged rollout
 *   [NAV_OVERHAUL.md](matcen-docs/NAV_OVERHAUL.md) — Phase 4.0 navigation design rationale
+*   [NAV_OVERHAUL_2.md](matcen-docs/NAV_OVERHAUL_2.md) — Phase 7 navigation: potential fields, flow fields, AB facing gate
 
 ## Contributing
 Anyone can contribute! We have an active Discord presence at [Descent Developer Network](https://discord.gg/GNy5CUQ). Patches should be submitted on GitHub.
