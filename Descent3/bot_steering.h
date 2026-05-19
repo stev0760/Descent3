@@ -51,8 +51,18 @@
 
 // Field opposition brake: when the field strongly opposes current thrust and the forward
 // ray confirms a wall ahead, suppress afterburner and reduce forward thrust.
+// Skipped when flow field is active (flow field + AB gate handle direction).
 #define BOT_PF_BRAKE_OPPOSITION_DOT -0.4f // field vs thrust dot product threshold (opposing)
 #define BOT_PF_BRAKE_FORWARD_CLAMP 0.2f   // max forward thrust when braking
+
+// Tunnel damping: when 3+ diagonal rays hit, we're in a confined tunnel.
+// Reduce overall field influence to allow movement through tight geometry.
+#define BOT_PF_TUNNEL_DAMPING 0.4f
+
+// Portal passability probe: casts a ship-radius ray through portal openings to detect
+// geometry-based blockage (bunker slits, barred windows) that portal flags miss.
+#define BOT_PF_PASSABILITY_PROBE_RADIUS 2.5f // ship-sized sphere for passage test
+#define BOT_PF_PASSABILITY_PROBE_DIST 5.0f   // probe distance on each side of portal
 
 // Runtime toggle (default ON — disable with $potentialfield off for comparison testing)
 extern bool Bot_potential_field_enabled;
@@ -64,11 +74,12 @@ extern bool Bot_flow_field_enabled;
 // Apply potential field steering correction to thrust direction components.
 // Casts 5 forward-hemisphere rays, accumulates repulsive force from wall hits,
 // and blends the result with the current forward/sideways/vertical thrust.
-// If a wall is detected directly ahead while the bot is thrusting into it,
-// suppresses want_afterburner and reduces forward thrust.
+// When flow_dir is non-null (flow field active), enables wall-skating: the repulsive
+// force component opposing the flow direction is stripped, allowing bots to slide
+// along walls toward portals instead of braking. The opposition brake is also skipped.
 // Must be called AFTER FSM direction overrides and juke, BEFORE speed scaling.
 void BotApplyPotentialField(int bot_index, object *obj, float &forward, float &sideways, float &vertical,
-                            bool &want_afterburner);
+                            bool &want_afterburner, const vector *flow_dir);
 
 // Phase 7.2: Flow field direction override.
 // Given a bot's current position and a goal room, uses BOA to find the next room

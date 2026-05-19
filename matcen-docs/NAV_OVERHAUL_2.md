@@ -543,6 +543,48 @@ optimal paths — the missing piece was converting "next room" into "portal dire
 
 ---
 
+## Remaining Work: Barrier Types and Passability
+
+Descent 3 maps contain several barrier types that affect bot navigation differently. Bots must distinguish between barriers they can path through and barriers they should only engage through (combat LOS).
+
+### Barrier Taxonomy
+
+| Barrier | See Through | Shoot Through | Pass Through | Bot Behavior |
+|---------|:-----------:|:-------------:|:------------:|:-------------|
+| **Normal wall** | No | No | No | Avoid completely |
+| **Regular glass** | Yes | Kinetic only (vauss, mass driver, missiles) | No (breakable by kinetic weapons) | Can break and fly through — needs "shoot to open" logic |
+| **Bulletproof glass** | Yes | No | No | Permanent barrier — never path through |
+| **Destructible grate** | Yes | Yes | No (until destroyed) | Can destroy and fly through — needs "shoot to open" logic |
+| **Geometry with small openings** (bunker slits, portholes, barred grates) | Through gaps | Through gaps | No | Combat LOS valid, movement path invalid |
+
+### The Small-Opening Problem
+
+Portals between rooms can exist for LOS/weapon purposes even when the physical gap is too small for a ship. The engine flags these with `PF_TOO_SMALL_FOR_ROBOT` (portal face < 6u in either dimension), which propagates to `BOAF_TOO_SMALL_FOR_ROBOT` on BOA routes.
+
+**Current handling:** The explore system and flow field skip `PF_TOO_SMALL_FOR_ROBOT` portals. But bunker slits and barred grates can have large portal faces (the whole wall section) with tiny physical openings — these bypass the 6u threshold. Bots see a valid portal, path toward it, and get stuck on the geometry.
+
+**Implemented (Phase 7.2a):** `BotCheckPortalPassable()` in `bot_steering.cpp` casts a 2.5-radius ray through each portal opening (from current room side to connected room side, using room center direction rather than face normals). Results are cached in `pf_portal_passable[MAX_ROOMS][MAX_PATH_PORTALS]` and invalidated on level change (`BOA_mine_checksum` mismatch). `BotFlowFieldGetDirection()` checks passability before using a portal for flow field direction and before using the look-ahead portal. Blocked portals cause the flow field to return false, falling back to the engine's pathfinder.
+
+**Known limitation:** Single centered probe — catches center-blocking geometry (horizontal bars, single mullions) but can thread between vertical bars. Multi-point probe is a future improvement if real maps still fail. Also, the engine's own BOA routing doesn't know about our geometric check, so the path follower may still try the same blocked portal — but without the flow field actively pulling the bot, the potential field steering bounces it away.
+
+### The Unreachable Powerup Trap
+
+Custom multiplayer maps sometimes place high-value powerups (Mega Missiles, Black Sharks) behind glass or small openings as decoration/teases. Bots evaluate these as top-priority pickups, navigate to them, and get permanently stuck trying to reach them through an impassable barrier. The powerup scoring system needs a reachability check — validate that the bot can physically reach the powerup's room before committing to the pickup goal.
+
+### Portal Flags Reference
+
+```
+PF_RENDER_FACES (1)        — portal has visible geometry (grate, glass, etc.)
+PF_RENDERED_FLYTHROUGH (2) — can fly through rendered faces (force fields, etc.)
+PF_TOO_SMALL_FOR_ROBOT (4) — portal face < 6u (windows, small openings)
+PF_BLOCK (32)              — fully blocked portal
+PF_BLOCK_REMOVABLE (64)    — blocked but can be opened (doors)
+```
+
+A portal is physically passable when: `!PF_BLOCK && (!PF_RENDER_FACES || PF_RENDERED_FLYTHROUGH)`. But this misses geometry-based blockage (bunker slits with large portal faces).
+
+---
+
 ## Appendix: Engine Wall Avoidance Analysis
 
 ### `goal_do_avoid_walls()` — Complete Behavior (AImain.cpp:1953-2105)

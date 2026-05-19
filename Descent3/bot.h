@@ -135,7 +135,7 @@
 #define BOT_POWERUP_DIVERT_PRIORITY 4       // minimum priority to trigger HUNT divert (any weapon worth grabbing)
 #define BOT_WEAK_DIVERT_PRIORITY 4          // WEAK bots divert for any weapon at all
 #define BOT_WEAK_DIVERT_RADIUS 350.0f       // WEAK bots scan very wide for weapon diverts
-#define BOT_WEAK_EXPLORE_SPEED 0.6f         // WEAK bots explore faster to find weapons (was 0.3×)
+#define BOT_WEAK_EXPLORE_SPEED 0.8f         // WEAK bots explore fast to find weapons before fighting
 #define BOT_WEAK_SEEK_RADIUS 500.0f         // WEAK bots scan further for powerups
 
 // Equipment-based behavior (Phase 3.11)

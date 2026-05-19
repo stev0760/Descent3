@@ -2670,7 +2670,7 @@ static void BotApplyThrust(int bot_index) {
         }
       }
     } else {
-      speed_scale = (equip <= BOT_EQUIP_TIER_WEAK) ? BOT_WEAK_EXPLORE_SPEED : 0.3f;
+      speed_scale = (equip <= BOT_EQUIP_TIER_WEAK) ? BOT_WEAK_EXPLORE_SPEED : 0.6f;
     }
     break;
   }
@@ -2740,7 +2740,8 @@ static void BotApplyThrust(int bot_index) {
   // that the field must be able to correct. Correction needs full directional resolution before
   // per-axis speed scaling collapses magnitudes. This layer supplements (not replaces) the engine's
   // AIF_AVOID_WALLS which is already baked into movement_dir.
-  BotApplyPotentialField(bot_index, obj, forward, sideways, vertical, want_afterburner);
+  BotApplyPotentialField(bot_index, obj, forward, sideways, vertical, want_afterburner,
+                         using_flow_field ? &flow_dir : nullptr);
 
   // AB facing gate: suppress afterburner when the bot isn't facing its desired travel direction.
   // In 6DOF, AB thrust goes along fvec — if fvec points at an enemy while the bot wants to

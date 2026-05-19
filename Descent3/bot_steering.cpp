@@ -41,9 +41,15 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 bool Bot_potential_field_enabled = true;
 bool Bot_flow_field_enabled = true;
+
+// Per-level portal passability cache. Catches geometry-based blockage (bunker slits,
+// barred openings) that portal flags miss. -1=unchecked, 0=blocked, 1=passable.
+static int8_t pf_portal_passable[MAX_ROOMS][MAX_PATH_PORTALS];
+static int pf_passable_level_checksum = 0;
 
 // File-local diagnostics
 static int pf_rays_cast_total = 0;
@@ -54,7 +60,7 @@ static int pf_portal_attracts = 0;
 static float pf_last_log_time = 0.0f;
 
 void BotApplyPotentialField(int bot_index, object *obj, float &forward, float &sideways, float &vertical,
-                            bool &want_afterburner) {
+                            bool &want_afterburner, const vector *flow_dir) {
   if (!Bot_potential_field_enabled)
     return;
 
@@ -142,6 +148,21 @@ void BotApplyPotentialField(int bot_index, object *obj, float &forward, float &s
   {
     vm_NormalizeVector(&repulsive_force);
 
+    // Wall skating: when flow field is active, strip the repulsive force component that
+    // opposes the flow direction. This keeps bots sliding along walls toward portals
+    // rather than braking to a stop at every tunnel curve.
+    if (flow_dir) {
+      float opposing_component = vm_DotProduct(&repulsive_force, flow_dir);
+      if (opposing_component < 0.0f) {
+        repulsive_force = repulsive_force - *flow_dir * opposing_component;
+        float new_mag = vm_GetMagnitude(&repulsive_force);
+        if (new_mag > 0.01f)
+          vm_NormalizeVector(&repulsive_force);
+        else
+          goto diagnostics;
+      }
+    }
+
     // Passage detection: if forward ray is clear but we have diagonal hits,
     // this is a narrow opening (pipe, doorway). Suppress backward component and
     // dampen lateral forces so the bot can flow through without excessive resistance.
@@ -168,6 +189,11 @@ void BotApplyPotentialField(int bot_index, object *obj, float &forward, float &s
     if (is_passage)
       w_field *= BOT_PF_PASSAGE_DAMPING;
 
+    // Tunnel damping: when most diagonal rays hit, we're in a confined space.
+    // Reduce field influence so bots can push through rather than oscillating.
+    if (diagonal_hits >= 3)
+      w_field *= BOT_PF_TUNNEL_DAMPING;
+
     float w_path = 1.0f - w_field;
 
     // Reconstruct current movement direction from local components
@@ -181,7 +207,9 @@ void BotApplyPotentialField(int bot_index, object *obj, float &forward, float &s
     // Field opposition brake: if forward ray hit a wall AND the repulsive force strongly
     // opposes current thrust direction, the bot is flying into solid geometry.
     // Suppress afterburner and clamp forward thrust.
-    if (forward_ray_hit) {
+    // Skip when flow field is active — the flow field + AB facing gate handle direction,
+    // and braking in tight tunnels prevents bots from navigating through them.
+    if (forward_ray_hit && !flow_dir) {
       float opposition = vm_DotProduct(&repulsive_force, &current_dir);
       if (opposition < BOT_PF_BRAKE_OPPOSITION_DOT) {
         want_afterburner = false;
@@ -262,6 +290,62 @@ diagnostics:
   }
 }
 
+// --- Portal Passability Probe ---
+// Catches geometry-based blockage (bunker slits, barred openings) that portal flags miss.
+// Casts a ship-radius ray through the portal opening; caches results per level.
+
+static bool BotCheckPortalPassable(int room_idx, int portal_idx) {
+  if (pf_passable_level_checksum != BOA_mine_checksum) {
+    memset(pf_portal_passable, -1, sizeof(pf_portal_passable));
+    pf_passable_level_checksum = BOA_mine_checksum;
+  }
+
+  int8_t &cached = pf_portal_passable[room_idx][portal_idx];
+  if (cached == 1)
+    return true;
+  if (cached == 0)
+    return false;
+
+  portal &pt = Rooms[room_idx].portals[portal_idx];
+  int connected_room = pt.croom;
+
+  if (connected_room < 0 || connected_room > Highest_room_index || !Rooms[connected_room].used) {
+    cached = 1;
+    return true;
+  }
+
+  vector through_dir = Rooms[connected_room].path_pnt - pt.path_pnt;
+  float through_dist = vm_GetMagnitude(&through_dir);
+  if (through_dist < 0.1f) {
+    cached = 1;
+    return true;
+  }
+  through_dir = through_dir * (1.0f / through_dist);
+
+  vector probe_start = pt.path_pnt - through_dir * BOT_PF_PASSABILITY_PROBE_DIST;
+  vector probe_end = pt.path_pnt + through_dir * BOT_PF_PASSABILITY_PROBE_DIST;
+
+  fvi_query fq{};
+  fvi_info hit{};
+  fq.p0 = &probe_start;
+  fq.p1 = &probe_end;
+  fq.startroom = room_idx;
+  fq.rad = BOT_PF_PASSABILITY_PROBE_RADIUS;
+  fq.thisobjnum = -1;
+  fq.ignore_obj_list = nullptr;
+  fq.flags = FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS | FQ_IGNORE_MOVING_OBJECTS;
+
+  int probe_hit = fvi_FindIntersection(&fq, &hit);
+  if (probe_hit == HIT_WALL || probe_hit == HIT_TERRAIN) {
+    cached = 0;
+    LOG_DEBUG << "[FlowField] Room " << room_idx << " portal " << portal_idx << " blocked by geometry";
+    return false;
+  }
+
+  cached = 1;
+  return true;
+}
+
 // --- Phase 7.2: Flow Field Navigation ---
 
 bool BotFlowFieldGetDirection(object *obj, int goal_room, vector *out_dir) {
@@ -287,6 +371,9 @@ bool BotFlowFieldGetDirection(object *obj, int goal_room, vector *out_dir) {
   if (portal_idx < 0 || portal_idx >= Rooms[current_room].num_portals)
     return false;
 
+  if (!BotCheckPortalPassable(current_room, portal_idx))
+    return false;
+
   vector portal_point = Rooms[current_room].portals[portal_idx].path_pnt;
   vector to_portal = portal_point - obj->pos;
   float dist = vm_GetMagnitude(&to_portal);
@@ -297,7 +384,8 @@ bool BotFlowFieldGetDirection(object *obj, int goal_room, vector *out_dir) {
     if (next_next != BOA_NO_PATH && next_next != next_room && !ROOMNUM_OUTSIDE(next_room) &&
         next_room <= Highest_room_index && Rooms[next_room].used) {
       int next_portal = BOA_DetermineStartRoomPortal(next_room, nullptr, next_next, nullptr);
-      if (next_portal >= 0 && next_portal < Rooms[next_room].num_portals) {
+      if (next_portal >= 0 && next_portal < Rooms[next_room].num_portals &&
+          BotCheckPortalPassable(next_room, next_portal)) {
         portal_point = Rooms[next_room].portals[next_portal].path_pnt;
         to_portal = portal_point - obj->pos;
         dist = vm_GetMagnitude(&to_portal);
