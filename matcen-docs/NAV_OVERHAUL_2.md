@@ -585,6 +585,48 @@ A portal is physically passable when: `!PF_BLOCK && (!PF_RENDER_FACES || PF_REND
 
 ---
 
+## Next: Phase 7.2b — BFS Reroute Over BOA Topology (PLANNED)
+
+**Problem:** When `BotCheckPortalPassable()` blocks a portal, the flow field returns false and the engine's BOA pathfinder takes over — which routes the bot through the same blocked portal. Bots still get stuck at bunker slits because BOA doesn't know about our geometric check. We cannot modify the engine (`PF_BLOCK`, BOA changes, etc.) — the solution must be entirely in bot code.
+
+**Solution:** A lightweight bot-owned pathfinder layered over BOA's room adjacency graph. Two layers:
+
+### Layer 1 — Wire passability into existing stuck escape
+
+The stuck escape system (Phase 4.0, `bot.cpp` ~line 2796) already iterates portals in the current room and picks an alternative when stuck. It checks `PF_TOO_SMALL_FOR_ROBOT` but not our geometric passability cache. Adding `BotCheckPortalPassable()` to that loop prevents the stuck escape from choosing another blocked portal.
+
+### Layer 2 — BFS reroute in flow field
+
+When `BotFlowFieldGetDirection()` finds its primary portal is blocked, instead of returning false:
+
+1. **One-hop reroute (fast path):** Iterate other portals in the current room that pass `BotCheckPortalPassable()`. For each, check if `BOA_GetNextRoom(portal.croom, goal_room)` returns a valid path. Pick the best passable alternative. This handles the common case: bunker slit rooms that also have a real door/tunnel.
+
+2. **Multi-hop BFS (fallback):** If no one-hop alternative exists (all portals blocked, or the only passable portal leads away from the goal), run a lightweight BFS/Dijkstra over the room graph:
+   - Start: `current_room`
+   - Goal: `goal_room`
+   - Expansion: iterate portals in each room, skip those failing `BotCheckPortalPassable()`
+   - Cost: BOA distance (from `BOA_cost_array`) or room count
+   - D3 maps have ~50-200 rooms — BFS is trivially fast
+   - Returns the first portal on the alternative path
+
+3. **Cache reroute results:** Blocked portals are static per-level, so cache `(current_room, goal_room) → first_portal_idx`. Invalidate with passability cache on level change.
+
+### Why this matters beyond CTF
+
+Once we have our own pathfinder over BOA's topology, we can inject **weighted costs** without touching the engine:
+- **Blocked portals** (current): infinite cost (binary)
+- **Enemy-occupied rooms**: soft penalty (avoid dangerous areas)
+- **Recently-visited rooms**: mild penalty (anti-clustering, exploration)
+- **Team-owned rooms**: zero or negative cost (prefer friendly territory)
+
+This becomes the core decision-making layer for **Entropy mode**, where rooms are capture objectives and ownership changes dynamically. The BFS infrastructure built for blocked-portal avoidance directly supports "which room do I capture next?" as a weighted graph traversal.
+
+### Interaction with existing stuck escape
+
+The stuck escape (Phase 4.0) remains as a safety net for situations the BFS can't predict: combat jams, physics glitches, destructible objects mid-path. With BFS rerouting proactively, bots should rarely trigger stuck escape for pure navigation failures — it becomes a last-resort recovery system rather than the primary navigation fallback.
+
+---
+
 ## Appendix: Engine Wall Avoidance Analysis
 
 ### `goal_do_avoid_walls()` — Complete Behavior (AImain.cpp:1953-2105)
