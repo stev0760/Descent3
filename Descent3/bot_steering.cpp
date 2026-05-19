@@ -33,6 +33,8 @@
 #include "bot.h"
 #include "BOA.h"
 #include "findintersection.h"
+#include "multi.h"
+#include "player.h"
 #include "room.h"
 #include "vecmat.h"
 #include "object.h"
@@ -60,6 +62,7 @@ static int pf_wall_hits_total = 0;
 static int pf_brakes_applied = 0;
 static int pf_passage_detections = 0;
 static int pf_portal_attracts = 0;
+static int pf_teammate_repulses = 0;
 static float pf_last_log_time = 0.0f;
 
 void BotApplyPotentialField(int bot_index, object *obj, float &forward, float &sideways, float &vertical,
@@ -279,16 +282,68 @@ void BotApplyPotentialField(int bot_index, object *obj, float &forward, float &s
     vertical = vm_DotProduct(&blended, &obj->orient.uvec) * mag;
   }
 
+  // Teammate repulsion: push same-team bots apart in tight spaces.
+  // Computed independently of wall avoidance — bots can block each other even when
+  // no walls are nearby. Applied after wall processing so it isn't neutered by
+  // the wall-skating flow-direction strip.
+  {
+    int my_slot = Bots[bot_index].player_slot;
+    BotSquadRole my_role = Bots[bot_index].squad_role;
+    int my_escort_target = Bots[bot_index].squad_target_slot;
+    vector tm_force = {0.0f, 0.0f, 0.0f};
+    int tm_count = 0;
+
+    for (int i = 0; i < MAX_NET_PLAYERS; i++) {
+      if (i == my_slot)
+        continue;
+      if (!(NetPlayers[i].flags & NPF_CONNECTED))
+        continue;
+      if (Players[i].flags & (PLAYER_FLAGS_DEAD | PLAYER_FLAGS_DYING))
+        continue;
+      if (BotIsPlayerEnemy(bot_index, i))
+        continue;
+      if ((my_role == SQUAD_FOLLOW || my_role == SQUAD_COVER) && my_escort_target == i)
+        continue;
+
+      object *other = &Objects[Players[i].objnum];
+      vector delta = obj->pos - other->pos;
+      float dist = vm_GetMagnitude(&delta);
+
+      if (dist < BOT_PF_TEAMMATE_DEADZONE || dist > BOT_PF_TEAMMATE_RADIUS)
+        continue;
+
+      float t = (dist - BOT_PF_TEAMMATE_DEADZONE) / (BOT_PF_TEAMMATE_RADIUS - BOT_PF_TEAMMATE_DEADZONE);
+      float strength = 1.0f - t;
+      tm_force += delta * (strength / dist);
+      tm_count++;
+    }
+
+    if (tm_count > 0) {
+      float tm_mag = vm_GetMagnitude(&tm_force);
+      if (tm_mag > 0.01f) {
+        vm_NormalizeVector(&tm_force);
+        float w = std::min(tm_mag, BOT_PF_TEAMMATE_MAX_FORCE * tm_count);
+        w = std::min(w, BOT_PF_TEAMMATE_MAX_FORCE * 2.0f);
+
+        forward += vm_DotProduct(&tm_force, &obj->orient.fvec) * w;
+        sideways += vm_DotProduct(&tm_force, &obj->orient.rvec) * w;
+        vertical += vm_DotProduct(&tm_force, &obj->orient.uvec) * w;
+        pf_teammate_repulses += tm_count;
+      }
+    }
+  }
+
 diagnostics:
   if (Gametime - pf_last_log_time > 10.0f) {
     LOG_DEBUG << "[PotField] rays=" << pf_rays_cast_total << " hits=" << pf_wall_hits_total
               << " brakes=" << pf_brakes_applied << " passages=" << pf_passage_detections
-              << " portals=" << pf_portal_attracts;
+              << " portals=" << pf_portal_attracts << " teammates=" << pf_teammate_repulses;
     pf_rays_cast_total = 0;
     pf_wall_hits_total = 0;
     pf_brakes_applied = 0;
     pf_passage_detections = 0;
     pf_portal_attracts = 0;
+    pf_teammate_repulses = 0;
     pf_last_log_time = Gametime;
   }
 }

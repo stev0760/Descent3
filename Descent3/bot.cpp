@@ -184,9 +184,7 @@ static void BotConfigureAI(int bot_index) {
   GoalAddGoal(obj, AIG_WANDER_AROUND, NULL, 1, 1.0f, GF_NONFLUSHABLE | GF_KEEP_AT_COMPLETION, -1, 0);
 }
 
-// Returns true if the target player slot is a valid enemy for the given bot.
-// Respects co-op (all players are allies), team anarchy, and free-for-all modes.
-static bool BotIsPlayerEnemy(int bot_index, int target_slot) {
+bool BotIsPlayerEnemy(int bot_index, int target_slot) {
   if (Netgame.flags & NF_COOP)
     return false; // co-op: all players are allies
   if (Num_teams > 1)

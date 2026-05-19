@@ -59,6 +59,12 @@
 // Reduce overall field influence to allow movement through tight geometry.
 #define BOT_PF_TUNNEL_DAMPING 0.4f
 
+// Teammate repulsion: linear falloff force pushing same-team bots apart in tight spaces.
+// Applied after wall-skating strip so the force isn't neutered in tunnels.
+#define BOT_PF_TEAMMATE_RADIUS 15.0f       // distance within which repulsion activates
+#define BOT_PF_TEAMMATE_MAX_FORCE 0.35f    // max blend weight at point-blank
+#define BOT_PF_TEAMMATE_DEADZONE 3.0f      // no force below this distance (inside collision)
+
 // Portal passability probe: casts a ship-radius ray through portal openings to detect
 // geometry-based blockage (bunker slits, barred windows) that portal flags miss.
 #define BOT_PF_PASSABILITY_PROBE_RADIUS 2.5f // ship-sized sphere for passage test

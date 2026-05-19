@@ -471,6 +471,10 @@ const char *BotSquadRoleName(BotSquadRole r);
 // Used by bot_objective.cpp to prefer well-armed bots for the DEFEND lean assignment.
 int BotGetEquipmentRating(int bot_index);
 
+// Returns true if the target player slot is a valid enemy for the given bot.
+// Respects co-op (all allies), team modes (team check), and FFA (everyone enemy).
+bool BotIsPlayerEnemy(int bot_index, int target_slot);
+
 // Force a bot into escort mode immediately: clears AI target, clears all goals, forces EXPLORE,
 // and sets a retarget cooldown so the bot doesn't immediately re-acquire a stuck enemy.
 // Called from !follow and !cover handlers so the order takes effect right away.
