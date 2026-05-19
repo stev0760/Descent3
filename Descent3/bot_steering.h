@@ -81,12 +81,27 @@ extern bool Bot_flow_field_enabled;
 void BotApplyPotentialField(int bot_index, object *obj, float &forward, float &sideways, float &vertical,
                             bool &want_afterburner, const vector *flow_dir);
 
+// Portal passability check: casts a ship-radius ray through the portal opening
+// to detect geometry-based blockage (bunker slits, barred windows). Results
+// cached per-level and invalidated on BOA_mine_checksum change.
+bool BotCheckPortalPassable(int room_idx, int portal_idx);
+
 // Phase 7.2: Flow field direction override.
 // Given a bot's current position and a goal room, uses BOA to find the next room
 // in the shortest path, then returns the direction toward the connecting portal.
-// Returns true if a valid portal direction was computed (caller should use it
-// to override the engine's movement_dir). Returns false if the bot is already
-// in the goal room, outdoors, or no path exists.
+// When the preferred portal is blocked, attempts one-hop reroute then Dijkstra
+// before returning false. Returns true if a valid portal direction was computed.
 bool BotFlowFieldGetDirection(object *obj, int goal_room, vector *out_dir);
+
+// Phase 7.2b: Bot-owned Dijkstra pathfinder over BOA topology.
+// Finds the first portal to traverse from from_room toward goal_room, skipping
+// portals that fail BotCheckPortalPassable(). Uses BOA_cost_array for edge weights.
+// Optional cost_overlay adds per-room penalties (enemy presence, anti-cluster, etc.).
+// Returns portal index in from_room, or -1 if no path exists.
+typedef float (*BotPathCostOverlay)(int room_idx);
+int BotDijkstraNextPortal(int from_room, int goal_room, BotPathCostOverlay cost_overlay = nullptr);
+
+// Runtime toggle for the Dijkstra rerouter (default ON — disable with $botpathfind off)
+extern bool Bot_pathfind_enabled;
 
 #endif // BOT_STEERING_H

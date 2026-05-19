@@ -42,6 +42,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <functional>
+#include <queue>
+#include <vector>
 
 bool Bot_potential_field_enabled = true;
 bool Bot_flow_field_enabled = true;
@@ -294,7 +297,7 @@ diagnostics:
 // Catches geometry-based blockage (bunker slits, barred openings) that portal flags miss.
 // Casts a ship-radius ray through the portal opening; caches results per level.
 
-static bool BotCheckPortalPassable(int room_idx, int portal_idx) {
+bool BotCheckPortalPassable(int room_idx, int portal_idx) {
   if (pf_passable_level_checksum != BOA_mine_checksum) {
     memset(pf_portal_passable, -1, sizeof(pf_portal_passable));
     pf_passable_level_checksum = BOA_mine_checksum;
@@ -346,7 +349,243 @@ static bool BotCheckPortalPassable(int room_idx, int portal_idx) {
   return true;
 }
 
+// --- Phase 7.2b: Bot-owned Dijkstra pathfinder over BOA topology ---
+// Finds shortest path from from_room to goal_room, skipping portals that fail
+// BotCheckPortalPassable(). Returns the portal index in from_room to traverse,
+// or -1 if no path exists. Optional cost_overlay adds per-room penalties.
+
+bool Bot_pathfind_enabled = true;
+
+// Reroute cache: (from_room, goal_room) → first portal index. Static per level.
+static int16_t pf_reroute_cache[MAX_ROOMS][MAX_ROOMS];
+static int pf_reroute_cache_checksum = 0;
+
+static void BotPathfindInvalidateCache() {
+  std::fill_n(&pf_reroute_cache[0][0], MAX_ROOMS * MAX_ROOMS, (int16_t)-2);
+  pf_reroute_cache_checksum = BOA_mine_checksum;
+}
+
+int BotDijkstraNextPortal(int from_room, int goal_room, BotPathCostOverlay cost_overlay) {
+  if (!Bot_pathfind_enabled)
+    return -1;
+  if (from_room < 0 || from_room > Highest_room_index || !Rooms[from_room].used)
+    return -1;
+  if (goal_room < 0 || goal_room > Highest_room_index || !Rooms[goal_room].used)
+    return -1;
+  if (from_room == goal_room)
+    return -1;
+
+  // Check cache (only for non-overlay queries — overlays are dynamic)
+  if (!cost_overlay) {
+    if (pf_reroute_cache_checksum != BOA_mine_checksum)
+      BotPathfindInvalidateCache();
+    int16_t cached = pf_reroute_cache[from_room][goal_room];
+    if (cached != -2)
+      return cached;
+  }
+
+  int max_nodes = Highest_room_index + MAX_BOA_TERRAIN_REGIONS + 1;
+
+  // Per-node Dijkstra state — stack allocated, small for D3 maps
+  struct DNode {
+    float cost;
+    int parent_room;
+    int entry_portal; // portal in from_room that starts this path
+    bool visited;
+  };
+  DNode nodes[MAX_ROOMS + MAX_BOA_TERRAIN_REGIONS];
+  for (int i = 0; i < max_nodes; i++) {
+    nodes[i].cost = 1e30f;
+    nodes[i].parent_room = -1;
+    nodes[i].entry_portal = -1;
+    nodes[i].visited = false;
+  }
+  nodes[from_room].cost = 0.0f;
+
+  // Min-heap priority queue: lazy deletion via visited check.
+  // Heap pushes once per edge relaxation — safe regardless of graph density.
+  struct PQEntry {
+    float cost;
+    int room;
+    bool operator>(const PQEntry &o) const { return cost > o.cost; }
+  };
+  std::priority_queue<PQEntry, std::vector<PQEntry>, std::greater<PQEntry>> pq;
+  pq.push({0.0f, from_room});
+
+  while (!pq.empty()) {
+    PQEntry cur = pq.top();
+    pq.pop();
+
+    int cur_room = cur.room;
+    if (nodes[cur_room].visited)
+      continue;
+    nodes[cur_room].visited = true;
+
+    if (cur_room == goal_room)
+      break;
+
+    // Expand neighbors via portals
+    int num_portals;
+    bool is_interior = (cur_room <= Highest_room_index);
+
+    if (is_interior) {
+      num_portals = Rooms[cur_room].num_portals;
+    } else {
+      int t_idx = cur_room - Highest_room_index - 1;
+      if (t_idx < 0 || t_idx >= MAX_BOA_TERRAIN_REGIONS)
+        continue;
+      num_portals = BOA_num_connect[t_idx];
+    }
+
+    for (int p = 0; p < num_portals; p++) {
+      if (!BOA_PassablePortal(cur_room, p))
+        continue;
+
+      int next_room;
+      if (is_interior) {
+        next_room = Rooms[cur_room].portals[p].croom;
+        if (next_room < 0)
+          continue;
+        // Skip our geometric passability check for this portal
+        if (!BotCheckPortalPassable(cur_room, p))
+          continue;
+        // Handle external rooms (indoor→terrain transition)
+        if (next_room <= Highest_room_index && (Rooms[next_room].flags & RF_EXTERNAL)) {
+          int cell = GetTerrainCellFromPos(&Rooms[cur_room].portals[p].path_pnt);
+          if (cell < 0)
+            continue;
+          next_room = Highest_room_index + TERRAIN_REGION(cell) + 1;
+        }
+      } else {
+        int t_idx = cur_room - Highest_room_index - 1;
+        next_room = BOA_connect[t_idx][p].roomnum;
+      }
+
+      if (next_room < 0 || next_room >= max_nodes)
+        continue;
+      if (next_room <= Highest_room_index && !Rooms[next_room].used)
+        continue;
+      if (nodes[next_room].visited)
+        continue;
+
+      // Edge cost: portal traversal cost from BOA + optional room overlay
+      float edge_cost = BOA_cost_array[cur_room][p];
+      if (edge_cost < 0.0f)
+        continue;
+
+      // Add reverse portal cost (cost to enter next_room from this direction)
+      int reverse_portal = BOA_DetermineStartRoomPortal(next_room, nullptr, cur_room, nullptr);
+      if (reverse_portal >= 0)
+        edge_cost += BOA_cost_array[next_room][reverse_portal];
+
+      if (cost_overlay)
+        edge_cost += cost_overlay(next_room);
+
+      float new_cost = nodes[cur_room].cost + edge_cost;
+      if (new_cost < nodes[next_room].cost) {
+        nodes[next_room].cost = new_cost;
+        nodes[next_room].parent_room = cur_room;
+        // Track which portal in from_room starts this entire path
+        nodes[next_room].entry_portal =
+            (cur_room == from_room) ? p : nodes[cur_room].entry_portal;
+        pq.push({new_cost, next_room});
+      }
+    }
+  }
+
+  int result = -1;
+  if (nodes[goal_room].visited)
+    result = nodes[goal_room].entry_portal;
+
+  // Cache result for non-overlay queries
+  if (!cost_overlay && from_room <= Highest_room_index && goal_room <= Highest_room_index) {
+    pf_reroute_cache[from_room][goal_room] = (int16_t)result;
+  }
+
+  if (result >= 0) {
+    LOG_DEBUG << "[Pathfind] Dijkstra reroute: room " << from_room << " → " << goal_room << " via portal " << result
+              << " (cost " << nodes[goal_room].cost << ")";
+  }
+
+  return result;
+}
+
+// --- One-hop reroute: try other portals in current room when preferred is blocked ---
+// Returns portal index, or -1 if no passable alternative reaches the goal.
+static int BotOneHopReroute(int current_room, int goal_room, int blocked_portal) {
+  if (current_room < 0 || current_room > Highest_room_index || !Rooms[current_room].used)
+    return -1;
+
+  room &cur = Rooms[current_room];
+  int best_portal = -1;
+  float best_cost = 1e30f;
+
+  for (int p = 0; p < cur.num_portals; p++) {
+    if (p == blocked_portal)
+      continue;
+    if (!BOA_PassablePortal(current_room, p))
+      continue;
+    if (!BotCheckPortalPassable(current_room, p))
+      continue;
+
+    int croom = cur.portals[p].croom;
+    if (croom < 0 || croom > Highest_room_index || !Rooms[croom].used)
+      continue;
+
+    // Check if this portal's connected room can still reach the goal
+    int next_from_croom = BOA_GetNextRoom(croom, goal_room);
+    if (next_from_croom == BOA_NO_PATH)
+      continue;
+
+    // Prefer the cheapest alternative
+    float cost = BOA_cost_array[current_room][p];
+    if (cost >= 0.0f && cost < best_cost) {
+      best_cost = cost;
+      best_portal = p;
+    }
+  }
+
+  if (best_portal >= 0) {
+    LOG_DEBUG << "[Pathfind] One-hop reroute: room " << current_room << " → goal " << goal_room << " via portal "
+              << best_portal << " (bypassing blocked portal " << blocked_portal << ")";
+  }
+
+  return best_portal;
+}
+
 // --- Phase 7.2: Flow Field Navigation ---
+
+// Helper: given a portal index in a room, compute direction from obj to that portal.
+// Includes look-ahead to the next portal for smoother transitions.
+static bool BotPortalToDirection(object *obj, int current_room, int portal_idx, int goal_room, vector *out_dir) {
+  if (portal_idx < 0 || portal_idx >= Rooms[current_room].num_portals)
+    return false;
+
+  vector portal_point = Rooms[current_room].portals[portal_idx].path_pnt;
+  vector to_portal = portal_point - obj->pos;
+  float dist = vm_GetMagnitude(&to_portal);
+
+  if (dist < 2.0f) {
+    int next_room = Rooms[current_room].portals[portal_idx].croom;
+    if (next_room >= 0 && next_room <= Highest_room_index && Rooms[next_room].used && !ROOMNUM_OUTSIDE(next_room)) {
+      int next_next = BOA_GetNextRoom(next_room, goal_room);
+      if (next_next != BOA_NO_PATH && next_next != next_room) {
+        int next_portal = BOA_DetermineStartRoomPortal(next_room, nullptr, next_next, nullptr);
+        if (next_portal >= 0 && next_portal < Rooms[next_room].num_portals &&
+            BotCheckPortalPassable(next_room, next_portal)) {
+          portal_point = Rooms[next_room].portals[next_portal].path_pnt;
+          to_portal = portal_point - obj->pos;
+          dist = vm_GetMagnitude(&to_portal);
+        }
+      }
+    }
+    if (dist < 0.5f)
+      return false;
+  }
+
+  *out_dir = to_portal * (1.0f / dist);
+  return true;
+}
 
 bool BotFlowFieldGetDirection(object *obj, int goal_room, vector *out_dir) {
   if (!Bot_flow_field_enabled)
@@ -366,35 +605,26 @@ bool BotFlowFieldGetDirection(object *obj, int goal_room, vector *out_dir) {
   if (next_room == BOA_NO_PATH || next_room == current_room)
     return false;
 
-  // Find the portal in current_room that connects to next_room
+  // Find the portal in current_room that connects to next_room (BOA's preferred route)
   int portal_idx = BOA_DetermineStartRoomPortal(current_room, nullptr, next_room, nullptr);
   if (portal_idx < 0 || portal_idx >= Rooms[current_room].num_portals)
     return false;
 
-  if (!BotCheckPortalPassable(current_room, portal_idx))
-    return false;
+  // Happy path: preferred portal is passable
+  if (BotCheckPortalPassable(current_room, portal_idx))
+    return BotPortalToDirection(obj, current_room, portal_idx, goal_room, out_dir);
 
-  vector portal_point = Rooms[current_room].portals[portal_idx].path_pnt;
-  vector to_portal = portal_point - obj->pos;
-  float dist = vm_GetMagnitude(&to_portal);
+  // --- Reroute chain: preferred portal is blocked ---
 
-  if (dist < 2.0f) {
-    // Already at the portal — look one hop further for smoother transitions
-    int next_next = BOA_GetNextRoom(next_room, goal_room);
-    if (next_next != BOA_NO_PATH && next_next != next_room && !ROOMNUM_OUTSIDE(next_room) &&
-        next_room <= Highest_room_index && Rooms[next_room].used) {
-      int next_portal = BOA_DetermineStartRoomPortal(next_room, nullptr, next_next, nullptr);
-      if (next_portal >= 0 && next_portal < Rooms[next_room].num_portals &&
-          BotCheckPortalPassable(next_room, next_portal)) {
-        portal_point = Rooms[next_room].portals[next_portal].path_pnt;
-        to_portal = portal_point - obj->pos;
-        dist = vm_GetMagnitude(&to_portal);
-      }
-    }
-    if (dist < 0.5f)
-      return false;
-  }
+  // Layer 2a: one-hop reroute — try other portals in this room
+  int alt_portal = BotOneHopReroute(current_room, goal_room, portal_idx);
+  if (alt_portal >= 0)
+    return BotPortalToDirection(obj, current_room, alt_portal, goal_room, out_dir);
 
-  *out_dir = to_portal * (1.0f / dist);
-  return true;
+  // Layer 2b: full Dijkstra — find multi-hop alternative path
+  int dijkstra_portal = BotDijkstraNextPortal(current_room, goal_room);
+  if (dijkstra_portal >= 0)
+    return BotPortalToDirection(obj, current_room, dijkstra_portal, goal_room, out_dir);
+
+  return false;
 }

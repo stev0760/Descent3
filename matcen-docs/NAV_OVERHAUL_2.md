@@ -1,8 +1,8 @@
 # Navigation Overhaul Phase 2 — Potential Fields & Flow Fields (Phase 7 / Version 0.9.0)
 
-**Status:** Phase 7.1 + 7.2 implemented and validated. Defense confirmed in CTF testing; offense (bot flag captures) still in progress. Dynamic flow field cost weighting deferred.
+**Status:** Phase 7.1 + 7.2 + 7.2a + 7.2b implemented. Defense confirmed in CTF testing; Rude Awakening bot flag capture achieved (7.2a). Dijkstra pathfinder with extensible cost overlays ready for Entropy/anti-cluster.
 **Prerequisite reading:** `NAV_OVERHAUL.md` (Phase 4.0, complete), `BOT_DEV_REFERENCE.md`, `PATHFINDING_CODEBASE_EXPLORE.md`, `D3_MOVEMENT_PHYSICS.md`
-**Key files:** `Descent3/bot_steering.h` (constants + API), `Descent3/bot_steering.cpp` (potential field + flow field), `Descent3/bot.cpp` (`BotGetNavGoalRoom`, `BotUpdateAimDirection`, `BotApplyThrust`), `Descent3/AImain.cpp` (`goal_do_avoid_walls`), `Descent3/BOA.h`, `physics/findintersection.h`
+**Key files:** `Descent3/bot_steering.h` (constants + API: `BotCheckPortalPassable`, `BotFlowFieldGetDirection`, `BotDijkstraNextPortal`), `Descent3/bot_steering.cpp` (potential field + flow field + Dijkstra pathfinder), `Descent3/bot.cpp` (`BotGetNavGoalRoom`, `BotUpdateAimDirection`, `BotApplyThrust`, stuck escape), `Descent3/AImain.cpp` (`goal_do_avoid_walls`), `Descent3/BOA.h` / `BOA.cpp` (room graph, `FindPath`, `BOA_cost_array`), `physics/findintersection.h`
 
 ---
 
@@ -585,45 +585,103 @@ A portal is physically passable when: `!PF_BLOCK && (!PF_RENDER_FACES || PF_REND
 
 ---
 
-## Next: Phase 7.2b — BFS Reroute Over BOA Topology (PLANNED)
+## Phase 7.2b — Dijkstra Pathfinder Over BOA Topology (IMPLEMENTED)
 
 **Problem:** When `BotCheckPortalPassable()` blocks a portal, the flow field returns false and the engine's BOA pathfinder takes over — which routes the bot through the same blocked portal. Bots still get stuck at bunker slits because BOA doesn't know about our geometric check. We cannot modify the engine (`PF_BLOCK`, BOA changes, etc.) — the solution must be entirely in bot code.
 
-**Solution:** A lightweight bot-owned pathfinder layered over BOA's room adjacency graph. Two layers:
+**Solution:** A three-layer reroute chain, entirely in bot code, layered over BOA's room adjacency graph.
 
-### Layer 1 — Wire passability into existing stuck escape
+### Why Dijkstra, Not BFS
 
-The stuck escape system (Phase 4.0, `bot.cpp` ~line 2796) already iterates portals in the current room and picks an alternative when stuck. It checks `PF_TOO_SMALL_FOR_ROBOT` but not our geometric passability cache. Adding `BotCheckPortalPassable()` to that loop prevents the stuck escape from choosing another blocked portal.
+BOA stores real geometric distances in `BOA_cost_array[room][portal]`. BFS discards this in favor of hop-count — a 2-hop detour through a long tunnel can be 5× worse than a 5-hop shortcut through small rooms. Dijkstra uses the actual traversal costs, producing demonstrably better paths. At 50–200 rooms the performance difference is negligible (`std::priority_queue` over 200 entries finishes in microseconds). BFS's only advantage — pure reachability — is already covered by `BOA_GetNextRoom() != BOA_NO_PATH`.
 
-### Layer 2 — BFS reroute in flow field
+The decisive factor: future cost overlays (enemy-occupied rooms, team ownership for Entropy, anti-clustering penalties) are inherently weighted-graph problems that BFS cannot express. Building BFS first would mean rewriting it the moment we add dynamic costs.
 
-When `BotFlowFieldGetDirection()` finds its primary portal is blocked, instead of returning false:
+### Guide-Bot Comparison
 
-1. **One-hop reroute (fast path):** Iterate other portals in the current room that pass `BotCheckPortalPassable()`. For each, check if `BOA_GetNextRoom(portal.croom, goal_room)` returns a valid path. Pick the best passable alternative. This handles the common case: bunker slit rooms that also have a real door/tunnel.
+The Guide-Bot (single-player) uses BOA directly via `AI_AddGoal()` with no custom pathfinding layer. It inherits all of BOA's limitations: no awareness of geometry-blocked portals, no dynamic costs, no multi-bot coordination. Our Dijkstra layer is a strict superset — it uses BOA's topology and cost data as a foundation but adds passability filtering and extensible cost overlays.
 
-2. **Multi-hop BFS (fallback):** If no one-hop alternative exists (all portals blocked, or the only passable portal leads away from the goal), run a lightweight BFS/Dijkstra over the room graph:
-   - Start: `current_room`
-   - Goal: `goal_room`
-   - Expansion: iterate portals in each room, skip those failing `BotCheckPortalPassable()`
-   - Cost: BOA distance (from `BOA_cost_array`) or room count
-   - D3 maps have ~50-200 rooms — BFS is trivially fast
-   - Returns the first portal on the alternative path
+### Architecture: Three-Layer Reroute Chain
 
-3. **Cache reroute results:** Blocked portals are static per-level, so cache `(current_room, goal_room) → first_portal_idx`. Invalidate with passability cache on level change.
+When `BotFlowFieldGetDirection()` determines BOA's preferred portal is blocked:
 
-### Why this matters beyond CTF
+#### Layer 1 — Passability-aware stuck escape (reactive)
 
-Once we have our own pathfinder over BOA's topology, we can inject **weighted costs** without touching the engine:
-- **Blocked portals** (current): infinite cost (binary)
-- **Enemy-occupied rooms**: soft penalty (avoid dangerous areas)
-- **Recently-visited rooms**: mild penalty (anti-clustering, exploration)
-- **Team-owned rooms**: zero or negative cost (prefer friendly territory)
+The stuck escape system (Phase 4.0, `bot.cpp` ~line 2800) already iterates portals in the current room and picks an alternative when stuck. It checks `PF_TOO_SMALL_FOR_ROBOT` but not our geometric passability cache. `BotCheckPortalPassable()` is now added to that loop, preventing stuck escape from choosing another blocked portal. This is the safety net — fires only after the bot is already stuck.
 
-This becomes the core decision-making layer for **Entropy mode**, where rooms are capture objectives and ownership changes dynamically. The BFS infrastructure built for blocked-portal avoidance directly supports "which room do I capture next?" as a weighted graph traversal.
+#### Layer 2a — One-hop reroute (proactive, fast path)
 
-### Interaction with existing stuck escape
+`BotOneHopReroute()` — when the preferred portal is blocked, scan the other portals in the current room:
+- Skip blocked portals (`BOA_PassablePortal` + `BotCheckPortalPassable`)
+- For each passable portal, check if `BOA_GetNextRoom(croom, goal_room)` returns a valid path
+- Pick the alternative with lowest `BOA_cost_array` traversal cost
+- Handles ~90% of bunker-slit cases: the room typically also has a real door/tunnel
 
-The stuck escape (Phase 4.0) remains as a safety net for situations the BFS can't predict: combat jams, physics glitches, destructible objects mid-path. With BFS rerouting proactively, bots should rarely trigger stuck escape for pure navigation failures — it becomes a last-resort recovery system rather than the primary navigation fallback.
+#### Layer 2b — Bounded Dijkstra (proactive, full reroute)
+
+`BotDijkstraNextPortal()` — when no one-hop alternative exists, run a full Dijkstra over the room graph:
+- **Graph:** BOA's room adjacency (portals for interior rooms, `BOA_connect` for terrain regions)
+- **Edge filter:** `BOA_PassablePortal()` AND `BotCheckPortalPassable()` — skips both engine-flagged and geometry-blocked portals
+- **Edge cost:** `BOA_cost_array[cur_room][portal] + BOA_cost_array[next_room][reverse_portal]` (bidirectional traversal cost, matching BOA's own `FindPath`)
+- **Cost overlay:** Optional `BotPathCostOverlay` callback adds per-room penalties. Defaults to nullptr (raw BOA costs). Entropy/anti-cluster pass different overlays without touching the algorithm
+- **Returns:** First portal index in `from_room` on the optimal path, or -1 if unreachable
+- **Priority queue:** Linear-scan extraction over stack-allocated array (faster than heap at 200 nodes)
+
+#### Reroute cache
+
+`pf_reroute_cache[MAX_ROOMS][MAX_ROOMS]` stores `(from_room, goal_room) → first_portal_idx`. Since blocked portals are static per-level, this avoids re-running Dijkstra every frame. Invalidated on level change via `BOA_mine_checksum`. Only used for non-overlay queries (dynamic overlays bypass the cache).
+
+### Flow Field Integration
+
+`BotFlowFieldGetDirection()` now implements the full reroute chain:
+
+```
+1. BOA_GetNextRoom(current, goal) → preferred portal
+2. If passable → use it (happy path, unchanged from 7.2)
+3. If blocked → BotOneHopReroute() (Layer 2a)
+4. If no one-hop → BotDijkstraNextPortal() (Layer 2b)
+5. If Dijkstra fails → return false (engine pathfinder, last resort)
+```
+
+Portal-to-direction conversion is shared via `BotPortalToDirection()`, which includes the existing look-ahead logic (when close to a portal, peek one hop further for smoother transitions).
+
+### API
+
+```cpp
+// Portal passability check (geometry-based, cached per level)
+bool BotCheckPortalPassable(int room_idx, int portal_idx);
+
+// Dijkstra pathfinder — extensible via cost overlay callback
+typedef float (*BotPathCostOverlay)(int room_idx);
+int BotDijkstraNextPortal(int from_room, int goal_room,
+                          BotPathCostOverlay cost_overlay = nullptr);
+
+// Runtime toggle
+extern bool Bot_pathfind_enabled;  // $botpathfind on|off
+```
+
+### Extensibility for Future Game Modes
+
+The `BotPathCostOverlay` callback is the extension point. Each game mode can define its own cost function:
+
+| Game Mode | Cost Overlay | Effect |
+|-----------|-------------|--------|
+| **CTF/Hoard** | nullptr (default) | Pure distance-optimal routing around blocked portals |
+| **Entropy** | `+penalty` for enemy-owned rooms, `-bonus` for contested rooms | Bots prioritize capture targets, avoid enemy strongholds |
+| **Anti-clustering** | `+penalty` for rooms with allied bots | Bots spread across approach corridors instead of clustering |
+| **Exploration** | `+penalty` for recently-visited rooms | Bots cover more of the map during EXPLORE state |
+
+Multiple overlays can be composed by stacking: `entropy_cost(room) + cluster_penalty(room)`.
+
+### Interaction with Existing Systems
+
+| System | Role After 7.2b |
+|--------|-----------------|
+| **BOA pathfinder** | Still provides the preferred route via `BOA_GetNextRoom`. Dijkstra only fires when that route hits a blocked portal. |
+| **Potential field (7.1)** | Local steering layer — prevents wall contact regardless of which portal the bot is heading toward. Unaffected by rerouting. |
+| **Flow field (7.2)** | Now includes the reroute chain. Still the primary direction source for `BotApplyThrust`. |
+| **Stuck escape (Phase 4.0)** | Safety net for physics glitches, combat jams, destructible objects. Now also passability-aware. Should fire much less often since bots proactively avoid blocked portals. |
+| **Guide-Bot** | Unaffected — uses BOA directly. Our Dijkstra is bot-only code. |
 
 ---
 

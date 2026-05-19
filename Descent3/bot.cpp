@@ -2799,6 +2799,8 @@ static void BotApplyThrust(int bot_index) {
           continue;
         if (cur.portals[p].flags & PF_TOO_SMALL_FOR_ROBOT)
           continue;
+        if (!BotCheckPortalPassable(obj->roomnum, p))
+          continue;
         // Skip the room we were trying to reach (it's the one that got us stuck)
         if (croom == Bots[bot_index].explore_dest_room)
           continue;
