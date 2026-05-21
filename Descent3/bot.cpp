@@ -1111,10 +1111,13 @@ static void BotDoStuckClear(int bot_index) {
 
   // Priority 2: forward ray hits a destroyable object (door, grate, building) — blast it open.
   // Only fire at objects that are actually destroyable to avoid wasting ammo on pillars.
+  // Skip teammates — BotDoStuckClear was shooting allied players as "obstacles" (79K hits overnight).
   if (hit_type == HIT_OBJECT && hit.hit_object[0] >= 0) {
     object *blocker = &Objects[hit.hit_object[0]];
-    if (blocker->type != OBJ_NONE && blocker->type != OBJ_GHOST && blocker->type != OBJ_POWERUP &&
-        (blocker->flags & OF_DESTROYABLE)) {
+    bool is_teammate = (blocker->type == OBJ_PLAYER && blocker->id >= 0 && blocker->id < MAX_NET_PLAYERS &&
+                        !BotIsPlayerEnemy(bot_index, blocker->id));
+    if (!is_teammate && blocker->type != OBJ_NONE && blocker->type != OBJ_GHOST &&
+        blocker->type != OBJ_POWERUP && (blocker->flags & OF_DESTROYABLE)) {
       BotFireAtObject(bot_index, blocker);
       LOG_DEBUG.printf("BOT: '%s' blasting destructible obstacle (type=%d)", Bots[bot_index].callsign, blocker->type);
       return;

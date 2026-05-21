@@ -57,7 +57,7 @@
 
 // Tunnel damping: when 3+ diagonal rays hit, we're in a confined tunnel.
 // Reduce overall field influence to allow movement through tight geometry.
-#define BOT_PF_TUNNEL_DAMPING 0.4f
+#define BOT_PF_TUNNEL_DAMPING 0.20f
 
 // Teammate repulsion: linear falloff force pushing same-team bots apart in tight spaces.
 // Applied after wall-skating strip so the force isn't neutered in tunnels.
@@ -69,6 +69,10 @@
 // geometry-based blockage (bunker slits, barred windows) that portal flags miss.
 #define BOT_PF_PASSABILITY_PROBE_RADIUS 2.5f // ship-sized sphere for passage test
 #define BOT_PF_PASSABILITY_PROBE_DIST 5.0f   // probe distance on each side of portal
+
+// Per-bot path variation: occupancy penalty added per extra teammate in a room.
+// Makes Dijkstra prefer routes through less-crowded corridors.
+#define BOT_PF_OCCUPANCY_PENALTY 30.0f
 
 // Runtime toggle (default ON — disable with $potentialfield off for comparison testing)
 extern bool Bot_potential_field_enabled;
@@ -109,5 +113,16 @@ int BotDijkstraNextPortal(int from_room, int goal_room, BotPathCostOverlay cost_
 
 // Runtime toggle for the Dijkstra rerouter (default ON — disable with $botpathfind off)
 extern bool Bot_pathfind_enabled;
+
+// Phase 7.3: BOA path cost estimation — follows BOA_GetNextRoom chain summing portal costs.
+// Used for goal selection (replaces Euclidean distance for topologically complex maps).
+float BotEstimatePathCost(int from_room, int goal_room);
+
+// Phase 7.3: Dijkstra with teammate occupancy overlay — penalizes crowded rooms
+// so bots on the same team naturally pick different routes to the same goal.
+int BotDijkstraNextPortalWithOccupancy(int from_room, int goal_room, int team);
+
+// Runtime toggle for occupancy-aware dispersal routing (default ON — disable with $botdispersal off)
+extern bool Bot_dispersal_enabled;
 
 #endif // BOT_STEERING_H

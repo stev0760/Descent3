@@ -70,6 +70,10 @@ void BotApplyPotentialField(int bot_index, object *obj, float &forward, float &s
   if (!Bot_potential_field_enabled)
     return;
 
+  // Outdoor: skip wall ray casting (terrain hits cause false braking and repulsion near
+  // arches/buildings) but still apply teammate repulsion below.
+  if (!ROOMNUM_OUTSIDE(obj->roomnum)) {
+
   float speed = vm_GetMagnitude(&obj->mtype.phys_info.velocity);
   float effective_radius =
       std::clamp(BOT_PF_BASE_RADIUS + speed * BOT_PF_LOOKAHEAD_TIME, BOT_PF_MIN_RADIUS, BOT_PF_MAX_RADIUS);
@@ -101,6 +105,7 @@ void BotApplyPotentialField(int bot_index, object *obj, float &forward, float &s
   bool forward_ray_hit = false;
   float forward_ray_dist = effective_radius;
   int diagonal_hits = 0;
+  bool ray_hit[BOT_PF_RAY_COUNT] = {false};
 
   for (int i = 0; i < BOT_PF_RAY_COUNT; i++) {
     vector ray_end = obj->pos + ray_dirs[i] * effective_radius;
@@ -120,6 +125,7 @@ void BotApplyPotentialField(int bot_index, object *obj, float &forward, float &s
 
     if (hit_type == HIT_WALL || hit_type == HIT_TERRAIN) {
       pf_wall_hits_total++;
+      ray_hit[i] = true;
 
       float hit_dist = hit.hit_dist;
       if (hit_dist < 0.1f)
@@ -154,10 +160,27 @@ void BotApplyPotentialField(int bot_index, object *obj, float &forward, float &s
   {
     vm_NormalizeVector(&repulsive_force);
 
-    // Wall skating: when flow field is active, strip the repulsive force component that
-    // opposes the flow direction. This keeps bots sliding along walls toward portals
-    // rather than braking to a stop at every tunnel curve.
-    if (flow_dir) {
+    // Open-sky vertical damping: in canyons/open-ceiling areas, the ground ray (4=fvec-uvec)
+    // pushes upward with no ceiling ray (3=fvec+uvec) to balance it, creating a net upward
+    // force that sends bots into the sky barrier. When the down ray hit but the up ray didn't,
+    // strip most of the upward (uvec) component from the repulsive force.
+    if (ray_hit[4] && !ray_hit[3]) {
+      float upward = vm_DotProduct(&repulsive_force, &obj->orient.uvec);
+      if (upward > 0.0f) {
+        repulsive_force = repulsive_force - obj->orient.uvec * (upward * 0.8f);
+        float new_mag = vm_GetMagnitude(&repulsive_force);
+        if (new_mag > 0.01f)
+          vm_NormalizeVector(&repulsive_force);
+        else
+          goto diagnostics;
+      }
+    }
+
+    // Wall skating: when flow field is active AND the bot is in a confined space (2+ diagonal
+    // hits = walls on both sides), strip the repulsive force component opposing the flow
+    // direction. This lets bots slide along walls in tight tunnels. In wide spaces (0-1 hits),
+    // keep the full deflection so bots steer around geometry features like tunnel lips/shoulders.
+    if (flow_dir && diagonal_hits >= 2) {
       float opposing_component = vm_DotProduct(&repulsive_force, flow_dir);
       if (opposing_component < 0.0f) {
         repulsive_force = repulsive_force - *flow_dir * opposing_component;
@@ -213,9 +236,9 @@ void BotApplyPotentialField(int bot_index, object *obj, float &forward, float &s
     // Field opposition brake: if forward ray hit a wall AND the repulsive force strongly
     // opposes current thrust direction, the bot is flying into solid geometry.
     // Suppress afterburner and clamp forward thrust.
-    // Skip when flow field is active — the flow field + AB facing gate handle direction,
-    // and braking in tight tunnels prevents bots from navigating through them.
-    if (forward_ray_hit && !flow_dir) {
+    // Skip when flow field is active, in tunnel mode (3+ diagonal hits), or outdoors —
+    // outdoors, terrain hits trigger the brake on open ground, stalling bots near arches/buildings.
+    if (forward_ray_hit && !flow_dir && diagonal_hits < 3 && !ROOMNUM_OUTSIDE(obj->roomnum)) {
       float opposition = vm_DotProduct(&repulsive_force, &current_dir);
       if (opposition < BOT_PF_BRAKE_OPPOSITION_DOT) {
         want_afterburner = false;
@@ -282,6 +305,8 @@ void BotApplyPotentialField(int bot_index, object *obj, float &forward, float &s
     vertical = vm_DotProduct(&blended, &obj->orient.uvec) * mag;
   }
 
+  } // end outdoor skip
+
   // Teammate repulsion: push same-team bots apart in tight spaces.
   // Computed independently of wall avoidance — bots can block each other even when
   // no walls are nearby. Applied after wall processing so it isn't neutered by
@@ -334,6 +359,8 @@ void BotApplyPotentialField(int bot_index, object *obj, float &forward, float &s
   }
 
 diagnostics:
+  if (Gametime < pf_last_log_time)
+    pf_last_log_time = 0.0f;
   if (Gametime - pf_last_log_time > 10.0f) {
     LOG_DEBUG << "[PotField] rays=" << pf_rays_cast_total << " hits=" << pf_wall_hits_total
               << " brakes=" << pf_brakes_applied << " passages=" << pf_passage_detections
@@ -363,6 +390,12 @@ bool BotCheckPortalPassable(int room_idx, int portal_idx) {
     return true;
   if (cached == 0)
     return false;
+
+  // FVI doesn't support RF_EXTERNAL rooms as startroom — assume passable
+  if (Rooms[room_idx].flags & RF_EXTERNAL) {
+    cached = 1;
+    return true;
+  }
 
   portal &pt = Rooms[room_idx].portals[portal_idx];
   int connected_room = pt.croom;
@@ -504,13 +537,10 @@ int BotDijkstraNextPortal(int from_room, int goal_room, BotPathCostOverlay cost_
         // Skip our geometric passability check for this portal
         if (!BotCheckPortalPassable(cur_room, p))
           continue;
-        // Handle external rooms (indoor→terrain transition)
-        if (next_room <= Highest_room_index && (Rooms[next_room].flags & RF_EXTERNAL)) {
-          int cell = GetTerrainCellFromPos(&Rooms[cur_room].portals[p].path_pnt);
-          if (cell < 0)
-            continue;
-          next_room = Highest_room_index + TERRAIN_REGION(cell) + 1;
-        }
+        // Don't convert RF_EXTERNAL rooms to terrain regions — navigate through them as
+        // regular rooms instead. This prevents Dijkstra from routing through outdoor sky
+        // while still allowing navigation through RF_EXTERNAL rooms laterally.
+        // (Original code converted RF_EXTERNAL→terrain region here, which enabled sky routing.)
       } else {
         int t_idx = cur_room - Highest_room_index - 1;
         next_room = BOA_connect[t_idx][p].roomnum;
@@ -563,6 +593,101 @@ int BotDijkstraNextPortal(int from_room, int goal_room, BotPathCostOverlay cost_
   }
 
   return result;
+}
+
+// --- Path cost estimation via BOA chain ---
+
+float BotEstimatePathCost(int from_room, int goal_room) {
+  if (from_room == goal_room)
+    return 0.0f;
+  if (from_room < 0 || from_room > Highest_room_index || !Rooms[from_room].used)
+    return 1e30f;
+  if (goal_room < 0 || goal_room > Highest_room_index || !Rooms[goal_room].used)
+    return 1e30f;
+
+  float total_cost = 0.0f;
+  int current = from_room;
+  int max_hops = Highest_room_index + 1;
+
+  for (int hop = 0; hop < max_hops; hop++) {
+    int next = BOA_GetNextRoom(current, goal_room);
+    if (next == BOA_NO_PATH || next == current)
+      return 1e30f;
+
+    int portal = BOA_DetermineStartRoomPortal(current, nullptr, next, nullptr);
+    if (portal >= 0 && portal < MAX_PATH_PORTALS)
+      total_cost += BOA_cost_array[current][portal];
+    else
+      total_cost += 50.0f;
+
+    if (next == goal_room)
+      return total_cost;
+    current = next;
+  }
+  return 1e30f;
+}
+
+// --- Teammate occupancy overlay for per-bot path variation ---
+
+bool Bot_dispersal_enabled = true;
+
+#define BOT_MAX_TEAMS_OCCUPANCY 4
+static int pf_room_occupancy[BOT_MAX_TEAMS_OCCUPANCY][MAX_ROOMS];
+static float pf_occupancy_last_update = -1.0f;
+static int pf_occupancy_query_team = -1;
+
+static void BotUpdateRoomOccupancy() {
+  if (Gametime < pf_occupancy_last_update)
+    pf_occupancy_last_update = -1.0f;
+  if (Gametime - pf_occupancy_last_update < 0.5f)
+    return;
+  pf_occupancy_last_update = Gametime;
+
+  memset(pf_room_occupancy, 0, sizeof(pf_room_occupancy));
+  for (int i = 0; i < MAX_NET_PLAYERS; i++) {
+    if (!(NetPlayers[i].flags & NPF_CONNECTED))
+      continue;
+    if (Players[i].flags & (PLAYER_FLAGS_DEAD | PLAYER_FLAGS_DYING))
+      continue;
+    object *p = &Objects[Players[i].objnum];
+    if (p->type != OBJ_PLAYER)
+      continue;
+    int team = Players[i].team;
+    if (team < 0 || team >= BOT_MAX_TEAMS_OCCUPANCY)
+      continue;
+    int room = p->roomnum;
+    if (!ROOMNUM_OUTSIDE(room) && room >= 0 && room <= Highest_room_index)
+      pf_room_occupancy[team][room]++;
+  }
+}
+
+static float BotTeammateOccupancyOverlay(int room_idx) {
+  if (room_idx < 0 || room_idx > Highest_room_index)
+    return 0.0f;
+  if (pf_occupancy_query_team < 0 || pf_occupancy_query_team >= BOT_MAX_TEAMS_OCCUPANCY)
+    return 0.0f;
+  int count = pf_room_occupancy[pf_occupancy_query_team][room_idx];
+  if (count <= 1)
+    return 0.0f;
+  return (float)(count - 1) * BOT_PF_OCCUPANCY_PENALTY;
+}
+
+int BotDijkstraNextPortalWithOccupancy(int from_room, int goal_room, int team) {
+  if (!Bot_dispersal_enabled)
+    return -1;
+  BotUpdateRoomOccupancy();
+  pf_occupancy_query_team = team;
+  int result = BotDijkstraNextPortal(from_room, goal_room, BotTeammateOccupancyOverlay);
+  pf_occupancy_query_team = -1;
+  return result;
+}
+
+static int BotGetTeammateCountInRoom(int team, int room) {
+  if (team < 0 || team >= BOT_MAX_TEAMS_OCCUPANCY)
+    return 0;
+  if (room < 0 || room > Highest_room_index)
+    return 0;
+  return pf_room_occupancy[team][room];
 }
 
 // --- One-hop reroute: try other portals in current room when preferred is blocked ---
@@ -665,9 +790,28 @@ bool BotFlowFieldGetDirection(object *obj, int goal_room, vector *out_dir) {
   if (portal_idx < 0 || portal_idx >= Rooms[current_room].num_portals)
     return false;
 
-  // Happy path: preferred portal is passable
-  if (BotCheckPortalPassable(current_room, portal_idx))
+  // Skip terrain routing: when BOA's next step is a terrain region (next_room > Highest_room_index),
+  // the path goes through outdoor sky. The sky barrier makes this impassable — force the reroute
+  // chain to find an indoor alternative. RF_EXTERNAL rooms connected laterally are fine to navigate.
+  bool boa_routes_through_terrain = (next_room > Highest_room_index);
+
+  // Happy path: preferred portal is passable and doesn't exit to terrain
+  if (!boa_routes_through_terrain && BotCheckPortalPassable(current_room, portal_idx)) {
+    // Congestion check: if the preferred next room is crowded with teammates, try an
+    // alternative route that avoids teammate clusters. Only updates occupancy periodically (0.5s).
+    int bot_team = (obj->id >= 0 && obj->id < MAX_NET_PLAYERS) ? Players[obj->id].team : -1;
+    if (bot_team >= 0 && bot_team < BOT_MAX_TEAMS_OCCUPANCY) {
+      BotUpdateRoomOccupancy();
+      int preferred_next = Rooms[current_room].portals[portal_idx].croom;
+      if (preferred_next >= 0 && preferred_next <= Highest_room_index &&
+          pf_room_occupancy[bot_team][preferred_next] >= 2) {
+        int occ_portal = BotDijkstraNextPortalWithOccupancy(current_room, goal_room, bot_team);
+        if (occ_portal >= 0 && occ_portal != portal_idx)
+          return BotPortalToDirection(obj, current_room, occ_portal, goal_room, out_dir);
+      }
+    }
     return BotPortalToDirection(obj, current_room, portal_idx, goal_room, out_dir);
+  }
 
   // --- Reroute chain: preferred portal is blocked ---
 

@@ -22,6 +22,7 @@
 
 #include "bot_objective.h"
 #include "bot.h"
+#include "bot_steering.h"
 #include "multi.h"
 #include "multi_external.h"
 #include "object.h"
@@ -34,6 +35,8 @@
 #include "log.h"
 
 BotObjectiveState Bot_objective;
+
+static const char *kTeamNames[] = {"Red", "Blue", "Green", "Yellow"};
 
 // Cached object type IDs — resolved once per level via FindObjectIDName().
 static int Obj_flag_id[BOT_MAX_TEAMS] = {-1, -1, -1, -1};
@@ -92,6 +95,13 @@ void BotInitObjectiveState() {
     LOG_DEBUG.printf("BOT OBJ: CTF goals: red=room%d blue=room%d green=room%d yellow=room%d",
                      Bot_objective.goal_room[0], Bot_objective.goal_room[1], Bot_objective.goal_room[2],
                      Bot_objective.goal_room[3]);
+    for (int i = 0; i < BOT_MAX_TEAMS; i++) {
+      if (Bot_objective.goal_room[i] < 0)
+        PrintDedicatedMessage("WARNING: team %d (%s) has no RF_GOAL room — flag may be outdoor\n", i, kTeamNames[i]);
+      else if (Rooms[Bot_objective.goal_room[i]].flags & RF_EXTERNAL)
+        PrintDedicatedMessage("NOTE: team %d (%s) goal room %d is RF_EXTERNAL (outdoor building)\n", i, kTeamNames[i],
+                              Bot_objective.goal_room[i]);
+    }
     break;
 
   case BGM_HYPERANARCHY:
@@ -367,7 +377,7 @@ static const char *FlagStateName(BotFlagState s) {
   }
 }
 
-static const char *kTeamNames[] = {"Red", "Blue", "Green", "Yellow"};
+// Defined earlier in file — used by both BotInitObjectiveState and BotPrintObjectiveState
 
 void BotPrintObjectiveState() {
   BotGameMode mode = BotGetGameMode();
@@ -492,16 +502,18 @@ static int BotGetObjectiveRoom_CTF(int bot_index) {
     // Fumble rush: enemy flag dropped + our flag safe = everyone goes for it
     if (Bot_objective.flag_state[my_team] == FLAG_AT_HOME) {
       object *obj = &Objects[Players[slot].objnum];
+      int bot_room = OBJECT_OUTSIDE(obj) ? -1 : obj->roomnum;
       int fumble_room = -1;
-      float fumble_dist = 1e30f;
+      float fumble_cost = 1e30f;
       for (int t = 0; t < num_teams; t++) {
         if (t == my_team)
           continue;
         if (Bot_objective.flag_state[t] == FLAG_DROPPED && Bot_objective.flag_room[t] >= 0 &&
             Rooms[Bot_objective.flag_room[t]].used) {
-          float d = vm_VectorDistanceQuick(&obj->pos, &Rooms[Bot_objective.flag_room[t]].path_pnt);
-          if (d < fumble_dist) {
-            fumble_dist = d;
+          float d = (bot_room >= 0) ? BotEstimatePathCost(bot_room, Bot_objective.flag_room[t])
+                                    : vm_VectorDistanceQuick(&obj->pos, &Rooms[Bot_objective.flag_room[t]].path_pnt);
+          if (d < fumble_cost) {
+            fumble_cost = d;
             fumble_room = Bot_objective.flag_room[t];
           }
         }
@@ -519,10 +531,11 @@ static int BotGetObjectiveRoom_CTF(int bot_index) {
     // Own flag stolen — drop offensive nav, let -400 targeting bias drive toward carrier
     if (Bot_objective.flag_state[my_team] == FLAG_CARRIED)
       return -1;
-    // Find nearest available enemy flag (at_home or dropped)
+    // Find nearest available enemy flag by BOA path cost (not Euclidean)
     object *obj = &Objects[Players[slot].objnum];
+    int bot_room = OBJECT_OUTSIDE(obj) ? -1 : obj->roomnum;
     int best_room = -1;
-    float best_dist = 1e30f;
+    float best_cost = 1e30f;
     for (int t = 0; t < num_teams; t++) {
       if (t == my_team)
         continue;
@@ -533,9 +546,10 @@ static int BotGetObjectiveRoom_CTF(int bot_index) {
         room = Bot_objective.flag_room[t];
       if (room < 0 || !Rooms[room].used)
         continue;
-      float dist = vm_VectorDistanceQuick(&obj->pos, &Rooms[room].path_pnt);
-      if (dist < best_dist) {
-        best_dist = dist;
+      float cost = (bot_room >= 0) ? BotEstimatePathCost(bot_room, room)
+                                   : vm_VectorDistanceQuick(&obj->pos, &Rooms[room].path_pnt);
+      if (cost < best_cost) {
+        best_cost = cost;
         best_room = room;
       }
     }
@@ -577,6 +591,7 @@ static int BotGetObjectiveRoom_Hoard(int bot_index) {
   // Non-carrier: navigate toward the densest nearby orb cluster
   int slot = Bots[bot_index].player_slot;
   object *obj = &Objects[Players[slot].objnum];
+  int bot_room = OBJECT_OUTSIDE(obj) ? -1 : obj->roomnum;
   int best_room = -1;
   float best_score = 0.0f;
 
@@ -600,7 +615,8 @@ static int BotGetObjectiveRoom_Hoard(int bot_index) {
         cluster++;
     }
 
-    float dist = vm_VectorDistanceQuick(&obj->pos, &Rooms[orb_room].path_pnt);
+    float dist = (bot_room >= 0) ? BotEstimatePathCost(bot_room, orb_room)
+                                 : vm_VectorDistanceQuick(&obj->pos, &Rooms[orb_room].path_pnt);
     float score = (float)cluster / (1.0f + dist / 200.0f);
     if (score > best_score) {
       best_score = score;
@@ -781,15 +797,17 @@ bool BotIsHoardCarrier(int bot_index) {
 int BotGetNearestHoardGoalRoom(int bot_index) {
   int slot = Bots[bot_index].player_slot;
   object *obj = &Objects[Players[slot].objnum];
+  int bot_room = OBJECT_OUTSIDE(obj) ? -1 : obj->roomnum;
   int best_room = -1;
-  float best_dist = 1e30f;
+  float best_cost = 1e30f;
   for (int i = 0; i < BOT_MAX_TEAMS; i++) {
     int room = Bot_objective.hoard_goal_rooms[i];
     if (room < 0 || !Rooms[room].used)
       continue;
-    float dist = vm_VectorDistanceQuick(&obj->pos, &Rooms[room].path_pnt);
-    if (dist < best_dist) {
-      best_dist = dist;
+    float cost = (bot_room >= 0) ? BotEstimatePathCost(bot_room, room)
+                                 : vm_VectorDistanceQuick(&obj->pos, &Rooms[room].path_pnt);
+    if (cost < best_cost) {
+      best_cost = cost;
       best_room = room;
     }
   }

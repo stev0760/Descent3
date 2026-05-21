@@ -898,6 +898,18 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     }
     return true;
   }
+  if (stricmp(command, "botdispersal") == 0) {
+    if (stricmp(operand, "on") == 0) {
+      Bot_dispersal_enabled = true;
+      PrintDedicatedMessage("Bot occupancy dispersal ON\n");
+    } else if (stricmp(operand, "off") == 0) {
+      Bot_dispersal_enabled = false;
+      PrintDedicatedMessage("Bot occupancy dispersal OFF\n");
+    } else {
+      PrintDedicatedMessage("Usage: $botdispersal on|off  (current: %s)\n", Bot_dispersal_enabled ? "on" : "off");
+    }
+    return true;
+  }
   if (stricmp(command, "botdifficulty") == 0) {
     if (!operand[0]) {
       PrintDedicatedMessage("Usage: $botdifficulty <index|all> <level>\n");
@@ -962,6 +974,7 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     PrintDedicatedMessage("  $potentialfield on|off - Toggle potential field steering (Phase 7.1)\n");
     PrintDedicatedMessage("  $flowfield on|off      - Toggle flow field navigation (Phase 7.2)\n");
     PrintDedicatedMessage("  $botpathfind on|off    - Toggle Dijkstra rerouter (Phase 7.2b)\n");
+    PrintDedicatedMessage("  $botdispersal on|off   - Toggle occupancy-aware route dispersal (Phase 7.3)\n");
     PrintDedicatedMessage("  $botmode               - Show detected game mode\n");
     PrintDedicatedMessage("  $botobj                - Show objective state (CTF flags, orbs, etc.)\n");
     PrintDedicatedMessage("  $servercaps            - Print server capabilities\n");
