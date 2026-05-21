@@ -72,8 +72,10 @@ void BotApplyPotentialField(int bot_index, object *obj, float &forward, float &s
 
   // Outdoor: skip wall ray casting (terrain hits cause false braking and repulsion near
   // arches/buildings) but still apply teammate repulsion below.
-  if (!ROOMNUM_OUTSIDE(obj->roomnum)) {
+  if (ROOMNUM_OUTSIDE(obj->roomnum))
+    goto diagnostics;
 
+  {
   float speed = vm_GetMagnitude(&obj->mtype.phys_info.velocity);
   float effective_radius =
       std::clamp(BOT_PF_BASE_RADIUS + speed * BOT_PF_LOOKAHEAD_TIME, BOT_PF_MIN_RADIUS, BOT_PF_MAX_RADIUS);
@@ -105,7 +107,7 @@ void BotApplyPotentialField(int bot_index, object *obj, float &forward, float &s
   bool forward_ray_hit = false;
   float forward_ray_dist = effective_radius;
   int diagonal_hits = 0;
-  bool ray_hit[BOT_PF_RAY_COUNT] = {false};
+  bool ray_hit[BOT_PF_RAY_COUNT]{};
 
   for (int i = 0; i < BOT_PF_RAY_COUNT; i++) {
     vector ray_end = obj->pos + ray_dirs[i] * effective_radius;
@@ -304,9 +306,9 @@ void BotApplyPotentialField(int bot_index, object *obj, float &forward, float &s
     sideways = vm_DotProduct(&blended, &obj->orient.rvec) * mag;
     vertical = vm_DotProduct(&blended, &obj->orient.uvec) * mag;
   }
+  }
 
-  } // end outdoor skip
-
+diagnostics:
   // Teammate repulsion: push same-team bots apart in tight spaces.
   // Computed independently of wall avoidance — bots can block each other even when
   // no walls are nearby. Applied after wall processing so it isn't neutered by
@@ -358,7 +360,6 @@ void BotApplyPotentialField(int bot_index, object *obj, float &forward, float &s
     }
   }
 
-diagnostics:
   if (Gametime < pf_last_log_time)
     pf_last_log_time = 0.0f;
   if (Gametime - pf_last_log_time > 10.0f) {
@@ -613,6 +614,8 @@ float BotEstimatePathCost(int from_room, int goal_room) {
     int next = BOA_GetNextRoom(current, goal_room);
     if (next == BOA_NO_PATH || next == current)
       return 1e30f;
+    if (next > Highest_room_index)
+      return 1e30f;
 
     int portal = BOA_DetermineStartRoomPortal(current, nullptr, next, nullptr);
     if (portal >= 0 && portal < MAX_PATH_PORTALS)
@@ -715,6 +718,8 @@ static int BotOneHopReroute(int current_room, int goal_room, int blocked_portal)
     // Check if this portal's connected room can still reach the goal
     int next_from_croom = BOA_GetNextRoom(croom, goal_room);
     if (next_from_croom == BOA_NO_PATH)
+      continue;
+    if (next_from_croom > Highest_room_index)
       continue;
 
     // Prefer the cheapest alternative

@@ -377,8 +377,6 @@ static const char *FlagStateName(BotFlagState s) {
   }
 }
 
-// Defined earlier in file — used by both BotInitObjectiveState and BotPrintObjectiveState
-
 void BotPrintObjectiveState() {
   BotGameMode mode = BotGetGameMode();
   PrintDedicatedMessage("Game mode: %s\n", BotGameModeName(mode));

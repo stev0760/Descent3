@@ -2497,6 +2497,27 @@ static void BotUpdateAimDirection(int bot_index) {
     if (should_face_nav) {
       vector flow_dir;
       if (BotFlowFieldGetDirection(obj, nav_goal_room, &flow_dir)) {
+        // Sky-route suppression: flatten upward flow directions on outdoor maps
+        // so bots don't face the sky barrier.
+        bool in_outdoor_area = ROOMNUM_OUTSIDE(obj->roomnum) ||
+                               (obj->roomnum >= 0 && obj->roomnum <= Highest_room_index &&
+                                (Rooms[obj->roomnum].flags & RF_EXTERNAL));
+        if (in_outdoor_area) {
+          float world_up_dot = flow_dir.z();
+          if (world_up_dot > 0.3f) {
+            flow_dir.z() = 0.0f;
+            float flat_mag = vm_GetMagnitude(&flow_dir);
+            if (flat_mag > 0.1f) {
+              flow_dir = flow_dir * (1.0f / flat_mag);
+            } else {
+              flow_dir = obj->orient.fvec;
+              flow_dir.z() = 0.0f;
+              float fwd_mag = vm_GetMagnitude(&flow_dir);
+              if (fwd_mag > 0.01f)
+                flow_dir = flow_dir * (1.0f / fwd_mag);
+            }
+          }
+        }
         obj->ai_info->last_see_target_pos = obj->pos + flow_dir * 200.0f;
         return;
       }
@@ -2566,14 +2587,57 @@ static void BotApplyThrust(int bot_index) {
 
   // Decompose world-space direction into bot-local axes
   float forward = 0.0f, sideways = 0.0f, vertical = 0.0f;
+  vector effective_dir = {0.0f, 0.0f, 0.0f};
+  bool has_nav_dir = false;
   if (using_flow_field) {
-    forward = vm_DotProduct(&flow_dir, &obj->orient.fvec);
-    sideways = vm_DotProduct(&flow_dir, &obj->orient.rvec);
-    vertical = vm_DotProduct(&flow_dir, &obj->orient.uvec);
+    effective_dir = flow_dir;
+    has_nav_dir = true;
   } else if (mdir_mag > 0.01f) {
-    forward = vm_DotProduct(&mdir, &obj->orient.fvec);
-    sideways = vm_DotProduct(&mdir, &obj->orient.rvec);
-    vertical = vm_DotProduct(&mdir, &obj->orient.uvec);
+    effective_dir = mdir;
+    has_nav_dir = true;
+  }
+
+  if (has_nav_dir) {
+    // Sky-route suppression: on outdoor maps, the engine's BOA pathfinder routes through
+    // terrain regions via upward portals (sky shortcuts). Flatten upward navigation
+    // directions to prevent bots from thrusting into the sky barrier.
+    // Applies to both RF_EXTERNAL rooms (canyon rooms) and terrain cells (already outdoors).
+    bool in_outdoor_area = ROOMNUM_OUTSIDE(obj->roomnum) ||
+                           (obj->roomnum >= 0 && obj->roomnum <= Highest_room_index &&
+                            (Rooms[obj->roomnum].flags & RF_EXTERNAL));
+    if (in_outdoor_area) {
+      // Use world-up (Z axis in D3), not bot-relative uvec — bots can be tilted/rolled in 6DOF
+      float world_up_dot = effective_dir.z();
+      static float sky_diag_timer = 0.0f;
+      sky_diag_timer += Frametime;
+      if (sky_diag_timer > 2.0f && world_up_dot > 0.1f) {
+        sky_diag_timer = 0.0f;
+        LOG_DEBUG.printf("SKY_DIAG: bot=%d room=%d outdoor=%s flow=%s world_up=%.2f local_up=%.2f dir=(%.2f,%.2f,%.2f)",
+                         bot_index, obj->roomnum, ROOMNUM_OUTSIDE(obj->roomnum) ? "terrain" : "rf_ext",
+                         using_flow_field ? "yes" : "no", world_up_dot,
+                         vm_DotProduct(&effective_dir, &obj->orient.uvec),
+                         effective_dir.x(), effective_dir.y(), effective_dir.z());
+      }
+      if (world_up_dot > 0.3f) {
+        vector flat_dir = effective_dir;
+        flat_dir.z() = 0.0f;
+        float flat_mag = vm_GetMagnitude(&flat_dir);
+        if (flat_mag > 0.1f) {
+          effective_dir = flat_dir * (1.0f / flat_mag);
+        } else {
+          // No horizontal component — use forward instead of hovering
+          effective_dir = obj->orient.fvec;
+          effective_dir.z() = 0.0f;
+          float fwd_mag = vm_GetMagnitude(&effective_dir);
+          if (fwd_mag > 0.01f)
+            effective_dir = effective_dir * (1.0f / fwd_mag);
+        }
+      }
+    }
+
+    forward = vm_DotProduct(&effective_dir, &obj->orient.fvec);
+    sideways = vm_DotProduct(&effective_dir, &obj->orient.rvec);
+    vertical = vm_DotProduct(&effective_dir, &obj->orient.uvec);
   } else {
     // Fallback: first frame after spawn or no active goal — default forward
     forward = 1.0f;
@@ -2742,14 +2806,14 @@ static void BotApplyThrust(int bot_index) {
   // per-axis speed scaling collapses magnitudes. This layer supplements (not replaces) the engine's
   // AIF_AVOID_WALLS which is already baked into movement_dir.
   BotApplyPotentialField(bot_index, obj, forward, sideways, vertical, want_afterburner,
-                         using_flow_field ? &flow_dir : nullptr);
+                         has_nav_dir ? &effective_dir : nullptr);
 
   // AB facing gate: suppress afterburner when the bot isn't facing its desired travel direction.
   // In 6DOF, AB thrust goes along fvec — if fvec points at an enemy while the bot wants to
   // navigate a pipe, AB pushes it the wrong way. The orient override in BotUpdateAimDirection
   // turns the bot to face the portal; this gate waits until alignment is close enough.
   if (want_afterburner) {
-    vector desired_dir = using_flow_field ? flow_dir : mdir;
+    vector desired_dir = has_nav_dir ? effective_dir : mdir;
     float facing_dot = vm_DotProduct(&obj->orient.fvec, &desired_dir);
     if (facing_dot < BOT_AB_FACING_THRESHOLD)
       want_afterburner = false;
