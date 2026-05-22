@@ -1,6 +1,6 @@
 # Navigation Overhaul Phase 2 — Potential Fields & Flow Fields (Phase 7 / Version 0.9.0)
 
-**Status:** Phase 7.1 + 7.2 + 7.2a + 7.2b implemented. Defense confirmed in CTF testing; Rude Awakening bot flag capture achieved (7.2a). Dijkstra pathfinder with extensible cost overlays ready for Entropy/anti-cluster.
+**Status:** Phase 7.1 + 7.2 + 7.2a + 7.2b + 7.2c + 7.3 + 7.4 implemented. Phase 7.4 (log analysis) fixes the Plasmacannon 12-second reselection loop (long-term powerup blacklist) and restores dispersal on the reroute path (occupancy-aware one-hop reroute).
 **Prerequisite reading:** `NAV_OVERHAUL.md` (Phase 4.0, complete), `BOT_DEV_REFERENCE.md`, `PATHFINDING_CODEBASE_EXPLORE.md`, `D3_MOVEMENT_PHYSICS.md`
 **Key files:** `Descent3/bot_steering.h` (constants + API: `BotCheckPortalPassable`, `BotFlowFieldGetDirection`, `BotDijkstraNextPortal`), `Descent3/bot_steering.cpp` (potential field + flow field + Dijkstra pathfinder), `Descent3/bot.cpp` (`BotGetNavGoalRoom`, `BotUpdateAimDirection`, `BotApplyThrust`, stuck escape), `Descent3/AImain.cpp` (`goal_do_avoid_walls`), `Descent3/BOA.h` / `BOA.cpp` (room graph, `FindPath`, `BOA_cost_array`), `physics/findintersection.h`
 
@@ -731,3 +731,32 @@ The potential field approach gives us velocity-aware, direction-aware, distance-
 | Supreme Commander (2007) | Flow fields for RTS unit routing | Popularized the room-level flow field concept we use in 7.2 |
 | Total War series | Crowd-density flow for formations | Anti-clustering via cost overlays |
 | Descent 1/2 robots | Fixed-pattern strafing + simple stuck detection | Historical context — D3's engine improved on this significantly |
+
+---
+
+## Phase 7.4 — Log-Analysis Fixes (IMPLEMENTED)
+
+Diagnosed from `dijstra-testing9.log` (11.4M lines, ~20-hour overnight run). Two root causes found:
+
+### Bug 1: Plasmacannon 12-Second Reselection Loop
+
+**Symptom:** 4,434 "room progress timeout — chasing 'Plasmacannon'" events across all bots, repeating at exactly 12-second intervals (= `BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT`).
+
+**Root cause:** `BotClearActiveGoal()` resets both `chasing_powerup_handle` and `chasing_powerup_timer` to zero. The room-progress timeout calls `BotClearActiveGoal()` → wipes the short-term skip flag → `BotFindBestPowerup()` re-selects the same blocked Plasmacannon → 8s chase timeout → repeat.
+
+**Fix:** Added long-term blacklist to `BotInfo`: `blacklisted_powerup_handle` + `blacklisted_powerup_expires`. When a powerup chase times out, the handle is blacklisted for `BOT_POWERUP_BLACKLIST_DURATION` (60s) — stored separately so it survives `BotClearActiveGoal()`. `BotFindBestPowerup()` checks both the short-term and long-term blacklists. Cleared on level transition (new map, new powerup positions).
+
+### Bug 2: Occupancy Dispersal Dead on Reroute Path
+
+**Symptom:** 9.17M one-hop reroutes at the same (room, portal) pairs — all bots taking the identical alternate route around a blocked portal. The dispersal/occupancy feature (Phase 7.3) was supposed to spread bots across different routes.
+
+**Root cause:** The occupancy check in `BotFlowFieldGetDirection` only fires on the happy path (passable preferred portal). When the preferred portal is blocked (56% of navigation events), the code falls into the reroute chain, which called `BotOneHopReroute` with no occupancy awareness. All bots picked the cheapest-BOA-cost alternate — the same portal every time.
+
+**Fix:**
+- `BotFlowFieldGetDirection` now calls `BotUpdateRoomOccupancy()` before entering the reroute chain, and passes `bot_team` to `BotOneHopReroute`.
+- `BotOneHopReroute` now accepts `team` parameter. Viable alternate portals are scored with occupancy penalty (`(occupants-1) × BOT_PF_OCCUPANCY_PENALTY`) so bots on the same team prefer less-crowded portal alternatives.
+- `BotOneHopReroute` log rate-limited to one line per (current_room, goal_room) pair per level — prevents 9M-line log spam that was hiding real diagnostic signals. Log suffix `[occ-aware]` when team context is active.
+
+### Log Volume Context
+
+The 9.17M one-hop count (1.6GB log) is not a CPU problem (~35 calls/sec across 6 bots = trivial). The log spam was the real cost. With rate-limiting, diagnostic signal is preserved while log volume drops by ~3 orders of magnitude on repeat (room, goal) pairs.

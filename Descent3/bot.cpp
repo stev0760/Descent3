@@ -1732,10 +1732,16 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
   int best_obj = -1;
   float best_score = 0.0f;
 
-  // Skip powerups we're already stuck chasing (Phase 4.03 chase timeout)
+  // Skip powerups we're already stuck chasing (Phase 4.03 short-term chase timeout)
   int blacklisted_handle = OBJECT_HANDLE_NONE;
   if (Bots[bot_index].chasing_powerup_timer > BOT_POWERUP_CHASE_TIMEOUT)
     blacklisted_handle = Bots[bot_index].chasing_powerup_handle;
+
+  // Phase 7.4: long-term blacklist — survives BotClearActiveGoal, breaks the re-selection loop.
+  // A specific object handle is blacklisted for BOT_POWERUP_BLACKLIST_DURATION seconds after a chase timeout.
+  int lt_blacklisted_handle = OBJECT_HANDLE_NONE;
+  if (Gametime < Bots[bot_index].blacklisted_powerup_expires)
+    lt_blacklisted_handle = Bots[bot_index].blacklisted_powerup_handle;
 
   for (int i = 0; i <= Highest_object_index; i++) {
     object *p = &Objects[i];
@@ -1744,6 +1750,8 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
     if (p->flags & (OF_DEAD | OF_DESTROYED))
       continue;
     if (p->handle == blacklisted_handle)
+      continue;
+    if (p->handle == lt_blacklisted_handle)
       continue;
 
     // Phase 4.06: skip powerups the bot can't actually collect (already owned primaries, etc.)
@@ -3374,6 +3382,8 @@ void BotInitAll() {
     Bots[i].powerup_goal_index = -1;
     Bots[i].chasing_powerup_handle = OBJECT_HANDLE_NONE;
     Bots[i].chasing_powerup_timer = 0.0f;
+    Bots[i].blacklisted_powerup_handle = OBJECT_HANDLE_NONE;
+    Bots[i].blacklisted_powerup_expires = 0.0f;
     Bots[i].explore_dest_room = -1;
     Bots[i].explore_stuck_room = -1;
     Bots[i].explore_room_timer = 0.0f;
@@ -3482,6 +3492,8 @@ void BotReinitAll() {
     Bots[i].powerup_goal_index = -1;
     Bots[i].chasing_powerup_handle = OBJECT_HANDLE_NONE;
     Bots[i].chasing_powerup_timer = 0.0f;
+    Bots[i].blacklisted_powerup_handle = OBJECT_HANDLE_NONE;
+    Bots[i].blacklisted_powerup_expires = 0.0f;
     Bots[i].state = BOT_STATE_EXPLORE;
     Bots[i].afterburner_fuel = BOT_AFTERBURNER_FUEL_MAX;
     Bots[i].afterburner_burst_timer = 0.0f;
@@ -3729,6 +3741,8 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   Bots[bot_index].powerup_goal_index = -1;
   Bots[bot_index].chasing_powerup_handle = OBJECT_HANDLE_NONE;
   Bots[bot_index].chasing_powerup_timer = 0.0f;
+  Bots[bot_index].blacklisted_powerup_handle = OBJECT_HANDLE_NONE;
+  Bots[bot_index].blacklisted_powerup_expires = 0.0f;
   Bots[bot_index].intended_team = chosen_team;
   Bots[bot_index].state = BOT_STATE_EXPLORE;
   Bots[bot_index].afterburner_fuel = BOT_AFTERBURNER_FUEL_MAX;
@@ -3956,14 +3970,22 @@ void BotDoFrame() {
     if (Bots[i].powerup_goal_index >= 0 && Bots[i].chasing_powerup_handle != OBJECT_HANDLE_NONE) {
       Bots[i].chasing_powerup_timer += Frametime;
       if (Bots[i].chasing_powerup_timer > BOT_POWERUP_CHASE_TIMEOUT) {
-        // Stuck chasing this powerup too long — give up and try another one next tick
-        LOG_DEBUG.printf("BOT: '%s' powerup chase timeout (%.1fs) — giving up", Bots[i].callsign,
-                         Bots[i].chasing_powerup_timer);
+        // Stuck chasing this powerup too long — give up and try another one next tick.
+        // Phase 7.4: Set long-term blacklist BEFORE clearing goal — survives BotClearActiveGoal.
+        // This breaks the 12-second "Plasmacannon loop" where the bot immediately re-selects
+        // the same unreachable powerup after BotClearActiveGoal wipes the short-term skip.
+        if (Bots[i].chasing_powerup_handle != OBJECT_HANDLE_NONE) {
+          Bots[i].blacklisted_powerup_handle = Bots[i].chasing_powerup_handle;
+          Bots[i].blacklisted_powerup_expires = Gametime + BOT_POWERUP_BLACKLIST_DURATION;
+          LOG_DEBUG.printf("BOT: '%s' powerup chase timeout (%.1fs) — blacklisting for %.0fs", Bots[i].callsign,
+                           Bots[i].chasing_powerup_timer, BOT_POWERUP_BLACKLIST_DURATION);
+        }
         int &pgi = Bots[i].powerup_goal_index;
         if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info && obj->ai_info->goals[pgi].used)
           GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
         pgi = -1;
         // Keep chasing_powerup_handle set with timer > timeout — BotFindBestPowerup will skip it
+        // (short-term skip; long-term blacklist above is the durable protection)
       }
     } else {
       Bots[i].chasing_powerup_timer = 0.0f;

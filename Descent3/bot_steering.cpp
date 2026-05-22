@@ -695,7 +695,10 @@ static int BotGetTeammateCountInRoom(int team, int room) {
 
 // --- One-hop reroute: try other portals in current room when preferred is blocked ---
 // Returns portal index, or -1 if no passable alternative reaches the goal.
-static int BotOneHopReroute(int current_room, int goal_room, int blocked_portal) {
+// team: when >= 0, applies teammate occupancy penalty so bots pick less-crowded alternatives.
+// Log rate-limiter: only emits one DEBUG line per (current_room, goal_room) pair per level to
+// avoid 9M-line spam that buries other diagnostic signals.
+static int BotOneHopReroute(int current_room, int goal_room, int blocked_portal, int team = -1) {
   if (current_room < 0 || current_room > Highest_room_index || !Rooms[current_room].used)
     return -1;
 
@@ -722,17 +725,39 @@ static int BotOneHopReroute(int current_room, int goal_room, int blocked_portal)
     if (next_from_croom > Highest_room_index)
       continue;
 
-    // Prefer the cheapest alternative
+    // Base cost from BOA edge weight. Phase 7.4: add occupancy penalty so bots on the same
+    // team naturally disperse when multiple bots are rerouting through the same bottleneck.
+    // This restores the dispersal feature that was dead on the reroute code path.
     float cost = BOA_cost_array[current_room][p];
-    if (cost >= 0.0f && cost < best_cost) {
+    if (cost < 0.0f)
+      continue;
+    if (team >= 0 && team < BOT_MAX_TEAMS_OCCUPANCY) {
+      int occupants = BotGetTeammateCountInRoom(team, croom);
+      if (occupants > 1)
+        cost += (occupants - 1) * BOT_PF_OCCUPANCY_PENALTY;
+    }
+
+    if (cost < best_cost) {
       best_cost = cost;
       best_portal = p;
     }
   }
 
+  // Rate-limited log: track which (room, goal) pairs have already been logged this level
+  // to avoid 9M-line spam that hides other diagnostic signals.
   if (best_portal >= 0) {
-    LOG_DEBUG << "[Pathfind] One-hop reroute: room " << current_room << " → goal " << goal_room << " via portal "
-              << best_portal << " (bypassing blocked portal " << blocked_portal << ")";
+    static int16_t logged_cache[MAX_ROOMS][MAX_ROOMS];
+    static int logged_checksum = -1;
+    if (logged_checksum != BOA_mine_checksum) {
+      memset(logged_cache, 0, sizeof(logged_cache));
+      logged_checksum = BOA_mine_checksum;
+    }
+    if (!logged_cache[current_room][goal_room]) {
+      logged_cache[current_room][goal_room] = 1;
+      LOG_DEBUG << "[Pathfind] One-hop reroute: room " << current_room << " → goal " << goal_room << " via portal "
+                << best_portal << " (bypassing blocked portal " << blocked_portal << ")"
+                << (team >= 0 ? " [occ-aware]" : "");
+    }
   }
 
   return best_portal;
@@ -820,8 +845,17 @@ bool BotFlowFieldGetDirection(object *obj, int goal_room, vector *out_dir) {
 
   // --- Reroute chain: preferred portal is blocked ---
 
-  // Layer 2a: one-hop reroute — try other portals in this room
-  int alt_portal = BotOneHopReroute(current_room, goal_room, portal_idx);
+  // Phase 7.4: Ensure occupancy is fresh before entering the reroute chain.
+  // The happy path calls BotUpdateRoomOccupancy() when congestion is detected, but when
+  // the preferred portal is blocked we skip that path entirely. Occupancy must be current
+  // so BotOneHopReroute can spread bots across alternate portals.
+  int bot_team = (obj->id >= 0 && obj->id < MAX_NET_PLAYERS) ? Players[obj->id].team : -1;
+  if (bot_team >= 0)
+    BotUpdateRoomOccupancy();
+
+  // Layer 2a: one-hop reroute — try other portals in this room.
+  // Passes team so occupancy penalty is applied; bots on the same team pick different alternates.
+  int alt_portal = BotOneHopReroute(current_room, goal_room, portal_idx, bot_team);
   if (alt_portal >= 0)
     return BotPortalToDirection(obj, current_room, alt_portal, goal_room, out_dir);
 
