@@ -95,7 +95,7 @@ void BotInitObjectiveState() {
     LOG_DEBUG.printf("BOT OBJ: CTF goals: red=room%d blue=room%d green=room%d yellow=room%d",
                      Bot_objective.goal_room[0], Bot_objective.goal_room[1], Bot_objective.goal_room[2],
                      Bot_objective.goal_room[3]);
-    for (int i = 0; i < BOT_MAX_TEAMS; i++) {
+    for (int i = 0; i < BOT_MAX_TEAMS && i < Num_teams; i++) {
       if (Bot_objective.goal_room[i] < 0)
         PrintDedicatedMessage("WARNING: team %d (%s) has no RF_GOAL room — flag may be outdoor\n", i, kTeamNames[i]);
       else if (Rooms[Bot_objective.goal_room[i]].flags & RF_EXTERNAL)

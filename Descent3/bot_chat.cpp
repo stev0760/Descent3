@@ -223,7 +223,9 @@ static void BotHandleAttack(int bot_index, int from_pnum, int towho, int force_t
 
   Bots[bot_index].squad_role = SQUAD_ATTACK;
   Bots[bot_index].squad_target_slot = -1;
-  Bots[bot_index].retarget_cooldown = 0.0f; // force immediate target re-evaluation
+  Bots[bot_index].retarget_cooldown = 0.0f;
+  Bots[bot_index].explore_dest_room = -1;
+  Bots[bot_index].explore_room_timer = 0.0f;
 
   // If a specific target was requested, force-set the AI target handle
   if (force_target_slot >= 0 && force_target_slot < MAX_NET_PLAYERS &&
@@ -263,6 +265,8 @@ static void BotHandleDefend(int bot_index, int from_pnum, int towho) {
 
   Bots[bot_index].squad_role = SQUAD_DEFEND;
   Bots[bot_index].squad_target_slot = -1;
+  Bots[bot_index].explore_dest_room = -1;
+  Bots[bot_index].explore_room_timer = 0.0f;
 
   char reply[128];
   snprintf(reply, sizeof(reply), "%s: Defending!", Bots[bot_index].callsign);
@@ -313,6 +317,9 @@ static void BotHandleFreelance(int bot_index, int from_pnum, int towho) {
 
   Bots[bot_index].squad_role = SQUAD_FREELANCE;
   Bots[bot_index].squad_target_slot = -1;
+  Bots[bot_index].explore_dest_room = -1;
+  Bots[bot_index].explore_room_timer = 0.0f;
+  Bots[bot_index].objective_lean = BOT_LEAN_BALANCED;
 
   char reply[128];
   snprintf(reply, sizeof(reply), "%s: Going freelance.", Bots[bot_index].callsign);
@@ -332,6 +339,8 @@ static void BotHandleHunt(int bot_index, int from_pnum, int towho, int target_sl
     Bots[bot_index].squad_target_slot = -1;
   }
   Bots[bot_index].retarget_cooldown = 0.0f;
+  Bots[bot_index].explore_dest_room = -1;
+  Bots[bot_index].explore_room_timer = 0.0f;
 
   if (target_slot >= 0 && target_slot < MAX_NET_PLAYERS &&
       (NetPlayers[target_slot].flags & NPF_CONNECTED) &&
@@ -370,6 +379,9 @@ static void BotHandleAttackFlag(int bot_index, int from_pnum, int towho) {
   Bots[bot_index].squad_role = SQUAD_ATTACK;
   Bots[bot_index].squad_target_slot = -1;
   Bots[bot_index].retarget_cooldown = 0.0f;
+  Bots[bot_index].explore_dest_room = -1;
+  Bots[bot_index].explore_room_timer = 0.0f;
+  Bots[bot_index].objective_lean = BOT_LEAN_ATTACK;
 
   char reply[128];
   if (BotGetGameMode() == BGM_CTF)
@@ -389,6 +401,9 @@ static void BotHandleDefendFlag(int bot_index, int from_pnum, int towho) {
 
   Bots[bot_index].squad_role = SQUAD_DEFEND;
   Bots[bot_index].squad_target_slot = -1;
+  Bots[bot_index].explore_dest_room = -1;
+  Bots[bot_index].explore_room_timer = 0.0f;
+  Bots[bot_index].objective_lean = BOT_LEAN_DEFEND;
 
   char reply[128];
   if (BotGetGameMode() == BGM_CTF)

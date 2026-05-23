@@ -2712,8 +2712,10 @@ static void BotApplyThrust(int bot_index) {
           speed_scale = 1.0f;
         }
       }
+    } else if (Bots[bot_index].explore_dest_room >= 0 || equip <= BOT_EQUIP_TIER_WEAK) {
+      speed_scale = 1.0f;
     } else {
-      speed_scale = (equip <= BOT_EQUIP_TIER_WEAK) ? BOT_WEAK_EXPLORE_SPEED : 0.6f;
+      speed_scale = 0.8f;
     }
     break;
   }
@@ -3973,8 +3975,6 @@ void BotDoFrame() {
       } else {
         Bots[i].room_progress_timer += Frametime;
         if (Bots[i].room_progress_timer > BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT) {
-          // Stuck in same room too long — try to find a nearby powerup first before picking random room.
-          // Phase 4.02: converts "stuck oscillating" time into productive looting.
           BotClearActiveGoal(i);
           Bots[i].explore_stuck_room = cur_room;
           Bots[i].explore_dest_room = -1;
@@ -3986,23 +3986,31 @@ void BotDoFrame() {
             Bots[i].retarget_cooldown = BOT_RETARGET_COOLDOWN;
           }
 
-          // Try to find a powerup to chase instead of picking another random unreachable room
-          float shields = Objects[Players[slot].objnum].shields;
-          bool need_sh = (shields < INITIAL_SHIELDS * BOT_LOW_SHIELDS_PCT);
-          bool low_energy = (Players[slot].energy < BOT_LOW_ENERGY);
-          int pu_obj = BotFindBestPowerup(i, need_sh, low_energy);
-          if (pu_obj >= 0) {
-            int tgt_handle = Objects[pu_obj].handle;
-            Bots[i].powerup_goal_index =
-                GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f, GF_SPEED_ATTACK);
-            Bots[i].chasing_powerup_handle = tgt_handle;
-            Bots[i].chasing_powerup_timer = 0.0f;
-            float pu_dist = vm_VectorDistanceQuick(&obj->pos, &Objects[pu_obj].pos);
-            LOG_DEBUG.printf("BOT: '%s' room progress timeout (room %d) — chasing '%s' (dist=%.0f)",
-                             Bots[i].callsign, cur_room, Object_info[Objects[pu_obj].id].name, pu_dist);
+          int obj_room = BotGetObjectiveRoom(i);
+          bool is_carrier = BotIsCarryingEnemyFlag(i) || BotIsCarryingHyperOrb(i);
+          if (obj_room >= 0 || is_carrier) {
+            // Objective-focused bot stalled — re-plan toward objective instead of looting.
+            // BotDoExploreRoaming will re-check BotGetObjectiveRoom on the next tick.
+            LOG_DEBUG.printf("BOT: '%s' room progress timeout (room %d) — re-routing to objective (room %d)",
+                             Bots[i].callsign, cur_room, obj_room);
           } else {
-            LOG_DEBUG.printf("BOT: '%s' room progress timeout (room %d, %.1fs) — picking new destination",
-                             Bots[i].callsign, cur_room, BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT);
+            float shields = Objects[Players[slot].objnum].shields;
+            bool need_sh = (shields < INITIAL_SHIELDS * BOT_LOW_SHIELDS_PCT);
+            bool low_energy = (Players[slot].energy < BOT_LOW_ENERGY);
+            int pu_obj = BotFindBestPowerup(i, need_sh, low_energy);
+            if (pu_obj >= 0) {
+              int tgt_handle = Objects[pu_obj].handle;
+              Bots[i].powerup_goal_index =
+                  GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f, GF_SPEED_ATTACK);
+              Bots[i].chasing_powerup_handle = tgt_handle;
+              Bots[i].chasing_powerup_timer = 0.0f;
+              float pu_dist = vm_VectorDistanceQuick(&obj->pos, &Objects[pu_obj].pos);
+              LOG_DEBUG.printf("BOT: '%s' room progress timeout (room %d) — chasing '%s' (dist=%.0f)",
+                               Bots[i].callsign, cur_room, Object_info[Objects[pu_obj].id].name, pu_dist);
+            } else {
+              LOG_DEBUG.printf("BOT: '%s' room progress timeout (room %d, %.1fs) — picking new destination",
+                               Bots[i].callsign, cur_room, BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT);
+            }
           }
         }
       }
