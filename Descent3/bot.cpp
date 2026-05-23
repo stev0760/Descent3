@@ -2483,6 +2483,32 @@ static int BotGetNavGoalRoom(int bot_index) {
   return -1;
 }
 
+// Sky-route suppression: on outdoor maps, BOA routes through terrain regions via upward
+// portals (sky shortcuts). Flatten upward nav directions to prevent sky-barrier thrust.
+static void BotFlattenSkyDirection(vector &dir, object *obj) {
+  bool in_outdoor_area = ROOMNUM_OUTSIDE(obj->roomnum) ||
+                         (obj->roomnum >= 0 && obj->roomnum <= Highest_room_index &&
+                          (Rooms[obj->roomnum].flags & RF_EXTERNAL));
+  if (!in_outdoor_area)
+    return;
+
+  float world_up_dot = dir.z();
+  if (world_up_dot <= 0.3f)
+    return;
+
+  dir.z() = 0.0f;
+  float flat_mag = vm_GetMagnitude(&dir);
+  if (flat_mag > 0.1f) {
+    dir = dir * (1.0f / flat_mag);
+  } else {
+    dir = obj->orient.fvec;
+    dir.z() = 0.0f;
+    float fwd_mag = vm_GetMagnitude(&dir);
+    if (fwd_mag > 0.01f)
+      dir = dir * (1.0f / fwd_mag);
+  }
+}
+
 // Per-frame lead aim steering (Phase 3.16 accuracy fix).
 // Writes the predicted intercept position into ai_info->last_see_target_pos so that
 // AIDoOrient (GF_ORIENT_TARGET) turns the bot toward where the target WILL BE,
@@ -2505,27 +2531,7 @@ static void BotUpdateAimDirection(int bot_index) {
     if (should_face_nav) {
       vector flow_dir;
       if (BotFlowFieldGetDirection(obj, nav_goal_room, &flow_dir)) {
-        // Sky-route suppression: flatten upward flow directions on outdoor maps
-        // so bots don't face the sky barrier.
-        bool in_outdoor_area = ROOMNUM_OUTSIDE(obj->roomnum) ||
-                               (obj->roomnum >= 0 && obj->roomnum <= Highest_room_index &&
-                                (Rooms[obj->roomnum].flags & RF_EXTERNAL));
-        if (in_outdoor_area) {
-          float world_up_dot = flow_dir.z();
-          if (world_up_dot > 0.3f) {
-            flow_dir.z() = 0.0f;
-            float flat_mag = vm_GetMagnitude(&flow_dir);
-            if (flat_mag > 0.1f) {
-              flow_dir = flow_dir * (1.0f / flat_mag);
-            } else {
-              flow_dir = obj->orient.fvec;
-              flow_dir.z() = 0.0f;
-              float fwd_mag = vm_GetMagnitude(&flow_dir);
-              if (fwd_mag > 0.01f)
-                flow_dir = flow_dir * (1.0f / fwd_mag);
-            }
-          }
-        }
+        BotFlattenSkyDirection(flow_dir, obj);
         obj->ai_info->last_see_target_pos = obj->pos + flow_dir * 200.0f;
         return;
       }
@@ -2606,43 +2612,7 @@ static void BotApplyThrust(int bot_index) {
   }
 
   if (has_nav_dir) {
-    // Sky-route suppression: on outdoor maps, the engine's BOA pathfinder routes through
-    // terrain regions via upward portals (sky shortcuts). Flatten upward navigation
-    // directions to prevent bots from thrusting into the sky barrier.
-    // Applies to both RF_EXTERNAL rooms (canyon rooms) and terrain cells (already outdoors).
-    bool in_outdoor_area = ROOMNUM_OUTSIDE(obj->roomnum) ||
-                           (obj->roomnum >= 0 && obj->roomnum <= Highest_room_index &&
-                            (Rooms[obj->roomnum].flags & RF_EXTERNAL));
-    if (in_outdoor_area) {
-      // Use world-up (Z axis in D3), not bot-relative uvec — bots can be tilted/rolled in 6DOF
-      float world_up_dot = effective_dir.z();
-      static float sky_diag_timer = 0.0f;
-      sky_diag_timer += Frametime;
-      if (sky_diag_timer > 2.0f && world_up_dot > 0.1f) {
-        sky_diag_timer = 0.0f;
-        LOG_DEBUG.printf("SKY_DIAG: bot=%d room=%d outdoor=%s flow=%s world_up=%.2f local_up=%.2f dir=(%.2f,%.2f,%.2f)",
-                         bot_index, obj->roomnum, ROOMNUM_OUTSIDE(obj->roomnum) ? "terrain" : "rf_ext",
-                         using_flow_field ? "yes" : "no", world_up_dot,
-                         vm_DotProduct(&effective_dir, &obj->orient.uvec),
-                         effective_dir.x(), effective_dir.y(), effective_dir.z());
-      }
-      if (world_up_dot > 0.3f) {
-        vector flat_dir = effective_dir;
-        flat_dir.z() = 0.0f;
-        float flat_mag = vm_GetMagnitude(&flat_dir);
-        if (flat_mag > 0.1f) {
-          effective_dir = flat_dir * (1.0f / flat_mag);
-        } else {
-          // No horizontal component — use forward instead of hovering
-          effective_dir = obj->orient.fvec;
-          effective_dir.z() = 0.0f;
-          float fwd_mag = vm_GetMagnitude(&effective_dir);
-          if (fwd_mag > 0.01f)
-            effective_dir = effective_dir * (1.0f / fwd_mag);
-        }
-      }
-    }
-
+    BotFlattenSkyDirection(effective_dir, obj);
     forward = vm_DotProduct(&effective_dir, &obj->orient.fvec);
     sideways = vm_DotProduct(&effective_dir, &obj->orient.rvec);
     vertical = vm_DotProduct(&effective_dir, &obj->orient.uvec);

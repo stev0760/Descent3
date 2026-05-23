@@ -4,7 +4,7 @@ set(GIT_HASH "")
 find_package(Git QUIET)
 if(GIT_FOUND)
   execute_process(
-    COMMAND ${GIT_EXECUTABLE} describe --always --dirty
+    COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
     OUTPUT_VARIABLE D3_GIT_HASH
     OUTPUT_STRIP_TRAILING_WHITESPACE
     ERROR_QUIET

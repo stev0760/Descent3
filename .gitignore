@@ -408,6 +408,9 @@ git-hash.txt
 # Ignore playtesting multiplayer audio transcripts
 D3-Bot-Multi-Playtest*.txt
 
+# Ignore saved Claude exports
+*this-session-is-being-continued-from-a-previous*.txt
+
 # Environment variables
 .env
 
@@ -434,5 +437,7 @@ d3rmv.cfg
 savegame/
 
 # Generated log files
-server.log
-d3.log
+*.log
+
+# Claude Code session exports
+2026-*.txt

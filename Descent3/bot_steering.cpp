@@ -65,17 +65,10 @@ static int pf_portal_attracts = 0;
 static int pf_teammate_repulses = 0;
 static float pf_last_log_time = 0.0f;
 
-void BotApplyPotentialField(int bot_index, object *obj, float &forward, float &sideways, float &vertical,
-                            bool &want_afterburner, const vector *flow_dir) {
-  if (!Bot_potential_field_enabled)
-    return;
-
-  // Outdoor: skip wall ray casting (terrain hits cause false braking and repulsion near
-  // arches/buildings) but still apply teammate repulsion below.
-  if (ROOMNUM_OUTSIDE(obj->roomnum))
-    goto diagnostics;
-
-  {
+// Wall ray-casting core: casts 5 forward-hemisphere rays and blends repulsive forces
+// with current thrust. Skipped for outdoor rooms (terrain hits cause false positives).
+static void BotApplyWallRepulsion(object *obj, float &forward, float &sideways, float &vertical,
+                                  bool &want_afterburner, const vector *flow_dir) {
   float speed = vm_GetMagnitude(&obj->mtype.phys_info.velocity);
   float effective_radius =
       std::clamp(BOT_PF_BASE_RADIUS + speed * BOT_PF_LOOKAHEAD_TIME, BOT_PF_MIN_RADIUS, BOT_PF_MAX_RADIUS);
@@ -101,7 +94,6 @@ void BotApplyPotentialField(int bot_index, object *obj, float &forward, float &s
   ray_dirs[4] = obj->orient.fvec - obj->orient.uvec;
   vm_NormalizeVector(&ray_dirs[4]);
 
-  // Cast all rays and accumulate repulsive force
   vector repulsive_force = {0.0f, 0.0f, 0.0f};
   float max_force = 0.0f;
   bool forward_ray_hit = false;
@@ -142,7 +134,6 @@ void BotApplyPotentialField(int bot_index, object *obj, float &forward, float &s
 
       float normalized_dist = hit_dist / effective_radius;
 
-      // Capped inverse-square: continuous force model, no discontinuity
       float force_magnitude = 1.0f / (normalized_dist * normalized_dist);
       if (force_magnitude > BOT_PF_MAX_FORCE)
         force_magnitude = BOT_PF_MAX_FORCE;
@@ -157,158 +148,143 @@ void BotApplyPotentialField(int bot_index, object *obj, float &forward, float &s
 
   float repulsive_mag = vm_GetMagnitude(&repulsive_force);
   if (repulsive_mag < 0.01f)
-    goto diagnostics;
+    return;
 
-  {
-    vm_NormalizeVector(&repulsive_force);
+  vm_NormalizeVector(&repulsive_force);
 
-    // Open-sky vertical damping: in canyons/open-ceiling areas, the ground ray (4=fvec-uvec)
-    // pushes upward with no ceiling ray (3=fvec+uvec) to balance it, creating a net upward
-    // force that sends bots into the sky barrier. When the down ray hit but the up ray didn't,
-    // strip most of the upward (uvec) component from the repulsive force.
-    if (ray_hit[4] && !ray_hit[3]) {
-      float upward = vm_DotProduct(&repulsive_force, &obj->orient.uvec);
-      if (upward > 0.0f) {
-        repulsive_force = repulsive_force - obj->orient.uvec * (upward * 0.8f);
-        float new_mag = vm_GetMagnitude(&repulsive_force);
-        if (new_mag > 0.01f)
-          vm_NormalizeVector(&repulsive_force);
-        else
-          goto diagnostics;
-      }
+  // Open-sky vertical damping: ground ray pushes upward with no ceiling ray to balance.
+  // Strip most of the upward component to prevent sky-barrier drift.
+  if (ray_hit[4] && !ray_hit[3]) {
+    float upward = vm_DotProduct(&repulsive_force, &obj->orient.uvec);
+    if (upward > 0.0f) {
+      repulsive_force = repulsive_force - obj->orient.uvec * (upward * 0.8f);
+      float new_mag = vm_GetMagnitude(&repulsive_force);
+      if (new_mag > 0.01f)
+        vm_NormalizeVector(&repulsive_force);
+      else
+        return;
     }
-
-    // Wall skating: when flow field is active AND the bot is in a confined space (2+ diagonal
-    // hits = walls on both sides), strip the repulsive force component opposing the flow
-    // direction. This lets bots slide along walls in tight tunnels. In wide spaces (0-1 hits),
-    // keep the full deflection so bots steer around geometry features like tunnel lips/shoulders.
-    if (flow_dir && diagonal_hits >= 2) {
-      float opposing_component = vm_DotProduct(&repulsive_force, flow_dir);
-      if (opposing_component < 0.0f) {
-        repulsive_force = repulsive_force - *flow_dir * opposing_component;
-        float new_mag = vm_GetMagnitude(&repulsive_force);
-        if (new_mag > 0.01f)
-          vm_NormalizeVector(&repulsive_force);
-        else
-          goto diagnostics;
-      }
-    }
-
-    // Passage detection: if forward ray is clear but we have diagonal hits,
-    // this is a narrow opening (pipe, doorway). Suppress backward component and
-    // dampen lateral forces so the bot can flow through without excessive resistance.
-    bool is_passage = false;
-    if (!forward_ray_hit && diagonal_hits > 0) {
-      float backward_component = vm_DotProduct(&repulsive_force, &obj->orient.fvec);
-      if (backward_component < -0.1f) {
-        repulsive_force = repulsive_force - obj->orient.fvec * backward_component;
-        float new_mag = vm_GetMagnitude(&repulsive_force);
-        if (new_mag > 0.01f)
-          vm_NormalizeVector(&repulsive_force);
-        else
-          goto diagnostics;
-        is_passage = true;
-        pf_passage_detections++;
-      }
-    }
-
-    // Adaptive blend weight
-    float w_field = BOT_PF_BLEND_BASE + (BOT_PF_BLEND_SCALE * std::min(max_force, 3.0f));
-    w_field = std::min(w_field, BOT_PF_BLEND_MAX);
-
-    // In passage mode, reduce field influence to allow fluid pipe traversal
-    if (is_passage)
-      w_field *= BOT_PF_PASSAGE_DAMPING;
-
-    // Tunnel damping: when most diagonal rays hit, we're in a confined space.
-    // Reduce field influence so bots can push through rather than oscillating.
-    if (diagonal_hits >= 3)
-      w_field *= BOT_PF_TUNNEL_DAMPING;
-
-    float w_path = 1.0f - w_field;
-
-    // Reconstruct current movement direction from local components
-    vector current_dir = obj->orient.fvec * forward + obj->orient.rvec * sideways + obj->orient.uvec * vertical;
-    float current_mag = vm_GetMagnitude(&current_dir);
-    if (current_mag > 0.01f)
-      vm_NormalizeVector(&current_dir);
-    else
-      current_dir = obj->orient.fvec;
-
-    // Field opposition brake: if forward ray hit a wall AND the repulsive force strongly
-    // opposes current thrust direction, the bot is flying into solid geometry.
-    // Suppress afterburner and clamp forward thrust.
-    // Skip when flow field is active, in tunnel mode (3+ diagonal hits), or outdoors —
-    // outdoors, terrain hits trigger the brake on open ground, stalling bots near arches/buildings.
-    if (forward_ray_hit && !flow_dir && diagonal_hits < 3 && !ROOMNUM_OUTSIDE(obj->roomnum)) {
-      float opposition = vm_DotProduct(&repulsive_force, &current_dir);
-      if (opposition < BOT_PF_BRAKE_OPPOSITION_DOT) {
-        want_afterburner = false;
-        float wall_proximity = 1.0f - (forward_ray_dist / effective_radius);
-        float clamp_val = BOT_PF_BRAKE_FORWARD_CLAMP * (1.0f - wall_proximity);
-        if (forward > clamp_val)
-          forward = clamp_val;
-        pf_brakes_applied++;
-      }
-    }
-
-    // Portal attraction: when hitting a wall head-on (forward ray hit), find the nearest
-    // portal in the current room whose direction aligns with the bot's intended movement.
-    // This redirects from "through the wall" to "through the portal opening."
-    vector portal_dir = {0.0f, 0.0f, 0.0f};
-    float w_portal = 0.0f;
-
-    if (forward_ray_hit && !ROOMNUM_OUTSIDE(obj->roomnum) && obj->roomnum >= 0 &&
-        obj->roomnum <= Highest_room_index && Rooms[obj->roomnum].used) {
-      room &cur = Rooms[obj->roomnum];
-      float best_dot = -0.5f;
-      int best_portal_idx = -1;
-      vector best_dir = {0.0f, 0.0f, 0.0f};
-
-      for (int p = 0; p < cur.num_portals; p++) {
-        if (cur.portals[p].flags & PF_BLOCK)
-          continue;
-
-        vector to_portal = cur.portals[p].path_pnt - obj->pos;
-        float dist = vm_GetMagnitude(&to_portal);
-        if (dist < 1.0f)
-          continue;
-        to_portal = to_portal * (1.0f / dist);
-
-        // Prefer the portal most aligned with where the bot WANTS to go
-        float dot = vm_DotProduct(&to_portal, &current_dir);
-        if (dot > best_dot) {
-          best_dot = dot;
-          best_portal_idx = p;
-          best_dir = to_portal;
-        }
-      }
-
-      if (best_portal_idx >= 0) {
-        portal_dir = best_dir;
-        // Scale attraction by how opposed the current direction is to reaching the portal
-        // (stronger when bot is really pointed wrong)
-        float wall_opposition = std::max(0.0f, 1.0f - (forward_ray_dist / effective_radius));
-        w_portal = BOT_PF_PORTAL_ATTRACT_WEIGHT * wall_opposition;
-        pf_portal_attracts++;
-      }
-    }
-
-    // Three-way blend: path direction + repulsive field + portal attraction
-    float total_weight = w_path + w_field + w_portal;
-    vector blended = current_dir * (w_path / total_weight) + repulsive_force * (w_field / total_weight) +
-                     portal_dir * (w_portal / total_weight);
-    vm_NormalizeVector(&blended);
-
-    // Decompose back to local axes, preserving original magnitude
-    float mag = std::max(current_mag, 0.3f);
-    forward = vm_DotProduct(&blended, &obj->orient.fvec) * mag;
-    sideways = vm_DotProduct(&blended, &obj->orient.rvec) * mag;
-    vertical = vm_DotProduct(&blended, &obj->orient.uvec) * mag;
-  }
   }
 
-diagnostics:
+  // Wall skating: in confined spaces (2+ diagonal hits), strip the repulsive force
+  // component opposing the flow direction so bots slide along walls toward portals.
+  if (flow_dir && diagonal_hits >= 2) {
+    float opposing_component = vm_DotProduct(&repulsive_force, flow_dir);
+    if (opposing_component < 0.0f) {
+      repulsive_force = repulsive_force - *flow_dir * opposing_component;
+      float new_mag = vm_GetMagnitude(&repulsive_force);
+      if (new_mag > 0.01f)
+        vm_NormalizeVector(&repulsive_force);
+      else
+        return;
+    }
+  }
+
+  // Passage detection: forward ray clear but diagonal hits → narrow opening.
+  bool is_passage = false;
+  if (!forward_ray_hit && diagonal_hits > 0) {
+    float backward_component = vm_DotProduct(&repulsive_force, &obj->orient.fvec);
+    if (backward_component < -0.1f) {
+      repulsive_force = repulsive_force - obj->orient.fvec * backward_component;
+      float new_mag = vm_GetMagnitude(&repulsive_force);
+      if (new_mag > 0.01f)
+        vm_NormalizeVector(&repulsive_force);
+      else
+        return;
+      is_passage = true;
+      pf_passage_detections++;
+    }
+  }
+
+  float w_field = BOT_PF_BLEND_BASE + (BOT_PF_BLEND_SCALE * std::min(max_force, 3.0f));
+  w_field = std::min(w_field, BOT_PF_BLEND_MAX);
+
+  if (is_passage)
+    w_field *= BOT_PF_PASSAGE_DAMPING;
+
+  if (diagonal_hits >= 3)
+    w_field *= BOT_PF_TUNNEL_DAMPING;
+
+  float w_path = 1.0f - w_field;
+
+  vector current_dir = obj->orient.fvec * forward + obj->orient.rvec * sideways + obj->orient.uvec * vertical;
+  float current_mag = vm_GetMagnitude(&current_dir);
+  if (current_mag > 0.01f)
+    vm_NormalizeVector(&current_dir);
+  else
+    current_dir = obj->orient.fvec;
+
+  // Field opposition brake: suppress AB and clamp forward thrust when flying into a wall.
+  // Skip when flow field is active or in tunnel mode (3+ diagonal hits).
+  if (forward_ray_hit && !flow_dir && diagonal_hits < 3) {
+    float opposition = vm_DotProduct(&repulsive_force, &current_dir);
+    if (opposition < BOT_PF_BRAKE_OPPOSITION_DOT) {
+      want_afterburner = false;
+      float wall_proximity = 1.0f - (forward_ray_dist / effective_radius);
+      float clamp_val = BOT_PF_BRAKE_FORWARD_CLAMP * (1.0f - wall_proximity);
+      if (forward > clamp_val)
+        forward = clamp_val;
+      pf_brakes_applied++;
+    }
+  }
+
+  // Portal attraction: when hitting a wall head-on, pull toward the nearest portal
+  // that aligns with the bot's intended movement direction.
+  vector portal_dir = {0.0f, 0.0f, 0.0f};
+  float w_portal = 0.0f;
+
+  if (forward_ray_hit && obj->roomnum >= 0 && obj->roomnum <= Highest_room_index && Rooms[obj->roomnum].used) {
+    room &cur = Rooms[obj->roomnum];
+    float best_dot = -0.5f;
+    int best_portal_idx = -1;
+    vector best_dir = {0.0f, 0.0f, 0.0f};
+
+    for (int p = 0; p < cur.num_portals; p++) {
+      if (cur.portals[p].flags & PF_BLOCK)
+        continue;
+
+      vector to_portal = cur.portals[p].path_pnt - obj->pos;
+      float dist = vm_GetMagnitude(&to_portal);
+      if (dist < 1.0f)
+        continue;
+      to_portal = to_portal * (1.0f / dist);
+
+      float dot = vm_DotProduct(&to_portal, &current_dir);
+      if (dot > best_dot) {
+        best_dot = dot;
+        best_portal_idx = p;
+        best_dir = to_portal;
+      }
+    }
+
+    if (best_portal_idx >= 0) {
+      portal_dir = best_dir;
+      float wall_opposition = std::max(0.0f, 1.0f - (forward_ray_dist / effective_radius));
+      w_portal = BOT_PF_PORTAL_ATTRACT_WEIGHT * wall_opposition;
+      pf_portal_attracts++;
+    }
+  }
+
+  float total_weight = w_path + w_field + w_portal;
+  vector blended = current_dir * (w_path / total_weight) + repulsive_force * (w_field / total_weight) +
+                   portal_dir * (w_portal / total_weight);
+  vm_NormalizeVector(&blended);
+
+  float mag = std::max(current_mag, 0.3f);
+  forward = vm_DotProduct(&blended, &obj->orient.fvec) * mag;
+  sideways = vm_DotProduct(&blended, &obj->orient.rvec) * mag;
+  vertical = vm_DotProduct(&blended, &obj->orient.uvec) * mag;
+}
+
+void BotApplyPotentialField(int bot_index, object *obj, float &forward, float &sideways, float &vertical,
+                            bool &want_afterburner, const vector *flow_dir) {
+  if (!Bot_potential_field_enabled)
+    return;
+
+  // Wall repulsion only runs indoors — terrain hits cause false braking near arches/buildings.
+  if (!ROOMNUM_OUTSIDE(obj->roomnum))
+    BotApplyWallRepulsion(obj, forward, sideways, vertical, want_afterburner, flow_dir);
+
   // Teammate repulsion: push same-team bots apart in tight spaces.
   // Computed independently of wall avoidance — bots can block each other even when
   // no walls are nearby. Applied after wall processing so it isn't neutered by
