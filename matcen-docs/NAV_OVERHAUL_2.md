@@ -817,7 +817,7 @@ A flag carrier standing in its home room (single-room arenas like frenzy) faced 
 
 ### Fix 3 — Outdoor flow-field disable
 
-`BotFlowFieldGetDirection` already returns false for `ROOMNUM_OUTSIDE` (terrain cells) but **not** for `RF_EXTERNAL` rooms (real mesh rooms open to the sky). On canyon maps (CanyonsCTF = HAVOC level 4) the flow field ran in RF_EXTERNAL rooms and BOA routed through terrain/sky portals — bots flew up into the sky barrier and stuck. Added an `RF_EXTERNAL` early-out so the engine path-follower handles outdoors. User-validated: disabling flow field outdoors restored sane canyon play.
+`BotFlowFieldGetDirection` already returns false for `ROOMNUM_OUTSIDE` (terrain cells) but **not** for open-air mesh rooms. On canyon maps (CanyonsCTF = HAVOC level 4) the flow field ran in these rooms and BOA routed through terrain/sky portals — bots flew up into the sky barrier and stuck. An initial `RF_EXTERNAL`-only early-out missed them: per-room flag diagnostics showed the canyon's open-air rooms are flagged **`RF_TOUCHES_TERRAIN`** (flags=32, "receives satellite lighting"), not `RF_EXTERNAL` (which is buildings). Corrected mask is `RF_EXTERNAL | RF_TOUCHES_TERRAIN`, applied to both the flow-field guard and `BotFlattenSkyDirection`; enclosed goal rooms (no terrain flag) keep the flow field. testing26-validated. Caveat: on mixed indoor/outdoor maps any room touching terrain now uses the engine path-follower — see the bedlam indoor→outdoor transition-stuck follow-up.
 
 ### Prototyped but NOT shipped: wall-slide go-around
 

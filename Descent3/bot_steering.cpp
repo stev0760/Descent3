@@ -818,11 +818,13 @@ bool BotFlowFieldGetDirection(object *obj, int goal_room, vector *out_dir) {
     return false;
   if (obj->roomnum < 0 || obj->roomnum > Highest_room_index || !Rooms[obj->roomnum].used)
     return false;
+
   // Flow field is unreliable outdoors: BOA routes through terrain/sky portals and bots fly up
-  // into the sky barrier and stick (validated on CanyonsCTF — disabling flow field outdoors
-  // restored sane play). RF_EXTERNAL rooms are open to the sky; defer to the engine path-follower
-  // there. ROOMNUM_OUTSIDE (terrain cells) is already handled above.
-  if (Rooms[obj->roomnum].flags & RF_EXTERNAL)
+  // into the sky barrier and stick. Defer to the engine path-follower for rooms open to the sky.
+  // RF_TOUCHES_TERRAIN (open-air canyon rooms) is the actual flag on CanyonsCTF — confirmed by
+  // per-room flag logging; RF_EXTERNAL alone (building rooms) missed them. ROOMNUM_OUTSIDE (terrain
+  // cells) is already handled above. Enclosed goal rooms (no terrain flag) keep the flow field.
+  if (Rooms[obj->roomnum].flags & (RF_EXTERNAL | RF_TOUCHES_TERRAIN))
     return false;
 
   int current_room = obj->roomnum;

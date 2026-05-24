@@ -2507,7 +2507,7 @@ static int BotGetNavGoalRoom(int bot_index) {
 static void BotFlattenSkyDirection(vector &dir, object *obj) {
   bool in_outdoor_area = ROOMNUM_OUTSIDE(obj->roomnum) ||
                          (obj->roomnum >= 0 && obj->roomnum <= Highest_room_index &&
-                          (Rooms[obj->roomnum].flags & RF_EXTERNAL));
+                          (Rooms[obj->roomnum].flags & (RF_EXTERNAL | RF_TOUCHES_TERRAIN)));
   if (!in_outdoor_area)
     return;
 
