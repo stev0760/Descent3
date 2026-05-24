@@ -81,6 +81,10 @@ extern bool Bot_potential_field_enabled;
 // Runtime toggle (default ON — disable with $flowfield off)
 extern bool Bot_flow_field_enabled;
 
+// Phase 8.1: Outdoor terrain steering (Y-up altitude regulation + entrance-seek mode).
+// Runtime toggle (default ON — disable with $terrainsteer off)
+extern bool Bot_terrain_steering_enabled;
+
 // Apply potential field steering correction to thrust direction components.
 // Casts 5 forward-hemisphere rays, accumulates repulsive force from wall hits,
 // and blends the result with the current forward/sideways/vertical thrust.

@@ -2502,26 +2502,36 @@ static int BotGetNavGoalRoom(int bot_index) {
   return -1;
 }
 
-// Sky-route suppression: on outdoor maps, BOA routes through terrain regions via upward
-// portals (sky shortcuts). Flatten upward nav directions to prevent sky-barrier thrust.
+// Phase 8.1a — Sky-route suppression: on outdoor maps, BOA routes through terrain regions via
+// upward portals (sky shortcuts), and engine terrain avoidance can push the nav direction skyward.
+// Flatten strongly-upward nav directions to prevent sky-barrier thrust.
+//
+// AXIS FIX: world up is the Y axis in this engine (GetTerrainGroundPoint writes pos->y(); the
+// outdoor altitude caps in BotApplyThrust use pos.y()). The original code operated on dir.z()
+// (the horizontal depth axis), so it never actually suppressed vertical motion and corrupted
+// heading on strong +Z travel. Now correctly flattens dir.y(). This is the seed of the Phase 8.1
+// terrain steering layer; 8.1b will replace the hard flatten with a two-way altitude band.
 static void BotFlattenSkyDirection(vector &dir, object *obj) {
+  if (!Bot_terrain_steering_enabled)
+    return;
+
   bool in_outdoor_area = ROOMNUM_OUTSIDE(obj->roomnum) ||
                          (obj->roomnum >= 0 && obj->roomnum <= Highest_room_index &&
                           (Rooms[obj->roomnum].flags & (RF_EXTERNAL | RF_TOUCHES_TERRAIN)));
   if (!in_outdoor_area)
     return;
 
-  float world_up_dot = dir.z();
+  float world_up_dot = dir.y();
   if (world_up_dot <= 0.3f)
     return;
 
-  dir.z() = 0.0f;
+  dir.y() = 0.0f;
   float flat_mag = vm_GetMagnitude(&dir);
   if (flat_mag > 0.1f) {
     dir = dir * (1.0f / flat_mag);
   } else {
     dir = obj->orient.fvec;
-    dir.z() = 0.0f;
+    dir.y() = 0.0f;
     float fwd_mag = vm_GetMagnitude(&dir);
     if (fwd_mag > 0.01f)
       dir = dir * (1.0f / fwd_mag);

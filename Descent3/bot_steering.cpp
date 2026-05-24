@@ -52,6 +52,11 @@
 bool Bot_potential_field_enabled = true;
 bool Bot_flow_field_enabled = true;
 
+// Phase 8.1: Outdoor terrain steering layer. 8.1a seeds it with the corrected (Y-up) sky-flatten;
+// 8.1b/c/d add the altitude band, look-ahead climb, and entrance-seek mode. Runtime toggle
+// (default ON — disable with $terrainsteer off to compare against raw engine outdoor movement).
+bool Bot_terrain_steering_enabled = true;
+
 // Per-level portal passability cache. Catches geometry-based blockage (bunker slits,
 // barred openings) that portal flags miss. -1=unchecked, 0=blocked, 1=passable.
 static int8_t pf_portal_passable[MAX_ROOMS][MAX_PATH_PORTALS];

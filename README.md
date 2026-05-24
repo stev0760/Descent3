@@ -80,6 +80,7 @@ These commands are available in the dedicated server console (or via remote teln
 | `$servercaps` | Prints server capabilities for remote admin tool handshake. |
 | `$potentialfield on\|off` | Toggle potential field steering (wall avoidance layer). |
 | `$flowfield on\|off` | Toggle flow field navigation (portal-directed movement). |
+| `$terrainsteer on\|off` | Toggle outdoor terrain steering (Y-up altitude/sky-route regulation). |
 | `$bothelp` | Lists all bot commands. |
 
 ### Roadmap
