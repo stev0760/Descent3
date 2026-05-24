@@ -796,3 +796,29 @@ The 9.17M one-hop count (1.6GB log) is not a CPU problem (~35 calls/sec across 6
 - **18 blocked portals on abend2:** Genuine geometry blocks, not door rooms. Door fix confirmed by zero blocked portals on SewerRat. These are narrow passages or decorative geometry. Not causing behavioral issues (reroute cache handles them efficiently at 0 uncached Dijkstra calls).
 - **Occ-Dijkstra still uncached for 3+-portal rooms:** Performance issue, not behavior. Occupancy Dijkstra can't cache because teammate positions change every frame. Could be throttled to run every 0.5s (matching occupancy update interval) instead of every frame.
 - **One-hop backward redirect:** `BotOneHopReroute` in the reroute chain also has occupancy awareness but no backward check. Not triggered on SewerRat (0 blocked portals → no reroute chain). Could become an issue on maps with blocked portals AND narrow tunnels.
+
+## Phase 7.6: Non-Convex Room Navigation (0.9.1-dev)
+
+Three fixes from broad CTF testing (pumphouse, MAYHEM, frenzy, bedlam, HAVOC/SewerRat + CanyonsCTF).
+
+### Root cause: flow field beelines through intra-room geometry
+
+`BotFlowFieldGetDirection` returns a straight-line direction to the next portal's `path_pnt`. This is correct in a convex room or tunnel (the portal is directly reachable) but wrong in a **non-convex** room — pumphouse's central arena has glass cover barriers that stick up from the floor with open sides. The straight line to the portal crosses the glass, so the bot presses into it while a perfectly passable portal goes unreached. Diagnostic confirmation: pumphouse rooms 0/2 had **0** blocked-portal events and **0** reroute-chain calls but 530 collisions — the portals were passable, the bot just couldn't reach them in a straight line.
+
+The flow field also **overrides** the engine's `movement_dir`, which would otherwise path-follow around the obstacle via intermediate path nodes. A `$flowfield off` discriminator test on pumphouse confirmed the trade-off: the engine path-follower is smoother in open/non-convex rooms, while the flow field is stronger in tunnels (where the engine under-progresses).
+
+### Fix 1 — Flow-field LOS gate (`BotPortalToDirection`)
+
+Before returning a portal direction, cast a **zero-radius** LOS ray from the bot to the (post-look-ahead) portal point. If a wall/terrain blocks it before the portal, return false → `BotFlowFieldGetDirection` returns false → caller falls back to the engine path-follower for that frame. Zero radius is deliberate: a radius cast would hug-wall false-positive in narrow tunnels; bot-radius clearance is the wall-repulsion layer's job. Net: flow field controls tunnels/convex rooms (portal in LOS), engine controls non-convex rooms (portal occluded). Dropped pumphouse collisions ~530 → 60.
+
+### Fix 2 — Carrier sprint-orient (`BotUpdateAimDirection`)
+
+A flag carrier standing in its home room (single-room arenas like frenzy) faced the enemy it was shooting; `fvec` diverged from the flag direction and the AB facing gate suppressed the score sprint. Now: when carrying the enemy flag **and** in the objective room, always orient toward the home flag position regardless of enemy LOS. AB thrust pushes along `+fvec`, so the carrier rushes the flag. Matches the existing "carrier never fights at home" policy.
+
+### Fix 3 — Outdoor flow-field disable
+
+`BotFlowFieldGetDirection` already returns false for `ROOMNUM_OUTSIDE` (terrain cells) but **not** for `RF_EXTERNAL` rooms (real mesh rooms open to the sky). On canyon maps (CanyonsCTF = HAVOC level 4) the flow field ran in RF_EXTERNAL rooms and BOA routed through terrain/sky portals — bots flew up into the sky barrier and stuck. Added an `RF_EXTERNAL` early-out so the engine path-follower handles outdoors. User-validated: disabling flow field outdoors restored sane canyon play.
+
+### Prototyped but NOT shipped: wall-slide go-around
+
+A potential-field wall-slide was prototyped to make COMBAT/HUNT bots steer *along* an in-room obstacle toward the target (the cover-glass case where the bot has LOS but no straight path). It never fired in a 200k-line test session (`slides=0` everywhere): the brake/slide path is gated on `!flow_dir`, but the caller passes `effective_dir` (non-null whenever the bot has any nav direction, including engine `movement_dir`), so the guard is almost never true. The pre-existing opposition brake is dead for the same reason. To revive either, thread the real `using_flow_field` boolean down from `BotApplyThrust` instead of inferring it from the `flow_dir` pointer. Reverted for now; cover-glass residual (pumphouse: ~60 collisions / 13 escalations) remains a tracked open issue.
