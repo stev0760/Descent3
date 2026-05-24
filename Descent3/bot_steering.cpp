@@ -782,6 +782,29 @@ static bool BotPortalToDirection(object *obj, int current_room, int portal_idx, 
       return false;
   }
 
+  // Intra-room geometry gate: the flow field beelines straight at the portal point. In a
+  // non-convex room (glass divider, pillar), that line can cross a solid face the bot cannot
+  // pass — the bot then presses into the wall and never reaches a portal that is itself
+  // perfectly passable. Cast a zero-radius line-of-sight ray to the portal point; if a wall
+  // blocks it, the room isn't convex between us and the portal, so return false. The caller
+  // falls back to the engine's path-follower (which routes via intermediate path nodes around
+  // the obstacle). The flow field stays in control wherever the portal is directly reachable
+  // (tunnels, convex rooms), where it outperforms the engine.
+  {
+    fvi_query fq{};
+    fvi_info hit{};
+    fq.p0 = &obj->pos;
+    fq.p1 = &portal_point;
+    fq.startroom = obj->roomnum;
+    fq.rad = 0.0f;
+    fq.thisobjnum = OBJNUM(obj);
+    fq.ignore_obj_list = nullptr;
+    fq.flags = FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS | FQ_IGNORE_MOVING_OBJECTS;
+    int hit_type = fvi_FindIntersection(&fq, &hit);
+    if ((hit_type == HIT_WALL || hit_type == HIT_TERRAIN) && hit.hit_dist < dist - 1.0f)
+      return false;
+  }
+
   *out_dir = to_portal * (1.0f / dist);
   return true;
 }
