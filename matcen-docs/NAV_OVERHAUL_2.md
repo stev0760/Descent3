@@ -760,3 +760,39 @@ Diagnosed from `dijstra-testing9.log` (11.4M lines, ~20-hour overnight run). Two
 ### Log Volume Context
 
 The 9.17M one-hop count (1.6GB log) is not a CPU problem (~35 calls/sec across 6 bots = trivial). The log spam was the real cost. With rate-limiting, diagnostic signal is preserved while log volume drops by ~3 orders of magnitude on repeat (room, goal) pairs.
+
+## Phase 7.5: Tunnel Oscillation Fix (0.9.1-dev)
+
+### Root Cause Analysis (testing15–testing18)
+
+**Diagnostic method:** Added `Occ-Dijkstra:` vs `Dijkstra reroute:` log prefix to distinguish occupancy-overlay calls from reroute-chain calls. Result: **0** reroute-chain Dijkstra calls (cache works perfectly), **6701** Occ-Dijkstra calls — 100% of the per-frame spam was from the occupancy overlay path which bypasses the cache by design.
+
+**Problem A — EXPLORE↔HUNT oscillation:** Bots in CTF objective nav would enter HUNT without LOS (blind chase) then immediately drop back to EXPLORE when the target moved. Fixed by requiring LOS for EXPLORE→HUNT transition when the bot has an active objective room (`BotGetObjectiveRoom` >= 0 and not yet reached).
+
+**Problem B — Powerup collection suppressed:** Priority-based powerup filter (`min_priority=29`) blocked ALL non-flag powerups during objective nav. Fixed by replacing with radius-based suppression (`BOT_POWERUP_ONPATH_RADIUS=120u` vs normal `BOT_POWERUP_SEEK_RADIUS=350u`). Bots grab items right in front of them without detouring. `explore_dest_room` preserved through on-path pickups so objective nav resumes.
+
+**Problem C — Tunnel oscillation (root cause):** On SewerRat CTF, bots oscillate in narrow tunnel rooms (rooms 3, 5, 7, 9 — connected by 2-portal corridors). Occupancy dispersal detects teammates in the next room and runs full Dijkstra every frame to find alternatives. Two failure modes:
+1. **Wasted computation:** Room has only 1–2 portals. Dijkstra returns the same portal (no alternatives). Pure waste — 1273 calls for room 5 alone.
+2. **Backward redirect:** Dijkstra finds a different portal, but it leads backward (away from the goal). Bot takes it, enters a room whose BOA routing goes back through the original room → oscillation loop.
+
+**Fix (three guards):**
+1. Skip occupancy Dijkstra entirely when `Rooms[current_room].num_portals <= 2` (tunnel rooms have no real alternative routes).
+2. After occupancy Dijkstra returns a different portal, reject it if `BOA_GetNextRoom(alt_croom, goal_room) == current_room` (the alternate loops back → dead-end).
+3. Door passability: `BotCheckPortalPassable` checks BOTH `Rooms[room_idx]` and `Rooms[connected_room]` for `doorway_data`. Unlocked doors bypass FVI raycast (closed door geometry was permanently marking door portals as impassable).
+
+### Testing Results
+
+| Metric | testing16 (before) | testing17 (door fix v1) | testing18 (occ diagnostic) |
+|--------|-------|---------|---------|
+| Blocked portals | 18 | 18 | 18 (genuine geometry, not doors) |
+| Dijkstra reroute (cached path) | 3593 | 5498 | 0 |
+| Occ-Dijkstra (uncached) | — | — | 6701 |
+| Room progress timeouts | — | — | 83 (abend2: 9, SewerRat: 74) |
+| Stuck escalations | — | — | 46 |
+| Collisions | 189 | 111 | 423 |
+
+### Remaining Issues
+
+- **18 blocked portals on abend2:** Genuine geometry blocks, not door rooms. Door fix confirmed by zero blocked portals on SewerRat. These are narrow passages or decorative geometry. Not causing behavioral issues (reroute cache handles them efficiently at 0 uncached Dijkstra calls).
+- **Occ-Dijkstra still uncached for 3+-portal rooms:** Performance issue, not behavior. Occupancy Dijkstra can't cache because teammate positions change every frame. Could be throttled to run every 0.5s (matching occupancy update interval) instead of every frame.
+- **One-hop backward redirect:** `BotOneHopReroute` in the reroute chain also has occupancy awareness but no backward check. Not triggered on SewerRat (0 blocked portals → no reroute chain). Could become an issue on maps with blocked portals AND narrow tunnels.

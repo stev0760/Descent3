@@ -32,6 +32,7 @@
 #include "bot_steering.h"
 #include "bot.h"
 #include "BOA.h"
+#include "doorway.h"
 #include "findintersection.h"
 #include "multi.h"
 #include "player.h"
@@ -382,6 +383,18 @@ bool BotCheckPortalPassable(int room_idx, int portal_idx) {
     return true;
   }
 
+  // Door rooms are passable — bots open doors by bumping. Only truly locked doors block.
+  // Check both sides: the portal source room or the connected room could be the door.
+  doorway *dw = Rooms[room_idx].doorway_data ? Rooms[room_idx].doorway_data : Rooms[connected_room].doorway_data;
+  if (dw != NULL) {
+    if (!(dw->flags & DF_LOCKED) || (dw->flags & DF_GB_IGNORE_LOCKED)) {
+      cached = 1;
+      return true;
+    }
+    cached = 0;
+    return false;
+  }
+
   vector through_dir = Rooms[connected_room].path_pnt - pt.path_pnt;
   float through_dist = vm_GetMagnitude(&through_dir);
   if (through_dist < 0.1f) {
@@ -565,8 +578,8 @@ int BotDijkstraNextPortal(int from_room, int goal_room, BotPathCostOverlay cost_
   }
 
   if (result >= 0) {
-    LOG_DEBUG << "[Pathfind] Dijkstra reroute: room " << from_room << " → " << goal_room << " via portal " << result
-              << " (cost " << nodes[goal_room].cost << ")";
+    LOG_DEBUG << (cost_overlay ? "[Pathfind] Occ-Dijkstra: room " : "[Pathfind] Dijkstra reroute: room ") << from_room
+              << " → " << goal_room << " via portal " << result << " (cost " << nodes[goal_room].cost << ")";
   }
 
   return result;
@@ -805,15 +818,25 @@ bool BotFlowFieldGetDirection(object *obj, int goal_room, vector *out_dir) {
   if (!boa_routes_through_terrain && BotCheckPortalPassable(current_room, portal_idx)) {
     // Congestion check: if the preferred next room is crowded with teammates, try an
     // alternative route that avoids teammate clusters. Only updates occupancy periodically (0.5s).
+    // Skip in tunnel rooms (≤2 portals) — no real alternatives, Dijkstra is wasted and can
+    // redirect backward, causing oscillation in narrow corridors.
     int bot_team = (obj->id >= 0 && obj->id < MAX_NET_PLAYERS) ? Players[obj->id].team : -1;
-    if (bot_team >= 0 && bot_team < BOT_MAX_TEAMS_OCCUPANCY) {
+    if (bot_team >= 0 && bot_team < BOT_MAX_TEAMS_OCCUPANCY && Rooms[current_room].num_portals > 2) {
       BotUpdateRoomOccupancy();
       int preferred_next = Rooms[current_room].portals[portal_idx].croom;
       if (preferred_next >= 0 && preferred_next <= Highest_room_index &&
           pf_room_occupancy[bot_team][preferred_next] >= 2) {
         int occ_portal = BotDijkstraNextPortalWithOccupancy(current_room, goal_room, bot_team);
-        if (occ_portal >= 0 && occ_portal != portal_idx)
-          return BotPortalToDirection(obj, current_room, occ_portal, goal_room, out_dir);
+        if (occ_portal >= 0 && occ_portal != portal_idx) {
+          // Reject backward redirects: if the alternate room's next hop goes back through
+          // the current room, it's a dead-end loop that causes tunnel oscillation.
+          int alt_croom = Rooms[current_room].portals[occ_portal].croom;
+          int alt_next = (alt_croom >= 0 && alt_croom <= Highest_room_index)
+                             ? BOA_GetNextRoom(alt_croom, goal_room)
+                             : BOA_NO_PATH;
+          if (alt_next != current_room)
+            return BotPortalToDirection(obj, current_room, occ_portal, goal_room, out_dir);
+        }
       }
     }
     return BotPortalToDirection(obj, current_room, portal_idx, goal_room, out_dir);

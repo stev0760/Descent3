@@ -82,7 +82,8 @@
 #define BOT_TARGET_BLACKLIST_DURATION 10.0f // seconds a target remains blacklisted after HUNT timeout
 
 // Powerup collection (Phase 3.8)
-#define BOT_POWERUP_SEEK_RADIUS 350.0f // scan radius for powerup objects
+#define BOT_POWERUP_SEEK_RADIUS 350.0f     // scan radius for powerup objects
+#define BOT_POWERUP_ONPATH_RADIUS 120.0f  // tighter radius during objective nav — grab items on the way
 #define BOT_LOW_SHIELDS_PCT 0.30f      // seek shield powerups when below 30% shields
 #define BOT_LOW_ENERGY 25.0f           // seek energy powerups when below 25 energy units
 
@@ -326,6 +327,7 @@ struct bot_info {
   float room_progress_timer;                   // seconds since last room change
   int visited_rooms[BOT_VISITED_ROOM_COUNT];   // circular buffer of recently visited rooms
   int visited_room_idx;                        // write index into visited_rooms[]
+  int room_progress_stuck_count;               // consecutive timeouts in same room; escalates to escape
 
   // Target blacklist (Phase 3.28) — prevents re-selecting unreachable targets after HUNT timeout
   int target_blacklist[MAX_NET_PLAYERS]; // player slots blacklisted as targets

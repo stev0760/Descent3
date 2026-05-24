@@ -1249,8 +1249,18 @@ static void BotDoExploreRoaming(int bot_index) {
       return;
     }
 
+    // If we already have a valid goal heading to this same objective room, don't re-issue it.
+    // Re-issuing recalculates the engine path from the current position, which in curved
+    // multi-room shafts can reverse direction and cause oscillation.
     int &pgi = Bots[bot_index].pursuit_goal_index;
-    if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+    bool goal_valid = (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used);
+    if (goal_valid && Bots[bot_index].explore_dest_room == obj_room && Bots[bot_index].explore_room_timer > 0.0f) {
+      LOG_DEBUG.printf("BOT: '%s' objective nav held (room %d, %.1fs left)", Bots[bot_index].callsign, obj_room,
+                       Bots[bot_index].explore_room_timer);
+      return;
+    }
+
+    if (goal_valid)
       GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
     pgi = -1;
 
@@ -1715,7 +1725,8 @@ static bool BotCanCollectPowerup(int bot_index, object *powerup) {
   return true;
 }
 
-static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy, int min_priority = 0) {
+static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy, int min_priority = 0,
+                              float max_dist_override = -1.0f) {
   int slot = Bots[bot_index].player_slot;
   object *obj = &Objects[Players[slot].objnum];
 
@@ -1728,6 +1739,8 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
     seek_radius = BOT_HOARD_ORB_SEEK_RADIUS;
   if (OBJECT_OUTSIDE(obj))
     seek_radius *= BOT_OUTDOOR_SEEK_MULTIPLIER;
+  if (max_dist_override > 0.0f && seek_radius > max_dist_override)
+    seek_radius = max_dist_override;
 
   int best_obj = -1;
   float best_score = 0.0f;
@@ -2065,21 +2078,15 @@ static void BotUpdateState(int bot_index) {
     }
     // Always seek powerups — even when transitioning to HUNT (fix: was skipped when has_target)
     bool need_sh = (shields < max_shields * BOT_LOW_SHIELDS_PCT);
-    // Well-equipped CTF defenders near their base don't chase powerups — hold position.
-    // Foraging exemption: WEAK defenders can seek powerups until armed (bot_equip < GOOD).
-    bool suppress_powerup = false;
-    if (BotGetGameMode() == BGM_CTF && Bots[bot_index].squad_role == SQUAD_FREELANCE &&
-        Bots[bot_index].objective_lean == BOT_LEAN_DEFEND && bot_equip >= BOT_EQUIP_TIER_GOOD) {
-      int home_room = BotGetObjectiveRoom(bot_index);
-      if (home_room >= 0 && Rooms[home_room].used) {
-        float home_dist = vm_VectorDistanceQuick(&obj->pos, &Rooms[home_room].path_pnt);
-        if (home_dist < BOT_FIRE_RANGE * 2.0f)
-          suppress_powerup = true;
-      }
+    // During objective nav, shrink seek radius so bots grab items on their path but don't detour.
+    bool on_objective = false;
+    {
+      int obj_room = BotGetObjectiveRoom(bot_index);
+      if (obj_room >= 0 && Rooms[obj_room].used && obj_room != (int)obj->roomnum)
+        on_objective = true;
     }
-    // Even suppressed defenders should grab flags (dropped own-flag returns it, enemy flag scores)
-    int pu_obj = suppress_powerup ? BotFindBestPowerup(bot_index, need_sh, low_energy, 29)
-                                  : BotFindBestPowerup(bot_index, need_sh, low_energy);
+    int pu_obj = on_objective ? BotFindBestPowerup(bot_index, need_sh, low_energy, 0, BOT_POWERUP_ONPATH_RADIUS)
+                              : BotFindBestPowerup(bot_index, need_sh, low_energy);
     bool holding_for_weapon = false;
     if (pu_obj >= 0) {
       // Check if this powerup is a weapon (not health/energy)
@@ -2112,10 +2119,15 @@ static void BotUpdateState(int bot_index) {
       if (rgi >= 0 && rgi < MAX_GOALS && obj->ai_info->goals[rgi].used)
         GoalClearGoal(obj, &obj->ai_info->goals[rgi]);
       rgi = -1;
-      // Reset roaming state so we resume searching after collecting
-      Bots[bot_index].explore_dest_room = -1;
-      Bots[bot_index].explore_stuck_room = -1;
-      Bots[bot_index].explore_room_timer = 0.0f;
+      if (on_objective) {
+        // On-path pickup: preserve objective state so the bot resumes its route after collecting.
+        // The pursuit_goal_index was cleared above — BotDoExploreRoaming will re-issue it next tick
+        // using the preserved explore_dest_room.
+      } else {
+        Bots[bot_index].explore_dest_room = -1;
+        Bots[bot_index].explore_stuck_room = -1;
+        Bots[bot_index].explore_room_timer = 0.0f;
+      }
     } else {
       // No powerup nearby — clear any stale goal index (powerup may have just been collected)
       // and navigate: follow target (FOLLOW/COVER) or roam room-to-room (FREELANCE/ATTACK/DEFEND).
@@ -2166,8 +2178,15 @@ static void BotUpdateState(int bot_index) {
     // On tight maps, 70u covers entire corridors; 30u means essentially touching.
     float urgent_dist = ctf_pushing ? 30.0f : BOT_CLOSERANGE_DIST;
     bool urgent_threat = (has_los && dist < urgent_dist);
+    bool objective_active = false;
+    {
+      int obj_room = BotGetObjectiveRoom(bot_index);
+      if (obj_room >= 0 && Rooms[obj_room].used && obj_room != (int)obj->roomnum)
+        objective_active = true;
+    }
+    bool hunt_blind_ok = !objective_active && dist < BOT_HUNT_BLIND_MAX_DIST;
     if (has_target && !holding_for_weapon && (!chasing_powerup || ha_carrier) && !hoard_collecting &&
-        !ctf_pushing && (has_los || dist < BOT_HUNT_BLIND_MAX_DIST))
+        !ctf_pushing && (has_los || hunt_blind_ok))
       new_state = BOT_STATE_HUNT;
     else if (has_target && !holding_for_weapon && (chasing_powerup || hoard_collecting || ctf_pushing) &&
              urgent_threat)
@@ -2819,7 +2838,7 @@ static void BotApplyThrust(int bot_index) {
 
   if (Bots[bot_index].stuck_timer >= 0.0f && current_speed < 5.0f && applying_thrust) {
     Bots[bot_index].stuck_timer += Frametime;
-  } else if (Bots[bot_index].stuck_timer >= 0.0f) {
+  } else if (Bots[bot_index].stuck_timer >= 0.0f && Bots[bot_index].stuck_timer <= BOT_STUCK_ABANDON_TIME) {
     Bots[bot_index].stuck_timer = 0.0f;
   }
 
@@ -2889,6 +2908,7 @@ static void BotApplyThrust(int bot_index) {
 
     Bots[bot_index].stuck_timer = -2.0f; // negative = sustained escape thrust for 2 seconds
     Bots[bot_index].room_progress_timer = 0.0f;
+    Bots[bot_index].room_progress_stuck_count = 0;
     // Randomized escape direction — avoids repeatedly hitting the same geometry
     forward = -0.5f + ((rand() % 100) / 100.0f) * 1.0f; // -0.5 to +0.5
     sideways = (rand() % 2) ? 1.0f : -1.0f;
@@ -3308,6 +3328,7 @@ static void BotRespawn(int bot_index) {
   for (int v = 0; v < BOT_VISITED_ROOM_COUNT; v++)
     Bots[bot_index].visited_rooms[v] = -1;
   Bots[bot_index].visited_room_idx = 0;
+  Bots[bot_index].room_progress_stuck_count = 0;
   for (int t = 0; t < MAX_NET_PLAYERS; t++)
     Bots[bot_index].target_blacklist[t] = -1;
   Bots[bot_index].target_blacklist_timer = 0.0f;
@@ -3364,6 +3385,7 @@ void BotInitAll() {
     for (int v = 0; v < BOT_VISITED_ROOM_COUNT; v++)
       Bots[i].visited_rooms[v] = -1;
     Bots[i].visited_room_idx = 0;
+    Bots[i].room_progress_stuck_count = 0;
     // Initialize target blacklist (Phase 3.28)
     for (int t = 0; t < MAX_NET_PLAYERS; t++)
       Bots[i].target_blacklist[t] = -1;
@@ -3488,6 +3510,7 @@ void BotReinitAll() {
     for (int v = 0; v < BOT_VISITED_ROOM_COUNT; v++)
       Bots[i].visited_rooms[v] = -1;
     Bots[i].visited_room_idx = 0;
+    Bots[i].room_progress_stuck_count = 0;
     Bots[i].countermeasure_timer = BOT_COUNTERMEASURE_INTERVAL;
     Bots[i].powerup_interrupt_cooldown = 0.0f;
     Bots[i].missile_evade_cooldown = 0.0f;
@@ -3738,6 +3761,7 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   for (int v = 0; v < BOT_VISITED_ROOM_COUNT; v++)
     Bots[bot_index].visited_rooms[v] = -1;
   Bots[bot_index].visited_room_idx = 0;
+  Bots[bot_index].room_progress_stuck_count = 0;
   for (int t = 0; t < MAX_NET_PLAYERS; t++)
     Bots[bot_index].target_blacklist[t] = -1;
   Bots[bot_index].target_blacklist_timer = 0.0f;
@@ -3885,6 +3909,7 @@ void BotDoFrame() {
       for (int v = 0; v < BOT_VISITED_ROOM_COUNT; v++)
         Bots[i].visited_rooms[v] = -1;
       Bots[i].visited_room_idx = 0;
+      Bots[i].room_progress_stuck_count = 0;
       for (int t = 0; t < MAX_NET_PLAYERS; t++)
         Bots[i].target_blacklist[t] = -1;
       Bots[i].target_blacklist_timer = 0.0f;
@@ -3972,13 +3997,13 @@ void BotDoFrame() {
         BotRecordVisitedRoom(i, cur_room);
         Bots[i].last_progress_room = cur_room;
         Bots[i].room_progress_timer = 0.0f;
+        Bots[i].room_progress_stuck_count = 0;
       } else {
         Bots[i].room_progress_timer += Frametime;
         if (Bots[i].room_progress_timer > BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT) {
+          Bots[i].room_progress_stuck_count++;
           BotClearActiveGoal(i);
           Bots[i].explore_stuck_room = cur_room;
-          Bots[i].explore_dest_room = -1;
-          Bots[i].explore_room_timer = 0.0f;
           Bots[i].room_progress_timer = 0.0f;
           if (Bots[i].state == BOT_STATE_HUNT) {
             AISetTarget(obj, OBJECT_HANDLE_NONE);
@@ -3986,30 +4011,38 @@ void BotDoFrame() {
             Bots[i].retarget_cooldown = BOT_RETARGET_COOLDOWN;
           }
 
-          int obj_room = BotGetObjectiveRoom(i);
-          bool is_carrier = BotIsCarryingEnemyFlag(i) || BotIsCarryingHyperOrb(i);
-          if (obj_room >= 0 || is_carrier) {
-            // Objective-focused bot stalled — re-plan toward objective instead of looting.
-            // BotDoExploreRoaming will re-check BotGetObjectiveRoom on the next tick.
-            LOG_DEBUG.printf("BOT: '%s' room progress timeout (room %d) — re-routing to objective (room %d)",
-                             Bots[i].callsign, cur_room, obj_room);
+          if (Bots[i].room_progress_stuck_count >= 2) {
+            // Consecutive timeouts in same room — nav goal keeps failing. Force physical escape.
+            // Preserve explore_dest_room so the escape handler can skip the failing portal.
+            Bots[i].stuck_timer = BOT_STUCK_ABANDON_TIME + 0.1f;
+            LOG_DEBUG.printf("BOT: '%s' stuck escalation (room %d, %d consecutive timeouts) — forcing escape",
+                             Bots[i].callsign, cur_room, Bots[i].room_progress_stuck_count);
           } else {
-            float shields = Objects[Players[slot].objnum].shields;
-            bool need_sh = (shields < INITIAL_SHIELDS * BOT_LOW_SHIELDS_PCT);
-            bool low_energy = (Players[slot].energy < BOT_LOW_ENERGY);
-            int pu_obj = BotFindBestPowerup(i, need_sh, low_energy);
-            if (pu_obj >= 0) {
-              int tgt_handle = Objects[pu_obj].handle;
-              Bots[i].powerup_goal_index =
-                  GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f, GF_SPEED_ATTACK);
-              Bots[i].chasing_powerup_handle = tgt_handle;
-              Bots[i].chasing_powerup_timer = 0.0f;
-              float pu_dist = vm_VectorDistanceQuick(&obj->pos, &Objects[pu_obj].pos);
-              LOG_DEBUG.printf("BOT: '%s' room progress timeout (room %d) — chasing '%s' (dist=%.0f)",
-                               Bots[i].callsign, cur_room, Object_info[Objects[pu_obj].id].name, pu_dist);
+            Bots[i].explore_dest_room = -1;
+            Bots[i].explore_room_timer = 0.0f;
+            int obj_room = BotGetObjectiveRoom(i);
+            bool is_carrier = BotIsCarryingEnemyFlag(i) || BotIsCarryingHyperOrb(i);
+            if (obj_room >= 0 || is_carrier) {
+              LOG_DEBUG.printf("BOT: '%s' room progress timeout (room %d) — re-routing to objective (room %d)",
+                               Bots[i].callsign, cur_room, obj_room);
             } else {
-              LOG_DEBUG.printf("BOT: '%s' room progress timeout (room %d, %.1fs) — picking new destination",
-                               Bots[i].callsign, cur_room, BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT);
+              float shields = Objects[Players[slot].objnum].shields;
+              bool need_sh = (shields < INITIAL_SHIELDS * BOT_LOW_SHIELDS_PCT);
+              bool low_energy = (Players[slot].energy < BOT_LOW_ENERGY);
+              int pu_obj = BotFindBestPowerup(i, need_sh, low_energy);
+              if (pu_obj >= 0) {
+                int tgt_handle = Objects[pu_obj].handle;
+                Bots[i].powerup_goal_index =
+                    GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f, GF_SPEED_ATTACK);
+                Bots[i].chasing_powerup_handle = tgt_handle;
+                Bots[i].chasing_powerup_timer = 0.0f;
+                float pu_dist = vm_VectorDistanceQuick(&obj->pos, &Objects[pu_obj].pos);
+                LOG_DEBUG.printf("BOT: '%s' room progress timeout (room %d) — chasing '%s' (dist=%.0f)",
+                                 Bots[i].callsign, cur_room, Object_info[Objects[pu_obj].id].name, pu_dist);
+              } else {
+                LOG_DEBUG.printf("BOT: '%s' room progress timeout (room %d, %.1fs) — picking new destination",
+                                 Bots[i].callsign, cur_room, BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT);
+              }
             }
           }
         }
