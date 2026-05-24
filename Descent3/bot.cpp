@@ -2541,6 +2541,22 @@ static void BotUpdateAimDirection(int bot_index) {
   object *target = ObjGet(obj->ai_info->target_handle);
   bool has_valid_target = target && target->type != OBJ_GHOST;
 
+  // Flag carrier in the home room: always face the home flag so afterburner thrust (which
+  // pushes along +fvec) drives the score run — even with an enemy in view. In a single-room
+  // arena the flow field is inactive (current==goal), so without this the bot faces the enemy
+  // it's shooting, fvec diverges from the flag direction, and the AB facing gate suppresses
+  // the sprint. Matches the "carrier never fights at home" policy in BotUpdateState.
+  if (BotIsCarryingEnemyFlag(bot_index)) {
+    int home_room = BotGetObjectiveRoom(bot_index);
+    if (home_room >= 0 && obj->roomnum == home_room) {
+      int flag_objnum = BotGetHomeFlagObjnum(bot_index);
+      if (flag_objnum >= 0) {
+        obj->ai_info->last_see_target_pos = Objects[flag_objnum].pos;
+        return;
+      }
+    }
+  }
+
   // Phase 7.2: Orient override — when navigating via flow field and the bot can't see its
   // target (or has no target), face the portal direction instead of the enemy. This ensures
   // fvec aligns with the navigation goal so afterburner thrust pushes the bot the right way.
