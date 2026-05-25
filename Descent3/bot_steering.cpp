@@ -41,7 +41,6 @@
 #include "object.h"
 #include "game.h"
 #include "log.h"
-#include "terrain.h"
 
 #include <algorithm>
 #include <cmath>
@@ -815,165 +814,22 @@ static bool BotPortalToDirection(object *obj, int current_room, int portal_idx, 
   return true;
 }
 
-// Phase 8.1b/8.1d/2.2.5 — Outdoor terrain steering: mode decision + altitude band + ENTRANCE-SEEK.
-// Called from BotApplyThrust after potential field, before speed scaling.
-//
-// Mode decision (2.2.5): each outdoor frame, inspect BOA_GetNextRoom:
-//   - next > Highest_room_index (terrain region) → OPEN-TERRAIN mode: hold altitude band 15-60u AGL
-//   - next <= Highest_room_index (indoor room) → ENTRANCE-SEEK mode: leave vertical alone
-//
-// The altitude band prevents the "ceiling pinning" problem: when 8.1f aims at a sky-exit portal
-// path_pnt high on the canyon rim, the band keeps the bot at 15-60u above ground instead of
-// thrusting up into the ceiling. ENTRANCE-SEEK disables the band so bots can dive into mine mouths.
-void BotApplyTerrainSteering(int bot_index, object *obj, int nav_goal_room,
-                              float &forward, float &sideways, float &vertical) {
-  if (!Bot_terrain_steering_enabled)
-    return;
-
-  // Gate: only outdoor / sky-exposed rooms (same check as BotFlattenSkyDirection)
-  bool outdoor = ROOMNUM_OUTSIDE(obj->roomnum);
-  bool sky_room =
-      (!outdoor && obj->roomnum >= 0 && obj->roomnum <= Highest_room_index && Rooms[obj->roomnum].used &&
-       (Rooms[obj->roomnum].flags & (RF_EXTERNAL | RF_TOUCHES_TERRAIN)));
-  if (!outdoor && !sky_room)
-    return;
-
-  // Mode decision: what does BOA want us to fly toward?
-  if (nav_goal_room < 0)
-    return;
-
-  int next = BOA_GetNextRoom(obj->roomnum, nav_goal_room);
-  if (next == BOA_NO_PATH)
-    return;
-
-  bool going_to_terrain = (next > Highest_room_index);
-  if (!going_to_terrain) {
-    // ENTRANCE-SEEK mode: BOA next hop is an indoor room — we're about to enter a mine/building.
-    // Disable the altitude band entirely so the bot can descend toward the entrance path_pnt
-    // without the band yanking it back up to band_min. Let the existing vertical through.
-    return;
-  }
-
-  // OPEN-TERRAIN mode: crossing open sky toward a terrain region.
-  // The horizontal heading is handled by 8.1f (BotComputeTerrainCrossTarget → flow field).
-  // We only regulate vertical here: the altitude band holding bot 15-60u above ground.
-  float ground_y = GetTerrainGroundPoint(&obj->pos);
-  float agl = obj->pos.y() - ground_y;
-
-  if (agl < BOT_TERRAIN_AGL_MIN) {
-    // Below the band: add upward thrust proportional to deficit.
-    float deficit = BOT_TERRAIN_AGL_MIN - agl;
-    float boost = (deficit / BOT_TERRAIN_AGL_MIN) * BOT_TERRAIN_BAND_BOOST;
-    vertical += boost;
-  } else if (agl > BOT_TERRAIN_AGL_MAX && vertical > 0.0f) {
-    // Above the band: suppress upward thrust to prevent ceiling pinning.
-    float overshoot = (agl - BOT_TERRAIN_AGL_MAX) / BOT_TERRAIN_AGL_MAX;
-    float damp = 1.0f - std::min(overshoot, 1.0f) * 0.7f;
-    vertical *= damp;
-  }
-  // Within the band: leave vertical alone — combat juke, heading, etc.
-}
-
-// Phase 8.1f — OPEN-TERRAIN crossing target.
-// BOA connects sky-exposed rooms through terrain regions (open-sky gaps). The flow field refuses
-// terrain-region portals (boa_routes_through_terrain) and the engine path-follower oscillates at
-// the mouth without committing (mdir flips aligned↔backward — terrain4.log), so bots never cross.
-// This computes a single world point to fly toward for the current leg of a crossing:
-//   - In a room whose BOA next-hop is a terrain region: our own exit-portal mouth (toward terrain).
-//   - Out on the terrain whose BOA next-hop is a room: that room's entry-portal mouth (toward us).
-// Returns false when no terrain crossing applies this frame (caller uses normal logic / bails).
-static bool BotComputeTerrainCrossTarget(object *obj, int goal_room, vector *out_target) {
-  int cur = obj->roomnum;
-
-  if (ROOMNUM_OUTSIDE(cur)) {
-    // On the terrain — aim at the entry mouth of the next room toward the goal.
-    int next = BOA_GetNextRoom(cur, goal_room);
-    if (next == BOA_NO_PATH || next < 0 || next > Highest_room_index || !Rooms[next].used)
-      return false; // next hop is another terrain region or invalid — let the engine carry it
-    int portal = BOA_DetermineStartRoomPortal(next, nullptr, cur, nullptr);
-    if (portal < 0 || portal >= Rooms[next].num_portals)
-      return false;
-    *out_target = Rooms[next].portals[portal].path_pnt;
-    return true;
-  }
-
-  // In a room — only a crossing if BOA's next hop is a terrain region (index > Highest_room_index).
-  if (cur < 0 || cur > Highest_room_index || !Rooms[cur].used)
-    return false;
-  int next = BOA_GetNextRoom(cur, goal_room);
-  if (next == BOA_NO_PATH || next <= Highest_room_index)
-    return false; // next hop is a normal room — normal flow field handles it
-  int portal = BOA_DetermineStartRoomPortal(cur, nullptr, next, nullptr);
-  if (portal < 0 || portal >= Rooms[cur].num_portals)
-    return false;
-  *out_target = Rooms[cur].portals[portal].path_pnt;
-  return true;
-}
-
 bool BotFlowFieldGetDirection(object *obj, int goal_room, vector *out_dir) {
   if (!Bot_flow_field_enabled)
     return false;
   if (goal_room < 0)
     return false;
-
-  // Phase 8.1f — terrain-region crossing (OPEN-TERRAIN heading generation). Runs BEFORE the
-  // ROOMNUM_OUTSIDE / sky-room gates below so it covers both halves of a crossing (in-room exit and
-  // out-on-terrain entry). A per-bot latch holds one crossing target until reached, the goal
-  // changes, or a timeout fires — without it, room-flicker at the threshold re-flaps the target.
-  if (Bot_terrain_steering_enabled) {
-    int bidx = (obj->id >= 0 && obj->id < MAX_NET_PLAYERS) ? BotFindBySlot(obj->id) : -1;
-    if (bidx >= 0) {
-      bot_info &b = Bots[bidx];
-
-      // Service an active latch first.
-      if (b.terrain_cross_active) {
-        if (b.terrain_cross_goal != goal_room || Gametime > b.terrain_cross_expire) {
-          b.terrain_cross_active = false; // stale — recompute below
-        } else {
-          vector to_t = b.terrain_cross_target - obj->pos;
-          float d = vm_GetMagnitude(&to_t);
-          if (d <= BOT_TERRAIN_CROSS_REACH) {
-            b.terrain_cross_active = false; // reached this mouth — recompute next leg below
-          } else {
-            *out_dir = to_t * (1.0f / d);
-            return true; // hold the latched heading across threshold flicker
-          }
-        }
-      }
-
-      // Not latched (or just released) — start a new crossing if one applies this frame.
-      if (!b.terrain_cross_active) {
-        vector cross_target;
-        if (BotComputeTerrainCrossTarget(obj, goal_room, &cross_target)) {
-          vector to_t = cross_target - obj->pos;
-          float d = vm_GetMagnitude(&to_t);
-          if (d > 1.0f) {
-            b.terrain_cross_active = true;
-            b.terrain_cross_goal = goal_room;
-            b.terrain_cross_target = cross_target;
-            b.terrain_cross_expire = Gametime + BOT_TERRAIN_CROSS_TIMEOUT;
-            *out_dir = to_t * (1.0f / d);
-            return true;
-          }
-        }
-      }
-    }
-  }
-
   if (ROOMNUM_OUTSIDE(obj->roomnum))
     return false;
   if (obj->roomnum < 0 || obj->roomnum > Highest_room_index || !Rooms[obj->roomnum].used)
     return false;
 
-  // Phase 8.1e: RF_TOUCHES_TERRAIN re-enabled. These are portal-connected sky-exposed rooms
-  // (CanyonsCTF is 100% RF_TOUCHES_TERRAIN, HRI=34, all rooms — bots never occupy terrain cells).
-  // The original sky-flying that motivated disabling flow here was the BotFlattenSkyDirection Y/Z
-  // axis bug (fixed in 8.1a), not the flow field itself. Letting flow field run in these rooms gives
-  // portal-directed steering for intra-area room hops (~47% of CanyonsCTF frames). The remaining
-  // ~53% — BOA routing through a terrain region (the open-sky canyon gap) — still bails below at the
-  // boa_routes_through_terrain guard; that crossing is OPEN-TERRAIN steering's job (Phase 8.1b/c).
-  // RF_EXTERNAL (enclosed building rooms) stays disabled. ROOMNUM_OUTSIDE handled above.
-  if (Rooms[obj->roomnum].flags & RF_EXTERNAL)
+  // Flow field is unreliable outdoors: BOA routes through terrain/sky portals and bots fly up
+  // into the sky barrier and stick. Defer to the engine path-follower for rooms open to the sky.
+  // RF_TOUCHES_TERRAIN (open-air canyon rooms) is the actual flag on CanyonsCTF — confirmed by
+  // per-room flag logging; RF_EXTERNAL alone (building rooms) missed them. ROOMNUM_OUTSIDE (terrain
+  // cells) is already handled above. Enclosed goal rooms (no terrain flag) keep the flow field.
+  if (Rooms[obj->roomnum].flags & (RF_EXTERNAL | RF_TOUCHES_TERRAIN))
     return false;
 
   int current_room = obj->roomnum;

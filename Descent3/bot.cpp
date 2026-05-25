@@ -2644,66 +2644,6 @@ static void BotApplyThrust(int bot_index) {
   int nav_goal_room = BotGetNavGoalRoom(bot_index);
   bool using_flow_field = (nav_goal_room >= 0 && BotFlowFieldGetDirection(obj, nav_goal_room, &flow_dir));
 
-  // === TEMP Phase 8 diagnostic — REMOVE after CanyonsCTF structure data is gathered ===
-  // Answers: do bots ever enter terrain cells (ROOMNUM_OUTSIDE)? Are canyon corridors
-  // RF_TOUCHES_TERRAIN rooms? Is the flow field bailing on the outdoor disable or terrain-region
-  // routing? Logs only in outdoor/sky-exposed contexts, rate-limited to ~2s per bot.
-  {
-    static float bot_tdiag_next[MAX_BOTS] = {0};
-    int r = obj->roomnum;
-    bool outside = ROOMNUM_OUTSIDE(r);
-    bool sky_room = (!outside && r >= 0 && r <= Highest_room_index && Rooms[r].used &&
-                     (Rooms[r].flags & (RF_EXTERNAL | RF_TOUCHES_TERRAIN)));
-    if ((outside || sky_room) && bot_index >= 0 && bot_index < MAX_BOTS && Gametime >= bot_tdiag_next[bot_index]) {
-      bot_tdiag_next[bot_index] = Gametime + 0.5f;
-      int boa_next = (nav_goal_room >= 0) ? BOA_GetNextRoom(r, nav_goal_room) : -99;
-      bool boa_is_terrain_region = (boa_next > Highest_room_index);
-      int flags = outside ? -1 : Rooms[r].flags;
-      float agl = outside ? (obj->pos.y() - GetTerrainGroundPoint(&obj->pos)) : -1.0f;
-      // When BOA's next hop is a terrain region (the open-sky canyon crossing), check whether the
-      // engine's movement_dir already points through the BOA-preferred exit portal toward that
-      // crossing. mdot near +1 => OPEN-TERRAIN steering can wrap engine mdir (NAV_OVERHAUL_3 §2.2.5
-      // as written); near 0 / negative => the engine isn't aiming at the exit and OPEN-TERRAIN must
-      // generate its own outbound heading (aim at the sky-portal path_pnt). sky_portal=-1 => no BOA
-      // exit portal found. mdir_mag<0.01 => engine produced no heading at all.
-      int sky_portal = -1;
-      float mdot = -2.0f;
-      if (boa_is_terrain_region && !outside && r >= 0 && r <= Highest_room_index && Rooms[r].used) {
-        sky_portal = BOA_DetermineStartRoomPortal(r, nullptr, boa_next, nullptr);
-        if (sky_portal >= 0 && sky_portal < Rooms[r].num_portals && mdir_mag > 0.01f) {
-          vector to_portal = Rooms[r].portals[sky_portal].path_pnt - obj->pos;
-          float pdist = vm_GetMagnitude(&to_portal);
-          if (pdist > 1.0f) {
-            to_portal *= (1.0f / pdist);
-            vector mdir_n = mdir * (1.0f / mdir_mag);
-            mdot = vm_DotProduct(&mdir_n, &to_portal);
-          }
-        }
-      }
-      // cross_d: distance to terrain crossing target if active
-      float cross_d = -1.0f;
-      if (Bots[bot_index].terrain_cross_active) {
-        vector to_ct = Bots[bot_index].terrain_cross_target - obj->pos;
-        cross_d = vm_GetMagnitude(&to_ct);
-      }
-      // croom and croom_flags from sky_portal
-      int croom_idx = -1;
-      int croom_flags_val = -1;
-      if (sky_portal >= 0 && sky_portal < Rooms[r].num_portals) {
-        croom_idx = Rooms[r].portals[sky_portal].croom;
-        if (croom_idx >= 0 && croom_idx <= Highest_room_index && Rooms[croom_idx].used)
-          croom_flags_val = Rooms[croom_idx].flags;
-      }
-      LOG_DEBUG.printf("BOT TDIAG '%s': roomnum=%d outside=%d sky_room=%d flags=0x%x goal=%d flow=%d "
-                       "boa_next=%d boa_terrain_region=%d HRI=%d agl=%.1f mdir_mag=%.2f sky_portal=%d mdot=%.2f "
-                       "cross=%d cross_d=%.1f croom=%d croom_flags=0x%x",
-                       Bots[bot_index].callsign, r, outside ? 1 : 0, sky_room ? 1 : 0, flags, nav_goal_room,
-                       using_flow_field ? 1 : 0, boa_next, boa_is_terrain_region ? 1 : 0, Highest_room_index, agl,
-                       mdir_mag, sky_portal, mdot,
-                       Bots[bot_index].terrain_cross_active ? 1 : 0, cross_d, croom_idx, croom_flags_val);
-    }
-  }
-
   // Decompose world-space direction into bot-local axes
   float forward = 0.0f, sideways = 0.0f, vertical = 0.0f;
   vector effective_dir = {0.0f, 0.0f, 0.0f};
@@ -2717,11 +2657,7 @@ static void BotApplyThrust(int bot_index) {
   }
 
   if (has_nav_dir) {
-    // Phase 8.1f: don't flatten a deliberate terrain-crossing heading. The crossing aims at a real
-    // portal mouth (which may sit above or below the bot); the sky-flatten only suppresses strongly
-    // upward directions, so flattening here would strand a bot whose crossing mouth is overhead.
-    if (!(using_flow_field && Bots[bot_index].terrain_cross_active))
-      BotFlattenSkyDirection(effective_dir, obj);
+    BotFlattenSkyDirection(effective_dir, obj);
     forward = vm_DotProduct(&effective_dir, &obj->orient.fvec);
     sideways = vm_DotProduct(&effective_dir, &obj->orient.rvec);
     vertical = vm_DotProduct(&effective_dir, &obj->orient.uvec);
@@ -2896,12 +2832,6 @@ static void BotApplyThrust(int bot_index) {
   // AIF_AVOID_WALLS which is already baked into movement_dir.
   BotApplyPotentialField(bot_index, obj, forward, sideways, vertical, want_afterburner,
                          has_nav_dir ? &effective_dir : nullptr);
-
-  // Phase 8.1b/8.1d/2.2.5: Outdoor terrain steering — mode decision + altitude band + ENTRANCE-SEEK.
-  // Applies after potential field but before speed scaling / stuck logic / altitude caps.
-  // In OPEN-TERRAIN mode, holds vertical in 15-60u AGL band (fixes ceiling-pinning).
-  // In ENTRANCE-SEEK mode, leaves vertical alone (bot descends into mine entrance).
-  BotApplyTerrainSteering(bot_index, obj, nav_goal_room, forward, sideways, vertical);
 
   // AB facing gate: suppress afterburner when the bot isn't facing its desired travel direction.
   // In 6DOF, AB thrust goes along fvec — if fvec points at an enemy while the bot wants to
@@ -3437,8 +3367,7 @@ static void BotRespawn(int bot_index) {
   Bots[bot_index].fire_delay_timer = 0.0f;
   Bots[bot_index].fire_delay_target = OBJECT_HANDLE_NONE;
   // Don't reset aim_wander_phase — continuous across respawns
-  Bots[bot_index].terrain_cross_active = false; // drop any terrain-crossing latch from the prior life
-  Bots[bot_index].last_target_update = 0.0f;    // force immediate re-target after respawn
+  Bots[bot_index].last_target_update = 0.0f; // force immediate re-target after respawn
   BotSelectBestWeapon(bot_index);            // equip best primary weapon on respawn
   BotSelectBestSecondary(bot_index);         // equip best secondary weapon on respawn
   LOG_DEBUG.printf("BOT: '%s' respawned in slot %d", Bots[bot_index].callsign, slot);
