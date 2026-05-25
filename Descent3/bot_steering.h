@@ -85,6 +85,17 @@ extern bool Bot_flow_field_enabled;
 // Runtime toggle (default ON — disable with $terrainsteer off)
 extern bool Bot_terrain_steering_enabled;
 
+// Phase 8.1b: Outdoor altitude band — holds bots 15-60u above ground in OPEN-TERRAIN mode.
+// These are only applied when BOA_GetNextRoom shows the next hop is a terrain region (open-sky crossing).
+// ENTRANCE-SEEK mode (next hop is an indoor room) disables the band so bots can dive into mine entrances.
+#define BOT_TERRAIN_AGL_MIN 15.0f   // bottom of altitude band (units above ground)
+#define BOT_TERRAIN_AGL_MAX 60.0f   // top of altitude band (above which upward thrust is suppressed)
+#define BOT_TERRAIN_BAND_BOOST 0.4f // upward correction strength when below band_min
+
+// Phase 8.1f: terrain-region crossing latch tuning.
+#define BOT_TERRAIN_CROSS_REACH 12.0f   // within this dist of the mouth, treat as crossed; recompute
+#define BOT_TERRAIN_CROSS_TIMEOUT 6.0f  // max seconds to hold one crossing target before releasing
+
 // Apply potential field steering correction to thrust direction components.
 // Casts 5 forward-hemisphere rays, accumulates repulsive force from wall hits,
 // and blends the result with the current forward/sideways/vertical thrust.
@@ -94,6 +105,13 @@ extern bool Bot_terrain_steering_enabled;
 // Must be called AFTER FSM direction overrides and juke, BEFORE speed scaling.
 void BotApplyPotentialField(int bot_index, object *obj, float &forward, float &sideways, float &vertical,
                             bool &want_afterburner, const vector *flow_dir);
+
+// Phase 8.1b/8.1d/2.2.5: Outdoor terrain steering — mode decision + altitude band + ENTRANCE-SEEK.
+// Called from BotApplyThrust after potential field, before speed scaling.
+// In OPEN-TERRAIN mode (BOA next hop is a terrain region): holds vertical in the AGL band (15-60u).
+// In ENTRANCE-SEEK mode (BOA next hop is an indoor room): leaves vertical alone so bot can descend.
+void BotApplyTerrainSteering(int bot_index, object *obj, int nav_goal_room,
+                              float &forward, float &sideways, float &vertical);
 
 // Portal passability check: casts a ship-radius ray through the portal opening
 // to detect geometry-based blockage (bunker slits, barred windows). Results

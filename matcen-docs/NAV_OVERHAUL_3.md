@@ -132,8 +132,24 @@ Each outdoor frame, inspect `next = BOA_GetNextRoom(current_room, goal_room)`:
   line, descends toward the mouth, crosses the threshold, and the flow field takes over the instant
   it is indoors.
 - **`next` is a terrain region** (`next > Highest_room_index`) or the goal is an open-terrain
-  position → **OPEN-TERRAIN mode**: apply the altitude band (8.1b) + look-ahead climb (8.1c);
-  horizontal heading from engine `movement_dir`.
+  position → **OPEN-TERRAIN mode**: apply the altitude band (8.1b) + look-ahead climb (8.1c).
+  **Horizontal heading aims at the sky-exit portal `path_pnt`** — NOT engine `movement_dir`.
+  > **Amendment (terrain4.log, 2026-05-24):** the original design said "horizontal heading from
+  > engine `movement_dir`." That is wrong. At a terrain-region exit mouth the engine `mdir`
+  > **oscillates** between aligned with the sky-exit portal (`mdot≈+1`) and pointing back into the
+  > room (`mdot≈-0.9`) — 57% aligned / 28% perpendicular-or-backward across 566 samples on
+  > CanyonsCTF. Bots were `outside=0` on 100% of 850 samples — they never crossed, not because the
+  > gap is blocked but because the engine never commits. OPEN-TERRAIN must **generate** its own
+  > heading from `BOA_DetermineStartRoomPortal(room, …, terrain_region, …)` → that portal's
+  > `path_pnt`. See [[project-nav-phase8-outdoor]].
+
+**Cross-commit latch (prevents boundary oscillation):** a pure per-frame override can produce a
+*second* oscillation at the threshold — bot crosses, room changes, BOA next-hop changes, heading
+flips back, room changes again. Defend with a per-bot latch: once aiming at a sky-exit `path_pnt`,
+keep aiming at *that same point* until the bot is through (roomnum becomes the BOA-next room or
+`outside=1`) or clearly diverged (BOA goal changed, hard turn-around, or a timeout). Do not tune the
+latch thresholds on CanyonsCTF alone — it is the easy case (one dominant gap, region 36, sky portal
+∈ {40,8,11,15}); Bedlam has more crossings and more candidate portals.
 
 **Route choice stays 100% BOA's job** — the layer never picks *which* entrance is fastest, it only
 flies whatever BOA routes. Asymmetric round-trips (out one mine, across terrain, into another) fall
@@ -186,6 +202,39 @@ if (ait_GetGroundInfo(&gi, &obj->pos, &ahead, obj->size)) {
   fights between the two.
 - This is the piece that lets bots traverse canyons/ridges instead of nosing into them.
 
+### 2.4.5 Phase 8.1f — Terrain-region crossing heading (SHIPPED 2026-05-24)
+
+This is the OPEN-TERRAIN *heading generator* — the piece that actually makes bots cross the open-sky
+gap, built after terrain4.log proved the engine `mdir` oscillates at the mouth and cannot be wrapped
+(see 2.2.5 amendment). It lives in `BotFlowFieldGetDirection` (`bot_steering.cpp`), runs **before**
+the `ROOMNUM_OUTSIDE`/sky-room gates so it covers both halves of a crossing, and is gated on
+`Bot_terrain_steering_enabled`.
+
+`BotComputeTerrainCrossTarget(obj, goal_room, &target)` returns the world point to fly toward for the
+current leg:
+
+- **In a room whose BOA next-hop is a terrain region** (`BOA_GetNextRoom(cur,goal) > Highest_room_index`):
+  target = our own exit-portal mouth toward that region —
+  `Rooms[cur].portals[BOA_DetermineStartRoomPortal(cur,_,region,_)].path_pnt`.
+- **Out on the terrain whose BOA next-hop is a room** (`BOA_GetNextRoom` accepts a terrain-cell
+  roomnum, converting via `TERRAIN_REGION`, `BOA.cpp:578`): target = that room's entry-portal mouth
+  facing us — `Rooms[next].portals[BOA_DetermineStartRoomPortal(next,_,cur,_)].path_pnt`.
+
+**Cross-commit latch** (per-bot, `bot_info.terrain_cross_*`): once a target is picked, hold it until
+the bot is within `BOT_TERRAIN_CROSS_REACH` (12u), the goal changes, or `BOT_TERRAIN_CROSS_TIMEOUT`
+(6s) elapses. This prevents the *second* oscillation the advisor flagged — without it, roomnum
+flicker at the threshold (A↔terrain↔B) re-flaps the target every frame. A crossing is a two-step
+latch: exit-mouth of A, then (once reached / once outside) entry-mouth of B; normal flow field
+resumes the instant the bot is in a room whose next-hop is another room.
+
+**Flatten exemption:** `BotApplyThrust` skips `BotFlattenSkyDirection` while `terrain_cross_active`,
+because the crossing aims at a real portal mouth that may sit above/below the bot and the flatten
+only suppresses strongly-upward headings — flattening would strand a bot whose mouth is overhead.
+
+**Known limitation:** when outside and the *next* hop is yet another terrain region (multi-region
+crossing), `BotComputeTerrainCrossTarget` returns false and the engine carries that leg. CanyonsCTF
+is a single dominant region (36) so this doesn't bite; revisit if a map chains regions.
+
 ### 2.5 Phase 8.1d — Indoor↔outdoor boundary handling = ENTRANCE-SEEK mode (in scope)
 
 This is **not a separate layer** — it *is* the ENTRANCE-SEEK branch of the mode decision (2.2.5).
@@ -220,14 +269,25 @@ hard safety caps above the band.)
 
 ### 2.7 Test plan
 
-1. **8.1a alone:** axis fix / flatten retire. Maps: CanyonsCTF (HAVOC L4), bedlam. Confirm no
-   regression indoors; observe whether outdoor heading already improves.
-2. **+8.1b together with the mode decision + 8.1d entrance-seek** (the band CANNOT ship without the
-   ENTRANCE-SEEK gate or it blocks tunnel entry — see 2.2.5). Watch `agl` stays in band over open
-   terrain; confirm the bedlam mine-entrance carrier dives in instead of hovering at the mouth.
-3. **+8.1c:** look-ahead climb (open-terrain mode only). Canyon/ridge traversal without nosing in.
-5. Regression sweep on open-with-buildings maps (Burnout, KegD3) and pure indoor (SewerRat) with
-   `$terrainsteer off` vs `on` to prove containment.
+1. **8.1a alone — DONE (terrain1.log).** Axis fix. Zero sky spam on CanyonsCTF; no indoor regression.
+2. **8.1e re-enable flow in RF_TOUCHES_TERRAIN — DONE (terrain4.log).** `flow=1` on intra-area room
+   hops (was 0/317 → 509/850). Bots navigate within a canyon area; **no captures yet** (expected —
+   the crossing was still bailing).
+3. **8.1f terrain-region crossing heading + latch — DONE, awaiting test.** Maps: CanyonsCTF first
+   (does the open-sky crossing work / do bots score?), then bedlam (asymmetric mixed maps). Watch:
+   bots now reach `outside=1` and cross; the in-room oscillation at the mouth is gone; latch holds
+   one mouth at a time. Tune `BOT_TERRAIN_CROSS_REACH`/`TIMEOUT` on **bedlam**, not CanyonsCTF (easy
+   case — single gap, region 36).
+4. **8.1b+8.1d+2.2.5 mode decision + altitude band + ENTRANCE-SEEK — DONE, awaiting test.**
+   Ships the three-component unit per NAV_OVERHAUL_3.md §2.2.5 (band requires ENTRANCE-SEEK gate).
+   Built after terrain6.log confirmed the ceiling-pin: 8.1f alone aimed at sky-exit portal path_pnt
+   high on the canyon rim; the altitude band holds bots at 15-60u AGL while crossing open sky, and
+   ENTRANCE-SEEK disables the band when BOA next-hop is an indoor room (mine entrance). Maps:
+   CanyonsCTF first (confirm no ceiling-pin, bots cross gap), then bedlam (asymmetric mixed maps),
+   then Burnout/KegD3 regression, then SewerRat pure-indoor (no change in behavior).
+5. **+8.1c look-ahead climb (terrain mode only), only if 8.1b+8.1d testing still shows ground-scrape.**
+   Use `ait_GetGroundInfo` to climb before hitting ridges. Deferred for now — the ceiling-pin was the
+   critical failure; 8.1b+8.1d may resolve it alone.
 
 Logging: per-bot outdoor diag (rate-limited) printing `agl`, band action, look-ahead climb,
 boundary-mode flag — so we can diagnose from `server.log` as usual.

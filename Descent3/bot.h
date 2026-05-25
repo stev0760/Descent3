@@ -374,6 +374,16 @@ struct bot_info {
 
   // Objective-mode lean (Phase 6.0 Stage 3) — assigned at level start, affects FREELANCE nav
   BotObjectiveLean objective_lean;
+
+  // Terrain-region crossing latch (Phase 8.1f, OPEN-TERRAIN). BOA routes between sky-exposed
+  // rooms through terrain regions (open-sky gaps); the engine path-follower oscillates at the
+  // exit mouth (mdir flips aligned↔backward — terrain4.log) and never commits. We generate a
+  // stable heading toward the crossing mouth ourselves and latch it so room-flicker at the
+  // threshold can't re-flap the target. See matcen-docs/NAV_OVERHAUL_3.md §2.2.5.
+  bool terrain_cross_active;   // a crossing heading is currently latched
+  vector terrain_cross_target; // world point being flown toward (a portal path_pnt)
+  int terrain_cross_goal;      // goal_room when latched; release if it changes
+  float terrain_cross_expire;  // Gametime to force-release the latch (anti-stuck)
 };
 
 extern bot_info Bots[MAX_BOTS];
