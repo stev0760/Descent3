@@ -2576,10 +2576,14 @@ static void BotUpdateAimDirection(int bot_index) {
     bool should_face_nav = !has_valid_target || !BotHasLOS(obj, target);
     if (should_face_nav) {
       vector nav_dir;
-      if (Bot_nav_routing_only) {
+      if (Bot_nav_routing_only && !OBJECT_OUTSIDE(obj)) {
         // Routing-only mode: steering is the engine path-follower, so face its movement_dir.
         // Aligning fvec with travel lets full forward thrust + afterburner drive the path
         // (otherwise the bot faces its combat target and the thrust/AB facing gate stalls it).
+        // Indoor-only: outdoors the flow field is already disabled, so OFF mode never overrode
+        // aim out there (it faced the combat target). Without this gate, ON forces a face-travel
+        // override outdoors for carriers/explorers, which OFF didn't — an asymmetry that thrashed
+        // outdoor aim. Outdoors, fall through to the flow branch (false outdoors) → combat aim.
         nav_dir = obj->ai_info->movement_dir;
         if (vm_GetMagnitude(&nav_dir) > 0.1f) {
           BotFlattenSkyDirection(nav_dir, obj);
