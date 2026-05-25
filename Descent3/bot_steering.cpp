@@ -51,7 +51,7 @@
 
 bool Bot_potential_field_enabled = true;
 bool Bot_flow_field_enabled = true;
-bool Bot_nav_routing_only = false; // Phase 9 redesign, experimental — $navrouting on
+bool Bot_nav_routing_only = true; // Phase 9 redesign, default ON — disable with $navrouting off
 
 // Phase 8.1: Outdoor terrain steering layer. 8.1a seeds it with the corrected (Y-up) sky-flatten;
 // 8.1b/c/d add the altitude band, look-ahead climb, and entrance-seek mode. Runtime toggle

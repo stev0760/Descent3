@@ -998,7 +998,7 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     PrintDedicatedMessage("  $botmov on|off         - Toggle movement debug logging\n");
     PrintDedicatedMessage("  $potentialfield on|off - Toggle potential field steering (Phase 7.1)\n");
     PrintDedicatedMessage("  $flowfield on|off      - Toggle flow field navigation (Phase 7.2)\n");
-    PrintDedicatedMessage("  $navrouting on|off     - Routing-only mode: flow routes, engine steers (Phase 9, exp)\n");
+    PrintDedicatedMessage("  $navrouting on|off     - Routing-only mode: flow routes, engine steers (Phase 9, default on)\n");
     PrintDedicatedMessage("  $terrainsteer on|off   - Toggle outdoor terrain steering (Phase 8.1)\n");
     PrintDedicatedMessage("  $botpathfind on|off    - Toggle Dijkstra rerouter (Phase 7.2b)\n");
     PrintDedicatedMessage("  $botdispersal on|off   - Toggle occupancy-aware route dispersal (Phase 7.3)\n");

@@ -81,12 +81,15 @@ extern bool Bot_potential_field_enabled;
 // Runtime toggle (default ON — disable with $flowfield off)
 extern bool Bot_flow_field_enabled;
 
-// Phase 9 redesign (experimental, default OFF — enable with $navrouting on):
+// Phase 9 redesign (default ON — disable with $navrouting off):
 // "flow routes, BOA steers". When ON, the flow field never produces a per-frame steering vector;
 // steering is the engine path-follower's movement_dir + potential-field wall avoidance, and the
-// bot orients to movement_dir so thrust/afterburner drive along the engine's chosen path. Flow/
-// Dijkstra are reserved for routing (goal selection) only. Eliminates the per-frame flow/engine
-// source swap suspected of causing the barrier-transition hover/flipflop.
+// bot orients to movement_dir (indoors only) so thrust/afterburner drive along the engine's chosen
+// path. Flow/Dijkstra are reserved for routing (goal selection) only. Eliminates the per-frame
+// flow/engine source swap that caused the indoor barrier-transition hover/flipflop — validated in
+// live CTF play (Plutonium: bots hover-locked OFF, immediately unstuck + scoring ON). This is a
+// global steering policy, not mode-specific: it benefits any mode that navigates to goal rooms
+// through complex geometry (CTF, Hoard, later Entropy), not just CTF.
 extern bool Bot_nav_routing_only;
 
 // Phase 8.1: Outdoor terrain steering (Y-up altitude regulation + entrance-seek mode).
