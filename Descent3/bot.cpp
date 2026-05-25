@@ -2963,8 +2963,12 @@ static void BotApplyThrust(int bot_index) {
   if (burst_timer > 0.0f) {
     burst_timer -= Frametime;
     if (burst_timer <= 0.0f) {
-      // Burst expired — enter cooldown
-      burst_timer = is_outdoor ? -BOT_AB_COOLDOWN_OUTDOOR : -BOT_AB_COOLDOWN_INDOOR;
+      // Burst expired — enter cooldown. Flag/hoard carriers rushing to score skip the long
+      // "silent indoors" cooldown: a carrier is already a hunted beacon, so urgency beats
+      // stealth. They use the short outdoor cooldown everywhere for a near-sustained sprint.
+      // (HA carriers are excluded — they hunt for kills indoors, not rush, see line ~2727.)
+      bool sprint_carrier = BotIsCarryingEnemyFlag(bot_index) || BotIsHoardCarrier(bot_index);
+      burst_timer = (is_outdoor || sprint_carrier) ? -BOT_AB_COOLDOWN_OUTDOOR : -BOT_AB_COOLDOWN_INDOOR;
     }
   } else if (burst_timer < 0.0f) {
     // Count cooldown toward 0
