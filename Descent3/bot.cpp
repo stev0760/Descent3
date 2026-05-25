@@ -3355,6 +3355,7 @@ static void BotRespawn(int bot_index) {
   Bots[bot_index].explore_stuck_room = -1;
   Bots[bot_index].explore_room_timer = 0.0f;
   Bots[bot_index].last_progress_room = -1;
+  vm_MakeZero(&Bots[bot_index].last_progress_pos);
   Bots[bot_index].room_progress_timer = 0.0f;
   for (int v = 0; v < BOT_VISITED_ROOM_COUNT; v++)
     Bots[bot_index].visited_rooms[v] = -1;
@@ -3412,6 +3413,7 @@ void BotInitAll() {
     Bots[i].explore_stuck_room = -1;
     Bots[i].explore_room_timer = 0.0f;
     Bots[i].last_progress_room = -1;
+    vm_MakeZero(&Bots[i].last_progress_pos);
     Bots[i].room_progress_timer = 0.0f;
     for (int v = 0; v < BOT_VISITED_ROOM_COUNT; v++)
       Bots[i].visited_rooms[v] = -1;
@@ -3537,6 +3539,7 @@ void BotReinitAll() {
     Bots[i].explore_stuck_room = -1;
     Bots[i].explore_room_timer = 0.0f;
     Bots[i].last_progress_room = -1;
+    vm_MakeZero(&Bots[i].last_progress_pos);
     Bots[i].room_progress_timer = 0.0f;
     for (int v = 0; v < BOT_VISITED_ROOM_COUNT; v++)
       Bots[i].visited_rooms[v] = -1;
@@ -3788,6 +3791,7 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   Bots[bot_index].explore_stuck_room = -1;
   Bots[bot_index].explore_room_timer = 0.0f;
   Bots[bot_index].last_progress_room = -1;
+  vm_MakeZero(&Bots[bot_index].last_progress_pos);
   Bots[bot_index].room_progress_timer = 0.0f;
   for (int v = 0; v < BOT_VISITED_ROOM_COUNT; v++)
     Bots[bot_index].visited_rooms[v] = -1;
@@ -4023,10 +4027,23 @@ void BotDoFrame() {
     // If the bot hasn't changed rooms for BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT, pick a new destination.
     if (Bots[i].state == BOT_STATE_EXPLORE || Bots[i].state == BOT_STATE_HUNT) {
       int cur_room = OBJECT_OUTSIDE(obj) ? -1 : obj->roomnum;
-      if (cur_room >= 0 && cur_room != Bots[i].last_progress_room) {
-        // Room changed — record and reset timer
-        BotRecordVisitedRoom(i, cur_room);
+      // Progress = changing rooms (indoors) or moving a meaningful distance (outdoors). Outdoors
+      // there are no room transitions, so the old room-change-only test never reset and a bot
+      // flying straight across open terrain tripped the timeout and got a spurious escape (~half
+      // of all stuck escalations). Genuine outdoor wedging is still caught by the speed-based
+      // detector in BotApplyThrust.
+      bool made_progress;
+      if (OBJECT_OUTSIDE(obj))
+        made_progress = vm_VectorDistanceQuick(&obj->pos, &Bots[i].last_progress_pos) > BOT_OUTDOOR_PROGRESS_DIST;
+      else
+        made_progress = (cur_room != Bots[i].last_progress_room);
+
+      if (made_progress) {
+        // Made progress — record and reset timer
+        if (cur_room >= 0)
+          BotRecordVisitedRoom(i, cur_room);
         Bots[i].last_progress_room = cur_room;
+        Bots[i].last_progress_pos = obj->pos;
         Bots[i].room_progress_timer = 0.0f;
         Bots[i].room_progress_stuck_count = 0;
       } else {

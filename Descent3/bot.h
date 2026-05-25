@@ -112,6 +112,7 @@
 #define BOT_EXPLORE_MAX_CANDIDATES 16   // max rooms to sample from the map per destination pick
 #define BOT_VISITED_ROOM_COUNT 12       // circular buffer of recently visited rooms (anti-oscillation)
 #define BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT 12.0f // stuck if no room change for this long (Phase 4.01: 8→12)
+#define BOT_OUTDOOR_PROGRESS_DIST 50.0f // outdoors (no room transitions) progress = moving at least this far
 
 // Secondary weapon firing (Phase 3.10)
 // Bots fire missiles alongside primaries in COMBAT. Each secondary has range gates and self-guards.
@@ -324,7 +325,8 @@ struct bot_info {
 
   // Room-change progress tracking (Phase 4.0) — detects stuck earlier than speed-based detection
   int last_progress_room;                      // roomnum at last progress check
-  float room_progress_timer;                   // seconds since last room change
+  vector last_progress_pos;                    // position at last progress check (outdoor displacement metric)
+  float room_progress_timer;                   // seconds since last room change (or outdoor displacement)
   int visited_rooms[BOT_VISITED_ROOM_COUNT];   // circular buffer of recently visited rooms
   int visited_room_idx;                        // write index into visited_rooms[]
   int room_progress_stuck_count;               // consecutive timeouts in same room; escalates to escape
