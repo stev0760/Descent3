@@ -110,9 +110,10 @@ bool BotIsFlagPowerup(int powerup_id, int *out_team);
 // Returns true if the bot is currently carrying an enemy team's flag.
 bool BotIsCarryingEnemyFlag(int bot_index);
 
-// Returns the Objects[] index of the bot's home flag when it's free (AT_HOME or DROPPED), or -1.
-// Used for score-beeline goal targeting.
-int BotGetHomeFlagObjnum(int bot_index);
+// Returns the Objects[] index of the carrier's own flag when it's a free world object (AT_HOME or
+// DROPPED), or -1 when it's carried by an enemy. Touching that object scores (if home) or returns
+// it home (if dropped). Used for carrier beeline/orient/thrust targeting.
+int BotGetCarrierTouchObjnum(int bot_index);
 
 // Returns true if the bot is currently carrying the Hyper-Anarchy orb.
 bool BotIsCarryingHyperOrb(int bot_index);

@@ -480,11 +480,21 @@ static int BotGetObjectiveRoom_CTF(int bot_index) {
   if (role == SQUAD_FOLLOW || role == SQUAD_COVER)
     return -1;
 
-  // Any role carrying an enemy flag must rush home — universal, not role-specific
+  // Any role carrying an enemy flag must rush home — universal, not role-specific.
+  // Exception: if our own flag is loose (dropped) we can't score until it's home, so divert to
+  // touch it first. Touching it returns it home without losing the carried enemy flag (ctf.cpp:1034).
+  // Fixes the stalemate where two carriers face off: the survivor returns its own dropped flag and
+  // then scores, instead of sitting at home waiting for a teammate/timeout to return it.
   for (int t = 0; t < num_teams; t++) {
     if (t == my_team)
       continue;
     if (Bot_objective.flag_carrier_slot[t] == slot) {
+      if (Bot_objective.flag_state[my_team] == FLAG_DROPPED && Bot_objective.flag_objnum[my_team] >= 0 &&
+          Bot_objective.flag_room[my_team] >= 0 && Rooms[Bot_objective.flag_room[my_team]].used) {
+        LOG_DEBUG.printf("BOT OBJ: '%s' carrying team %d flag, own flag DROPPED -> returning it (room %d)",
+                         Bots[bot_index].callsign, t, Bot_objective.flag_room[my_team]);
+        return Bot_objective.flag_room[my_team];
+      }
       LOG_DEBUG.printf("BOT OBJ: '%s' carrying team %d flag -> heading home (room %d)", Bots[bot_index].callsign, t,
                        Bot_objective.goal_room[my_team]);
       return Bot_objective.goal_room[my_team];
@@ -710,15 +720,20 @@ bool BotIsCarryingEnemyFlag(int bot_index) {
   return false;
 }
 
-int BotGetHomeFlagObjnum(int bot_index) {
+int BotGetCarrierTouchObjnum(int bot_index) {
   if (BotGetGameMode() != BGM_CTF)
     return -1;
   int my_team = Players[Bots[bot_index].player_slot].team;
   if (my_team < 0 || my_team >= BOT_MAX_TEAMS)
     return -1;
-  if (Bot_objective.flag_state[my_team] != FLAG_AT_HOME)
-    return -1;
-  return Bot_objective.flag_objnum[my_team];
+  // Touching our own free flag either scores (when it's home) or returns it home (when it's
+  // dropped) — both handled in ctf.cpp:1034, and neither drops the carried enemy flag. Either
+  // way it's the object a carrier should fly into. When our flag is carried by an enemy there's
+  // nothing to touch (the enemy carrier must be killed first).
+  BotFlagState st = Bot_objective.flag_state[my_team];
+  if (st == FLAG_AT_HOME || st == FLAG_DROPPED)
+    return Bot_objective.flag_objnum[my_team];
+  return -1;
 }
 
 bool BotIsCarryingHyperOrb(int bot_index) {

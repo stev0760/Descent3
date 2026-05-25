@@ -1234,7 +1234,7 @@ static void BotDoExploreRoaming(int bot_index) {
     if (obj_room == obj->roomnum) {
       // Score beeline: carrier at home base with home flag present — fly through it to score.
       if (BotIsCarryingEnemyFlag(bot_index)) {
-        int flag_objnum = BotGetHomeFlagObjnum(bot_index);
+        int flag_objnum = BotGetCarrierTouchObjnum(bot_index);
         if (flag_objnum >= 0) {
           int &pgi = Bots[bot_index].pursuit_goal_index;
           if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
@@ -1476,16 +1476,17 @@ static void BotDoCarrierNav(int bot_index) {
     return;
   }
 
-  // Already at home base — beeline to the flag object (touching it scores)
+  // In the objective room — beeline to our own flag object. Touching it scores (flag at home) or
+  // returns our dropped flag home (which then lets us score on a later pass).
   if (obj_room == obj->roomnum) {
-    int flag_objnum = BotGetHomeFlagObjnum(bot_index);
+    int flag_objnum = BotGetCarrierTouchObjnum(bot_index);
     if (flag_objnum >= 0) {
       int &pgi = Bots[bot_index].pursuit_goal_index;
       if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
         GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
       int flag_handle = Objects[flag_objnum].handle;
       pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&flag_handle, 2, 1.0f, GF_SPEED_ATTACK);
-      LOG_DEBUG.printf("BOT CTF: '%s' score nav -> home flag obj %d", Bots[bot_index].callsign, flag_objnum);
+      LOG_DEBUG.printf("BOT CTF: '%s' carrier beeline -> own flag obj %d", Bots[bot_index].callsign, flag_objnum);
     } else {
       LOG_DEBUG.printf("BOT CTF: '%s' at home base, waiting for flag return", Bots[bot_index].callsign);
     }
@@ -2559,7 +2560,7 @@ static void BotUpdateAimDirection(int bot_index) {
   if (BotIsCarryingEnemyFlag(bot_index)) {
     int home_room = BotGetObjectiveRoom(bot_index);
     if (home_room >= 0 && obj->roomnum == home_room) {
-      int flag_objnum = BotGetHomeFlagObjnum(bot_index);
+      int flag_objnum = BotGetCarrierTouchObjnum(bot_index);
       if (flag_objnum >= 0) {
         obj->ai_info->last_see_target_pos = Objects[flag_objnum].pos;
         return;
@@ -2701,7 +2702,7 @@ static void BotApplyThrust(int bot_index) {
     }
     // Flag carrier: full speed + afterburner to rush home; beeline to home flag when close
     if (BotIsCarryingEnemyFlag(bot_index)) {
-      int flag_objnum = BotGetHomeFlagObjnum(bot_index);
+      int flag_objnum = BotGetCarrierTouchObjnum(bot_index);
       if (flag_objnum >= 0) {
         speed_scale = 1.0f;
         want_afterburner = true;
@@ -2715,7 +2716,7 @@ static void BotApplyThrust(int bot_index) {
           vertical = vm_DotProduct(&to_flag, &obj->orient.uvec);
         }
       } else {
-        // Home flag not present — wait at base, slow drift
+        // Own flag carried by an enemy — nothing to touch yet, wait at base with slow drift.
         speed_scale = 0.3f;
       }
       break;
