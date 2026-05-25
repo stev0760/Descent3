@@ -2729,8 +2729,17 @@ static void BotApplyThrust(int bot_index) {
           vertical = vm_DotProduct(&to_flag, &obj->orient.uvec);
         }
       } else {
-        // Own flag carried by an enemy — nothing to touch yet, wait at base with slow drift.
-        speed_scale = 0.3f;
+        // Own flag carried by an enemy — can't score or touch-return it yet. Still sprint home
+        // so we're staged at base to score the instant a teammate returns it; only slow-drift
+        // (hold position) once we've actually arrived home. Without the at_home gate the carrier
+        // crawls the whole way back at 30% speed, the "leisurely float" instead of an urgent run.
+        int home_room = BotGetObjectiveRoom(bot_index);
+        if (home_room >= 0 && obj->roomnum == home_room) {
+          speed_scale = 0.3f; // staged at base, waiting for the flag to come home
+        } else {
+          speed_scale = 1.0f;
+          want_afterburner = true;
+        }
       }
       break;
     }
