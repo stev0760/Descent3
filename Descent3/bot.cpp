@@ -2575,10 +2575,20 @@ static void BotUpdateAimDirection(int bot_index) {
   if (nav_goal_room >= 0) {
     bool should_face_nav = !has_valid_target || !BotHasLOS(obj, target);
     if (should_face_nav) {
-      vector flow_dir;
-      if (BotFlowFieldGetDirection(obj, nav_goal_room, &flow_dir)) {
-        BotFlattenSkyDirection(flow_dir, obj);
-        obj->ai_info->last_see_target_pos = obj->pos + flow_dir * 200.0f;
+      vector nav_dir;
+      if (Bot_nav_routing_only) {
+        // Routing-only mode: steering is the engine path-follower, so face its movement_dir.
+        // Aligning fvec with travel lets full forward thrust + afterburner drive the path
+        // (otherwise the bot faces its combat target and the thrust/AB facing gate stalls it).
+        nav_dir = obj->ai_info->movement_dir;
+        if (vm_GetMagnitude(&nav_dir) > 0.1f) {
+          BotFlattenSkyDirection(nav_dir, obj);
+          obj->ai_info->last_see_target_pos = obj->pos + nav_dir * 200.0f;
+          return;
+        }
+      } else if (BotFlowFieldGetDirection(obj, nav_goal_room, &nav_dir)) {
+        BotFlattenSkyDirection(nav_dir, obj);
+        obj->ai_info->last_see_target_pos = obj->pos + nav_dir * 200.0f;
         return;
       }
     }
@@ -2643,7 +2653,10 @@ static void BotApplyThrust(int bot_index) {
   // movement_dir when we have a known goal room in a different room.
   vector flow_dir;
   int nav_goal_room = BotGetNavGoalRoom(bot_index);
-  bool using_flow_field = (nav_goal_room >= 0 && BotFlowFieldGetDirection(obj, nav_goal_room, &flow_dir));
+  // Routing-only mode ($navrouting on): never let the flow field steer — fall through to the
+  // engine path-follower's movement_dir (the potential field below still supplements it).
+  bool using_flow_field =
+      (!Bot_nav_routing_only && nav_goal_room >= 0 && BotFlowFieldGetDirection(obj, nav_goal_room, &flow_dir));
 
   // Decompose world-space direction into bot-local axes
   float forward = 0.0f, sideways = 0.0f, vertical = 0.0f;

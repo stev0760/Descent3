@@ -886,6 +886,18 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     }
     return true;
   }
+  if (stricmp(command, "navrouting") == 0) {
+    if (stricmp(operand, "on") == 0) {
+      Bot_nav_routing_only = true;
+      PrintDedicatedMessage("Nav routing-only mode ON (flow routes, engine steers)\n");
+    } else if (stricmp(operand, "off") == 0) {
+      Bot_nav_routing_only = false;
+      PrintDedicatedMessage("Nav routing-only mode OFF (flow-field steering)\n");
+    } else {
+      PrintDedicatedMessage("Usage: $navrouting on|off  (current: %s)\n", Bot_nav_routing_only ? "on" : "off");
+    }
+    return true;
+  }
   if (stricmp(command, "terrainsteer") == 0) {
     if (stricmp(operand, "on") == 0) {
       Bot_terrain_steering_enabled = true;
@@ -986,6 +998,7 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     PrintDedicatedMessage("  $botmov on|off         - Toggle movement debug logging\n");
     PrintDedicatedMessage("  $potentialfield on|off - Toggle potential field steering (Phase 7.1)\n");
     PrintDedicatedMessage("  $flowfield on|off      - Toggle flow field navigation (Phase 7.2)\n");
+    PrintDedicatedMessage("  $navrouting on|off     - Routing-only mode: flow routes, engine steers (Phase 9, exp)\n");
     PrintDedicatedMessage("  $terrainsteer on|off   - Toggle outdoor terrain steering (Phase 8.1)\n");
     PrintDedicatedMessage("  $botpathfind on|off    - Toggle Dijkstra rerouter (Phase 7.2b)\n");
     PrintDedicatedMessage("  $botdispersal on|off   - Toggle occupancy-aware route dispersal (Phase 7.3)\n");
