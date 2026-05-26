@@ -94,7 +94,9 @@ The current focus is **0.9.0 stable** — further testing and tuning of Phase 7 
 
 ### Known Issues
 
-*   **Navigation edge cases:** Tested on a wide variety of level sets, both vanilla and custom. Most maps work well but complex multi-level geometry may still have edge cases, especially within outdoor structures.
+*   **Outdoor world-space awareness:** Indoor traversal is solid with routing-only steering (default on). Outdoors, bots are not yet fully aware of the full 3D worldspace — they can mis-target the wrong entry point of surface structures (e.g. a flag shaft whose opening is above ground level) and stick there. Improving height-aware outdoor navigation is the current focus.
+*   **Map design limits:** Most maps play well, but some — extreme verticality, deep mazes, or deliberately obtuse geometry — simply won't suit bots. The goal is a solid experience across the majority of maps, not every map.
+*   **Multi-flag CTF scoring:** In 4-team CTF a player can cash in multiple opposing flags at once for a bonus (2 flags = 3 pts, 3 = 9 pts). Bots only do this opportunistically; they don't deliberately hoard flags before scoring.
 *   **Client compatibility:** Tested with retail D3 v1.5 and PiccuEngine (Windows v1.5-compatible).
 *   **Weapon usage diversity:** Weapon selection hierarchy may need further tuning as more combat data is gathered.
 *   **Team rebalancing:** Teams can be pre-assigned per-bot in config. Dynamic rebalancing when humans join/leave is planned.
