@@ -95,6 +95,7 @@ The current focus is **0.9.0 stable** — further testing and tuning of Phase 7 
 ### Known Issues
 
 *   **Outdoor world-space awareness:** Indoor traversal is solid with routing-only steering (default on). Outdoors, bots are not yet fully aware of the full 3D worldspace — they can mis-target the wrong entry point of surface structures (e.g. a flag shaft whose opening is above ground level) and stick there. Improving height-aware outdoor navigation is the current focus.
+*   **Complex indoor routing (winding tunnels / blocked portals):** Under the new default routing-only steering, smart rerouting around teammate congestion and blocked passages is not yet active (it has not been wired into the engine's navigation goal), so bots in tight, maze-like interiors can stall and fall back to generic stuck-escape rather than routing around. Improving this is planned and untested under the new default.
 *   **Map design limits:** Most maps play well, but some — extreme verticality, deep mazes, or deliberately obtuse geometry — simply won't suit bots. The goal is a solid experience across the majority of maps, not every map.
 *   **Multi-flag CTF scoring:** In 4-team CTF a player can cash in multiple opposing flags at once for a bonus (2 flags = 3 pts, 3 = 9 pts). Bots only do this opportunistically; they don't deliberately hoard flags before scoring.
 *   **Client compatibility:** Tested with retail D3 v1.5 and PiccuEngine (Windows v1.5-compatible).
