@@ -439,5 +439,8 @@ savegame/
 # Generated log files
 *.log
 
+# Analysis output (from tools/analyze_bot_log.py)
+*.csv
+
 # Claude Code session exports
 2026-*.txt
