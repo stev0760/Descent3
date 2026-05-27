@@ -844,6 +844,10 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
       PrintDedicatedMessage("  Bot %d '%s' slot=%d state=%s role=%s lean=%s speed=%.1f shields=%.0f target=%s\n", i,
                             Bots[i].callsign, slot, state_names[Bots[i].state], BotSquadRoleName(Bots[i].squad_role),
                             lean_names[Bots[i].objective_lean], speed, obj->shields, tgt_name);
+      char nav_diag[192];
+      BotFormatNavDiag(i, nav_diag, sizeof(nav_diag));
+      if (nav_diag[0])
+        PrintDedicatedMessage("      %s\n", nav_diag);
     }
     if (!any)
       PrintDedicatedMessage("No bots active (or invalid index)\n");
@@ -893,6 +897,11 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     } else if (stricmp(operand, "off") == 0) {
       Bot_nav_routing_only = false;
       PrintDedicatedMessage("Nav routing-only mode OFF (flow-field steering)\n");
+      // Phase 10 Step 0 guard: with the potential field also off (new default), turning navrouting
+      // off leaves bots on raw flow-field steering — the worst combination. Warn the operator.
+      if (!Bot_potential_field_enabled)
+        PrintDedicatedMessage("  WARNING: potential field is OFF — raw flow-field steering, expect "
+                              "degraded movement. Re-enable navrouting or $potentialfield on.\n");
     } else {
       PrintDedicatedMessage("Usage: $navrouting on|off  (current: %s)\n", Bot_nav_routing_only ? "on" : "off");
     }

@@ -476,6 +476,14 @@ void BotSetDifficulty(int bot_index, BotDifficulty diff);
 // Returns the display name for a squad role (e.g., "Freelance", "Attack", "Defend").
 const char *BotSquadRoleName(BotSquadRole r);
 
+// Diagnostic: write a one-line navigation summary for $botstat into buf. Exposes why a bot
+// may be pressing a wall: engine path state (num_paths>0 = following a BOA path, 0 = direct-
+// seeking the goal position) and an FVI probe along the bot's intended movement direction
+// (movement_dir) reporting the nearest collidable face, its distance, and whether it is a
+// SOLID portal (i.e. glass). Diagnostic-only; no behavior change.
+void BotFormatNavDiag(int bot_index, char *buf, size_t buflen);
+#define BOT_NAV_DIAG_PROBE_DIST 50.0f // forward look distance for the $botstat movement_dir probe
+
 // Classify this bot's primary weapon loadout into BOT_EQUIP_TIER_WEAK/GOOD/ELITE.
 // Used by bot_objective.cpp to prefer well-armed bots for the DEFEND lean assignment.
 int BotGetEquipmentRating(int bot_index);

@@ -3113,6 +3113,71 @@ static void BotApplyThrust(int bot_index) {
   obj->mtype.phys_info.flags |= PF_USES_THRUST;
 }
 
+// Diagnostic: format a one-line navigation summary for $botstat. See bot.h for rationale.
+// Probes a ray along the bot's intended movement direction (movement_dir — what it thrusts
+// along when $navrouting is on) and reports the nearest collidable face: distance and whether
+// it is a SOLID portal (glass) vs a plain wall. Plus the engine path state (num_paths).
+void BotFormatNavDiag(int bot_index, char *buf, size_t buflen) {
+  if (bot_index < 0 || bot_index >= MAX_BOTS || !buf || buflen == 0)
+    return;
+  buf[0] = '\0';
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  if (!obj->ai_info)
+    return;
+
+  ai_path_info &path = obj->ai_info->path;
+  int dest_room = Bots[bot_index].explore_dest_room;
+
+  vector mdir = obj->ai_info->movement_dir;
+  float mdir_mag = vm_GetMagnitude(&mdir);
+
+  char probe[128];
+  if (mdir_mag > 0.01f) {
+    vector dir = mdir * (1.0f / mdir_mag);
+    vector p0 = obj->pos;
+    vector p1 = obj->pos + dir * BOT_NAV_DIAG_PROBE_DIST;
+    fvi_query fq{};
+    fvi_info hit{};
+    fq.p0 = &p0;
+    fq.p1 = &p1;
+    fq.startroom = obj->roomnum;
+    fq.rad = obj->size;
+    fq.thisobjnum = OBJNUM(obj);
+    fq.ignore_obj_list = nullptr;
+    fq.flags = FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS | FQ_IGNORE_MOVING_OBJECTS;
+    int ht = fvi_FindIntersection(&fq, &hit);
+    if (ht == HIT_NONE) {
+      snprintf(probe, sizeof(probe), "clear(>%.0fu)", BOT_NAV_DIAG_PROBE_DIST);
+    } else if (ht == HIT_WALL || ht == HIT_BACKFACE) {
+      vector d = hit.hit_pnt - obj->pos;
+      float dist = vm_GetMagnitude(&d);
+      int fr = hit.hit_face_room[0];
+      int fi = hit.hit_face[0];
+      int solid = -1, portal = -1;
+      if (fr >= 0 && fr <= Highest_room_index && Rooms[fr].used && fi >= 0 && fi < Rooms[fr].num_faces) {
+        int pf = GetFacePhysicsFlags(&Rooms[fr], &Rooms[fr].faces[fi]);
+        solid = (pf & FPF_SOLID) ? 1 : 0;
+        portal = (pf & FPF_PORTAL) ? 1 : 0;
+      }
+      snprintf(probe, sizeof(probe), "WALL d=%.1f solid=%d portal=%d", dist, solid, portal);
+    } else if (ht == HIT_TERRAIN) {
+      vector d = hit.hit_pnt - obj->pos;
+      snprintf(probe, sizeof(probe), "TERRAIN d=%.1f", vm_GetMagnitude(&d));
+    } else if (ht == HIT_OBJECT) {
+      vector d = hit.hit_pnt - obj->pos;
+      snprintf(probe, sizeof(probe), "OBJ d=%.1f", vm_GetMagnitude(&d));
+    } else {
+      snprintf(probe, sizeof(probe), "hit=%d", ht);
+    }
+  } else {
+    snprintf(probe, sizeof(probe), "mdir~0");
+  }
+
+  snprintf(buf, buflen, "nav: dest_room=%d num_paths=%d path=%u/%u mdir|%.2f| ahead:%s", dest_room,
+           (int)path.num_paths, path.cur_path, path.cur_node, mdir_mag, probe);
+}
+
 // Find and set the best target as this bot's AI target.
 // Considers all enemies (players + robots in coop/robo-anarchy), with a congestion
 // penalty to spread bots across multiple targets.
