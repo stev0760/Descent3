@@ -49,8 +49,12 @@
 #include <queue>
 #include <vector>
 
-bool Bot_potential_field_enabled = true;
-bool Bot_flow_field_enabled = true;
+// Phase 10 consolidation Step 0: potential field default OFF. The engine's AIF_AVOID_WALLS
+// (grazing-wall deflection) + AIF_AUTO_AVOID_FRIENDS cover what PF wall/teammate repulsion
+// re-implemented, and PF portal-attraction can tug bots at glass portals BOA already excludes.
+// Toggle ($potentialfield) retained for A/B until the layer is deleted (NAV_CONSOLIDATION.md).
+bool Bot_potential_field_enabled = false;
+bool Bot_flow_field_enabled = true; // dormant for steering while navrouting on; pruned in Step 3
 bool Bot_nav_routing_only = true; // Phase 9 redesign, default ON — disable with $navrouting off
 
 // Phase 8.1: Outdoor terrain steering layer. 8.1a seeds it with the corrected (Y-up) sky-flatten;
@@ -627,7 +631,9 @@ float BotEstimatePathCost(int from_room, int goal_room) {
 
 // --- Teammate occupancy overlay for per-bot path variation ---
 
-bool Bot_dispersal_enabled = true;
+// Phase 10 consolidation Step 0: occupancy dispersal default OFF. Dormant for steering under
+// navrouting-on anyway; toggle ($botdispersal) retained for A/B until deleted in Step 1.
+bool Bot_dispersal_enabled = false;
 
 #define BOT_MAX_TEAMS_OCCUPANCY 4
 static int pf_room_occupancy[BOT_MAX_TEAMS_OCCUPANCY][MAX_ROOMS];
