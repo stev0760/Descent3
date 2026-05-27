@@ -2568,29 +2568,16 @@ static void BotUpdateAimDirection(int bot_index) {
     }
   }
 
-  // Phase 7.2: Orient override — when navigating via flow field and the bot can't see its
-  // target (or has no target), face the portal direction instead of the enemy. This ensures
-  // fvec aligns with the navigation goal so afterburner thrust pushes the bot the right way.
+  // Phase 10 routing-only orient override: when the bot has a nav goal and can't see its target
+  // (or has none), face the engine path-follower's movement_dir so forward thrust + afterburner
+  // drive along the path instead of facing the combat target (which stalls the AB facing gate).
+  // Indoor-only — outdoors falls through to combat aim (matches pre-Phase-10 outdoor behavior).
   int nav_goal_room = BotGetNavGoalRoom(bot_index);
-  if (nav_goal_room >= 0) {
+  if (nav_goal_room >= 0 && !OBJECT_OUTSIDE(obj)) {
     bool should_face_nav = !has_valid_target || !BotHasLOS(obj, target);
     if (should_face_nav) {
-      vector nav_dir;
-      if (Bot_nav_routing_only && !OBJECT_OUTSIDE(obj)) {
-        // Routing-only mode: steering is the engine path-follower, so face its movement_dir.
-        // Aligning fvec with travel lets full forward thrust + afterburner drive the path
-        // (otherwise the bot faces its combat target and the thrust/AB facing gate stalls it).
-        // Indoor-only: outdoors the flow field is already disabled, so OFF mode never overrode
-        // aim out there (it faced the combat target). Without this gate, ON forces a face-travel
-        // override outdoors for carriers/explorers, which OFF didn't — an asymmetry that thrashed
-        // outdoor aim. Outdoors, fall through to the flow branch (false outdoors) → combat aim.
-        nav_dir = obj->ai_info->movement_dir;
-        if (vm_GetMagnitude(&nav_dir) > 0.1f) {
-          BotFlattenSkyDirection(nav_dir, obj);
-          obj->ai_info->last_see_target_pos = obj->pos + nav_dir * 200.0f;
-          return;
-        }
-      } else if (BotFlowFieldGetDirection(obj, nav_goal_room, &nav_dir)) {
+      vector nav_dir = obj->ai_info->movement_dir;
+      if (vm_GetMagnitude(&nav_dir) > 0.1f) {
         BotFlattenSkyDirection(nav_dir, obj);
         obj->ai_info->last_see_target_pos = obj->pos + nav_dir * 200.0f;
         return;
@@ -2653,23 +2640,12 @@ static void BotApplyThrust(int bot_index) {
   vector &mdir = obj->ai_info->movement_dir;
   float mdir_mag = vm_GetMagnitude(&mdir);
 
-  // Phase 7.2: Flow field override — use portal-directed navigation instead of engine's
-  // movement_dir when we have a known goal room in a different room.
-  vector flow_dir;
-  int nav_goal_room = BotGetNavGoalRoom(bot_index);
-  // Routing-only mode ($navrouting on): never let the flow field steer — fall through to the
-  // engine path-follower's movement_dir (the potential field below still supplements it).
-  bool using_flow_field =
-      (!Bot_nav_routing_only && nav_goal_room >= 0 && BotFlowFieldGetDirection(obj, nav_goal_room, &flow_dir));
-
-  // Decompose world-space direction into bot-local axes
+  // Phase 10: steering is the engine path-follower's movement_dir (flow-field steering removed —
+  // routing picks the goal room, the engine steers there). Decompose into bot-local axes.
   float forward = 0.0f, sideways = 0.0f, vertical = 0.0f;
   vector effective_dir = {0.0f, 0.0f, 0.0f};
   bool has_nav_dir = false;
-  if (using_flow_field) {
-    effective_dir = flow_dir;
-    has_nav_dir = true;
-  } else if (mdir_mag > 0.01f) {
+  if (mdir_mag > 0.01f) {
     effective_dir = mdir;
     has_nav_dir = true;
   }
