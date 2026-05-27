@@ -288,3 +288,106 @@ those exist in the rotation before building it.
   *open* room): the `using_flow_field`-threading gate fix from Phase 7.6 notes — different mechanism,
   not terrain. See `project_nav_phase7_status.md`.
 - **Flag-carrier sprint-home speed** and other Phase 7.6 open bugs — independent of outdoor steering.
+
+---
+
+## 5. Phase 8.2 — Elevated-Entrance Seeking (post-revert re-scope, 2026-05-26)
+
+> This section supersedes the *implementation* plan of §2.3–§2.7 for the next increment. The §2
+> design (mode decision, altitude band, look-ahead) stands as the long-term shape; §5 records what
+> actually shipped, what was reverted and why, and the deliberately narrower next step.
+
+### 5.1 What landed vs. what was reverted
+
+| Piece | Commit | Status |
+| :-- | :-- | :-- |
+| 8.1a — `BotFlattenSkyDirection` axis fix (`.z()`→`.y()`), `$terrainsteer` toggle | `2adbe1be` | **LANDED, kept** |
+| 8.1b + 8.1d + mode decision — altitude band + ENTRANCE-SEEK | `b95a04df` | **REVERTED** (`ee386c83`) |
+
+**Why `b95a04df` was reverted:** on CanyonsCTF it aimed bots full-3-D at the boundary portal
+`path_pnt`, but on that map the relevant portals are **sky portals whose `path_pnt` sits near the
+canyon ceiling**. Bots flew up at the ceiling-height target and pinned against the sky barrier. The
+band + entrance-seek shipped together and could not be A/B-isolated from the open-terrain crossing
+case they broke. After the revert the user confirmed CanyonsCTF "works pretty well."
+
+**Post-revert outdoor baseline (this is the validated starting point — do not regress it):**
+- **Heading:** raw engine `movement_dir` (flow field disabled outdoors at `bot_steering.cpp:823/833`;
+  potential-field wall-repulsion is indoor-only at `bot_steering.cpp:292`).
+- **Aim:** the `$navrouting` face-travel override is indoor-gated (`e075a0d5`) → outdoors the bot
+  faces its combat target, not its travel direction.
+- **Vertical regulation:** only the **one-way 8.1a flatten** (`BotFlattenSkyDirection`, `bot.cpp:2515`)
+  — zeroes any `effective_dir` with `dir.y() > 0.3` — plus a **one-way altitude ceiling cap**
+  (`bot.cpp:3090`, `BOT_MAX_ALTITUDE_ABOVE_GROUND = 200`). No floor-lift, no look-ahead, no entrance logic.
+
+### 5.2 The bug being targeted: elevated structure entrances (red/blue flag shaft)
+
+Live-observed on Plutonium (navrouting3/4): the red and blue flags sit inside tunnels whose **opening
+is above ground level** on the terrain surface. Bots target the **base** of the shaft structure and
+stick there instead of flying up into the opening.
+
+**Confirmed root cause (verified in source this session):** when the BOA next-hop is the shaft's
+indoor room, the engine `movement_dir` toward that boundary portal points *upward* (`mdir.y() > 0.3`,
+because the opening is above the bot). At `bot.cpp:2677-2681` the thrust path runs
+`BotFlattenSkyDirection(effective_dir, obj)` **before** decomposing into forward/sideways/vertical —
+so the flatten **zeroes exactly the climb the bot needs** and it presses horizontally into the shaft
+base. The 200u soft cap (`bot.cpp:3090`) is *not* implicated — a shaft mouth is nowhere near 200u AGL.
+
+This is the §2.2.5 ENTRANCE-SEEK case. The reverted attempt's failure mode (ceiling-pin) **cannot
+reproduce here**: an ENTRANCE-SEEK target is a real *indoor structure* portal (the building opening),
+not a *sky/terrain-region* portal. Different geometry, different code branch.
+
+### 5.3 Phase 8.2a — ENTRANCE-SEEK only (the next increment; ship this alone)
+
+Scope deliberately narrowed to *just* the structure-entrance case. **No altitude band, no look-ahead**
+— those are for crossing open terrain, which the baseline already handles. Defer them (§5.5).
+
+**Detect (per outdoor frame, in `BotApplyThrust` outdoor handling):**
+```
+next = BOA_GetNextRoom(cur_room, goal_room)
+entrance_seek =  obj is outdoor/sky-exposed
+              && next is a real indoor structure room:
+                 next >= 0 && next <= Highest_room_index
+                 && !(Rooms[next].flags & (RF_EXTERNAL | RF_TOUCHES_TERRAIN))
+```
+Terrain regions are `index > Highest_room_index` and sky-exposed rooms carry the terrain flags, so
+both the CanyonsCTF open-crossing case and intra-canyon hops are excluded by construction.
+
+**Act, when `entrance_seek`:**
+1. **Suppress the 8.1a flatten** (`bot.cpp:2678`) — pass a flag or guard the call so it no-ops in this
+   mode. The bot must be allowed to climb to an elevated opening.
+2. **Suppress the upward soft cap** (`bot.cpp:3090`) in this mode (belt-and-suspenders; unlikely to
+   bite for a shaft but documents intent and protects very tall structures).
+3. **Aim full-3-D at the boundary portal.** Reuse the existing BOA machinery that
+   `BotFlowFieldGetDirection` uses — `BOA_DetermineStartRoomPortal(cur_room, nullptr, next, nullptr)`
+   → portal `path_pnt` (the opening). Aim `effective_dir` at it directly (no LOS gate — the bot is
+   outdoors approaching a structure, not routing through interior glass). This is a **steering branch,
+   not a new pathfinder.**
+4. **Face the entrance so the afterburner assists.** Outdoors the bot currently faces its combat
+   target (§5.1), so AB (which forces `forward=1.0` along `fvec`) would push the wrong way. Add an
+   ENTRANCE-SEEK aim override in `BotUpdateAimDirection` (mirror the indoor navrouting override, but
+   gated on `entrance_seek` rather than `!OBJECT_OUTSIDE`) so the bot orients at the opening and the
+   AB facing gate fires it *into* the shaft. Without this, tri-chord thrust still carries the bot
+   toward the opening — just slower; the facing override is what makes it a sprint.
+
+**Containment:** the whole branch is gated on `outdoor && next-hop-is-indoor-structure`. It is
+inert on CanyonsCTF (next-hop there is a terrain region / sky-exposed room) and inert fully indoors.
+
+### 5.4 Mandatory test plan (the revert is the lesson — atomic + regression-gated)
+
+Whatever lands must be **one atomic change, A/B-tested with `$terrainsteer off` vs `on`**, not merely
+"shaft fixed." The 8.1b/d revert proved outdoor pieces pin bots in ways indoor tests never catch.
+
+1. **Plutonium red/blue shaft** — confirm bots climb into the elevated opening and reach the flag
+   (the target bug). `$terrainsteer on` vs `off` so the new branch can be disabled in the field.
+2. **CanyonsCTF (HAVOC L4) regression** — the explicit guard against repeating the revert. Confirm
+   bots still cross the canyon gap and do **not** sky-pin. Must be unchanged from today's baseline.
+3. **Mixed map (bedlam) regression** — indoor↔outdoor transitions still smooth; carriers still sprint.
+4. **Pure indoor (SewerRat)** — prove containment: zero behavior change.
+
+### 5.5 Deferred to 8.2b / 8.2c — gated on evidence
+
+- **8.2b altitude band** (§2.3) and **8.2c forward look-ahead** (§2.4) are for *crossing open terrain*.
+  CanyonsCTF crosses fine today without them — **do not build until a map shows bots scraping ground
+  or nosing into ridges across open terrain.** If the band is ever revived it **must** ship behind the
+  §2.2.5 mode gate (the band over an entrance mouth yanks the bot up exactly when it should descend) —
+  that gate-coupling failure is precisely what caused the `b95a04df` revert.
