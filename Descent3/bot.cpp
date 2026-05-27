@@ -2852,14 +2852,6 @@ static void BotApplyThrust(int bot_index) {
       Bots[bot_index].juke_phase -= 6.28318f;
   }
 
-  // Phase 7.1: Potential field steering — applied after FSM overrides and juke but before speed
-  // scaling. FSM branches set absolute directions (carrier beeline, powerup beeline, combat orbit)
-  // that the field must be able to correct. Correction needs full directional resolution before
-  // per-axis speed scaling collapses magnitudes. This layer supplements (not replaces) the engine's
-  // AIF_AVOID_WALLS which is already baked into movement_dir.
-  BotApplyPotentialField(bot_index, obj, forward, sideways, vertical, want_afterburner,
-                         has_nav_dir ? &effective_dir : nullptr);
-
   // AB facing gate: suppress afterburner when the bot isn't facing its desired travel direction.
   // In 6DOF, AB thrust goes along fvec — if fvec points at an enemy while the bot wants to
   // navigate a pipe, AB pushes it the wrong way. The orient override in BotUpdateAimDirection
