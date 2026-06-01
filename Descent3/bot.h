@@ -113,6 +113,7 @@
 #define BOT_VISITED_ROOM_COUNT 12       // circular buffer of recently visited rooms (anti-oscillation)
 #define BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT 12.0f // stuck if no room change for this long (Phase 4.01: 8→12)
 #define BOT_OUTDOOR_PROGRESS_DIST 50.0f // outdoors (no room transitions) progress = moving at least this far
+#define BOT_INDOOR_PROGRESS_DIST 50.0f  // indoors, also count this much displacement as progress (big-room fix)
 
 // Secondary weapon firing (Phase 3.10)
 // Bots fire missiles alongside primaries in COMBAT. Each secondary has range gates and self-guards.

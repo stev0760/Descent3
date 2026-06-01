@@ -4091,11 +4091,18 @@ void BotDoFrame() {
       // flying straight across open terrain tripped the timeout and got a spurious escape (~half
       // of all stuck escalations). Genuine outdoor wedging is still caught by the speed-based
       // detector in BotApplyThrust.
+      // Displacement from the progress anchor (last room-entry / last reset point). Used both as a progress
+      // signal and logged at timeout to tell a real wedge (small net_disp) from a big-room false positive (large).
+      float net_disp = vm_VectorDistanceQuick(&obj->pos, &Bots[i].last_progress_pos);
       bool made_progress;
       if (OBJECT_OUTSIDE(obj))
-        made_progress = vm_VectorDistanceQuick(&obj->pos, &Bots[i].last_progress_pos) > BOT_OUTDOOR_PROGRESS_DIST;
+        made_progress = net_disp > BOT_OUTDOOR_PROGRESS_DIST;
       else
-        made_progress = (cur_room != Bots[i].last_progress_room);
+        // Indoors, progress = changing rooms OR covering meaningful ground. A bot crossing a huge room (the
+        // central arena) makes real progress with no portal transition; the old room-change-only test flagged
+        // it stuck and forced a turn-around mid-crossing (~42% of timeouts were >75u traversals). Mirrors the
+        // outdoor displacement test; genuine pins (small net_disp) still escalate.
+        made_progress = (cur_room != Bots[i].last_progress_room) || net_disp > BOT_INDOOR_PROGRESS_DIST;
 
       if (made_progress) {
         // Made progress — record and reset timer
@@ -4122,16 +4129,18 @@ void BotDoFrame() {
             // Consecutive timeouts in same room — nav goal keeps failing. Force physical escape.
             // Preserve explore_dest_room so the escape handler can skip the failing portal.
             Bots[i].stuck_timer = BOT_STUCK_ABANDON_TIME + 0.1f;
-            LOG_DEBUG.printf("BOT: '%s' stuck escalation (room %d, %d consecutive timeouts) — forcing escape",
-                             Bots[i].callsign, cur_room, Bots[i].room_progress_stuck_count);
+            LOG_DEBUG.printf("BOT: '%s' stuck escalation (room %d, %d consecutive timeouts, net_disp=%.0f) — "
+                             "forcing escape",
+                             Bots[i].callsign, cur_room, Bots[i].room_progress_stuck_count, net_disp);
           } else {
             Bots[i].explore_dest_room = -1;
             Bots[i].explore_room_timer = 0.0f;
             int obj_room = BotGetObjectiveRoom(i);
             bool is_carrier = BotIsCarryingEnemyFlag(i) || BotIsCarryingHyperOrb(i);
             if (obj_room >= 0 || is_carrier) {
-              LOG_DEBUG.printf("BOT: '%s' room progress timeout (room %d) — re-routing to objective (room %d)",
-                               Bots[i].callsign, cur_room, obj_room);
+              LOG_DEBUG.printf("BOT: '%s' room progress timeout (room %d, net_disp=%.0f) — re-routing to objective "
+                               "(room %d)",
+                               Bots[i].callsign, cur_room, net_disp, obj_room);
             } else {
               float shields = Objects[Players[slot].objnum].shields;
               bool need_sh = (shields < INITIAL_SHIELDS * BOT_LOW_SHIELDS_PCT);
@@ -4144,11 +4153,11 @@ void BotDoFrame() {
                 Bots[i].chasing_powerup_handle = tgt_handle;
                 Bots[i].chasing_powerup_timer = 0.0f;
                 float pu_dist = vm_VectorDistanceQuick(&obj->pos, &Objects[pu_obj].pos);
-                LOG_DEBUG.printf("BOT: '%s' room progress timeout (room %d) — chasing '%s' (dist=%.0f)",
-                                 Bots[i].callsign, cur_room, Object_info[Objects[pu_obj].id].name, pu_dist);
+                LOG_DEBUG.printf("BOT: '%s' room progress timeout (room %d, net_disp=%.0f) — chasing '%s' (dist=%.0f)",
+                                 Bots[i].callsign, cur_room, net_disp, Object_info[Objects[pu_obj].id].name, pu_dist);
               } else {
-                LOG_DEBUG.printf("BOT: '%s' room progress timeout (room %d, %.1fs) — picking new destination",
-                                 Bots[i].callsign, cur_room, BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT);
+                LOG_DEBUG.printf("BOT: '%s' room progress timeout (room %d, net_disp=%.0f) — picking new destination",
+                                 Bots[i].callsign, cur_room, net_disp);
               }
             }
           }
