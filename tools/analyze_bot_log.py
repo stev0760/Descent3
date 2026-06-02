@@ -27,13 +27,21 @@ RE_GAME_MODE = re.compile(r"Detected game mode: (\S+)")
 RE_STUCK = re.compile(r"stuck escalation \(room (-?\d+)")
 RE_CAPTURE = re.compile(r"\((\w+)\) captures the (\w+) Flag")
 RE_KILL = re.compile(r"was killed by")
-RE_CARRIER_NAV = re.compile(r"carrier nav room (-?\d+) -> home (\d+)")
+# Carrier nav — tolerant of both the pre-Phase-11 ("-> home N") and Phase-11 waypoint-injection
+# ("-> wp W (home N)" / Hoard "(K orbs) room R -> wp W (goal N)") formats. g1=current room, g2=goal.
+RE_CARRIER_NAV = re.compile(r"carrier nav (?:\(\d+ orbs\) )?room (-?\d+) -> (?:home |wp \d+ \((?:home|goal) )(\d+)")
 RE_CARRIER_DEATH = re.compile(r"DIED carrying flag.*dist_to_home=(\d+).*room=(-?\d+)")
 RE_WAITING_FLAG = re.compile(r"at home base, waiting for flag return")
 RE_BOT_POLL_CTF = re.compile(r"\[BotPollCTF@")
 RE_OBJ_INIT = re.compile(r"CTF goals: (.+)")
-RE_OBJ_ROOM = re.compile(r"objective nav -> room (\d+)")
+# Objective nav — pre-Phase-11 ("-> room N") and Phase-11 waypoint ("-> wp W (goal N)").
+RE_OBJ_ROOM = re.compile(r"objective nav -> (?:room \d+|wp \d+ \(goal \d+\))")
 RE_BOT_NAME = re.compile(r"'([^']+\[BOT\])'")
+
+# Phase 11 router diagnostics.
+RE_DIVERGE = re.compile(r"\[DIVERGE\]")  # router chose a different door than BOA (co-occurs on nav lines)
+RE_IMPASSABLE = re.compile(r"\[Nav\] Room (-?\d+) portal \d+ IMPASSABLE")  # grate/slit/locked detected
+RE_DYN_BUMP = re.compile(r"\[Nav\] dyn-penalty bump room (-?\d+) portal")  # emergent-obstacle reroute
 
 DIST_CLOSE = 200
 DIST_MID = 500
@@ -59,6 +67,11 @@ def new_map_stats():
         "waiting_flag": 0,
         "poll_ctf": 0,
         "obj_nav": 0,
+        # Phase 11 router activity
+        "diverge": 0,        # nav re-issues where the router chose a different door than BOA
+        "impassable": 0,     # grate/slit/locked portals the router excluded
+        "impassable_rooms": Counter(),
+        "dyn_bumps": 0,      # emergent-obstacle penalty bumps (traversal failures)
         "bot_carrier_ticks": Counter(),
         "bot_carrier_deaths": Counter(),
         "first_ts": None,
@@ -98,6 +111,21 @@ def parse_log(path):
 
             s = stats[current_map]
             s["last_ts"] = last_ts
+
+            # Router divergence co-occurs on the carrier/objective nav lines (which continue below),
+            # so count it here without consuming the line.
+            if "[DIVERGE]" in line:
+                s["diverge"] += 1
+
+            m = RE_IMPASSABLE.search(line)
+            if m:
+                s["impassable"] += 1
+                s["impassable_rooms"][int(m.group(1))] += 1
+                continue
+
+            if RE_DYN_BUMP.search(line):
+                s["dyn_bumps"] += 1
+                continue
 
             m = RE_GAME_MODE.search(line)
             if m:
@@ -180,6 +208,19 @@ def detect_anomalies(stats):
                 anomalies.append((name, "FLAG_DETECT_SILENCE",
                                   f"CTF mode with {s['kills']} kills but zero objective nav and zero poll events — "
                                   f"flag objects likely invisible to bot objective system"))
+
+        # Phase 11 router: present but never diverged from BOA / found no geometry / never rerouted,
+        # AND bots are stuck indoors (where the router *should* help — it is indoor-only). This is the
+        # actionable no-op case: geometry cost isn't catching this map's chokes, or there's no alternate
+        # route to take. (Idle on an open map with no indoor stucks is correct, not flagged.)
+        router_nav = s["obj_nav"] + s["carrier_nav_ticks"]
+        indoor_stucks = s["stucks"] - s["outdoor_stucks"]
+        if (router_nav > 50 and indoor_stucks > 50
+                and s["diverge"] == 0 and s["impassable"] == 0 and s["dyn_bumps"] == 0):
+            anomalies.append((name, "ROUTER_INACTIVE",
+                              f"{router_nav} router nav events and {indoor_stucks} indoor stucks, but 0 "
+                              f"divergences / 0 impassable / 0 bumps — router returned BOA's route every "
+                              f"time where bots are stuck (geometry cost not catching this map's chokes)"))
 
         # Stuck concentration: high stuck count in 1-2 rooms
         if s["stucks"] > 50:
@@ -310,6 +351,29 @@ def print_report(stats, total_lines, log_path):
               f"| {avg_dd} |")
     print()
 
+    # Router activity (Phase 11) — is the cost-aware router actually doing anything?
+    has_router = any((s["obj_nav"] + s["carrier_nav_ticks"]) > 0 for s in stats.values())
+    if has_router:
+        print(f"## Router Activity (Phase 11)")
+        print()
+        print(f"Router nav = objective + carrier waypoint re-issues. DIVERGE = chose a different door "
+              f"than BOA (the router earning its keep). Impassable = grates/slits excluded. "
+              f"Bumps = emergent-obstacle reroutes. A map with router nav but 0 DIVERGE/impassable/bumps "
+              f"is a no-op (geometry cost not catching its chokes, or no alternate routes).")
+        print()
+        print(f"| Map | Router Nav | DIVERGE (rate) | Impassable | Dyn Bumps |")
+        print(f"|---|---|---|---|---|")
+        for name in maps:
+            s = stats[name]
+            rn = s["obj_nav"] + s["carrier_nav_ticks"]
+            if rn == 0:
+                continue
+            print(f"| {name} | {rn} "
+                  f"| {s['diverge']} ({fmt_pct(s['diverge'], rn)}) "
+                  f"| {s['impassable']} "
+                  f"| {s['dyn_bumps']} |")
+        print()
+
     # Outdoor breakdown (only if any map has carrier data)
     has_carrier = any(s["carrier_nav_ticks"] > 0 for s in stats.values())
     if has_carrier:
@@ -434,7 +498,8 @@ def export_csv(stats, total_lines, log_path, out_dir):
               "carrier_deaths", "avg_death_dist",
               "carrier_nav_ticks", "outdoor_carrier_pct",
               "outdoor_stucks", "outdoor_stuck_pct",
-              "waiting_flag_return", "poll_ctf_events", "objective_nav_events"]
+              "waiting_flag_return", "poll_ctf_events", "objective_nav_events",
+              "router_diverge", "router_diverge_pct", "router_impassable", "router_dyn_bumps"]
     rows = []
     for name in maps:
         s = stats[name]
@@ -452,6 +517,9 @@ def export_csv(stats, total_lines, log_path, out_dir):
             s["carrier_nav_ticks"], outdoor_c_pct,
             s["outdoor_stucks"], outdoor_s_pct,
             s["waiting_flag"], s["poll_ctf"], s["obj_nav"],
+            s["diverge"],
+            f"{s['diverge']/(s['obj_nav']+s['carrier_nav_ticks'])*100:.0f}" if (s["obj_nav"] + s["carrier_nav_ticks"]) else "",
+            s["impassable"], s["dyn_bumps"],
         ])
     path = os.path.join(out_dir, f"{basename}_summary.csv")
     write_csv(path, header, rows)
