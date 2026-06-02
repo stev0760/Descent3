@@ -8,7 +8,7 @@ Design documents, reference material, and specifications for the Matcen multipla
 | [BOTS_DEVEL.md](BOTS_DEVEL.md) | Phase history, current status, implementation notes |
 | [BOT_DEV_REFERENCE.md](BOT_DEV_REFERENCE.md) | Architecture, FSM, constants, engine API patterns, gotchas |
 | [BOT_MANAGEMENT.md](BOT_MANAGEMENT.md) | Config rosters, ship selection, difficulty levels, UI, remote admin |
-| [NAV_OVERHAUL.md](NAV_OVERHAUL.md) | Navigation overhaul: root cause analysis, pathfinding pipeline |
+| [NAVIGATION.md](NAVIGATION.md) | **Canonical** bot navigation design: two-layer model, Phase 11 cost-aware router, engine reference, history |
 | [PATHFINDING_CODEBASE_EXPLORE.md](PATHFINDING_CODEBASE_EXPLORE.md) | Guide-bot navigation analysis |
 | [D3_MOVEMENT_PHYSICS.md](D3_MOVEMENT_PHYSICS.md) | Engine physics constants and packet flag reference |
 | [D3_PYRODECK_SPEC.md](D3_PYRODECK_SPEC.md) | Spec for D3 Pyrodeck — companion web admin tool |

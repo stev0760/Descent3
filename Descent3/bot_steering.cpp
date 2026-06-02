@@ -16,18 +16,16 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-// Phase 7.1a: Potential field steering — forward-hemisphere wall avoidance + portal attraction.
-// See matcen-docs/NAV_OVERHAUL_2.md for full design rationale.
+// Bot navigation routing layer (Phase 11). Routing-only: this file decides WHICH room a bot
+// heads to next; the engine path-follower does all the steering. See matcen-docs/NAVIGATION.md
+// for the full design (and §8 for why the old potential/flow-field steering layers were removed).
 //
-// Three key behaviors beyond basic repulsion:
-// 1. Forward-clear passage detection: when the central forward ray is clear but diagonal
-//    rays hit (narrow pipe/doorway), dampen lateral forces to allow fluid pipe traversal.
-// 2. Field opposition brake: when the forward ray hits AND the field strongly opposes
-//    current thrust (bot is flying into a solid wall), suppress afterburner and clamp
-//    forward thrust. This prevents the "AB into wall" pattern.
-// 3. Portal attraction: when hitting a wall head-on, add a pull toward the nearest
-//    portal exit that aligns with the bot's intended movement. This redirects bots
-//    from "through the wall" to "through the portal opening."
+// Contents:
+// - BotPortalGeoCost / BotCheckPortalPassable: graded portal geometry cost (grates/slits/tight).
+// - BotComputeRoute: cost-aware Dijkstra next-hop over the interior room graph.
+// - BotBumpPortalPenalty / BotPortalDynPenalty: dynamic per-portal cost for emergent obstacles.
+// - BotEstimatePathCost: BOA-chain cost estimate for objective scoring.
+// - Bot_terrain_steering_enabled ($terrainsteer): outdoor altitude / sky-flatten toggle.
 
 #include "bot_steering.h"
 #include "bot.h"

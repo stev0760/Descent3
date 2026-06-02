@@ -221,12 +221,16 @@ Output per bot (all): `  Bot <N> '<name>' → <difficulty>` (2 leading spaces)
 Extra line when `all`: `Default difficulty set to <difficulty>`
 
 **`$botstat [index|all]`**
-Show bot status. Output format (timeout-based collection):
+Show bot status — **two lines per bot** (a status line and a navigation-diagnostic line). Output format (timeout-based collection):
 ```
-  Bot 0 'Phantom [BOT]' slot=2 state=COMBAT speed=10.3 vel=(0.0,-7.2,7.3) shields=100 target=Viper [BOT]
-  Bot 1 'Viper [BOT]' slot=3 state=EXPLORE speed=51.6 vel=(36.3,-2.5,36.5) shields=43 target=(none)
+  Bot 0 'Phantom [BOT]' slot=2 state=COMBAT role=FREELANCE lean=balanced speed=10.3 shields=100 target=Viper [BOT]
+      nav: dest_room=5 num_paths=1 path=0/3 mdir|0.98| ahead:WALL d=12.3 solid=0 portal=1 route:goal=19 dijkstra=3 boa=24 [DIVERGE] gcost=40
+  Bot 1 'Viper [BOT]' slot=3 state=EXPLORE role=ATTACK lean=attack speed=51.6 shields=43 target=(none)
+      nav: dest_room=7 num_paths=1 path=1/4 mdir|1.00| ahead:clear(>30u) route:goal=19 dijkstra=7 boa=7 gcost=0
 ```
-Fields: `slot=` (player slot index), `state=` (EXPLORE/HUNT/COMBAT/FLEE/EVADE), `speed=`, `vel=`, `shields=`, `target=`.
+Status-line fields: `slot=` (player slot index), `state=` (EXPLORE/HUNT/COMBAT/FLEE/EVADE), `role=` (squad role), `lean=` (objective lean: balanced/attack/defend), `speed=`, `shields=`, `target=`.
+
+Nav-line fields (Phase 11 router diagnostic): `dest_room=` (current waypoint room), `num_paths=`/`path=` (engine path-follower state), `mdir|x|` (movement_dir magnitude), `ahead:` (forward probe — `clear(>Nu)` / `WALL d=… solid=… portal=…` / `TERRAIN d=…` / `OBJ d=…` / `mdir~0`), and `route:goal=G dijkstra=D boa=B [DIVERGE] gcost=X` — the cost-aware router's next hop (`dijkstra`) vs the engine's BOA next hop (`boa`); `[DIVERGE]` appears when they differ; `gcost` = geometry cost of the chosen portal (`1000000` = impassable). Objective modes only; otherwise `route:goal=-1 n/a`.
 
 **`$botmov on|off`**
 Toggle movement debug logging. No structured output.

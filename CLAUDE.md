@@ -34,11 +34,10 @@ ctest --preset linux -C Debug
 
 All Matcen fork documentation lives in **`matcen-docs/`**:
 
-- **`matcen-docs/BOT_DEV_REFERENCE.md`** — living developer reference: architecture, FSM, constants, engine API patterns, critical gotchas. **Read this before modifying bot code.**
+- **`matcen-docs/BOT_DEV_REFERENCE.md`** — living developer reference: architecture, FSM, constants, engine API patterns, critical gotchas (and a navigation summary). **Read this before modifying bot code.**
 - **`matcen-docs/BOTS_DEVEL.md`** — phase history and roadmap. Update when a phase completes.
-- **`matcen-docs/NAV_OVERHAUL.md`** — Phase 4.0 navigation overhaul: research synthesis, root cause analysis, engine pathfinding pipeline reference, and implementation plan.
-- **`matcen-docs/NAV_OVERHAUL_2.md`** — Phase 7 (version 0.9.0) navigation overhaul: potential field steering (wall-slam fix) + dynamic flow fields (strategic routing). Engine research, algorithm design, integration plan. **Read this before modifying navigation or steering code.**
-- **`matcen-docs/PATHFINDING_CODEBASE_EXPLORE.md`** — Guide-bot navigation analysis: how single-player bots navigate complex passages vs. our multiplayer bots. Research input for `NAV_OVERHAUL.md`.
+- **`matcen-docs/NAVIGATION.md`** — **canonical bot navigation design**: the two-layer model (routing = us, steering = engine), the Phase 11 cost-aware Dijkstra router, the engine pathfinding reference, open problems, and consolidated history. **Read this before modifying navigation, routing, or steering code.** Supersedes the retired `NAV_OVERHAUL*.md` / `NAV_CONSOLIDATION.md` docs (now in git history).
+- **`matcen-docs/PATHFINDING_CODEBASE_EXPLORE.md`** — Guide-bot navigation analysis: how single-player bots navigate complex passages vs. our multiplayer bots. Deep engine research, cited by `NAVIGATION.md` (still accurate).
 - **`matcen-docs/BOT_MANAGEMENT.md`** — Phase 5 planning and implementation: config-file rosters, ship selection, difficulty levels, auto-rebalancing, `$servercaps` handshake. **Read this before modifying bot management code.**
 - **`matcen-docs/CHAT_COMMANDS.md`** — Phase 6.0 chat command system: cross-genre research synthesis, verb taxonomy (4 tiers), staged rollout plan, engine integration points. **Read this before modifying bot chat code.**
 - **`matcen-docs/PLAN.md`** — original Phase 0 design document and full phase roadmap.

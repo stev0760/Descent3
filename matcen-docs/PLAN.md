@@ -662,7 +662,7 @@ The following phases originally planned as "Future Work" have been completed. Se
 
 ### Phase 4.0: Navigation Overhaul
 
-The current navigation system causes bots to cluster and stagnate on complex maps. See `NAV_OVERHAUL.md` for the full research synthesis and implementation plan.
+The current navigation system causes bots to cluster and stagnate on complex maps. See `NAVIGATION.md` for the full research synthesis and implementation plan.
 
 Four incremental changes:
 1. **BOA-driven long-range explore destinations** — Replace 2-portal-deep candidate search with map-wide room selection. Let the engine build full BOA+BNode paths to distant rooms.
@@ -703,7 +703,7 @@ See `BOTS_DEVEL.md` Phase 6 for full design detail, UT research notes, and 6DOF-
 
 ## Known Issues
 
-- **Navigation clustering (Phase 4.0 target):** Bots cluster near spawn areas due to shallow explore destinations (2 portals deep). Manual portal-by-portal navigation fights the engine's pathfinding. See `NAV_OVERHAUL.md`.
+- **Navigation clustering (Phase 4.0 target):** Bots cluster near spawn areas due to shallow explore destinations (2 portals deep). Manual portal-by-portal navigation fights the engine's pathfinding. See `NAVIGATION.md`.
 - **Client compatibility:** Tested with retail D3 v1.5 and PiccuEngine (Windows v1.5-compatible). Some PiccuEngine-specific issues observed (e.g., control takeover in robo-anarchy) that do not reproduce on vanilla clients. BNode assertions fire on campaign levels in robo-anarchy (pre-existing engine issue — campaign levels lack multiplayer BNode data). Further cross-client testing needed.
 - **Physics immunity:** Previously observed (Black Shark vortex, Mass Driver knockback) — appears resolved in a prior phase.
 - **Weapon usage diversity:** Per-weapon pickup priorities added (Phase 3.30). Further playtesting needed.

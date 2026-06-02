@@ -7,7 +7,9 @@ Current implementation status is in `BOTS_DEVEL.md`. Physics model reference is 
 
 ## Current Status
 
-**Phase 7.2 complete (0.9.0-dev)** — Potential field steering (5-ray wall avoidance, portal attraction, passage damping, opposition brake) + flow field navigation (BOA portal-directed movement) + orient override (face portal when navigating without LOS) + AB facing gate (suppress AB when fvec misaligned >45°). Defense validated in CTF; offense in progress. See `NAV_OVERHAUL_2.md` for design rationale.
+**Phase 11 (0.9.1-dev)** — Cost-aware Dijkstra router, rebuilt as a **routing-only** layer atop the engine path-follower. The bot picks the route (a cost-aware next hop over the BOA room graph, weighting tight/grated/blocked portals and runtime obstacles); the engine does all steering. Wired into objective and carrier navigation via waypoint injection. Active in CTF/objective modes only — anarchy/team/robo/coop are behavior-identical. Untested; the engine path-follower's portal-transition wobble is **not** claimed fixed. See the Navigation System section below and `BOTS_DEVEL.md`.
+
+> Built on the **Phase 10** two-layer consolidation (Phases 7–9 grew bot-side steering layers — potential field, flow-field-as-steering, occupancy dispersal — that fought the engine; all removed). Phase 11 adds routing intelligence back *without* re-adding a steering override.
 
 For the full phase history and roadmap, see `BOTS_DEVEL.md`.
 
@@ -201,23 +203,18 @@ EVADE   ──(evade_timer <= 0)────────────────
 `max_delta_velocity = 0`, the engine cannot overwrite velocity — but the `movement_dir` vector is
 still computed and valid. This is the key insight that makes the hybrid CT_AI+thrust approach work.
 
-**Phase 7.2 flow field override:** When the bot has a known goal room (`BotGetNavGoalRoom()` returns
-a valid room), `BotFlowFieldGetDirection()` uses `BOA_GetNextRoom` + `BOA_DetermineStartRoomPortal`
-to find the portal direction toward the goal. This overrides `movement_dir` decomposition. The
-engine's BNode path follower often points `movement_dir` at node positions that are through walls;
-the flow field points at the actual portal opening. Goal room computation covers: flag carriers,
-hoard carriers, powerup chasing, squad escort, explore destinations, and HUNT targets.
+**Two-layer model (Phase 10 onward).** The bot-side steering layers from Phases 7–9 (potential
+field, flow-field-as-steering, occupancy dispersal) and their toggles were removed. Navigation is
+now exactly two layers:
 
-**Orient override (Phase 7.2):** `BotUpdateAimDirection()` normally writes `last_see_target_pos`
-toward the enemy lead aim position, keeping `fvec` locked on the target. When using flow field AND
-the bot has no LOS to its target (or no target), the orient override sets `last_see_target_pos`
-toward the portal direction instead. This causes the engine's `AIDoOrientDefault` to turn the bot
-toward its navigation goal, so afterburner thrust pushes it the right way.
+1. **Routing (ours):** a thin layer picks *which room* to head toward — from mode objectives and,
+   in Phase 11, a cost-aware Dijkstra route over the room graph (see *Cost-Aware Router* below).
+2. **Steering (engine):** `movement_dir` path-following with native `AIF_AVOID_WALLS` +
+   `AIF_AUTO_AVOID_FRIENDS` + dodge. We never overwrite `movement_dir` with a custom vector.
 
-**AB facing gate (Phase 7.2):** After potential field correction, if `want_afterburner` is true
-but `dot(fvec, desired_dir) < BOT_AB_FACING_THRESHOLD (0.7)`, AB is suppressed. The bot won't
-afterburn until it's roughly facing its travel direction (~45°). This prevents the "AB into wall"
-pattern where bots face enemies while trying to navigate corridors.
+Indoors, `BotUpdateAimDirection()` faces the bot along `movement_dir` (its travel direction), and
+the **AB facing gate** (suppress afterburner when `dot(fvec, movement_dir)` is below threshold)
+keeps thrust pointed along the engine's path rather than locking `fvec` on a far enemy.
 
 ### Navigation Data Structures
 
@@ -228,7 +225,46 @@ pattern where bots face enemies while trying to navigate corridors.
   geometry *inside* a room. The engine generates a sequence of BNode waypoints along the BOA path.
 - **Dynamic Paths:** Allocated from a pool (`MAX_DYNAMIC_PATHS = 200` in `aistruct.h`). Each
   active pathfinding bot consumes one slot. Pool exhaustion was a crash source — now handled
-  gracefully in `aipath.cpp`.
+  gracefully in `aipath.cpp`. (Logs were checked across 20h soaks — exhaustion does **not** fire in
+  practice; the router's short hops are for route control, not pool relief.)
+
+### Cost-Aware Router (Phase 11)
+
+`bot_steering.cpp` provides a routing-only layer that complements the engine path-follower: it
+chooses the route, the engine flies it. Active in objective modes only (`BotGetObjectiveRoom()`
+returns -1 in anarchy/team/robo/coop, so the router is never reached there — those modes are
+behavior-identical to the Phase 10 base).
+
+- **`BotComputeRoute(from, goal)`** — Dijkstra over the interior room graph. Edge cost =
+  BOA forward+reverse portal cost (so it reproduces `BOA_GetNextRoom` when the extra terms are
+  zero) + graded geometry cost + dynamic penalty. Returns the next room toward `goal`, or `-1` when
+  no finite interior route exists — callers then feed the engine the far goal and let its own
+  pathing take over, so the router can lengthen a route but **never strand a bot**. Interior-only
+  (no terrain-region expansion → no sky-routing). Recomputed on demand; no result cache (a run is
+  microseconds even on the largest maps).
+- **`BotPortalGeoCost(room, portal)`** — graded geometry cost. Grates/slits (swept ship-radius
+  probe blocked), locked doors, and `PF_BLOCK`/`PF_TOO_SMALL_FOR_ROBOT` → `BOT_PORTAL_IMPASSABLE`;
+  a tight-but-flyable opening → finite penalty; wide open → 0. This is a **soft** cost: it never
+  mutates engine portal flags, so a false "impassable" only makes the router prefer another door
+  (or fall back) — it cannot wall off a hub (the failure mode of the earlier `$navprobe` attempt).
+  Cached per level.
+- **Dynamic penalty (`BotBumpPortalPenalty` / `BotPortalDynPenalty`)** — emergent obstacles. A
+  room-progress timeout bumps the failed portal's cost so the next recompute routes around it; the
+  penalty decays (~20s) and is capped well below impassable, so a bumped door stays usable as a last
+  resort. This is the cost-signal form of "stop pressing this door" — it replaces a special-case
+  goal-ward escape heuristic.
+- **Waypoint injection (`BotSetRoutedGoal`)** — the delivery mechanism. The engine ignores our route
+  if handed the far goal (it re-plans via its own BOA), so we feed it the **adjacent** next hop as an
+  `AIG_GET_TO_POS` goal; the engine path-follows there and we recompute on room-entry. Wired into
+  `BotDoExploreRoaming` (objective nav), `BotDoCarrierNav`, and `BotDoHoardCarrierNav`.
+- **Diagnostics:** `$botstat` prints `route:goal=G dijkstra=D boa=B [DIVERGE] gcost=X` — `[DIVERGE]`
+  marks where the cost-aware route picks a different door than BOA. Validation gate: DIVERGE should
+  appear only where `gcost>0` or a penalty is active (otherwise the base cost isn't reproducing BOA).
+
+**Boundary (do not over-claim):** the router reduces how often bots reach bad spots; it does **not**
+fix the engine path-follower's portal-transition wobble on a *passable* portal, and the goal-blind
+stuck-escape in `BotApplyThrust` is unchanged. The SewerRat hub oscillation and the glass-stall
+wobble are not solved by routing alone.
 
 ### Navigation Strategy (Phase 4.0)
 
@@ -474,7 +510,7 @@ Both COMBAT interrupt and HUNT divert set `powerup_interrupt_cooldown` to preven
 - A `dist=0` target indicates a stale or recycled handle (object at same position as bot). Clear the target immediately; do not transition to HUNT or fire.
 
 ### Pathfinding
-- `AIPathGetDPathSlot` can exhaust `MAX_DYNAMIC_PATHS` with many bots — raised to 100 in `aistruct.h`. Graceful failure in `aipath.cpp` (no more ASSERT).
+- `AIPathGetDPathSlot` can exhaust `MAX_DYNAMIC_PATHS` (200 in `aistruct.h`) with many bots — graceful failure in `aipath.cpp` (no more ASSERT). In practice 20h soaks show it never exhausts.
 - `BOA_mine_checksum == 0` means pathfinding data is absent — `MakeBOA()` is called in `MultiStartNewLevel()` to rebuild it.
 
 ### DMFC / PRec

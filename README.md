@@ -10,7 +10,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Matcen — Multiplayer Bots (Experimental)
 
-> **Matcen 0.9.1-dev** — Phase 10 navigation consolidation. After Phase 7–9 grew a tower of bot-side steering layers (potential field, flow field, Dijkstra reroute, occupancy dispersal) that increasingly fought or duplicated the engine's own path-follower, the stack has been consolidated to two layers: **a thin goal-routing layer** (picks the goal room from mode objectives + reachability) and **the engine path-follower** (does all the steering, with its native wall and friend avoidance). Bots orient to their travel direction indoors so the afterburner facing gate drives them along the path. The bot-side steering layers and their toggles (`$potentialfield`, `$flowfield`, `$navrouting`, `$botpathfind`, `$botdispersal`) have been removed; outdoor terrain steering (`$terrainsteer`) and the carrier score-sprint / flag-return behaviors are retained. This is a behavior-neutral cleanup over the validated lean configuration — a leaner base for the remaining work on the engine path-follower's transition "wobble" (bots oscillating at some node/portal hand-offs, of which the bulletproof-glass stall is the worst case).
+> **Matcen 0.9.1-dev** — Phase 11: cost-aware Dijkstra router (untested). Building on the Phase 10 two-layer base (a thin goal-routing layer + the engine path-follower, after the Phase 7–9 bot-side steering layers were removed for fighting the engine), Phase 11 adds routing intelligence back — as a **routing-only** layer. A Dijkstra search over the room graph picks the route (weighting tight, grated, blocked, and runtime-obstructed portals); the engine still does all the steering. It is delivered by *waypoint injection* — feeding the engine the adjacent next-hop room so it follows our route — and is scoped to objective modes (CTF/Hoard/Hyper-Anarchy); Anarchy and Team Anarchy are unchanged. Geometry-impassable openings (shoot-through-only bunker slits/grates) are routed around, and the verdict is a *soft* cost that can never wall off a hub. This is freshly built and under test; the engine path-follower's portal-transition "wobble" on passable portals is **not** claimed fixed.
 
 This fork — "Matcen" — adds a **server-side multiplayer bot system** to Descent 3. Bots occupy real player slots on dedicated servers or listen servers, appearing and acting as normal players. All bots are tagged with ` [BOT]` as a callsign suffix for easy identification.
 
@@ -23,7 +23,7 @@ This fork — "Matcen" — adds a **server-side multiplayer bot system** to Desc
 *   **Full Physics:** Bots obey the same inertia, momentum, and tri-chord physics as human players.
 *   **Weapon System:** Tactical primary switching (energy vs. ammo based on range and resources), secondary fire with splash-damage guards, and smart powerup collection with LOS scoring.
 *   **Loadout Awareness:** Bots self-classify into WEAK/GOOD/ELITE tiers and adjust aggression accordingly — poorly-armed bots hunt upgrades before engaging.
-*   **Navigation:** Engine-integrated BOA+BNode pathfinding with visited-room memory. A thin routing layer picks the goal room (mode objectives + reachability validation); the engine path-follower does the steering (with its native wall and friend avoidance). Bots orient to their travel direction indoors so the afterburner facing gate drives them along the path. Outdoor terrain steering (`$terrainsteer`) regulates altitude/sky-routing.
+*   **Navigation:** Engine-integrated BOA+BNode pathfinding with visited-room memory. A thin routing layer picks the route; the engine path-follower does the steering (with its native wall and friend avoidance). In objective modes a **cost-aware Dijkstra router** chooses the room sequence — preferring roomier doors, routing around impassable slits/grates, and rerouting around portals that fail at runtime — delivered to the engine as adjacent waypoints. Bots orient to their travel direction indoors so the afterburner facing gate drives them along the path. Outdoor terrain steering (`$terrainsteer`) regulates altitude/sky-routing.
 *   **Game Modes:** Anarchy, Team Anarchy, Robo-Anarchy, CTF (flag-chasing prioritization, carrier home-rush, fumble pile-on, role auto-assignment), Hyper-Anarchy (orb carrier aggression), and Hoard (scarcity-adaptive collect-and-deliver). Bots persist across level transitions. Further objective modes (Entropy, Monsterball) are on the roadmap.
 *   **Chat Commands:** Bots respond to `!` prefixed commands in multiplayer chat (team modes). Full Tier 1 squad orders: `!attack`, `!target`, `!defend`, `!follow`, `!cover`, `!freelance`, `!status`, `!ping`. Supports all-chat, team-chat, and DM addressing (by name prefix or slot). Works on all D3-compatible clients.
 *   **Ship Selection:** Pyro-GL, Phoenix, Magnum-AHT, or Black Pyro (requires Mercenary expansion).
@@ -83,7 +83,7 @@ These commands are available in the dedicated server console (or via remote teln
 
 ### Roadmap
 
-The current focus is **0.9.0 stable** — further testing and tuning of Phase 7 navigation (especially offensive flag captures). After that:
+The current focus is **0.9.1 stable** — validating the Phase 11 cost-aware router (especially offensive flag captures on complex maps) and the engine path-follower's portal-transition wobble. After that:
 
 *   **Entropy** — Virus transport and room capture. A unique D3 mode with no clear FPS analogue — bots will make it easily accessible for the first time in years.
 *   **Monsterball** — Ball-push physics and positional play.
@@ -92,7 +92,7 @@ The current focus is **0.9.0 stable** — further testing and tuning of Phase 7 
 ### Known Issues
 
 *   **Outdoor world-space awareness:** Indoor traversal is solid with routing-only steering (default on). Outdoors, bots are not yet fully aware of the full 3D worldspace — they can mis-target the wrong entry point of surface structures (e.g. a flag shaft whose opening is above ground level) and stick there. Improving height-aware outdoor navigation is the current focus.
-*   **Complex indoor routing (winding tunnels / blocked portals):** Under the new default routing-only steering, smart rerouting around teammate congestion and blocked passages is not yet active (it has not been wired into the engine's navigation goal), so bots in tight, maze-like interiors can stall and fall back to generic stuck-escape rather than routing around. Improving this is planned and untested under the new default.
+*   **Complex indoor routing (winding tunnels / blocked portals):** The Phase 11 cost-aware router now picks routes around tight/grated/blocked portals and reroutes around runtime obstructions (wired into the engine's navigation goal via waypoint injection, objective modes). This is freshly built and under test — on hard maze maps bots may still stall and fall back to generic stuck-escape where the obstruction is the engine path-follower's wobble on a *passable* portal rather than a routing choice the router can change.
 *   **Map design limits:** Most maps play well, but some — extreme verticality, deep mazes, or deliberately obtuse geometry — simply won't suit bots. The goal is a solid experience across the majority of maps, not every map.
 *   **Multi-flag CTF scoring:** In 4-team CTF a player can cash in multiple opposing flags at once for a bonus (2 flags = 3 pts, 3 = 9 pts). Bots only do this opportunistically; they don't deliberately hoard flags before scoring.
 *   **Client compatibility:** Tested with retail D3 v1.5 and PiccuEngine (Windows v1.5-compatible).
@@ -106,8 +106,7 @@ For a deep dive into the architecture, FSM logic, and implementation history, se
 *   [BOT_DEV_REFERENCE.md](matcen-docs/BOT_DEV_REFERENCE.md) — Architecture, FSM, constants, engine API patterns
 *   [BOT_MANAGEMENT.md](matcen-docs/BOT_MANAGEMENT.md) — Phase 5 bot management: config, ships, difficulty, remote admin
 *   [CHAT_COMMANDS.md](matcen-docs/CHAT_COMMANDS.md) — Chat command system: research, verb taxonomy, staged rollout
-*   [NAV_OVERHAUL.md](matcen-docs/NAV_OVERHAUL.md) — Phase 4.0 navigation design rationale
-*   [NAV_OVERHAUL_2.md](matcen-docs/NAV_OVERHAUL_2.md) — Phase 7 navigation: potential fields, flow fields, AB facing gate
+*   [NAVIGATION.md](matcen-docs/NAVIGATION.md) — **canonical** bot navigation design: two-layer model, the Phase 11 cost-aware router, engine reference, and history
 
 ## Contributing
 Anyone can contribute! We have an active Discord presence at [Descent Developer Network](https://discord.gg/GNy5CUQ). Patches should be submitted on GitHub.
