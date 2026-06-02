@@ -73,7 +73,8 @@
 #define BOT_HUNT_PROGRESS_THRESHOLD 10.0f // distance decrease (units) that counts as "making progress"
 #define BOT_RETARGET_COOLDOWN 5.0f        // seconds after HUNT drop before re-acquiring targets (Phase 4.01: 2→5)
 #define BOT_HUNT_MIN_DURATION 3.0f        // minimum seconds in HUNT before dropping to EXPLORE (hysteresis)
-#define BOT_HUNT_BLIND_MAX_DIST 300.0f    // max distance to enter HUNT without LOS (Phase 4.06: 150→300, 150 too tight for open maps)
+#define BOT_HUNT_BLIND_MAX_DIST                                                                                        \
+  300.0f // max distance to enter HUNT without LOS (Phase 4.06: 150→300, 150 too tight for open maps)
 
 // Target blacklist (Phase 3.28) — prevents re-selecting unreachable targets during retarget cooldown.
 // When a target is blacklisted due to HUNT timeout, the bot cannot select it again until the
@@ -82,10 +83,10 @@
 #define BOT_TARGET_BLACKLIST_DURATION 10.0f // seconds a target remains blacklisted after HUNT timeout
 
 // Powerup collection (Phase 3.8)
-#define BOT_POWERUP_SEEK_RADIUS 350.0f     // scan radius for powerup objects
-#define BOT_POWERUP_ONPATH_RADIUS 120.0f  // tighter radius during objective nav — grab items on the way
-#define BOT_LOW_SHIELDS_PCT 0.30f      // seek shield powerups when below 30% shields
-#define BOT_LOW_ENERGY 25.0f           // seek energy powerups when below 25 energy units
+#define BOT_POWERUP_SEEK_RADIUS 350.0f   // scan radius for powerup objects
+#define BOT_POWERUP_ONPATH_RADIUS 120.0f // tighter radius during objective nav — grab items on the way
+#define BOT_LOW_SHIELDS_PCT 0.30f        // seek shield powerups when below 30% shields
+#define BOT_LOW_ENERGY 25.0f             // seek energy powerups when below 25 energy units
 
 // Inventory management (Phase 3.9)
 // Weapon selection uses energy level and combat distance to pick the best available weapon.
@@ -107,13 +108,13 @@
 // EXPLORE state room roaming (Phase 3.9, overhauled Phase 4.0)
 // Phase 4.0: bots pick destinations from across the entire map via BOA validation,
 // letting the engine build full BOA+BNode paths instead of manual portal-by-portal navigation.
-#define BOT_EXPLORE_ROOM_TIME_MIN 6.0f  // min seconds for nearby explore destinations
-#define BOT_EXPLORE_ROOM_TIME_MAX 20.0f // max seconds for far-away explore destinations
-#define BOT_EXPLORE_MAX_CANDIDATES 16   // max rooms to sample from the map per destination pick
-#define BOT_VISITED_ROOM_COUNT 12       // circular buffer of recently visited rooms (anti-oscillation)
+#define BOT_EXPLORE_ROOM_TIME_MIN 6.0f          // min seconds for nearby explore destinations
+#define BOT_EXPLORE_ROOM_TIME_MAX 20.0f         // max seconds for far-away explore destinations
+#define BOT_EXPLORE_MAX_CANDIDATES 16           // max rooms to sample from the map per destination pick
+#define BOT_VISITED_ROOM_COUNT 12               // circular buffer of recently visited rooms (anti-oscillation)
 #define BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT 12.0f // stuck if no room change for this long (Phase 4.01: 8→12)
-#define BOT_OUTDOOR_PROGRESS_DIST 50.0f // outdoors (no room transitions) progress = moving at least this far
-#define BOT_INDOOR_PROGRESS_DIST 50.0f  // indoors, also count this much displacement as progress (big-room fix)
+#define BOT_OUTDOOR_PROGRESS_DIST 50.0f         // outdoors (no room transitions) progress = moving at least this far
+#define BOT_INDOOR_PROGRESS_DIST 50.0f          // indoors, also count this much displacement as progress (big-room fix)
 
 // Secondary weapon firing (Phase 3.10)
 // Bots fire missiles alongside primaries in COMBAT. Each secondary has range gates and self-guards.
@@ -182,10 +183,10 @@
 // before it can divert/interrupt again. This allows the bot to collect the item and re-engage
 // without immediately being yanked out of COMBAT on the next tick.
 #define BOT_POWERUP_INTERRUPT_COOLDOWN 6.0f
-#define BOT_POWERUP_CHASE_TIMEOUT 8.0f     // seconds chasing same powerup before giving up (Phase 4.03)
+#define BOT_POWERUP_CHASE_TIMEOUT 8.0f       // seconds chasing same powerup before giving up (Phase 4.03)
 #define BOT_POWERUP_BLACKLIST_DURATION 60.0f // seconds that a timed-out powerup stays blacklisted (Phase 7.4)
-#define BOT_POWERUP_THRUST_RADIUS 50.0f // direct-thrust override distance for close visible powerups (Phase 4.06)
-#define BOT_POWERUP_STALE_CHASE 4.0f    // seconds chasing without collecting before treating chase as stale (Phase 4.06)
+#define BOT_POWERUP_THRUST_RADIUS 50.0f      // direct-thrust override distance for close visible powerups (Phase 4.06)
+#define BOT_POWERUP_STALE_CHASE 4.0f // seconds chasing without collecting before treating chase as stale (Phase 4.06)
 
 // Homing missile evasion (Phase 3.15)
 // Scans Objects[] for OBJ_WEAPON with PF_HOMING tracking the bot's handle.
@@ -325,12 +326,12 @@ struct bot_info {
   int explore_stuck_room;   // last room abandoned due to stuck — blacklisted for next pick
 
   // Room-change progress tracking (Phase 4.0) — detects stuck earlier than speed-based detection
-  int last_progress_room;                      // roomnum at last progress check
-  vector last_progress_pos;                    // position at last progress check (outdoor displacement metric)
-  float room_progress_timer;                   // seconds since last room change (or outdoor displacement)
-  int visited_rooms[BOT_VISITED_ROOM_COUNT];   // circular buffer of recently visited rooms
-  int visited_room_idx;                        // write index into visited_rooms[]
-  int room_progress_stuck_count;               // consecutive timeouts in same room; escalates to escape
+  int last_progress_room;                    // roomnum at last progress check
+  vector last_progress_pos;                  // position at last progress check (outdoor displacement metric)
+  float room_progress_timer;                 // seconds since last room change (or outdoor displacement)
+  int visited_rooms[BOT_VISITED_ROOM_COUNT]; // circular buffer of recently visited rooms
+  int visited_room_idx;                      // write index into visited_rooms[]
+  int room_progress_stuck_count;             // consecutive timeouts in same room; escalates to escape
 
   // Target blacklist (Phase 3.28) — prevents re-selecting unreachable targets after HUNT timeout
   int target_blacklist[MAX_NET_PLAYERS]; // player slots blacklisted as targets
@@ -363,17 +364,17 @@ struct bot_info {
   float blacklisted_powerup_expires; // Gametime when blacklist expires (0 = not blacklisted)
 
   // Difficulty system (Phase 5.2)
-  BotDifficulty difficulty;  // this bot's difficulty level
-  float fire_delay_timer;    // counts down after target acquired; fires when <= 0
-  int fire_delay_target;     // handle of target the delay was started for
-  float aim_wander_phase;    // smooth sinusoidal aim offset phase (like juke_phase)
+  BotDifficulty difficulty; // this bot's difficulty level
+  float fire_delay_timer;   // counts down after target acquired; fires when <= 0
+  int fire_delay_target;    // handle of target the delay was started for
+  float aim_wander_phase;   // smooth sinusoidal aim offset phase (like juke_phase)
 
   // Chat command system (Phase 6.0)
   float last_chat_reply_time; // Gametime of last chat reply (throttle)
 
   // Squad orders (Phase 6.0 Stage 2) — persist through death and level transitions
-  BotSquadRole squad_role;  // current squad order
-  int squad_target_slot;    // for FOLLOW/COVER: player slot to follow/protect (-1 = sender)
+  BotSquadRole squad_role; // current squad order
+  int squad_target_slot;   // for FOLLOW/COVER: player slot to follow/protect (-1 = sender)
 
   // Objective-mode lean (Phase 6.0 Stage 3) — assigned at level start, affects FREELANCE nav
   BotObjectiveLean objective_lean;
@@ -393,8 +394,7 @@ extern BotGameMode Bot_game_mode;
 // Add a bot to the game. Returns bot index (into Bots[]) or -1 on failure.
 // Ship can be specified by index, or use BotResolveShipAlias() to get index from a name string.
 // desired_team: 0-indexed team (0=Team1, 1=Team2, 2=Team3, 3=Team4), or -1 for auto-balance.
-int BotAdd(const char *name, int ship_index = 0, BotDifficulty difficulty = BOT_DIFF_HOTSHOT,
-           int desired_team = -1);
+int BotAdd(const char *name, int ship_index = 0, BotDifficulty difficulty = BOT_DIFF_HOTSHOT, int desired_team = -1);
 
 // Resolve a difficulty name string to a BotDifficulty enum value.
 // Accepts: "trainee", "rookie", "hotshot", "ace", "insane" (case-insensitive), or "0"–"4".
@@ -484,6 +484,11 @@ const char *BotSquadRoleName(BotSquadRole r);
 // SOLID portal (i.e. glass). Diagnostic-only; no behavior change.
 void BotFormatNavDiag(int bot_index, char *buf, size_t buflen);
 #define BOT_NAV_DIAG_PROBE_DIST 50.0f // forward look distance for the $botstat movement_dir probe
+
+// Write the engine's runtime navigation geometry (BOA, room/portal path_pnt,
+// portal passability, portal-LOS matrix) to a JSON file for offline analysis.
+// Diagnostic only — changes no game state. Returns false if the file can't be written.
+bool BotNavDump(const char *filename);
 
 // Classify this bot's primary weapon loadout into BOT_EQUIP_TIER_WEAK/GOOD/ELITE.
 // Used by bot_objective.cpp to prefer well-armed bots for the DEFEND lean assignment.

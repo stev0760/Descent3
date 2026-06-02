@@ -853,6 +853,18 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
       PrintDedicatedMessage("No bots active (or invalid index)\n");
     return true;
   }
+  if (stricmp(command, "navdump") == 0) {
+    char fname[128];
+    if (operand[0])
+      snprintf(fname, sizeof(fname), "%s", operand);
+    else
+      snprintf(fname, sizeof(fname), "navdump.json");
+    if (BotNavDump(fname))
+      PrintDedicatedMessage("Nav geometry dumped to '%s' (see log for summary)\n", fname);
+    else
+      PrintDedicatedMessage("Nav dump FAILED to write '%s'\n", fname);
+    return true;
+  }
   if (stricmp(command, "botmov") == 0) {
     if (stricmp(operand, "on") == 0) {
       Bot_debug_movement = true;
@@ -938,6 +950,7 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     PrintDedicatedMessage("  $botlist               - List active bots\n");
     PrintDedicatedMessage("  $botdifficulty <index|all> <level> - Change difficulty\n");
     PrintDedicatedMessage("  $botstat [index|all]   - Show bot status details\n");
+    PrintDedicatedMessage("  $navdump [file]        - Dump current level nav geometry to JSON (diagnostic)\n");
     PrintDedicatedMessage("  $botmov on|off         - Toggle movement debug logging\n");
     PrintDedicatedMessage("  $terrainsteer on|off   - Toggle outdoor terrain steering (Phase 8.1)\n");
     PrintDedicatedMessage("  $botmode               - Show detected game mode\n");

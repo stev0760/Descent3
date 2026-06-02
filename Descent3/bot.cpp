@@ -3076,8 +3076,8 @@ static void BotApplyThrust(int bot_index) {
 }
 
 // Diagnostic: format a one-line navigation summary for $botstat. See bot.h for rationale.
-// Probes a ray along the bot's intended movement direction (movement_dir — what it thrusts
-// along when $navrouting is on) and reports the nearest collidable face: distance and whether
+// Probes a ray along the bot's intended movement direction (movement_dir — the engine's
+// blended thrust direction) and reports the nearest collidable face: distance and whether
 // it is a SOLID portal (glass) vs a plain wall. Plus the engine path state (num_paths).
 void BotFormatNavDiag(int bot_index, char *buf, size_t buflen) {
   if (bot_index < 0 || bot_index >= MAX_BOTS || !buf || buflen == 0)
@@ -3164,6 +3164,198 @@ void BotFormatNavDiag(int bot_index, char *buf, size_t buflen) {
 
   snprintf(buf, buflen, "nav: dest_room=%d num_paths=%d path=%u/%u mdir|%.2f| ahead:%s%s", dest_room,
            (int)path.num_paths, path.cur_path, path.cur_node, mdir_mag, probe, route);
+}
+
+// --- Navigation geometry dump (diagnostic, read-only) -------------------------
+// $navdump writes the engine's RUNTIME navigation structures to a JSON file.
+// These (BOA, room/portal path_pnt, portal passability, BNodes) are computed at
+// level load — NOT stored in the .d3l — so they are invisible to any offline
+// file parser. The dump lets us see exactly where the engine path-follower aims
+// bots. Key discriminators it records per room:
+//   - whether path_pnt is just the bbox center (BOA.cpp default) — for a
+//     non-convex room that center can land in solid geometry,
+//   - a portal-to-portal line-of-sight matrix (swept ship-radius fvi) — blocked
+//     legs reveal rooms whose path nodes are not straight-line reachable, which
+//     is exactly what makes AIPathMoveTurnTowardsNode steer into a wall.
+// It changes no game state.
+
+// Swept ship-radius LOS between two points. Returns true if no SOLID wall blocks
+// the straight path before reaching b (portals are passed through). out_dist gets
+// the distance to the blocking hit when blocked.
+static bool BotNavDumpLOS(const vector &a, const vector &b, int startroom, float rad, float *out_dist) {
+  vector p0 = a, p1 = b;
+  fvi_query fq{};
+  fvi_info hit{};
+  fq.p0 = &p0;
+  fq.p1 = &p1;
+  fq.startroom = startroom;
+  fq.rad = rad;
+  fq.thisobjnum = -1;
+  fq.ignore_obj_list = nullptr;
+  fq.flags = FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS | FQ_IGNORE_MOVING_OBJECTS;
+  int ht = fvi_FindIntersection(&fq, &hit);
+  if (ht == HIT_NONE)
+    return true;
+  vector d = hit.hit_pnt - a;
+  float hit_dist = vm_GetMagnitude(&d);
+  vector full = b - a;
+  float target_dist = vm_GetMagnitude(&full);
+  if (out_dist)
+    *out_dist = hit_dist;
+  // Reaching (almost) the target = clear; the ray legitimately ends at/near the portal point.
+  return hit_dist >= target_dist - rad;
+}
+
+// Pick a representative ship radius for the swept LOS probes — use an active
+// bot's object size (a bot IS a player ship), else a Pyro-ish default.
+static float BotNavDumpProbeRadius() {
+  for (int i = 0; i < MAX_BOTS; i++) {
+    if (!Bots[i].active)
+      continue;
+    object *o = &Objects[Players[Bots[i].player_slot].objnum];
+    if (o->size > 0.0f)
+      return o->size;
+  }
+  return 3.0f;
+}
+
+bool BotNavDump(const char *filename) {
+  char path[256];
+  if (filename && filename[0])
+    snprintf(path, sizeof(path), "%s", filename);
+  else
+    snprintf(path, sizeof(path), "navdump.json");
+
+  FILE *fp = fopen(path, "w");
+  if (!fp) {
+    LOG_WARNING.printf("[NavDump] could not open '%s' for writing", path);
+    return false;
+  }
+
+  const float rad = BotNavDumpProbeRadius();
+  int disagree_total = 0;       // engine says passable, our probe says impassable
+  int blocked_leg_total = 0;    // portal->portal LOS legs blocked by solid geometry
+  int center_pathpnt_total = 0; // rooms whose path_pnt is the raw bbox center
+
+  fprintf(fp, "{\n");
+  fprintf(fp, "  \"highest_room_index\": %d,\n", Highest_room_index);
+  fprintf(fp, "  \"boa_mine_checksum\": %d,\n", BOA_mine_checksum);
+  fprintf(fp, "  \"probe_radius\": %.3f,\n", rad);
+  fprintf(fp, "  \"rooms\": [\n");
+
+  bool first_room = true;
+  for (int r = 0; r <= Highest_room_index; r++) {
+    room &rm = Rooms[r];
+    if (!rm.used)
+      continue;
+
+    vector center = (rm.max_xyz + rm.min_xyz) / 2.0f;
+    vector dc = rm.path_pnt - center;
+    bool pp_is_center = (vm_GetMagnitude(&dc) < 0.5f);
+    bool pp_manual = (rm.flags & RF_MANUAL_PATH_PNT) != 0;
+    if (pp_is_center && !pp_manual)
+      center_pathpnt_total++;
+
+    if (!first_room)
+      fprintf(fp, ",\n");
+    first_room = false;
+
+    fprintf(fp, "    {\n");
+    fprintf(fp, "      \"id\": %d, \"flags\": \"0x%08x\", \"external\": %s, \"is_door\": %s,\n", r, rm.flags,
+            (rm.flags & RF_EXTERNAL) ? "true" : "false", (rm.flags & RF_DOOR) ? "true" : "false");
+    fprintf(fp, "      \"num_portals\": %d, \"num_faces\": %d,\n", rm.num_portals, rm.num_faces);
+    fprintf(fp, "      \"bbox_min\": [%.2f,%.2f,%.2f], \"bbox_max\": [%.2f,%.2f,%.2f],\n", rm.min_xyz.x(),
+            rm.min_xyz.y(), rm.min_xyz.z(), rm.max_xyz.x(), rm.max_xyz.y(), rm.max_xyz.z());
+    fprintf(fp, "      \"path_pnt\": [%.2f,%.2f,%.2f], \"path_pnt_is_bbox_center\": %s, \"path_pnt_manual\": %s,\n",
+            rm.path_pnt.x(), rm.path_pnt.y(), rm.path_pnt.z(), pp_is_center ? "true" : "false",
+            pp_manual ? "true" : "false");
+
+    // Per-portal detail
+    fprintf(fp, "      \"portals\": [\n");
+    for (int p = 0; p < rm.num_portals; p++) {
+      portal &po = rm.portals[p];
+      int cr = po.croom;
+      float gcost = BotPortalGeoCost(r, p);
+      bool our_impass = (gcost >= BOT_PORTAL_IMPASSABLE);
+      bool eng_pass = BOA_PassablePortal(r, p);
+      bool disagree = eng_pass && our_impass;
+      if (disagree)
+        disagree_total++;
+
+      float boa_fwd = (p < MAX_PATH_PORTALS) ? BOA_cost_array[r][p] : -1.0f;
+      float boa_rev = -1.0f;
+      if (po.cportal >= 0 && po.cportal < MAX_PATH_PORTALS && cr >= 0 && cr <= Highest_room_index)
+        boa_rev = BOA_cost_array[cr][po.cportal];
+
+      // Face geometry for this portal
+      vector fc{0, 0, 0}, fn{0, 0, 0};
+      int fsolid = -1, fportal = -1;
+      int fi = po.portal_face;
+      if (fi >= 0 && fi < rm.num_faces) {
+        face &fa = rm.faces[fi];
+        fc = (fa.max_xyz + fa.min_xyz) / 2.0f;
+        fn = fa.normal;
+        int pf = GetFacePhysicsFlags(&rm, &fa);
+        fsolid = (pf & FPF_SOLID) ? 1 : 0;
+        fportal = (pf & FPF_PORTAL) ? 1 : 0;
+      }
+
+      // LOS from this room's steer point (path_pnt) to the portal's steer point.
+      float los_d = -1.0f;
+      bool los_clear = BotNavDumpLOS(rm.path_pnt, po.path_pnt, r, rad, &los_d);
+
+      fprintf(fp, "        {\"idx\": %d, \"croom\": %d, \"cportal\": %d, \"flags\": \"0x%08x\", ", p, cr, po.cportal,
+              po.flags);
+      fprintf(fp, "\"face\": %d, \"face_center\": [%.2f,%.2f,%.2f], \"face_normal\": [%.2f,%.2f,%.2f], ", fi, fc.x(),
+              fc.y(), fc.z(), fn.x(), fn.y(), fn.z());
+      fprintf(fp, "\"face_solid\": %d, \"face_portal\": %d, ", fsolid, fportal);
+      fprintf(fp, "\"portal_path_pnt\": [%.2f,%.2f,%.2f], ", po.path_pnt.x(), po.path_pnt.y(), po.path_pnt.z());
+      fprintf(fp, "\"boa_cost_fwd\": %.2f, \"boa_cost_rev\": %.2f, ", boa_fwd, boa_rev);
+      fprintf(fp, "\"engine_passable\": %s, \"our_geocost\": %.1f, \"our_impassable\": %s, \"DISAGREE\": %s, ",
+              eng_pass ? "true" : "false", gcost, our_impass ? "true" : "false", disagree ? "true" : "false");
+      fprintf(fp, "\"los_from_pathpnt_clear\": %s, \"los_dist\": %.2f}%s\n", los_clear ? "true" : "false", los_d,
+              (p == rm.num_portals - 1) ? "" : ",");
+    }
+    fprintf(fp, "      ],\n");
+
+    // Portal-to-portal LOS matrix (only the BLOCKED legs — the diagnostic signal).
+    // A blocked leg means a bot entering at portal i cannot reach portal j's path
+    // node in a straight line: a non-convex room where the path-follower mis-aims.
+    fprintf(fp, "      \"portal_los_blocked\": [");
+    int tested = 0, blocked = 0;
+    bool first_leg = true;
+    for (int i = 0; i < rm.num_portals; i++) {
+      for (int j = 0; j < rm.num_portals; j++) {
+        if (i == j)
+          continue;
+        tested++;
+        float d = -1.0f;
+        if (!BotNavDumpLOS(rm.portals[i].path_pnt, rm.portals[j].path_pnt, r, rad, &d)) {
+          blocked++;
+          blocked_leg_total++;
+          if (!first_leg)
+            fprintf(fp, ", ");
+          first_leg = false;
+          fprintf(fp, "{\"from\": %d, \"to\": %d, \"dist\": %.2f}", i, j, d);
+        }
+      }
+    }
+    fprintf(fp, "],\n");
+    fprintf(fp, "      \"portal_los_tested\": %d, \"portal_los_blocked_count\": %d\n", tested, blocked);
+    fprintf(fp, "    }");
+  }
+
+  fprintf(fp, "\n  ],\n");
+  fprintf(fp,
+          "  \"summary\": {\"passability_disagreements\": %d, \"blocked_portal_legs\": %d, "
+          "\"bbox_center_pathpnts\": %d}\n",
+          disagree_total, blocked_leg_total, center_pathpnt_total);
+  fprintf(fp, "}\n");
+  fclose(fp);
+
+  LOG_INFO.printf("[NavDump] wrote '%s' — disagreements=%d blocked_legs=%d bbox_center_pathpnts=%d", path,
+                  disagree_total, blocked_leg_total, center_pathpnt_total);
+  return true;
 }
 
 // Find and set the best target as this bot's AI target.

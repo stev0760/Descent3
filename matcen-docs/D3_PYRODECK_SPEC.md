@@ -232,6 +232,9 @@ Status-line fields: `slot=` (player slot index), `state=` (EXPLORE/HUNT/COMBAT/F
 
 Nav-line fields (Phase 11 router diagnostic): `dest_room=` (current waypoint room), `num_paths=`/`path=` (engine path-follower state), `mdir|x|` (movement_dir magnitude), `ahead:` (forward probe — `clear(>Nu)` / `WALL d=… solid=… portal=…` / `TERRAIN d=…` / `OBJ d=…` / `mdir~0`), and `route:goal=G dijkstra=D boa=B [DIVERGE] gcost=X` — the cost-aware router's next hop (`dijkstra`) vs the engine's BOA next hop (`boa`); `[DIVERGE]` appears when they differ; `gcost` = geometry cost of the chosen portal (`1000000` = impassable). Objective modes only; otherwise `route:goal=-1 n/a`.
 
+**`$navdump [file]`**
+Diagnostic — dump the current level's runtime navigation geometry to a JSON file (default `navdump.json`, written to the server's working directory). Read-only; safe to run mid-match. Writes one object per used room: bbox, `path_pnt` (+ `path_pnt_is_bbox_center`/`path_pnt_manual`), and per-portal detail (connected room, face center/normal, `face_solid`/`face_portal`, BOA cost fwd/rev, `engine_passable` vs `our_geocost`/`our_impassable` + `DISAGREE`, `los_from_pathpnt_clear`), plus a per-room `portal_los_blocked` matrix and a top-level `summary` (`passability_disagreements`, `blocked_portal_legs`, `bbox_center_pathpnts`). Console/telnet prints a one-line confirmation; the full summary is logged to `server.log`. Intended for offline nav analysis, not routine web-admin display.
+
 **`$botmov on|off`**
 Toggle movement debug logging. No structured output.
 
