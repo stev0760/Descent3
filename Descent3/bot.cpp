@@ -61,8 +61,8 @@ bool Bot_debug_movement = false; // Toggle with "$botmov on/off" console command
 BotGameMode Bot_game_mode = BGM_UNKNOWN;
 
 // --- Bot roster config (Phase 5.1) ---
-char Bot_config_file[260] = {};           // CVar storage — set by "BotConfig=<file>" in dedicated.cfg
-static bool Bot_roster_spawned = false;   // true after first level auto-spawn
+char Bot_config_file[260] = {};         // CVar storage — set by "BotConfig=<file>" in dedicated.cfg
+static bool Bot_roster_spawned = false; // true after first level auto-spawn
 
 // --- Delayed UI bot spawn (Phase 5.4) ---
 // Listen server bots spawn a few seconds after level load so the host has time to manage teams.
@@ -87,9 +87,7 @@ static const BotDifficultyParams kDiffParams[BOT_DIFF_COUNT] = {
 };
 static BotDifficulty Bot_default_difficulty = BOT_DIFF_HOTSHOT;
 
-static const BotDifficultyParams *BotGetDiffParams(int bot_index) {
-  return &kDiffParams[Bots[bot_index].difficulty];
-}
+static const BotDifficultyParams *BotGetDiffParams(int bot_index) { return &kDiffParams[Bots[bot_index].difficulty]; }
 
 // Forward declarations for functions not exposed in headers
 static void BotDoUISpawn();
@@ -1116,8 +1114,8 @@ static void BotDoStuckClear(int bot_index) {
     object *blocker = &Objects[hit.hit_object[0]];
     bool is_teammate = (blocker->type == OBJ_PLAYER && blocker->id >= 0 && blocker->id < MAX_NET_PLAYERS &&
                         !BotIsPlayerEnemy(bot_index, blocker->id));
-    if (!is_teammate && blocker->type != OBJ_NONE && blocker->type != OBJ_GHOST &&
-        blocker->type != OBJ_POWERUP && (blocker->flags & OF_DESTROYABLE)) {
+    if (!is_teammate && blocker->type != OBJ_NONE && blocker->type != OBJ_GHOST && blocker->type != OBJ_POWERUP &&
+        (blocker->flags & OF_DESTROYABLE)) {
       BotFireAtObject(bot_index, blocker);
       LOG_DEBUG.printf("BOT: '%s' blasting destructible obstacle (type=%d)", Bots[bot_index].callsign, blocker->type);
       return;
@@ -1181,6 +1179,44 @@ static bool BotNavigateToFollowTarget(int bot_index) {
 }
 
 // Navigate the bot portal-to-portal through the level when in EXPLORE state with no nearby pickups.
+// Phase 11 waypoint injection — the single mechanism all objective navigation uses to follow the
+// cost-aware router. Computes the next room on the Dijkstra route to goal_room and aims the engine
+// at that *adjacent* waypoint, so the engine path-follows OUR route instead of re-planning the whole
+// way via its own greedy BOA. When the waypoint is the goal room itself (final hop, or no interior
+// route exists) it aims at final_pos and lets the engine handle the last approach — so a bad geometry
+// verdict can lengthen a route but never strand a bot. Skips re-issuing while already heading to the
+// same waypoint (the route is recomputed each tick from the current room, so the waypoint advances
+// naturally on room-entry without churning the engine path). Sets *reissued when a new goal was set.
+static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_pos, bool *reissued) {
+  if (reissued)
+    *reissued = false;
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+
+  int wp_room = BotComputeRoute(obj->roomnum, goal_room);
+  if (wp_room < 0)
+    wp_room = goal_room;
+
+  int &pgi = Bots[bot_index].pursuit_goal_index;
+  bool goal_valid = (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used);
+  if (goal_valid && Bots[bot_index].explore_dest_room == wp_room && Bots[bot_index].explore_room_timer > 0.0f)
+    return wp_room; // already en route to this waypoint — leave the engine path alone
+
+  if (goal_valid)
+    GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+  pgi = -1;
+
+  goal_info gi_info{};
+  gi_info.pos = (wp_room == goal_room) ? final_pos : Rooms[wp_room].path_pnt;
+  gi_info.roomnum = wp_room;
+  pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
+  Bots[bot_index].explore_dest_room = wp_room;
+  Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
+  if (reissued)
+    *reissued = true;
+  return wp_room;
+}
+
 // Picks a random reachable room from the current position and sets AIG_GET_TO_POS toward it.
 // Called from BotUpdateState() every 0.5s tick when no powerup goal is active.
 // Uses pursuit_goal_index — cleared automatically when leaving EXPLORE via BotClearActiveGoal().
@@ -1216,9 +1252,8 @@ static void BotDoExploreRoaming(int bot_index) {
     gi_info.roomnum = Bots[bot_index].last_target_room;
 
     pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
-    Bots[bot_index].explore_dest_room = ROOMNUM_OUTSIDE(Bots[bot_index].last_target_room)
-                                            ? -1
-                                            : BOA_INDEX(Bots[bot_index].last_target_room);
+    Bots[bot_index].explore_dest_room =
+        ROOMNUM_OUTSIDE(Bots[bot_index].last_target_room) ? -1 : BOA_INDEX(Bots[bot_index].last_target_room);
     Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
 
     LOG_DEBUG.printf("BOT: '%s' explore -> last-known target pos (room %d)", Bots[bot_index].callsign,
@@ -1249,30 +1284,16 @@ static void BotDoExploreRoaming(int bot_index) {
       return;
     }
 
-    // If we already have a valid goal heading to this same objective room, don't re-issue it.
-    // Re-issuing recalculates the engine path from the current position, which in curved
-    // multi-room shafts can reverse direction and cause oscillation.
-    int &pgi = Bots[bot_index].pursuit_goal_index;
-    bool goal_valid = (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used);
-    if (goal_valid && Bots[bot_index].explore_dest_room == obj_room && Bots[bot_index].explore_room_timer > 0.0f) {
-      LOG_DEBUG.printf("BOT: '%s' objective nav held (room %d, %.1fs left)", Bots[bot_index].callsign, obj_room,
-                       Bots[bot_index].explore_room_timer);
-      return;
+    // Phase 11 waypoint injection: head to the next room on the cost-aware route rather than
+    // straight at the far objective room (which lets the engine re-plan via its own greedy BOA and
+    // ignore our routing). Shared BotSetRoutedGoal handles the route, the hold-check, and fallback.
+    bool reissued = false;
+    int wp_room = BotSetRoutedGoal(bot_index, obj_room, Rooms[obj_room].path_pnt, &reissued);
+    if (reissued) {
+      int boa_next = BOA_GetNextRoom(obj->roomnum, obj_room);
+      LOG_DEBUG.printf("BOT: '%s' objective nav -> wp %d (goal %d)%s", Bots[bot_index].callsign, wp_room, obj_room,
+                       (wp_room != obj_room && boa_next != BOA_NO_PATH && wp_room != boa_next) ? " [DIVERGE]" : "");
     }
-
-    if (goal_valid)
-      GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
-    pgi = -1;
-
-    goal_info gi_info{};
-    gi_info.pos = Rooms[obj_room].path_pnt;
-    gi_info.roomnum = obj_room;
-
-    pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
-    Bots[bot_index].explore_dest_room = obj_room;
-    Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
-
-    LOG_DEBUG.printf("BOT: '%s' objective nav -> room %d", Bots[bot_index].callsign, obj_room);
     return;
   }
 
@@ -1425,14 +1446,14 @@ static void BotDoExploreRoaming(int bot_index) {
     float t = est_dist / 1000.0f;
     if (t > 1.0f)
       t = 1.0f;
-    Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MIN + t * (BOT_EXPLORE_ROOM_TIME_MAX - BOT_EXPLORE_ROOM_TIME_MIN);
+    Bots[bot_index].explore_room_timer =
+        BOT_EXPLORE_ROOM_TIME_MIN + t * (BOT_EXPLORE_ROOM_TIME_MAX - BOT_EXPLORE_ROOM_TIME_MIN);
   } else {
     Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX; // unknown distance — generous
   }
 
   LOG_DEBUG.printf("BOT: '%s' explore → room %d (dist=%.0f timer=%.1fs %s%s)", Bots[bot_index].callsign, dest_room,
-                   est_dist, Bots[bot_index].explore_room_timer,
-                   is_outdoor ? "from outdoor" : "from indoor",
+                   est_dist, Bots[bot_index].explore_room_timer, is_outdoor ? "from outdoor" : "from indoor",
                    BotHasVisitedRoom(bot_index, dest_room) ? " revisit" : " new");
 }
 
@@ -1493,30 +1514,19 @@ static void BotDoCarrierNav(int bot_index) {
     return;
   }
 
-  // Not yet at home — still en route with a valid goal? Don't reset every tick.
-  // But if the goal was cleared (e.g., by HUNT/COMBAT interruption), re-create it.
-  int &pgi_check = Bots[bot_index].pursuit_goal_index;
-  bool goal_valid = (pgi_check >= 0 && pgi_check < MAX_GOALS && obj->ai_info->goals[pgi_check].used);
-  if (goal_valid && Bots[bot_index].explore_dest_room == obj_room && Bots[bot_index].explore_room_timer > 0.0f)
-    return;
-
-  // Navigate to home base via portal point (same approach as Hoard carrier nav)
-  int &pgi = Bots[bot_index].pursuit_goal_index;
-  if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
-    GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
-  pgi = -1;
-
-  goal_info gi_info{};
-  gi_info.pos = BotGetNearestPortalPoint(obj, obj_room);
-  gi_info.roomnum = obj_room;
-
-  pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
-  Bots[bot_index].explore_dest_room = obj_room;
-  Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
+  // Not yet at home. Phase 11 waypoint injection: route to the next room on the cost-aware path
+  // home rather than straight at the far home room. Carriers crossing the maze are THE primary CTF
+  // case — feeding an adjacent waypoint forces the engine down our route (tight/grated doors
+  // penalized, impassable slits avoided). Final hop aims at the home room's nearest portal point.
   Bots[bot_index].last_target_room = -1;
-
-  LOG_DEBUG.printf("BOT CTF: '%s' carrier nav room %d -> home %d", Bots[bot_index].callsign,
-                   OBJECT_OUTSIDE(obj) ? -1 : obj->roomnum, obj_room);
+  bool reissued = false;
+  int wp_room = BotSetRoutedGoal(bot_index, obj_room, BotGetNearestPortalPoint(obj, obj_room), &reissued);
+  if (reissued) {
+    int boa_next = BOA_GetNextRoom(obj->roomnum, obj_room);
+    LOG_DEBUG.printf("BOT CTF: '%s' carrier nav room %d -> wp %d (home %d)%s", Bots[bot_index].callsign,
+                     OBJECT_OUTSIDE(obj) ? -1 : obj->roomnum, wp_room, obj_room,
+                     (wp_room != obj_room && boa_next != BOA_NO_PATH && wp_room != boa_next) ? " [DIVERGE]" : "");
+  }
 }
 
 static void BotDoHoardCarrierNav(int bot_index) {
@@ -1538,28 +1548,17 @@ static void BotDoHoardCarrierNav(int bot_index) {
     return;
   }
 
-  // Still en route with a valid goal? Don't reset every tick — destabilizes the pathfinder.
-  int &pgi_check = Bots[bot_index].pursuit_goal_index;
-  bool goal_valid = (pgi_check >= 0 && pgi_check < MAX_GOALS && obj->ai_info->goals[pgi_check].used);
-  if (goal_valid && Bots[bot_index].explore_dest_room == obj_room && Bots[bot_index].explore_room_timer > 0.0f)
-    return;
-
-  int &pgi = Bots[bot_index].pursuit_goal_index;
-  if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
-    GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
-  pgi = -1;
-
-  goal_info gi_info{};
-  gi_info.pos = BotGetNearestPortalPoint(obj, obj_room);
-  gi_info.roomnum = obj_room;
-
-  pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
-  Bots[bot_index].explore_dest_room = obj_room;
-  Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
+  // Phase 11 waypoint injection: route to the next room on the cost-aware path to the goal rather
+  // than straight at the far goal room. Final hop aims at the goal room's nearest portal point.
   Bots[bot_index].last_target_room = -1;
-
-  LOG_DEBUG.printf("BOT HOARD: '%s' carrier nav (%d orbs) room %d -> goal %d", Bots[bot_index].callsign,
-                   Bot_objective.hoard_count[slot], OBJECT_OUTSIDE(obj) ? -1 : obj->roomnum, obj_room);
+  bool reissued = false;
+  int wp_room = BotSetRoutedGoal(bot_index, obj_room, BotGetNearestPortalPoint(obj, obj_room), &reissued);
+  if (reissued) {
+    int boa_next = BOA_GetNextRoom(obj->roomnum, obj_room);
+    LOG_DEBUG.printf("BOT HOARD: '%s' carrier nav (%d orbs) room %d -> wp %d (goal %d)%s", Bots[bot_index].callsign,
+                     Bot_objective.hoard_count[slot], OBJECT_OUTSIDE(obj) ? -1 : obj->roomnum, wp_room, obj_room,
+                     (wp_room != obj_room && boa_next != BOA_NO_PATH && wp_room != boa_next) ? " [DIVERGE]" : "");
+  }
 }
 
 // Returns true if the bot has no primary weapon beyond the default Laser (battery 0).
@@ -1681,11 +1680,13 @@ static bool BotCanCollectPowerup(int bot_index, object *powerup) {
 
   // Primary weapons: can't pick up if already have the weapon in multiplayer
   // Name→weapon_index mapping mirrors powerup_data_primary[] in multisafe.cpp
-  static const struct { const char *name; int weapon_index; } primaries[] = {
-    {"Vauss", VAUSS_INDEX}, {"Napalm", NAPALM_INDEX}, {"EMDlauncher", EMD_INDEX},
-    {"Microwave", MICROWAVE_INDEX}, {"MassDriver", MASSDRIVER_INDEX},
-    {"SuperLaser", SUPER_LASER_INDEX}, {"Plasmacannon", PLASMA_INDEX},
-    {"Fusioncannon", FUSION_INDEX}, {"Omegacannon", OMEGA_INDEX},
+  static const struct {
+    const char *name;
+    int weapon_index;
+  } primaries[] = {
+      {"Vauss", VAUSS_INDEX},         {"Napalm", NAPALM_INDEX},         {"EMDlauncher", EMD_INDEX},
+      {"Microwave", MICROWAVE_INDEX}, {"MassDriver", MASSDRIVER_INDEX}, {"SuperLaser", SUPER_LASER_INDEX},
+      {"Plasmacannon", PLASMA_INDEX}, {"Fusioncannon", FUSION_INDEX},   {"Omegacannon", OMEGA_INDEX},
   };
   for (auto &p : primaries) {
     if (!stricmp(pname, p.name)) {
@@ -1866,7 +1867,7 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
     else if (strstr(lower, "napalm"))
       priority = only_default ? 11 : 5; // area denial flamethrower
     else if (strstr(lower, "omega"))
-      priority = only_default ? 8 : 4;  // situational melee-range leech beam
+      priority = only_default ? 8 : 4; // situational melee-range leech beam
 
     // --- Countermeasure pickups (from death spew and spawn areas) ---
     else if (strstr(lower, "chaff") || strstr(lower, "betty") || strstr(lower, "seeker") || strstr(lower, "gunboy") ||
@@ -1954,10 +1955,10 @@ static bool BotShouldInterruptForPowerup(int bot_index) {
       return true;
 
     // Tier B: game-changing secondaries — break off if bot has no secondaries at all
-    if (no_secondaries && (strstr(lower, "mega") || strstr(lower, "black shark") || strstr(lower, "blackshark") ||
-                           strstr(lower, "smart") || strstr(lower, "cyclone") || strstr(lower, "homing") ||
-                           strstr(lower, "concussion") || strstr(lower, "napalm rocket") || strstr(lower, "frag") ||
-                           strstr(lower, "mortar")))
+    if (no_secondaries &&
+        (strstr(lower, "mega") || strstr(lower, "black shark") || strstr(lower, "blackshark") ||
+         strstr(lower, "smart") || strstr(lower, "cyclone") || strstr(lower, "homing") || strstr(lower, "concussion") ||
+         strstr(lower, "napalm rocket") || strstr(lower, "frag") || strstr(lower, "mortar")))
       return true;
 
     // Tier C: survival — break off if critically low and a shield drop is right here
@@ -2143,22 +2144,22 @@ static void BotUpdateState(int bot_index) {
     // This prevents bots from abandoning powerup pickups for blind chases behind walls.
     // Phase 4.06: a chase is "stale" if we've been chasing > 4s without collecting —
     // don't let a stuck powerup chase permanently suppress engagement.
-    bool chasing_powerup = (Bots[bot_index].powerup_goal_index >= 0) &&
-                           (Bots[bot_index].chasing_powerup_timer < BOT_POWERUP_STALE_CHASE);
+    bool chasing_powerup =
+        (Bots[bot_index].powerup_goal_index >= 0) && (Bots[bot_index].chasing_powerup_timer < BOT_POWERUP_STALE_CHASE);
     // Hyper-Anarchy orb carrier: kills are worth more, so always prioritize engagement.
     // Powerup chasing never suppresses HUNT transition — grab items opportunistically only.
     bool ha_carrier = BotIsCarryingHyperOrb(bot_index);
     // Hoard collection mode: when orbs exist in the world, suppress combat engagement.
     // Only fight urgent threats (close + LOS). Reverts to normal anarchy when no orbs around.
-    bool hoard_collecting = (BotGetGameMode() == BGM_HOARD && Bot_objective.hoard_world_orb_count > 0 &&
-                             !BotIsHoardCarrier(bot_index));
+    bool hoard_collecting =
+        (BotGetGameMode() == BGM_HOARD && Bot_objective.hoard_world_orb_count > 0 && !BotIsHoardCarrier(bot_index));
     // CTF push mode: bots navigating to enemy flag suppress combat engagement.
     // Applies to ATTACK-lean bots always, and ALL bots during a fumble rush.
     bool ctf_pushing = false;
     if (BotGetGameMode() == BGM_CTF && !BotIsCarryingEnemyFlag(bot_index)) {
       BotSquadRole role = Bots[bot_index].squad_role;
-      bool is_attacker = (role == SQUAD_ATTACK) ||
-                         (role == SQUAD_FREELANCE && Bots[bot_index].objective_lean == BOT_LEAN_ATTACK);
+      bool is_attacker =
+          (role == SQUAD_ATTACK) || (role == SQUAD_FREELANCE && Bots[bot_index].objective_lean == BOT_LEAN_ATTACK);
       if (is_attacker)
         ctf_pushing = true;
       // Fumble rush: any bot navigating to a dropped enemy flag also suppresses combat
@@ -2186,11 +2187,10 @@ static void BotUpdateState(int bot_index) {
         objective_active = true;
     }
     bool hunt_blind_ok = !objective_active && dist < BOT_HUNT_BLIND_MAX_DIST;
-    if (has_target && !holding_for_weapon && (!chasing_powerup || ha_carrier) && !hoard_collecting &&
-        !ctf_pushing && (has_los || hunt_blind_ok))
+    if (has_target && !holding_for_weapon && (!chasing_powerup || ha_carrier) && !hoard_collecting && !ctf_pushing &&
+        (has_los || hunt_blind_ok))
       new_state = BOT_STATE_HUNT;
-    else if (has_target && !holding_for_weapon && (chasing_powerup || hoard_collecting || ctf_pushing) &&
-             urgent_threat)
+    else if (has_target && !holding_for_weapon && (chasing_powerup || hoard_collecting || ctf_pushing) && urgent_threat)
       new_state = BOT_STATE_HUNT;
     break;
   }
@@ -2266,8 +2266,7 @@ static void BotUpdateState(int bot_index) {
       new_state = BOT_STATE_COMBAT;
 
     // SQUAD_DEFEND: don't pursue targets beyond effective fire range — hold position
-    if (new_state == BOT_STATE_HUNT && Bots[bot_index].squad_role == SQUAD_DEFEND &&
-        dist > BOT_FIRE_RANGE * 1.5f) {
+    if (new_state == BOT_STATE_HUNT && Bots[bot_index].squad_role == SQUAD_DEFEND && dist > BOT_FIRE_RANGE * 1.5f) {
       AISetTarget(obj, OBJECT_HANDLE_NONE);
       Bots[bot_index].retarget_cooldown = 3.0f;
       new_state = BOT_STATE_EXPLORE;
@@ -2275,12 +2274,11 @@ static void BotUpdateState(int bot_index) {
     // FREELANCE/DEFEND-lean in CTF: same leash as SQUAD_DEFEND.
     // Two exceptions: (1) own flag stolen — pursue the carrier regardless of distance;
     // (2) weak equipment — let the bot roam and arm up before holding position.
-    if (new_state == BOT_STATE_HUNT && BotGetGameMode() == BGM_CTF &&
-        Bots[bot_index].squad_role == SQUAD_FREELANCE &&
+    if (new_state == BOT_STATE_HUNT && BotGetGameMode() == BGM_CTF && Bots[bot_index].squad_role == SQUAD_FREELANCE &&
         Bots[bot_index].objective_lean == BOT_LEAN_DEFEND && dist > BOT_FIRE_RANGE * 1.5f) {
       int my_team = Players[slot].team;
-      bool own_flag_safe = (my_team >= 0 && my_team < BOT_MAX_TEAMS &&
-                            Bot_objective.flag_state[my_team] == FLAG_AT_HOME);
+      bool own_flag_safe =
+          (my_team >= 0 && my_team < BOT_MAX_TEAMS && Bot_objective.flag_state[my_team] == FLAG_AT_HOME);
       bool well_equipped = (bot_equip >= BOT_EQUIP_TIER_GOOD);
       if (own_flag_safe && well_equipped) {
         AISetTarget(obj, OBJECT_HANDLE_NONE);
@@ -2320,10 +2318,8 @@ static void BotUpdateState(int bot_index) {
       }
     }
 
-    bool hoard_cooldown_bypass =
-        (BotGetGameMode() == BGM_HOARD && Bots[bot_index].powerup_interrupt_cooldown > 0.0f);
-    if (new_state == BOT_STATE_HUNT &&
-        (Bots[bot_index].powerup_interrupt_cooldown <= 0.0f || hoard_cooldown_bypass)) {
+    bool hoard_cooldown_bypass = (BotGetGameMode() == BGM_HOARD && Bots[bot_index].powerup_interrupt_cooldown > 0.0f);
+    if (new_state == BOT_STATE_HUNT && (Bots[bot_index].powerup_interrupt_cooldown <= 0.0f || hoard_cooldown_bypass)) {
       // Opportunistic pickup divert: WEAK bots divert for any weapon upgrade;
       // well-armed bots only divert for game-changers (Mega, Invulnerability, etc.)
       bool need_sh = (shields < max_shields * BOT_LOW_SHIELDS_PCT);
@@ -2369,12 +2365,11 @@ static void BotUpdateState(int bot_index) {
       new_state = BOT_STATE_EXPLORE;
     else if (BotGetGameMode() == BGM_CTF && Bots[bot_index].combat_idle_timer > BOT_CTF_ATTACK_COMBAT_TIMEOUT) {
       BotSquadRole role = Bots[bot_index].squad_role;
-      bool is_attacker = (role == SQUAD_ATTACK) ||
-                         (role == SQUAD_FREELANCE && Bots[bot_index].objective_lean == BOT_LEAN_ATTACK);
+      bool is_attacker =
+          (role == SQUAD_ATTACK) || (role == SQUAD_FREELANCE && Bots[bot_index].objective_lean == BOT_LEAN_ATTACK);
       if (is_attacker && !BotIsCarryingEnemyFlag(bot_index))
         new_state = BOT_STATE_EXPLORE;
-    }
-    else if (Bots[bot_index].combat_idle_timer > BOT_EVADE_COMBAT_TIMEOUT && shields < max_shields * 0.60f)
+    } else if (Bots[bot_index].combat_idle_timer > BOT_EVADE_COMBAT_TIMEOUT && shields < max_shields * 0.60f)
       new_state = BOT_STATE_EVADE; // prolonged combat AND taking losses — break off to regroup
     else if (BotShouldInterruptForPowerup(bot_index)) {
       // WEAK bots use shorter cooldown — they interrupt more aggressively to arm up
@@ -2516,9 +2511,9 @@ static void BotFlattenSkyDirection(vector &dir, object *obj) {
   if (!Bot_terrain_steering_enabled)
     return;
 
-  bool in_outdoor_area = ROOMNUM_OUTSIDE(obj->roomnum) ||
-                         (obj->roomnum >= 0 && obj->roomnum <= Highest_room_index &&
-                          (Rooms[obj->roomnum].flags & (RF_EXTERNAL | RF_TOUCHES_TERRAIN)));
+  bool in_outdoor_area =
+      ROOMNUM_OUTSIDE(obj->roomnum) || (obj->roomnum >= 0 && obj->roomnum <= Highest_room_index &&
+                                        (Rooms[obj->roomnum].flags & (RF_EXTERNAL | RF_TOUCHES_TERRAIN)));
   if (!in_outdoor_area)
     return;
 
@@ -2673,7 +2668,7 @@ static void BotApplyThrust(int bot_index) {
     float tr_scale = BotGetDiffParams(bot_index)->turn_rate_scale;
     int turn_rate = (int)((dist_to_target < BOT_CLOSERANGE_DIST) ? BOT_CLOSERANGE_TURNRATE * tr_scale
                           : (dist_to_target < BOT_MIDRANGE_DIST) ? BOT_MIDRANGE_TURNRATE * tr_scale
-                                                                  : BOT_LONGRANGE_TURNRATE * tr_scale);
+                                                                 : BOT_LONGRANGE_TURNRATE * tr_scale);
     if (turn_rate > 65535)
       turn_rate = 65535;
     obj->ai_info->max_turn_rate = turn_rate;
@@ -2872,8 +2867,7 @@ static void BotApplyThrust(int bot_index) {
     Bots[bot_index].retarget_cooldown = BOT_RETARGET_COOLDOWN;
 
     bool escaped_via_portal = false;
-    if (!OBJECT_OUTSIDE(obj) && obj->roomnum >= 0 && obj->roomnum <= Highest_room_index &&
-        Rooms[obj->roomnum].used) {
+    if (!OBJECT_OUTSIDE(obj) && obj->roomnum >= 0 && obj->roomnum <= Highest_room_index && Rooms[obj->roomnum].used) {
       room &cur = Rooms[obj->roomnum];
       // Try to find a portal leading to a room we haven't visited recently
       int best_portal = -1;
@@ -3142,8 +3136,34 @@ void BotFormatNavDiag(int bot_index, char *buf, size_t buflen) {
     snprintf(probe, sizeof(probe), "mdir~0");
   }
 
-  snprintf(buf, buflen, "nav: dest_room=%d num_paths=%d path=%u/%u mdir|%.2f| ahead:%s", dest_room,
-           (int)path.num_paths, path.cur_path, path.cur_node, mdir_mag, probe);
+  // Router probe: show the Dijkstra next-hop toward the objective vs the engine's BOA next-hop.
+  // When they differ (DIVERGE), our cost-aware routing is actively choosing a different door —
+  // the proof the router is doing something the engine wouldn't. gcost = geometry cost of the
+  // chosen portal (1e6 == impassable, which the router would have skipped).
+  char route[96];
+  int goal_room = BotGetObjectiveRoom(bot_index);
+  if (goal_room >= 0 && !OBJECT_OUTSIDE(obj) && obj->roomnum != goal_room) {
+    int dnext = BotComputeRoute(obj->roomnum, goal_room);
+    int bnext = BOA_GetNextRoom(obj->roomnum, goal_room);
+    if (bnext == BOA_NO_PATH)
+      bnext = -1;
+    float gcost = -1.0f;
+    if (dnext >= 0) {
+      room &cr = Rooms[obj->roomnum];
+      for (int p = 0; p < cr.num_portals; p++)
+        if (cr.portals[p].croom == dnext) {
+          gcost = BotPortalGeoCost(obj->roomnum, p);
+          break;
+        }
+    }
+    snprintf(route, sizeof(route), " route:goal=%d dijkstra=%d boa=%d%s gcost=%.0f", goal_room, dnext, bnext,
+             (dnext >= 0 && bnext >= 0 && dnext != bnext) ? "(DIVERGE)" : "", gcost);
+  } else {
+    snprintf(route, sizeof(route), " route:goal=%d n/a", goal_room);
+  }
+
+  snprintf(buf, buflen, "nav: dest_room=%d num_paths=%d path=%u/%u mdir|%.2f| ahead:%s%s", dest_room,
+           (int)path.num_paths, path.cur_path, path.cur_node, mdir_mag, probe, route);
 }
 
 // Find and set the best target as this bot's AI target.
@@ -3496,8 +3516,8 @@ void BotInitAll() {
 
 void BotShutdownAll() {
   BotRemoveAll();
-  Bot_roster_spawned = false;    // allow re-spawn in next game session
-  Bot_ui_spawn_pending = false;  // cancel any pending delayed spawn
+  Bot_roster_spawned = false;   // allow re-spawn in next game session
+  Bot_ui_spawn_pending = false; // cancel any pending delayed spawn
 }
 
 // ---------------------------------------------------------------------------
@@ -3538,24 +3558,33 @@ static void BotDetectGameMode() {
   else
     Bot_game_mode = BGM_UNKNOWN;
 
-  LOG_DEBUG.printf("BOT: Detected game mode: %s (scriptname='%s')", BotGameModeName(Bot_game_mode),
-                   Netgame.scriptname);
+  LOG_DEBUG.printf("BOT: Detected game mode: %s (scriptname='%s')", BotGameModeName(Bot_game_mode), Netgame.scriptname);
 }
 
 BotGameMode BotGetGameMode() { return Bot_game_mode; }
 
 const char *BotGameModeName(BotGameMode mode) {
   switch (mode) {
-  case BGM_ANARCHY: return "Anarchy";
-  case BGM_TEAM_ANARCHY: return "Team Anarchy";
-  case BGM_ROBO_ANARCHY: return "Robo-Anarchy";
-  case BGM_COOP: return "Co-op";
-  case BGM_CTF: return "CTF";
-  case BGM_HYPERANARCHY: return "Hyper-Anarchy";
-  case BGM_HOARD: return "Hoard";
-  case BGM_ENTROPY: return "Entropy";
-  case BGM_MONSTERBALL: return "Monsterball";
-  default: return "Unknown";
+  case BGM_ANARCHY:
+    return "Anarchy";
+  case BGM_TEAM_ANARCHY:
+    return "Team Anarchy";
+  case BGM_ROBO_ANARCHY:
+    return "Robo-Anarchy";
+  case BGM_COOP:
+    return "Co-op";
+  case BGM_CTF:
+    return "CTF";
+  case BGM_HYPERANARCHY:
+    return "Hyper-Anarchy";
+  case BGM_HOARD:
+    return "Hoard";
+  case BGM_ENTROPY:
+    return "Entropy";
+  case BGM_MONSTERBALL:
+    return "Monsterball";
+  default:
+    return "Unknown";
   }
 }
 
@@ -3612,7 +3641,8 @@ void BotReinitAll() {
     Bots[i].gunboy_cooldown = 0.0f;
     Bots[i].fire_delay_timer = 0.0f;
     Bots[i].fire_delay_target = OBJECT_HANDLE_NONE;
-    Bots[i].last_chat_reply_time = 0.0f; // Gametime resets on level transition — must clear or throttle fires permanently
+    Bots[i].last_chat_reply_time =
+        0.0f; // Gametime resets on level transition — must clear or throttle fires permanently
     Bots[i].squad_role = SQUAD_FREELANCE;
     Bots[i].squad_target_slot = -1;
     Bots[i].objective_lean = BOT_LEAN_BALANCED;
@@ -3975,8 +4005,8 @@ void BotDoFrame() {
         float home_dist = (home_room >= 0 && Rooms[home_room].used)
                               ? vm_VectorDistanceQuick(&dobj->pos, &Rooms[home_room].path_pnt)
                               : -1.0f;
-        LOG_DEBUG.printf("BOT CTF: '%s' DIED carrying flag! dist_to_home=%.0f room=%d home=%d",
-                         Bots[i].callsign, home_dist, OBJECT_OUTSIDE(dobj) ? -1 : dobj->roomnum, home_room);
+        LOG_DEBUG.printf("BOT CTF: '%s' DIED carrying flag! dist_to_home=%.0f room=%d home=%d", Bots[i].callsign,
+                         home_dist, OBJECT_OUTSIDE(dobj) ? -1 : dobj->roomnum, home_room);
       }
       Bots[i].awaiting_respawn = true;
       Bots[i].death_time = Gametime;
@@ -4051,8 +4081,7 @@ void BotDoFrame() {
         Bots[i].combat_no_los_timer += Frametime;
       else
         Bots[i].combat_no_los_timer = 0.0f;
-    }
-    else if (Bots[i].state == BOT_STATE_EVADE)
+    } else if (Bots[i].state == BOT_STATE_EVADE)
       Bots[i].evade_timer -= Frametime;
     else if (Bots[i].state == BOT_STATE_EXPLORE && Bots[i].explore_room_timer > 0.0f)
       Bots[i].explore_room_timer -= Frametime;
@@ -4116,6 +4145,24 @@ void BotDoFrame() {
         Bots[i].room_progress_timer += Frametime;
         if (Bots[i].room_progress_timer > BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT) {
           Bots[i].room_progress_stuck_count++;
+
+          // Emergent-obstacle feedback (Phase 11): the bot failed to make progress toward its
+          // waypoint. Bump the portal it was trying to cross so the router prefers an alternate
+          // door on the next recompute — the cost-signal form of "don't keep pressing this door."
+          // Indoor only, and only when a direct portal to the waypoint exists (adjacent-hop case).
+          if (cur_room >= 0 && cur_room <= Highest_room_index && Rooms[cur_room].used) {
+            int dest = Bots[i].explore_dest_room;
+            if (dest >= 0 && dest <= Highest_room_index) {
+              room &cr = Rooms[cur_room];
+              for (int p = 0; p < cr.num_portals; p++) {
+                if (cr.portals[p].croom == dest) {
+                  BotBumpPortalPenalty(cur_room, p);
+                  break;
+                }
+              }
+            }
+          }
+
           BotClearActiveGoal(i);
           Bots[i].explore_stuck_room = cur_room;
           Bots[i].room_progress_timer = 0.0f;
@@ -4392,8 +4439,8 @@ void BotLoadRosterFile() {
     while (*val == ' ' || *val == '\t')
       val++;
     int vlen = strlen(val);
-    while (vlen > 0 && (val[vlen - 1] == ' ' || val[vlen - 1] == '\t' || val[vlen - 1] == '\r' ||
-                        val[vlen - 1] == '\n'))
+    while (vlen > 0 &&
+           (val[vlen - 1] == ' ' || val[vlen - 1] == '\t' || val[vlen - 1] == '\r' || val[vlen - 1] == '\n'))
       val[--vlen] = '\0';
 
     if (stricmp(key, "BotCount") == 0) {
@@ -4513,11 +4560,16 @@ const char *BotDifficultyName(BotDifficulty d) {
 
 const char *BotSquadRoleName(BotSquadRole r) {
   switch (r) {
-  case SQUAD_ATTACK: return "Attack";
-  case SQUAD_DEFEND: return "Defend";
-  case SQUAD_FOLLOW: return "Follow";
-  case SQUAD_COVER: return "Cover";
-  default: return "Freelance";
+  case SQUAD_ATTACK:
+    return "Attack";
+  case SQUAD_DEFEND:
+    return "Defend";
+  case SQUAD_FOLLOW:
+    return "Follow";
+  case SQUAD_COVER:
+    return "Cover";
+  default:
+    return "Freelance";
   }
 }
 
@@ -4541,10 +4593,9 @@ void BotPrintServerCaps() {
 
 // --- Bot UI roster (Phase 5.4) ---
 
-static const char *kDefaultBotNames[BOT_UI_MAX_BOTS] = {"Reaper",  "Phantom", "Viper",   "Shadow",
-                                                         "Blaze",   "Rogue",   "Havoc",   "Spectre",
-                                                         "Wraith",  "Talon",   "Fury",    "Ghost",
-                                                         "Striker", "Nova",    "Tempest", "Apex"};
+static const char *kDefaultBotNames[BOT_UI_MAX_BOTS] = {"Reaper",  "Phantom", "Viper",   "Shadow", "Blaze", "Rogue",
+                                                        "Havoc",   "Spectre", "Wraith",  "Talon",  "Fury",  "Ghost",
+                                                        "Striker", "Nova",    "Tempest", "Apex"};
 
 BotUISettings Bot_ui_settings;
 
