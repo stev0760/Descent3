@@ -2593,8 +2593,9 @@ static void BotUpdateAimDirection(int bot_index) {
   float target_speed = vm_GetMagnitude(&target->mtype.phys_info.velocity);
   if (target_speed > 2.0f) {
     int wb_index = Players[slot].weapon[PW_PRIMARY].index;
-    int ship_idx = Players[slot].ship_index;
-    int weapon_id = Ships[ship_idx].static_wb[wb_index].gp_weapon_index[0];
+    // Use BotGetWbWeaponId (iterates gp_fire_masks) — gp_weapon_index[0] is 0 for wing-mounted
+    // batteries (Plasma/EMD fire from gunpoint index > 0), which would skip lead targeting.
+    int weapon_id = BotGetWbWeaponId(slot, wb_index);
     if (weapon_id > 0 && weapon_id < MAX_WEAPONS) {
       float proj_speed = vm_GetMagnitude(&Weapons[weapon_id].phys_info.velocity);
       if (proj_speed > 1.0f)

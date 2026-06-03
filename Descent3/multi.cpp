@@ -5002,6 +5002,7 @@ void MultiDoMessageToServer(uint8_t *data) {
   uint8_t len = MultiGetByte(data, &count);
 
   memcpy(message, &data[count], len);
+  message[(len < 255) ? len : 254] = '\0'; // ensure C-string termination (BotFindCommand scans this)
   count += len;
 
   // Dispatch to bot chat system before rebroadcasting to humans.

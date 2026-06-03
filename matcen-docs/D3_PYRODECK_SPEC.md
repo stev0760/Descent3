@@ -238,6 +238,15 @@ Diagnostic — dump the current level's runtime navigation geometry to a JSON fi
 **`$botmov on|off`**
 Toggle movement debug logging. No structured output.
 
+**`$botmode`**
+Print the detected game mode. Output: `Game mode: <MODE> (scriptname='<name>', teams=<n>)` — `<MODE>` is one of `Anarchy`/`TeamAnarchy`/`CTF`/`Hoard`/`HyperAnarchy`/`Monsterball`/`RoboAnarchy`/`Coop` (matches `BotGameModeName`). Useful for the web UI to confirm objective-mode detection before showing CTF/Hoard panels.
+
+**`$botobj`**
+Print the current objective state (CTF flag IDs and goal rooms, Hoard/Hyper orb IDs, per-team flag status). Prints a `Game mode: <MODE>` line plus any warnings (e.g. a team with no `RF_GOAL` room → outdoor flag); most detail goes to `server.log` at DEBUG. Diagnostic, not routine web display.
+
+**`$terrainsteer on|off`**
+Toggle outdoor terrain steering (Phase 8.1). Usage with no operand reports current state: `Usage: $terrainsteer on|off  (current: <on|off>)`. Server-wide steering toggle — a candidate for an advanced/debug settings control in the admin panel.
+
 **`$bothelp`**
 Print bot command reference. For display in the web UI help panel only.
 

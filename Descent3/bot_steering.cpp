@@ -94,6 +94,9 @@ static bool ProbePortalClearance(int room_idx, int connected_room, const portal 
 }
 
 bool BotCheckPortalPassable(int room_idx, int portal_idx) {
+  if (room_idx < 0 || room_idx >= MAX_ROOMS || portal_idx < 0 || portal_idx >= MAX_PATH_PORTALS)
+    return false; // out of cache range — matches BotPortalGeoCost's guard
+
   if (pf_passable_level_checksum != BOA_mine_checksum) {
     memset(pf_portal_passable, -1, sizeof(pf_portal_passable));
     pf_passable_level_checksum = BOA_mine_checksum;
