@@ -1084,6 +1084,8 @@ static void BotDoStuckClear(int bot_index) {
       continue;
     if (!BotIsPlayerEnemy(bot_index, i))
       continue;
+    if (Objects[Players[i].objnum].type != OBJ_PLAYER)
+      continue; // skip ghost/none during respawn window (matches BotSelectTarget guard)
     float dist = vm_VectorDistanceQuick(&obj->pos, &Objects[Players[i].objnum].pos);
     if (dist < BOT_STUCK_ENEMY_RADIUS) {
       object *enemy = &Objects[Players[i].objnum];
@@ -1128,10 +1130,11 @@ static void BotDoStuckClear(int bot_index) {
   if (hit_type == HIT_WALL && hit.hit_face_room[0] >= 0 && hit.hit_face[0] >= 0) {
     int face_room = hit.hit_face_room[0];
     int face_num = hit.hit_face[0];
-    if (face_room >= 0 && face_room <= Highest_room_index && Rooms[face_room].used) {
+    if (face_room >= 0 && face_room <= Highest_room_index && Rooms[face_room].used &&
+        face_num < Rooms[face_room].num_faces) {
       face &fp = Rooms[face_room].faces[face_num];
       int16_t tmap = fp.tmap;
-      if ((GameTextures[tmap].flags & TF_BREAKABLE) && fp.portal_num >= 0) {
+      if (tmap >= 0 && (GameTextures[tmap].flags & TF_BREAKABLE) && fp.portal_num >= 0) {
         BotBreakGlassObstacle(bot_index, &hit.hit_face_pnt[0]);
         LOG_DEBUG.printf("BOT: '%s' breaking glass obstacle in room %d face %d", Bots[bot_index].callsign, face_room,
                          face_num);
@@ -1192,6 +1195,8 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
     *reissued = false;
   int slot = Bots[bot_index].player_slot;
   object *obj = &Objects[Players[slot].objnum];
+  if (!obj->ai_info)
+    return -1; // not AI-controlled (e.g. mid-respawn) — callers guard, but don't assume
 
   int wp_room = BotComputeRoute(obj->roomnum, goal_room);
   if (wp_room < 0)
