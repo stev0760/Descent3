@@ -1,9 +1,9 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Matcen 0.9.1-dev — **Phase 11: cost-aware Dijkstra router** (untested; see the Phase 11 section directly below). Routing intelligence is added back on top of the Phase 10 two-layer base — as a *routing-only* layer (it picks the room sequence; the engine still does all steering), explicitly **not** the steering override that Phase 10 removed.
+**Status:** Matcen 0.9.1 (stable) — **Phase 11: cost-aware Dijkstra router** (validated; see the Phase 11 section directly below). Routing intelligence is added back on top of the Phase 10 two-layer base — as a *routing-only* layer (it picks the room sequence; the engine still does all steering), explicitly **not** the steering override that Phase 10 removed. This is the pinned stable baseline to fall back on while the remaining engine-side nav work continues.
 
-### Phase 11 — Cost-Aware Dijkstra Router (0.9.1-dev, UNTESTED)
+### Phase 11 — Cost-Aware Dijkstra Router (0.9.1, VALIDATED)
 
 The Phase 10 base navigates well on simple/open maps but can't evaluate alternate routes through complex maps (SewerRat-style hub + multiple winding pipes), where the engine's greedy single-next-hop BOA can route a bot into a tight/blocked door it then wedges against. Phase 11 rebuilds the Dijkstra router deleted in Phase 10 — but as **routing only**, complementing Outrage's path-follower instead of fighting it.
 
@@ -13,7 +13,11 @@ The Phase 10 base navigates well on simple/open maps but can't evaluate alternat
 - **Waypoint injection (`BotSetRoutedGoal`)** — feeds the engine the *adjacent* next hop (not the far goal, which it would re-plan via its own BOA), so it path-follows our route. Wired into `BotDoExploreRoaming` (objective nav), `BotDoCarrierNav`, `BotDoHoardCarrierNav`.
 - **`$botstat`** now prints `route:goal=G dijkstra=D boa=B [DIVERGE] gcost=X` — the validation gate (DIVERGE should appear only where `gcost>0`/penalty active).
 
-**Scope/safety:** active in objective modes only (`BotGetObjectiveRoom()` → -1 in anarchy/team/robo/coop, so `BotComputeRoute` is never reached there). Default ON. **Not claimed fixed:** the engine path-follower's portal-transition wobble on *passable* portals, and the goal-blind stuck-escape in `BotApplyThrust` are unchanged; the router reduces how often bots reach bad spots but does not eliminate engine-level steering stalls. Validate the DIVERGE gate on SewerRat before trusting capture numbers. Design detail in `project_dijkstra_redesign` (session memory).
+**Scope/safety:** active in objective modes only (`BotGetObjectiveRoom()` → -1 in anarchy/team/robo/coop, so `BotComputeRoute` is never reached there). Default ON. **Not claimed fixed:** the engine path-follower's portal-transition wobble on *passable* portals, and the goal-blind stuck-escape in `BotApplyThrust` are unchanged; the router reduces how often bots reach bad spots but does not eliminate engine-level steering stalls. Design detail in `project_dijkstra_redesign` (session memory).
+
+**Validation (2026-06-03):** a 10.5h bot-only 4-team CTF soak (Apparition/Plutonium/QuadSomniac/Polaris, 43 rounds) logged **326 captures and 0 crashes / 0 asserts** across 10.1M lines. The router earns its keep where the map has alternate routes — Polaris saw 18% of routes DIVERGE from the engine's greedy BOA hop and posted the best capture rate (14.4/round); on simpler maps (Plutonium/QuadSomniac) it diverges rarely and rides bare BOA, as designed. The DIVERGE gate's `gcost` field shows only the *immediate* door's geometry cost — DIVERGE at `gcost=0` is expected when a downstream door's geometry or an accrued dynamic penalty drives the reroute, **not** a base≠BOA bug. The remaining capture ceiling is carrier *survivability* (mid-field carrier deaths), not routing.
+
+**`$navdump [file]`** (added 0.9.1) writes the engine's runtime nav geometry to JSON for offline analysis: per room — BOA routing, bbox vs `path_pnt` (with `path_pnt_is_bbox_center`), and a swept-ship-radius portal-to-portal LOS matrix (the non-convex-room / wall-press discriminator); per portal — engine vs our swept-radius passability verdict + `DISAGREE` flag. Read-only, on-demand. Confirmed the abend2 wall-press is engine-side (concave rooms with bbox-center path nodes where the objective door is straight-line-unreachable from the entry portals). Guards `RF_EXTERNAL` startrooms (FVI crashes on them) so it is safe on outdoor levels.
 
 ---
 
