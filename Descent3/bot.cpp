@@ -46,6 +46,7 @@
 #include "vecmat.h"
 #include "findintersection.h"
 #include "room.h"
+#include "doorway.h"
 #include "weapon.h"
 #include "objinfo.h"
 #include "terrain.h"
@@ -3232,6 +3233,64 @@ static float BotNavDumpProbeRadius() {
   return 3.0f;
 }
 
+// Zero-radius ray from a->b: reliably reports the first blocking WALL FACE (room+facenum).
+// The swept (rad>0) LOS gives the ship-fit verdict; this gives the occluder's identity so we
+// can classify it (breakable glass the bot could shoot vs. a wall/bulletproof it must avoid).
+// Uses rad=0 deliberately — that path is the proven one in BotDoStuckClear for face hits.
+static bool BotNavDumpHitFace(const vector &a, const vector &b, int startroom, int *hit_room, int *hit_facenum,
+                              float *out_dist) {
+  if (hit_room)
+    *hit_room = -1;
+  if (hit_facenum)
+    *hit_facenum = -1;
+  if (out_dist)
+    *out_dist = -1.0f;
+  if (startroom < 0 || startroom > Highest_room_index || !Rooms[startroom].used ||
+      (Rooms[startroom].flags & RF_EXTERNAL))
+    return false;
+  vector p0 = a, p1 = b;
+  fvi_query fq{};
+  fvi_info hit{};
+  fq.p0 = &p0;
+  fq.p1 = &p1;
+  fq.startroom = startroom;
+  fq.rad = 0.0f;
+  fq.thisobjnum = -1;
+  fq.ignore_obj_list = nullptr;
+  fq.flags = FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS | FQ_IGNORE_MOVING_OBJECTS;
+  int ht = fvi_FindIntersection(&fq, &hit);
+  if (ht != HIT_WALL || hit.hit_face_room[0] < 0 || hit.hit_face[0] < 0)
+    return false;
+  vector d = hit.hit_pnt - a;
+  if (out_dist)
+    *out_dist = vm_GetMagnitude(&d);
+  if (hit_room)
+    *hit_room = hit.hit_face_room[0];
+  if (hit_facenum)
+    *hit_facenum = hit.hit_face[0];
+  return true;
+}
+
+// Classify a face into the OBSTACLE_GEOMETRY.md taxonomy from engine flags alone.
+// Honest about what flags cannot split: a large grate and bulletproof glass are both
+// rendered + see-through + engine-impassable + non-breakable, so both report "seethrough".
+static const char *BotClassifyFaceType(room *rp, int facenum) {
+  if (!rp || facenum < 0 || facenum >= rp->num_faces)
+    return "unknown";
+  face &fa = rp->faces[facenum];
+  uint32_t tf = (fa.tmap >= 0) ? GameTextures[fa.tmap].flags : 0u;
+  if (tf & TF_FORCEFIELD)
+    return "forcefield";
+  if (tf & TF_BREAKABLE)
+    return "breakable_glass";
+  int pf = GetFacePhysicsFlags(rp, &fa);
+  if (pf & FPF_TRANSPARENT)
+    return "seethrough"; // grate OR bulletproof glass (flag-identical)
+  if (pf & FPF_SOLID)
+    return "wall";
+  return "open";
+}
+
 bool BotNavDump(const char *filename) {
   char path[256];
   if (filename && filename[0])
@@ -3246,9 +3305,11 @@ bool BotNavDump(const char *filename) {
   }
 
   const float rad = BotNavDumpProbeRadius();
-  int disagree_total = 0;       // engine says passable, our probe says impassable
-  int blocked_leg_total = 0;    // portal->portal LOS legs blocked by solid geometry
-  int center_pathpnt_total = 0; // rooms whose path_pnt is the raw bbox center
+  int disagree_total = 0;        // engine says passable, our probe says impassable
+  int blocked_leg_total = 0;     // portal->portal LOS legs blocked by solid geometry
+  int center_pathpnt_total = 0;  // rooms whose path_pnt is the raw bbox center
+  int breakable_glass_total = 0; // TF_BREAKABLE portal faces (router should treat passable, see OBSTACLE_GEOMETRY §5)
+  int forcefield_total = 0;      // TF_FORCEFIELD portal faces
 
   fprintf(fp, "{\n");
   fprintf(fp, "  \"highest_room_index\": %d,\n", Highest_room_index);
@@ -3300,9 +3361,10 @@ bool BotNavDump(const char *filename) {
       if (po.cportal >= 0 && po.cportal < MAX_PATH_PORTALS && cr >= 0 && cr <= Highest_room_index)
         boa_rev = BOA_cost_array[cr][po.cportal];
 
-      // Face geometry for this portal
+      // Face geometry + obstacle classification for this portal (see OBSTACLE_GEOMETRY.md).
       vector fc{0, 0, 0}, fn{0, 0, 0};
-      int fsolid = -1, fportal = -1;
+      int fsolid = -1, fportal = -1, ftrans = -1;
+      int tf_break = 0, tf_ff = 0, tf_destroy = 0, tf_fly = 0;
       int fi = po.portal_face;
       if (fi >= 0 && fi < rm.num_faces) {
         face &fa = rm.faces[fi];
@@ -3311,7 +3373,44 @@ bool BotNavDump(const char *filename) {
         int pf = GetFacePhysicsFlags(&rm, &fa);
         fsolid = (pf & FPF_SOLID) ? 1 : 0;
         fportal = (pf & FPF_PORTAL) ? 1 : 0;
+        ftrans = (pf & FPF_TRANSPARENT) ? 1 : 0;
+        uint32_t tf = (fa.tmap >= 0) ? GameTextures[fa.tmap].flags : 0u;
+        tf_break = (tf & TF_BREAKABLE) ? 1 : 0;
+        tf_ff = (tf & TF_FORCEFIELD) ? 1 : 0;
+        tf_destroy = (tf & TF_DESTROYABLE) ? 1 : 0;
+        tf_fly = (tf & TF_FLY_THRU) ? 1 : 0;
       }
+      if (tf_break)
+        breakable_glass_total++;
+      if (tf_ff)
+        forcefield_total++;
+
+      // Best-effort obstacle type. bulletproof_glass and a large grate are flag-identical
+      // (both rendered + see-through + engine-impassable + non-breakable) → both "seethrough_impassable".
+      bool pf_block_f = (po.flags & PF_BLOCK) && !(po.flags & PF_BLOCK_REMOVABLE);
+      bool pf_small_f = (po.flags & PF_TOO_SMALL_FOR_ROBOT) != 0;
+      bool rendered = (po.flags & PF_RENDER_FACES) && !(po.flags & PF_RENDERED_FLYTHROUGH);
+      doorway *dw = rm.doorway_data ? rm.doorway_data
+                    : (cr >= 0 && cr <= Highest_room_index && Rooms[cr].used) ? Rooms[cr].doorway_data
+                                                                              : nullptr;
+      const char *ptype;
+      if (dw) {
+        bool locked = (dw->flags & DF_LOCKED) && !(dw->flags & DF_GB_IGNORE_LOCKED);
+        ptype = locked ? "door_locked" : "door";
+      } else if (pf_block_f)
+        ptype = "blocked";
+      else if (tf_ff)
+        ptype = "forcefield";
+      else if (tf_break)
+        ptype = "breakable_glass";
+      else if (rendered)
+        ptype = ftrans == 1 ? "seethrough_impassable" : "wall";
+      else if (pf_small_f)
+        ptype = "too_small";
+      else if (our_impass)
+        ptype = "tight"; // open + engine-passable bbox, but swept ship hull rejects = DISAGREE narrow gap
+      else
+        ptype = "open";
 
       // LOS from this room's steer point (path_pnt) to the portal's steer point.
       float los_d = -1.0f;
@@ -3321,7 +3420,11 @@ bool BotNavDump(const char *filename) {
               po.flags);
       fprintf(fp, "\"face\": %d, \"face_center\": [%.2f,%.2f,%.2f], \"face_normal\": [%.2f,%.2f,%.2f], ", fi, fc.x(),
               fc.y(), fc.z(), fn.x(), fn.y(), fn.z());
-      fprintf(fp, "\"face_solid\": %d, \"face_portal\": %d, ", fsolid, fportal);
+      fprintf(fp, "\"face_solid\": %d, \"face_portal\": %d, \"face_transparent\": %d, ", fsolid, fportal, ftrans);
+      fprintf(fp,
+              "\"tf_breakable\": %d, \"tf_forcefield\": %d, \"tf_destroyable\": %d, \"tf_flythru\": %d, "
+              "\"pf_too_small\": %d, \"pf_block\": %d, \"type\": \"%s\", ",
+              tf_break, tf_ff, tf_destroy, tf_fly, pf_small_f ? 1 : 0, pf_block_f ? 1 : 0, ptype);
       fprintf(fp, "\"portal_path_pnt\": [%.2f,%.2f,%.2f], ", po.path_pnt.x(), po.path_pnt.y(), po.path_pnt.z());
       fprintf(fp, "\"boa_cost_fwd\": %.2f, \"boa_cost_rev\": %.2f, ", boa_fwd, boa_rev);
       fprintf(fp, "\"engine_passable\": %s, \"our_geocost\": %.1f, \"our_impassable\": %s, \"DISAGREE\": %s, ",
@@ -3360,15 +3463,144 @@ bool BotNavDump(const char *filename) {
   }
 
   fprintf(fp, "\n  ],\n");
+
+  // --- Strict our-passable connected components -------------------------------
+  // Edge present iff BotPortalGeoCost < IMPASSABLE. The router uses a SOFT cost and would
+  // still route INTO a grate-sealed pocket (huge but finite), so a strict graph is required
+  // to tell a truly-unreachable powerup from a reachable one. This is also the portable
+  // predicate the eventual powerup-reachability fix must use. The LARGEST component is the
+  // main navigable space; a powerup outside it is sealed. External rooms are excluded (FVI
+  // can't probe them) and handled as their own powerup state.
+  int comp[MAX_ROOMS];
+  int bfsq[MAX_ROOMS];
+  for (int i = 0; i < MAX_ROOMS; i++)
+    comp[i] = -1;
+  int main_comp = -1, main_size = 0;
+  for (int s = 0; s <= Highest_room_index && s < MAX_ROOMS; s++) {
+    if (!Rooms[s].used || comp[s] != -1 || (Rooms[s].flags & RF_EXTERNAL))
+      continue;
+    int label = s; // use the seed room id as the component label
+    int qh = 0, qt = 0, size = 0;
+    bfsq[qt++] = s;
+    comp[s] = label;
+    while (qh < qt) {
+      int rr = bfsq[qh++];
+      size++;
+      room &rmm = Rooms[rr];
+      for (int p = 0; p < rmm.num_portals; p++) {
+        int crr = rmm.portals[p].croom;
+        if (crr < 0 || crr > Highest_room_index || crr >= MAX_ROOMS || !Rooms[crr].used)
+          continue;
+        if (comp[crr] != -1 || (Rooms[crr].flags & RF_EXTERNAL))
+          continue;
+        if (BotPortalGeoCost(rr, p) >= BOT_PORTAL_IMPASSABLE)
+          continue;
+        comp[crr] = label;
+        bfsq[qt++] = crr;
+      }
+    }
+    if (size > main_size) {
+      main_size = size;
+      main_comp = label;
+    }
+  }
+
+  // --- Powerups: reachability + occlusion classification ----------------------
+  // Per powerup, two diagnostic axes (this prototypes the fix predicate, read-only):
+  //   sealed_troll      — powerup's room is not in the main our-passable component
+  //                       (only reachable via grates/glass/blocked portals). Definitive.
+  //   review            — room IS reachable, but NO straight swept approach to the powerup
+  //                       exists from the room center or any portal node = same-room glass/ledge
+  //                       occlusion. The UNSOLVED fork — surfaced, not verdicted.
+  //   reachable         — room reachable AND >=1 clear approach.
+  //   external_unprobed — outdoor/terrain powerup (FVI can't probe; not counted either way).
+  int pu_reach = 0, pu_sealed = 0, pu_review = 0, pu_ext = 0;
+  fprintf(fp, "  \"powerups\": [\n");
+  bool first_pu = true;
+  for (int i = 0; i <= Highest_object_index; i++) {
+    object *pu = &Objects[i];
+    if (pu->type != OBJ_POWERUP)
+      continue;
+    if (pu->flags & (OF_DEAD | OF_DESTROYED))
+      continue;
+    const char *nm = (pu->id >= 0) ? Object_info[pu->id].name : "?";
+    int proom = pu->roomnum;
+    bool outside = OBJECT_OUTSIDE(pu);
+
+    const char *verdict;
+    int clear_app = 0, total_app = 0;
+    const char *block_type = "";
+    float block_dist = -1.0f;
+    bool start_in_solid = false;
+
+    if (outside || proom < 0 || proom > Highest_room_index || proom >= MAX_ROOMS || !Rooms[proom].used ||
+        (Rooms[proom].flags & RF_EXTERNAL)) {
+      verdict = "external_unprobed";
+      pu_ext++;
+    } else if (comp[proom] != main_comp) {
+      verdict = "sealed_troll";
+      pu_sealed++;
+    } else {
+      room &prm = Rooms[proom];
+      float d;
+      // Approach sources must be points a ship can actually reach: the room center plus only
+      // OUR-PASSABLE portal nodes. An impassable grate/glass portal's path_pnt sits in the
+      // opening itself — it has clear LOS to a powerup behind the grate but is unreachable, so
+      // counting it falsely reads a sealed troll as "reachable" (the nysa room-41 Mega bug).
+      total_app++;
+      if (BotNavDumpLOS(prm.path_pnt, pu->pos, proom, rad, &d))
+        clear_app++;
+      for (int pp = 0; pp < prm.num_portals; pp++) {
+        if (BotPortalGeoCost(proom, pp) >= BOT_PORTAL_IMPASSABLE)
+          continue;
+        total_app++;
+        if (BotNavDumpLOS(prm.portals[pp].path_pnt, pu->pos, proom, rad, &d))
+          clear_app++;
+      }
+      if (clear_app >= 1) {
+        verdict = "reachable";
+        pu_reach++;
+      } else {
+        verdict = "review";
+        pu_review++;
+      }
+      // Identify the occluder along room-center -> powerup (zero-radius face probe).
+      int hr = -1, hf = -1;
+      float hd = -1.0f;
+      if (BotNavDumpHitFace(prm.path_pnt, pu->pos, proom, &hr, &hf, &hd)) {
+        block_type = BotClassifyFaceType(&Rooms[hr], hf);
+        block_dist = hd;
+        if (hd < rad)
+          start_in_solid = true; // path_pnt may be embedded in geometry (non-convex room)
+      }
+    }
+
+    if (!first_pu)
+      fprintf(fp, ",\n");
+    first_pu = false;
+    fprintf(fp,
+            "    {\"name\": \"%s\", \"room\": %d, \"pos\": [%.2f,%.2f,%.2f], \"external\": %s, \"verdict\": \"%s\", "
+            "\"approaches_clear\": %d, \"approaches_total\": %d, \"block_face_type\": \"%s\", \"block_dist\": %.2f, "
+            "\"start_in_solid\": %s}",
+            nm, proom, pu->pos.x(), pu->pos.y(), pu->pos.z(), outside ? "true" : "false", verdict, clear_app, total_app,
+            block_type, block_dist, start_in_solid ? "true" : "false");
+  }
+  fprintf(fp, "\n  ],\n");
+
   fprintf(fp,
           "  \"summary\": {\"passability_disagreements\": %d, \"blocked_portal_legs\": %d, "
-          "\"bbox_center_pathpnts\": %d}\n",
-          disagree_total, blocked_leg_total, center_pathpnt_total);
+          "\"bbox_center_pathpnts\": %d, \"breakable_glass_portals\": %d, \"forcefield_portals\": %d, "
+          "\"main_component_rooms\": %d, \"powerups_reachable\": %d, \"powerups_sealed_troll\": %d, "
+          "\"powerups_review\": %d, \"powerups_external\": %d}\n",
+          disagree_total, blocked_leg_total, center_pathpnt_total, breakable_glass_total, forcefield_total, main_size,
+          pu_reach, pu_sealed, pu_review, pu_ext);
   fprintf(fp, "}\n");
   fclose(fp);
 
-  LOG_INFO.printf("[NavDump] wrote '%s' — disagreements=%d blocked_legs=%d bbox_center_pathpnts=%d", path,
-                  disagree_total, blocked_leg_total, center_pathpnt_total);
+  LOG_INFO.printf("[NavDump] wrote '%s' — disagreements=%d blocked_legs=%d bbox_center_pathpnts=%d "
+                  "breakable_glass=%d forcefield=%d | powerups: reachable=%d sealed=%d review=%d external=%d",
+                  path, disagree_total, blocked_leg_total, center_pathpnt_total, breakable_glass_total,
+                  forcefield_total, pu_reach, pu_sealed, pu_review, pu_ext);
   return true;
 }
 

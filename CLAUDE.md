@@ -37,6 +37,7 @@ All Matcen fork documentation lives in **`matcen-docs/`**:
 - **`matcen-docs/BOT_DEV_REFERENCE.md`** — living developer reference: architecture, FSM, constants, engine API patterns, critical gotchas (and a navigation summary). **Read this before modifying bot code.**
 - **`matcen-docs/BOTS_DEVEL.md`** — phase history and roadmap. Update when a phase completes.
 - **`matcen-docs/NAVIGATION.md`** — **canonical bot navigation design**: the two-layer model (routing = us, steering = engine), the Phase 11 cost-aware Dijkstra router, the engine pathfinding reference, open problems, and consolidated history. **Read this before modifying navigation, routing, or steering code.** Supersedes the retired `NAV_OVERHAUL*.md` / `NAV_CONSOLIDATION.md` docs (now in git history).
+- **`matcen-docs/OBSTACLE_GEOMETRY.md`** — **authoritative reference for how the engine represents passable/impassable geometry**: walls, regular vs. bulletproof glass, grates/slits, breakable objects, destroyable-decor faces, doors, forcefields — with the deciding engine functions (`GetFacePhysicsFlags`, `BOA_PassablePortal`, `find_small_portals`), the flag glossary, and what our bot does for each. **Read this before modifying navigation, portal passability, powerup selection, or stuck-clear code** — it captures hard-won engine facts (e.g. see-through ≠ passable; `TF_BREAKABLE` = breakable glass, kinetic-only; bulletproof glass = engine-impassable) so they don't have to be re-derived.
 - **`matcen-docs/PATHFINDING_CODEBASE_EXPLORE.md`** — Guide-bot navigation analysis: how single-player bots navigate complex passages vs. our multiplayer bots. Deep engine research, cited by `NAVIGATION.md` (still accurate).
 - **`matcen-docs/BOT_MANAGEMENT.md`** — Phase 5 planning and implementation: config-file rosters, ship selection, difficulty levels, auto-rebalancing, `$servercaps` handshake. **Read this before modifying bot management code.**
 - **`matcen-docs/CHAT_COMMANDS.md`** — Phase 6.0 chat command system: cross-genre research synthesis, verb taxonomy (4 tiers), staged rollout plan, engine integration points. **Read this before modifying bot chat code.**
@@ -68,6 +69,15 @@ The `online/Direct TCP~IP.d3c` file is critical — the raw `.so`/`.dll` from `n
 
 This pipes debug output from the server to a log file in the $PROJECT_DIR (this project root). During testing, the user will run this command manually in another shell.
 Claude Code should regularly review server logs to diagnose any debug feedback from the user.
+
+## Diagnostic Tooling
+
+Two Python analysis scripts in `tools/` turn raw test output into actionable summaries — prefer them over ad-hoc grepping:
+
+- **`tools/analyze_bot_log.py <server-log>`** — parses a server debug log into per-map stats (captures, kills, stucks, carrier deaths, Phase 11 router activity) and flags anomalies (e.g. `OUTDOOR_STUCK_CLUSTER`, `CARRIER_SURVIVABILITY`, `POWERUP_PIN`, `TEAM_IMBALANCE`). **Always run this to read a soak log — naive greps miss events** (e.g. capture lines have specific wording). Add a new `RE_*` + accumulator + `detect_anomalies` tag when teaching it a new log pattern.
+- **`tools/analyze_navdump.py <navdump.json> [...]`** — summarizes a `$navdump` JSON (the in-engine runtime nav-geometry dump): obstacle-type histogram, passability DISAGREE/tight portals, breakable-glass/forcefield portals, non-convex rooms (wall-press risk), and troll-powerup classification (sealed vs. same-room-occluded). See `matcen-docs/OBSTACLE_GEOMETRY.md` for what the types mean.
+
+Log files and `$navdump` JSON output land in user/OS-specific locations (the server log where the launch command is run; `$navdump` files in the dedicated server's working directory) — ask the user for the path rather than assuming one.
 
 ## Bot Configuration
 

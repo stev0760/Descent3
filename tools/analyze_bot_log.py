@@ -43,6 +43,11 @@ RE_DIVERGE = re.compile(r"\[DIVERGE\]")  # router chose a different door than BO
 RE_IMPASSABLE = re.compile(r"\[Nav\] Room (-?\d+) portal \d+ IMPASSABLE")  # grate/slit/locked detected
 RE_DYN_BUMP = re.compile(r"\[Nav\] dyn-penalty bump room (-?\d+) portal")  # emergent-obstacle reroute
 
+# Powerup-chase pin: bot wedged on a face beelining to a powerup it can't reach (troll powerup
+# behind glass/grate). Distinct from a generic room-progress timeout — requires the "chasing 'X'"
+# suffix. See OBSTACLE_GEOMETRY.md (powerup selection has no reachability/LOS gate).
+RE_POWERUP_PIN = re.compile(r"room progress timeout \(room (-?\d+), net_disp=-?\d+\) — chasing '([^']+)'")
+
 DIST_CLOSE = 200
 DIST_MID = 500
 
@@ -72,6 +77,9 @@ def new_map_stats():
         "impassable": 0,     # grate/slit/locked portals the router excluded
         "impassable_rooms": Counter(),
         "dyn_bumps": 0,      # emergent-obstacle penalty bumps (traversal failures)
+        "powerup_pins": 0,            # bot pinned beelining to an unreachable powerup (troll glass/grate)
+        "powerup_pin_rooms": Counter(),
+        "powerup_pin_items": Counter(),
         "bot_carrier_ticks": Counter(),
         "bot_carrier_deaths": Counter(),
         "first_ts": None,
@@ -125,6 +133,13 @@ def parse_log(path):
 
             if RE_DYN_BUMP.search(line):
                 s["dyn_bumps"] += 1
+                continue
+
+            m = RE_POWERUP_PIN.search(line)
+            if m:
+                s["powerup_pins"] += 1
+                s["powerup_pin_rooms"][int(m.group(1))] += 1
+                s["powerup_pin_items"][m.group(2)] += 1
                 continue
 
             m = RE_GAME_MODE.search(line)
@@ -267,6 +282,16 @@ def detect_anomalies(stats):
                     anomalies.append((name, "TEAM_SHUTOUT",
                                       f"Team(s) with zero captures: {', '.join(zero_teams)} — "
                                       f"full spread: {dict(caps)}"))
+
+        # Troll-powerup pin: bots repeatedly wedging while chasing an unreachable powerup.
+        # Each pin is a bot stuck ~8s on a face it can't pass, so even a handful is a real problem.
+        if s["powerup_pins"] >= 5:
+            top_item = s["powerup_pin_items"].most_common(1)[0]
+            top_room = s["powerup_pin_rooms"].most_common(1)[0]
+            anomalies.append((name, "POWERUP_PIN",
+                              f"{s['powerup_pins']} powerup-chase pins — top: '{top_item[0]}' x{top_item[1]}, "
+                              f"room {top_room[0]} x{top_room[1]} (likely troll powerup behind glass/grate; "
+                              f"see OBSTACLE_GEOMETRY.md — powerup selection has no reachability gate)"))
 
         # Zero activity on a CTF map
         if mode == "CTF" and s["kills"] == 0 and s["captures"] == 0 and s["stucks"] > 50:
