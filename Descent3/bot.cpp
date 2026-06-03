@@ -3189,6 +3189,13 @@ void BotFormatNavDiag(int bot_index, char *buf, size_t buflen) {
 // the straight path before reaching b (portals are passed through). out_dist gets
 // the distance to the blocking hit when blocked.
 static bool BotNavDumpLOS(const vector &a, const vector &b, int startroom, float rad, float *out_dist) {
+  if (out_dist)
+    *out_dist = -1.0f;
+  // FVI cannot use an RF_EXTERNAL room as startroom (it crashes) — outdoor LOS is not probed.
+  // Matches the guard in BotPortalGeoCost; outdoor routing is a separate concern.
+  if (startroom < 0 || startroom > Highest_room_index || !Rooms[startroom].used ||
+      (Rooms[startroom].flags & RF_EXTERNAL))
+    return true;
   vector p0 = a, p1 = b;
   fvi_query fq{};
   fvi_info hit{};
@@ -3349,6 +3356,7 @@ bool BotNavDump(const char *filename) {
     fprintf(fp, "],\n");
     fprintf(fp, "      \"portal_los_tested\": %d, \"portal_los_blocked_count\": %d\n", tested, blocked);
     fprintf(fp, "    }");
+    fflush(fp); // flush per room so a crash on some edge-case map leaves a diagnosable partial file
   }
 
   fprintf(fp, "\n  ],\n");
