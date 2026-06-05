@@ -43,13 +43,26 @@ RE_DIVERGE = re.compile(r"\[DIVERGE\]")  # router chose a different door than BO
 RE_IMPASSABLE = re.compile(r"\[Nav\] Room (-?\d+) portal \d+ IMPASSABLE")  # grate/slit/locked detected
 RE_DYN_BUMP = re.compile(r"\[Nav\] dyn-penalty bump room (-?\d+) portal")  # emergent-obstacle reroute
 
-# Powerup-chase pin: bot wedged on a face beelining to a powerup it can't reach (troll powerup
-# behind glass/grate). Distinct from a generic room-progress timeout — requires the "chasing 'X'"
-# suffix. See OBSTACLE_GEOMETRY.md (powerup selection has no reachability/LOS gate).
-RE_POWERUP_PIN = re.compile(r"room progress timeout \(room (-?\d+), net_disp=-?\d+\) — chasing '([^']+)'")
+# Powerup-chase pin: bot wedged (net_disp<HARD_PIN_DISP) while beelining to a powerup. This is
+# AMBIGUOUS from the log alone — it is EITHER a genuine troll/unreachable powerup (behind glass/grate,
+# no reachability gate — see OBSTACLE_GEOMETRY.md) OR ordinary wall-press/outdoor-stuck that merely
+# happened during a powerup chase. On Outrage official maps (e.g. bedlam: Apparition/Plutonium/
+# QuadSomniac/Polaris) there are NO troll powerups, so every one of these is the latter — a nav pin,
+# not a troll. Cross-ref the $navdump powerup verdict for the room to disambiguate. Requires the
+# "chasing 'X'" suffix. g1=room, g2=net_disp, g3=item.
+RE_POWERUP_PIN = re.compile(r"room progress timeout \(room (-?\d+), net_disp=(-?\d+)\) — chasing '([^']+)'")
+RE_NET_DISP = re.compile(r"net_disp=(-?\d+)")  # carried by stuck-escalation + room-progress-timeout lines
 
 DIST_CLOSE = 200
 DIST_MID = 500
+
+# "room progress timeout" / "stuck escalation" lines carry net_disp = net displacement over the
+# progress window. net_disp < HARD_PIN_DISP ≈ the bot barely moved = a true HARD pin (pressed on a
+# wall / grate / terrain). net_disp in [HARD_PIN_DISP, ~50) = the bot IS moving but isn't netting the
+# progress threshold = circling / slow-but-legit nav, NOT pinned. Counting every timeout equally
+# massively overstates "stuck"/"pin" problems — in a 24h soak ~85% of timeouts were the moving-but-slow
+# kind — so the anomalies below key off the HARD count, not the raw total. See OBSTACLE_GEOMETRY.md.
+HARD_PIN_DISP = 10
 
 # ---------------------------------------------------------------------------
 # Per-map accumulator
@@ -63,12 +76,14 @@ def new_map_stats():
         "team_caps": Counter(),
         "kills": 0,
         "stucks": 0,
+        "stucks_hard": 0,            # stuck escalations with net_disp < HARD_PIN_DISP (true pins)
         "stuck_rooms": Counter(),
         "carrier_deaths": 0,
         "carrier_dists": [],
         "carrier_nav_ticks": 0,
         "carrier_outdoor_ticks": 0,
         "outdoor_stucks": 0,
+        "outdoor_stucks_hard": 0,    # outdoor stuck escalations with net_disp < HARD_PIN_DISP
         "waiting_flag": 0,
         "poll_ctf": 0,
         "obj_nav": 0,
@@ -77,9 +92,12 @@ def new_map_stats():
         "impassable": 0,     # grate/slit/locked portals the router excluded
         "impassable_rooms": Counter(),
         "dyn_bumps": 0,      # emergent-obstacle penalty bumps (traversal failures)
-        "powerup_pins": 0,            # bot pinned beelining to an unreachable powerup (troll glass/grate)
+        "powerup_pins": 0,            # bot beelining to a powerup it isn't reaching (chase-timeout, any net_disp)
+        "powerup_pins_hard": 0,       # subset with net_disp < HARD_PIN_DISP = true pin (the actionable troll signal)
         "powerup_pin_rooms": Counter(),
         "powerup_pin_items": Counter(),
+        "powerup_pin_rooms_hard": Counter(),
+        "powerup_pin_items_hard": Counter(),
         "bot_carrier_ticks": Counter(),
         "bot_carrier_deaths": Counter(),
         "first_ts": None,
@@ -137,9 +155,16 @@ def parse_log(path):
 
             m = RE_POWERUP_PIN.search(line)
             if m:
+                room = int(m.group(1))
+                disp = int(m.group(2))
+                item = m.group(3)
                 s["powerup_pins"] += 1
-                s["powerup_pin_rooms"][int(m.group(1))] += 1
-                s["powerup_pin_items"][m.group(2)] += 1
+                s["powerup_pin_rooms"][room] += 1
+                s["powerup_pin_items"][item] += 1
+                if disp < HARD_PIN_DISP:
+                    s["powerup_pins_hard"] += 1
+                    s["powerup_pin_rooms_hard"][room] += 1
+                    s["powerup_pin_items_hard"][item] += 1
                 continue
 
             m = RE_GAME_MODE.search(line)
@@ -148,13 +173,19 @@ def parse_log(path):
                 current_mode = m.group(1)
                 continue
 
-            if RE_STUCK.search(line):
+            rm = RE_STUCK.search(line)
+            if rm:
                 s["stucks"] += 1
-                rm = RE_STUCK.search(line)
                 room = int(rm.group(1))
                 s["stuck_rooms"][room] += 1
+                nd = RE_NET_DISP.search(line)
+                hard = nd is not None and int(nd.group(1)) < HARD_PIN_DISP
+                if hard:
+                    s["stucks_hard"] += 1
                 if room == -1:
                     s["outdoor_stucks"] += 1
+                    if hard:
+                        s["outdoor_stucks_hard"] += 1
                 continue
 
             m = RE_CAPTURE.search(line)
@@ -245,14 +276,17 @@ def detect_anomalies(stats):
                 outdoor_frac = s["outdoor_stucks"] / s["stucks"] if s["stucks"] else 0
                 rooms_str = ", ".join(
                     f"{'outdoor' if r == -1 else f'room {r}'} ({c})" for r, c in top2)
+                # net_disp split: how many of these are TRUE hard pins vs moving-but-slow (circling).
+                hard_note = (f"; {s['stucks_hard']}/{s['stucks']} are hard pins "
+                             f"(net_disp<{HARD_PIN_DISP}), the rest moving-but-slow")
                 if outdoor_frac > 0.5:
                     anomalies.append((name, "OUTDOOR_STUCK_CLUSTER",
                                       f"{top2_total}/{s['stucks']} stucks ({top2_total/s['stucks']*100:.0f}%) "
-                                      f"concentrated in {rooms_str}"))
+                                      f"concentrated in {rooms_str}{hard_note}"))
                 else:
                     anomalies.append((name, "ENGINE_WOBBLE_SUSPECT",
                                       f"{top2_total}/{s['stucks']} stucks ({top2_total/s['stucks']*100:.0f}%) "
-                                      f"concentrated in {rooms_str}"))
+                                      f"concentrated in {rooms_str}{hard_note}"))
 
         # Outdoor nav bottleneck
         if s["carrier_nav_ticks"] > 0:
@@ -283,15 +317,21 @@ def detect_anomalies(stats):
                                       f"Team(s) with zero captures: {', '.join(zero_teams)} — "
                                       f"full spread: {dict(caps)}"))
 
-        # Troll-powerup pin: bots repeatedly wedging while chasing an unreachable powerup.
-        # Each pin is a bot stuck ~8s on a face it can't pass, so even a handful is a real problem.
-        if s["powerup_pins"] >= 5:
-            top_item = s["powerup_pin_items"].most_common(1)[0]
-            top_room = s["powerup_pin_rooms"].most_common(1)[0]
-            anomalies.append((name, "POWERUP_PIN",
-                              f"{s['powerup_pins']} powerup-chase pins — top: '{top_item[0]}' x{top_item[1]}, "
-                              f"room {top_room[0]} x{top_room[1]} (likely troll powerup behind glass/grate; "
-                              f"see OBSTACLE_GEOMETRY.md — powerup selection has no reachability gate)"))
+        # Chase pin: bots WEDGED (net_disp<HARD_PIN_DISP ≈ stationary) while chasing a powerup. Keyed
+        # off the HARD count, not the raw chase-timeout total (dominated by slow-but-real progress).
+        # AMBIGUOUS: a real troll/unreachable powerup OR plain wall-press that happened during a chase.
+        # Can't tell from the log — cross-ref the $navdump powerup verdict for the room. On official
+        # maps with no troll powerups (e.g. bedlam), these are nav pins, not trolls.
+        if s["powerup_pins_hard"] >= 5:
+            top_item = s["powerup_pin_items_hard"].most_common(1)[0]
+            top_room = s["powerup_pin_rooms_hard"].most_common(1)[0]
+            room_lbl = "outdoor" if top_room[0] == -1 else f"room {top_room[0]}"
+            anomalies.append((name, "CHASE_PIN",
+                              f"{s['powerup_pins_hard']} HARD chase pins (net_disp<{HARD_PIN_DISP}, "
+                              f"~stationary) of {s['powerup_pins']} total chase-timeouts — top hard: "
+                              f"'{top_item[0]}' x{top_item[1]}, {room_lbl} x{top_room[1]}. AMBIGUOUS: "
+                              f"troll/unreachable powerup OR plain wall-press during a chase — cross-ref "
+                              f"$navdump powerup verdict for that room (no troll powerups on official maps)"))
 
         # Zero activity on a CTF map
         if mode == "CTF" and s["kills"] == 0 and s["captures"] == 0 and s["stucks"] > 50:
@@ -375,6 +415,30 @@ def print_report(stats, total_lines, log_path):
               f"| {s['carrier_deaths']} "
               f"| {avg_dd} |")
     print()
+
+    # Stuck / pin severity — the honest view. The Stucks and Powerup-pin TOTALS above (and the
+    # anomaly room concentrations) count every progress-timeout equally, but ~85% of timeouts are
+    # "moving but not netting progress" (circling / slow nav), not pins. The (hard) columns isolate
+    # net_disp<HARD_PIN_DISP ≈ stationary = the real pins. Judge nav problems by the hard columns.
+    has_pin_data = any(s["stucks"] or s["powerup_pins"] for s in stats.values())
+    if has_pin_data:
+        print(f"## Stuck / Pin Severity (net_disp split)")
+        print()
+        print(f"`hard` = net_disp<{HARD_PIN_DISP} ≈ stationary (true pin on wall/grate/terrain). The "
+              f"remainder are moving-but-slow (circling / legit slow nav), counted in totals but NOT "
+              f"pinned. **Judge problems by the hard columns**, not the raw totals.")
+        print()
+        print(f"| Map | Stucks (hard) | Outdoor stucks (hard) | Powerup pins (hard) |")
+        print(f"|---|---|---|---|")
+        for name in maps:
+            s = stats[name]
+            if not (s["stucks"] or s["powerup_pins"]):
+                continue
+            print(f"| {name} "
+                  f"| {s['stucks']} ({s['stucks_hard']}) "
+                  f"| {s['outdoor_stucks']} ({s['outdoor_stucks_hard']}) "
+                  f"| {s['powerup_pins']} ({s['powerup_pins_hard']}) |")
+        print()
 
     # Router activity (Phase 11) — is the cost-aware router actually doing anything?
     has_router = any((s["obj_nav"] + s["carrier_nav_ticks"]) > 0 for s in stats.values())
@@ -524,7 +588,8 @@ def export_csv(stats, total_lines, log_path, out_dir):
               "carrier_nav_ticks", "outdoor_carrier_pct",
               "outdoor_stucks", "outdoor_stuck_pct",
               "waiting_flag_return", "poll_ctf_events", "objective_nav_events",
-              "router_diverge", "router_diverge_pct", "router_impassable", "router_dyn_bumps"]
+              "router_diverge", "router_diverge_pct", "router_impassable", "router_dyn_bumps",
+              "stucks_hard", "outdoor_stucks_hard", "powerup_pins", "powerup_pins_hard"]
     rows = []
     for name in maps:
         s = stats[name]
@@ -545,6 +610,7 @@ def export_csv(stats, total_lines, log_path, out_dir):
             s["diverge"],
             f"{s['diverge']/(s['obj_nav']+s['carrier_nav_ticks'])*100:.0f}" if (s["obj_nav"] + s["carrier_nav_ticks"]) else "",
             s["impassable"], s["dyn_bumps"],
+            s["stucks_hard"], s["outdoor_stucks_hard"], s["powerup_pins"], s["powerup_pins_hard"],
         ])
     path = os.path.join(out_dir, f"{basename}_summary.csv")
     write_csv(path, header, rows)

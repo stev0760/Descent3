@@ -115,22 +115,46 @@ def analyze(path, data):
         print("## Powerups\n  (dump predates the `powerups[]` section — re-dump with the current build)\n")
         return
 
+    # Room → external? and room → neighbour-rooms, for the sealed_troll outdoor-connectivity check.
+    room_external = {r["id"]: bool(r.get("external", False)) for r in rooms}
+    room_neighbors = {r["id"]: {p.get("croom") for p in r.get("portals", [])} for r in rooms}
+
+    def outdoor_linked(room_id):
+        """True if this interior room's ONLY portal neighbours are external (outdoor) rooms.
+
+        The sealed-pocket BFS skips external rooms (FVI can't use an RF_EXTERNAL startroom), so any
+        interior pocket reachable only through outdoor terrain is wrongly isolated and tagged
+        sealed_troll. Both CTF flags on Apparition hit this. See OBSTACLE_GEOMETRY.md §5."""
+        neigh = {n for n in room_neighbors.get(room_id, set()) if n is not None and n != room_id}
+        return bool(neigh) and all(room_external.get(n, False) for n in neigh)
+
     vcount = Counter(p.get("verdict", "?") for p in powerups)
+    sealed_outdoor = sum(1 for p in powerups
+                         if p.get("verdict") == "sealed_troll" and outdoor_linked(p.get("room", -1)))
     print(f"## Powerups — {len(powerups)} total")
     print(f"  reachable={vcount.get('reachable', 0)}  sealed_troll={vcount.get('sealed_troll', 0)}  "
           f"review={vcount.get('review', 0)}  external_unprobed={vcount.get('external_unprobed', 0)}")
+    if sealed_outdoor:
+        print(f"  !! {sealed_outdoor} of the sealed_troll verdicts are OUTDOOR-LINKED = almost certainly "
+              f"FALSE POSITIVES")
+        print(f"     (their room connects only through external/outdoor rooms, which the BFS skips). "
+              f"`review` is the trustworthy signal; do NOT gate powerup/flag selection on sealed_troll alone.")
     print()
 
     trolls = [p for p in powerups if p.get("verdict") in ("sealed_troll", "review")]
     if trolls:
         print("### Troll / unreachable powerups (the beeline-pin candidates)")
-        print(f"  {'name':16s} {'room':>5} {'verdict':14s} {'appr':>6} {'block_face':22s} {'in_solid':8s}")
+        print(f"  {'name':16s} {'room':>5} {'verdict':14s} {'appr':>6} {'outdoor?':8s} "
+              f"{'block_face':22s} {'in_solid':8s}")
         for p in trolls:
             appr = f"{p.get('approaches_clear', '?')}/{p.get('approaches_total', '?')}"
+            ol = "OUTDOOR" if (p.get("verdict") == "sealed_troll" and outdoor_linked(p.get("room", -1))) else "-"
             print(f"  {p.get('name', '?')[:16]:16s} {p.get('room', -1):>5} {p.get('verdict', '?'):14s} "
-                  f"{appr:>6} {p.get('block_face_type', '') or '-':22s} "
+                  f"{appr:>6} {ol:8s} {p.get('block_face_type', '') or '-':22s} "
                   f"{str(p.get('start_in_solid', False)):8s}")
-        print("\n  sealed_troll = room only reachable via grate/glass/blocked portals (definitive).")
+        print("\n  sealed_troll = room only reachable via grate/glass/blocked portals (definitive)")
+        print("                 — UNLESS outdoor? = OUTDOOR, then it's a BFS false positive (reachable")
+        print("                 through terrain the probe can't traverse).")
         print("  review       = room reachable but no straight approach found = same-room glass/ledge")
         print("                 occlusion (the unsolved fork; block_face shows what's in the way).")
         print()

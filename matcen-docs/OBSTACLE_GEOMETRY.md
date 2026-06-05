@@ -144,6 +144,18 @@ tight-slit DISAGREE territory (e.g. nysa r69→r73, megafactory r10→r11).
    type and a `start_in_solid` flag (path_pnt embedded in a non-convex room). Analyze with
    `tools/analyze_navdump.py`. *Still not captured:* a full non-portal-face enumeration — deliberately
    skipped (the powerup-targeted probe gets the same insight where it matters without exploding the dump).
+4. **`sealed_troll` FALSE-POSITIVES on outdoor-connected pockets — DO NOT gate selection on it alone.**
+   The strict connected-component BFS **skips external (RF_EXTERNAL) rooms** because FVI can't use an
+   outdoor room as a startroom (it crashes — see the `$navdump` outdoor guard). So any interior room
+   reachable *only through outdoor terrain* gets isolated into its own component and everything in it is
+   wrongly tagged `sealed_troll`. Confirmed on Apparition: **both CTF flags** (FlagYellow r0 → external
+   r84, FlagGreen r28 → external r27) plus 7 weapon/ammo powerups read sealed, yet all are reachable
+   in-game through the outdoor courtyard. `tools/analyze_navdump.py` now flags these as `OUTDOOR-LINKED`
+   (room's only neighbours are external) and warns. **Implication for the powerup-reachability filter
+   (gap #2): it MUST bridge external rooms** (treat an external-only-connected pocket as reachable, or
+   route the reachability test through terrain) — a filter built naively on this BFS would make bots
+   **ignore outdoor flags/powerups**, a capture-killing regression. `review` is the trustworthy verdict;
+   `sealed_troll` is only reliable on fully-indoor maps.
 
 ---
 
