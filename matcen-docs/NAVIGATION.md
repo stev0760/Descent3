@@ -79,6 +79,18 @@ relief. Don't justify nav design by pool pressure.
 - **Guide-bot heritage.** The path-follower was tuned for the single-player Guide-Bot, which
   *pre-validates* reachability (`AI_IsObjReachable`) and follows a nearby human. Autonomous PvP bots
   crossing a whole map alone stress it differently (see `PATHFINDING_CODEBASE_EXPLORE.md`).
+- **Intra-room occlusion of the path-node→portal line** *(the headline limitation — Phase 12 target,
+  §7)*. A room's path node (`path_pnt`, often the bbox centre) and the next exit portal can have a
+  **free-standing interior obstacle between them** — a glass cover panel, pillar, or column that is a
+  room *face*, not a portal. The path-follower beelines `movement_dir` at the portal and the bot
+  presses the obstacle at d≈0. The portal itself is fully passable (`engine_passable`, `gcost=0`), so
+  routing is correct and **powerless**. The same face blocks the line to *any* in-room goal — a chased
+  **powerup** behind a glass divider or ledge presses identically (and if the goal is genuinely sealed
+  behind a grate/glass, the bot should abandon it, not press) — so the Phase 12 fix keys on the active
+  local goal, not just portals. This reproduces in **vanilla retail D3 with robot enemies** —
+  Outrage authored the single-player AI around it (scripted, hand-placed node paths), so it never
+  surfaced in 1999; free-roaming multiplayer bots expose it, and it is the gap to Q3A/UT-era bot
+  parity. The navdump field `los_from_pathpnt_clear=0` predicts exactly the affected rooms.
 
 ---
 
@@ -190,15 +202,80 @@ BOA — a bug (the router would be silently overriding BOA everywhere), not a fe
 
 ## 7. Open problems (roadmap)
 
-- **Engine path-follower portal-transition wobble / glass stall.** Toggle-independent (187 room-30
-  stuck events across every layer combo in navrouting5) → it is the engine's goal-pursuit, not our
-  layers, and routing **cannot** fix it on a *passable* portal. Worst case: a `FPF_SOLID|FPF_PORTAL`
-  glass face (bots don't shoot it — `BotHasLOS` blocks; humans see through the alpha). Next probe:
-  whether the engine's `num_paths` collapses to 0 at the press moment (path completed/dropped near a
-  goal that is geometrically across the glass → direct-seek through it). Instrument via the
-  `$botstat` nav probe at a wobble moment (speed≈0 + WALL d small). The router reduces how often bots
-  *reach* these spots; it does not eliminate them. **Do not report the wobble or the SewerRat hub
-  oscillation as solved.**
+- **Intra-room interior-obstacle press — KNOWN ENGINE LIMITATION (Phase 12 / 0.9.2 target).**
+  *This is the headline nav problem and the goal of the 0.9.2 build.* Earlier notes filed this under a
+  speculative "portal-transition wobble" and guessed the obstacle was a `FPF_SOLID|FPF_PORTAL` glass
+  *portal*. The `pumphouse.json` navdump (2026-06-08) **disproves that** and pins it precisely:
+
+  - **It is an interior FACE, not a portal.** pumphouse (`pumphouse.d3m` → `small.d3l`) has **zero**
+    glass portals — all 48 portals are `solid=0 portal=1` (open) plus 8 fly-through forcefields
+    (`engine_passable=1`). The "glass cover" panels are free-standing room *faces* (counted in
+    `num_faces`), invisible to portal-based routing.
+  - **Diagnostic: `los_from_pathpnt_clear=0`.** In the press rooms the engine's own path node can't see
+    the exit portal: room 0 & room 2 (mirror) → r1 blocked at `los_dist=10.3` (hull radius 6.68);
+    rooms 10 & 18 (5-portal central rooms, 20/20 blocked legs) blocked at `los_dist=138`.
+  - **Purely steering, not routing.** Every affected portal is `engine_passable=1, gcost=0,
+    DISAGREE=false` — the router picks the right door and is powerless to help; the bot simply can't
+    cross the room to it. The press is **93% in EXPLORE** (8543/9362 d≈0 presses, navmapping7), so
+    `BotDoExploreRoaming`/the waypoint-injection path (§3.4) is live at the press moment.
+  - **It is a limit cycle, not a hard pin.** The dynamic penalty (§3.3) bounces the bot off the
+    correct-but-blocked door onto the wrong ones and back (wp 14/3/0/8 for the same goal). Threading
+    the right door **once** breaks the cycle; the penalty climb stops on its own. Do **not** try to fix
+    the flap directly — it is downstream of the press.
+  - **Engine-level / not a fork regression.** Reproduces in **vanilla retail D3 with robot enemies**
+    (Outrage scripted single-player paths around it). It is the specific blocker keeping multiplayer
+    bots off Q3A/UT-era parity: pumphouse = **0 captures across 43 rounds** purely from this.
+
+  **Phase 12 fix — intra-room via-point steering (planned, advisor-reviewed).** One mechanism, keyed on
+  the bot's **active local steering target** — generalized from "next portal" to *any* in-room goal: the
+  objective-routing next portal (pumphouse), **a powerup being chased**, or an explore destination. The
+  same interior face that blocks a portal line blocks a powerup line; one go-around serves both.
+
+  1. **Detect** (indoor): before steering to the active local target, cast a hull-radius ray bot→target.
+     Blocked by a solid interior face ⇒ occluded (runtime form of `los_from_pathpnt_clear=0`).
+  2. **Round it — target reachable (analyzer `review`):** probe offsets to *both* sides of the blocking
+     face; choose the side whose via-point has clear LOS to **both** the bot and the target. **Commit to
+     that side for N frames** — per-frame re-selection *is* the `net_disp` 28–43 circling already seen.
+  3. **Deliver via §3.4:** feed the via-point as an `AIG_GET_TO_POS` sub-goal so the engine path-follows
+     to it *first*, then resumes the target. We change what the engine steers **toward**, never
+     `movement_dir` — consistent with Invariant #1; a finer-grained waypoint, not a new steering layer.
+  4. **Give up — target unreachable (analyzer `sealed_troll`):** if the side-probe finds **no** clear
+     via-point *and* the only approach is through impassable (grate/glass/blocked) geometry, the target
+     is sealed → abandon + blacklist immediately, **without** waiting for a stuck-escape. PLUS a
+     *proactive* filter in `BotFindBestPowerup`: never select a powerup whose room is unroutable
+     (`BotComputeRoute == -1` / impassable-only approach) — a troll powerup is skipped before any chase.
+     This is the runtime answer to the pre-0.9.2 "troll powerup" planning (supersedes the reverted
+     `$navprobe`); the via-point search's *failure* is the natural, conservative give-up trigger.
+
+  **Mode scope (important — pyroplace is team-anarchy):**
+  - The **portal via-point** rides the objective-only Phase 11 waypoint plumbing (§3.4) → inert in
+    anarchy/team (Invariant #4 holds for that branch).
+  - The **powerup go-around + unreachable-gate are GLOBAL** — powerups are chased in *every* mode, so
+    these run in anarchy/team too. This is a **deliberate exception to Invariant #4**; both are
+    additive/fallback-safe (fire only on an occluded/unreachable powerup, else current behavior), but
+    per Invariant #5 they **must be validated in non-objective modes** (pyroplace) before `-dev` drops.
+
+  **Gate/safety:** indoor-only (no outdoor work in 0.9.2); side-committed against oscillation; additive
+  (reachable + no clear via-point ⇒ fall back to today's behavior; unreachable ⇒ abandon, strictly
+  better than wedge-then-blacklist). **Do NOT** (a) restore the deleted flow-field LOS gate alone — the
+  engine's own `path_pnt` can't see the portal, so there is nothing to defer to; (b) resurrect
+  strafe-through-lip (`movement_dir` seam, 0 fires) or goal-blind escape (regressed feel); (c) gate the
+  powerup branches on objective mode (breaks pyroplace).
+
+  **Test rotation — all user-made INDOOR maps:**
+  | Map | Mode | Exercises |
+  |-----|------|-----------|
+  | **abend2** | CTF | long-standing room-30 glass press (portal via-point) |
+  | **pumphouse** | CTF | free-standing center glass cover panels; navdump `los_from_pathpnt_clear=0` rooms 0/2/10/18 (portal via-point) |
+  | **nysa** | (per setup) | troll powerups sealed behind a **grate** (unreachable-gate / `sealed_troll`) |
+  | **pyroplace** | **team-anarchy** | troll powerups behind **glass** + powerups blocked by **ledge** obstacles depending on beeline origin (GLOBAL powerup go-around + unreachable-gate in a *non-objective* mode) |
+
+  **Success metrics:** pumphouse/abend2 captures > 0 (from 0) and clean crossing of the
+  `los_from_pathpnt_clear=0` rooms; nysa/pyroplace bots stop wedging on or re-chasing sealed powerups
+  (no stuck-escape loop, no 60 s re-chase) and smoothly round ledge/glass-occluded *reachable* powerups;
+  **and anarchy/team otherwise feel unchanged** (pyroplace regression check). A separate, smaller
+  *genuine* portal-transition wobble on truly passable portals may remain — keep distinct, don't claim
+  solved here.
 - **Goal-blind stuck-escape.** The escape portal pick in `BotApplyThrust` still ignores goal
   direction and can flee backward. The dynamic penalty (§3.3) addresses the *intent* (reroute forward
   on repeated failure) but only when an alternate route exists. A goal-aware escape may still be
