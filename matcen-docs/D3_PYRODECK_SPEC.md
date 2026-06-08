@@ -1,7 +1,7 @@
 # D3 Pyrodeck — Specification
 
-**Version:** 2.5
-**Date:** March 17, 2026
+**Version:** 2.6
+**Date:** June 8, 2026
 **Author:** stev0760
 **Repository:** `stev0760/d3-pyrodeck` (planned)
 **Engine Fork:** `stev0760/Descent3` branch `feature/multiplayer-bots`
@@ -145,7 +145,7 @@ These are the only additions made to the `stev0760/Descent3` engine fork that th
 
 **Response format:** Single line, no terminator required.
 ```
-SERVERCAPS version=1 fork=Matcen fork_version=0.8.0 features=bots,roster,ships,difficulty
+SERVERCAPS version=1 fork=Matcen fork_version=0.9.1 features=bots,roster,ships,difficulty
 ```
 
 **Current feature flags (version=1):**
@@ -184,6 +184,38 @@ const VANILLA_CAPS: ServerCapabilities = { version: 0, fork: '', forkVersion: ''
 ```
 
 **Version field** enables future feature-gating without breaking older web admin clients.
+
+### 5.1.1 Command Stability Tiers — Contract vs. Diagnostics
+
+The fork's bot command surface is **two surfaces in one**: a stable management/handshake *contract*, and a
+*diagnostic* surface that churns continuously as bot AI and navigation are debugged. Pyrodeck must treat them
+differently or it will break on every fork bug-fix cycle. (Background: the 0.9.1 development cycle added, renamed,
+and **removed** several nav debug commands; treating them as a contract caused repeated parser drift.)
+
+**Anchor on `$servercaps`, never on command existence.** `$servercaps` is self-versioning (`version=`) and
+capability-enumerating (`features=`). Gate UI on the `features=` set — *not* on whether a particular command
+exists. Adding or removing a diagnostic command is invisible churn; a real capability change is reflected in
+`features=`. This is the one part of the surface guaranteed stable across fork versions.
+
+**Cardinal rule:**
+- **Listing** a command in operator help / `CommandReference` is safe for **any** tier — it is just type-able text.
+- **Parsing** a command's output or building a **UI panel/feature** against it is permitted **only for Tier 1.**
+
+| Tier | Commands | Pyrodeck may… |
+|------|----------|---------------|
+| **1 — Stable contract** | `$servercaps` (anchor), `$botlist`, `$addbot` / `$removebot` / `$removebots` / `$botdifficulty` (fire-and-forget verbs), `$botmode`, plus the vanilla `$scores` / player / team / settings commands in §5.3 | parse output, build UI, feature-gate |
+| **2 — Semi-stable** | `$botstat` *status* line (line 1 only), `$botobj` | expose as console/help text; avoid hard output parsers |
+| **3 — Volatile diagnostics (mid-flight)** | `$botstat` **nav: line** (`route:goal=… dijkstra=… boa=… gcost=…`), `$navdump` JSON schema, `$terrainsteer`, `$botmov` | reference as text only — **zero** output binding |
+
+**Tier 3 detail.** These commands exist to support active bot-AI/navigation debugging and change shape without
+notice. As of 0.9.1 the in-flight intra-room steering work (the "pumphouse glass-press" fix) is expected to change
+the `$botstat` nav: line format and/or extend the `$navdump` schema. Do not write parsers against them; mark any
+`CommandReference` entries for them as "format unstable — do not parse." Skip the `$botstat` nav: line when
+parsing the status block (the status line is Tier 2).
+
+**Removed commands — never reference.** Deleted in the Phase 10 nav consolidation and confirmed absent in 0.9.1:
+`$navrouting`, `$flowfield`, `$potentialfield`, `$botpathfind`, `$botdispersal`. If an older Pyrodeck build
+references any of these, strip them.
 
 ### 5.2 Bot Management Commands
 
@@ -231,21 +263,23 @@ Show bot status — **two lines per bot** (a status line and a navigation-diagno
 Status-line fields: `slot=` (player slot index), `state=` (EXPLORE/HUNT/COMBAT/FLEE/EVADE), `role=` (squad role), `lean=` (objective lean: balanced/attack/defend), `speed=`, `shields=`, `target=`.
 
 Nav-line fields (Phase 11 router diagnostic): `dest_room=` (current waypoint room), `num_paths=`/`path=` (engine path-follower state), `mdir|x|` (movement_dir magnitude), `ahead:` (forward probe — `clear(>Nu)` / `WALL d=… solid=… portal=…` / `TERRAIN d=…` / `OBJ d=…` / `mdir~0`), and `route:goal=G dijkstra=D boa=B [DIVERGE] gcost=X` — the cost-aware router's next hop (`dijkstra`) vs the engine's BOA next hop (`boa`); `[DIVERGE]` appears when they differ; `gcost` = geometry cost of the chosen portal (`1000000` = impassable). Objective modes only; otherwise `route:goal=-1 n/a`.
+> **Tier:** status line = Tier 2 (semi-stable, OK to surface as text); nav: line = **Tier 3 (volatile, mid-flight — do not parse)**. See §5.1.1. When parsing the status block, consume the status line and skip the nav: line.
 
 **`$navdump [file]`**
 Diagnostic — dump the current level's runtime navigation geometry to a JSON file (default `navdump.json`, written to the server's working directory). Read-only; safe to run mid-match. Writes one object per used room: bbox, `path_pnt` (+ `path_pnt_is_bbox_center`/`path_pnt_manual`), and per-portal detail (connected room, face center/normal, `face_solid`/`face_portal`, BOA cost fwd/rev, `engine_passable` vs `our_geocost`/`our_impassable` + `DISAGREE`, `los_from_pathpnt_clear`), plus a per-room `portal_los_blocked` matrix and a top-level `summary` (`passability_disagreements`, `blocked_portal_legs`, `bbox_center_pathpnts`). Console/telnet prints a one-line confirmation; the full summary is logged to `server.log`. Intended for offline nav analysis, not routine web-admin display.
+> **Tier 3 (volatile, mid-flight).** The JSON schema grows as nav obstacle awareness expands — list `$navdump` in the command reference but do not build a parser/UI against the JSON. See §5.1.1.
 
 **`$botmov on|off`**
-Toggle movement debug logging. No structured output.
+Toggle movement debug logging. No structured output. *(Tier 3 — diagnostic toggle; reference only.)*
 
 **`$botmode`**
-Print the detected game mode. Output: `Game mode: <MODE> (scriptname='<name>', teams=<n>)` — `<MODE>` is one of `Anarchy`/`TeamAnarchy`/`CTF`/`Hoard`/`HyperAnarchy`/`Monsterball`/`RoboAnarchy`/`Coop` (matches `BotGameModeName`). Useful for the web UI to confirm objective-mode detection before showing CTF/Hoard panels.
+Print the detected game mode. Output: `Game mode: <MODE> (scriptname='<name>', teams=<n>)` — `<MODE>` is one of `Anarchy`/`TeamAnarchy`/`CTF`/`Hoard`/`HyperAnarchy`/`Monsterball`/`RoboAnarchy`/`Coop` (matches `BotGameModeName`). Useful for the web UI to confirm objective-mode detection before showing CTF/Hoard panels. *(Tier 1 — stable, OK to parse.)*
 
 **`$botobj`**
 Print the current objective state (CTF flag IDs and goal rooms, Hoard/Hyper orb IDs, per-team flag status). Prints a `Game mode: <MODE>` line plus any warnings (e.g. a team with no `RF_GOAL` room → outdoor flag); most detail goes to `server.log` at DEBUG. Diagnostic, not routine web display.
 
 **`$terrainsteer on|off`**
-Toggle outdoor terrain steering (Phase 8.1). Usage with no operand reports current state: `Usage: $terrainsteer on|off  (current: <on|off>)`. Server-wide steering toggle — a candidate for an advanced/debug settings control in the admin panel.
+Toggle outdoor terrain steering (Phase 8.1). Usage with no operand reports current state: `Usage: $terrainsteer on|off  (current: <on|off>)`. Server-wide steering toggle — a candidate for an advanced/debug settings control in the admin panel. *(Tier 3 — experimental toggle; may be removed when terrain steering is finalized. Reference only.)*
 
 **`$bothelp`**
 Print bot command reference. For display in the web UI help panel only.
