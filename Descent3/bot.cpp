@@ -1241,6 +1241,12 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
       if (goal_slot >= 0 && goal_slot < MAX_GOALS && obj->ai_info->goals[goal_slot].used)
         GoalClearGoal(obj, &obj->ai_info->goals[goal_slot]);
       goal_slot = -1; // caller re-issues the real target this tick
+      // 12.1: the via dance is real progress, but its 15-45u legs sit under the 50u displacement
+      // threshold — without this reset the 12s room-progress timeout fires MID-crossing, bumps the
+      // correct door, and reroutes (navmapping9: 61 bumps on room 2 portal 0 = the flap's engine).
+      Bots[bot_index].last_progress_pos = obj->pos;
+      Bots[bot_index].room_progress_timer = 0.0f;
+      Bots[bot_index].room_progress_stuck_count = 0;
       LOG_DEBUG.printf("BOT NAV: '%s' via-point reached (room %d)", Bots[bot_index].callsign, obj->roomnum);
       return 0;
     }
@@ -1265,8 +1271,16 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
   BotViaResult r = BotFindViaPoint(obj, target_pos, target_room, &via);
   if (verdict_out)
     *verdict_out = r;
-  if (r != BOT_VIA_FOUND)
+  if (r != BOT_VIA_FOUND) {
+    // 12.1: NONE was previously silent in the portal branch, which hid the navmapping9 finding
+    // (17/19 hard presses had no via activity). Throttled so a pressed bot logs ~1 line / 5s.
+    if (r == BOT_VIA_NONE && Gametime - Bots[bot_index].via_fail_last_log > 5.0f) {
+      Bots[bot_index].via_fail_last_log = Gametime;
+      LOG_DEBUG.printf("BOT NAV: '%s' via search failed in room %d (target room %d)", Bots[bot_index].callsign,
+                       obj->roomnum, target_room);
+    }
     return 0;
+  }
 
   Bots[bot_index].via_point = via;
   Bots[bot_index].via_expires = Gametime + BOT_VIA_COMMIT_TIME;
@@ -4106,6 +4120,7 @@ void BotInitAll() {
     vm_MakeZero(&Bots[i].via_point);
     Bots[i].via_expires = 0.0f;
     Bots[i].via_seal_count = 0;
+    Bots[i].via_fail_last_log = 0.0f;
     Bots[i].explore_dest_room = -1;
     Bots[i].explore_stuck_room = -1;
     Bots[i].explore_room_timer = 0.0f;
@@ -4230,6 +4245,7 @@ void BotReinitAll() {
     vm_MakeZero(&Bots[i].via_point);
     Bots[i].via_expires = 0.0f;
     Bots[i].via_seal_count = 0;
+    Bots[i].via_fail_last_log = 0.0f;
     Bots[i].state = BOT_STATE_EXPLORE;
     Bots[i].afterburner_fuel = BOT_AFTERBURNER_FUEL_MAX;
     Bots[i].afterburner_burst_timer = 0.0f;
@@ -4485,6 +4501,7 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   vm_MakeZero(&Bots[bot_index].via_point);
   Bots[bot_index].via_expires = 0.0f;
   Bots[bot_index].via_seal_count = 0;
+  Bots[bot_index].via_fail_last_log = 0.0f;
   Bots[bot_index].intended_team = chosen_team;
   Bots[bot_index].state = BOT_STATE_EXPLORE;
   Bots[bot_index].afterburner_fuel = BOT_AFTERBURNER_FUEL_MAX;

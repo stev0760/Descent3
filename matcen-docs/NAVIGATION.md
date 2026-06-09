@@ -277,8 +277,18 @@ BOA — a bug (the router would be silently overriding BOA everywhere), not a fe
     consecutive no-via verdicts on a same-room item → immediate abandon + 60s blacklist) and the
     existing 8s chase-timeout backstop.
   - **Diagnostics:** `$botstat` nav line gains ` via:d=<dist> t=<commit-left>` while a via is
-    active; log lines `via-point detour in room R`, `via-point reached`, `powerup sealed in room R`
-    (all under `BOT NAV:`) feed `tools/analyze_bot_log.py`.
+    active; log lines `via-point detour in room R`, `via-point reached`, `via search failed in
+    room R` (throttled ~5s/bot), `powerup sealed in room R` (all under `BOT NAV:`) feed
+    `tools/analyze_bot_log.py`.
+  - **12.1 (first live test, navmapping9 — pumphouse):** detection + execution validated (1524
+    detours, 85% reached, in exactly the navdump-predicted rooms 0/1/2; defenders hold flag rooms
+    correctly), but **17/19 hard presses got a silent no-via verdict** — nose-on contact puts the
+    fvi hit at d≈0, the anchor at the bot, and the 15-45u rings inside a wide panel's span. Three
+    fixes: (a) **pressed-state second search pass** — anchor backed off 25u toward the bot, rings
+    30/60/90; (b) the no-via verdict is now **logged** (throttled) → analyzer `VIA_SEARCH_FAIL`;
+    (c) **via arrival resets the room-progress anchor** — the dance's 15-45u legs sat under the 50u
+    progress threshold, so the 12s timeout fired mid-crossing and dyn-penalty-bumped the *correct*
+    door (61 bumps on room 2 portal 0 = the route-flap engine).
 
   **Mode scope (important — pyroplace is team-anarchy):**
   - The **portal via-point** rides the objective-only Phase 11 waypoint plumbing (§3.4) → inert in

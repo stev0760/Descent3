@@ -373,9 +373,10 @@ struct bot_info {
   float blacklisted_powerup_expires; // Gametime when blacklist expires (0 = not blacklisted)
 
   // Intra-room via-point steering (Phase 12) — committed go-around waypoint state
-  vector via_point;   // committed go-around waypoint (valid while Gametime < via_expires)
-  float via_expires;  // Gametime when the via commitment lapses; 0 = no active via
-  int via_seal_count; // consecutive no-via-found verdicts on the chased same-room powerup
+  vector via_point;        // committed go-around waypoint (valid while Gametime < via_expires)
+  float via_expires;       // Gametime when the via commitment lapses; 0 = no active via
+  int via_seal_count;      // consecutive no-via-found verdicts on the chased same-room powerup
+  float via_fail_last_log; // Gametime of last "via search failed" log (12.1 — throttle, diagnostics only)
 
   // Difficulty system (Phase 5.2)
   BotDifficulty difficulty; // this bot's difficulty level

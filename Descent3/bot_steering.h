@@ -55,6 +55,14 @@
 #define BOT_VIA_OFFSET_STEP 15.0f  // offset increment per ring (15 / 30 / 45)
 #define BOT_VIA_OFFSET_RINGS 3     // candidate rings tried per side
 
+// Pressed-state fallback pass (12.1). When the bot is nose-on the obstacle, the fvi hit is at
+// d≈0: the first pass anchors essentially at the bot and its 15-45u rings don't clear a wide
+// glass panel's edge (navmapping9: 17/19 hard presses got a silent no-via verdict). The second
+// pass backs the anchor off toward the bot's own side and sweeps wider — "back off, then around".
+#define BOT_VIA_PRESS_BACKOFF 25.0f     // second-pass anchor: this far back from the bot along the blocked line
+#define BOT_VIA_PRESS_OFFSET_BASE 30.0f // second-pass lateral rings: 30 / 60 / 90
+#define BOT_VIA_PRESS_OFFSET_STEP 30.0f
+
 enum BotViaResult {
   BOT_VIA_CLEAR = 0, // straight line to the target is clear (or probe not applicable) — steer normally
   BOT_VIA_FOUND = 1, // line blocked by an interior face; *via_out = go-around point seeing both ends

@@ -47,6 +47,7 @@ RE_DYN_BUMP = re.compile(r"\[Nav\] dyn-penalty bump room (-?\d+) portal")  # eme
 RE_VIA_DETOUR = re.compile(r"via-point detour in room (-?\d+)")   # line blocked by interior face, go-around committed
 RE_VIA_REACHED = re.compile(r"via-point reached \(room (-?\d+)\)")  # committed via-point arrived at
 RE_PU_SEALED = re.compile(r"powerup sealed in room (-?\d+)")      # same-room powerup abandoned as sealed (troll)
+RE_VIA_FAIL = re.compile(r"via search failed in room (-?\d+)")   # line blocked, NO via found (throttled ~5s/bot)
 
 # Powerup-chase pin: bot wedged (net_disp<HARD_PIN_DISP) while beelining to a powerup. This is
 # AMBIGUOUS from the log alone — it is EITHER a genuine troll/unreachable powerup (behind glass/grate,
@@ -103,6 +104,8 @@ def new_map_stats():
         "via_reached": 0,    # commits that actually arrived at the via-point (the funnel's second stage)
         "sealed_abandons": 0,  # same-room powerups abandoned as sealed (glass box / grate pocket)
         "sealed_rooms": Counter(),
+        "via_fails": 0,        # blocked-but-no-via verdicts (throttled ~5s/bot) — the funnel's stage-0 misses
+        "via_fail_rooms": Counter(),
         "powerup_pins": 0,            # bot beelining to a powerup it isn't reaching (chase-timeout, any net_disp)
         "powerup_pins_hard": 0,       # subset with net_disp < HARD_PIN_DISP = true pin (the actionable troll signal)
         "powerup_pin_rooms": Counter(),
@@ -179,6 +182,12 @@ def parse_log(path):
             if m:
                 s["sealed_abandons"] += 1
                 s["sealed_rooms"][int(m.group(1))] += 1
+                continue
+
+            m = RE_VIA_FAIL.search(line)
+            if m:
+                s["via_fails"] += 1
+                s["via_fail_rooms"][int(m.group(1))] += 1
                 continue
 
             m = RE_POWERUP_PIN.search(line)
@@ -366,12 +375,23 @@ def detect_anomalies(stats):
         # press geometry on this map. THE validation signal for the los_from_pathpnt_clear=0 maps
         # (pumphouse/abend2): hard indoor pins should convert into detours, not stay pins.
         indoor_hard = s["stucks_hard"] - s["outdoor_stucks_hard"]
-        if indoor_hard >= 20 and s["via_detours"] == 0:
+        if indoor_hard >= 20 and s["via_detours"] == 0 and s["via_fails"] == 0:
             anomalies.append((name, "VIA_INACTIVE",
                               f"{indoor_hard} hard indoor pins (net_disp<{HARD_PIN_DISP}) with 0 via-point "
                               f"detours — the Phase 12 occlusion probe isn't firing on this map's press "
                               f"geometry (probe target/blocked-verdict mismatch, or presses are not "
                               f"interior-face occlusion)"))
+
+        # Phase 12 via-point funnel, stage 0b (12.1): the probe sees the block but the candidate
+        # search finds no via — pressed-state geometry the rings don't clear. Each logged fail is
+        # throttled (~5s/bot), so even modest counts mean sustained pressing.
+        if s["via_fails"] >= 10:
+            top = s["via_fail_rooms"].most_common(2)
+            rooms_str = ", ".join(f"room {r} ({c})" for r, c in top)
+            anomalies.append((name, "VIA_SEARCH_FAIL",
+                              f"{s['via_fails']} throttled no-via verdicts (line blocked, no candidate cleared "
+                              f"both legs) — top rooms: {rooms_str}. Candidate rings not clearing the "
+                              f"obstacle edge there (widen search or map-specific geometry)"))
 
         # Phase 12 via-point funnel, stage 2: detours commit but rarely arrive — the go-around is
         # being CHOSEN but not FLOWN (arrive radius / 4s commit window / candidate quality, or
@@ -522,19 +542,23 @@ def print_report(stats, total_lines, log_path):
               f"committed via-point was arrived at (the funnel's success stage — low reach % means "
               f"chosen-but-not-flown). Sealed = same-room powerups abandoned+blacklisted as sealed.")
         print()
-        print(f"| Map | Detours | Reached (rate) | Top Detour Rooms | Sealed Abandons |")
-        print(f"|---|---|---|---|---|")
+        print(f"| Map | Detours | Reached (rate) | Top Detour Rooms | Search Fails (top rooms) | Sealed Abandons |")
+        print(f"|---|---|---|---|---|---|")
         for name in maps:
             s = stats[name]
-            if s["via_detours"] == 0 and s["sealed_abandons"] == 0:
+            if s["via_detours"] == 0 and s["sealed_abandons"] == 0 and s["via_fails"] == 0:
                 continue
             rooms_str = ", ".join(f"{r}x{c}" for r, c in s["via_detour_rooms"].most_common(3)) or "-"
             sealed_str = str(s["sealed_abandons"])
             if s["sealed_abandons"]:
                 sealed_str += " (" + ", ".join(f"room {r}x{c}" for r, c in s["sealed_rooms"].most_common(2)) + ")"
+            fails_str = str(s["via_fails"])
+            if s["via_fails"]:
+                fails_str += " (" + ", ".join(f"{r}x{c}" for r, c in s["via_fail_rooms"].most_common(3)) + ")"
             print(f"| {name} | {s['via_detours']} "
                   f"| {s['via_reached']} ({fmt_pct(s['via_reached'], s['via_detours'])}) "
                   f"| {rooms_str} "
+                  f"| {fails_str} "
                   f"| {sealed_str} |")
         print()
 
@@ -665,7 +689,7 @@ def export_csv(stats, total_lines, log_path, out_dir):
               "waiting_flag_return", "poll_ctf_events", "objective_nav_events",
               "router_diverge", "router_diverge_pct", "router_impassable", "router_dyn_bumps",
               "stucks_hard", "outdoor_stucks_hard", "powerup_pins", "powerup_pins_hard",
-              "via_detours", "via_reached", "sealed_abandons"]
+              "via_detours", "via_reached", "sealed_abandons", "via_fails"]
     rows = []
     for name in maps:
         s = stats[name]
@@ -687,7 +711,7 @@ def export_csv(stats, total_lines, log_path, out_dir):
             f"{s['diverge']/(s['obj_nav']+s['carrier_nav_ticks'])*100:.0f}" if (s["obj_nav"] + s["carrier_nav_ticks"]) else "",
             s["impassable"], s["dyn_bumps"],
             s["stucks_hard"], s["outdoor_stucks_hard"], s["powerup_pins"], s["powerup_pins_hard"],
-            s["via_detours"], s["via_reached"], s["sealed_abandons"],
+            s["via_detours"], s["via_reached"], s["sealed_abandons"], s["via_fails"],
         ])
     path = os.path.join(out_dir, f"{basename}_summary.csv")
     write_csv(path, header, rows)

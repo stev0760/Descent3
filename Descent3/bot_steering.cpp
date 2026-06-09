@@ -301,23 +301,38 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
   vector up = vm_Cross3Product(side, dir); // completes the frame — vertical go-around (6DOF: over/under)
   vm_NormalizeVector(&up);
 
-  // Rings of 4 candidates (±side, ±up) at growing offsets: nearest workable detour wins.
-  // A candidate must be reachable from the bot AND see the target, both at hull radius.
-  for (int ring = 0; ring < BOT_VIA_OFFSET_RINGS; ring++) {
-    float off = BOT_VIA_OFFSET_BASE + ring * BOT_VIA_OFFSET_STEP;
-    const vector cands[4] = {anchor + side * off, anchor - side * off, anchor + up * off, anchor - up * off};
-    for (const vector &via : cands) {
-      fvi_info leg1{};
-      if (!ViaSegmentClear(obj->roomnum, obj->pos, via, radius, &leg1))
-        continue;
-      int via_room = leg1.hit_room;
-      if (via_room < 0 || via_room > Highest_room_index || !Rooms[via_room].used)
-        continue;
-      if (!ViaSegmentClear(target_room, target_pos, via, radius, nullptr))
-        continue;
-      if (via_out)
-        *via_out = via;
-      return BOT_VIA_FOUND;
+  // Two search passes of 4-candidate rings (±side, ±up) at growing offsets; nearest workable
+  // detour wins. A candidate must be reachable from the bot AND see the target, both at hull
+  // radius. Pass 1 anchors just short of the blocking face (the approach case). Pass 2 is the
+  // pressed-state fallback (12.1): nose-on contact puts the pass-1 anchor at the bot itself and
+  // its rings inside a wide panel's span — so back the anchor off toward the bot's side of the
+  // line and sweep wider rings to clear the panel edge.
+  struct ViaPass {
+    vector anchor;
+    float base, step;
+  };
+  const ViaPass passes[2] = {
+      {anchor, BOT_VIA_OFFSET_BASE, BOT_VIA_OFFSET_STEP},
+      {obj->pos - dir * BOT_VIA_PRESS_BACKOFF, BOT_VIA_PRESS_OFFSET_BASE, BOT_VIA_PRESS_OFFSET_STEP},
+  };
+  for (const ViaPass &pass : passes) {
+    for (int ring = 0; ring < BOT_VIA_OFFSET_RINGS; ring++) {
+      float off = pass.base + ring * pass.step;
+      const vector cands[4] = {pass.anchor + side * off, pass.anchor - side * off, pass.anchor + up * off,
+                               pass.anchor - up * off};
+      for (const vector &via : cands) {
+        fvi_info leg1{};
+        if (!ViaSegmentClear(obj->roomnum, obj->pos, via, radius, &leg1))
+          continue;
+        int via_room = leg1.hit_room;
+        if (via_room < 0 || via_room > Highest_room_index || !Rooms[via_room].used)
+          continue;
+        if (!ViaSegmentClear(target_room, target_pos, via, radius, nullptr))
+          continue;
+        if (via_out)
+          *via_out = via;
+        return BOT_VIA_FOUND;
+      }
     }
   }
   return BOT_VIA_NONE;
