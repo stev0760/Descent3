@@ -35,6 +35,7 @@
 #include "ship.h"
 #include "AIGoal.h"
 #include "AIMain.h"
+#include "aipath.h"
 #include "aistruct.h"
 #include "aistruct_external.h"
 #include "object_external.h"
@@ -289,6 +290,8 @@ static void BotClearActiveGoal(int bot_index) {
   clear_goal(Bots[bot_index].powerup_goal_index);
   Bots[bot_index].chasing_powerup_handle = OBJECT_HANDLE_NONE;
   Bots[bot_index].chasing_powerup_timer = 0.0f;
+  Bots[bot_index].via_expires = 0.0f; // Phase 12: a via commitment dies with the goal it served
+  Bots[bot_index].via_seal_count = 0;
 }
 
 // Force a bot into escort mode: clear target + all goals + force EXPLORE + retarget cooldown.
@@ -1182,6 +1185,97 @@ static bool BotNavigateToFollowTarget(int bot_index) {
   return true;
 }
 
+// Phase 12: the point the engine path-follower is currently driving the bot toward — its current
+// path node when a live path exists (the exact point AIPathMoveTurnTowardsNode beelines
+// movement_dir at, i.e. the press line), else the supplied goal position. Bounds-guarded:
+// querying node pos on a dead path reads stale indices (the navrouting23 SIGSEGV).
+static vector BotGetActiveSteerPoint(object *obj, const vector &goal_pos, int goal_room, int *steer_room) {
+  ai_path_info &path = obj->ai_info->path;
+  if (path.num_paths > 0 && path.cur_path < path.num_paths && path.cur_node < MAX_NODES) {
+    vector npos;
+    int nroom = -1;
+    if (AIPathGetCurrentNodePos(&path, &npos, &nroom)) {
+      *steer_room = nroom;
+      return npos;
+    }
+  }
+  *steer_room = goal_room;
+  return goal_pos;
+}
+
+// Phase 12 intra-room via-point steering (NAVIGATION.md §7) — the go-around the engine doesn't
+// have for free-standing interior obstacles (glass covers, pillars, ledges). Run each nav tick
+// BEFORE (re)issuing a local goal, with the bot's active local steering target. Maintains the
+// side-committed via state and delivers the detour as an AIG_GET_TO_POS sub-goal through the
+// supplied goal slot — a finer-grained waypoint the engine path-follows, never a movement_dir
+// write (Invariant #1). Returns nonzero while a via sub-goal is active this tick (the caller must
+// skip its own goal issue); on via arrival the slot is cleared so the caller re-aims at the real
+// target the same tick. *verdict_out (optional) reports the probe result for sealed-target logic.
+static int BotViaPointTick(int bot_index, const vector &target_pos, int target_room, int &goal_slot,
+                           BotViaResult *verdict_out) {
+  if (verdict_out)
+    *verdict_out = BOT_VIA_CLEAR;
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  if (!obj->ai_info)
+    return 0;
+  if (OBJECT_OUTSIDE(obj)) {
+    Bots[bot_index].via_expires = 0.0f; // indoor-only — drop any commitment on exiting
+    return 0;
+  }
+
+  auto issue_via_goal = [&]() {
+    if (goal_slot >= 0 && goal_slot < MAX_GOALS && obj->ai_info->goals[goal_slot].used)
+      GoalClearGoal(obj, &obj->ai_info->goals[goal_slot]);
+    goal_info gi_info{};
+    gi_info.pos = Bots[bot_index].via_point;
+    gi_info.roomnum = obj->roomnum;
+    goal_slot = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
+  };
+
+  // Committed: hold course to the via until reached or the commitment lapses. The commit window
+  // is what prevents per-tick side flipping (the old net_disp 28-43 circling signature).
+  if (Bots[bot_index].via_expires > Gametime) {
+    if (vm_VectorDistanceQuick(&obj->pos, &Bots[bot_index].via_point) < BOT_VIA_ARRIVE_DIST) {
+      Bots[bot_index].via_expires = 0.0f;
+      if (goal_slot >= 0 && goal_slot < MAX_GOALS && obj->ai_info->goals[goal_slot].used)
+        GoalClearGoal(obj, &obj->ai_info->goals[goal_slot]);
+      goal_slot = -1; // caller re-issues the real target this tick
+      LOG_DEBUG.printf("BOT NAV: '%s' via-point reached (room %d)", Bots[bot_index].callsign, obj->roomnum);
+      return 0;
+    }
+    if (!(goal_slot >= 0 && goal_slot < MAX_GOALS && obj->ai_info->goals[goal_slot].used))
+      issue_via_goal(); // goal slot was flushed elsewhere — re-pin the committed via
+    return 1;
+  }
+
+  // Commitment lapsed WITHOUT arrival — drop the via goal now, or the callers' hold-checks
+  // ("already en route") would keep the bot steering at a dead via point indefinitely.
+  if (Bots[bot_index].via_expires != 0.0f) {
+    Bots[bot_index].via_expires = 0.0f;
+    if (goal_slot >= 0 && goal_slot < MAX_GOALS && obj->ai_info->goals[goal_slot].used)
+      GoalClearGoal(obj, &obj->ai_info->goals[goal_slot]);
+    goal_slot = -1; // caller re-issues the real target (or we recommit below if still blocked)
+  }
+
+  // Not committed: probe the line to the active steer target and detour if an interior face
+  // blocks it AND a clear go-around exists. CLEAR and NONE both mean "steer normally" here —
+  // NONE additionally feeds the caller's sealed-target counting via *verdict_out.
+  vector via;
+  BotViaResult r = BotFindViaPoint(obj, target_pos, target_room, &via);
+  if (verdict_out)
+    *verdict_out = r;
+  if (r != BOT_VIA_FOUND)
+    return 0;
+
+  Bots[bot_index].via_point = via;
+  Bots[bot_index].via_expires = Gametime + BOT_VIA_COMMIT_TIME;
+  issue_via_goal();
+  LOG_DEBUG.printf("BOT NAV: '%s' via-point detour in room %d (target room %d occluded)", Bots[bot_index].callsign,
+                   obj->roomnum, target_room);
+  return 1;
+}
+
 // Navigate the bot portal-to-portal through the level when in EXPLORE state with no nearby pickups.
 // Phase 11 waypoint injection — the single mechanism all objective navigation uses to follow the
 // cost-aware router. Computes the next room on the Dijkstra route to goal_room and aims the engine
@@ -1202,6 +1296,23 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   int wp_room = BotComputeRoute(obj->roomnum, goal_room);
   if (wp_room < 0)
     wp_room = goal_room;
+
+  // Phase 12: interior-obstacle go-around. Probe the line to the point the engine is actually
+  // steering at; when a free-standing interior face blocks it, divert through a committed
+  // via-point sub-goal before resuming the routed waypoint. Carriers call this every tick, so
+  // via arrival/expiry is fully maintained here; explore nav maintains it en route in
+  // BotDoExploreRoaming's still-navigating branch.
+  {
+    vector goal_pos = (wp_room == goal_room) ? final_pos : Rooms[wp_room].path_pnt;
+    int steer_room = -1;
+    vector steer_pos = BotGetActiveSteerPoint(obj, goal_pos, wp_room, &steer_room);
+    if (BotViaPointTick(bot_index, steer_pos, steer_room, Bots[bot_index].pursuit_goal_index, nullptr)) {
+      Bots[bot_index].explore_dest_room = wp_room; // keep waypoint bookkeeping for progress/hold checks
+      if (Bots[bot_index].explore_room_timer <= 0.0f)
+        Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
+      return wp_room;
+    }
+  }
 
   int &pgi = Bots[bot_index].pursuit_goal_index;
   bool goal_valid = (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used);
@@ -1238,8 +1349,26 @@ static void BotDoExploreRoaming(int bot_index) {
 
   // Still navigating to current destination — don't change course until we arrive or time out
   if (Bots[bot_index].explore_dest_room >= 0 && Bots[bot_index].explore_room_timer > 0.0f) {
-    if (OBJECT_OUTSIDE(obj) || obj->roomnum != Bots[bot_index].explore_dest_room)
+    if (OBJECT_OUTSIDE(obj) || obj->roomnum != Bots[bot_index].explore_dest_room) {
+      // Phase 12: en-route via maintenance. The interior-obstacle press happens MID-room while
+      // this branch is holding course (93% of pumphouse presses were in EXPLORE), so the
+      // occlusion probe has to run here, not just at goal-issue time.
+      if (!OBJECT_OUTSIDE(obj)) {
+        int dest = Bots[bot_index].explore_dest_room;
+        int steer_room = -1;
+        vector steer_pos = BotGetActiveSteerPoint(obj, Rooms[dest].path_pnt, dest, &steer_room);
+        int &pgi = Bots[bot_index].pursuit_goal_index;
+        if (!BotViaPointTick(bot_index, steer_pos, steer_room, pgi, nullptr) &&
+            !(pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)) {
+          // Via just completed (or the goal was flushed) — re-aim at the original destination
+          goal_info gi_info{};
+          gi_info.pos = Rooms[dest].path_pnt;
+          gi_info.roomnum = dest;
+          pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
+        }
+      }
       return; // still en route
+    }
     // Arrived — clear blacklist and last-known position
     Bots[bot_index].explore_stuck_room = -1;
     Bots[bot_index].last_target_room = -1;
@@ -1779,6 +1908,14 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
     if (!BotCanCollectPowerup(bot_index, p))
       continue;
 
+    // Phase 12 troll-powerup gate: never select an item in a sealed room (every entry portal a
+    // grate/slit/locked door). The engine's pathing believes such rooms are reachable and would
+    // drive the bot into the grate — skip before any chase starts. Same-room items are exempt
+    // (handled by the via-point sealed counter); the room test is local-only so outdoor-linked
+    // rooms can't false-positive. GLOBAL like the rest of selection (Invariant #4 exception).
+    if (!OBJECT_OUTSIDE(obj) && !OBJECT_OUTSIDE(p) && p->roomnum != obj->roomnum && BotRoomSealedForShip(p->roomnum))
+      continue;
+
     float dist = vm_VectorDistanceQuick(&obj->pos, &p->pos);
     if (dist > seek_radius)
       continue;
@@ -2109,19 +2246,50 @@ static void BotUpdateState(int bot_index) {
       bool poorly_armed = BotHasOnlyDefaultPrimary(bot_index) || BotHasNoSecondaries(bot_index);
       holding_for_weapon = is_weapon && poorly_armed && (dist > BOT_CLOSERANGE_DIST);
 
-      // Refresh powerup pursuit goal each tick (powerup may disappear)
       int &pgi = Bots[bot_index].powerup_goal_index;
-      if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
-        GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
-      pgi = -1;
       int tgt_handle = Objects[pu_obj].handle;
-      pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f, GF_SPEED_ATTACK);
       // Track which powerup we're chasing for timeout detection
       if (Bots[bot_index].chasing_powerup_handle != tgt_handle) {
         Bots[bot_index].chasing_powerup_handle = tgt_handle;
         Bots[bot_index].chasing_powerup_timer = 0.0f;
+        Bots[bot_index].via_seal_count = 0;
       }
-      // Clear any active roaming goal so it doesn't conflict with the powerup goal.
+
+      // Phase 12: interior-obstacle handling on the powerup line. GLOBAL — powerups are chased in
+      // every mode, so this runs in anarchy/team too (deliberate Invariant #4 exception, see
+      // NAVIGATION.md §7). Occluded-but-reachable (glass divider, ledge) → detour through a
+      // via-point sub-goal. Same-room item with NO clear via for several ticks → sealed (glass
+      // box / grate pocket): abandon + blacklist NOW instead of wedging until the 8s chase timeout.
+      object *pu = &Objects[pu_obj];
+      bool pu_same_room = !OBJECT_OUTSIDE(pu) && pu->roomnum == obj->roomnum;
+      int steer_room = -1;
+      vector steer_pos = BotGetActiveSteerPoint(obj, pu->pos, OBJECT_OUTSIDE(pu) ? -1 : pu->roomnum, &steer_room);
+      BotViaResult via_verdict = BOT_VIA_CLEAR;
+      bool via_active = BotViaPointTick(bot_index, steer_pos, steer_room, pgi, &via_verdict) != 0;
+      if (!via_active)
+        Bots[bot_index].via_seal_count =
+            (pu_same_room && via_verdict == BOT_VIA_NONE) ? Bots[bot_index].via_seal_count + 1 : 0;
+
+      if (Bots[bot_index].via_seal_count >= BOT_VIA_SEALED_TICKS) {
+        // Sealed powerup — the runtime form of the navdump sealed_troll verdict.
+        Bots[bot_index].blacklisted_powerup_handle = tgt_handle;
+        Bots[bot_index].blacklisted_powerup_expires = Gametime + BOT_POWERUP_BLACKLIST_DURATION;
+        if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+          GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+        pgi = -1;
+        Bots[bot_index].chasing_powerup_handle = OBJECT_HANDLE_NONE;
+        Bots[bot_index].chasing_powerup_timer = 0.0f;
+        Bots[bot_index].via_seal_count = 0;
+        LOG_DEBUG.printf("BOT NAV: '%s' powerup sealed in room %d — abandoned + blacklisted %.0fs",
+                         Bots[bot_index].callsign, obj->roomnum, BOT_POWERUP_BLACKLIST_DURATION);
+      } else if (!via_active) {
+        // Refresh powerup pursuit goal each tick (powerup may disappear)
+        if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+          GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+        pgi = -1;
+        pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f, GF_SPEED_ATTACK);
+      }
+      // Clear any active roaming goal so it doesn't conflict with the powerup/via goal.
       // Two goals at the same priority pull in different directions → bot hovers in place.
       int &rgi = Bots[bot_index].pursuit_goal_index;
       if (rgi >= 0 && rgi < MAX_GOALS && obj->ai_info->goals[rgi].used)
@@ -3169,8 +3337,17 @@ void BotFormatNavDiag(int bot_index, char *buf, size_t buflen) {
     snprintf(route, sizeof(route), " route:goal=%d n/a", goal_room);
   }
 
-  snprintf(buf, buflen, "nav: dest_room=%d num_paths=%d path=%u/%u mdir|%.2f| ahead:%s%s", dest_room,
-           (int)path.num_paths, path.cur_path, path.cur_node, mdir_mag, probe, route);
+  // Phase 12: active via-point detour state (distance to the committed via + commit time left)
+  char via[48];
+  if (Bots[bot_index].via_expires > Gametime) {
+    float vd = vm_VectorDistanceQuick(&obj->pos, &Bots[bot_index].via_point);
+    snprintf(via, sizeof(via), " via:d=%.1f t=%.1f", vd, Bots[bot_index].via_expires - Gametime);
+  } else {
+    via[0] = '\0';
+  }
+
+  snprintf(buf, buflen, "nav: dest_room=%d num_paths=%d path=%u/%u mdir|%.2f| ahead:%s%s%s", dest_room,
+           (int)path.num_paths, path.cur_path, path.cur_node, mdir_mag, probe, route, via);
 }
 
 // --- Navigation geometry dump (diagnostic, read-only) -------------------------
@@ -3926,6 +4103,9 @@ void BotInitAll() {
     Bots[i].chasing_powerup_timer = 0.0f;
     Bots[i].blacklisted_powerup_handle = OBJECT_HANDLE_NONE;
     Bots[i].blacklisted_powerup_expires = 0.0f;
+    vm_MakeZero(&Bots[i].via_point);
+    Bots[i].via_expires = 0.0f;
+    Bots[i].via_seal_count = 0;
     Bots[i].explore_dest_room = -1;
     Bots[i].explore_stuck_room = -1;
     Bots[i].explore_room_timer = 0.0f;
@@ -4047,6 +4227,9 @@ void BotReinitAll() {
     Bots[i].chasing_powerup_timer = 0.0f;
     Bots[i].blacklisted_powerup_handle = OBJECT_HANDLE_NONE;
     Bots[i].blacklisted_powerup_expires = 0.0f;
+    vm_MakeZero(&Bots[i].via_point);
+    Bots[i].via_expires = 0.0f;
+    Bots[i].via_seal_count = 0;
     Bots[i].state = BOT_STATE_EXPLORE;
     Bots[i].afterburner_fuel = BOT_AFTERBURNER_FUEL_MAX;
     Bots[i].afterburner_burst_timer = 0.0f;
@@ -4299,6 +4482,9 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   Bots[bot_index].chasing_powerup_timer = 0.0f;
   Bots[bot_index].blacklisted_powerup_handle = OBJECT_HANDLE_NONE;
   Bots[bot_index].blacklisted_powerup_expires = 0.0f;
+  vm_MakeZero(&Bots[bot_index].via_point);
+  Bots[bot_index].via_expires = 0.0f;
+  Bots[bot_index].via_seal_count = 0;
   Bots[bot_index].intended_team = chosen_team;
   Bots[bot_index].state = BOT_STATE_EXPLORE;
   Bots[bot_index].afterburner_fuel = BOT_AFTERBURNER_FUEL_MAX;

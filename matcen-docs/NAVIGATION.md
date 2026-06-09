@@ -155,6 +155,14 @@ The engine owns steering. Our only touches:
 - **Goal-room selection / explore.** `BotDoExploreRoaming` samples reachable rooms
   (`BOA_GetNextRoom != BOA_NO_PATH`, filters `BOAF_TOO_SMALL_FOR_ROBOT`), favors unvisited/uncrowded
   rooms (visited-room memory), and — in objective modes — defers to the router (§3.4).
+- **Intra-room via-point detour (Phase 12).** When the hull-radius line to the engine's *current
+  path node* is blocked by a free-standing interior face (glass cover, pillar, ledge — the §2.5
+  blind spot), a side-committed via-point with clear LOS to both the bot and the target is delivered
+  as an `AIG_GET_TO_POS` sub-goal (`BotViaPointTick`); the engine path-follows to it, then resumes
+  the real target. Sealed same-room powerups are abandoned + blacklisted after
+  `BOT_VIA_SEALED_TICKS` failed via searches, and powerups in sealed rooms (every entry portal
+  geo-impassable) are never selected (`BotRoomSealedForShip`). Still never writes `movement_dir` —
+  a finer-grained waypoint, not a steering layer. Details in §7.
 - **Stuck recovery.** Room-progress timeout (`BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT`, displacement-based
   so big-room crossings and open-terrain flights aren't false positives) → bump the failed portal
   (§3.3) and pick a new destination; escalation forces a physical escape. ⚠️ The escape portal pick
@@ -226,7 +234,8 @@ BOA — a bug (the router would be silently overriding BOA everywhere), not a fe
     (Outrage scripted single-player paths around it). It is the specific blocker keeping multiplayer
     bots off Q3A/UT-era parity: pumphouse = **0 captures across 43 rounds** purely from this.
 
-  **Phase 12 fix — intra-room via-point steering (planned, advisor-reviewed).** One mechanism, keyed on
+  **Phase 12 fix — intra-room via-point steering (IMPLEMENTED 0.9.2-dev — rotation validation
+  pending; do not claim fixed until the §test-rotation gate passes).** One mechanism, keyed on
   the bot's **active local steering target** — generalized from "next portal" to *any* in-room goal: the
   objective-routing next portal (pumphouse), **a powerup being chased**, or an explore destination. The
   same interior face that blocks a portal line blocks a powerup line; one go-around serves both.
@@ -246,6 +255,30 @@ BOA — a bug (the router would be silently overriding BOA everywhere), not a fe
      (`BotComputeRoute == -1` / impassable-only approach) — a troll powerup is skipped before any chase.
      This is the runtime answer to the pre-0.9.2 "troll powerup" planning (supersedes the reverted
      `$navprobe`); the via-point search's *failure* is the natural, conservative give-up trigger.
+
+  **As built (deltas from the plan above — all deliberate):**
+  - **Detection target = the engine's *current path node*** (`AIPathGetCurrentNodePos`, bounds-guarded
+    against the navrouting23 dead-path read) when a live path exists, else the handed goal position.
+    This is the exact point `AIPathMoveTurnTowardsNode` beelines `movement_dir` at — the runtime
+    equivalent of `los_from_pathpnt_clear=0` — so the probe fires precisely where the engine presses,
+    not on every legitimately-curved room crossing. Probe + via search live in
+    `BotFindViaPoint` (`bot_steering.cpp`); commitment + delivery in `BotViaPointTick` (`bot.cpp`).
+  - **Three wiring sites:** `BotSetRoutedGoal` (carriers + objective waypoint issue), the
+    still-en-route hold branch of `BotDoExploreRoaming` (where 93% of presses happen — the hold
+    branch otherwise never re-examines the line), and the powerup-chase branch of `BotUpdateState`.
+  - **Via candidates are 6DOF:** rings of 4 (±side along the blocking face plane, ±perpendicular —
+    over/under) at 15/30/45u, anchored just on the bot's side of the hit face; first candidate with
+    hull-radius LOS to both ends wins; commitment is `BOT_VIA_COMMIT_TIME` (4s) or arrival.
+  - **The unreachable-gate is a *local sealed-room* test (`BotRoomSealedForShip`), not
+    `BotComputeRoute == -1`:** a powerup is skipped only when *every entry portal of its own room*
+    is geo-impassable (grate/slit/locked). A full interior-route verdict would false-positive on
+    outdoor-linked rooms (the analyzer's OUTDOOR-LINKED `sealed_troll` caveat); the local test
+    cannot. Multi-hop seals still fall to the runtime sealed counter (`BOT_VIA_SEALED_TICKS`
+    consecutive no-via verdicts on a same-room item → immediate abandon + 60s blacklist) and the
+    existing 8s chase-timeout backstop.
+  - **Diagnostics:** `$botstat` nav line gains ` via:d=<dist> t=<commit-left>` while a via is
+    active; log lines `via-point detour in room R`, `via-point reached`, `powerup sealed in room R`
+    (all under `BOT NAV:`) feed `tools/analyze_bot_log.py`.
 
   **Mode scope (important — pyroplace is team-anarchy):**
   - The **portal via-point** rides the objective-only Phase 11 waypoint plumbing (§3.4) → inert in

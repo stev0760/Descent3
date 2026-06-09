@@ -43,6 +43,33 @@
 #define BOT_PORTAL_DYN_MAX 600.0f // cap (<< IMPASSABLE: never fully removes the only route)
 #define BOT_PORTAL_DYN_DECAY 4.0f // penalty units shed per second (an 80-unit bump fades in ~20s)
 
+// --- Intra-room via-point steering (Phase 12) ---
+// The engine path-follower beelines movement_dir at its current path node; a free-standing
+// interior FACE (glass cover panel, pillar, ledge — not a portal) on that line makes the bot
+// press it at d≈0 (the $navdump los_from_pathpnt_clear=0 rooms). BotFindViaPoint probes whether
+// the hull-radius line bot→target is blocked by such a face and, if so, searches beside the
+// blocking face for a via-point with clear hull-radius LOS to BOTH the bot and the target.
+// Geometry only — the caller owns commitment (side-commit) and delivery (AIG_GET_TO_POS sub-goal).
+#define BOT_VIA_PROBE_BACKOFF 6.0f // via candidates sit this far on the bot's side of the blocking face
+#define BOT_VIA_OFFSET_BASE 15.0f  // first lateral candidate offset from the blocked line (units)
+#define BOT_VIA_OFFSET_STEP 15.0f  // offset increment per ring (15 / 30 / 45)
+#define BOT_VIA_OFFSET_RINGS 3     // candidate rings tried per side
+
+enum BotViaResult {
+  BOT_VIA_CLEAR = 0, // straight line to the target is clear (or probe not applicable) — steer normally
+  BOT_VIA_FOUND = 1, // line blocked by an interior face; *via_out = go-around point seeing both ends
+  BOT_VIA_NONE = 2,  // line blocked and no clear via-point exists — fall back / sealed-target evidence
+};
+
+// Probe the hull-radius line obj→target_pos and search for a go-around via-point when an interior
+// face blocks it. target_room = the room target_pos is in (fvi start room for the via→target leg).
+BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_room, vector *via_out);
+
+// Phase 12 troll-powerup gate: true when every portal into the room is geo-impassable for a ship
+// (grates/slits/locked doors) — a sealed pocket. Powerup selection skips items in such rooms so
+// bots never chase (and wedge against) an item the engine wrongly believes is reachable.
+bool BotRoomSealedForShip(int room_idx);
+
 // Phase 8.1: Outdoor terrain steering (Y-up altitude regulation + entrance-seek mode).
 // Runtime toggle (default ON — disable with $terrainsteer off)
 extern bool Bot_terrain_steering_enabled;

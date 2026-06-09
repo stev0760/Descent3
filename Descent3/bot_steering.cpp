@@ -247,6 +247,105 @@ void BotBumpPortalPenalty(int room_idx, int portal_idx) {
   LOG_DEBUG << "[Nav] dyn-penalty bump room " << room_idx << " portal " << portal_idx << " -> " << nv;
 }
 
+// --- Intra-room via-point steering (Phase 12) ---
+// See NAVIGATION.md §2.5/§7: the engine's path-follower has no go-around for free-standing
+// room-interior obstacles (it only routes around portal-level blockage), so a glass cover,
+// pillar, or ledge between the bot and its current path node becomes a stable press.
+
+// Hull-radius segment probe. Walls/terrain block; objects don't (doors open by bumping,
+// players/powerups move). Returns true when the segment is clear for a ship of this radius.
+static bool ViaSegmentClear(int startroom, const vector &a, const vector &b, float radius, fvi_info *hit_out) {
+  vector p0 = a, p1 = b;
+  fvi_query fq{};
+  fvi_info hit{};
+  fq.p0 = &p0;
+  fq.p1 = &p1;
+  fq.startroom = startroom;
+  fq.rad = radius;
+  fq.thisobjnum = -1;
+  fq.ignore_obj_list = nullptr;
+  fq.flags = FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS | FQ_IGNORE_MOVING_OBJECTS;
+  int ht = fvi_FindIntersection(&fq, &hit);
+  if (hit_out)
+    *hit_out = hit;
+  return !(ht == HIT_WALL || ht == HIT_BACKFACE || ht == HIT_TERRAIN);
+}
+
+BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_room, vector *via_out) {
+  if (!obj || OBJECT_OUTSIDE(obj))
+    return BOT_VIA_CLEAR; // indoor-only mechanism (no outdoor work in 0.9.2)
+  if (target_room < 0 || target_room > Highest_room_index || !Rooms[target_room].used ||
+      (Rooms[target_room].flags & RF_EXTERNAL))
+    return BOT_VIA_CLEAR;
+
+  float radius = obj->size;
+
+  fvi_info block{};
+  if (ViaSegmentClear(obj->roomnum, obj->pos, target_pos, radius, &block))
+    return BOT_VIA_CLEAR;
+
+  vector dir = target_pos - obj->pos;
+  float dist = vm_GetMagnitude(&dir);
+  if (dist < 1.0f)
+    return BOT_VIA_CLEAR; // on top of the target — nothing to round
+  dir = dir * (1.0f / dist);
+
+  // Anchor the candidate ring just on the bot's side of the blocking face, then slide laterally.
+  // Side axis = along the face plane, perpendicular to the travel line (cross(dir, face normal));
+  // when the face squarely opposes travel that cross degenerates — fall back to the ship's rvec.
+  vector anchor = block.hit_pnt - dir * BOT_VIA_PROBE_BACKOFF;
+  vector side = vm_Cross3Product(dir, block.hit_wallnorm[0]);
+  if (vm_GetMagnitude(&side) < 0.3f)
+    side = obj->orient.rvec;
+  vm_NormalizeVector(&side);
+  vector up = vm_Cross3Product(side, dir); // completes the frame — vertical go-around (6DOF: over/under)
+  vm_NormalizeVector(&up);
+
+  // Rings of 4 candidates (±side, ±up) at growing offsets: nearest workable detour wins.
+  // A candidate must be reachable from the bot AND see the target, both at hull radius.
+  for (int ring = 0; ring < BOT_VIA_OFFSET_RINGS; ring++) {
+    float off = BOT_VIA_OFFSET_BASE + ring * BOT_VIA_OFFSET_STEP;
+    const vector cands[4] = {anchor + side * off, anchor - side * off, anchor + up * off, anchor - up * off};
+    for (const vector &via : cands) {
+      fvi_info leg1{};
+      if (!ViaSegmentClear(obj->roomnum, obj->pos, via, radius, &leg1))
+        continue;
+      int via_room = leg1.hit_room;
+      if (via_room < 0 || via_room > Highest_room_index || !Rooms[via_room].used)
+        continue;
+      if (!ViaSegmentClear(target_room, target_pos, via, radius, nullptr))
+        continue;
+      if (via_out)
+        *via_out = via;
+      return BOT_VIA_FOUND;
+    }
+  }
+  return BOT_VIA_NONE;
+}
+
+// Phase 12 troll-powerup gate. Local and conservative on purpose: only the item's own room is
+// tested (every entry portal geo-impassable = sealed pocket, e.g. a powerup behind a grate).
+// Deliberately NOT a full-route test — an interior-only Dijkstra verdict would false-positive
+// on outdoor-linked rooms (the analyzer's OUTDOOR-LINKED sealed_troll caveat). Multi-hop seals
+// are still caught at runtime by the via-point sealed counter and the chase-timeout blacklist.
+bool BotRoomSealedForShip(int room_idx) {
+  if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used)
+    return false;
+  room &rm = Rooms[room_idx];
+  if (rm.flags & RF_EXTERNAL)
+    return false;
+  bool any_portal = false;
+  for (int p = 0; p < rm.num_portals; p++) {
+    int nr = rm.portals[p].croom;
+    if (nr < 0 || nr > Highest_room_index || !Rooms[nr].used)
+      continue;
+    any_portal = true;
+    if (BotPortalGeoCost(room_idx, p) < BOT_PORTAL_IMPASSABLE)
+      return false; // at least one flyable way in
+  }
+  return any_portal; // portal-less rooms aren't "sealed" — there is nothing to gate
+}
+
 // --- Cost-aware next-hop router (Phase 11) ---
 // Runs Dijkstra over the interior room graph from from_room to goal_room, weighting each
 // portal by BOA's base traversal cost plus our graded geometry cost (grates/slits excluded,

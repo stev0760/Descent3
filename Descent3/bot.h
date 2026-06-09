@@ -188,6 +188,15 @@
 #define BOT_POWERUP_THRUST_RADIUS 50.0f      // direct-thrust override distance for close visible powerups (Phase 4.06)
 #define BOT_POWERUP_STALE_CHASE 4.0f // seconds chasing without collecting before treating chase as stale (Phase 4.06)
 
+// Intra-room via-point steering (Phase 12) — go around free-standing interior obstacles
+// (glass covers, pillars, ledges) that the engine path-follower presses into (NAVIGATION.md §7).
+// The via-point is delivered as an AIG_GET_TO_POS sub-goal; the engine still does all steering.
+#define BOT_VIA_COMMIT_TIME 4.0f  // seconds committed to a chosen via-point (side-commit — per-tick
+                                  // re-selection IS the net_disp 28-43 circling seen pre-Phase-12)
+#define BOT_VIA_ARRIVE_DIST 15.0f // via-point counts as reached within this distance
+#define BOT_VIA_SEALED_TICKS 4    // consecutive failed via searches on a same-room powerup (~2s at the
+                                  // 0.5s tick) before declaring it sealed: abandon + blacklist
+
 // Homing missile evasion (Phase 3.15)
 // Scans Objects[] for OBJ_WEAPON with PF_HOMING tracking the bot's handle.
 // Triggers EVADE + chaff deployment + afterburner burst to outrun/dodge.
@@ -362,6 +371,11 @@ struct bot_info {
   // Plasmacannon loop is broken. Set when a powerup chase times out; checked in BotFindBestPowerup.
   int blacklisted_powerup_handle;    // handle of recently-timed-out powerup; OBJECT_HANDLE_NONE = none
   float blacklisted_powerup_expires; // Gametime when blacklist expires (0 = not blacklisted)
+
+  // Intra-room via-point steering (Phase 12) — committed go-around waypoint state
+  vector via_point;   // committed go-around waypoint (valid while Gametime < via_expires)
+  float via_expires;  // Gametime when the via commitment lapses; 0 = no active via
+  int via_seal_count; // consecutive no-via-found verdicts on the chased same-room powerup
 
   // Difficulty system (Phase 5.2)
   BotDifficulty difficulty; // this bot's difficulty level
