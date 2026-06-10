@@ -280,6 +280,15 @@ BOA — a bug (the router would be silently overriding BOA everywhere), not a fe
     active; log lines `via-point detour in room R`, `via-point reached`, `via search failed in
     room R` (throttled ~5s/bot), `powerup sealed in room R` (all under `BOT NAV:`) feed
     `tools/analyze_bot_log.py`.
+  - **12.2 (NEXT — from the navmapping10 run, pumphouse + abend2):** 12.1 verdict = **keep** (hard
+    pins 19→0; **first-ever abend2 bot capture**), but two follow-ups: (1) **via cycle cap** — the
+    progress credit lets a detour↔arrival dance spin endlessly in a room it never exits (abend2
+    mirror rooms 30/0: 232/171 detours, blue team visibly trapped; after ~3 via arrivals without a
+    room change, stop crediting and suspend via in that room so timeout/reroute/escape resumes);
+    (2) **wire the via tick into the escort branch** — `BotNavigateToFollowTarget` has no via
+    support, so `!follow` (command layer verified working: role set + acked) can't extract a bot
+    wedged in a broken room; (3) pass-2 still fails in pumphouse rooms 4/2/3 + abend2 30/0
+    (`VIA_SEARCH_FAIL`) — consider portal-anchored candidates in non-convex rooms.
   - **12.1 (first live test, navmapping9 — pumphouse):** detection + execution validated (1524
     detours, 85% reached, in exactly the navdump-predicted rooms 0/1/2; defenders hold flag rooms
     correctly), but **17/19 hard presses got a silent no-via verdict** — nose-on contact puts the
