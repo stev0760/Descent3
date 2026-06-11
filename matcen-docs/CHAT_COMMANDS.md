@@ -4,7 +4,7 @@ Phase 6.0 infrastructure: chat-based bot command system. Enables squad orders, g
 awareness, and bot personality expression. Foundational layer for all objective-mode work
 (CTF, Entropy, Co-op, Monsterball).
 
-**Status:** Stage 3 in progress (Matcen 0.8.11-dev). Stages 1-2 complete (0.8.8-0.8.9). Matcen 0.8.10 added non-team-mode guard. Matcen 0.8.11-dev adds game-mode detection (`BotGameMode`, `$botmode`), objective-state polling (`bot_objective.h`/`.cpp` — CTF flags, Hyper-Anarchy orb, Hoard counts, Monsterball), FSM integration (`BotGetObjectiveRoom()` + `BotGetObjectiveTargetBias()` + `BotObjectiveLean`), Tier 2 verbs (`!hunt`, `!regroup`/`!form up`, `!attack flag`/`!defend flag`), and CTF behavior tuning: smart flag filter in `BotCanCollectPowerup` (skip own AT_HOME, allow DROPPED for returns), carrier state suppression (stay EXPLORE, HUNT only for urgent threats), score beeline (`AIG_GET_TO_OBJ` + bline on home flag), wait-at-home when own flag stolen, forced defender retarget on flag theft (`Prev_flag_state` transition detection), carrier thrust override (full speed + AB when scoring possible, 0.3f drift when waiting). `!get <powerup>` deferred (requires powerup awareness). Next: CTF smoke test, then strip `-dev` for 0.9.0.
+**Status:** Stages 1-3 shipped (0.8.8-0.8.13). **Stage 6 "Orders as Goals" overhaul designed 2026-06-11 (see below) — the next major command work**, sequenced after the 12.3 nav geometry pass. Historical Stage 3 status: Stages 1-2 complete (0.8.8-0.8.9). Matcen 0.8.10 added non-team-mode guard. Matcen 0.8.11-dev adds game-mode detection (`BotGameMode`, `$botmode`), objective-state polling (`bot_objective.h`/`.cpp` — CTF flags, Hyper-Anarchy orb, Hoard counts, Monsterball), FSM integration (`BotGetObjectiveRoom()` + `BotGetObjectiveTargetBias()` + `BotObjectiveLean`), Tier 2 verbs (`!hunt`, `!regroup`/`!form up`, `!attack flag`/`!defend flag`), and CTF behavior tuning: smart flag filter in `BotCanCollectPowerup` (skip own AT_HOME, allow DROPPED for returns), carrier state suppression (stay EXPLORE, HUNT only for urgent threats), score beeline (`AIG_GET_TO_OBJ` + bline on home flag), wait-at-home when own flag stolen, forced defender retarget on flag theft (`Prev_flag_state` transition detection), carrier thrust override (full speed + AB when scoring possible, 0.3f drift when waiting). `!get <powerup>` deferred (requires powerup awareness). Next: CTF smoke test, then strip `-dev` for 0.9.0.
 
 ## Research Summary
 
@@ -242,6 +242,84 @@ in open rooms. Novel design, no direct prior art.
 
 **Goal:** Monsterball, command chaining, squad grouping. Monsterball bot play is a significant
 physics challenge (ball-push mechanics, goal positioning) and may require dedicated R&D.
+
+## Stage 6: Command Overhaul — Orders as Goals (PLANNED, researched 2026-06-11)
+
+**Problem statement (user, post-0.9.2-dev testing):** "bots are listening — but their behavior
+barely changes and it does not feel *useful* at all." Commands ack correctly, roles are set and
+never stomped (verified twice in log analysis), yet orders don't visibly matter.
+
+### Why commands feel dead — mechanical audit of what each verb actually does
+
+| Verb | What it actually changes | Why the player can't feel it |
+|---|---|---|
+| `!attack` | flee threshold ×0.5; CTF: flag-runner lean | In anarchy/TA it is ONLY a flee tweak. Navigation unchanged — the bot roams exactly as before. Invisible. |
+| `!defend` | flee ×1.5 + HUNT leash (1.5× fire range); CTF: flag-guard | **No anchor.** Outside CTF "defend" never means a *place* — the bot keeps roaming the whole map. Invisible. |
+| `!follow` | Real nav override (escort branch) | The one verb that owns navigation — and it fails silently: no catch-up burn (lags a human at speed), crowds at a fixed 40u with no offset, wedges in broken rooms (via support only added in 12.2d), and **never reports failure**. The perceived "regression" is unreported failure. |
+| `!cover` | Same nav as follow + free engagement | Indistinguishable from `!follow` in practice. |
+| `!hunt <enemy>` | ATTACK + named target | Works, but when the target dies it silently reverts to nothing. |
+| `!regroup` | One-shot converge goal | No arrival ack; once there, nothing further. |
+| `!status` | Role + HP + state | No order progress: no anchor, no distance, no "why I'm stuck". |
+
+### Root causes (architecture, not bugs)
+
+1. **Orders are biases, not goals.** They nudge FSM thresholds; the FSM's own machinery
+   (powerup chase, roaming, HUNT) still owns navigation. The UT model the doc was founded on
+   is the opposite: *every order derives a destination and the bot navigates there and stays*.
+2. **No spatial anchor concept.** UT's order set is positional (defend point, hold position,
+   assault objective). We have no "here" outside CTF flag rooms.
+3. **No feedback loop.** One ack at issue time, then silence forever. The player cannot
+   distinguish "obeying" from "ignoring" — and with `!follow`'s silent nav failures, they
+   experience ignoring.
+4. **No failure handling.** A follower wedged for 30s behaves no differently than one en route.
+   An order should grant *escalation permission* (aggressive unstick) and, failing that, report.
+
+### The overhaul: orders own navigation
+
+**Order = verb + anchor + lifecycle state.** New `BotOrder` on bot_info wrapping the existing
+`squad_role`/`squad_target_slot`:
+
+```
+anchor_type: NONE | PLAYER <slot> | POSITION <pos,room> | OBJECT <handle>
+state:       ISSUED → EN_ROUTE → ON_STATION | BLOCKED
+```
+
+**Priority ladder, formalized** (today it's implicit and scattered):
+`Carrier/score > Player order > Objective lean > Powerup > Roam`.
+An active order owns the EXPLORE-state nav slot exactly the way `BotDoCarrierNav` already does
+(proven bypass pattern — reuse it as `BotDoOrderNav`).
+
+**New core verb: `!hold` (aliases `!stay`, `!defend here`)** — anchor to the *speaker's position
+at issue time*: navigate there, keep station within ~60u, engage threats near the anchor, return
+when they're dead. This is THE missing universal verb (UT "Hold this position", FS2, R6 — 4+ of
+our references) and it gives `!defend` a spatial meaning in **every** mode:
+- `!defend` in CTF → existing home-flag anchor (unchanged)
+- `!defend` in anarchy/TA → hold at the bot's own current position (UT's "Defend!" semantics)
+- `!hold` anywhere → hold at the speaker's position
+
+**Escort quality pass (`!follow`/`!cover`):**
+- **Offset stations** per follower (left-rear / right-rear / high-rear) instead of all bots
+  crowding one 40u bubble — and these offsets are deliberately the Tier 3 *formation primitive*
+  (Stage 4 builds on them).
+- **Catch-up afterburner** when >150u and the target is receding; speed-match inside the band.
+- **BLOCKED detection**: no progress for ~8s while distance grows → escalated unstick (the
+  order grants permission), then a *report* ("Can't reach you!") — the user's original
+  !follow-as-rescue use case, made explicit.
+
+**Feedback loop (state-transition chat, throttled):**
+- ON_STATION (once): "In position." / "Right behind you."
+- BLOCKED (once, then 30s throttle): "Can't get there!"
+- `!status` enriched with order context: `Holding position, 45u off station, 84 shields`.
+- Orders persist across respawn; the bot re-navigates to its anchor and re-reports.
+
+**Out of scope for Stage 6** (unchanged): formation types, above/below/flank (Stage 4 — they
+become small extensions of the offset-station mechanism), Monsterball (Stage 5), natural
+language, duration modifiers.
+
+**Sequencing note:** Stage 6 depends on nav being trustworthy in the rooms players actually
+fight in — order navigation reuses the same routed-goal + via machinery as everything else, so
+the 12.3 geometry work (rooms 41/69-class via search) directly raises order execution quality.
+Recommended order: 12.3 nav → Stage 6 overhaul → Stage 4 formation.
 
 ## Design Decisions Log
 
