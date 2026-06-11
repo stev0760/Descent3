@@ -405,6 +405,18 @@ def detect_anomalies(stats):
                               f"troll/unreachable powerup OR plain wall-press during a chase — cross-ref "
                               f"$navdump powerup verdict for that room (no troll powerups on official maps)"))
 
+        # Phase 12.2b tripwire: an OBJECTIVE item (flag/orb) got troll-retired — nav failures in
+        # its approach room struck it out, silently turning bots off the game objective. The
+        # engine-side exemption (BotTrollStrike) should make this impossible; if it fires, the
+        # exemption regressed or a new objective item name slipped the filter.
+        ret_objective = [n for n, _ in s["trolls_retired"]
+                         if "flag" in n.lower() or "orb" in n.lower()]
+        if ret_objective:
+            anomalies.append((name, "TROLL_RETIRED_OBJECTIVE",
+                              f"objective item(s) retired as trolls: {', '.join(ret_objective)} — "
+                              f"bots will stop pursuing the objective for the rest of the level. "
+                              f"BotTrollStrike's flag/orb exemption is not working"))
+
         # Phase 12 via-point funnel, stage 1: bots are HARD-pinned indoors but the via mechanism
         # never fired — the occlusion probe (bot → engine's current path node) isn't seeing the
         # press geometry on this map. THE validation signal for the los_from_pathpnt_clear=0 maps

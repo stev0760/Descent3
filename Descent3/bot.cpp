@@ -1949,6 +1949,25 @@ static bool BotPowerupTrollRetired(int handle) {
 static void BotTrollStrike(int handle, const char *botname) {
   if (handle == OBJECT_HANDLE_NONE)
     return;
+  // Objective items (CTF flags, Hoard/Hyper orbs) are NEVER trolls — a nav-broken approach room
+  // racks up chase timeouts on them just like a glass pocket does (navmapping13: nysa retired
+  // FlagBlue after corner-stuck attackers struck it out, silently turning the team off the
+  // objective). Strikes are for optional pickups only; objective failures belong to nav.
+  {
+    object *p = ObjGet(handle);
+    if (p && p->type == OBJ_POWERUP) {
+      int ft = -1;
+      if (BotIsFlagPowerup(p->id, &ft))
+        return;
+      const char *raw = Object_info[p->id].name;
+      char lower[64] = {};
+      strncpy(lower, raw ? raw : "", sizeof(lower) - 1);
+      for (int k = 0; lower[k]; k++)
+        lower[k] = (char)tolower((unsigned char)lower[k]);
+      if (strstr(lower, "hoardorb") || strstr(lower, "hyperorb"))
+        return;
+    }
+  }
   int slot = -1, free_slot = -1;
   for (int i = 0; i < BOT_TROLL_TABLE_SIZE; i++) {
     if (Troll_handles[i] == handle) {
