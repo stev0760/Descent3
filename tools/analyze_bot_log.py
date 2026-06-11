@@ -49,6 +49,12 @@ RE_VIA_REACHED = re.compile(r"via-point reached \(room (-?\d+)\)")  # committed 
 RE_PU_SEALED = re.compile(r"powerup sealed in room (-?\d+)")      # same-room powerup abandoned as sealed (troll)
 RE_VIA_FAIL = re.compile(r"via search failed in room (-?\d+)")   # line blocked, NO via found (throttled ~5s/bot)
 
+# Phase 12.2 — wrong-side rescue, via cycle cap, global troll memory.
+RE_VIA_RESCUE = re.compile(r"wrong-side rescue in room (-?\d+) — rerouting via room (-?\d+)")
+RE_RESCUE_ARRIVED = re.compile(r"rescue arrived in room (-?\d+)")
+RE_VIA_SUSPEND = re.compile(r"via suspended in room (-?\d+)")
+RE_TROLL_RETIRED = re.compile(r"powerup troll-retired: '([^']*)' \(room (-?\d+)\)")
+
 # Powerup-chase pin: bot wedged (net_disp<HARD_PIN_DISP) while beelining to a powerup. This is
 # AMBIGUOUS from the log alone — it is EITHER a genuine troll/unreachable powerup (behind glass/grate,
 # no reachability gate — see OBSTACLE_GEOMETRY.md) OR ordinary wall-press/outdoor-stuck that merely
@@ -106,6 +112,13 @@ def new_map_stats():
         "sealed_rooms": Counter(),
         "via_fails": 0,        # blocked-but-no-via verdicts (throttled ~5s/bot) — the funnel's stage-0 misses
         "via_fail_rooms": Counter(),
+        # Phase 12.2
+        "rescues": 0,            # wrong-side rescues issued (item behind an intra-room divider)
+        "rescue_rooms": Counter(),  # room the bot was IN when rescued (the wrong side)
+        "rescue_arrivals": 0,    # rescues that reached the rescue-neighbor room (chase then resumes)
+        "via_suspends": 0,       # via cycle-cap suspensions (dance without a room crossing)
+        "via_suspend_rooms": Counter(),
+        "trolls_retired": [],    # (item, room) pairs retired level-wide after repeat strikes
         "powerup_pins": 0,            # bot beelining to a powerup it isn't reaching (chase-timeout, any net_disp)
         "powerup_pins_hard": 0,       # subset with net_disp < HARD_PIN_DISP = true pin (the actionable troll signal)
         "powerup_pin_rooms": Counter(),
@@ -188,6 +201,28 @@ def parse_log(path):
             if m:
                 s["via_fails"] += 1
                 s["via_fail_rooms"][int(m.group(1))] += 1
+                continue
+
+            m = RE_VIA_RESCUE.search(line)
+            if m:
+                s["rescues"] += 1
+                s["rescue_rooms"][int(m.group(1))] += 1
+                continue
+
+            m = RE_RESCUE_ARRIVED.search(line)
+            if m:
+                s["rescue_arrivals"] += 1
+                continue
+
+            m = RE_VIA_SUSPEND.search(line)
+            if m:
+                s["via_suspends"] += 1
+                s["via_suspend_rooms"][int(m.group(1))] += 1
+                continue
+
+            m = RE_TROLL_RETIRED.search(line)
+            if m:
+                s["trolls_retired"].append((m.group(1), int(m.group(2))))
                 continue
 
             m = RE_POWERUP_PIN.search(line)
@@ -562,6 +597,30 @@ def print_report(stats, total_lines, log_path):
                   f"| {sealed_str} |")
         print()
 
+    # Phase 12.2 — wrong-side rescues, cycle-cap suspensions, troll retirements.
+    has_122 = any(s["rescues"] or s["via_suspends"] or s["trolls_retired"] for s in stats.values())
+    if has_122:
+        print(f"## Troll Guards / Cycle Cap (Phase 12.2)")
+        print()
+        print(f"Rescue = sealed-counter trip resolved as an intra-room divider (reroute via the neighbor "
+              f"whose portal sees the item) — arrivals below means the reroute landed and the chase resumed. "
+              f"Suspend = via dance capped (arrivals without a room crossing). Retired = items struck out "
+              f"level-wide (repeat chase-timeouts/seal-abandons by any bot — the Mega/Blackshark class).")
+        print()
+        print(f"| Map | Rescues (arrived) | Rescue Rooms | Via Suspends (top rooms) | Trolls Retired |")
+        print(f"|---|---|---|---|---|")
+        for name in maps:
+            s = stats[name]
+            if not (s["rescues"] or s["via_suspends"] or s["trolls_retired"]):
+                continue
+            rrooms = ", ".join(f"{r}x{c}" for r, c in s["rescue_rooms"].most_common(3)) or "-"
+            susp = str(s["via_suspends"])
+            if s["via_suspends"]:
+                susp += " (" + ", ".join(f"{r}x{c}" for r, c in s["via_suspend_rooms"].most_common(3)) + ")"
+            retired = "; ".join(f"{item} (room {room})" for item, room in s["trolls_retired"]) or "-"
+            print(f"| {name} | {s['rescues']} ({s['rescue_arrivals']}) | {rrooms} | {susp} | {retired} |")
+        print()
+
     # Outdoor breakdown (only if any map has carrier data)
     has_carrier = any(s["carrier_nav_ticks"] > 0 for s in stats.values())
     if has_carrier:
@@ -689,7 +748,8 @@ def export_csv(stats, total_lines, log_path, out_dir):
               "waiting_flag_return", "poll_ctf_events", "objective_nav_events",
               "router_diverge", "router_diverge_pct", "router_impassable", "router_dyn_bumps",
               "stucks_hard", "outdoor_stucks_hard", "powerup_pins", "powerup_pins_hard",
-              "via_detours", "via_reached", "sealed_abandons", "via_fails"]
+              "via_detours", "via_reached", "sealed_abandons", "via_fails",
+              "rescues", "rescue_arrivals", "via_suspends", "trolls_retired"]
     rows = []
     for name in maps:
         s = stats[name]
@@ -712,6 +772,7 @@ def export_csv(stats, total_lines, log_path, out_dir):
             s["impassable"], s["dyn_bumps"],
             s["stucks_hard"], s["outdoor_stucks_hard"], s["powerup_pins"], s["powerup_pins_hard"],
             s["via_detours"], s["via_reached"], s["sealed_abandons"], s["via_fails"],
+            s["rescues"], s["rescue_arrivals"], s["via_suspends"], len(s["trolls_retired"]),
         ])
     path = os.path.join(out_dir, f"{basename}_summary.csv")
     write_csv(path, header, rows)

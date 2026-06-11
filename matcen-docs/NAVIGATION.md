@@ -280,15 +280,78 @@ BOA — a bug (the router would be silently overriding BOA everywhere), not a fe
     active; log lines `via-point detour in room R`, `via-point reached`, `via search failed in
     room R` (throttled ~5s/bot), `powerup sealed in room R` (all under `BOT NAV:`) feed
     `tools/analyze_bot_log.py`.
-  - **12.2 (NEXT — from the navmapping10 run, pumphouse + abend2):** 12.1 verdict = **keep** (hard
-    pins 19→0; **first-ever abend2 bot capture**), but two follow-ups: (1) **via cycle cap** — the
-    progress credit lets a detour↔arrival dance spin endlessly in a room it never exits (abend2
-    mirror rooms 30/0: 232/171 detours, blue team visibly trapped; after ~3 via arrivals without a
-    room change, stop crediting and suspend via in that room so timeout/reroute/escape resumes);
-    (2) **wire the via tick into the escort branch** — `BotNavigateToFollowTarget` has no via
-    support, so `!follow` (command layer verified working: role set + acked) can't extract a bot
-    wedged in a broken room; (3) pass-2 still fails in pumphouse rooms 4/2/3 + abend2 30/0
-    (`VIA_SEARCH_FAIL`) — consider portal-anchored candidates in non-convex rooms.
+  - **12.2 (IMPLEMENTED 2026-06-10, UNTESTED — plan finalized after navmapping10/11/12):** 12.1
+    verdict = **keep** (hard pins 19→0; **first-ever abend2 bot capture**). The pyroplace headless
+    soak (navmapping11, 10.7h) + user ground truth then reframed the powerup-guard work — two new
+    troll classes the current guards miss:
+    - **Adjacent-room alcove troll (Mega/Blackshark, rooms 71/72 off room 2):** a
+      bulletproof-glass face *deep inside room 2* walls off a pocket that **contains both alcove
+      portals**. `ProbePortalClearance` is an *aperture* test (±5u swept-sphere window centered on
+      the portal — correct for the grate/slit-AT-the-portal class): probed from the room-2 side
+      the whole segment lies *inside* the pocket (geocost **0.0**, "wide open"); from the alcove
+      side only the alcove's own walls register (geocost 40). Neither cast can ever touch the
+      glass. "Can a ship REACH this portal from the room's main volume" is a volumetric
+      reachability question no straight-line probe answers — and lengthening the probe would
+      false-IMPASSABLE bendy-but-legit approaches, which is soft for routing but would make the
+      sealed-powerup gate retire *real* items. The sealed counter also never fired
+      (`pu_same_room` gate — bot is in room 2), hence all-night 8s-timeout/60s-blacklist churn
+      (~7,580 via fails in room 2 targeting 71/72). *Geometry keeps its aperture job; this class
+      is handled behaviorally (see 12.2b).*
+    - **Glass-split corridor (room 6-class):** ONE room physically split by a bulletproof-glass
+      wall, powerups on both sides. Signature in the navdump: portal-to-portal LOS blocked 2/2,
+      `los_from_pathpnt_clear=false` both portals. The right move (human-obvious) is *out one
+      portal, around, in the other* — the via search can never find this (no single point has LOS
+      to both ends), so the sealed counter **falsely abandons reachable powerups** (666 abandons
+      in room 6 overnight; same mechanism likely behind the room 76/35 "review" abandons, which
+      the user believes are all collectible).
+
+    Plan, in implementation order:
+    1. **12.2b — global troll memory (behavioral, handle-keyed):** per-level table objnum →
+       strike count, shared across all bots. Every 8s chase-timeout and every genuine-seal abandon
+       = 1 strike; at ~3 strikes the powerup is suppressed for the rest of the level (all bots).
+       Kills the Mega/Blackshark churn in minutes; also matches the user's point that map authors
+       troll with *ultra-high-value* items our prioritization loves. Smallest diff, biggest win.
+       **Plus: widen the seal counter from `pu_same_room` to same-OR-adjacent room** — the
+       detection signal for the alcove trolls was always firing (via-NONE every tick), only the
+       gate suppressed it. Rescue-aware: on trip, run the 12.2a portal-LOS check; if the
+       rescue-neighbor is the room the bot is already in, there is nowhere left to reroute →
+       genuine seal → abandon + strike.
+    2. **12.2a — wrong-side rescue (portal-LOS reroute):** when the same-room sealed counter
+       trips, do NOT abandon yet — hull-probe from each entry portal's `path_pnt` of the powerup's
+       room to the powerup. If a portal P→neighbor N sees it (and the bot's line is blocked), the
+       bot is on the wrong side of an intra-room divider: issue a one-hop detour
+       (`AIG_GET_TO_POS` at N's path_pnt, ~15s commit or until room==N), then resume the chase —
+       re-entry through P lands on the powerup's side. If NO portal sees it → genuinely sealed →
+       abandon + strike (12.2b). One rescue per chase; second seal-trip = abandon. Fixes the glass
+       corridor and the false abandons in one mechanism.
+    3. **12.2c — via cycle cap:** progress credit lets a detour↔arrival dance spin endlessly in a
+       room it never exits (abend2 mirror rooms 30/0: 232/171 detours, blue team visibly trapped).
+       After ~3 via arrivals without a room change: stop crediting, suspend via in that room
+       10–15s so timeout/dyn-bump/escape resumes. *A via must lead to a room change or yield.*
+    4. **12.2d — escort-branch via support:** `BotNavigateToFollowTarget` has no via tick, so
+       `!follow` (command layer verified working) can't extract a bot wedged in a broken room.
+
+    **As built (12.2 deltas):** the rescue is spent **per powerup handle**, not per chase — a
+    re-selected item that seals again goes straight to abandon+strike (no rescue ping-pong). The
+    8s chase timer is held at zero while a rescue is in flight (the 15s rescue commit is the
+    watchdog — a reroute legitimately outlives the chase window). The cycle cap withholds the
+    12.1 progress credit on the capping arrival ("via-point reached" still logs, so analyzer
+    reach-rates are comparable across versions) and suspension is room-keyed, surviving goal
+    clears but not level init. Strikes come from the chase timeout and the genuine-seal abandon;
+    the table holds 32 suspects/level, resets in `BotInitAll`/`BotReinitAll`, and retirement logs
+    once (`powerup troll-retired: 'name' (room R)`). New log lines (`wrong-side rescue in room A —
+    rerouting via room B` / `rescue arrived in room R` / `via suspended in room R`) feed
+    `analyze_bot_log.py`'s "Troll Guards / Cycle Cap (Phase 12.2)" table.
+
+    **Deferred to 12.3 (tracked, not in 12.2):** (i) split-room *routing* — BOA happily routes
+    *through* room-6-class rooms (portal LOS 2/2 blocked is necessary but not sufficient:
+    room 42 is 10/12 blocked yet traversable-but-bendy, so a hard leg-cost would wreck non-convex
+    routing; needs a real intra-room reachability test); (ii) pass-2 `VIA_SEARCH_FAIL` rooms
+    (pumphouse 4/2/3; portal-anchored candidates = lead idea); (iii) the **room 62 mystery**
+    (pyroplace #1 hard-pin room, 1,020 same-room-target via fails, yet navdump-clean — a
+    same-room target unreachable from bot positions, invisible to path_pnt-based probing);
+    (iv) navdump gap: approach probes should start from the *neighbor* side so intra-room grates
+    in front of alcove portals are seen (would have caught Mega/Blackshark).
   - **12.1 (first live test, navmapping9 — pumphouse):** detection + execution validated (1524
     detours, 85% reached, in exactly the navdump-predicted rooms 0/1/2; defenders hold flag rooms
     correctly), but **17/19 hard presses got a silent no-via verdict** — nose-on contact puts the

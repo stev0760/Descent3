@@ -292,6 +292,7 @@ static void BotClearActiveGoal(int bot_index) {
   Bots[bot_index].chasing_powerup_timer = 0.0f;
   Bots[bot_index].via_expires = 0.0f; // Phase 12: a via commitment dies with the goal it served
   Bots[bot_index].via_seal_count = 0;
+  Bots[bot_index].rescue_expires = 0.0f; // 12.2a: so does a rescue reroute (suspension is room-keyed; keep)
 }
 
 // Force a bot into escort mode: clear target + all goals + force EXPLORE + retarget cooldown.
@@ -1151,6 +1152,11 @@ static void BotDoStuckClear(int bot_index) {
 // SQUAD_FOLLOW / SQUAD_COVER navigation: steer toward the followed/covered player.
 // Called from the EXPLORE branch of BotUpdateState when no powerup goal is active.
 // Returns false if the follow target is unavailable (caller falls back to normal roaming).
+// Phase 12 via-point machinery (defined below) — forward-declared for the escort branch (12.2d).
+static vector BotGetActiveSteerPoint(object *obj, const vector &goal_pos, int goal_room, int *steer_room);
+static int BotViaPointTick(int bot_index, const vector &target_pos, int target_room, int &goal_slot,
+                           BotViaResult *verdict_out);
+
 static bool BotNavigateToFollowTarget(int bot_index) {
   int target_slot = Bots[bot_index].squad_target_slot;
   if (target_slot < 0 || target_slot >= MAX_NET_PLAYERS)
@@ -1174,6 +1180,18 @@ static bool BotNavigateToFollowTarget(int bot_index) {
     return true; // tight escort — stay this close
 
   int &pgi = Bots[bot_index].pursuit_goal_index;
+
+  // 12.2d: interior-obstacle go-around for the escort branch — !follow's original use case is
+  // extracting a wedged bot, which needs the same via support as explore nav (navmapping10:
+  // Shadow stayed pinned in abend2 room 30 through an entire FOLLOW because this was missing).
+  {
+    int steer_room = -1;
+    vector steer_pos =
+        BotGetActiveSteerPoint(obj, tgt_obj->pos, OBJECT_OUTSIDE(tgt_obj) ? -1 : (int)tgt_obj->roomnum, &steer_room);
+    if (BotViaPointTick(bot_index, steer_pos, steer_room, pgi, nullptr))
+      return true; // via sub-goal active this tick; target goal re-issued on via arrival
+  }
+
   if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
     GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
 
@@ -1241,12 +1259,32 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
       if (goal_slot >= 0 && goal_slot < MAX_GOALS && obj->ai_info->goals[goal_slot].used)
         GoalClearGoal(obj, &obj->ai_info->goals[goal_slot]);
       goal_slot = -1; // caller re-issues the real target this tick
-      // 12.1: the via dance is real progress, but its 15-45u legs sit under the 50u displacement
-      // threshold — without this reset the 12s room-progress timeout fires MID-crossing, bumps the
-      // correct door, and reroutes (navmapping9: 61 bumps on room 2 portal 0 = the flap's engine).
-      Bots[bot_index].last_progress_pos = obj->pos;
-      Bots[bot_index].room_progress_timer = 0.0f;
-      Bots[bot_index].room_progress_stuck_count = 0;
+      // 12.2c cycle cap: a via must lead to a room change or yield. Repeated arrivals in the SAME
+      // room are the abend2 rooms-30/0 dance — the 12.1 progress credit kept it spinning by
+      // resetting the very timeout that would have rerouted. Count arrivals per room; at the cap,
+      // withhold the credit and suspend via here so timeout/dyn-bump/escape machinery acts.
+      bool cycle_capped = false;
+      if ((int)obj->roomnum == Bots[bot_index].via_arrival_room) {
+        if (++Bots[bot_index].via_arrivals_same_room >= BOT_VIA_CYCLE_CAP) {
+          cycle_capped = true;
+          Bots[bot_index].via_suspend_until = Gametime + BOT_VIA_SUSPEND_TIME;
+          Bots[bot_index].via_suspend_room = obj->roomnum;
+          Bots[bot_index].via_arrivals_same_room = 0;
+          LOG_DEBUG.printf("BOT NAV: '%s' via suspended in room %d (%d arrivals without crossing)",
+                           Bots[bot_index].callsign, obj->roomnum, BOT_VIA_CYCLE_CAP);
+        }
+      } else {
+        Bots[bot_index].via_arrival_room = obj->roomnum;
+        Bots[bot_index].via_arrivals_same_room = 1;
+      }
+      if (!cycle_capped) {
+        // 12.1: the via dance is real progress, but its 15-45u legs sit under the 50u displacement
+        // threshold — without this reset the 12s room-progress timeout fires MID-crossing, bumps the
+        // correct door, and reroutes (navmapping9: 61 bumps on room 2 portal 0 = the flap's engine).
+        Bots[bot_index].last_progress_pos = obj->pos;
+        Bots[bot_index].room_progress_timer = 0.0f;
+        Bots[bot_index].room_progress_stuck_count = 0;
+      }
       LOG_DEBUG.printf("BOT NAV: '%s' via-point reached (room %d)", Bots[bot_index].callsign, obj->roomnum);
       return 0;
     }
@@ -1263,6 +1301,11 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
       GoalClearGoal(obj, &obj->ai_info->goals[goal_slot]);
     goal_slot = -1; // caller re-issues the real target (or we recommit below if still blocked)
   }
+
+  // 12.2c: suspended in this room — a via dance was spinning without a crossing; stand down and
+  // let the room-progress timeout / dyn-penalty / escape machinery reroute instead.
+  if (Bots[bot_index].via_suspend_until > Gametime && (int)obj->roomnum == Bots[bot_index].via_suspend_room)
+    return 0;
 
   // Not committed: probe the line to the active steer target and detour if an interior face
   // blocks it AND a clear go-around exists. CLEAR and NONE both mean "steer normally" here —
@@ -1876,6 +1919,64 @@ static bool BotCanCollectPowerup(int bot_index, object *powerup) {
   return true;
 }
 
+// --- Global troll-powerup memory (Phase 12.2b) ---
+// Per-level strike table shared by ALL bots, keyed on the powerup's object handle. Map authors
+// bait with ultra-high-value items (Mega/Black Shark in glass pockets or grated chambers —
+// OBSTACLE_GEOMETRY.md §3.1) that no straight-line geometry probe can prove unreachable: the
+// seal is approach geometry deep inside the neighboring room (pyroplace rooms 71/72). Behavioral
+// evidence settles it instead: every chase timeout or genuine-seal abandon is a strike; at
+// BOT_TROLL_STRIKES the item is retired level-wide so one bot's discovery teaches the roster.
+// Uncollectable items never respawn, so their handles are stable for the whole level.
+static int Troll_handles[BOT_TROLL_TABLE_SIZE];
+static uint8_t Troll_strikes[BOT_TROLL_TABLE_SIZE];
+
+static void BotTrollTableReset() {
+  for (int i = 0; i < BOT_TROLL_TABLE_SIZE; i++) {
+    Troll_handles[i] = OBJECT_HANDLE_NONE;
+    Troll_strikes[i] = 0;
+  }
+}
+
+static bool BotPowerupTrollRetired(int handle) {
+  if (handle == OBJECT_HANDLE_NONE)
+    return false;
+  for (int i = 0; i < BOT_TROLL_TABLE_SIZE; i++)
+    if (Troll_handles[i] == handle)
+      return Troll_strikes[i] >= BOT_TROLL_STRIKES;
+  return false;
+}
+
+static void BotTrollStrike(int handle, const char *botname) {
+  if (handle == OBJECT_HANDLE_NONE)
+    return;
+  int slot = -1, free_slot = -1;
+  for (int i = 0; i < BOT_TROLL_TABLE_SIZE; i++) {
+    if (Troll_handles[i] == handle) {
+      slot = i;
+      break;
+    }
+    if (free_slot < 0 && Troll_handles[i] == OBJECT_HANDLE_NONE)
+      free_slot = i;
+  }
+  if (slot < 0) {
+    if (free_slot < 0)
+      return; // table full — drop the strike (32 suspects per level is already pathological)
+    slot = free_slot;
+    Troll_handles[slot] = handle;
+    Troll_strikes[slot] = 0;
+  }
+  if (Troll_strikes[slot] >= BOT_TROLL_STRIKES)
+    return; // already retired — don't re-log
+  if (++Troll_strikes[slot] >= BOT_TROLL_STRIKES) {
+    object *p = ObjGet(handle);
+    const char *nm = (p && p->type == OBJ_POWERUP) ? Object_info[p->id].name : "?";
+    int rm = (p && !OBJECT_OUTSIDE(p)) ? (int)p->roomnum : -1;
+    LOG_DEBUG.printf("BOT NAV: powerup troll-retired: '%s' (room %d) after %d strikes by '%s' — "
+                     "suppressed for this level",
+                     nm, rm, BOT_TROLL_STRIKES, botname);
+  }
+}
+
 static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy, int min_priority = 0,
                               float max_dist_override = -1.0f) {
   int slot = Bots[bot_index].player_slot;
@@ -1916,6 +2017,9 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
     if (p->handle == blacklisted_handle)
       continue;
     if (p->handle == lt_blacklisted_handle)
+      continue;
+    // Phase 12.2b: retired level-wide as a troll (repeat chase timeouts / seal abandons, any bot)
+    if (BotPowerupTrollRetired(p->handle))
       continue;
 
     // Phase 4.06: skip powerups the bot can't actually collect (already owned primaries, etc.)
@@ -2267,6 +2371,7 @@ static void BotUpdateState(int bot_index) {
         Bots[bot_index].chasing_powerup_handle = tgt_handle;
         Bots[bot_index].chasing_powerup_timer = 0.0f;
         Bots[bot_index].via_seal_count = 0;
+        Bots[bot_index].rescue_expires = 0.0f; // any in-flight rescue was for the old target
       }
 
       // Phase 12: interior-obstacle handling on the powerup line. GLOBAL — powerups are chased in
@@ -2276,27 +2381,100 @@ static void BotUpdateState(int bot_index) {
       // box / grate pocket): abandon + blacklist NOW instead of wedging until the 8s chase timeout.
       object *pu = &Objects[pu_obj];
       bool pu_same_room = !OBJECT_OUTSIDE(pu) && pu->roomnum == obj->roomnum;
-      int steer_room = -1;
-      vector steer_pos = BotGetActiveSteerPoint(obj, pu->pos, OBJECT_OUTSIDE(pu) ? -1 : pu->roomnum, &steer_room);
-      BotViaResult via_verdict = BOT_VIA_CLEAR;
-      bool via_active = BotViaPointTick(bot_index, steer_pos, steer_room, pgi, &via_verdict) != 0;
-      if (!via_active)
-        Bots[bot_index].via_seal_count =
-            (pu_same_room && via_verdict == BOT_VIA_NONE) ? Bots[bot_index].via_seal_count + 1 : 0;
+      // 12.2b: adjacent-room sealed targets (glass-pocket alcoves, pyroplace Mega/Blackshark)
+      // produce the same every-tick no-via signal as same-room ones — the old pu_same_room-only
+      // gate is why they churned the 8s-timeout loop all night instead of sealing in ~2s.
+      bool pu_adjacent_room = false;
+      if (!pu_same_room && !OBJECT_OUTSIDE(pu) && !OBJECT_OUTSIDE(obj)) {
+        room &br = Rooms[obj->roomnum];
+        for (int pp = 0; pp < br.num_portals; pp++) {
+          if (br.portals[pp].croom == (int)pu->roomnum) {
+            pu_adjacent_room = true;
+            break;
+          }
+        }
+      }
 
-      if (Bots[bot_index].via_seal_count >= BOT_VIA_SEALED_TICKS) {
-        // Sealed powerup — the runtime form of the navdump sealed_troll verdict.
-        Bots[bot_index].blacklisted_powerup_handle = tgt_handle;
-        Bots[bot_index].blacklisted_powerup_expires = Gametime + BOT_POWERUP_BLACKLIST_DURATION;
+      // 12.2a: wrong-side rescue in flight — hold the reroute; the chase resumes (now from the
+      // powerup's side of the divider) on arrival in the rescue room, or falls back on lapse.
+      bool rescue_active = false;
+      if (Bots[bot_index].rescue_expires > Gametime) {
+        if (!OBJECT_OUTSIDE(obj) && (int)obj->roomnum == Bots[bot_index].rescue_room) {
+          Bots[bot_index].rescue_expires = 0.0f;
+          if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+            GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+          pgi = -1; // re-aim at the powerup below this tick
+          LOG_DEBUG.printf("BOT NAV: '%s' rescue arrived in room %d — resuming chase", Bots[bot_index].callsign,
+                           obj->roomnum);
+        } else {
+          rescue_active = true;
+          // The reroute legitimately takes longer than the 8s chase window — the rescue's own
+          // 15s commit is the watchdog here, so keep the chase timeout from striking mid-flight.
+          Bots[bot_index].chasing_powerup_timer = 0.0f;
+          if (!(pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)) {
+            goal_info gi_info{};
+            gi_info.pos = Rooms[Bots[bot_index].rescue_room].path_pnt;
+            gi_info.roomnum = Bots[bot_index].rescue_room;
+            pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
+          }
+        }
+      } else if (Bots[bot_index].rescue_expires != 0.0f) {
+        Bots[bot_index].rescue_expires = 0.0f; // lapsed without arrival — resume the normal chase
         if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
           GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
         pgi = -1;
-        Bots[bot_index].chasing_powerup_handle = OBJECT_HANDLE_NONE;
-        Bots[bot_index].chasing_powerup_timer = 0.0f;
-        Bots[bot_index].via_seal_count = 0;
-        LOG_DEBUG.printf("BOT NAV: '%s' powerup sealed in room %d — abandoned + blacklisted %.0fs",
-                         Bots[bot_index].callsign, obj->roomnum, BOT_POWERUP_BLACKLIST_DURATION);
-      } else if (!via_active) {
+      }
+
+      BotViaResult via_verdict = BOT_VIA_CLEAR;
+      bool via_active = false;
+      if (!rescue_active) {
+        int steer_room = -1;
+        vector steer_pos = BotGetActiveSteerPoint(obj, pu->pos, OBJECT_OUTSIDE(pu) ? -1 : pu->roomnum, &steer_room);
+        via_active = BotViaPointTick(bot_index, steer_pos, steer_room, pgi, &via_verdict) != 0;
+        if (!via_active)
+          Bots[bot_index].via_seal_count =
+              ((pu_same_room || pu_adjacent_room) && via_verdict == BOT_VIA_NONE) ? Bots[bot_index].via_seal_count + 1
+                                                                                  : 0;
+      }
+
+      if (!rescue_active && Bots[bot_index].via_seal_count >= BOT_VIA_SEALED_TICKS) {
+        // Sealed signal tripped. 12.2a: before abandoning, check whether the item is merely on the
+        // other side of an intra-room divider — if some entry portal of ITS room can see it,
+        // reroute through that portal's neighbor and re-enter on the right side (one rescue per
+        // chase). When the only "way around" is the room we're already in (glass-pocket alcove),
+        // or no portal sees it at all, it's a genuine seal: abandon + blacklist + global strike.
+        int rescue_nbr = (!OBJECT_OUTSIDE(pu)) ? BotFindRescueNeighbor(pu->pos, pu->roomnum, obj->size) : -1;
+        if (rescue_nbr >= 0 && (OBJECT_OUTSIDE(obj) || rescue_nbr != (int)obj->roomnum) &&
+            Bots[bot_index].rescue_used_handle != tgt_handle) {
+          Bots[bot_index].rescue_used_handle = tgt_handle;
+          Bots[bot_index].rescue_room = rescue_nbr;
+          Bots[bot_index].rescue_expires = Gametime + BOT_RESCUE_COMMIT_TIME;
+          Bots[bot_index].via_seal_count = 0;
+          if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+            GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+          {
+            goal_info gi_info{};
+            gi_info.pos = Rooms[rescue_nbr].path_pnt;
+            gi_info.roomnum = rescue_nbr;
+            pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
+          }
+          LOG_DEBUG.printf("BOT NAV: '%s' wrong-side rescue in room %d — rerouting via room %d (powerup room %d)",
+                           Bots[bot_index].callsign, obj->roomnum, rescue_nbr, pu->roomnum);
+        } else {
+          // Sealed powerup — the runtime form of the navdump sealed_troll verdict.
+          Bots[bot_index].blacklisted_powerup_handle = tgt_handle;
+          Bots[bot_index].blacklisted_powerup_expires = Gametime + BOT_POWERUP_BLACKLIST_DURATION;
+          if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+            GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+          pgi = -1;
+          Bots[bot_index].chasing_powerup_handle = OBJECT_HANDLE_NONE;
+          Bots[bot_index].chasing_powerup_timer = 0.0f;
+          Bots[bot_index].via_seal_count = 0;
+          BotTrollStrike(tgt_handle, Bots[bot_index].callsign); // 12.2b
+          LOG_DEBUG.printf("BOT NAV: '%s' powerup sealed in room %d — abandoned + blacklisted %.0fs",
+                           Bots[bot_index].callsign, obj->roomnum, BOT_POWERUP_BLACKLIST_DURATION);
+        }
+      } else if (!rescue_active && !via_active) {
         // Refresh powerup pursuit goal each tick (powerup may disappear)
         if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
           GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
@@ -4088,6 +4266,7 @@ static void BotRespawn(int bot_index) {
 }
 
 void BotInitAll() {
+  BotTrollTableReset(); // 12.2b: troll strikes are per-level evidence
   for (int i = 0; i < MAX_BOTS; i++) {
     Bots[i].active = false;
     Bots[i].player_slot = -1;
@@ -4121,6 +4300,13 @@ void BotInitAll() {
     Bots[i].via_expires = 0.0f;
     Bots[i].via_seal_count = 0;
     Bots[i].via_fail_last_log = 0.0f;
+    Bots[i].rescue_expires = 0.0f;
+    Bots[i].rescue_room = -1;
+    Bots[i].rescue_used_handle = OBJECT_HANDLE_NONE;
+    Bots[i].via_arrival_room = -1;
+    Bots[i].via_arrivals_same_room = 0;
+    Bots[i].via_suspend_until = 0.0f;
+    Bots[i].via_suspend_room = -1;
     Bots[i].explore_dest_room = -1;
     Bots[i].explore_stuck_room = -1;
     Bots[i].explore_room_timer = 0.0f;
@@ -4224,6 +4410,7 @@ const char *BotGameModeName(BotGameMode mode) {
 void BotReinitAll() {
   BotDetectGameMode();
   BotInitObjectiveState();
+  BotTrollTableReset(); // 12.2b: new level = new geometry; strikes don't carry over
 
   for (int i = 0; i < MAX_BOTS; i++) {
     if (!Bots[i].active)
@@ -4246,6 +4433,13 @@ void BotReinitAll() {
     Bots[i].via_expires = 0.0f;
     Bots[i].via_seal_count = 0;
     Bots[i].via_fail_last_log = 0.0f;
+    Bots[i].rescue_expires = 0.0f;
+    Bots[i].rescue_room = -1;
+    Bots[i].rescue_used_handle = OBJECT_HANDLE_NONE;
+    Bots[i].via_arrival_room = -1;
+    Bots[i].via_arrivals_same_room = 0;
+    Bots[i].via_suspend_until = 0.0f;
+    Bots[i].via_suspend_room = -1;
     Bots[i].state = BOT_STATE_EXPLORE;
     Bots[i].afterburner_fuel = BOT_AFTERBURNER_FUEL_MAX;
     Bots[i].afterburner_burst_timer = 0.0f;
@@ -4502,6 +4696,13 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   Bots[bot_index].via_expires = 0.0f;
   Bots[bot_index].via_seal_count = 0;
   Bots[bot_index].via_fail_last_log = 0.0f;
+  Bots[bot_index].rescue_expires = 0.0f;
+  Bots[bot_index].rescue_room = -1;
+  Bots[bot_index].rescue_used_handle = OBJECT_HANDLE_NONE;
+  Bots[bot_index].via_arrival_room = -1;
+  Bots[bot_index].via_arrivals_same_room = 0;
+  Bots[bot_index].via_suspend_until = 0.0f;
+  Bots[bot_index].via_suspend_room = -1;
   Bots[bot_index].intended_team = chosen_team;
   Bots[bot_index].state = BOT_STATE_EXPLORE;
   Bots[bot_index].afterburner_fuel = BOT_AFTERBURNER_FUEL_MAX;
@@ -4740,6 +4941,9 @@ void BotDoFrame() {
           Bots[i].blacklisted_powerup_expires = Gametime + BOT_POWERUP_BLACKLIST_DURATION;
           LOG_DEBUG.printf("BOT: '%s' powerup chase timeout (%.1fs) — blacklisting for %.0fs", Bots[i].callsign,
                            Bots[i].chasing_powerup_timer, BOT_POWERUP_BLACKLIST_DURATION);
+          // 12.2b: a timeout is behavioral evidence of unreachability — strike toward level-wide
+          // retirement (catches approach-sealed trolls no geometric probe can see).
+          BotTrollStrike(Bots[i].chasing_powerup_handle, Bots[i].callsign);
         }
         int &pgi = Bots[i].powerup_goal_index;
         if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info && obj->ai_info->goals[pgi].used)

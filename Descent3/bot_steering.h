@@ -78,6 +78,11 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
 // bots never chase (and wedge against) an item the engine wrongly believes is reachable.
 bool BotRoomSealedForShip(int room_idx);
 
+// 12.2a wrong-side rescue probe: the neighbor room behind the first entry portal of pu_room with
+// hull-radius LOS to pu_pos (the item's side of an intra-room divider), or -1 when no portal can
+// see the item (sealed from every approach).
+int BotFindRescueNeighbor(const vector &pu_pos, int pu_room, float radius);
+
 // Phase 8.1: Outdoor terrain steering (Y-up altitude regulation + entrance-seek mode).
 // Runtime toggle (default ON — disable with $terrainsteer off)
 extern bool Bot_terrain_steering_enabled;

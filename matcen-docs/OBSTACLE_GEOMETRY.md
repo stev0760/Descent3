@@ -94,6 +94,26 @@ more permissive than a real ship hull. See §4 (DISAGREE band).
 | **Door** | `RF_DOOR` room + `doorway_data` | Yes, unless `DF_LOCKED` (and not `DF_GB_IGNORE_LOCKED`) | `DF_BLASTABLE` doors destroyable | Treat unlocked as passable (bump-open); locked as impassable |
 | **Forcefield** | `TF_FORCEFIELD` face | **Yes** (BOA exempts it) | toggled on/off by trigger/script (multisafe) | Engine AI treats as a hazard; passable when off |
 
+### 3.1 Troll-powerup patterns (map-maker ground truth, 2026-06-10)
+
+Custom-map authors bait with **ultra-high-value items** (Mega, Black Shark) — exactly what our
+prioritization loves — in two recurring builds:
+
+1. **Glass pocket**: a pocket adjacent to a larger room, sealed with bulletproof glass. The glass
+   is often an *interior face of the larger room*, not a portal — so portal flags, BOA, the
+   aperture probe, and the navdump approach probe are all blind to it (pyroplace rooms 71/72:
+   the glass walls off a pocket *containing* the alcove portals; both sides' aperture probes run
+   entirely inside the pocket → geocost 0.0/40, never touching the glass).
+2. **Grated chamber**: a chamber fully surrounded by grating with no entry at all — usually
+   shoot-through. In single-player this doubles as a puzzle (shoot a switch through the grate,
+   guided missile, or Black Shark suction to pull the item out); in multiplayer it is pure bait.
+
+Both classes are **approach-sealed, not portal-sealed** — "can a ship reach the opening" is a
+volumetric question no straight-line probe answers. Bot policy (Phase 12.2): geometry keeps the
+aperture job (grates AT portals → DISAGREE); approach-sealed items are retired **behaviorally**
+(global per-level strike table: repeated chase-timeouts / seal-abandons on the same object →
+suppressed level-wide for all bots).
+
 ---
 
 ## 4. The DISAGREE mechanism (why grates fool the engine)

@@ -361,6 +361,28 @@ bool BotRoomSealedForShip(int room_idx) {
   return any_portal; // portal-less rooms aren't "sealed" — there is nothing to gate
 }
 
+// 12.2a wrong-side rescue probe: which entry portal of the powerup's room has hull-radius LOS to
+// the item? An intra-room divider (bulletproof-glass corridor wall) blocks the bot's side but not
+// the portal on the item's side — that portal's neighbor room is where the bot must reroute to,
+// re-entering on the correct side. Returns the neighbor room, or -1 when NO portal can see the
+// item (sealed from every approach — the genuine-troll verdict). Probes item→portal so the fvi
+// start room is always the item's room.
+int BotFindRescueNeighbor(const vector &pu_pos, int pu_room, float radius) {
+  if (pu_room < 0 || pu_room > Highest_room_index || !Rooms[pu_room].used)
+    return -1;
+  if (Rooms[pu_room].flags & RF_EXTERNAL)
+    return -1; // FVI can't start in external rooms; outdoor items aren't divider-sealed
+  room &rm = Rooms[pu_room];
+  for (int p = 0; p < rm.num_portals; p++) {
+    int nr = rm.portals[p].croom;
+    if (nr < 0 || nr > Highest_room_index || !Rooms[nr].used)
+      continue;
+    if (ViaSegmentClear(pu_room, pu_pos, rm.portals[p].path_pnt, radius, nullptr))
+      return nr;
+  }
+  return -1;
+}
+
 // --- Cost-aware next-hop router (Phase 11) ---
 // Runs Dijkstra over the interior room graph from from_room to goal_room, weighting each
 // portal by BOA's base traversal cost plus our graded geometry cost (grates/slits excluded,
