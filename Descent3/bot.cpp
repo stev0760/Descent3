@@ -1964,7 +1964,9 @@ static void BotTrollStrike(int handle, const char *botname) {
       strncpy(lower, raw ? raw : "", sizeof(lower) - 1);
       for (int k = 0; lower[k]; k++)
         lower[k] = (char)tolower((unsigned char)lower[k]);
-      if (strstr(lower, "hoardorb") || strstr(lower, "hyperorb"))
+      // "flag" is name-broad on purpose: the CTF DLL also spawns ATTACHED flag powerups
+      // (ShipBlueFlag etc.) with ids outside Obj_flag_id — navmapping14 retired those 7 times.
+      if (strstr(lower, "flag") || strstr(lower, "hoardorb") || strstr(lower, "hyperorb"))
         return;
     }
   }
@@ -2070,6 +2072,12 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
     int flag_team = -1;
     if (BotIsFlagPowerup(p->id, &flag_team)) {
       priority = 30; // CTF flags are the #1 objective — always grab immediately
+    } else if (strstr(lower, "flag")) {
+      // Attached carrier flags (ShipBlueFlag etc., ctf.cpp AFlagIDs) — OBJ_POWERUPs the CTF DLL
+      // bolts onto a carrying ship. Not collectible: chasing one beelines at a moving enemy until
+      // the timeout strikes it out (navmapping14: 7 ShipBlueFlag retirements). Carrier pursuit is
+      // the CTF retarget logic's job, not the powerup chase's.
+      continue;
     } else if (strstr(lower, "hoardorb")) {
       int capacity = BOT_HOARD_MAX_ORBS - Bot_objective.hoard_count[slot];
       if (capacity <= 0) {
