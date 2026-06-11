@@ -21,6 +21,7 @@
 
 #include "bot_chat.h"
 #include "bot.h"
+#include "bot_objective.h"
 #include "multi.h"
 #include "multi_external.h"
 #include "player.h"
@@ -35,6 +36,26 @@
 #include <cctype>
 
 static void BotSendChatReply(int bot_index, const char *text, int towho);
+
+// ---------------------------------------------------------------------------
+// Stage 6 order helpers (Orders as Goals — CHAT_COMMANDS.md §Stage 6)
+// ---------------------------------------------------------------------------
+
+// Reset the order lifecycle for a fresh anchored order.
+static void BotArmOrder(int bot_index, int from_pnum, uint8_t anchor_type) {
+  Bots[bot_index].order_anchor_type = anchor_type;
+  Bots[bot_index].order_state = ORDER_EN_ROUTE;
+  Bots[bot_index].order_issuer_slot = from_pnum;
+  Bots[bot_index].order_progress_pos = Objects[Players[Bots[bot_index].player_slot].objnum].pos;
+  Bots[bot_index].order_progress_time = Gametime;
+  Bots[bot_index].order_report_time = 0.0f;
+}
+
+// Bias-only orders (!attack, !hunt, flag verbs) and !freelance drop any anchored order.
+static void BotClearOrderAnchor(int bot_index) {
+  Bots[bot_index].order_anchor_type = ORDER_ANCHOR_NONE;
+  Bots[bot_index].order_state = ORDER_NONE;
+}
 
 // ---------------------------------------------------------------------------
 // Parser
@@ -188,6 +209,28 @@ static void BotHandleStatus(int bot_index, int from_pnum, int towho) {
   default: state_str = "exploring"; break;
   }
 
+  // Stage 6: order context — lifecycle state + distance to the anchor, so the player can see
+  // compliance (or the lack of it) at a glance.
+  char order_suf[64] = "";
+  if (Bots[bot_index].order_anchor_type != ORDER_ANCHOR_NONE) {
+    float od = -1.0f;
+    if (Bots[bot_index].order_anchor_type == ORDER_ANCHOR_POSITION) {
+      od = vm_VectorDistance(&obj->pos, &Bots[bot_index].order_anchor_pos);
+    } else {
+      int ts = Bots[bot_index].squad_target_slot;
+      if (ts >= 0 && ts < MAX_NET_PLAYERS && (NetPlayers[ts].flags & NPF_CONNECTED) &&
+          Objects[Players[ts].objnum].type == OBJ_PLAYER)
+        od = vm_VectorDistance(&obj->pos, &Objects[Players[ts].objnum].pos);
+    }
+    const char *os = (Bots[bot_index].order_state == ORDER_ON_STATION)  ? "on station"
+                     : (Bots[bot_index].order_state == ORDER_BLOCKED) ? "BLOCKED"
+                                                                       : "en route";
+    if (od >= 0.0f)
+      snprintf(order_suf, sizeof(order_suf), ", %s (%.0fu out)", os, od);
+    else
+      snprintf(order_suf, sizeof(order_suf), ", %s", os);
+  }
+
   char reply[256];
   if ((Bots[bot_index].state == BOT_STATE_HUNT || Bots[bot_index].state == BOT_STATE_COMBAT) &&
       obj->ai_info) {
@@ -199,15 +242,15 @@ static void BotHandleStatus(int bot_index, int from_pnum, int towho) {
       if (tlen > BOT_NAME_SUFFIX_LEN &&
           strcmp(tcs + tlen - BOT_NAME_SUFFIX_LEN, BOT_NAME_SUFFIX) == 0)
         tlen -= BOT_NAME_SUFFIX_LEN;
-      snprintf(reply, sizeof(reply), "%s: %s, HP %d%%, %s %.*s", Bots[bot_index].callsign, role,
-               (int)shields_pct, state_str, tlen, tcs);
+      snprintf(reply, sizeof(reply), "%s: %s, HP %d%%, %s %.*s%s", Bots[bot_index].callsign, role,
+               (int)shields_pct, state_str, tlen, tcs, order_suf);
     } else {
-      snprintf(reply, sizeof(reply), "%s: %s, HP %d%%, %s", Bots[bot_index].callsign, role, (int)shields_pct,
-               state_str);
+      snprintf(reply, sizeof(reply), "%s: %s, HP %d%%, %s%s", Bots[bot_index].callsign, role, (int)shields_pct,
+               state_str, order_suf);
     }
   } else {
-    snprintf(reply, sizeof(reply), "%s: %s, HP %d%%, %s", Bots[bot_index].callsign, role, (int)shields_pct,
-             state_str);
+    snprintf(reply, sizeof(reply), "%s: %s, HP %d%%, %s%s", Bots[bot_index].callsign, role, (int)shields_pct,
+             state_str, order_suf);
   }
 
   BotSendChatReply(bot_index, reply, (towho >= 0) ? from_pnum : towho);
@@ -223,6 +266,7 @@ static void BotHandleAttack(int bot_index, int from_pnum, int towho, int force_t
 
   Bots[bot_index].squad_role = SQUAD_ATTACK;
   Bots[bot_index].squad_target_slot = -1;
+  BotClearOrderAnchor(bot_index); // Stage 6: an attack order releases any post/escort
   Bots[bot_index].retarget_cooldown = 0.0f;
   Bots[bot_index].explore_dest_room = -1;
   Bots[bot_index].explore_room_timer = 0.0f;
@@ -268,8 +312,46 @@ static void BotHandleDefend(int bot_index, int from_pnum, int towho) {
   Bots[bot_index].explore_dest_room = -1;
   Bots[bot_index].explore_room_timer = 0.0f;
 
+  // Stage 6: outside CTF, "defend" finally means a PLACE — anchor at the bot's current position
+  // (UT's "Defend!" semantics). In CTF the objective system already anchors defenders to the
+  // home flag room, so plain !defend stays unanchored there (use !hold for an explicit post).
+  if (BotGetGameMode() != BGM_CTF) {
+    object *bobj = &Objects[Players[Bots[bot_index].player_slot].objnum];
+    Bots[bot_index].order_anchor_pos = bobj->pos;
+    Bots[bot_index].order_anchor_room = OBJECT_OUTSIDE(bobj) ? -1 : (int)bobj->roomnum;
+    BotArmOrder(bot_index, from_pnum, ORDER_ANCHOR_POSITION);
+  } else {
+    BotClearOrderAnchor(bot_index);
+  }
+
   char reply[128];
   snprintf(reply, sizeof(reply), "%s: Defending!", Bots[bot_index].callsign);
+  BotSendChatReply(bot_index, reply, (towho >= 0) ? from_pnum : towho);
+}
+
+// Stage 6: !hold / !stay / !defend here — anchor at the SPEAKER's position. The missing
+// universal verb (UT "Hold this position"): navigate there, report "In position.", keep
+// station, engage only threats near the post, return after combat.
+static void BotHandleHold(int bot_index, int from_pnum, int towho) {
+  if (!BotShouldObey(bot_index, from_pnum)) {
+    char reply[128];
+    snprintf(reply, sizeof(reply), "%s: Not taking orders from you!", Bots[bot_index].callsign);
+    BotSendChatReply(bot_index, reply, (towho >= 0) ? from_pnum : towho);
+    return;
+  }
+
+  object *speaker = &Objects[Players[from_pnum].objnum];
+  Bots[bot_index].squad_role = SQUAD_DEFEND;
+  Bots[bot_index].squad_target_slot = -1;
+  Bots[bot_index].explore_dest_room = -1;
+  Bots[bot_index].explore_room_timer = 0.0f;
+  Bots[bot_index].order_anchor_pos = speaker->pos;
+  Bots[bot_index].order_anchor_room = OBJECT_OUTSIDE(speaker) ? -1 : (int)speaker->roomnum;
+  BotArmOrder(bot_index, from_pnum, ORDER_ANCHOR_POSITION);
+  BotForceEscortMode(bot_index); // comply immediately — drop current hunt/combat and move
+
+  char reply[128];
+  snprintf(reply, sizeof(reply), "%s: Holding position!", Bots[bot_index].callsign);
   BotSendChatReply(bot_index, reply, (towho >= 0) ? from_pnum : towho);
 }
 
@@ -283,6 +365,7 @@ static void BotHandleFollow(int bot_index, int from_pnum, int towho) {
 
   Bots[bot_index].squad_role = SQUAD_FOLLOW;
   Bots[bot_index].squad_target_slot = from_pnum;
+  BotArmOrder(bot_index, from_pnum, ORDER_ANCHOR_PLAYER); // Stage 6: lifecycle + reports
   BotForceEscortMode(bot_index); // abandon current hunt/combat, start navigating immediately
 
   char reply[128];
@@ -300,6 +383,7 @@ static void BotHandleCover(int bot_index, int from_pnum, int towho) {
 
   Bots[bot_index].squad_role = SQUAD_COVER;
   Bots[bot_index].squad_target_slot = from_pnum;
+  BotArmOrder(bot_index, from_pnum, ORDER_ANCHOR_PLAYER); // Stage 6: lifecycle + reports
   BotForceEscortMode(bot_index);
 
   char reply[128];
@@ -320,6 +404,7 @@ static void BotHandleFreelance(int bot_index, int from_pnum, int towho) {
   Bots[bot_index].explore_dest_room = -1;
   Bots[bot_index].explore_room_timer = 0.0f;
   Bots[bot_index].objective_lean = BOT_LEAN_BALANCED;
+  BotClearOrderAnchor(bot_index); // Stage 6: stand down from any post/escort
 
   char reply[128];
   snprintf(reply, sizeof(reply), "%s: Going freelance.", Bots[bot_index].callsign);
@@ -338,6 +423,7 @@ static void BotHandleHunt(int bot_index, int from_pnum, int towho, int target_sl
     Bots[bot_index].squad_role = SQUAD_ATTACK;
     Bots[bot_index].squad_target_slot = -1;
   }
+  BotClearOrderAnchor(bot_index); // Stage 6: hunting releases any post/escort
   Bots[bot_index].retarget_cooldown = 0.0f;
   Bots[bot_index].explore_dest_room = -1;
   Bots[bot_index].explore_room_timer = 0.0f;
@@ -378,6 +464,7 @@ static void BotHandleAttackFlag(int bot_index, int from_pnum, int towho) {
 
   Bots[bot_index].squad_role = SQUAD_ATTACK;
   Bots[bot_index].squad_target_slot = -1;
+  BotClearOrderAnchor(bot_index); // Stage 6: flag duty releases any post/escort
   Bots[bot_index].retarget_cooldown = 0.0f;
   Bots[bot_index].explore_dest_room = -1;
   Bots[bot_index].explore_room_timer = 0.0f;
@@ -401,6 +488,7 @@ static void BotHandleDefendFlag(int bot_index, int from_pnum, int towho) {
 
   Bots[bot_index].squad_role = SQUAD_DEFEND;
   Bots[bot_index].squad_target_slot = -1;
+  BotClearOrderAnchor(bot_index); // Stage 6: CTF flag-guard uses the objective anchor, not a post
   Bots[bot_index].explore_dest_room = -1;
   Bots[bot_index].explore_room_timer = 0.0f;
   Bots[bot_index].objective_lean = BOT_LEAN_DEFEND;
@@ -432,6 +520,8 @@ static void BotDispatchVerb(int bot_index, int from_pnum, int towho, const char 
     BotHandleAttack(bot_index, from_pnum, towho, force_target_slot);
   } else if (strcmp(verb, "defend") == 0) {
     BotHandleDefend(bot_index, from_pnum, towho);
+  } else if (strcmp(verb, "hold") == 0) {
+    BotHandleHold(bot_index, from_pnum, towho);
   } else if (strcmp(verb, "follow") == 0) {
     BotHandleFollow(bot_index, from_pnum, towho);
   } else if (strcmp(verb, "cover") == 0) {
@@ -556,6 +646,20 @@ static void BotSendChatReply(int bot_index, const char *text, int towho) {
   LOG_DEBUG.printf("BOT CHAT: %s (towho=%d)", buf, towho);
 }
 
+// Stage 6: order lifecycle report — DM'd to the player who issued the bot's current order.
+// The feedback half of Orders-as-Goals: without arrival/failure reports, obeying and ignoring
+// look identical from the cockpit.
+void BotOrderReport(int bot_index, const char *text) {
+  int issuer = Bots[bot_index].order_issuer_slot;
+  if (issuer < 0 || issuer >= MAX_NET_PLAYERS)
+    return;
+  if (!(NetPlayers[issuer].flags & NPF_CONNECTED) || (NetPlayers[issuer].flags & NPF_BOT))
+    return;
+  char reply[160];
+  snprintf(reply, sizeof(reply), "%s: %s", Bots[bot_index].callsign, text);
+  BotSendChatReply(bot_index, reply, issuer);
+}
+
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
@@ -582,6 +686,17 @@ void BotOnChatMessage(int from_pnum, int towho, const char *message) {
   // Canonicalize aliases before dispatch
   if (strcmp(verb, "stop") == 0 || strcmp(verb, "dismiss") == 0)
     strcpy(verb, "freelance");
+  if (strcmp(verb, "stay") == 0 || strcmp(verb, "holdposition") == 0)
+    strcpy(verb, "hold");
+  // "!defend here" — anchored hold at the speaker's position (Stage 6)
+  if (strcmp(verb, "defend") == 0 && strnicmp(args, "here", 4) == 0 &&
+      (args[4] == '\0' || isspace((unsigned char)args[4]))) {
+    strcpy(verb, "hold");
+    const char *drest = args + 4;
+    while (*drest && isspace((unsigned char)*drest))
+      drest++;
+    memmove(args, drest, strlen(drest) + 1);
+  }
   if (strcmp(verb, "report") == 0)
     strcpy(verb, "status");
   if (strcmp(verb, "regroup") == 0 || strcmp(verb, "formup") == 0)

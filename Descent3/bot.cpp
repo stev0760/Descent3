@@ -20,6 +20,7 @@
 // Bots occupy real player slots and appear as normal players to retail clients.
 
 #include "bot.h"
+#include "bot_chat.h"
 #include "bot_objective.h"
 #include "bot_steering.h"
 #include <climits>
@@ -1157,6 +1158,67 @@ static vector BotGetActiveSteerPoint(object *obj, const vector &goal_pos, int go
 static int BotViaPointTick(int bot_index, const vector &target_pos, int target_room, int &goal_slot,
                            BotViaResult *verdict_out);
 
+// Stage 6: shared BLOCKED detection for anchored orders. Marks progress whenever the bot has
+// moved BOT_ORDER_PROGRESS_EPS since the last mark (any direction — via dance legs count); after
+// BOT_ORDER_BLOCKED_TIME without one, flips the order to BLOCKED, reports to the issuer
+// (throttled), and flushes the nav goal so the next tick re-paths fresh.
+static void BotOrderProgressCheck(int bot_index, object *obj, const char *blocked_msg) {
+  if (vm_VectorDistanceQuick(&obj->pos, &Bots[bot_index].order_progress_pos) > BOT_ORDER_PROGRESS_EPS) {
+    Bots[bot_index].order_progress_pos = obj->pos;
+    Bots[bot_index].order_progress_time = Gametime;
+    if (Bots[bot_index].order_state == ORDER_BLOCKED)
+      Bots[bot_index].order_state = ORDER_EN_ROUTE; // moving again — recovered
+    return;
+  }
+  if (Gametime - Bots[bot_index].order_progress_time <= BOT_ORDER_BLOCKED_TIME)
+    return;
+  if (Bots[bot_index].order_state != ORDER_BLOCKED ||
+      Gametime - Bots[bot_index].order_report_time > BOT_ORDER_REPORT_THROTTLE) {
+    Bots[bot_index].order_state = ORDER_BLOCKED;
+    Bots[bot_index].order_report_time = Gametime;
+    BotOrderReport(bot_index, blocked_msg);
+    LOG_DEBUG.printf("BOT ORDER: '%s' BLOCKED in room %d (no progress %.0fs)", Bots[bot_index].callsign,
+                     OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum, BOT_ORDER_BLOCKED_TIME);
+  }
+  // Escalation: drop the current goal so order nav re-issues from scratch — combined with the
+  // via tick and dyn-penalty machinery this is a forced repath, the order's unstick permission.
+  int &pgi = Bots[bot_index].pursuit_goal_index;
+  if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info && obj->ai_info->goals[pgi].used)
+    GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+  pgi = -1;
+  Bots[bot_index].order_progress_time = Gametime; // restart the window for the next report
+}
+
+// Stage 6: this escort's offset station behind the followed player. Followers no longer crowd a
+// single bubble: each bot escorting the same player takes a distinct slot (left-rear, right-rear,
+// high-rear, deep-rear) in the player's orientation frame — also the Tier 3 formation primitive.
+static vector BotGetEscortStation(int bot_index, object *tgt_obj) {
+  int ordinal = 0;
+  for (int i = 0; i < MAX_BOTS; i++) {
+    if (i == bot_index)
+      break;
+    if (Bots[i].active && (Bots[i].squad_role == SQUAD_FOLLOW || Bots[i].squad_role == SQUAD_COVER) &&
+        Bots[i].squad_target_slot == Bots[bot_index].squad_target_slot)
+      ordinal++;
+  }
+  vector station = tgt_obj->pos - tgt_obj->orient.fvec * BOT_ESCORT_STATION_DIST;
+  switch (ordinal % 4) {
+  case 0:
+    station += tgt_obj->orient.rvec * (BOT_ESCORT_STATION_DIST * 0.6f);
+    break;
+  case 1:
+    station -= tgt_obj->orient.rvec * (BOT_ESCORT_STATION_DIST * 0.6f);
+    break;
+  case 2:
+    station += tgt_obj->orient.uvec * (BOT_ESCORT_STATION_DIST * 0.6f);
+    break;
+  default:
+    station -= tgt_obj->orient.fvec * BOT_ESCORT_STATION_DIST; // deep-rear for the 4th+
+    break;
+  }
+  return station;
+}
+
 static bool BotNavigateToFollowTarget(int bot_index) {
   int target_slot = Bots[bot_index].squad_target_slot;
   if (target_slot < 0 || target_slot >= MAX_NET_PLAYERS)
@@ -1173,34 +1235,110 @@ static bool BotNavigateToFollowTarget(int bot_index) {
   if (!obj->ai_info)
     return false;
 
-  // Don't spam goal updates when right on top of the target
   object *tgt_obj = &Objects[Players[target_slot].objnum];
   float dist = vm_VectorDistanceQuick(&obj->pos, &tgt_obj->pos);
-  if (dist < 40.0f)
-    return true; // tight escort — stay this close
-
   int &pgi = Bots[bot_index].pursuit_goal_index;
+
+  // Stage 6: on station when close to OUR offset slot (not a shared 40u bubble). Report arrival
+  // once per EN_ROUTE→ON_STATION transition; idle there (no goal churn) until the player moves.
+  vector station = BotGetEscortStation(bot_index, tgt_obj);
+  float station_dist = vm_VectorDistanceQuick(&obj->pos, &station);
+  if (station_dist < BOT_ESCORT_STATION_ARRIVE || dist < BOT_ESCORT_STATION_ARRIVE) {
+    if (Bots[bot_index].order_state != ORDER_ON_STATION) {
+      Bots[bot_index].order_state = ORDER_ON_STATION;
+      BotOrderReport(bot_index, "Right behind you.");
+      LOG_DEBUG.printf("BOT ORDER: '%s' escort on station (player %d)", Bots[bot_index].callsign, target_slot);
+    }
+    if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+      GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+    pgi = -1;
+    Bots[bot_index].order_progress_pos = obj->pos;
+    Bots[bot_index].order_progress_time = Gametime;
+    return true;
+  }
+  if (Bots[bot_index].order_state == ORDER_ON_STATION)
+    Bots[bot_index].order_state = ORDER_EN_ROUTE; // player moved off — resume silently
 
   // 12.2d: interior-obstacle go-around for the escort branch — !follow's original use case is
   // extracting a wedged bot, which needs the same via support as explore nav (navmapping10:
   // Shadow stayed pinned in abend2 room 30 through an entire FOLLOW because this was missing).
+  bool via_active = false;
   {
     int steer_room = -1;
     vector steer_pos =
         BotGetActiveSteerPoint(obj, tgt_obj->pos, OBJECT_OUTSIDE(tgt_obj) ? -1 : (int)tgt_obj->roomnum, &steer_room);
-    if (BotViaPointTick(bot_index, steer_pos, steer_room, pgi, nullptr))
-      return true; // via sub-goal active this tick; target goal re-issued on via arrival
+    via_active = BotViaPointTick(bot_index, steer_pos, steer_room, pgi, nullptr) != 0;
   }
 
-  if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
-    GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+  if (!via_active) {
+    if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+      GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
 
-  int tgt_handle = tgt_obj->handle;
-  pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f, GF_SPEED_ATTACK | GF_OBJ_IS_TARGET);
+    if (dist < BOT_ESCORT_STATION_DIST * 2.5f && obj->roomnum == tgt_obj->roomnum) {
+      // Close + same room: steer at the offset station for formation spacing
+      goal_info gi_info{};
+      gi_info.pos = station;
+      gi_info.roomnum = obj->roomnum;
+      pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
+    } else {
+      // Far / different room: track the player object (engine follows the moving target)
+      int tgt_handle = tgt_obj->handle;
+      pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f, GF_SPEED_ATTACK | GF_OBJ_IS_TARGET);
+    }
+  }
+
+  // Stage 6: BLOCKED detection + forced-repath escalation — the silent-failure fix.
+  BotOrderProgressCheck(bot_index, obj, "Can't reach you!");
 
   Bots[bot_index].explore_dest_room = -1;
   Bots[bot_index].explore_room_timer = 0.0f;
   return true;
+}
+
+// Stage 6: hold-station navigation for ORDER_ANCHOR_POSITION (!hold / !defend). Navigate to the
+// anchor, report "In position." once, then idle there — combat transitions still fire for
+// threats near the post (leashed at the HUNT gate), and the bot returns to station afterward.
+static void BotDoHoldStationNav(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  if (!obj->ai_info)
+    return;
+  int &pgi = Bots[bot_index].pursuit_goal_index;
+
+  float dist = vm_VectorDistanceQuick(&obj->pos, &Bots[bot_index].order_anchor_pos);
+  if (dist <= BOT_ORDER_STATION_RADIUS) {
+    if (Bots[bot_index].order_state != ORDER_ON_STATION) {
+      Bots[bot_index].order_state = ORDER_ON_STATION;
+      BotOrderReport(bot_index, "In position.");
+      LOG_DEBUG.printf("BOT ORDER: '%s' on station (room %d)", Bots[bot_index].callsign,
+                       OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum);
+    }
+    if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+      GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+    pgi = -1;
+    Bots[bot_index].order_progress_pos = obj->pos;
+    Bots[bot_index].order_progress_time = Gametime;
+    return;
+  }
+  if (Bots[bot_index].order_state == ORDER_ON_STATION)
+    Bots[bot_index].order_state = ORDER_EN_ROUTE; // drifted/chased off — head back silently
+
+  // Routed approach with via support (same machinery as explore/escort nav)
+  bool via_active = false;
+  {
+    int steer_room = -1;
+    vector steer_pos = BotGetActiveSteerPoint(obj, Bots[bot_index].order_anchor_pos,
+                                              Bots[bot_index].order_anchor_room, &steer_room);
+    via_active = BotViaPointTick(bot_index, steer_pos, steer_room, pgi, nullptr) != 0;
+  }
+  if (!via_active && !(pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)) {
+    goal_info gi_info{};
+    gi_info.pos = Bots[bot_index].order_anchor_pos;
+    gi_info.roomnum = Bots[bot_index].order_anchor_room;
+    pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
+  }
+
+  BotOrderProgressCheck(bot_index, obj, "Can't get there!");
 }
 
 // Phase 12: the point the engine path-follower is currently driving the bot toward — its current
@@ -2352,6 +2490,16 @@ static void BotUpdateState(int bot_index) {
         new_state = BOT_STATE_HUNT;
       break;
     }
+    // Stage 6: position-anchored orders (!hold / !defend) own EXPLORE navigation — the bot
+    // moves to its post and stays, instead of roaming the map with a tweaked flee threshold.
+    // Threat engagement still fires (gated below by the anchor-distance leash) and the bot
+    // returns to station after combat. Powerup chasing is suspended while under a hold order.
+    if (Bots[bot_index].order_anchor_type == ORDER_ANCHOR_POSITION) {
+      BotDoHoldStationNav(bot_index);
+      if (has_target && (has_los || dist < BOT_HUNT_BLIND_MAX_DIST))
+        new_state = BOT_STATE_HUNT;
+      break;
+    }
     // Escort roles take priority over powerup collection and roaming.
     // Navigate to the followed/covered player; FOLLOW only fights back when attacked,
     // COVER engages freely so it can kill threats near the protected player.
@@ -2663,6 +2811,17 @@ static void BotUpdateState(int bot_index) {
       AISetTarget(obj, OBJECT_HANDLE_NONE);
       Bots[bot_index].retarget_cooldown = 3.0f;
       new_state = BOT_STATE_EXPLORE;
+    }
+    // Stage 6: position-anchored orders — never chase a target far from the post. The leash is
+    // anchor↔target distance (not bot↔target), so a bot drawn off station still snaps back.
+    if (new_state == BOT_STATE_HUNT && Bots[bot_index].order_anchor_type == ORDER_ANCHOR_POSITION) {
+      object *anchor_tgt = obj->ai_info ? ObjGet(obj->ai_info->target_handle) : nullptr;
+      if (!anchor_tgt ||
+          vm_VectorDistanceQuick(&anchor_tgt->pos, &Bots[bot_index].order_anchor_pos) > BOT_ORDER_LEASH_RADIUS) {
+        AISetTarget(obj, OBJECT_HANDLE_NONE);
+        Bots[bot_index].retarget_cooldown = 3.0f;
+        new_state = BOT_STATE_EXPLORE;
+      }
     }
     // FREELANCE/DEFEND-lean in CTF: same leash as SQUAD_DEFEND.
     // Two exceptions: (1) own flag stolen — pursue the carrier regardless of distance;
@@ -4334,6 +4493,14 @@ void BotInitAll() {
     Bots[i].via_arrivals_same_room = 0;
     Bots[i].via_suspend_until = 0.0f;
     Bots[i].via_suspend_room = -1;
+    Bots[i].order_anchor_type = ORDER_ANCHOR_NONE;
+    vm_MakeZero(&Bots[i].order_anchor_pos);
+    Bots[i].order_anchor_room = -1;
+    Bots[i].order_state = ORDER_NONE;
+    Bots[i].order_issuer_slot = -1;
+    Bots[i].order_progress_time = 0.0f;
+    vm_MakeZero(&Bots[i].order_progress_pos);
+    Bots[i].order_report_time = 0.0f;
     Bots[i].explore_dest_room = -1;
     Bots[i].explore_stuck_room = -1;
     Bots[i].explore_room_timer = 0.0f;
@@ -4467,6 +4634,14 @@ void BotReinitAll() {
     Bots[i].via_arrivals_same_room = 0;
     Bots[i].via_suspend_until = 0.0f;
     Bots[i].via_suspend_room = -1;
+    Bots[i].order_anchor_type = ORDER_ANCHOR_NONE;
+    vm_MakeZero(&Bots[i].order_anchor_pos);
+    Bots[i].order_anchor_room = -1;
+    Bots[i].order_state = ORDER_NONE;
+    Bots[i].order_issuer_slot = -1;
+    Bots[i].order_progress_time = 0.0f;
+    vm_MakeZero(&Bots[i].order_progress_pos);
+    Bots[i].order_report_time = 0.0f;
     Bots[i].state = BOT_STATE_EXPLORE;
     Bots[i].afterburner_fuel = BOT_AFTERBURNER_FUEL_MAX;
     Bots[i].afterburner_burst_timer = 0.0f;
@@ -4730,6 +4905,14 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   Bots[bot_index].via_arrivals_same_room = 0;
   Bots[bot_index].via_suspend_until = 0.0f;
   Bots[bot_index].via_suspend_room = -1;
+  Bots[bot_index].order_anchor_type = ORDER_ANCHOR_NONE;
+  vm_MakeZero(&Bots[bot_index].order_anchor_pos);
+  Bots[bot_index].order_anchor_room = -1;
+  Bots[bot_index].order_state = ORDER_NONE;
+  Bots[bot_index].order_issuer_slot = -1;
+  Bots[bot_index].order_progress_time = 0.0f;
+  vm_MakeZero(&Bots[bot_index].order_progress_pos);
+  Bots[bot_index].order_report_time = 0.0f;
   Bots[bot_index].intended_team = chosen_team;
   Bots[bot_index].state = BOT_STATE_EXPLORE;
   Bots[bot_index].afterburner_fuel = BOT_AFTERBURNER_FUEL_MAX;

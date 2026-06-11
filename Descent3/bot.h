@@ -273,6 +273,29 @@ enum BotObjectiveLean {
   BOT_LEAN_DEFEND,       // FREELANCE bots lean toward defense (flag guarding)
 };
 
+// Stage 6 "Orders as Goals" (CHAT_COMMANDS.md §Stage 6): an order is verb + anchor + lifecycle.
+// The anchor gives the order a destination the bot navigates to and keeps; the lifecycle drives
+// the feedback loop (one "In position." on arrival, one throttled "Can't get there!" when stuck).
+enum BotOrderAnchor : uint8_t {
+  ORDER_ANCHOR_NONE = 0, // bias-only order (!attack) or no order
+  ORDER_ANCHOR_PLAYER,   // escort: squad_target_slot is the anchor (!follow / !cover)
+  ORDER_ANCHOR_POSITION, // hold: order_anchor_pos/room is the anchor (!hold / !defend)
+};
+enum BotOrderState : uint8_t {
+  ORDER_NONE = 0,   // no anchored order
+  ORDER_EN_ROUTE,   // navigating to the anchor
+  ORDER_ON_STATION, // within station radius — holding / escorting in formation
+  ORDER_BLOCKED,    // no progress toward the anchor (reported, retrying)
+};
+
+#define BOT_ORDER_STATION_RADIUS 60.0f  // within this of a position anchor = ON_STATION
+#define BOT_ORDER_LEASH_RADIUS 250.0f   // holding bots ignore HUNT targets farther than this from the anchor
+#define BOT_ORDER_BLOCKED_TIME 8.0f     // no progress toward the anchor for this long → BLOCKED + report
+#define BOT_ORDER_PROGRESS_EPS 25.0f    // displacement that counts as progress (sub-via-leg scale)
+#define BOT_ORDER_REPORT_THROTTLE 30.0f // min seconds between repeated BLOCKED reports
+#define BOT_ESCORT_STATION_DIST 45.0f   // escort offset-station distance behind the followed player
+#define BOT_ESCORT_STATION_ARRIVE 25.0f // within this of the offset station = ON_STATION (escort)
+
 struct BotDifficultyParams {
   float aim_error_deg;        // max angular offset added to aim (degrees)
   float fire_delay;           // seconds after acquiring target before first shot
@@ -409,6 +432,18 @@ struct bot_info {
   // Squad orders (Phase 6.0 Stage 2) — persist through death and level transitions
   BotSquadRole squad_role; // current squad order
   int squad_target_slot;   // for FOLLOW/COVER: player slot to follow/protect (-1 = sender)
+
+  // Stage 6 "Orders as Goals" (CHAT_COMMANDS.md §Stage 6) — order anchor + lifecycle.
+  // Persist through death (the bot returns to its post after respawn); cleared by !freelance,
+  // a new order, or level init. The pursuit goal itself is transient — order nav re-issues it.
+  uint8_t order_anchor_type; // BotOrderAnchor — what the order is pinned to
+  vector order_anchor_pos;   // ORDER_ANCHOR_POSITION: the hold point
+  int order_anchor_room;     // room of order_anchor_pos
+  uint8_t order_state;       // BotOrderState lifecycle (EN_ROUTE → ON_STATION | BLOCKED)
+  int order_issuer_slot;     // player who gave the order — status reports DM here
+  float order_progress_time; // Gametime of last progress toward the anchor (BLOCKED detection)
+  vector order_progress_pos; // position at the last progress mark
+  float order_report_time;   // Gametime of last BLOCKED report (throttle)
 
   // Objective-mode lean (Phase 6.0 Stage 3) — assigned at level start, affects FREELANCE nav
   BotObjectiveLean objective_lean;

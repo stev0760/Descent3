@@ -190,7 +190,11 @@ static void BotPollCTF() {
   for (int t = 0; t < num_teams; t++) {
     if (Prev_flag_state[t] == FLAG_AT_HOME &&
         (Bot_objective.flag_state[t] == FLAG_CARRIED || Bot_objective.flag_state[t] == FLAG_DROPPED)) {
-      LOG_DEBUG.printf("BOT OBJ: team %d flag stolen! Clearing retarget cooldowns for defenders", t);
+      // Log the thief when known — steal lines were thief-anonymous, which made short logs with
+      // humans in the server unreadable (navmapping16 lesson: bot vs human steals matter).
+      int thief = Bot_objective.flag_carrier_slot[t];
+      LOG_DEBUG.printf("BOT OBJ: team %d flag stolen by '%s'! Clearing retarget cooldowns for defenders", t,
+                       (thief >= 0 && thief < MAX_NET_PLAYERS) ? Players[thief].callsign : "?");
       for (int b = 0; b < MAX_BOTS; b++) {
         if (!Bots[b].active)
           continue;

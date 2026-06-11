@@ -4,7 +4,7 @@ Phase 6.0 infrastructure: chat-based bot command system. Enables squad orders, g
 awareness, and bot personality expression. Foundational layer for all objective-mode work
 (CTF, Entropy, Co-op, Monsterball).
 
-**Status:** Stages 1-3 shipped (0.8.8-0.8.13). **Stage 6 "Orders as Goals" overhaul designed 2026-06-11 (see below) — the next major command work**, sequenced after the 12.3 nav geometry pass. Historical Stage 3 status: Stages 1-2 complete (0.8.8-0.8.9). Matcen 0.8.10 added non-team-mode guard. Matcen 0.8.11-dev adds game-mode detection (`BotGameMode`, `$botmode`), objective-state polling (`bot_objective.h`/`.cpp` — CTF flags, Hyper-Anarchy orb, Hoard counts, Monsterball), FSM integration (`BotGetObjectiveRoom()` + `BotGetObjectiveTargetBias()` + `BotObjectiveLean`), Tier 2 verbs (`!hunt`, `!regroup`/`!form up`, `!attack flag`/`!defend flag`), and CTF behavior tuning: smart flag filter in `BotCanCollectPowerup` (skip own AT_HOME, allow DROPPED for returns), carrier state suppression (stay EXPLORE, HUNT only for urgent threats), score beeline (`AIG_GET_TO_OBJ` + bline on home flag), wait-at-home when own flag stolen, forced defender retarget on flag theft (`Prev_flag_state` transition detection), carrier thrust override (full speed + AB when scoring possible, 0.3f drift when waiting). `!get <powerup>` deferred (requires powerup awareness). Next: CTF smoke test, then strip `-dev` for 0.9.0.
+**Status:** Stages 1-3 shipped (0.8.8-0.8.13). **Stage 6 "Orders as Goals" implemented 2026-06-11 (0.9.2-dev, untested — see Stage 6 section)**. Historical Stage 3 status: Stages 1-2 complete (0.8.8-0.8.9). Matcen 0.8.10 added non-team-mode guard. Matcen 0.8.11-dev adds game-mode detection (`BotGameMode`, `$botmode`), objective-state polling (`bot_objective.h`/`.cpp` — CTF flags, Hyper-Anarchy orb, Hoard counts, Monsterball), FSM integration (`BotGetObjectiveRoom()` + `BotGetObjectiveTargetBias()` + `BotObjectiveLean`), Tier 2 verbs (`!hunt`, `!regroup`/`!form up`, `!attack flag`/`!defend flag`), and CTF behavior tuning: smart flag filter in `BotCanCollectPowerup` (skip own AT_HOME, allow DROPPED for returns), carrier state suppression (stay EXPLORE, HUNT only for urgent threats), score beeline (`AIG_GET_TO_OBJ` + bline on home flag), wait-at-home when own flag stolen, forced defender retarget on flag theft (`Prev_flag_state` transition detection), carrier thrust override (full speed + AB when scoring possible, 0.3f drift when waiting). `!get <powerup>` deferred (requires powerup awareness). Next: CTF smoke test, then strip `-dev` for 0.9.0.
 
 ## Research Summary
 
@@ -243,7 +243,25 @@ in open rooms. Novel design, no direct prior art.
 **Goal:** Monsterball, command chaining, squad grouping. Monsterball bot play is a significant
 physics challenge (ball-push mechanics, goal positioning) and may require dedicated R&D.
 
-## Stage 6: Command Overhaul — Orders as Goals (PLANNED, researched 2026-06-11)
+## Stage 6: Command Overhaul — Orders as Goals (IMPLEMENTED 2026-06-11, UNTESTED)
+
+**As built:** everything below shipped in one pass except formation types (Stage 4 as planned).
+Deltas/notes: `!hold` aliases are `!stay` and `!defend here` (also `!holdposition`); plain
+`!defend` outside CTF anchors at the **bot's** current position, `!hold` at the **speaker's**;
+CTF `!defend`/`!defendflag` keep the objective-system flag-room anchor (no position anchor).
+Escort stations are ordinal slots (left-rear / right-rear / high-rear / deep-rear at 45u) in the
+followed player's orientation frame; within 2.5× station distance and same room the goal switches
+from GET_TO_OBJ (tracking) to GET_TO_POS (station-keeping). BLOCKED = no 25u displacement for 8s
+→ "Can't reach you!"/"Can't get there!" DM to the issuer (30s throttle) + forced goal flush
+(repath). Reports ride the existing 2s reply throttle. Orders persist through death (anchor
+survives; the bot returns to its post after respawn) but not level transitions. The HUNT leash
+for anchored bots is anchor↔target distance (250u), so a bot drawn off station snaps back.
+Hold posts suspend powerup chasing entirely (discipline over greed — v1 simplification).
+Log lines: `BOT ORDER: '<bot>' on station (room R)` / `escort on station (player N)` /
+`BLOCKED in room R`; analyzer section "Orders (Stage 6)". Flag-stolen poll lines now name the
+thief (navmapping16 lesson).
+
+### Original design (for reference)
 
 **Problem statement (user, post-0.9.2-dev testing):** "bots are listening — but their behavior
 barely changes and it does not feel *useful* at all." Commands ack correctly, roles are set and

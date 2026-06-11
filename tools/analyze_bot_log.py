@@ -55,6 +55,10 @@ RE_RESCUE_ARRIVED = re.compile(r"rescue arrived in room (-?\d+)")
 RE_VIA_SUSPEND = re.compile(r"via suspended in room (-?\d+)")
 RE_TROLL_RETIRED = re.compile(r"powerup troll-retired: '([^']*)' \(room (-?\d+)\)")
 
+# Stage 6 "Orders as Goals" ("BOT ORDER:" lines).
+RE_ORDER_STATION = re.compile(r"BOT ORDER: '([^']*)' (?:escort )?on station")
+RE_ORDER_BLOCKED = re.compile(r"BOT ORDER: '([^']*)' BLOCKED in room (-?\d+)")
+
 # Powerup-chase pin: bot wedged (net_disp<HARD_PIN_DISP) while beelining to a powerup. This is
 # AMBIGUOUS from the log alone — it is EITHER a genuine troll/unreachable powerup (behind glass/grate,
 # no reachability gate — see OBSTACLE_GEOMETRY.md) OR ordinary wall-press/outdoor-stuck that merely
@@ -119,6 +123,10 @@ def new_map_stats():
         "via_suspends": 0,       # via cycle-cap suspensions (dance without a room crossing)
         "via_suspend_rooms": Counter(),
         "trolls_retired": [],    # (item, room) pairs retired level-wide after repeat strikes
+        # Stage 6 orders
+        "order_stations": 0,     # ON_STATION arrivals (hold posts + escort stations)
+        "order_blocked": 0,      # BLOCKED reports (order nav made no progress ~8s)
+        "order_blocked_rooms": Counter(),
         "powerup_pins": 0,            # bot beelining to a powerup it isn't reaching (chase-timeout, any net_disp)
         "powerup_pins_hard": 0,       # subset with net_disp < HARD_PIN_DISP = true pin (the actionable troll signal)
         "powerup_pin_rooms": Counter(),
@@ -223,6 +231,17 @@ def parse_log(path):
             m = RE_TROLL_RETIRED.search(line)
             if m:
                 s["trolls_retired"].append((m.group(1), int(m.group(2))))
+                continue
+
+            m = RE_ORDER_STATION.search(line)
+            if m:
+                s["order_stations"] += 1
+                continue
+
+            m = RE_ORDER_BLOCKED.search(line)
+            if m:
+                s["order_blocked"] += 1
+                s["order_blocked_rooms"][int(m.group(2))] += 1
                 continue
 
             m = RE_POWERUP_PIN.search(line)
@@ -631,6 +650,23 @@ def print_report(stats, total_lines, log_path):
                 susp += " (" + ", ".join(f"{r}x{c}" for r, c in s["via_suspend_rooms"].most_common(3)) + ")"
             retired = "; ".join(f"{item} (room {room})" for item, room in s["trolls_retired"]) or "-"
             print(f"| {name} | {s['rescues']} ({s['rescue_arrivals']}) | {rrooms} | {susp} | {retired} |")
+        print()
+
+    # Stage 6 orders — arrivals vs blocked posts (only when order traffic exists).
+    has_orders = any(s["order_stations"] or s["order_blocked"] for s in stats.values())
+    if has_orders:
+        print(f"## Orders (Stage 6)")
+        print()
+        print(f"| Map | On-Station Arrivals | Blocked Reports (top rooms) |")
+        print(f"|---|---|---|")
+        for name in maps:
+            s = stats[name]
+            if not (s["order_stations"] or s["order_blocked"]):
+                continue
+            blk = str(s["order_blocked"])
+            if s["order_blocked"]:
+                blk += " (" + ", ".join(f"{r}x{c}" for r, c in s["order_blocked_rooms"].most_common(3)) + ")"
+            print(f"| {name} | {s['order_stations']} | {blk} |")
         print()
 
     # Outdoor breakdown (only if any map has carrier data)

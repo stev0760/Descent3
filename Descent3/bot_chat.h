@@ -23,4 +23,8 @@
 
 void BotOnChatMessage(int from_pnum, int towho, const char *message);
 
+// Stage 6: order lifecycle reports ("In position." / "Can't get there!") — DM'd to the player
+// who issued the bot's current order (order_issuer_slot). Subject to the per-bot reply throttle.
+void BotOrderReport(int bot_index, const char *text);
+
 #endif // BOT_CHAT_H
