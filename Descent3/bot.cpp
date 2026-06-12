@@ -1403,12 +1403,22 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
       // withhold the credit and suspend via here so timeout/dyn-bump/escape machinery acts.
       bool cycle_capped = false;
       if ((int)obj->roomnum == Bots[bot_index].via_arrival_room) {
-        // 12.3: only BOUNCE arrivals count — repeated arrivals near the same spot are the
-        // oscillation signature; same-room arrivals far apart are skeleton-chain progress
-        // around a ring/labyrinth and must not trip the cap mid-traversal.
-        bool bounce = vm_VectorDistanceQuick(&obj->pos, &Bots[bot_index].via_arrival_pos) < BOT_VIA_BOUNCE_DIST;
-        if (!bounce) {
-          Bots[bot_index].via_arrivals_same_room = 1;
+        // 12.3.2: skeleton arrivals never bounce-count (ring portal nodes sit 20-30u apart on
+        // abend2's vestibule pairs — legitimate hops read as "bounces" and chains got suspended
+        // mid-crossing). They get their own generous per-room chain cap as the ping-pong guard.
+        bool bounce = !Bots[bot_index].via_is_skeleton &&
+                      vm_VectorDistanceQuick(&obj->pos, &Bots[bot_index].via_arrival_pos) < BOT_VIA_BOUNCE_DIST;
+        if (Bots[bot_index].via_is_skeleton && ++Bots[bot_index].via_skel_chain >= BOT_VIA_SKEL_CHAIN_CAP) {
+          cycle_capped = true;
+          Bots[bot_index].via_suspend_until = Gametime + BOT_VIA_SUSPEND_TIME;
+          Bots[bot_index].via_suspend_room = obj->roomnum;
+          Bots[bot_index].via_skel_chain = 0;
+          Bots[bot_index].via_arrivals_same_room = 0;
+          LOG_DEBUG.printf("BOT NAV: '%s' via suspended in room %d (%d arrivals without crossing)",
+                           Bots[bot_index].callsign, obj->roomnum, BOT_VIA_SKEL_CHAIN_CAP);
+        } else if (!bounce) {
+          if (!Bots[bot_index].via_is_skeleton)
+            Bots[bot_index].via_arrivals_same_room = 1;
         } else if (++Bots[bot_index].via_arrivals_same_room >= BOT_VIA_CYCLE_CAP) {
           cycle_capped = true;
           Bots[bot_index].via_suspend_until = Gametime + BOT_VIA_SUSPEND_TIME;
@@ -1420,6 +1430,7 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
       } else {
         Bots[bot_index].via_arrival_room = obj->roomnum;
         Bots[bot_index].via_arrivals_same_room = 1;
+        Bots[bot_index].via_skel_chain = 0;
       }
       Bots[bot_index].via_arrival_pos = obj->pos;
       if (!cycle_capped) {
@@ -1473,6 +1484,7 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
 
   Bots[bot_index].via_point = via;
   Bots[bot_index].via_expires = Gametime + BOT_VIA_COMMIT_TIME;
+  Bots[bot_index].via_is_skeleton = skeleton_hop ? 1 : 0;
   issue_via_goal();
   if (skeleton_hop)
     LOG_DEBUG.printf("BOT NAV: '%s' skeleton via in room %d (target room %d)", Bots[bot_index].callsign, obj->roomnum,
@@ -4507,6 +4519,8 @@ void BotInitAll() {
     Bots[i].rescue_used_handle = OBJECT_HANDLE_NONE;
     Bots[i].via_arrival_room = -1;
     vm_MakeZero(&Bots[i].via_arrival_pos);
+    Bots[i].via_is_skeleton = 0;
+    Bots[i].via_skel_chain = 0;
     Bots[i].via_arrivals_same_room = 0;
     Bots[i].via_suspend_until = 0.0f;
     Bots[i].via_suspend_room = -1;
@@ -4649,6 +4663,8 @@ void BotReinitAll() {
     Bots[i].rescue_used_handle = OBJECT_HANDLE_NONE;
     Bots[i].via_arrival_room = -1;
     vm_MakeZero(&Bots[i].via_arrival_pos);
+    Bots[i].via_is_skeleton = 0;
+    Bots[i].via_skel_chain = 0;
     Bots[i].via_arrivals_same_room = 0;
     Bots[i].via_suspend_until = 0.0f;
     Bots[i].via_suspend_room = -1;
@@ -4921,6 +4937,8 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   Bots[bot_index].rescue_used_handle = OBJECT_HANDLE_NONE;
   Bots[bot_index].via_arrival_room = -1;
   vm_MakeZero(&Bots[bot_index].via_arrival_pos);
+  Bots[bot_index].via_is_skeleton = 0;
+  Bots[bot_index].via_skel_chain = 0;
   Bots[bot_index].via_arrivals_same_room = 0;
   Bots[bot_index].via_suspend_until = 0.0f;
   Bots[bot_index].via_suspend_room = -1;

@@ -203,6 +203,10 @@
 #define BOT_VIA_SUSPEND_TIME 12.0f   // suspension length — lets timeout/dyn-bump/escape machinery act
 #define BOT_VIA_BOUNCE_DIST 40.0f    // 12.3: an arrival within this of the previous one = a bounce
                                      // (oscillation); farther = chain progress, doesn't count
+#define BOT_VIA_SKEL_CHAIN_CAP 8     // 12.3.2: skeleton arrivals don't bounce-count (ring portal
+                                     // nodes can sit 20-30u apart) — but cap hops/room as the
+                                     // ping-pong guard; a chain this long without a room change
+                                     // isn't going anywhere
 #define BOT_TROLL_STRIKES 3          // chase-timeout/seal strikes before a powerup is retired level-wide
 #define BOT_TROLL_TABLE_SIZE 32      // suspect powerups tracked per level (global, shared by all bots)
 
@@ -422,6 +426,8 @@ struct bot_info {
   int via_arrival_room;       // room of the last via arrival
   vector via_arrival_pos;     // position of the last via arrival (bounce detection)
   int via_arrivals_same_room; // consecutive bounce arrivals without leaving the room
+  uint8_t via_is_skeleton;    // the committed via is a skeleton hop (12.3.2: separate cap)
+  uint8_t via_skel_chain;     // consecutive skeleton arrivals without leaving the room
   float via_suspend_until;    // Gametime until via search is suspended in via_suspend_room
   int via_suspend_room;       // room the suspension applies to
 
