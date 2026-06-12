@@ -343,15 +343,62 @@ BOA — a bug (the router would be silently overriding BOA everywhere), not a fe
     rerouting via room B` / `rescue arrived in room R` / `via suspended in room R`) feed
     `analyze_bot_log.py`'s "Troll Guards / Cycle Cap (Phase 12.2)" table.
 
-    **Deferred to 12.3 (tracked, not in 12.2):** (i) split-room *routing* — BOA happily routes
-    *through* room-6-class rooms (portal LOS 2/2 blocked is necessary but not sufficient:
-    room 42 is 10/12 blocked yet traversable-but-bendy, so a hard leg-cost would wreck non-convex
-    routing; needs a real intra-room reachability test); (ii) pass-2 `VIA_SEARCH_FAIL` rooms
-    (pumphouse 4/2/3; portal-anchored candidates = lead idea); (iii) the **room 62 mystery**
-    (pyroplace #1 hard-pin room, 1,020 same-room-target via fails, yet navdump-clean — a
-    same-room target unreachable from bot positions, invisible to path_pnt-based probing);
-    (iv) navdump gap: approach probes should start from the *neighbor* side so intra-room grates
-    in front of alcove portals are seen (would have caught Mega/Blackshark).
+  - **12.3 — PORTAL-SKELETON TRAVERSAL (NEXT PHASE — designed 2026-06-11, build next session).**
+    Subsumes every deferred 12.2 item (split-room routing, pass-2 `VIA_SEARCH_FAIL` rooms, the
+    pyroplace room-62 mystery, the navdump approach-probe gap).
+
+    **The unified diagnosis (abend2 case study + cross-map navdump analysis + user automap
+    screenshots):** the engine assumes rooms are convex — that a straight line between its path
+    nodes inside a room is flyable. Custom maps break this in three topologies, all sharing one
+    signature (*buried center*: the room's bbox-center path_pnt is occluded from, or not even
+    inside, the playable space):
+    1. **Ring/annulus** — abend2's mirror discs (rooms 0/30): hollow octagonal doughnuts,
+       364×364×20u, flag pockets (h10, ONE portal) underneath. Correct traversal follows the
+       ring arc to a specific exit (under-corridor → central chamber, or door corridor → glass
+       halls); the engine chords across the hollow and presses. **Caution: the navdump reported
+       the disc path_pnts as seeing 5–6/6 portals — a FALSE CLEAR.** The path_pnt sits in the
+       non-playable core, and probes cast from inside it exit through one-sided inner-ring faces
+       unobstructed (the same fvi blind spot as the pyroplace glass pocket).
+    2. **Labyrinth** — nysa 41/69 (98–100% blocked legs), pumphouse 2/3/4.
+    3. **Divided** — bulletproof-glass corridors (pyroplace room 6 class).
+
+    **The mechanism (invariant-derived, not shape-derived):** on *any* map, the portals are the
+    only points guaranteed flyable (a ship physically entered through each), and hull-clear
+    portal-to-portal legs are guaranteed flyable corridors. So:
+    1. **Detector:** a room is *skeleton-traversal* when its path_pnt is not actually contained
+       in the room (annulus/buried-core test — also fixes the navdump false-clears at the
+       source) or its portal-leg blockage ratio is high. Lazy, cached per level.
+    2. **Skeleton:** nodes = the room's portal path_pnts (+ the path_pnt itself when contained);
+       edges = hull-clear legs (≤66 one-time probes for a 12-portal room, cached).
+    3. **Traversal:** when the steer line chords into a wall in a skeleton room, BFS from the
+       bot's nearest *visible* skeleton node to the exit portal's node and issue the **first
+       hop** as an ordinary via sub-goal. Rings yield tangential arc-hops, labyrinths thread,
+       divided rooms correctly report no-path → existing sealed/strike logic. Composes unchanged
+       with via commitment, the cycle cap, progress credit, and Invariants #1/#3/#5; exit
+       *choice* stays with the Phase 11 router; skeleton-BFS failure degrades to today's
+       behavior. (Framing: SP maps author dense intra-room node graphs the Guide-Bot rides; MP
+       maps don't — the skeleton synthesizes the minimal one from data every map must have.)
+    4. **Wrong-side rescue demoted to verdict-only** (the portal-LOS seal test feeding troll
+       strikes stays; the 15s reroute goes — 3 arrivals in ~190 attempts across three sessions).
+
+    **Step zero — validate the detector offline BEFORE writing engine code:** run it against
+    every navdump on hand; it must flag exactly the soak-log pin rooms (abend2 0/30, nysa 41/69,
+    pumphouse 2/3/4, pyroplace 2/6/62/76) and near-nothing else. The five soak logs are a
+    labeled dataset; the model is falsifiable in an afternoon.
+
+    **Generality gate (the project-goal test — "arbitrary player-made maps"):**
+    (a) an official Outrage map soak (bedlam-class, convex, well-noded) where skeleton activity
+    must be ≈0 — the regression guard; (b) **two fresh community maps never previously tested**
+    (user picks from the archives), dumped + soaked + read blind. Success = `VIA_SEARCH_FAIL`
+    rooms convert to skeleton hops and room crossings on maps we never tuned against. Accepted
+    residual: rooms with mutually-invisible portals fall back to the timeout machinery; outdoor
+    nav untouched.
+
+    **Tooling alongside:** `tools/visualize_navdump.py` (new, committed — top-down SVG of the
+    nav geometry) gains a side-view panel + annulus-suspect tag; navdump gains the
+    path_pnt-containment flag; analyzer gains skeleton-hop counters. The JSON↔automap-screenshot
+    loop (user flies the map, captures the automap; we cross-read against the dump) is now a
+    standard diagnostic — it resolved the disc topology in an hour after three soaks couldn't.
   - **12.1 (first live test, navmapping9 — pumphouse):** detection + execution validated (1524
     detours, 85% reached, in exactly the navdump-predicted rooms 0/1/2; defenders hold flag rooms
     correctly), but **17/19 hard presses got a silent no-via verdict** — nose-on contact puts the

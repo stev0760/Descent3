@@ -109,7 +109,15 @@ prioritization loves — in two recurring builds:
    guided missile, or Black Shark suction to pull the item out); in multiplayer it is pure bait.
 
 Both classes are **approach-sealed, not portal-sealed** — "can a ship reach the opening" is a
-volumetric question no straight-line probe answers. Bot policy (Phase 12.2): geometry keeps the
+volumetric question no straight-line probe answers.
+
+3. **Hollow-core ring rooms** (abend2's mirror discs, rooms 0/30): flat octagonal *annuli* whose
+   bbox-center path_pnt sits in the **non-playable hollow core**. Probes cast *from* that point
+   exit through the one-sided inner-ring faces unobstructed, so `los_from_pathpnt_clear` reads
+   **falsely clear** (5–6/6 portals "visible" from a point you cannot fly to). Rule of thumb:
+   any LOS/approach probe is only trustworthy if its start point is verifiably inside playable
+   space — check point-room containment first (the Phase 12.3 detector does). Same fvi
+   blind-spot family as one-sided grate/glass faces probed from behind. Bot policy (Phase 12.2): geometry keeps the
 aperture job (grates AT portals → DISAGREE); approach-sealed items are retired **behaviorally**
 (global per-level strike table: repeated chase-timeouts / seal-abandons on the same object →
 suppressed level-wide for all bots).
