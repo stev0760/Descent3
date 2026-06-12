@@ -71,7 +71,15 @@ enum BotViaResult {
 
 // Probe the hull-radius line obj→target_pos and search for a go-around via-point when an interior
 // face blocks it. target_room = the room target_pos is in (fvi start room for the via→target leg).
-BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_room, vector *via_out);
+// 12.3: when the ring passes fail, a portal-skeleton hop may be returned instead (an intermediate
+// node on the room's portal graph, no target LOS required) — *skeleton_out reports that case.
+BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_room, vector *via_out,
+                             bool *skeleton_out = nullptr);
+
+// 12.3 diagnostic: is the room's path_pnt hull-reachable from at least one of its portals
+// (probed FROM the portal — trustworthy start point)? False = buried/void path_pnt (hollow-core
+// ring or labyrinth center) — the navdump's annulus detector.
+bool BotRoomPathPntReachable(int room_idx);
 
 // Phase 12 troll-powerup gate: true when every portal into the room is geo-impassable for a ship
 // (grates/slits/locked doors) — a sealed pocket. Powerup selection skips items in such rooms so

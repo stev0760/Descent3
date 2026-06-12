@@ -55,6 +55,9 @@ RE_RESCUE_ARRIVED = re.compile(r"rescue arrived in room (-?\d+)")
 RE_VIA_SUSPEND = re.compile(r"via suspended in room (-?\d+)")
 RE_TROLL_RETIRED = re.compile(r"powerup troll-retired: '([^']*)' \(room (-?\d+)\)")
 
+# Phase 12.3 portal-skeleton traversal.
+RE_SKEL_VIA = re.compile(r"skeleton via in room (-?\d+)")
+
 # Stage 6 "Orders as Goals" ("BOT ORDER:" lines).
 RE_ORDER_STATION = re.compile(r"BOT ORDER: '([^']*)' (?:escort )?on station")
 RE_ORDER_BLOCKED = re.compile(r"BOT ORDER: '([^']*)' BLOCKED in room (-?\d+)")
@@ -123,6 +126,9 @@ def new_map_stats():
         "via_suspends": 0,       # via cycle-cap suspensions (dance without a room crossing)
         "via_suspend_rooms": Counter(),
         "trolls_retired": [],    # (item, room) pairs retired level-wide after repeat strikes
+        # Phase 12.3
+        "skel_vias": 0,          # portal-skeleton hops issued (pass-3: ring/labyrinth traversal)
+        "skel_via_rooms": Counter(),
         # Stage 6 orders
         "order_stations": 0,     # ON_STATION arrivals (hold posts + escort stations)
         "order_blocked": 0,      # BLOCKED reports (order nav made no progress ~8s)
@@ -231,6 +237,12 @@ def parse_log(path):
             m = RE_TROLL_RETIRED.search(line)
             if m:
                 s["trolls_retired"].append((m.group(1), int(m.group(2))))
+                continue
+
+            m = RE_SKEL_VIA.search(line)
+            if m:
+                s["skel_vias"] += 1
+                s["skel_via_rooms"][int(m.group(1))] += 1
                 continue
 
             m = RE_ORDER_STATION.search(line)
@@ -608,8 +620,8 @@ def print_report(stats, total_lines, log_path):
               f"committed via-point was arrived at (the funnel's success stage — low reach % means "
               f"chosen-but-not-flown). Sealed = same-room powerups abandoned+blacklisted as sealed.")
         print()
-        print(f"| Map | Detours | Reached (rate) | Top Detour Rooms | Search Fails (top rooms) | Sealed Abandons |")
-        print(f"|---|---|---|---|---|---|")
+        print(f"| Map | Detours | Reached (rate) | Top Detour Rooms | Search Fails (top rooms) | Sealed Abandons | Skeleton Hops (12.3) |")
+        print(f"|---|---|---|---|---|---|---|")
         for name in maps:
             s = stats[name]
             if s["via_detours"] == 0 and s["sealed_abandons"] == 0 and s["via_fails"] == 0:
@@ -621,11 +633,15 @@ def print_report(stats, total_lines, log_path):
             fails_str = str(s["via_fails"])
             if s["via_fails"]:
                 fails_str += " (" + ", ".join(f"{r}x{c}" for r, c in s["via_fail_rooms"].most_common(3)) + ")"
+            skel_str = str(s["skel_vias"])
+            if s["skel_vias"]:
+                skel_str += " (" + ", ".join(f"{r}x{c}" for r, c in s["skel_via_rooms"].most_common(3)) + ")"
             print(f"| {name} | {s['via_detours']} "
                   f"| {s['via_reached']} ({fmt_pct(s['via_reached'], s['via_detours'])}) "
                   f"| {rooms_str} "
                   f"| {fails_str} "
-                  f"| {sealed_str} |")
+                  f"| {sealed_str} "
+                  f"| {skel_str} |")
         print()
 
     # Phase 12.2 — wrong-side rescues, cycle-cap suspensions, troll retirements.

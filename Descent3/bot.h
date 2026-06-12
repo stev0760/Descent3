@@ -199,8 +199,10 @@
 
 // Phase 12.2 — wrong-side rescue, via cycle cap, global troll memory (NAVIGATION.md §7)
 #define BOT_RESCUE_COMMIT_TIME 15.0f // wrong-side rescue: window to reach the rescue-neighbor room
-#define BOT_VIA_CYCLE_CAP 3          // via arrivals in the same room before via is suspended there
+#define BOT_VIA_CYCLE_CAP 3          // bounce arrivals in the same room before via is suspended there
 #define BOT_VIA_SUSPEND_TIME 12.0f   // suspension length — lets timeout/dyn-bump/escape machinery act
+#define BOT_VIA_BOUNCE_DIST 40.0f    // 12.3: an arrival within this of the previous one = a bounce
+                                     // (oscillation); farther = chain progress, doesn't count
 #define BOT_TROLL_STRIKES 3          // chase-timeout/seal strikes before a powerup is retired level-wide
 #define BOT_TROLL_TABLE_SIZE 32      // suspect powerups tracked per level (global, shared by all bots)
 
@@ -414,9 +416,12 @@ struct bot_info {
   int rescue_room;        // the rescue-neighbor room being routed to
   int rescue_used_handle; // powerup handle the one-rescue-per-chase was spent on
 
-  // Via cycle cap (12.2c) — a via must lead to a room change or yield to rerouting
+  // Via cycle cap (12.2c, refined 12.3) — a via must lead to a room change OR substantial
+  // displacement (skeleton hop chains arrive repeatedly in the same room while making real
+  // progress around a ring — only bounce-backs near the previous arrival count toward the cap)
   int via_arrival_room;       // room of the last via arrival
-  int via_arrivals_same_room; // consecutive via arrivals without leaving that room
+  vector via_arrival_pos;     // position of the last via arrival (bounce detection)
+  int via_arrivals_same_room; // consecutive bounce arrivals without leaving the room
   float via_suspend_until;    // Gametime until via search is suspended in via_suspend_room
   int via_suspend_room;       // room the suspension applies to
 

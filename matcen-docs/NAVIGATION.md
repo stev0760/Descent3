@@ -343,7 +343,20 @@ BOA — a bug (the router would be silently overriding BOA everywhere), not a fe
     rerouting via room B` / `rescue arrived in room R` / `via suspended in room R`) feed
     `analyze_bot_log.py`'s "Troll Guards / Cycle Cap (Phase 12.2)" table.
 
-  - **12.3 — PORTAL-SKELETON TRAVERSAL (NEXT PHASE — designed 2026-06-11, build next session).**
+  - **12.3 — PORTAL-SKELETON TRAVERSAL (IMPLEMENTED 2026-06-12, UNTESTED — step-zero detector
+    validated offline first: 13/14 ground-truth pin rooms flagged across 5 maps, the miss being
+    pyroplace room 62, the documented residual).** As built: pass 3 lives inside
+    `BotFindViaPoint` — when both ring passes fail, build the room's portal skeleton (nodes =
+    portal path_pnts, edges = hull-clear legs at ship radius, cached per level, ≤16 nodes), pick
+    the exit set (portals toward `BotComputeRoute`'s next room, or target-visible nodes for
+    same-room targets), BFS from the exit set to the nearest bot-visible node, return that node
+    as the via (`skeleton_out` flag → `BOT NAV: skeleton via in room R` log → analyzer
+    "Skeleton Hops" column). **No runtime detector gating** — pass 3 runs wherever rings fail;
+    over-flagging costs nothing. The 12.2c cycle cap was refined to count only BOUNCE arrivals
+    (within 40u of the previous arrival): skeleton chains arrive repeatedly in the same room
+    while making real arc progress and must not be suspended mid-traversal. `$navdump` gains
+    `path_pnt_reachable` (probed FROM portals — the annulus detector; false = buried/void center,
+    LOS readings from that point are untrustworthy).
     Subsumes every deferred 12.2 item (split-room routing, pass-2 `VIA_SEARCH_FAIL` rooms, the
     pyroplace room-62 mystery, the navdump approach-probe gap).
 

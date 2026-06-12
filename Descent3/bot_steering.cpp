@@ -271,7 +271,63 @@ static bool ViaSegmentClear(int startroom, const vector &a, const vector &b, flo
   return !(ht == HIT_WALL || ht == HIT_BACKFACE || ht == HIT_TERRAIN);
 }
 
-BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_room, vector *via_out) {
+// --- Phase 12.3: portal-skeleton traversal (pass 3 of the via search) ---
+// In buried-center rooms (hollow-core rings like abend2's discs, labyrinths like nysa 41/69) no
+// single point has hull LOS to both the bot and the target — the ring passes fail by
+// construction. But two facts hold on EVERY map: portals are guaranteed-flyable points (a ship
+// entered through each), and hull-clear portal-to-portal legs are guaranteed-flyable corridors.
+// Build that per-room skeleton once (cached per level), then BFS from the exit portal back to
+// the nearest bot-visible node and hand out the FIRST hop as the via. No target LOS required —
+// hop chains compose with the normal via commitment/arrival machinery (NAVIGATION.md §7 12.3).
+#define SKEL_MAX_NODES 16
+
+static uint16_t skel_edges[MAX_ROOMS][SKEL_MAX_NODES]; // bit j of [room][i]: leg i↔j is hull-clear
+static int8_t skel_built[MAX_ROOMS];
+static int skel_level_checksum = 0;
+
+static int SkelNodeCount(const room &rm) {
+  return rm.num_portals < SKEL_MAX_NODES ? rm.num_portals : SKEL_MAX_NODES;
+}
+
+static void SkelBuild(int room_idx) {
+  room &rm = Rooms[room_idx];
+  int n = SkelNodeCount(rm);
+  for (int i = 0; i < n; i++)
+    skel_edges[room_idx][i] = 0;
+  for (int i = 0; i < n; i++) {
+    for (int j = i + 1; j < n; j++) {
+      if (ViaSegmentClear(room_idx, rm.portals[i].path_pnt, rm.portals[j].path_pnt, BOT_PORTAL_SHIP_RADIUS,
+                          nullptr)) {
+        skel_edges[room_idx][i] |= (uint16_t)(1 << j);
+        skel_edges[room_idx][j] |= (uint16_t)(1 << i);
+      }
+    }
+  }
+  skel_built[room_idx] = 1;
+}
+
+bool BotRoomPathPntReachable(int room_idx) {
+  if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used)
+    return false;
+  room &rm = Rooms[room_idx];
+  if (rm.flags & RF_EXTERNAL)
+    return true; // outdoor rooms: not this mechanism's question
+  for (int i = 0; i < rm.num_portals; i++) {
+    int nr = rm.portals[i].croom;
+    if (nr < 0 || nr > Highest_room_index || !Rooms[nr].used)
+      continue;
+    // Probe FROM the portal (a trustworthy in-playable-space start) toward the path_pnt — a
+    // probe cast from a void/core path_pnt exits one-sided faces unobstructed (false clear).
+    if (ViaSegmentClear(room_idx, rm.portals[i].path_pnt, rm.path_pnt, BOT_PORTAL_SHIP_RADIUS, nullptr))
+      return true;
+  }
+  return false;
+}
+
+BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_room, vector *via_out,
+                             bool *skeleton_out) {
+  if (skeleton_out)
+    *skeleton_out = false;
   if (!obj || OBJECT_OUTSIDE(obj))
     return BOT_VIA_CLEAR; // indoor-only mechanism (no outdoor work in 0.9.2)
   if (target_room < 0 || target_room > Highest_room_index || !Rooms[target_room].used ||
@@ -332,6 +388,89 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
         if (via_out)
           *via_out = via;
         return BOT_VIA_FOUND;
+      }
+    }
+  }
+
+  // --- Pass 3 (12.3): portal-skeleton hop. ---
+  {
+    if (skel_level_checksum != BOA_mine_checksum) {
+      memset(skel_built, 0, sizeof(skel_built));
+      skel_level_checksum = BOA_mine_checksum;
+    }
+    int room_idx = obj->roomnum;
+    room &rm = Rooms[room_idx];
+    int n = SkelNodeCount(rm);
+    if (n >= 2) {
+      if (!skel_built[room_idx])
+        SkelBuild(room_idx);
+
+      // Exit set: the portal(s) toward the routed next room (cross-room target), or the nodes
+      // that can see the target (same-room target — e.g. a powerup across the ring).
+      uint32_t exits = 0;
+      if (target_room != room_idx) {
+        int next_room = BotComputeRoute(room_idx, target_room);
+        if (next_room < 0)
+          next_room = target_room;
+        for (int i = 0; i < n; i++)
+          if (rm.portals[i].croom == next_room)
+            exits |= (1u << i);
+        if (!exits) { // router said something not adjacent (shouldn't happen) — direct fallback
+          for (int i = 0; i < n; i++)
+            if (rm.portals[i].croom == target_room)
+              exits |= (1u << i);
+        }
+      } else {
+        for (int i = 0; i < n; i++)
+          if (ViaSegmentClear(room_idx, rm.portals[i].path_pnt, target_pos, radius, nullptr))
+            exits |= (1u << i);
+      }
+
+      if (exits) {
+        // Start set: skeleton nodes the bot can reach directly at hull radius.
+        uint32_t vis = 0;
+        for (int i = 0; i < n; i++)
+          if (ViaSegmentClear(room_idx, obj->pos, rm.portals[i].path_pnt, radius, nullptr))
+            vis |= (1u << i);
+
+        int hop = -1;
+        for (int i = 0; i < n && hop < 0; i++) // trivial: an exit node the bot can already see
+          if ((exits & vis) & (1u << i))
+            hop = i;
+
+        if (hop < 0 && vis) {
+          // BFS outward FROM the exit set over skeleton edges; the first bot-visible node
+          // reached is the bot-adjacent node on a shortest node-path to the exit — the hop.
+          int dist_n[SKEL_MAX_NODES], qq[SKEL_MAX_NODES], qh = 0, qt = 0;
+          for (int i = 0; i < n; i++)
+            dist_n[i] = -1;
+          for (int i = 0; i < n; i++)
+            if (exits & (1u << i)) {
+              dist_n[i] = 0;
+              qq[qt++] = i;
+            }
+          while (hop < 0 && qh < qt) {
+            int u = qq[qh++];
+            for (int v = 0; v < n; v++) {
+              if (!(skel_edges[room_idx][u] & (1 << v)) || dist_n[v] >= 0)
+                continue;
+              dist_n[v] = dist_n[u] + 1;
+              qq[qt++] = v;
+              if (vis & (1u << v)) {
+                hop = v;
+                break;
+              }
+            }
+          }
+        }
+
+        if (hop >= 0) {
+          if (via_out)
+            *via_out = rm.portals[hop].path_pnt;
+          if (skeleton_out)
+            *skeleton_out = true;
+          return BOT_VIA_FOUND;
+        }
       }
     }
   }

@@ -1403,7 +1403,13 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
       // withhold the credit and suspend via here so timeout/dyn-bump/escape machinery acts.
       bool cycle_capped = false;
       if ((int)obj->roomnum == Bots[bot_index].via_arrival_room) {
-        if (++Bots[bot_index].via_arrivals_same_room >= BOT_VIA_CYCLE_CAP) {
+        // 12.3: only BOUNCE arrivals count — repeated arrivals near the same spot are the
+        // oscillation signature; same-room arrivals far apart are skeleton-chain progress
+        // around a ring/labyrinth and must not trip the cap mid-traversal.
+        bool bounce = vm_VectorDistanceQuick(&obj->pos, &Bots[bot_index].via_arrival_pos) < BOT_VIA_BOUNCE_DIST;
+        if (!bounce) {
+          Bots[bot_index].via_arrivals_same_room = 1;
+        } else if (++Bots[bot_index].via_arrivals_same_room >= BOT_VIA_CYCLE_CAP) {
           cycle_capped = true;
           Bots[bot_index].via_suspend_until = Gametime + BOT_VIA_SUSPEND_TIME;
           Bots[bot_index].via_suspend_room = obj->roomnum;
@@ -1415,6 +1421,7 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
         Bots[bot_index].via_arrival_room = obj->roomnum;
         Bots[bot_index].via_arrivals_same_room = 1;
       }
+      Bots[bot_index].via_arrival_pos = obj->pos;
       if (!cycle_capped) {
         // 12.1: the via dance is real progress, but its 15-45u legs sit under the 50u displacement
         // threshold — without this reset the 12s room-progress timeout fires MID-crossing, bumps the
@@ -1449,7 +1456,8 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
   // blocks it AND a clear go-around exists. CLEAR and NONE both mean "steer normally" here —
   // NONE additionally feeds the caller's sealed-target counting via *verdict_out.
   vector via;
-  BotViaResult r = BotFindViaPoint(obj, target_pos, target_room, &via);
+  bool skeleton_hop = false;
+  BotViaResult r = BotFindViaPoint(obj, target_pos, target_room, &via, &skeleton_hop);
   if (verdict_out)
     *verdict_out = r;
   if (r != BOT_VIA_FOUND) {
@@ -1466,8 +1474,12 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
   Bots[bot_index].via_point = via;
   Bots[bot_index].via_expires = Gametime + BOT_VIA_COMMIT_TIME;
   issue_via_goal();
-  LOG_DEBUG.printf("BOT NAV: '%s' via-point detour in room %d (target room %d occluded)", Bots[bot_index].callsign,
-                   obj->roomnum, target_room);
+  if (skeleton_hop)
+    LOG_DEBUG.printf("BOT NAV: '%s' skeleton via in room %d (target room %d)", Bots[bot_index].callsign, obj->roomnum,
+                     target_room);
+  else
+    LOG_DEBUG.printf("BOT NAV: '%s' via-point detour in room %d (target room %d occluded)", Bots[bot_index].callsign,
+                     obj->roomnum, target_room);
   return 1;
 }
 
@@ -3898,6 +3910,10 @@ bool BotNavDump(const char *filename) {
     fprintf(fp, "      \"path_pnt\": [%.2f,%.2f,%.2f], \"path_pnt_is_bbox_center\": %s, \"path_pnt_manual\": %s,\n",
             rm.path_pnt.x(), rm.path_pnt.y(), rm.path_pnt.z(), pp_is_center ? "true" : "false",
             pp_manual ? "true" : "false");
+    // 12.3 annulus detector: false = the path_pnt is hull-unreachable from every portal (probed
+    // FROM the portals — a buried/void center; LOS readings FROM such a path_pnt are untrustworthy)
+    fprintf(fp, "      \"path_pnt_reachable\": %s,\n",
+            (rm.flags & RF_EXTERNAL) ? "true" : (BotRoomPathPntReachable(r) ? "true" : "false"));
 
     // Per-portal detail
     fprintf(fp, "      \"portals\": [\n");
@@ -4490,6 +4506,7 @@ void BotInitAll() {
     Bots[i].rescue_room = -1;
     Bots[i].rescue_used_handle = OBJECT_HANDLE_NONE;
     Bots[i].via_arrival_room = -1;
+    vm_MakeZero(&Bots[i].via_arrival_pos);
     Bots[i].via_arrivals_same_room = 0;
     Bots[i].via_suspend_until = 0.0f;
     Bots[i].via_suspend_room = -1;
@@ -4631,6 +4648,7 @@ void BotReinitAll() {
     Bots[i].rescue_room = -1;
     Bots[i].rescue_used_handle = OBJECT_HANDLE_NONE;
     Bots[i].via_arrival_room = -1;
+    vm_MakeZero(&Bots[i].via_arrival_pos);
     Bots[i].via_arrivals_same_room = 0;
     Bots[i].via_suspend_until = 0.0f;
     Bots[i].via_suspend_room = -1;
@@ -4902,6 +4920,7 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   Bots[bot_index].rescue_room = -1;
   Bots[bot_index].rescue_used_handle = OBJECT_HANDLE_NONE;
   Bots[bot_index].via_arrival_room = -1;
+  vm_MakeZero(&Bots[bot_index].via_arrival_pos);
   Bots[bot_index].via_arrivals_same_room = 0;
   Bots[bot_index].via_suspend_until = 0.0f;
   Bots[bot_index].via_suspend_room = -1;
