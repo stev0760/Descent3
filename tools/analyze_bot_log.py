@@ -636,8 +636,9 @@ def print_report(stats, total_lines, log_path):
             skel_str = str(s["skel_vias"])
             if s["skel_vias"]:
                 skel_str += " (" + ", ".join(f"{r}x{c}" for r, c in s["skel_via_rooms"].most_common(3)) + ")"
+            total_commits = s['via_detours'] + s['skel_vias']
             print(f"| {name} | {s['via_detours']} "
-                  f"| {s['via_reached']} ({fmt_pct(s['via_reached'], s['via_detours'])}) "
+                  f"| {s['via_reached']} ({fmt_pct(s['via_reached'], total_commits)}) "
                   f"| {rooms_str} "
                   f"| {fails_str} "
                   f"| {sealed_str} "

@@ -427,11 +427,24 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
       }
 
       if (exits) {
-        // Start set: skeleton nodes the bot can reach directly at hull radius.
-        uint32_t vis = 0;
-        for (int i = 0; i < n; i++)
+        // Start set: skeleton nodes the bot can reach directly at hull radius. 12.3.1: nodes the
+        // bot is already STANDING at must not be chosen as the hop (navmapping19: issue node i →
+        // "reached" 1s later → re-issue i → bounce-suspend; the off-node probe to the NEXT node
+        // often fails, leaving i the only visible node). A standing node instead contributes its
+        // skeleton NEIGHBORS to the start set — the cached edge already proves those legs are
+        // ship-flyable from i, which is where the bot effectively is.
+        uint32_t vis = 0, standing = 0;
+        for (int i = 0; i < n; i++) {
+          float nd = vm_VectorDistanceQuick(&obj->pos, &rm.portals[i].path_pnt);
+          if (nd < BOT_VIA_ARRIVE_DIST) {
+            standing |= (1u << i);
+            vis |= skel_edges[room_idx][i]; // neighbors reachable via the proven corridor
+            continue;
+          }
           if (ViaSegmentClear(room_idx, obj->pos, rm.portals[i].path_pnt, radius, nullptr))
             vis |= (1u << i);
+        }
+        vis &= ~standing; // never hop to where we already are
 
         int hop = -1;
         for (int i = 0; i < n && hop < 0; i++) // trivial: an exit node the bot can already see
