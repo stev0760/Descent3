@@ -19,6 +19,7 @@ the patch text in this document is sufficient — no need to merge from Matcen.
 | # | Bug | Affected | Status (Matcen) | Status (Upstream) |
 | :--- | :--- | :--- | :--- | :--- |
 | 1 | `$scores` numeric column truncation | 7 netgame DLLs | Fixed (Matcen 0.8.7, header-overlap regression fixed 0.8.8) | Not submitted |
+| 2 | Dedicated server never resets the grtext buffer → overflow crash | `Descent3/GameLoop.cpp` | Fixed (Matcen 0.9.2-dev) | Not submitted |
 
 ---
 
@@ -171,3 +172,77 @@ source.
 - **DescentDevelopers/Descent3:** Not submitted. Candidate for PR.
 - **PiccuEngine:** Not submitted. Same fix applies verbatim (source confirmed
   identical at `netgames/anarchy/anarchy.cpp:770-775` and sibling files).
+
+---
+
+## 2. Dedicated Server Never Resets the grtext Buffer (Overflow Crash)
+
+### Bug
+
+A dedicated server that receives repeated `$netgameinfo` console commands
+aborts after ~15 minutes with an assertion in `grtext_Puts`:
+
+```
+Assertion failed ((Grtext_ptr + sizeof(cmd) + strlen(str) + 1) < GRTEXT_BUFLEN)
+  in grtext/grtext.cpp:441
+```
+
+Any tool that polls `$netgameinfo` on an interval (e.g. an external admin
+panel) will crash an otherwise-healthy server. ~30 `$netgameinfo` invocations
+is enough.
+
+### Root cause
+
+The engine's 2D text renderer queues draw commands into a fixed 16 KB buffer
+(`Grtext_buffer`, `GRTEXT_BUFLEN = 16384`); `grtext_Flush()` is the only thing
+that resets the write pointer `Grtext_ptr`, and it is only ever called from the
+render path. On a dedicated server `GameRenderFrame()` (`Descent3/GameLoop.cpp`)
+early-returns at its `if (Dedicated_server)` guard **before** reaching
+`grtext_Flush()`, so the buffer is never reset.
+
+That alone is harmless only if nothing queues text. But the DMFC console-info
+display (`DMFCBase::DisplayNetGameInfo`, invoked by `$netgameinfo`) emits ~17
+`grtext_Printf` lines **unconditionally** — it is dual-purpose (on-screen
+overlay + console echo) and the on-screen half still runs on a dedicated
+server. Those ~500 bytes per call accumulate in the never-reset buffer until it
+overflows `GRTEXT_BUFLEN` and the assert aborts the process.
+
+(`$scores` is **not** affected: its console output goes through a separate
+`DPrintf`-only path; only the HUD scoreboard overlay uses grtext, and that is
+correctly gated behind the dedicated-server render guard.)
+
+### Affected files
+
+| File | Function location | Change |
+| :--- | :--- | :--- |
+| `Descent3/GameLoop.cpp` | `GameRenderFrame()` dedicated-server early-return | reset the grtext buffer once per frame |
+
+### Fix
+
+Reset the grtext buffer in the dedicated-server branch of `GameRenderFrame`,
+before the early `return`, so any text queued during a frame is discarded
+rather than accumulated (nothing is ever drawn on a dedicated server anyway):
+
+```cpp
+if (Dedicated_server) {
+  grtext_Reset();   // dedicated never flushes grtext; bound the buffer
+  return;
+}
+```
+
+This bounds `Grtext_ptr` to a single frame's worth regardless of which DLL
+queued the text, so it also covers any other dual-purpose DMFC display
+function, not just `$netgameinfo`.
+
+### Portability
+
+One line in one engine file, no API or behavior change for non-dedicated
+clients (the branch only runs when `Dedicated_server` is set). Safe to apply to
+any D3 engine fork.
+
+### Status
+
+- **Matcen:** Fixed in 0.9.2-dev.
+- **DescentDevelopers/Descent3:** Not submitted. Candidate for PR.
+- **PiccuEngine:** Not submitted. Same fix expected to apply (engine-level
+  dedicated render guard is shared lineage).

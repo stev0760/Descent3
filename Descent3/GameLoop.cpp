@@ -2556,8 +2556,18 @@ void GameRenderFrame(void) {
   AI_NumRendered = 0;
   AI_NumHostileAlert = 0;
 
-  if (Dedicated_server)
+  if (Dedicated_server) {
+    // A dedicated server never renders, so grtext_Flush() (which resets Grtext_ptr) is
+    // never reached. Any code that queues text via grtext_Puts/grtext_Printf on a
+    // dedicated server therefore accumulates in Grtext_buffer forever until it overflows
+    // GRTEXT_BUFLEN and trips the ASSERT in grtext_Puts(). The DMFC console-info display
+    // (DMFCBase::DisplayNetGameInfo, called by $netgameinfo) is one such writer — it emits
+    // ~17 grtext_Printf lines per invocation even on a dedicated server, so periodic polling
+    // (e.g. the Pyrodeck admin tool) crashed the server after ~15 minutes. Discard whatever
+    // was queued this frame so the buffer can never grow unbounded.
+    grtext_Reset();
     return;
+  }
 
 #ifndef RELEASE
   Mine_depth = 0;
