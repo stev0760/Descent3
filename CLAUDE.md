@@ -41,6 +41,8 @@ All Matcen fork documentation lives in **`matcen-docs/`**:
 - **`matcen-docs/PATHFINDING_CODEBASE_EXPLORE.md`** — Guide-bot navigation analysis: how single-player bots navigate complex passages vs. our multiplayer bots. Deep engine research, cited by `NAVIGATION.md` (still accurate).
 - **`matcen-docs/BOT_MANAGEMENT.md`** — Phase 5 planning and implementation: config-file rosters, ship selection, difficulty levels, auto-rebalancing, `$servercaps` handshake. **Read this before modifying bot management code.**
 - **`matcen-docs/CHAT_COMMANDS.md`** — Phase 6.0 chat command system: cross-genre research synthesis, verb taxonomy (4 tiers), staged rollout plan, engine integration points. **Read this before modifying bot chat code.**
+- **`matcen-docs/ENTROPY_MODE.md`** — Entropy mode mechanics reference (from the netgame DLL source) + phased bot implementation spec (E1–E4). **Read this before writing any Entropy bot code.**
+- **`matcen-docs/MONSTERBALL_MODE.md`** — Monsterball mechanics reference (DLL source; carry is dead code, score into your OWN goal, weapon hits clamp to 10–20 u/s) + sports-AI research synthesis (RLBot/RoboCup) + phased bot spec (M1–M4). **Read this before writing any Monsterball bot code.**
 - **`matcen-docs/PLAN.md`** — original Phase 0 design document and full phase roadmap.
 - **`matcen-docs/D3_MOVEMENT_PHYSICS.md`** — engine physics constants and packet flag reference.
 - **`matcen-docs/D3_PYRODECK_SPEC.md`** — specification for the D3 Pyrodeck companion web admin tool. **Update this when telnet commands or output formats change.**
