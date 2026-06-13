@@ -4367,6 +4367,18 @@ static void BotDoFiring(int bot_index) {
 static void BotRespawn(int bot_index) {
   int slot = Bots[bot_index].player_slot;
 
+  // Release the engine dynamic-path slots this bot's AI still holds BEFORE the respawn wipes
+  // ai_info. The respawn path below (MultiSendRenewPlayer -> ResetPlayerObject, then the
+  // PlayerSetControlToAI memset) zeroes the ai_path_info struct without freeing its slots.
+  // A bot's player object keeps its handle across death, so the engine's dead-owner reclaim
+  // in AIPathGetDPathSlot never recovers them — every respawn would otherwise leak slots from
+  // the global AIDynamicPath[MAX_DYNAMIC_PATHS] pool until it exhausts and the AI floods
+  // "No dynamic paths left". This is a bot-only concern (stock robots are ObjDelete'd on death,
+  // making their slots reclaimable), so the fix lives here rather than in the engine.
+  object *pobj = &Objects[Players[slot].objnum];
+  if (pobj->ai_info)
+    AIPathFreePath(&pobj->ai_info->path);
+
   // Use the existing multiplayer respawn path.
   // This calls EndPlayerDeath() -> InitPlayerNewShip() + ResetPlayerObject(),
   // then PlayerMoveToStartPos() and MakePlayerInvulnerable(slot, 2.0).
