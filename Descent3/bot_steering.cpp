@@ -283,11 +283,31 @@ static bool ViaSegmentClear(int startroom, const vector &a, const vector &b, flo
 
 static uint16_t skel_edges[MAX_ROOMS][SKEL_MAX_NODES]; // bit j of [room][i]: leg i↔j is hull-clear
 static int8_t skel_built[MAX_ROOMS];
+static int8_t room_buried[MAX_ROOMS]; // -1 unknown, else BotRoomPathPntReachable() == false
 static int skel_level_checksum = 0;
 
-static int SkelNodeCount(const room &rm) {
-  return rm.num_portals < SKEL_MAX_NODES ? rm.num_portals : SKEL_MAX_NODES;
+static void SkelLevelReset() {
+  if (skel_level_checksum != BOA_mine_checksum) {
+    memset(skel_built, 0, sizeof(skel_built));
+    memset(room_buried, -1, sizeof(room_buried));
+    skel_level_checksum = BOA_mine_checksum;
+  }
 }
+
+// Cached buried-center verdict (the annulus detector): no portal has hull LOS to the room's
+// path_pnt, so the "center" is void/core space and ring candidates anchored on the press line
+// are micro-hops along the core wall (navmapping20: room 30/0 ring vias "reached" in 0.5s →
+// 3-arrival suspend → 12s wall-press). In these rooms the skeleton is the only sound geometry.
+static bool RoomBuriedCenter(int room_idx) {
+  SkelLevelReset();
+  if (room_idx < 0 || room_idx > Highest_room_index)
+    return false;
+  if (room_buried[room_idx] < 0)
+    room_buried[room_idx] = BotRoomPathPntReachable(room_idx) ? 0 : 1;
+  return room_buried[room_idx] == 1;
+}
+
+static int SkelNodeCount(const room &rm) { return rm.num_portals < SKEL_MAX_NODES ? rm.num_portals : SKEL_MAX_NODES; }
 
 static void SkelBuild(int room_idx) {
   room &rm = Rooms[room_idx];
@@ -296,8 +316,7 @@ static void SkelBuild(int room_idx) {
     skel_edges[room_idx][i] = 0;
   for (int i = 0; i < n; i++) {
     for (int j = i + 1; j < n; j++) {
-      if (ViaSegmentClear(room_idx, rm.portals[i].path_pnt, rm.portals[j].path_pnt, BOT_PORTAL_SHIP_RADIUS,
-                          nullptr)) {
+      if (ViaSegmentClear(room_idx, rm.portals[i].path_pnt, rm.portals[j].path_pnt, BOT_PORTAL_SHIP_RADIUS, nullptr)) {
         skel_edges[room_idx][i] |= (uint16_t)(1 << j);
         skel_edges[room_idx][j] |= (uint16_t)(1 << i);
       }
@@ -346,58 +365,59 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
     return BOT_VIA_CLEAR; // on top of the target — nothing to round
   dir = dir * (1.0f / dist);
 
-  // Anchor the candidate ring just on the bot's side of the blocking face, then slide laterally.
-  // Side axis = along the face plane, perpendicular to the travel line (cross(dir, face normal));
-  // when the face squarely opposes travel that cross degenerates — fall back to the ship's rvec.
-  vector anchor = block.hit_pnt - dir * BOT_VIA_PROBE_BACKOFF;
-  vector side = vm_Cross3Product(dir, block.hit_wallnorm[0]);
-  if (vm_GetMagnitude(&side) < 0.3f)
-    side = obj->orient.rvec;
-  vm_NormalizeVector(&side);
-  vector up = vm_Cross3Product(side, dir); // completes the frame — vertical go-around (6DOF: over/under)
-  vm_NormalizeVector(&up);
+  // Buried-center rooms (hollow-core rings, see RoomBuriedCenter): skip the ring passes — their
+  // candidates hug the core wall and bounce-suspend — and go straight to the portal skeleton.
+  if (!RoomBuriedCenter(obj->roomnum)) {
+    // Anchor the candidate ring just on the bot's side of the blocking face, then slide laterally.
+    // Side axis = along the face plane, perpendicular to the travel line (cross(dir, face normal));
+    // when the face squarely opposes travel that cross degenerates — fall back to the ship's rvec.
+    vector anchor = block.hit_pnt - dir * BOT_VIA_PROBE_BACKOFF;
+    vector side = vm_Cross3Product(dir, block.hit_wallnorm[0]);
+    if (vm_GetMagnitude(&side) < 0.3f)
+      side = obj->orient.rvec;
+    vm_NormalizeVector(&side);
+    vector up = vm_Cross3Product(side, dir); // completes the frame — vertical go-around (6DOF: over/under)
+    vm_NormalizeVector(&up);
 
-  // Two search passes of 4-candidate rings (±side, ±up) at growing offsets; nearest workable
-  // detour wins. A candidate must be reachable from the bot AND see the target, both at hull
-  // radius. Pass 1 anchors just short of the blocking face (the approach case). Pass 2 is the
-  // pressed-state fallback (12.1): nose-on contact puts the pass-1 anchor at the bot itself and
-  // its rings inside a wide panel's span — so back the anchor off toward the bot's side of the
-  // line and sweep wider rings to clear the panel edge.
-  struct ViaPass {
-    vector anchor;
-    float base, step;
-  };
-  const ViaPass passes[2] = {
-      {anchor, BOT_VIA_OFFSET_BASE, BOT_VIA_OFFSET_STEP},
-      {obj->pos - dir * BOT_VIA_PRESS_BACKOFF, BOT_VIA_PRESS_OFFSET_BASE, BOT_VIA_PRESS_OFFSET_STEP},
-  };
-  for (const ViaPass &pass : passes) {
-    for (int ring = 0; ring < BOT_VIA_OFFSET_RINGS; ring++) {
-      float off = pass.base + ring * pass.step;
-      const vector cands[4] = {pass.anchor + side * off, pass.anchor - side * off, pass.anchor + up * off,
-                               pass.anchor - up * off};
-      for (const vector &via : cands) {
-        fvi_info leg1{};
-        if (!ViaSegmentClear(obj->roomnum, obj->pos, via, radius, &leg1))
-          continue;
-        int via_room = leg1.hit_room;
-        if (via_room < 0 || via_room > Highest_room_index || !Rooms[via_room].used)
-          continue;
-        if (!ViaSegmentClear(target_room, target_pos, via, radius, nullptr))
-          continue;
-        if (via_out)
-          *via_out = via;
-        return BOT_VIA_FOUND;
+    // Two search passes of 4-candidate rings (±side, ±up) at growing offsets; nearest workable
+    // detour wins. A candidate must be reachable from the bot AND see the target, both at hull
+    // radius. Pass 1 anchors just short of the blocking face (the approach case). Pass 2 is the
+    // pressed-state fallback (12.1): nose-on contact puts the pass-1 anchor at the bot itself and
+    // its rings inside a wide panel's span — so back the anchor off toward the bot's side of the
+    // line and sweep wider rings to clear the panel edge.
+    struct ViaPass {
+      vector anchor;
+      float base, step;
+    };
+    const ViaPass passes[2] = {
+        {anchor, BOT_VIA_OFFSET_BASE, BOT_VIA_OFFSET_STEP},
+        {obj->pos - dir * BOT_VIA_PRESS_BACKOFF, BOT_VIA_PRESS_OFFSET_BASE, BOT_VIA_PRESS_OFFSET_STEP},
+    };
+    for (const ViaPass &pass : passes) {
+      for (int ring = 0; ring < BOT_VIA_OFFSET_RINGS; ring++) {
+        float off = pass.base + ring * pass.step;
+        const vector cands[4] = {pass.anchor + side * off, pass.anchor - side * off, pass.anchor + up * off,
+                                 pass.anchor - up * off};
+        for (const vector &via : cands) {
+          fvi_info leg1{};
+          if (!ViaSegmentClear(obj->roomnum, obj->pos, via, radius, &leg1))
+            continue;
+          int via_room = leg1.hit_room;
+          if (via_room < 0 || via_room > Highest_room_index || !Rooms[via_room].used)
+            continue;
+          if (!ViaSegmentClear(target_room, target_pos, via, radius, nullptr))
+            continue;
+          if (via_out)
+            *via_out = via;
+          return BOT_VIA_FOUND;
+        }
       }
     }
   }
 
   // --- Pass 3 (12.3): portal-skeleton hop. ---
   {
-    if (skel_level_checksum != BOA_mine_checksum) {
-      memset(skel_built, 0, sizeof(skel_built));
-      skel_level_checksum = BOA_mine_checksum;
-    }
+    SkelLevelReset();
     int room_idx = obj->roomnum;
     room &rm = Rooms[room_idx];
     int n = SkelNodeCount(rm);
@@ -511,28 +531,6 @@ bool BotRoomSealedForShip(int room_idx) {
       return false; // at least one flyable way in
   }
   return any_portal; // portal-less rooms aren't "sealed" — there is nothing to gate
-}
-
-// 12.2a wrong-side rescue probe: which entry portal of the powerup's room has hull-radius LOS to
-// the item? An intra-room divider (bulletproof-glass corridor wall) blocks the bot's side but not
-// the portal on the item's side — that portal's neighbor room is where the bot must reroute to,
-// re-entering on the correct side. Returns the neighbor room, or -1 when NO portal can see the
-// item (sealed from every approach — the genuine-troll verdict). Probes item→portal so the fvi
-// start room is always the item's room.
-int BotFindRescueNeighbor(const vector &pu_pos, int pu_room, float radius) {
-  if (pu_room < 0 || pu_room > Highest_room_index || !Rooms[pu_room].used)
-    return -1;
-  if (Rooms[pu_room].flags & RF_EXTERNAL)
-    return -1; // FVI can't start in external rooms; outdoor items aren't divider-sealed
-  room &rm = Rooms[pu_room];
-  for (int p = 0; p < rm.num_portals; p++) {
-    int nr = rm.portals[p].croom;
-    if (nr < 0 || nr > Highest_room_index || !Rooms[nr].used)
-      continue;
-    if (ViaSegmentClear(pu_room, pu_pos, rm.portals[p].path_pnt, radius, nullptr))
-      return nr;
-  }
-  return -1;
 }
 
 // --- Cost-aware next-hop router (Phase 11) ---

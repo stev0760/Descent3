@@ -393,6 +393,8 @@ BOA — a bug (the router would be silently overriding BOA everywhere), not a fe
        maps don't — the skeleton synthesizes the minimal one from data every map must have.)
     4. **Wrong-side rescue demoted to verdict-only** (the portal-LOS seal test feeding troll
        strikes stays; the 15s reroute goes — 3 arrivals in ~190 attempts across three sessions).
+       *(As built in 12.3.3: removed entirely, verdict included — seal trips go straight to
+       abandon + strike; see below.)*
 
     **Step zero — validate the detector offline BEFORE writing engine code:** run it against
     every navdump on hand; it must flag exactly the soak-log pin rooms (abend2 0/30, nysa 41/69,
@@ -412,6 +414,30 @@ BOA — a bug (the router would be silently overriding BOA everywhere), not a fe
     path_pnt-containment flag; analyzer gains skeleton-hop counters. The JSON↔automap-screenshot
     loop (user flies the map, captures the automap; we cross-read against the dump) is now a
     standard diagnostic — it resolved the disc topology in an hour after three soaks couldn't.
+
+    **12.3.1–12.3.3 — live-test fixes (navmapping19/20 abend2 soaks, 2026-06-12):** the 12.3.0
+    overnight soak regressed captures (0.77/rnd vs the 1.11 pre-skeleton baseline) despite 4,708
+    healthy-looking hops — the funnel lied; chains were stationary. Three fixes, each trace-driven:
+    1. **12.3.1 — hop self-selection:** a bot standing at node *i* trivially "sees" *i* while the
+       off-node probe to the next node fails, so the BFS returned the node under the bot
+       (issue → "reached" 1s later → re-issue → bounce-suspend; chains parked at portals).
+       Standing nodes now contribute their skeleton *neighbors* to the visible set (the cached
+       edge proves the leg) and are excluded as hops.
+    2. **12.3.2 — bounce-cap exemption:** vestibule portal pairs sit 20–30u apart, so legitimate
+       skeleton hops read as bounces and suspended mid-crossing. Skeleton arrivals are exempt
+       from bounce counting and carry their own per-room chain cap (`BOT_VIA_SKEL_CHAIN_CAP` 8,
+       reset on room change).
+    3. **12.3.3 — buried-center ring-pass gate + rescue removal:** the 14.5h 12.3.2 soak
+       (navmapping20: 0.98 capt/rnd, 0 crashes, perfect 28/29 team balance) showed the *skeleton*
+       healthy (10,034 hops, only 27 chain-cap suspends) but 97% of stucks and ~6.5k suspends
+       still in the disc rooms — produced by the **ring passes**, whose candidates hug the core
+       wall ("reached" in 0.5s → 3-arrival suspend → 12s wall-press). Fix: `RoomBuriedCenter()`
+       (cached `BotRoomPathPntReachable` == false — the annulus detector, now gating at runtime)
+       skips passes 1–2 entirely and goes straight to the skeleton. Rings remain the tool for
+       pillar/glass presses in normal rooms. **Wrong-side rescue removed outright** (0 arrivals
+       in ~226 firings across nm17/nm19/nm20 — the troll-strike table and sealed abandon cover
+       its job); the `rescue_*` fields, `BOT_RESCUE_COMMIT_TIME`, and `BotFindRescueNeighbor`
+       are gone. Analyzer keeps its rescue parsing for historical logs.
   - **12.1 (first live test, navmapping9 — pumphouse):** detection + execution validated (1524
     detours, 85% reached, in exactly the navdump-predicted rooms 0/1/2; defenders hold flag rooms
     correctly), but **17/19 hard presses got a silent no-via verdict** — nose-on contact puts the

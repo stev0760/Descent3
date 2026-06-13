@@ -191,24 +191,27 @@
 // Intra-room via-point steering (Phase 12) — go around free-standing interior obstacles
 // (glass covers, pillars, ledges) that the engine path-follower presses into (NAVIGATION.md §7).
 // The via-point is delivered as an AIG_GET_TO_POS sub-goal; the engine still does all steering.
-#define BOT_VIA_COMMIT_TIME 4.0f  // seconds committed to a chosen via-point (side-commit — per-tick
+#define BOT_VIA_COMMIT_TIME                                                                                            \
+  4.0f                            // seconds committed to a chosen via-point (side-commit — per-tick
                                   // re-selection IS the net_disp 28-43 circling seen pre-Phase-12)
 #define BOT_VIA_ARRIVE_DIST 15.0f // via-point counts as reached within this distance
-#define BOT_VIA_SEALED_TICKS 4    // consecutive failed via searches on a same/adjacent-room powerup
-                                  // (~2s at the 0.5s tick) before the sealed/rescue decision
+#define BOT_VIA_SEALED_TICKS                                                                                           \
+  4 // consecutive failed via searches on a same/adjacent-room powerup
+    // (~2s at the 0.5s tick) before the sealed abandon
 
-// Phase 12.2 — wrong-side rescue, via cycle cap, global troll memory (NAVIGATION.md §7)
-#define BOT_RESCUE_COMMIT_TIME 15.0f // wrong-side rescue: window to reach the rescue-neighbor room
-#define BOT_VIA_CYCLE_CAP 3          // bounce arrivals in the same room before via is suspended there
-#define BOT_VIA_SUSPEND_TIME 12.0f   // suspension length — lets timeout/dyn-bump/escape machinery act
-#define BOT_VIA_BOUNCE_DIST 40.0f    // 12.3: an arrival within this of the previous one = a bounce
-                                     // (oscillation); farther = chain progress, doesn't count
-#define BOT_VIA_SKEL_CHAIN_CAP 8     // 12.3.2: skeleton arrivals don't bounce-count (ring portal
-                                     // nodes can sit 20-30u apart) — but cap hops/room as the
-                                     // ping-pong guard; a chain this long without a room change
-                                     // isn't going anywhere
-#define BOT_TROLL_STRIKES 3          // chase-timeout/seal strikes before a powerup is retired level-wide
-#define BOT_TROLL_TABLE_SIZE 32      // suspect powerups tracked per level (global, shared by all bots)
+// Phase 12.2 — via cycle cap, global troll memory (NAVIGATION.md §7)
+#define BOT_VIA_CYCLE_CAP 3        // bounce arrivals in the same room before via is suspended there
+#define BOT_VIA_SUSPEND_TIME 12.0f // suspension length — lets timeout/dyn-bump/escape machinery act
+#define BOT_VIA_BOUNCE_DIST                                                                                            \
+  40.0f // 12.3: an arrival within this of the previous one = a bounce
+        // (oscillation); farther = chain progress, doesn't count
+#define BOT_VIA_SKEL_CHAIN_CAP                                                                                         \
+  8                             // 12.3.2: skeleton arrivals don't bounce-count (ring portal
+                                // nodes can sit 20-30u apart) — but cap hops/room as the
+                                // ping-pong guard; a chain this long without a room change
+                                // isn't going anywhere
+#define BOT_TROLL_STRIKES 3     // chase-timeout/seal strikes before a powerup is retired level-wide
+#define BOT_TROLL_TABLE_SIZE 32 // suspect powerups tracked per level (global, shared by all bots)
 
 // Homing missile evasion (Phase 3.15)
 // Scans Objects[] for OBJ_WEAPON with PF_HOMING tracking the bot's handle.
@@ -413,12 +416,6 @@ struct bot_info {
   float via_expires;       // Gametime when the via commitment lapses; 0 = no active via
   int via_seal_count;      // consecutive no-via-found verdicts on the chased same/adjacent-room powerup
   float via_fail_last_log; // Gametime of last "via search failed" log (12.1 — throttle, diagnostics only)
-
-  // Wrong-side rescue (12.2a) — reroute through the neighbor room whose portal can see the
-  // powerup (intra-room divider: bulletproof-glass corridor), then resume the chase from there.
-  float rescue_expires;   // Gametime when the rescue reroute lapses; 0 = none active
-  int rescue_room;        // the rescue-neighbor room being routed to
-  int rescue_used_handle; // powerup handle the one-rescue-per-chase was spent on
 
   // Via cycle cap (12.2c, refined 12.3) — a via must lead to a room change OR substantial
   // displacement (skeleton hop chains arrive repeatedly in the same room while making real
