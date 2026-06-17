@@ -3020,6 +3020,35 @@ static int BotGetNavGoalRoom(int bot_index) {
   return -1;
 }
 
+// Outdoor diagnostic suffix for stuck/escape log lines. Indoors the existing lines already pinpoint
+// bot + room + reason; outdoors they collapse to "room -1" with no terrain context. This appends a
+// terrain bucket + the outdoor "why" so outdoor stucks are as diagnosable as indoor ones:
+//   cell=X,Z  terrain grid cell (the spatial hotspot key, replacing the useless -1)
+//   rgn=R     BOA terrain region (routing granularity)
+//   agl=A     altitude above ground (ground/ridge pin & entrance-base stick vs sky hover)
+//   spd=S     current speed (oscillation/hover vs hard pin)
+//   dest=D(T) routed destination room + class: TERRAIN = open-terrain crossing, STRUCT = entrance-seek
+// Empty for indoor bots, so indoor lines are byte-identical (no analyzer regression). Uses only
+// already-computed state — no FVI / BOA_DetermineStartRoomPortal lookups on outside objects (those
+// crash on RF_EXTERNAL; see Phase 8 notes) — so it is allocation- and crash-free.
+static const char *BotTerrainDiag(object *obj, int bot_index, char *buf, size_t buflen) {
+  if (!OBJECT_OUTSIDE(obj)) {
+    buf[0] = '\0';
+    return buf;
+  }
+  int cellnum = CELLNUM(obj->roomnum);
+  int region = TERRAIN_REGION(cellnum);
+  int cx = cellnum % TERRAIN_WIDTH;
+  int cz = cellnum / TERRAIN_WIDTH;
+  float agl = obj->pos.y() - GetTerrainGroundPoint(&obj->pos);
+  float spd = vm_GetMagnitude(&obj->mtype.phys_info.velocity);
+  int dest = Bots[bot_index].explore_dest_room;
+  const char *dtype = (dest < 0) ? "none" : (dest > Highest_room_index ? "TERRAIN" : "STRUCT");
+  snprintf(buf, buflen, " | TERRAIN cell=%d,%d rgn=%d agl=%.0f spd=%.0f dest=%d(%s)", cx, cz, region, agl, spd, dest,
+           dtype);
+  return buf;
+}
+
 // Phase 8.1a — Sky-route suppression: on outdoor maps, BOA routes through terrain regions via
 // upward portals (sky shortcuts), and engine terrain avoidance can push the nav direction skyward.
 // Flatten strongly-upward nav directions to prevent sky-barrier thrust.
@@ -3437,7 +3466,9 @@ static void BotApplyThrust(int bot_index) {
       Bots[bot_index].explore_stuck_room = OBJECT_OUTSIDE(obj) ? -1 : obj->roomnum;
       Bots[bot_index].explore_dest_room = -1;
       Bots[bot_index].explore_room_timer = 0.0f;
-      LOG_DEBUG.printf("BOT: '%s' stuck escape — no portal, random lateral escape", Bots[bot_index].callsign);
+      char tdiag[128];
+      LOG_DEBUG.printf("BOT: '%s' stuck escape — no portal, random lateral escape%s", Bots[bot_index].callsign,
+                       BotTerrainDiag(obj, bot_index, tdiag, sizeof(tdiag)));
     }
 
     // Record current room as stuck to avoid it in future explore picks
@@ -5217,18 +5248,22 @@ void BotDoFrame() {
             // Consecutive timeouts in same room — nav goal keeps failing. Force physical escape.
             // Preserve explore_dest_room so the escape handler can skip the failing portal.
             Bots[i].stuck_timer = BOT_STUCK_ABANDON_TIME + 0.1f;
+            char tdiag[128];
             LOG_DEBUG.printf("BOT: '%s' stuck escalation (room %d, %d consecutive timeouts, net_disp=%.0f) — "
-                             "forcing escape",
-                             Bots[i].callsign, cur_room, Bots[i].room_progress_stuck_count, net_disp);
+                             "forcing escape%s",
+                             Bots[i].callsign, cur_room, Bots[i].room_progress_stuck_count, net_disp,
+                             BotTerrainDiag(obj, i, tdiag, sizeof(tdiag)));
           } else {
             Bots[i].explore_dest_room = -1;
             Bots[i].explore_room_timer = 0.0f;
             int obj_room = BotGetObjectiveRoom(i);
             bool is_carrier = BotIsCarryingEnemyFlag(i) || BotIsCarryingHyperOrb(i);
             if (obj_room >= 0 || is_carrier) {
+              char tdiag[128];
               LOG_DEBUG.printf("BOT: '%s' room progress timeout (room %d, net_disp=%.0f) — re-routing to objective "
-                               "(room %d)",
-                               Bots[i].callsign, cur_room, net_disp, obj_room);
+                               "(room %d)%s",
+                               Bots[i].callsign, cur_room, net_disp, obj_room,
+                               BotTerrainDiag(obj, i, tdiag, sizeof(tdiag)));
             } else {
               float shields = Objects[Players[slot].objnum].shields;
               bool need_sh = (shields < INITIAL_SHIELDS * BOT_LOW_SHIELDS_PCT);
@@ -5241,11 +5276,15 @@ void BotDoFrame() {
                 Bots[i].chasing_powerup_handle = tgt_handle;
                 Bots[i].chasing_powerup_timer = 0.0f;
                 float pu_dist = vm_VectorDistanceQuick(&obj->pos, &Objects[pu_obj].pos);
-                LOG_DEBUG.printf("BOT: '%s' room progress timeout (room %d, net_disp=%.0f) — chasing '%s' (dist=%.0f)",
-                                 Bots[i].callsign, cur_room, net_disp, Object_info[Objects[pu_obj].id].name, pu_dist);
+                char tdiag[128];
+                LOG_DEBUG.printf("BOT: '%s' room progress timeout (room %d, net_disp=%.0f) — chasing '%s' (dist=%.0f)%s",
+                                 Bots[i].callsign, cur_room, net_disp, Object_info[Objects[pu_obj].id].name, pu_dist,
+                                 BotTerrainDiag(obj, i, tdiag, sizeof(tdiag)));
               } else {
-                LOG_DEBUG.printf("BOT: '%s' room progress timeout (room %d, net_disp=%.0f) — picking new destination",
-                                 Bots[i].callsign, cur_room, net_disp);
+                char tdiag[128];
+                LOG_DEBUG.printf("BOT: '%s' room progress timeout (room %d, net_disp=%.0f) — picking new destination%s",
+                                 Bots[i].callsign, cur_room, net_disp,
+                                 BotTerrainDiag(obj, i, tdiag, sizeof(tdiag)));
               }
             }
           }

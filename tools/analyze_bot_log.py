@@ -72,6 +72,12 @@ RE_ORDER_BLOCKED = re.compile(r"BOT ORDER: '([^']*)' BLOCKED in room (-?\d+)")
 RE_POWERUP_PIN = re.compile(r"room progress timeout \(room (-?\d+), net_disp=(-?\d+)\) — chasing '([^']+)'")
 RE_NET_DISP = re.compile(r"net_disp=(-?\d+)")  # carried by stuck-escalation + room-progress-timeout lines
 
+# Outdoor diagnostic suffix appended (by BotTerrainDiag) to outdoor stuck/escalation/escape lines:
+#   " | TERRAIN cell=X,Z rgn=R agl=A spd=S dest=D(TERRAIN|STRUCT|none)"
+# Present only outdoors, so it doubles as the outdoor-event detector, spatial bucket, and why-classifier.
+RE_TERRAIN_DIAG = re.compile(
+    r"TERRAIN cell=(-?\d+),(-?\d+) rgn=(-?\d+) agl=(-?\d+) spd=(-?\d+) dest=(-?\d+)\((\w+)\)")
+
 DIST_CLOSE = 200
 DIST_MID = 500
 
@@ -82,6 +88,10 @@ DIST_MID = 500
 # massively overstates "stuck"/"pin" problems — in a 24h soak ~85% of timeouts were the moving-but-slow
 # kind — so the anomalies below key off the HARD count, not the raw total. See OBSTACLE_GEOMETRY.md.
 HARD_PIN_DISP = 10
+# Outdoor terrain-diag (the " | TERRAIN ..." suffix on outdoor stuck/escape lines): a bot within
+# AGL_GROUND_PIN units of the ground is scraping/pinned on terrain (ship hull ~6.7u); a stuck at
+# higher agl is hovering in open air (the sky-gap non-commitment, not a geometry pin).
+AGL_GROUND_PIN = 12
 
 # ---------------------------------------------------------------------------
 # Per-map accumulator
@@ -103,6 +113,15 @@ def new_map_stats():
         "carrier_outdoor_ticks": 0,
         "outdoor_stucks": 0,
         "outdoor_stucks_hard": 0,    # outdoor stuck escalations with net_disp < HARD_PIN_DISP
+        # Outdoor terrain-diag accumulators (from the " | TERRAIN ..." suffix on outdoor stuck/escape lines)
+        "terrain_events": 0,          # total enriched outdoor stuck/escape events
+        "terrain_cells": Counter(),   # "cx,cz" grid cell → spatial hotspot bucket (replaces the useless room -1)
+        "terrain_crossfail": 0,       # stuck while routed to a TERRAIN region = open-crossing non-commitment
+        "terrain_entrance": 0,        # stuck while routed to a STRUCT room = entrance-seek miss
+        "terrain_groundpin": 0,       # agl < AGL_GROUND_PIN = scraping/pinned on terrain (vs open-air hover)
+        "terrain_agl_sum": 0,
+        "terrain_agl_n": 0,
+        "terrain_agl_min": 999999,
         "waiting_flag": 0,
         "poll_ctf": 0,
         "obj_nav": 0,
@@ -256,6 +275,23 @@ def parse_log(path):
                 s["order_blocked_rooms"][int(m.group(2))] += 1
                 continue
 
+            mt = RE_TERRAIN_DIAG.search(line)
+            if mt:
+                s["terrain_events"] += 1
+                s["terrain_cells"][f"{mt.group(1)},{mt.group(2)}"] += 1
+                agl = int(mt.group(4))
+                s["terrain_agl_sum"] += agl
+                s["terrain_agl_n"] += 1
+                s["terrain_agl_min"] = min(s["terrain_agl_min"], agl)
+                if agl < AGL_GROUND_PIN:
+                    s["terrain_groundpin"] += 1
+                dtype = mt.group(7)
+                if dtype == "TERRAIN":
+                    s["terrain_crossfail"] += 1
+                elif dtype == "STRUCT":
+                    s["terrain_entrance"] += 1
+                # no continue: the line still flows to its normal stuck/timeout handler below
+
             m = RE_POWERUP_PIN.search(line)
             if m:
                 room = int(m.group(1))
@@ -370,6 +406,25 @@ def detect_anomalies(stats):
                               f"{router_nav} router nav events and {indoor_stucks} indoor stucks, but 0 "
                               f"divergences / 0 impassable / 0 bumps — router returned BOA's route every "
                               f"time where bots are stuck (geometry cost not catching this map's chokes)"))
+
+        # Outdoor steering: name the dominant outdoor stuck mode (from the terrain-diag suffix) so soaks
+        # surface WHERE and WHY bots fail outdoors. Threshold avoids noise on mostly-indoor maps.
+        if s["terrain_events"] >= 15:
+            cross, entr, gpin, ev = (s["terrain_crossfail"], s["terrain_entrance"],
+                                     s["terrain_groundpin"], s["terrain_events"])
+            top = ", ".join(f"cell {cell} ({c})" for cell, c in s["terrain_cells"].most_common(2))
+            if cross >= entr and cross * 2 >= ev:
+                anomalies.append((name, "OUTDOOR_CROSS_NONCOMMIT",
+                                  f"{cross}/{ev} outdoor stucks were routed to open terrain (won't commit to the "
+                                  f"crossing); {gpin} ground-pinned. Top cells: {top}"))
+            elif entr > cross and entr * 2 >= ev:
+                anomalies.append((name, "OUTDOOR_ENTRANCE_MISS",
+                                  f"{entr}/{ev} outdoor stucks were routed into a structure (entrance-seek miss); "
+                                  f"{gpin} ground-pinned. Top cells: {top}"))
+            elif gpin * 2 >= ev:
+                anomalies.append((name, "OUTDOOR_GROUND_PIN",
+                                  f"{gpin}/{ev} outdoor stucks within {AGL_GROUND_PIN}u of the ground "
+                                  f"(terrain scrape/pin, not open-air hover). Top cells: {top}"))
 
         # Stuck concentration: high stuck count in 1-2 rooms
         if s["stucks"] > 50:
@@ -700,6 +755,36 @@ def print_report(stats, total_lines, log_path):
                   f"| {fmt_pct(s['carrier_outdoor_ticks'], s['carrier_nav_ticks'])} "
                   f"| {s['stucks']} "
                   f"| {fmt_pct(s['outdoor_stucks'], s['stucks'])} |")
+        print()
+
+    # Outdoor steering diagnosis (terrain-diag suffix on outdoor stuck/escape lines). Only renders if
+    # any outdoor stuck was enriched, so indoor-only soaks don't grow an empty section.
+    has_terrain = any(s["terrain_events"] for s in stats.values())
+    if has_terrain:
+        print(f"## Outdoor Steering (terrain-diag)")
+        print()
+        print("Where/why bots stick outdoors (the outdoor equivalent of stuck-room hotspots). "
+              "`cross-fail` = stuck while routed to open terrain (won't commit to the crossing); "
+              "`entrance` = stuck while routed into a structure (entrance-seek miss); `ground-pin` = "
+              f"within {AGL_GROUND_PIN}u of the ground (terrain scrape/pin vs open-air hover). "
+              "Cells are terrain grid coords (cx,cz).")
+        print()
+        print(f"| Map | Events | cross-fail | entrance | ground-pin | agl min/avg | Top cells (cx,cz) |")
+        print(f"|---|---|---|---|---|---|---|")
+        for name in maps:
+            s = stats[name]
+            if not s["terrain_events"]:
+                continue
+            agl_min = s["terrain_agl_min"] if s["terrain_agl_n"] else 0
+            agl_avg = (s["terrain_agl_sum"] / s["terrain_agl_n"]) if s["terrain_agl_n"] else 0
+            top_cells = ", ".join(f"{cell}x{c}" for cell, c in s["terrain_cells"].most_common(3))
+            print(f"| {name} "
+                  f"| {s['terrain_events']} "
+                  f"| {s['terrain_crossfail']} "
+                  f"| {s['terrain_entrance']} "
+                  f"| {s['terrain_groundpin']} "
+                  f"| {agl_min:.0f}/{agl_avg:.0f} "
+                  f"| {top_cells} |")
         print()
 
     # Carrier death distance buckets
