@@ -114,4 +114,11 @@ float BotPortalDynPenalty(int room_idx, int portal_idx);
 // Used for goal selection (replaces Euclidean distance for topologically complex maps).
 float BotEstimatePathCost(int from_room, int goal_room);
 
+// Phase 8.1 outdoor entrance resolution. Given an outdoor bot and an interior objective room,
+// returns the terrain-facing entrance (a structure room + the NEAR door's portal index) the bot
+// should fly to: directly when the objective is itself terrain-adjacent (posts), otherwise the
+// reachable entrance with the lowest interior path cost (the pavilion for a shaft objective). The
+// caller aims the engine goal at that portal's path_pnt. False when none is resolvable.
+bool BotResolveOutdoorEntrance(const object *obj, int objective_room, int *out_room, int *out_portal);
+
 #endif // BOT_STEERING_H

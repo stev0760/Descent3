@@ -35,6 +35,7 @@
 #include "multi.h"
 #include "player.h"
 #include "room.h"
+#include "terrain.h"
 #include "vecmat.h"
 #include "object.h"
 #include "game.h"
@@ -660,4 +661,83 @@ float BotEstimatePathCost(int from_room, int goal_room) {
     current = next;
   }
   return 1e30f;
+}
+
+// --- Phase 8.1 outdoor entrance resolution ---------------------------------------------------
+// Read-only. Objective routing (BotDoExploreRoaming) consumes this to aim an outdoor bot's goal at
+// the terrain-facing doorway leading to its objective, instead of the buried room center the engine
+// can't reach across terrain. The engine then steers the full-3D approach itself (NAVIGATION.md §4.1).
+
+bool BotResolveOutdoorEntrance(const object *obj, int objective_room, int *out_room, int *out_portal) {
+  if (out_room)
+    *out_room = -1;
+  if (out_portal)
+    *out_portal = -1;
+  if (!obj || !OBJECT_OUTSIDE(obj))
+    return false;
+  if (objective_room < 0 || objective_room > Highest_room_index || !Rooms[objective_room].used)
+    return false;
+
+  // BOA_connect[region][] is the engine's precomputed terrain->structure entrance table for the
+  // bot's current terrain region: each entry is a structure room reachable from that region plus
+  // the portal facing the terrain. (Same table the outdoor EXPLORE branch already uses.)
+  int region = TERRAIN_REGION(CELLNUM(obj->roomnum));
+  if (region < 0 || region >= MAX_BOA_TERRAIN_REGIONS)
+    return false;
+  int nconn = BOA_num_connect[region];
+  if (nconn <= 0)
+    return false;
+  if (nconn > MAX_PATH_PORTALS)
+    nconn = MAX_PATH_PORTALS;
+
+  // Pass 1 — choose the entrance ROOM. DIRECT: the objective structure is itself terrain-adjacent
+  // (a post / flag room). INDIRECT: the surface pavilion with the cheapest interior path down to a
+  // buried objective (shaft flags). A room may appear in several BOA_connect entries (one per
+  // terrain-facing door) — door choice is Pass 2.
+  int ent_room = -1;
+  bool direct = false;
+  float best_cost = 1e30f;
+  for (int c = 0; c < nconn; c++) {
+    int er = BOA_connect[region][c].roomnum;
+    if (er < 0 || er > Highest_room_index || !Rooms[er].used)
+      continue;
+    if (er == objective_room) {
+      ent_room = objective_room;
+      direct = true;
+      break;
+    }
+    float cost = BotEstimatePathCost(er, objective_room);
+    if (cost < best_cost) {
+      best_cost = cost;
+      ent_room = er;
+    }
+  }
+  if (ent_room < 0 || (!direct && best_cost >= 1e30f))
+    return false; // no connect entrance leads to the objective — caller keeps engine nav
+
+  // Pass 2 — pick the NEAR door: among ent_room's terrain-facing portals, the one whose path_pnt is
+  // closest to the bot. A post has a door on each side; flying to the near one means flying to the
+  // target area, not into the far wall (the old break-on-first-match picked an arbitrary door).
+  int best_portal = -1;
+  float best_dist = 1e30f;
+  for (int c = 0; c < nconn; c++) {
+    if (BOA_connect[region][c].roomnum != ent_room)
+      continue;
+    int ep = BOA_connect[region][c].portal;
+    if (ep < 0 || ep >= Rooms[ent_room].num_portals)
+      continue;
+    vector diff = Rooms[ent_room].portals[ep].path_pnt - obj->pos;
+    float d = vm_GetMagnitude(&diff);
+    if (d < best_dist) {
+      best_dist = d;
+      best_portal = ep;
+    }
+  }
+  if (best_portal < 0)
+    return false;
+  if (out_room)
+    *out_room = ent_room;
+  if (out_portal)
+    *out_portal = best_portal;
+  return true;
 }

@@ -1637,6 +1637,35 @@ static void BotDoExploreRoaming(int bot_index) {
       return;
     }
 
+    // Phase 8.1 outdoor entrance awareness: outdoors the engine path-follower can't steer across
+    // terrain to a structure, so it strands the bot at the room center (buried down a shaft, or
+    // behind a wall). Resolve the terrain-facing NEAR door leading to the objective and aim the
+    // engine goal at its path_pnt; the engine then steers the full-3D approach itself. Indoors this
+    // is skipped and the interior router below runs (it owns the shaft descent / post interior).
+    if (Bot_terrain_steering_enabled && OBJECT_OUTSIDE(obj)) {
+      int ent_room = -1, ent_portal = -1;
+      if (BotResolveOutdoorEntrance(obj, obj_room, &ent_room, &ent_portal)) {
+        vector ent_pos = Rooms[ent_room].portals[ent_portal].path_pnt;
+        // Re-issue only when the entrance changed or the goal lapsed (no per-tick churn).
+        int &pgi = Bots[bot_index].pursuit_goal_index;
+        bool en_route = (Bots[bot_index].explore_dest_room == ent_room && pgi >= 0 && pgi < MAX_GOALS &&
+                         obj->ai_info->goals[pgi].used && Bots[bot_index].explore_room_timer > 0.0f);
+        if (!en_route) {
+          if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+            GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+          goal_info gi_info{};
+          gi_info.pos = ent_pos;
+          gi_info.roomnum = ent_room;
+          pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
+          Bots[bot_index].explore_dest_room = ent_room;
+          Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
+          LOG_DEBUG.printf("BOT: '%s' outdoor entrance-seek -> room %d portal %d (obj %d)", Bots[bot_index].callsign,
+                           ent_room, ent_portal, obj_room);
+        }
+        return;
+      }
+    }
+
     // Phase 11 waypoint injection: head to the next room on the cost-aware route rather than
     // straight at the far objective room (which lets the engine re-plan via its own greedy BOA and
     // ignore our routing). Shared BotSetRoutedGoal handles the route, the hold-check, and fallback.
@@ -3052,42 +3081,6 @@ static const char *BotTerrainDiag(object *obj, int dest, char *buf, size_t bufle
   return buf;
 }
 
-// Phase 8.1a — Sky-route suppression: on outdoor maps, BOA routes through terrain regions via
-// upward portals (sky shortcuts), and engine terrain avoidance can push the nav direction skyward.
-// Flatten strongly-upward nav directions to prevent sky-barrier thrust.
-//
-// AXIS FIX: world up is the Y axis in this engine (GetTerrainGroundPoint writes pos->y(); the
-// outdoor altitude caps in BotApplyThrust use pos.y()). The original code operated on dir.z()
-// (the horizontal depth axis), so it never actually suppressed vertical motion and corrupted
-// heading on strong +Z travel. Now correctly flattens dir.y(). This is the seed of the Phase 8.1
-// terrain steering layer; 8.1b will replace the hard flatten with a two-way altitude band.
-static void BotFlattenSkyDirection(vector &dir, object *obj) {
-  if (!Bot_terrain_steering_enabled)
-    return;
-
-  bool in_outdoor_area =
-      ROOMNUM_OUTSIDE(obj->roomnum) || (obj->roomnum >= 0 && obj->roomnum <= Highest_room_index &&
-                                        (Rooms[obj->roomnum].flags & (RF_EXTERNAL | RF_TOUCHES_TERRAIN)));
-  if (!in_outdoor_area)
-    return;
-
-  float world_up_dot = dir.y();
-  if (world_up_dot <= 0.3f)
-    return;
-
-  dir.y() = 0.0f;
-  float flat_mag = vm_GetMagnitude(&dir);
-  if (flat_mag > 0.1f) {
-    dir = dir * (1.0f / flat_mag);
-  } else {
-    dir = obj->orient.fvec;
-    dir.y() = 0.0f;
-    float fwd_mag = vm_GetMagnitude(&dir);
-    if (fwd_mag > 0.01f)
-      dir = dir * (1.0f / fwd_mag);
-  }
-}
-
 // Per-frame lead aim steering (Phase 3.16 accuracy fix).
 // Writes the predicted intercept position into ai_info->last_see_target_pos so that
 // AIDoOrient (GF_ORIENT_TARGET) turns the bot toward where the target WILL BE,
@@ -3127,7 +3120,6 @@ static void BotUpdateAimDirection(int bot_index) {
     if (should_face_nav) {
       vector nav_dir = obj->ai_info->movement_dir;
       if (vm_GetMagnitude(&nav_dir) > 0.1f) {
-        BotFlattenSkyDirection(nav_dir, obj);
         obj->ai_info->last_see_target_pos = obj->pos + nav_dir * 200.0f;
         return;
       }
@@ -3201,7 +3193,11 @@ static void BotApplyThrust(int bot_index) {
   }
 
   if (has_nav_dir) {
-    BotFlattenSkyDirection(effective_dir, obj);
+    // Outdoor steering is the engine's own full-3D movement_dir toward the goal (which routing has
+    // aimed at the near entrance door — NAVIGATION.md §4.1) — decompose it straight into thrust axes.
+    // No sky-flatten / soft AGL cap: those were band-aids for the removed flow-field layer; the
+    // engine already points correctly at elevated targets, and the absolute ceiling cap below + the
+    // OF_FORCE_CEILING_CHECK collision are the real altitude rails.
     forward = vm_DotProduct(&effective_dir, &obj->orient.fvec);
     sideways = vm_DotProduct(&effective_dir, &obj->orient.rvec);
     vertical = vm_DotProduct(&effective_dir, &obj->orient.uvec);
@@ -3605,14 +3601,9 @@ static void BotApplyThrust(int bot_index) {
   // The ceiling collision (OF_FORCE_CEILING_CHECK) handles the hard boundary; this prevents
   // the thrust-into-ceiling loop that causes "Too many collisions" spam.
   if (OBJECT_OUTSIDE(obj)) {
-    float ground_y = GetTerrainGroundPoint(&obj->pos);
-    float alt_above_ground = obj->pos.y() - ground_y;
-
-    // Ground-relative cap: keep fights at reasonable altitudes
-    if (alt_above_ground > BOT_MAX_ALTITUDE_ABOVE_GROUND && vertical > 0.0f)
-      vertical = 0.0f;
-
-    // Absolute ceiling cap: never approach Ceiling_height
+    // Absolute ceiling cap: never approach Ceiling_height. (The old ground-relative AGL cap was a
+    // band-aid for the removed flow-field layer — deleted; the engine steers to bounded targets, and
+    // this absolute cap + the OF_FORCE_CEILING_CHECK collision are the real altitude rails.)
     if (obj->pos.y() > Ceiling_height - BOT_ALTITUDE_CEILING_MARGIN && vertical > 0.0f)
       vertical = 0.0f;
 

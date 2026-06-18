@@ -239,8 +239,7 @@
 // Altitude constraint (Phase 3.20)
 // Prevents bots from flying out of the level space on outdoor maps.
 // OF_FORCE_CEILING_CHECK enables engine ceiling collision; these constants add a thrust soft cap.
-#define BOT_MAX_ALTITUDE_ABOVE_GROUND 200.0f // max height above terrain before suppressing climb
-#define BOT_ALTITUDE_CEILING_MARGIN 50.0f    // suppress upward thrust this far below Ceiling_height
+#define BOT_ALTITUDE_CEILING_MARGIN 50.0f // suppress upward thrust this far below Ceiling_height
 
 // Game mode detection (Phase 7.0) — cached at level start from Netgame.scriptname.
 // Keeps string compares off the hot path; FSM and objective code switch on this enum.

@@ -168,9 +168,55 @@ The engine owns steering. Our only touches:
   (§3.3) and pick a new destination; escalation forces a physical escape. ⚠️ The escape portal pick
   in `BotApplyThrust` is still **goal-blind** (§7).
 - **Outdoor (`$terrainsteer`, default on).** Indoors the engine handles everything. Outdoors the
-  fork adds a thin terrain layer (sky-flatten on the **Y** axis — Y is up in this engine; the engine's
+  fork adds a terrain layer (sky-flatten on the **Y** axis — Y is up in this engine; the engine's
   own `AIF_BIASED_FLIGHT_HEIGHT` altitude regulator is gated to `AIT_BIRD_FLOCK1` and never runs for
   our `AIG_GET_TO_POS` followers). The router is interior-only and does not touch outdoor routing.
+  This layer is the **outdoor spatial-awareness model — see §4.1.**
+
+---
+
+## 4.1 Outdoor navigation (Phase 8.1) — engine 3D steering + entrance redirect
+
+**The engine already steers in full 3D.** For an `AIG_GET_TO_POS` goal, `AIMoveTowardsPosition()`
+(`AImain.cpp:1792`) sets `movement_dir = normalize(goal_pos − obj->pos)` — a goal 150u up yields a
+direction that points **up**. There is no terrain/ground bias for normal goals (`AIF_BIASED_FLIGHT_HEIGHT`
+is flock-only and never set on bots). So outdoors the engine flies a bot straight at whatever 3D point we
+give it. Our job is only **(1) don't mangle that direction, and (2) hand it a *reachable* target.**
+
+**Two things go wrong — both about the target, not the steering:**
+- The engine can't *path* across terrain (no path nodes outdoors → it beelines to `goal_pos`). Aim it at a
+  structure room's center and it beelines into the wall (post) or the ground above a buried shaft room.
+- A multi-door structure (a post has a door per side) — aim at the wrong/far door = into the wall.
+
+**The redirect (`BotResolveOutdoorEntrance`, `bot_steering.cpp`).** When an outdoor bot has a structure
+objective, resolve the terrain-facing **near door** leading to it and aim the `AIG_GET_TO_POS` goal at
+that portal's `path_pnt` (the engine's designer-placed transit point — reachable, unlike the wall-plane
+`face_center`). Door resolution from the engine's own `BOA_connect[region][]` table (structure room +
+terrain portal): **direct** when the objective is terrain-adjacent (posts); else the **min interior-path-
+cost** entrance (`BotEstimatePathCost`) = the surface **pavilion** atop a shaft. Among that room's doors,
+pick the one whose `path_pnt` is **nearest the bot**. The engine then flies the full-3D approach; once the
+bot is inside (`OBJECT_OUTSIDE` false) the interior router owns the shaft descent / post interior. Gated by
+`$terrainsteer` (`Bot_terrain_steering_enabled`): `off` = raw engine (room-center goal), `on` = redirect.
+
+**No sky-flatten, no soft AGL cap (deleted).** Outdoor steering is simply the engine's un-flattened
+`movement_dir` decomposed into thrust. The old `BotFlattenSkyDirection` (zeroed `dir.y()`) and the
+ground-relative AGL-200 cap were band-aids for the **flow-field steering layer deleted in Phase 10** —
+they only survived to harm: flattening the engine's correct +Y is exactly what pinned bots at the base of
+elevated entrances. The **real** altitude rails remain: the absolute `Ceiling_height` cap + hard-recovery
+(`BotApplyThrust`) and the `OF_FORCE_CEILING_CHECK` collision (`physics.cpp` adds `FQ_CHECK_CEILING`),
+which physically halt the bot at the ceiling regardless of thrust. Every outdoor goal is a bounded target
+(objective entrance, explore `BOA_connect` point, HUNT/powerup object, or WANDER's bounded-Y terrain
+point), so nothing pushes a bot skyward with no destination — sky-flying cannot recur absent the deleted
+flow field.
+
+**Mode-agnostic.** Keys off `BotGetObjectiveRoom` — CTF / Hyper-Anarchy / Hoard / Monsterball all benefit;
+Entropy gains it once it has an objective-room hook. All changes are bot code (no engine files).
+
+**Deferred — ridge handling / outdoor anchor graph.** The engine avoids walls, not bare terrain ridges, so
+a hill between bot and target on an extreme map is unhandled (pre-existing, not regressed here). The terrain
+analog of the skeleton — nodes = entrances + sampled terrain waypoints, edges = heightfield-LOS-clear legs,
+cached per level — is the route-around tier; build only if a real map proves over-the-top flight is
+ceiling-blocked.
 
 ---
 
@@ -195,7 +241,10 @@ BOA — a bug (the router would be silently overriding BOA everywhere), not a fe
 ## 6. Invariants (don't regress these)
 
 1. **Never write `movement_dir`** or otherwise hand the bot a custom steering vector. Routing returns
-   a room; the engine steers.
+   a room (or, outdoors, redirects the goal to a reachable entrance `path_pnt` — §4.1); the engine
+   steers in 3D toward it. **Bounded exception** (where the engine genuinely cannot steer): the
+   flag-carrier home beeline decomposes a direct vector into thrust axes — never writing `movement_dir`,
+   gated to carrier-in-home-room, off everywhere else.
 2. **Routing failure must fall back to the engine**, never strand. `BotComputeRoute` returns -1 →
    feed the far goal.
 3. **Geometry/obstacle verdicts are soft costs only** — never mutate engine portal/BOA flags.
@@ -481,13 +530,14 @@ BOA — a bug (the router would be silently overriding BOA everywhere), not a fe
   direction and can flee backward. The dynamic penalty (§3.3) addresses the *intent* (reroute forward
   on repeated failure) but only when an alternate route exists. A goal-aware escape may still be
   warranted — but it caused regressions before; treat carefully.
-- **Outdoor height-awareness (ENTRANCE-SEEK).** Bots can mis-target the wrong entry point of a
-  surface structure (e.g. a flag shaft whose mouth is above ground) and stick. Planned design: a
-  per-frame mode decision in the terrain layer — **OPEN-TERRAIN** (altitude-band hold + forward
-  look-ahead climb) when the next room is open terrain, vs **ENTRANCE-SEEK** (aim directly at the
-  entrance `path_pnt`, band/look-ahead disabled) when the route goes into a mine/structure. Gated on
-  `RF_EXTERNAL | RF_TOUCHES_TERRAIN`; indoor path untouched. (A parallel terrain nav-grid was scoped
-  and rejected as too costly — see git history of `NAV_OVERHAUL_3.md`.)
+- **Outdoor navigation — redesigned subtractively (§4.1), pending soak.** Root cause was *us*: the
+  engine already produces a full-3D `movement_dir` to elevated targets, but `BotFlattenSkyDirection`
+  (a vestigial band-aid for the Phase-10-deleted flow field) zeroed the climb. Fix = delete the
+  flatten + soft AGL cap + the entrance-seek override, and instead redirect the outdoor goal to the
+  **near door's `path_pnt`** (`BotResolveOutdoorEntrance`); the engine flies the 3D approach. **Open
+  item:** bare terrain **ridges** between bot and target (engine avoids walls, not terrain) — the
+  deferred route-around anchor graph is the minimal form, built only if a map proves it needed (a
+  parallel terrain nav-grid was scoped and rejected as too costly — git history of `NAV_OVERHAUL_3.md`).
 - **Multi-flag CTF.** In 4-team CTF, deliberately hoarding multiple enemy flags before cashing in is
   not implemented (bots only do it opportunistically).
 

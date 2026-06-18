@@ -78,6 +78,10 @@ RE_NET_DISP = re.compile(r"net_disp=(-?\d+)")  # carried by stuck-escalation + r
 RE_TERRAIN_DIAG = re.compile(
     r"TERRAIN cell=(-?\d+),(-?\d+) rgn=(-?\d+) agl=(-?\d+) spd=(-?\d+) dest=(-?\d+)\((\w+)\)")
 
+# Phase 8.1 outdoor entrance-seek issuance (routing aimed an outdoor bot at a structure entrance).
+# Pairs with terrain_entrance (the stuck-miss count): seeks issued should rise as misses fall.
+RE_OA_SEEK = re.compile(r"outdoor entrance-seek -> room (\d+) portal (\d+) \(obj (\d+)\)")
+
 DIST_CLOSE = 200
 DIST_MID = 500
 
@@ -122,6 +126,8 @@ def new_map_stats():
         "terrain_agl_sum": 0,
         "terrain_agl_n": 0,
         "terrain_agl_min": 999999,
+        "oa_seek_events": 0,          # Phase 8.1: outdoor entrance-seek goals issued
+        "oa_seek_rooms": Counter(),   # entrance room → count (which structures bots are seeking)
         "waiting_flag": 0,
         "poll_ctf": 0,
         "obj_nav": 0,
@@ -291,6 +297,12 @@ def parse_log(path):
                 elif dtype == "STRUCT":
                     s["terrain_entrance"] += 1
                 # no continue: the line still flows to its normal stuck/timeout handler below
+
+            mo = RE_OA_SEEK.search(line)
+            if mo:
+                s["oa_seek_events"] += 1
+                s["oa_seek_rooms"][int(mo.group(1))] += 1
+                continue
 
             m = RE_POWERUP_PIN.search(line)
             if m:
@@ -759,7 +771,7 @@ def print_report(stats, total_lines, log_path):
 
     # Outdoor steering diagnosis (terrain-diag suffix on outdoor stuck/escape lines). Only renders if
     # any outdoor stuck was enriched, so indoor-only soaks don't grow an empty section.
-    has_terrain = any(s["terrain_events"] for s in stats.values())
+    has_terrain = any(s["terrain_events"] or s["oa_seek_events"] for s in stats.values())
     if has_terrain:
         print(f"## Outdoor Steering (terrain-diag)")
         print()
@@ -786,6 +798,22 @@ def print_report(stats, total_lines, log_path):
                   f"| {agl_min:.0f}/{agl_avg:.0f} "
                   f"| {top_cells} |")
         print()
+        # Phase 8.1 entrance-seek issuance (routing aimed outdoor bots at structure entrances).
+        # Read it against the `entrance` (miss) column: seeks firing while entrance-miss stucks fall
+        # = the climb is landing. Seeks firing while misses stay high = climb not converting yet.
+        if any(s["oa_seek_events"] for s in stats.values()):
+            print("**Entrance-seek issued (Phase 8.1):** outdoor bots routed at a structure doorway "
+                  "(climb-to-entrance). Compare with the `entrance` column above.")
+            print()
+            print(f"| Map | Seeks issued | Top entrance rooms |")
+            print(f"|---|---|---|")
+            for name in maps:
+                s = stats[name]
+                if not s["oa_seek_events"]:
+                    continue
+                top_rooms = ", ".join(f"room {r}x{c}" for r, c in s["oa_seek_rooms"].most_common(3))
+                print(f"| {name} | {s['oa_seek_events']} | {top_rooms} |")
+            print()
 
     # Carrier death distance buckets
     has_deaths = any(s["carrier_dists"] for s in stats.values())
