@@ -40,6 +40,12 @@ def analyze(path, data):
     print(f"- rooms: {len(rooms)}  (highest_room_index {data.get('highest_room_index', '?')})")
     print(f"- probe_radius (ship hull): {data.get('probe_radius', '?')}")
     print(f"- boa_mine_checksum: {data.get('boa_mine_checksum', '?')}")
+    bn_alloc = data.get("bnode_allocated")
+    if bn_alloc is not None:
+        rooms_no_bn = sum(1 for r in rooms if r.get("bnode_count", 0) == 0)
+        tag = "OK" if bn_alloc else "ABSENT — engine bakes NO in-room waypoints; reactive reach-the-door fallback owns this map"
+        print(f"- bnodes: allocated={bn_alloc} verified={data.get('bnode_verified')}  | "
+              f"rooms with 0 bnodes: {rooms_no_bn}/{len(rooms)}  [{tag}]")
     if summary:
         print(f"- summary: {json.dumps(summary)}")
     print()

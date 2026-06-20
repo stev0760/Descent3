@@ -3,6 +3,30 @@
 
 **Status:** Matcen **0.9.2-dev** — **Phase 12: intra-room via-point steering** (in progress). 0.9.2 is the targeted *final, canonical, fixed navigation-and-steering* build: it attacks the one remaining nav blocker — the engine's intra-room interior-obstacle press (a free-standing glass/pillar *face* between the path node and the exit portal), a **known engine limitation reproducible in vanilla retail D3 with robots**. Full diagnosis (navdump-confirmed: `los_from_pathpnt_clear=0`, pure steering, 93% EXPLORE, limit-cycle) and the via-point plan live in `NAVIGATION.md` §7 + §2.5. **The Phase 12 mechanism is now implemented** (via-point detour keyed on the engine's current path node, sealed-powerup abandon + sealed-room selection gate), and **Phase 12.2 hardens the powerup guards** after the pyroplace soak: a global per-level troll strike table (repeat chase-timeouts/seal-abandons retire an item level-wide — the only defense against approach-sealed glass-pocket trolls no straight-line probe can see, e.g. pyroplace Mega/Blackshark), a wrong-side rescue (item across a bulletproof-glass corridor divider → reroute through the neighbor whose portal sees it), a via cycle cap (a via must lead to a room change or yield to rerouting — the abend2 mirror-room dance), and via support in the `!follow` escort branch. Awaiting validation on the 4-map indoor rotation (abend2/pumphouse/nysa/pyroplace) before any "fixed" claim. **Phase 12.3 "portal-skeleton traversal" is implemented (2026-06-12, untested)** (NAVIGATION.md §7 12.3): when the via ring search fails, a per-room portal skeleton (portal path_pnts + hull-clear legs, cached) is BFS'd toward the routed exit and the first hop issued as the via — invariant-derived intra-room traversal for buried-center rooms (rings/labyrinths/divided). Step-zero offline detector validation passed (13/14 pin rooms across 5 maps). Generality gate pending: official-map regression + two fresh community holdout maps. **Chat Stage 6 "Orders as Goals" is also in (2026-06-11, untested):** orders now own navigation via anchors + a lifecycle with player feedback — new `!hold`/`!stay` verb (hold the speaker's position), `!defend` anchors to a post outside CTF, escort offset stations + BLOCKED detection/reports for `!follow`/`!cover`, enriched `!status`. See `CHAT_COMMANDS.md` §Stage 6. **Matcen 0.9.1 (stable) remains the pinned fallback** — Phase 11's validated cost-aware Dijkstra router (routing-only on the Phase 10 two-layer base; the engine still does all steering), explicitly **not** the steering override Phase 10 removed.
 
+### Outdoor redesign (VALIDATED) + in-room nav for BNode-less custom maps (0.9.2-dev, 2026-06-19)
+
+**Phase 8.1 outdoor terrain nav — subtractive redesign, VALIDATED.** The engine's `AIMoveTowardsPosition`
+already produces a full-3D heading to any goal; the fork's `BotFlattenSkyDirection` — a vestigial band-aid
+for the Phase-10-deleted flow field — was zeroing the climb, stranding bots at the base of elevated
+structures (flag posts / shaft pavilions). Fix = **delete** the flatten + soft AGL cap + the entrance-seek
+override, and **redirect** the outdoor objective goal to the **near door's `path_pnt`**
+(`BotResolveOutdoorEntrance`); the engine flies the 3D approach itself. Validated: bedlam captures
++70%/+32%, outdoor hard-pins 57→1; Fellowship (real rough terrain) **0 sky-fly** (all 2397 outdoor stuck
+events agl<150, avg 8). Bot code only; `NAVIGATION.md` §4.1.
+
+**Phase 12.4 in-room nav for BNode-less custom maps — reactive reach-the-door fallback (untested).** Root
+cause confirmed in-code: the engine's in-room waypoints (**BNodes**) are **baked into the level file only,
+with no runtime generator** (`ReadBNodeChunk`/`LoadLevel.cpp` sets `BNode_allocated`; `MakeBOA` builds
+none). Old user-made maps lack the `BNODE` chunk → the engine threads rooms with just `path_pnt`+portal
+points → buried-center rooms (Bree's tavern: 1820 faces, unreachable center, no clear portal leg) strand
+the bot (703 via-search-fails). Fix (`Bot_reach_door_enabled`, `BotFindViaPoint`): when the portal-skeleton
+knows the egress portal toward the goal but can't reach it cleanly in a `RoomBuriedCenter` room, **aim at
+the nearest egress portal anyway** — a goal waypoint, *not* a steering force (explicitly **not** the
+reverted Phase-7 flow/potential-fields) — and let the engine grind to the threshold; marked as a skeleton
+hop so the existing chain-cap → suspend → reroute machinery governs loops. Added `$navdump`
+`bnode_allocated` / per-room `bnode_count` diagnostic. Awaiting a Fellowship soak. Bot code only;
+`NAVIGATION.md` §2.2 + §4.2.
+
 ### Crash & leak fixes from the navmapping22 soak (0.9.2-dev, 2026-06-13, pending soak re-validation)
 
 A 12.3.3 bedlam soak (navmapping22) aborted. Diagnosis turned up two **independent** defects, neither caused by the skeleton-nav work (navmapping21 hit the identical abort ~14 min in with zero nav activity):

@@ -53,6 +53,13 @@
 // (default ON — disable with $terrainsteer off to compare against raw engine outdoor movement).
 bool Bot_terrain_steering_enabled = true;
 
+// Phase 12.4: reactive "reach-the-door" in-room fallback. On BNode-less custom maps the engine bakes
+// no in-room waypoints, so a buried-center / no-clear-leg room (Bree's tavern, Isengard's labyrinth)
+// strands the bot — the via search finds no clean path and gives up. When that happens but the egress
+// portal toward the goal is known, aim at it anyway and let the engine grind the bot to the threshold.
+// Kill-switch for the §7 goal-aware-escape regression history (flip + rebuild to A/B).
+bool Bot_reach_door_enabled = true;
+
 // Per-level portal passability cache. Catches geometry-based blockage (bunker slits,
 // barred openings) that portal flags miss. -1=unchecked, 0=blocked, 1=passable.
 static int8_t pf_portal_passable[MAX_ROOMS][MAX_PATH_PORTALS];
@@ -504,6 +511,36 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
           if (skeleton_out)
             *skeleton_out = true;
           return BOT_VIA_FOUND;
+        }
+
+        // Reactive reach-the-door fallback (12.4): the egress portal toward the goal is known (exits)
+        // but no clean skeleton path reaches it — the buried-center / no-clear-leg rooms of BNode-less
+        // custom maps, where the engine bakes no in-room waypoints (NAVIGATION.md). Aim straight at the
+        // nearest egress portal anyway and let the engine's wall-avoidance grind the bot to the
+        // threshold; crossing it = progress. Still a goal-aware AIG_GET_TO_POS waypoint, never a
+        // steering force. Marked skeleton so the existing chain-cap -> suspend -> room-progress-timeout
+        // -> dyn-bump -> reroute machinery governs it: if the bot keeps reaching the door region without
+        // crossing, it reroutes (or, if this is the only way out, keeps trying — no worse than the churn
+        // it replaces, which it also silences by returning FOUND instead of NONE).
+        if (Bot_reach_door_enabled && RoomBuriedCenter(room_idx)) {
+          int best = -1;
+          float best_d = 1e30f;
+          for (int i = 0; i < n; i++) {
+            if (!(exits & (1u << i)))
+              continue;
+            float d = vm_VectorDistanceQuick(&obj->pos, &rm.portals[i].path_pnt);
+            if (d < best_d) {
+              best_d = d;
+              best = i;
+            }
+          }
+          if (best >= 0) {
+            if (via_out)
+              *via_out = rm.portals[best].path_pnt;
+            if (skeleton_out)
+              *skeleton_out = true;
+            return BOT_VIA_FOUND;
+          }
         }
       }
     }

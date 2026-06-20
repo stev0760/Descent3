@@ -50,6 +50,14 @@ Verified against `aipath.cpp`, `BOA.cpp`, `AImain.cpp`, `aistruct.h`.
 ### 2.2 BNodes — in-room waypoints
 Points inside a room (usually near portals) the engine threads between to cross a room's interior.
 `AIGenerateBNodePath` builds a node sequence along the BOA room path.
+**Critical: BNodes are BAKED INTO THE LEVEL FILE ONLY** — `ReadBNodeChunk` (`LoadLevel.cpp:3047`) sets
+the global `BNode_allocated`; there is **no runtime generator** (`MakeBOA` builds none). Old user-made
+maps shipped without the `BNODE` chunk → `BNode_allocated = false` → the path build falls back to
+`AIGenerateBOAPath` (`aipath.cpp:1097`), which strings together only the **room `path_pnt` + portal
+points** — no intra-room waypoints. In a buried-center room that `path_pnt` is *inside solid*, so the
+engine aims the bot **into the wall**. This is a durable engine limitation, not a fork regression, and
+it is *the* reason complex rooms on custom maps are unnavigable by the engine alone (see §4.2). Confirm
+per map with `$navdump` → `bnode_allocated` / per-room `bnode_count`.
 
 ### 2.3 The path-follower pipeline
 `GoalAddGoal(AIG_GET_TO_POS/OBJ)` → `AIPathAllocPath` (`aipath.cpp:990`) builds the full path:
@@ -217,6 +225,35 @@ a hill between bot and target on an extreme map is unhandled (pre-existing, not 
 analog of the skeleton — nodes = entrances + sampled terrain waypoints, edges = heightfield-LOS-clear legs,
 cached per level — is the route-around tier; build only if a real map proves over-the-top flight is
 ceiling-blocked.
+
+---
+
+## 4.2 In-room navigation on BNode-less custom maps (Phase 12.4)
+
+**Why a separate layer.** §2.2: the engine's in-room waypoints (BNodes) are baked into the level file
+only, with no runtime generator. Old custom maps ship without them → the engine threads a room with just
+its `path_pnt` + portal points, which fails outright in **buried-center / no-clear-portal-leg** rooms
+(Bree's tavern: 1820 faces, unreachable bbox-center `path_pnt`, 2 portals with no clear leg between them
+→ 703 via-search-fails). Our portal-skeleton go-around (§4 via-points) also gives up there — it only
+connects *portals* with hull-clear legs, and there are none.
+
+**Reactive reach-the-door fallback (`Bot_reach_door_enabled`, default on, `BotFindViaPoint`).** When the
+skeleton knows the egress portal toward the goal (`exits`) but finds no clean path to it, *in a
+`RoomBuriedCenter` room*, commit the bot to the **nearest egress portal's `path_pnt`** anyway and let the
+engine's wall-avoidance grind it to the threshold; crossing it = progress. It is a **goal waypoint
+(`AIG_GET_TO_POS`), never a steering force** — so it complements the engine's one controller and is
+categorically unlike the reverted flow/potential-fields (§8, Phase 7). Marked as a skeleton hop, so the
+existing **chain-cap → suspend → room-progress-timeout → dyn-bump → reroute** machinery governs it: a bot
+that keeps reaching the door region without crossing reroutes around the room (if an alternate exists),
+or — if it's the only way out — keeps trying, never worse than the churn it replaces (which it also
+silences, returning `FOUND` instead of `NONE`). Genuinely unsolvable rooms (no alternate route + no
+reachable door) are a map defect no nav layer fixes.
+
+**Deferred tier — interior-waypoint synthesis (a runtime BNode substitute).** Only if the reactive
+fallback leaves bots stalling: sample interior 3D points (along bot→exit, then a point-cloud), keep the
+hull-clear ones (`ViaSegmentClear`), and path through them — generating the in-room waypoints the engine
+won't. Same `AIG_GET_TO_POS` waypoint architecture; smoother motion *when a hull-clear path exists*, but
+no help when one doesn't (so the reactive fallback stays the backstop).
 
 ---
 
@@ -530,14 +567,43 @@ BOA — a bug (the router would be silently overriding BOA everywhere), not a fe
   direction and can flee backward. The dynamic penalty (§3.3) addresses the *intent* (reroute forward
   on repeated failure) but only when an alternate route exists. A goal-aware escape may still be
   warranted — but it caused regressions before; treat carefully.
-- **Outdoor navigation — redesigned subtractively (§4.1), pending soak.** Root cause was *us*: the
-  engine already produces a full-3D `movement_dir` to elevated targets, but `BotFlattenSkyDirection`
-  (a vestigial band-aid for the Phase-10-deleted flow field) zeroed the climb. Fix = delete the
-  flatten + soft AGL cap + the entrance-seek override, and instead redirect the outdoor goal to the
-  **near door's `path_pnt`** (`BotResolveOutdoorEntrance`); the engine flies the 3D approach. **Open
-  item:** bare terrain **ridges** between bot and target (engine avoids walls, not terrain) — the
-  deferred route-around anchor graph is the minimal form, built only if a map proves it needed (a
-  parallel terrain nav-grid was scoped and rejected as too costly — git history of `NAV_OVERHAUL_3.md`).
+- **Outdoor navigation — redesigned subtractively (§4.1), VALIDATED.** Root cause was *us*: the engine
+  already produces a full-3D `movement_dir` to elevated targets, but `BotFlattenSkyDirection` (a
+  vestigial band-aid for the Phase-10-deleted flow field) zeroed the climb. Fix = delete the flatten +
+  soft AGL cap + the entrance-seek override, and redirect the outdoor goal to the **near door's
+  `path_pnt`** (`BotResolveOutdoorEntrance`); the engine flies the 3D approach. Validated on real
+  terrain — bedlam: captures +70%/+32%, outdoor hard-pins 57→1; Fellowship: **0 sky-fly** (all 2397
+  outdoor stuck events were agl<150, avg 8). Remaining frontier → rough-terrain line-of-flight (below).
+- **Rough-terrain line-of-flight — the deferred terrain tier.** On *continuous rough terrain* (hills,
+  pits, cavern mouths — not discrete posts) the engine flies the bot a straight 3D line to its target;
+  when terrain rises between them the line goes **into the hillside** and the bot ground-pins (it avoids
+  walls, not bare terrain). Signature: outdoor stucks dominated by `ground-pin` (agl<12) / under-terrain
+  (agl<0), not the high-post stall (Fellowship's Isengard pit + town surfaces were the proof). Fix tier:
+  sample the heightfield along the steer line → lift the aim over the crest, and/or a cached outdoor
+  anchor graph (nodes = entrances + ridge-saddle waypoints, edges = heightfield-LOS-clear legs). Build
+  when a target map needs it (a full parallel terrain nav-grid was scoped and rejected as too costly —
+  git history of `NAV_OVERHAUL_3.md`; this is the minimal form).
+- **Cramped concave room clusters with constrained egress — reactive fallback shipped (12.4), pending
+  soak.** A small volume densely subdivided into many non-convex chambers joined by tight portals, where
+  the goal lies *outside* the cluster and is reachable only through one (or few) egress portal(s). The
+  cluster's own interior faces occlude the steer line in every direction, so the intra-room via/skeleton
+  go-around searches and gives up — the bot churns inside, never threading back out. Stacked chambers /
+  vertical shafts compound it. Signature: a large `via-search-fail` count piled in one room with **0 hard
+  pins** (soft search-and-fail) — the worst single room across the Fellowship soak logged **703**.
+  **Root cause = §2.2 (the engine bakes no BNodes on these maps).** Fix shipped: the **reactive
+  reach-the-door fallback** (`Bot_reach_door_enabled`, `BotFindViaPoint`) — when the skeleton knows the
+  egress portal but can't reach it cleanly in a `RoomBuriedCenter` room, aim at the nearest egress portal
+  anyway (a goal waypoint, not a steering force) and let the engine grind to the threshold; marked
+  skeleton so the existing chain-cap → suspend → dyn-bump → reroute machinery governs it. The deferred
+  tier (only if this leaves bots stalling) is interior-waypoint synthesis — a runtime BNode substitute
+  (§4.2). Surfaced by a custom map that dressed the cluster as a multi-storey building, but the geometry
+  is generic: any cramped, concave, single-chokepoint room pocket in a mine.
+- **Breakable-grate / destructible-obstacle passability — second priority.** Bots treat a destructible
+  grate / breakable pane as a permanent wall: the engine and our passability layer mark the portal
+  impassable, and the bot never *shoots it open* to pass. On maps that wall off zones with grates this
+  **partitions the map into sealed regions** — bots can't reach each other (0 kills) or the flag
+  (Fellowship's Isengard). Geometry flags in `OBSTACLE_GEOMETRY.md`. A fix needs a "shoot-to-open"
+  behaviour on a blocked-but-*breakable* portal that lies on the committed route.
 - **Multi-flag CTF.** In 4-team CTF, deliberately hoarding multiple enemy flags before cashing in is
   not implemented (bots only do it opportunistically).
 

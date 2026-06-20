@@ -90,6 +90,9 @@ bool BotRoomSealedForShip(int room_idx);
 // Runtime toggle (default ON — disable with $terrainsteer off)
 extern bool Bot_terrain_steering_enabled;
 
+// Phase 12.4: reactive "reach-the-door" in-room fallback for BNode-less custom maps (default ON).
+extern bool Bot_reach_door_enabled;
+
 // Portal passability check: casts a ship-radius ray through the portal opening
 // to detect geometry-based blockage (bunker slits, barred windows). Results
 // cached per-level and invalidated on BOA_mine_checksum change.

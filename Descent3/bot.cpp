@@ -53,6 +53,7 @@
 #include "objinfo.h"
 #include "terrain.h"
 #include "BOA.h"
+#include "bnode.h"
 #include "cfile.h"
 #include "dedicated_server.h"
 #include "init.h"
@@ -3868,6 +3869,12 @@ bool BotNavDump(const char *filename) {
   fprintf(fp, "  \"highest_room_index\": %d,\n", Highest_room_index);
   fprintf(fp, "  \"boa_mine_checksum\": %d,\n", BOA_mine_checksum);
   fprintf(fp, "  \"probe_radius\": %.3f,\n", rad);
+  // BNode availability — the engine's in-room waypoints are BAKED into the level file only (no
+  // runtime generator). false here = old custom map without the BNODE chunk → the engine falls back
+  // to sparse room-center+portal paths and can't thread complex rooms (see NAVIGATION.md / the
+  // reactive reach-the-door fallback). bnode_count per room below confirms it room-by-room.
+  fprintf(fp, "  \"bnode_allocated\": %s, \"bnode_verified\": %s,\n", BNode_allocated ? "true" : "false",
+          BNode_verified ? "true" : "false");
   fprintf(fp, "  \"rooms\": [\n");
 
   bool first_room = true;
@@ -3900,6 +3907,9 @@ bool BotNavDump(const char *filename) {
     // FROM the portals — a buried/void center; LOS readings FROM such a path_pnt are untrustworthy)
     fprintf(fp, "      \"path_pnt_reachable\": %s,\n",
             (rm.flags & RF_EXTERNAL) ? "true" : (BotRoomPathPntReachable(r) ? "true" : "false"));
+    // Engine in-room waypoints for this room (0 = none baked → reactive reach-the-door fallback owns it)
+    bn_list *bnl = BNode_GetBNListPtr(r);
+    fprintf(fp, "      \"bnode_count\": %d,\n", bnl ? bnl->num_nodes : 0);
 
     // Per-portal detail
     fprintf(fp, "      \"portals\": [\n");
