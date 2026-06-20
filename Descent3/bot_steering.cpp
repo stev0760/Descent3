@@ -60,6 +60,7 @@ bool Bot_terrain_steering_enabled = true;
 // Kill-switch for the §7 goal-aware-escape regression history (flip + rebuild to A/B).
 bool Bot_reach_door_enabled = true;
 bool Bot_pseudo_bnodes_enabled = true; // 12.5b: synthesize interior waypoints in disconnected rooms ($pseudobnodes)
+bool Bot_outdoor_via_enabled = true;   // 12.6: lateral go-around outdoors (around structures) ($outdoorvia)
 
 // Per-level portal passability cache. Catches geometry-based blockage (bunker slits,
 // barred openings) that portal flags miss. -1=unchecked, 0=blocked, 1=passable.
@@ -263,7 +264,12 @@ void BotBumpPortalPenalty(int room_idx, int portal_idx) {
 
 // Hull-radius segment probe. Walls/terrain block; objects don't (doors open by bumping,
 // players/powerups move). Returns true when the segment is clear for a ship of this radius.
-static bool ViaSegmentClear(int startroom, const vector &a, const vector &b, float radius, fvi_info *hit_out) {
+// check_ceiling (12.6, outdoor only): also reject legs that cross the invisible outdoor ceiling
+// (FQ_CHECK_CEILING → HIT_CEILING). Off indoors — the global ceiling plane could false-hit a room
+// above it; only the outdoor go-around passes true, so a leg that would route a bot OVER a structure
+// (above the low Bree ceiling) fails and the search picks a lateral detour instead.
+static bool ViaSegmentClear(int startroom, const vector &a, const vector &b, float radius, fvi_info *hit_out,
+                            bool check_ceiling = false) {
   vector p0 = a, p1 = b;
   fvi_query fq{};
   fvi_info hit{};
@@ -274,10 +280,16 @@ static bool ViaSegmentClear(int startroom, const vector &a, const vector &b, flo
   fq.thisobjnum = -1;
   fq.ignore_obj_list = nullptr;
   fq.flags = FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS | FQ_IGNORE_MOVING_OBJECTS;
+  if (check_ceiling)
+    fq.flags |= FQ_CHECK_CEILING;
   int ht = fvi_FindIntersection(&fq, &hit);
   if (hit_out)
     *hit_out = hit;
-  return !(ht == HIT_WALL || ht == HIT_BACKFACE || ht == HIT_TERRAIN);
+  if (ht == HIT_WALL || ht == HIT_BACKFACE || ht == HIT_TERRAIN)
+    return false;
+  if (check_ceiling && ht == HIT_CEILING)
+    return false;
+  return true;
 }
 
 // --- Phase 12.3: portal-skeleton traversal (pass 3 of the via search) ---
@@ -448,16 +460,25 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
                              bool *skeleton_out) {
   if (skeleton_out)
     *skeleton_out = false;
-  if (!obj || OBJECT_OUTSIDE(obj))
-    return BOT_VIA_CLEAR; // indoor-only mechanism (no outdoor work in 0.9.2)
-  if (target_room < 0 || target_room > Highest_room_index || !Rooms[target_room].used ||
-      (Rooms[target_room].flags & RF_EXTERNAL))
+  if (!obj)
     return BOT_VIA_CLEAR;
+  // 12.6: outdoors, run the SAME ring search (now ceiling-aware) to route laterally around structures
+  // instead of bailing. Pass 3 (the room portal-skeleton) stays indoor-only — outdoors obj->roomnum is a
+  // terrain cell, not a room index. Gated by $outdoorvia.
+  bool is_outdoor = OBJECT_OUTSIDE(obj) != 0;
+  if (is_outdoor && !Bot_outdoor_via_enabled)
+    return BOT_VIA_CLEAR;
+  // Validate an INTERIOR target room; an outdoor target (terrain cell) is a valid fvi startroom as-is.
+  if (!ROOMNUM_OUTSIDE(target_room)) {
+    if (target_room < 0 || target_room > Highest_room_index || !Rooms[target_room].used ||
+        (Rooms[target_room].flags & RF_EXTERNAL))
+      return BOT_VIA_CLEAR;
+  }
 
   float radius = obj->size;
 
   fvi_info block{};
-  if (ViaSegmentClear(obj->roomnum, obj->pos, target_pos, radius, &block))
+  if (ViaSegmentClear(obj->roomnum, obj->pos, target_pos, radius, &block, is_outdoor))
     return BOT_VIA_CLEAR;
 
   vector dir = target_pos - obj->pos;
@@ -501,12 +522,13 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
                                  pass.anchor - up * off};
         for (const vector &via : cands) {
           fvi_info leg1{};
-          if (!ViaSegmentClear(obj->roomnum, obj->pos, via, radius, &leg1))
+          if (!ViaSegmentClear(obj->roomnum, obj->pos, via, radius, &leg1, is_outdoor))
             continue;
           int via_room = leg1.hit_room;
-          if (via_room < 0 || via_room > Highest_room_index || !Rooms[via_room].used)
+          // Indoors the via must land in a real room; outdoors it lands in open air (a terrain cell) — fine.
+          if (!is_outdoor && (via_room < 0 || via_room > Highest_room_index || !Rooms[via_room].used))
             continue;
-          if (!ViaSegmentClear(target_room, target_pos, via, radius, nullptr))
+          if (!ViaSegmentClear(target_room, target_pos, via, radius, nullptr, is_outdoor))
             continue;
           if (via_out)
             *via_out = via;
@@ -516,8 +538,9 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
     }
   }
 
-  // --- Pass 3 (12.3 + 12.5b): skeleton hop over portals AND pseudo-bnodes. ---
-  {
+  // --- Pass 3 (12.3 + 12.5b): skeleton hop over portals AND pseudo-bnodes. Indoor-only: it indexes
+  // Rooms[obj->roomnum], which is a terrain cell outdoors. The outdoor connecting graph is Stage B. ---
+  if (!is_outdoor) {
     SkelLevelReset();
     int room_idx = obj->roomnum;
     room &rm = Rooms[room_idx];

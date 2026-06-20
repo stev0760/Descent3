@@ -67,6 +67,38 @@ a room lacking BNode data — a latent crash independent of bots).
 
 ---
 
+### Outdoor lateral go-around — Stage A (Phase 12.6, 0.9.2-dev, 2026-06-20, UNTESTED)
+
+**Extends the via go-around OUTDOORS so bots route laterally around building structures instead of
+straight-line-pinning on exterior walls.** Pseudo-BNodes (12.5b) fixed indoor nav, but the user's FPV
+reconnaissance of townofbree showed the dominant remaining failure is **outdoor**: bots pinned against
+building facades / wedged high in wall-and-ceiling corners across the urban town, because **the entire
+via/skeleton was indoor-only** (`BotFindViaPoint` and `BotViaPointTick` early-returned on `OBJECT_OUTSIDE`),
+leaving outdoors with only the engine's straight-line `movement_dir` + grazing wall-avoidance.
+
+Stage A (bot code only, engine *includes* only):
+- **Lift the `OBJECT_OUTSIDE` gates** — outdoors run the SAME reactive ring search (`BotFindViaPoint` passes
+  1–2); Pass 3 (the room portal-skeleton) stays indoor-only (`obj->roomnum` is a terrain cell outdoors).
+- **Ceiling-aware probe** — `ViaSegmentClear` gains an opt-in `check_ceiling` (outdoor only) that sets
+  `FQ_CHECK_CEILING` and treats `HIT_CEILING` as blocked. So the ring's *vertical* (over-the-top) candidates
+  fail when the invisible ceiling is low (Bree), and it picks a **lateral** detour around the footprint —
+  the fix for the high-corner wedge. User-confirmed: **no sky-fly guard needed** (the engine handles
+  vertical fine since the flow-field/axis-flip removal).
+- **Run the via tick in the outdoor path** — at the entrance-seek hook + the en-route maintenance in
+  `BotDoExploreRoaming` (the pin happens mid-flight, so the detour must run en-route too). Carries the
+  approach target in new `oa_steer_pos`/`oa_steer_room` per-bot fields.
+- **Entrance approach offset** (`BOT_OUTDOOR_APPROACH_OFFSET`) — aim at a clean point offset OUT of the door
+  face, clear of the facade / open-door geometry the engine pinned behind (`path_pnt - face_normal*k`).
+- **Toggle** `$outdoorvia` (default ON) for A/B; **no engine files** (the gate-lift only changes the bot's
+  outdoor early-return; indoor ring/skeleton path untouched → indoor maps can't regress).
+
+Engine facts reused: `Ceiling_height`/`FQ_CHECK_CEILING`→`HIT_CEILING` (`findintersection.cpp:2463`),
+`BOA_connect` entrance table (via the existing `BotResolveOutdoorEntrance`). **Stage B (deferred)** = a
+cached outdoor *connecting graph* (BOA_connect entrance nodes + structure perimeter anchors, BFS'd) for
+multi-hop routing around large structures, if Stage A's reactive ring leaves local-minima pins. **Verify:**
+townofbree FPV recon + soak — outdoor `OUTDOOR_ENTRANCE_MISS`/ground-pins drop, the high-corner wedge stops,
+indoor maps unchanged. Doc: `NAVIGATION.md` §4.3.
+
 ### Pseudo-BNodes in the bot-code skeleton (Phase 12.5b, 0.9.2-dev, 2026-06-20, UNTESTED)
 
 **The principled replacement for the reverted engine-BNode generation (below).** Same goal — in-room

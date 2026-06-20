@@ -312,6 +312,7 @@ void BotForceEscortMode(int bot_index) {
   Bots[bot_index].evade_timer = 0.0f;
   Bots[bot_index].explore_dest_room = -1;
   Bots[bot_index].explore_room_timer = 0.0f;
+  Bots[bot_index].oa_steer_room = -1;
 }
 
 // Set a pursuit goal for the bot's current AI target.
@@ -1375,8 +1376,8 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
   object *obj = &Objects[Players[slot].objnum];
   if (!obj->ai_info)
     return 0;
-  if (OBJECT_OUTSIDE(obj)) {
-    Bots[bot_index].via_expires = 0.0f; // indoor-only — drop any commitment on exiting
+  if (OBJECT_OUTSIDE(obj) && !Bot_outdoor_via_enabled) {
+    Bots[bot_index].via_expires = 0.0f; // outdoor go-around disabled ($outdoorvia off) — drop commitment
     return 0;
   }
 
@@ -1585,6 +1586,22 @@ static void BotDoExploreRoaming(int bot_index) {
           gi_info.roomnum = dest;
           pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
         }
+      } else if (Bot_outdoor_via_enabled && Bots[bot_index].oa_steer_room >= 0 &&
+                 Bots[bot_index].oa_steer_room == Bots[bot_index].explore_dest_room) {
+        // 12.6 outdoor via maintenance: the wall-pin happens MID-FLIGHT while holding course to the
+        // entrance (same as the indoor interior press), so the lateral go-around has to run here, not
+        // just at entrance-seek time. The carried approach point must be for the current dest (an
+        // entrance the hook resolved), else a stale target would mis-detour. Detour around structures.
+        vector appr = Bots[bot_index].oa_steer_pos;
+        int aroom = Bots[bot_index].oa_steer_room;
+        int &pgi = Bots[bot_index].pursuit_goal_index;
+        if (!BotViaPointTick(bot_index, appr, aroom, pgi, nullptr) &&
+            !(pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)) {
+          goal_info gi_info{};
+          gi_info.pos = appr;
+          gi_info.roomnum = aroom;
+          pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
+        }
       }
       return; // still en route
     }
@@ -1646,9 +1663,23 @@ static void BotDoExploreRoaming(int bot_index) {
     if (Bot_terrain_steering_enabled && OBJECT_OUTSIDE(obj)) {
       int ent_room = -1, ent_portal = -1;
       if (BotResolveOutdoorEntrance(obj, obj_room, &ent_room, &ent_portal)) {
-        vector ent_pos = Rooms[ent_room].portals[ent_portal].path_pnt;
-        // Re-issue only when the entrance changed or the goal lapsed (no per-tick churn).
+        portal &ep = Rooms[ent_room].portals[ent_portal];
+        // 12.6: aim at a clean APPROACH point offset OUT of the door face (the face normal points INTO the
+        // room, so subtract it to push outward) — clear of the facade / open-door geometry the engine's
+        // straight line otherwise pins behind. Carry it to the en-route via maintenance below.
+        vector ent_pos = ep.path_pnt - Rooms[ent_room].faces[ep.portal_face].normal * BOT_OUTDOOR_APPROACH_OFFSET;
+        Bots[bot_index].oa_steer_pos = ent_pos;
+        Bots[bot_index].oa_steer_room = ent_room;
         int &pgi = Bots[bot_index].pursuit_goal_index;
+        // Outdoor go-around: if a structure blocks the straight line to the approach point, commit to a
+        // lateral via (around the footprint, under the ceiling) instead of beelining into the wall.
+        if (BotViaPointTick(bot_index, ent_pos, ent_room, pgi, nullptr)) {
+          Bots[bot_index].explore_dest_room = ent_room;
+          Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
+          return;
+        }
+        // Line clear (or via reached this tick): head straight to the approach point. Re-issue only when
+        // the entrance changed or the goal lapsed (no per-tick churn).
         bool en_route = (Bots[bot_index].explore_dest_room == ent_room && pgi >= 0 && pgi < MAX_GOALS &&
                          obj->ai_info->goals[pgi].used && Bots[bot_index].explore_room_timer > 0.0f);
         if (!en_route) {

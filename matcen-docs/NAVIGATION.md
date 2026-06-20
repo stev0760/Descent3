@@ -272,6 +272,36 @@ unsolvable rooms (no alternate route + no reachable door) are a map defect no na
 
 ---
 
+## 4.3 Outdoor lateral go-around (Phase 12.6 — `$outdoorvia`)
+
+§4.1 redirects an outdoor bot's goal to the near structure entrance and lets the engine fly the straight 3D
+approach. But on an *urban* outdoor map (Town of Bree) the buildings' exterior walls form alleys and
+courtyards, and the engine's straight line + grazing wall-avoidance **pins the bot against a facade** (or,
+with the **low invisible ceiling** blocking over-flight, wedges it high in a wall-and-ceiling corner). The
+via go-around was indoor-only (`OBJECT_OUTSIDE` early-returns in `BotFindViaPoint` / `BotViaPointTick`).
+
+**Stage A — lift the gate + a ceiling-aware *reactive* detour.** Outdoors we now run the same ring search
+(`BotFindViaPoint` passes 1–2): when `bot→goal` is blocked, sweep ±side/±up candidates for a clear lateral
+via and commit to it (the existing `AIG_GET_TO_POS` + chain-cap/suspend machinery). Two outdoor specifics:
+- **Ceiling-aware probe** — outdoor `ViaSegmentClear` calls set `FQ_CHECK_CEILING`; `HIT_CEILING` counts as
+  blocked. So *over-the-top* candidates fail under a low ceiling and the search resolves **laterally** —
+  around the footprint, in the ground↔ceiling band. (Indoor probes never pass the flag, so the global
+  ceiling plane can't false-hit a room above it.) No sky-fly guard — the engine handles vertical itself.
+- **Entrance approach offset** — target the door's `path_pnt - face_normal*k` (a clean point *out* of the
+  structure), so the final leg isn't into the facade/open-door obstruction the bot pinned behind.
+
+It runs both at entrance-seek and as **en-route maintenance** in `BotDoExploreRoaming` (the pin happens
+mid-flight), carrying the approach point in `oa_steer_pos`/`oa_steer_room`. Pass 3 (the room portal
+skeleton) stays indoor-only — outdoors `obj->roomnum` is a terrain cell, not a room index. Toggle
+`$outdoorvia` (default ON); bot code only, so indoor nav can't regress.
+
+**Stage B (deferred) — the outdoor connecting graph.** If the reactive ring local-minima-pins on large
+structures: a cached per-region node graph (BOA_connect entrance approach points + structure perimeter
+anchors, hull-clear ceiling-capped edges) BFS'd for multi-hop point-to-point routing around buildings — the
+outdoor analog of the room skeleton (§4.2), with the `$navdump` emit extended to draw it.
+
+---
+
 ## 5. Diagnostics
 
 `$botstat [index|all]` prints, per bot, a status line and a nav line:

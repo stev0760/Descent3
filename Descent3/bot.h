@@ -114,6 +114,7 @@
 #define BOT_VISITED_ROOM_COUNT 12               // circular buffer of recently visited rooms (anti-oscillation)
 #define BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT 12.0f // stuck if no room change for this long (Phase 4.01: 8→12)
 #define BOT_OUTDOOR_PROGRESS_DIST 50.0f         // outdoors (no room transitions) progress = moving at least this far
+#define BOT_OUTDOOR_APPROACH_OFFSET 12.0f       // 12.6: aim this far OUT of a structure door (clear of facade/open-door)
 #define BOT_INDOOR_PROGRESS_DIST 50.0f          // indoors, also count this much displacement as progress (big-room fix)
 
 // Secondary weapon firing (Phase 3.10)
@@ -370,6 +371,8 @@ struct bot_info {
   // EXPLORE room roaming (Phase 3.9, overhauled Phase 4.0)
   int explore_dest_room;    // Rooms[] index the bot is currently navigating toward, -1 = none
   float explore_room_timer; // counts down; when <=0 bot picks a new destination room
+  vector oa_steer_pos;      // 12.6: outdoor entrance approach point (carried from entrance-seek to the
+  int oa_steer_room;        //       en-route via maintenance so the lateral go-around runs mid-flight); room=-1 none
   int explore_stuck_room;   // last room abandoned due to stuck — blacklisted for next pick
 
   // Room-change progress tracking (Phase 4.0) — detects stuck earlier than speed-based detection
