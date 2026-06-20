@@ -35,7 +35,6 @@ set(HEADERS
   attach.h
   audiotaunts.h
   bnode.h
-  bnode_gen.h
   bsp.h
   buddymenu.h
   cinematics.h
@@ -156,7 +155,6 @@ set(CPPS
   attach.cpp
   audiotaunts.cpp
   bnode.cpp
-  bnode_gen.cpp
   BOA.cpp
   bot.cpp
   bot_chat.cpp

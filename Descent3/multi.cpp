@@ -1698,8 +1698,6 @@
 #include "psrand.h"
 #include "bot.h"
 #include "BOA.h"
-#include "bnode.h"
-#include "bnode_gen.h"
 #include "aipath.h"
 
 void MultiProcessShipChecksum(MD5 *md5, int ship_index);
@@ -6421,14 +6419,6 @@ bool MultiStartNewLevel(int level) {
   if (BOA_mine_checksum == 0) {
     LOG_INFO << "MULTI: BOA data missing, rebuilding for AI pathfinding";
     MakeBOA();
-  }
-
-  // Ensure in-room BNode waypoints exist for AI navigation. MP maps ship without baked BNodes
-  // (vanilla MP had no AI), so the engine's native in-room path-follower has no data and complex
-  // rooms become untraversable. Generate them here — the matched twin of the MakeBOA() repair above.
-  if (!BNode_allocated) {
-    LOG_INFO << "MULTI: BNode data missing, generating for AI in-room navigation";
-    BNodeGenerateForLevel();
   }
 
   // Fill in player object numbers

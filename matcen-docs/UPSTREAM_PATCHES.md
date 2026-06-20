@@ -20,7 +20,7 @@ the patch text in this document is sufficient — no need to merge from Matcen.
 | :--- | :--- | :--- | :--- | :--- |
 | 1 | `$scores` numeric column truncation | 7 netgame DLLs | Fixed (Matcen 0.8.7, header-overlap regression fixed 0.8.8) | Not submitted |
 | 2 | Dedicated server never resets the grtext buffer → overflow crash | `Descent3/GameLoop.cpp` | Fixed (Matcen 0.9.2-dev) | Not submitted |
-| 3 | AI pathfinder asserts (crashes) on a room with no BNode data | `Descent3/bnode.cpp`, `Descent3/aipath.cpp` | Hardened (Matcen 0.9.3-dev) | Not submitted |
+| 3 | BNode lookup asserts (crashes) on a room with no BNode data | `Descent3/bnode.cpp` | Hardened (Matcen 0.9.2-dev) | Not submitted |
 
 ---
 
@@ -250,62 +250,57 @@ any D3 engine fork.
 
 ---
 
-## 3. AI Pathfinder Asserts on a Room With No BNode Data
+## 3. BNode Lookup Asserts on a Room With No BNode Data
 
 ### Bug
 
-The in-room AI navigation functions assume every room they touch has BNode
-(in-room waypoint) data. If a robot ever paths through a room whose `bn_info`
-has zero nodes — or whose generated/loaded graph leaves two portal-nodes
-disconnected — the engine trips a hard `ASSERT` and aborts:
+The in-room AI node-lookup helpers assume every room they touch has BNode
+(in-room waypoint) data. If a robot's path build calls them on a room whose
+`bn_info` has zero nodes, the engine trips a hard `ASSERT` and aborts:
 
 ```
-  ASSERT(bnlist->num_nodes > 0)         in bnode.cpp (BNode_Find*LocalVisibleBNode)
-  ASSERT(closest_node != -1)            in bnode.cpp
-  ASSERT(f_ok)                          in aipath.cpp (AIGenerateBNodePath / AIGenerateAltBNodePath)
+  ASSERT(bnlist->num_nodes > 0)   in bnode.cpp (BNode_FindClosestLocalVisibleBNode)
+  ASSERT(closest_node != -1)      in bnode.cpp (BNode_FindDirLocalVisibleBNode)
 ```
 
 This is latent in retail D3 because the shipped single-player campaign maps were
 all BNode-authored and editor-verified, so the predicates always held. But it is
-a genuine engine fragility: **any** map a robot navigates that lacks BNode data
-in a room (a custom SP level built without running the editor's BNode pass, or
-any multiplayer map — MP maps never carry BNodes) crashes the game rather than
-degrading. It is independent of bots; a stock robot on such a map hits it too.
+a genuine engine fragility: a custom SP level built without running the editor's
+BNode pass crashes the game rather than degrading. It is independent of bots; a
+stock robot on such a map hits it too.
 
 ### Root cause
 
 The BNode system was authored alongside a level editor that always generated and
-verified the graph before shipping, so the runtime treats "no/disconnected BNode
-data" as impossible (`ASSERT`) instead of a case to handle. There is no runtime
-generation or validation fallback in the game itself.
+verified the graph before shipping, so the runtime treats "no BNode data" as
+impossible (`ASSERT`) instead of a case to handle.
 
 ### Affected files
 
 | File | Function | Change |
 | :--- | :--- | :--- |
 | `Descent3/bnode.cpp` | `BNode_FindClosestLocalVisibleBNode`, `BNode_FindDirLocalVisibleBNode` | `ASSERT(num_nodes>0)` / `ASSERT(closest!=-1)` → `if (num_nodes<=0) return -1;` |
-| `Descent3/aipath.cpp` | `AIGenerateBNodePath`, `AIGenerateAltBNodePath` | `ASSERT(f_ok)` / `ASSERT(bnode>=0)` / `ASSERT(last_node>=0)` → graceful `f_path_exists=false; goto done;` |
 
 ### Fix
 
-Replace the asserts with graceful returns. The callers already handle "no BNode
-path" — `AIGenerate*BNodePath` returning `false` routes the engine to its
-existing alt-path / `AIGenerateBOAPath` fallback, and a `-1` node lookup is an
-already-handled "no node" result. The change is purely *crash → degrade*: on a
+Replace the asserts with graceful returns. The caller already handles a `-1`
+node lookup as an "no node" result. The change is purely *crash → degrade*: on a
 well-formed, BNode-verified map the predicates still always hold, so behavior is
-byte-identical; only a dataless/malformed room is affected, and there a graceful
-fallback is strictly better than an abort.
+byte-identical; only a dataless room is affected, and there a graceful return is
+strictly better than an abort.
 
 ### Portability
 
-Self-contained per-function guards in two engine files, no API change. Safe to
-apply to any D3 engine fork. (In Matcen this hardening is what lets runtime-
-generated BNodes — `bnode_gen.cpp` — be used safely, but the patch itself is
-bot-independent and benefits vanilla robustness on its own.)
+Self-contained per-function guards in one engine file, no API change. Safe to
+apply to any D3 engine fork; bot-independent, benefits vanilla robustness on its
+own. (A sibling hardening of the deeper `ASSERT(f_ok)` in `aipath.cpp`'s
+`AIGenerateBNodePath` was tried during the reverted runtime-BNode-generation
+experiment and is **not** in the current tree — those asserts only fire when
+`BNode_allocated` is true, which on MP maps it is not, so they are dormant here.)
 
 ### Status
 
-- **Matcen:** Hardened in 0.9.3-dev.
+- **Matcen:** Hardened in 0.9.2-dev.
 - **DescentDevelopers/Descent3:** Not submitted. Candidate for PR (latent retail
   crash on BNode-less rooms).
 - **PiccuEngine:** Not submitted. Same engine lineage; same fix expected to apply.

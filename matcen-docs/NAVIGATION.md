@@ -49,43 +49,15 @@ Verified against `aipath.cpp`, `BOA.cpp`, `AImain.cpp`, `aistruct.h`.
 
 ### 2.2 BNodes — in-room waypoints
 Points inside a room (usually near portals) the engine threads between to cross a room's interior.
-`AIGenerateBNodePath` builds a node sequence along the BOA room path, used when
-`BNode_allocated && BNode_verified`.
-
-**The data ships only in single-player levels.** BNodes are baked into the level file by the editor's
-authoring pass (`ReadBNodeChunk`, `LoadLevel.cpp:3047`, sets the global `BNode_allocated`). **Multiplayer
-maps never carry them** — vanilla D3 MP had no AI players, so the editor's BNode pass was never run on MP
-maps, official *or* custom (confirmed 3-for-3 via `$navdump`: `bnode_allocated=false`, 0 nodes). Without
-them the path build falls back to `AIGenerateBOAPath` (`aipath.cpp:1097`), which strings together only the
-**room `path_pnt` + portal points** — no intra-room waypoints. In a buried-center room that `path_pnt` is
-*inside solid*, so the engine aims the bot **into the wall**. This was *the* reason complex rooms on MP
-maps were unnavigable by the engine alone.
-
-**Fix (0.9.3): we generate BNodes at MP level load — the matched twin of the `MakeBOA` repair.** BNodes
-are the in-room half of the navigation data that pairs with BOA (the room-to-room half); just as we
-rebuild BOA when `BOA_mine_checksum == 0` (§2.1), we now build BNodes when `!BNode_allocated`. The engine
-*had* the generator all along — Outrage's editor pass `EBNode_MakeFirstPass` — it was simply never linked
-into the game. We ported its geometry-only functions into `Descent3/bnode_gen.cpp`
-(`BNodeGenerateForLevel`, from `editor/ebnode.cpp`) and call it right after the `MakeBOA()` block in
-`MultiStartNewLevel` (`multi.cpp`), gated on `!BNode_allocated` (so SP/baked maps are untouched). The
-generator places a node per portal (offset into the room by `face_normal*0.75`) plus a room-center node,
-adds edges wherever an `fvi` hull-probe is clear, and prunes edges narrower than the ship. The engine's
-native `AIGenerateBNodePath` then threads complex rooms exactly as on single-player maps. The editor's
-`O(n³) EBNode_VerifyGraph` is skipped (`BNode_verified` set directly); the per-room BOA fallback +
-the via/skeleton layer (§4.2) remain the safety net for rooms the generator leaves sparse. Confirm per map
-with `$navdump` → `bnode_allocated=true` / per-room `bnode_count>0`.
-
-**Path-follower tolerance (required companion change, `aipath.cpp`).** `AIGenerateBNodePath` /
-`AIGenerateAltBNodePath` were written for hand-authored, human-verified graphs: they `ASSERT` that within
-every room on the route the entry- and exit-portal nodes are connected (`BNode_FindPath` succeeds) and
-that every routed portal has a node (`bnode_index >= 0`). A *generated* graph breaks both in pathological
-rooms — a buried-center room whose center node is in solid leaves the portal-nodes disconnected, and a
-portal pruned as unopenable leaves `bnode_index == -1`. So those asserts are relaxed to **graceful bails**
-(`f_path_exists = false; goto done`), routing the case into the engine's existing "no path found" handler
-→ alt-path → BOA → our reach-door layer (§4.2). Good rooms are unaffected (the predicates hold); only the
-pathological ones degrade instead of crashing. This is the minimal completion of the generation repair —
-without it the engine asserts the moment a bot routes through a buried-center room (it crashed on
-townofbree before this change).
+`AIGenerateBNodePath` builds a node sequence along the BOA room path.
+**Critical: BNodes are BAKED INTO THE LEVEL FILE ONLY** — `ReadBNodeChunk` (`LoadLevel.cpp:3047`) sets
+the global `BNode_allocated`; there is **no runtime generator** (`MakeBOA` builds none). Old user-made
+maps shipped without the `BNODE` chunk → `BNode_allocated = false` → the path build falls back to
+`AIGenerateBOAPath` (`aipath.cpp:1097`), which strings together only the **room `path_pnt` + portal
+points** — no intra-room waypoints. In a buried-center room that `path_pnt` is *inside solid*, so the
+engine aims the bot **into the wall**. This is a durable engine limitation, not a fork regression, and
+it is *the* reason complex rooms on custom maps are unnavigable by the engine alone (see §4.2). Confirm
+per map with `$navdump` → `bnode_allocated` / per-room `bnode_count`.
 
 ### 2.3 The path-follower pipeline
 `GoalAddGoal(AIG_GET_TO_POS/OBJ)` → `AIPathAllocPath` (`aipath.cpp:990`) builds the full path:
@@ -258,19 +230,12 @@ ceiling-blocked.
 
 ## 4.2 In-room navigation on BNode-less custom maps (Phase 12.4)
 
-> **Superseded as the primary fix by §2.2 BNode generation (0.9.3).** We now generate real BNodes at MP
-> level load, so the engine's native in-room follower handles complex rooms directly. This reach-door
-> layer remains as the **safety net** for rooms the generator leaves sparse (no hull-clear edges → 0
-> usable nodes → per-room BOA fallback). Keep it; it's cheap and covers the generator's gaps.
-
-**Why a separate layer.** §2.2: the engine's in-room waypoints (BNodes) were baked into the level file
-only — MP maps never carry them, and (before 0.9.3) there was no runtime generator. Without BNodes the
-engine threads a room with just its `path_pnt` + portal points, which fails outright in
-**buried-center / no-clear-portal-leg** rooms (Bree's tavern: 1820 faces, unreachable bbox-center
-`path_pnt`, 2 portals with no clear leg between them → 703 via-search-fails). Our portal-skeleton
-go-around (§4 via-points) also gives up there — it only connects *portals* with hull-clear legs, and there
-are none. BNode generation (§2.2) is the structural fix; the fallback below covers what the generator
-can't synthesize.
+**Why a separate layer.** §2.2: the engine's in-room waypoints (BNodes) are baked into the level file
+only, with no runtime generator. Old custom maps ship without them → the engine threads a room with just
+its `path_pnt` + portal points, which fails outright in **buried-center / no-clear-portal-leg** rooms
+(Bree's tavern: 1820 faces, unreachable bbox-center `path_pnt`, 2 portals with no clear leg between them
+→ 703 via-search-fails). Our portal-skeleton go-around (§4 via-points) also gives up there — it only
+connects *portals* with hull-clear legs, and there are none.
 
 **Reactive reach-the-door fallback (`Bot_reach_door_enabled`, default on, `BotFindViaPoint`).** When the
 skeleton knows the egress portal toward the goal (`exits`) but finds no clean path to it, *in a
@@ -284,12 +249,11 @@ or — if it's the only way out — keeps trying, never worse than the churn it 
 silences, returning `FOUND` instead of `NONE`). Genuinely unsolvable rooms (no alternate route + no
 reachable door) are a map defect no nav layer fixes.
 
-**Resolved tier — runtime BNode generation (§2.2, 0.9.3).** What was scoped here as a "deferred runtime
-BNode substitute" was superseded by something better: generating *real* BNodes from the engine's own
-editor pass (`BNodeGenerateForLevel`). It produces the in-room waypoints the engine consumes natively
-(`AIGenerateBNodePath`), rather than a bot-layer imitation, so motion through complex rooms is the
-engine's own — no `AIG_GET_TO_POS` waypoint stitching needed when a hull-clear path exists. The reach-door
-fallback above stays as the backstop for rooms where even the generator finds no hull-clear edges.
+**Deferred tier — interior-waypoint synthesis (a runtime BNode substitute).** Only if the reactive
+fallback leaves bots stalling: sample interior 3D points (along bot→exit, then a point-cloud), keep the
+hull-clear ones (`ViaSegmentClear`), and path through them — generating the in-room waypoints the engine
+won't. Same `AIG_GET_TO_POS` waypoint architecture; smoother motion *when a hull-clear path exists*, but
+no help when one doesn't (so the reactive fallback stays the backstop).
 
 ---
 
@@ -619,22 +583,21 @@ BOA — a bug (the router would be silently overriding BOA everywhere), not a fe
   anchor graph (nodes = entrances + ridge-saddle waypoints, edges = heightfield-LOS-clear legs). Build
   when a target map needs it (a full parallel terrain nav-grid was scoped and rejected as too costly —
   git history of `NAV_OVERHAUL_3.md`; this is the minimal form).
-- **Cramped concave room clusters with constrained egress — structural fix shipped (BNode generation,
-  0.9.3), pending soak.** A small volume densely subdivided into many non-convex chambers joined by tight
-  portals, where the goal lies *outside* the cluster and is reachable only through one (or few) egress
-  portal(s). The cluster's own interior faces occlude the steer line in every direction, so the intra-room
-  via/skeleton go-around searches and gives up — the bot churns inside, never threading back out. Stacked
-  chambers / vertical shafts compound it. Signature: a large `via-search-fail` count piled in one room with
-  **0 hard pins** (soft search-and-fail) — the worst single room across the Fellowship soak logged **703**.
-  **Root cause = §2.2 (MP maps carry no baked BNodes).** Fix shipped: **generate BNodes at MP level load**
-  (`BNodeGenerateForLevel`, the `MakeBOA` twin) so the engine's native in-room follower threads the cluster
-  directly — the structural cure, not a workaround. The **reactive reach-the-door fallback**
-  (`Bot_reach_door_enabled`, `BotFindViaPoint`) remains as the backstop for rooms the generator leaves
-  sparse (no hull-clear edges): aim at the nearest egress portal in a `RoomBuriedCenter` room (a goal
-  waypoint, not a steering force), governed by the chain-cap → suspend → dyn-bump → reroute machinery.
-  Surfaced by a custom map that dressed the cluster as a multi-storey building, but the geometry is
-  generic: any cramped, concave, single-chokepoint room pocket in a mine. **Verify:** regen a townofbree
-  `$navdump` → `bnode_allocated=true`, room-60 `via-search-fail` collapses, bots exit the tavern.
+- **Cramped concave room clusters with constrained egress — reactive fallback shipped (12.4), pending
+  soak.** A small volume densely subdivided into many non-convex chambers joined by tight portals, where
+  the goal lies *outside* the cluster and is reachable only through one (or few) egress portal(s). The
+  cluster's own interior faces occlude the steer line in every direction, so the intra-room via/skeleton
+  go-around searches and gives up — the bot churns inside, never threading back out. Stacked chambers /
+  vertical shafts compound it. Signature: a large `via-search-fail` count piled in one room with **0 hard
+  pins** (soft search-and-fail) — the worst single room across the Fellowship soak logged **703**.
+  **Root cause = §2.2 (the engine bakes no BNodes on these maps).** Fix shipped: the **reactive
+  reach-the-door fallback** (`Bot_reach_door_enabled`, `BotFindViaPoint`) — when the skeleton knows the
+  egress portal but can't reach it cleanly in a `RoomBuriedCenter` room, aim at the nearest egress portal
+  anyway (a goal waypoint, not a steering force) and let the engine grind to the threshold; marked
+  skeleton so the existing chain-cap → suspend → dyn-bump → reroute machinery governs it. The deferred
+  tier (only if this leaves bots stalling) is interior-waypoint synthesis — a runtime BNode substitute
+  (§4.2). Surfaced by a custom map that dressed the cluster as a multi-storey building, but the geometry
+  is generic: any cramped, concave, single-chokepoint room pocket in a mine.
 - **Breakable-grate / destructible-obstacle passability — second priority.** Bots treat a destructible
   grate / breakable pane as a permanent wall: the engine and our passability layer mark the portal
   impassable, and the bot never *shoots it open* to pass. On maps that wall off zones with grates this

@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Matcen **0.9.3-dev** — **Phase 12: intra-room via-point steering** (in progress). 0.9.2 is the targeted *final, canonical, fixed navigation-and-steering* build: it attacks the one remaining nav blocker — the engine's intra-room interior-obstacle press (a free-standing glass/pillar *face* between the path node and the exit portal), a **known engine limitation reproducible in vanilla retail D3 with robots**. Full diagnosis (navdump-confirmed: `los_from_pathpnt_clear=0`, pure steering, 93% EXPLORE, limit-cycle) and the via-point plan live in `NAVIGATION.md` §7 + §2.5. **The Phase 12 mechanism is now implemented** (via-point detour keyed on the engine's current path node, sealed-powerup abandon + sealed-room selection gate), and **Phase 12.2 hardens the powerup guards** after the pyroplace soak: a global per-level troll strike table (repeat chase-timeouts/seal-abandons retire an item level-wide — the only defense against approach-sealed glass-pocket trolls no straight-line probe can see, e.g. pyroplace Mega/Blackshark), a wrong-side rescue (item across a bulletproof-glass corridor divider → reroute through the neighbor whose portal sees it), a via cycle cap (a via must lead to a room change or yield to rerouting — the abend2 mirror-room dance), and via support in the `!follow` escort branch. Awaiting validation on the 4-map indoor rotation (abend2/pumphouse/nysa/pyroplace) before any "fixed" claim. **Phase 12.3 "portal-skeleton traversal" is implemented (2026-06-12, untested)** (NAVIGATION.md §7 12.3): when the via ring search fails, a per-room portal skeleton (portal path_pnts + hull-clear legs, cached) is BFS'd toward the routed exit and the first hop issued as the via — invariant-derived intra-room traversal for buried-center rooms (rings/labyrinths/divided). Step-zero offline detector validation passed (13/14 pin rooms across 5 maps). Generality gate pending: official-map regression + two fresh community holdout maps. **Chat Stage 6 "Orders as Goals" is also in (2026-06-11, untested):** orders now own navigation via anchors + a lifecycle with player feedback — new `!hold`/`!stay` verb (hold the speaker's position), `!defend` anchors to a post outside CTF, escort offset stations + BLOCKED detection/reports for `!follow`/`!cover`, enriched `!status`. See `CHAT_COMMANDS.md` §Stage 6. **Matcen 0.9.1 (stable) remains the pinned fallback** — Phase 11's validated cost-aware Dijkstra router (routing-only on the Phase 10 two-layer base; the engine still does all steering), explicitly **not** the steering override Phase 10 removed.
+**Status:** Matcen **0.9.2-dev** — **Phase 12: intra-room via-point steering** (in progress). 0.9.2 is the targeted *final, canonical, fixed navigation-and-steering* build: it attacks the one remaining nav blocker — the engine's intra-room interior-obstacle press (a free-standing glass/pillar *face* between the path node and the exit portal), a **known engine limitation reproducible in vanilla retail D3 with robots**. Full diagnosis (navdump-confirmed: `los_from_pathpnt_clear=0`, pure steering, 93% EXPLORE, limit-cycle) and the via-point plan live in `NAVIGATION.md` §7 + §2.5. **The Phase 12 mechanism is now implemented** (via-point detour keyed on the engine's current path node, sealed-powerup abandon + sealed-room selection gate), and **Phase 12.2 hardens the powerup guards** after the pyroplace soak: a global per-level troll strike table (repeat chase-timeouts/seal-abandons retire an item level-wide — the only defense against approach-sealed glass-pocket trolls no straight-line probe can see, e.g. pyroplace Mega/Blackshark), a wrong-side rescue (item across a bulletproof-glass corridor divider → reroute through the neighbor whose portal sees it), a via cycle cap (a via must lead to a room change or yield to rerouting — the abend2 mirror-room dance), and via support in the `!follow` escort branch. Awaiting validation on the 4-map indoor rotation (abend2/pumphouse/nysa/pyroplace) before any "fixed" claim. **Phase 12.3 "portal-skeleton traversal" is implemented (2026-06-12, untested)** (NAVIGATION.md §7 12.3): when the via ring search fails, a per-room portal skeleton (portal path_pnts + hull-clear legs, cached) is BFS'd toward the routed exit and the first hop issued as the via — invariant-derived intra-room traversal for buried-center rooms (rings/labyrinths/divided). Step-zero offline detector validation passed (13/14 pin rooms across 5 maps). Generality gate pending: official-map regression + two fresh community holdout maps. **Chat Stage 6 "Orders as Goals" is also in (2026-06-11, untested):** orders now own navigation via anchors + a lifecycle with player feedback — new `!hold`/`!stay` verb (hold the speaker's position), `!defend` anchors to a post outside CTF, escort offset stations + BLOCKED detection/reports for `!follow`/`!cover`, enriched `!status`. See `CHAT_COMMANDS.md` §Stage 6. **Matcen 0.9.1 (stable) remains the pinned fallback** — Phase 11's validated cost-aware Dijkstra router (routing-only on the Phase 10 two-layer base; the engine still does all steering), explicitly **not** the steering override Phase 10 removed.
 
 ## Engine Files Modified — Single-Player / Robo-Anarchy / Co-op Impact Audit
 
@@ -35,7 +35,7 @@ robo-anarchy and co-op map robots (so they can acquire players), by design; sing
 | File | Change | Single-player impact |
 |---|---|---|
 | `aistruct.h` | `MAX_DYNAMIC_PATHS 50 → 200` | **Capacity only.** Quadruples the AI dynamic-path pool (bots keep object handles across death, draining it faster — see the navmapping22 leak fix). SP robots share the pool; they get more headroom, never less. SP rarely nears 50 simultaneous *dynamic* paths, so it's invisible in practice; cost is ~150 path slots of memory. **No behavior change.** |
-| `aipath.cpp` / `aipath.h` | (1) `AIGenerateBNodePath` / `AIGenerateAltBNodePath`: the asserts assuming a hand-authored, fully-connected BNode graph (`f_ok`, `bnode>=0`, `last_node>=0`) → **graceful bail** (`f_path_exists=false; goto done`), routing into the engine's existing "no path found" fallback. (2) new `AIPathResetDynamicPaths()` (called only from `multi.cpp`). | SP campaign maps ship **BNode-verified** graphs, so those predicates always hold and the bails never fire → **identical behavior**. The bails only matter for runtime-*generated* graphs (MP) with disconnected/buried-center rooms. `AIPathResetDynamicPaths` is MP-only. **No SP behavior change** (release identical; debug no longer asserts if a map ever had a bad graph). |
+| `aipath.cpp` / `aipath.h` | New `AIPathResetDynamicPaths()` (called only from `multi.cpp`), for the dynamic-path-pool reset on MP level change (navmapping22 leak fix). *(The BNode path-follower assert→bail changes that briefly lived here were **reverted** with the BNode-generation experiment — see the tried-and-reverted entry below; aipath.cpp is otherwise at baseline.)* | `AIPathResetDynamicPaths` is MP-only (the server-side level-change pool reset). **No SP behavior change.** |
 | `bnode.cpp` | `BNode_FindClosest/DirLocalVisibleBNode`: `ASSERT(num_nodes>0)` / `ASSERT(closest!=-1)` → `if (num_nodes<=0) return -1`. | Same character. SP rooms have BNodes, so the guard is a no-op; it only returns -1 for rooms with **no** nav data (MP-generated / sparse custom maps), where the caller already handles -1. **No SP behavior change** (release identical; removes a *debug* assert on a nav-data-less room). |
 | `AIGoal.cpp` | (1) on `AIPathAllocPath` failure, `next_path_time = Gametime + 0.5f` instead of re-pathing next frame (3 sites). (2) `AIG_GET_AWAY_FROM_OBJ` / `AIG_MOVE_AROUND_OBJ` added to the object-handle copy switch. (3) `AIG_FIRE_AT_OBJ` / set-animation goals: early-return for `OBJ_PLAYER`. | (1) **Shared throttle — improvement.** Affects any AI (SP robots too) but *only on the failure path* (pool exhausted): waits 0.5 s before re-pathing instead of hammering every frame. Strictly reduces churn; invisible when paths succeed. (2) **Shared correctness fix.** These two goal types (issuable by Osiris level scripts) weren't copying their handle arg — a latent bug; now they do. Affects a script-commanded robot using them (SP included) but *fixes broken behavior*, doesn't change good behavior. (3) **Bot-only** (`OBJ_PLAYER`): SP robots are `OBJ_ROBOT`, never hit these returns; the guard prevents an `Object_info[obj->id]` crash for bots (player `obj->id` is a slot #, not an Object_info index). |
 | `AImain.cpp` | (1) `AIDoFrame`: preserve thrust / skip animation / skip spray-weapons / skip drag-comp / skip awareness-anim **for bot players only** (`OBJ_PLAYER && BotIsPlayerSlot`). (2) `AIDetermineTarget` **multiplayer branch**: replace `AITargetCheck` (BOA_IsVisible-gated) with a direct distance check. | (1) **Bot-only.** Every guard is `obj->type == OBJ_PLAYER` / `is_bot_player`; SP robots (`OBJ_ROBOT`) take the original path verbatim. The skipped routines (`ai_do_animation`, spray, `do_awareness_based_anim_stuff`) all index `Object_info[obj->id]`, invalid for a player slot. (2) **Robo-anarchy / co-op — NOT single-player.** The whole branch is inside `if (Game_mode & GM_MULTI)`; SP targeting (the `else`) is untouched. In MP, map robots (gunboys) couldn't acquire players because their rooms aren't in the player BOA graph; direct distance fixes that. **This is the one change that alters non-bot robot behavior — in robo-anarchy and co-op only, by design.** Weapon fire still requires LOS (in `CreateAndFireWeapon`). |
@@ -48,8 +48,8 @@ robo-anarchy and co-op map robots (so they can acquire players), by design; sing
 | `physics/physics.cpp` | (1) `phys_apply_force`: same bot-player server allowance. (2) `do_physics_sim` / `do_walking_sim` "Too many collisions for player" `LOG_WARNING` rate-limited to 1/s. | (1) `GM_MULTI`-gated → **no SP path.** (2) **Cosmetic** — throttles a log message only; the `velocity = 0` clamp that follows is unchanged for everyone, including the SP player object. |
 
 ### Tier C — Multiplayer subsystem / dedicated / UI (no single-player gameplay path)
-`multi.cpp` (the BOA + **BNode generation** hooks in `MultiStartNewLevel`, MP-only, each gated on missing
-data), `multi_server.cpp`, `multi_dll_mgr.cpp`, `multi_ui.cpp/.h`, `multi_external.h`,
+`multi.cpp` (the BOA-repair hook in `MultiStartNewLevel`, MP-only, gated on missing data — the BNode-
+generation hook that briefly sat beside it was reverted), `multi_server.cpp`, `multi_dll_mgr.cpp`, `multi_ui.cpp/.h`, `multi_external.h`,
 `multi_save_setting.cpp`, `dedicated_server.cpp`, `sdlmain.cpp`, `netcon/includes/con_dll.h`, and the
 loadable mode DLLs `netgames/{anarchy,tanarchy,ctf,hoard,entropy,hyperanarchy,roboanarchy,dmfc}/*` — the
 multiplayer code path and game-mode modules, not executed by the single-player campaign. `GameLoop.cpp`
@@ -62,38 +62,42 @@ multiplayer code path and game-mode modules, not executed by the single-player c
 `README.md`.
 
 **Upstream-bug candidates** (would help vanilla too; see `UPSTREAM_PATCHES.md`): the `GameLoop.cpp`
-grtext_Reset (dedicated-server buffer overflow) and the `bnode.cpp` / `aipath.cpp` assert-hardening
-(retail D3 asserts on any room lacking BNode data — a latent crash independent of bots).
+grtext_Reset (dedicated-server buffer overflow) and the `bnode.cpp` assert-hardening (retail D3 asserts on
+a room lacking BNode data — a latent crash independent of bots).
 
 ---
 
-### Runtime BNode generation (Phase 12.5, 0.9.3-dev, 2026-06-20)
+### Runtime BNode generation (Phase 12.5) — TRIED AND REVERTED (2026-06-20)
 
-**The structural fix for the no-BNodes root cause.** Multiplayer maps never ship baked **BNodes** (the
-engine's in-room AI waypoints) — vanilla D3 MP had no AI players, so the editor's BNode-authoring pass was
-never run on MP maps, official *or* custom (confirmed via `$navdump`: `bnode_allocated=false`, 0 nodes).
-Without them the engine threads a room with only `path_pnt` + portal points, which aims bots into walls in
-buried-center rooms (Bree's tavern = 703 via-fails). The whole bot nav stack (router, skeleton, via-points,
-reach-door — Phase 12.4) has been a partial substitute for this missing data.
+**Attempted, regressed, reverted.** We generated real engine BNodes at MP level load — ported Outrage's
+editor pass `EBNode_MakeFirstPass` (`editor/ebnode.cpp`) into a new `bnode_gen.cpp`, called as the twin of
+the `MakeBOA` repair (gated on `!BNode_allocated`) so the engine's native `AIGenerateBNodePath` would thread
+complex rooms. `$navdump` confirmed it generated nodes for every indoor room (townofbree `bnode_allocated`
+flipped false→true, room 60 got 3 nodes). But it **regressed** a working map (doorsofmoria: 5 kills → 0,
+39 hard pins) and didn't deliver the target (townofbree: 0 captures). **Reverted** — commits `f0f39007`
+(generation) + `4d515800` (path-follower assert tolerance) backed out; version returned to 0.9.2-dev.
 
-**Fix = the matched twin of the `MakeBOA` repair.** BNodes are the in-room half of nav data that pairs with
-BOA (room-to-room half). At project start (Phase 3.6) we found BOA also isn't built on MP maps and added a
-repair in `MultiStartNewLevel` (`if (BOA_mine_checksum == 0) MakeBOA();`); we never did the BNode twin. The
-engine *had* the generator all along — Outrage's editor pass `EBNode_MakeFirstPass` (`editor/ebnode.cpp`),
-simply never linked into the game. Ported its geometry-only functions into the new `Descent3/bnode_gen.cpp`
-(`BNodeGenerateForLevel`) and call it right after the `MakeBOA()` block, gated on `!BNode_allocated` (so
-SP/baked maps are untouched). Level-transition reset is already handled by `BNode_ClearBNodeInfo()` in
-`LoadLevel()`. Editor deps stripped: `OutrageMessageBox` → no-op; the O(n³) `EBNode_VerifyGraph` skipped
-(`BNode_verified` set directly). Commit `f0f39007`.
+**Why it failed — the durable lesson.** `AIGenerateBNodePath` is built for **hand-authored,
+human-verified** graphs (the editor had a person verify/fix them). We can't reliably synthesize those for
+arbitrary geometry: buried-center rooms yield *disconnected* graphs, and the generator keeps edges down to
+`max_rad 5.0` while the ship hull is **6.676** → it routes bots into unflyable gaps. Worse, the global
+`BNode_allocated` flag is **all-or-nothing**: flipping it on *displaced* the engine's crude-but-working
+`AIGenerateBOAPath` across every route, AND broke our own skeleton — which doesn't move bots itself, it
+injects `AIG_GET_TO_POS` waypoints and **relies on the engine path-follower to fly the bot there**. With
+generation on, that follower (now `AIGenerateBNodePath`) bailed in the bad rooms → the skeleton churned
+(564 hops in one doorsofmoria room) and pinned. Each fix dug further into engine internals (assert
+tolerance, then a per-route BOA fallback) — against the project's complement-don't-override principle.
+Detail: session memory [[project-bnode-generation]].
 
-**Required companion: path-follower tolerance (`aipath.cpp`).** First test crashed — `AIGenerateBNodePath`
-asserts a hand-authored, fully-connected graph, which a *generated* graph can't guarantee in buried-center
-rooms (disconnected portal-nodes) or at pruned portals (`bnode_index == -1`). Relaxed those asserts (in
-both `AIGenerateBNodePath` and its alt-path twin) to graceful bails that fall through to the engine's
-existing alt-path → BOA → reach-door fallback. Logic-neutral for the BNode-verified maps SP ships (see the
-audit above, Tier A). Commit `4d515800`. The via/skeleton/reach-door layer (Phase 12.4) is retained as the
-backstop for rooms the generator still leaves sparse. Canonical doc: `NAVIGATION.md` §2.2 + §4.2.
-**UNTESTED** — pending a townofbree `$navdump` (expect `bnode_allocated=true`, `bnode_count>0`) + soak.
+**Kept (not reverted):** the engine-files impact audit above (generation now recorded here as the
+cautionary case); the `bnode.cpp` assert-hardening (UPSTREAM_PATCHES #3 — a standalone latent-crash fix,
+inert with `BNode_allocated=false`); the `$navdump` `bnode_allocated`/`bnode_count` diagnostic.
+
+**The lesson directly informs the replacement → Phase 12.5b: pseudo-BNodes in the bot-code skeleton.**
+Instead of generating engine BNodes (which displaces the engine path and demands engine edits), we add
+*interior* waypoint nodes to our own skeleton (`SkelBuild`) — offset-into-room + portal-centroid nodes,
+**hull-aware** edges (the 6.676 lesson), layered on top of crude-BOA via the same `AIG_GET_TO_POS` channel
+we already use. Full control, zero engine edits. See `NAVIGATION.md` §4.2.
 
 ### Outdoor redesign (VALIDATED) + in-room nav for BNode-less custom maps (0.9.2-dev, 2026-06-19)
 
