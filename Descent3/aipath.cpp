@@ -672,7 +672,7 @@ static bool AIGenerateAltBNodePath(object *obj, vector *start_pos, int *start_ro
 
         if (cur_room >= 0 && cur_room <= Highest_room_index) {
           bnode = Rooms[cur_room].portals[portal].bnode_index;
-          ASSERT(bnode >= 0 && bnode < BNode_GetBNListPtr(cur_room)->num_nodes);
+          // bnode may be -1 on a generated graph (portal node pruned); guarded before BNode_FindPath.
         } else {
           int croom = BOA_connect[cur_room - Highest_room_index - 1][portal].roomnum;
           int cportal = BOA_connect[cur_room - Highest_room_index - 1][portal].portal;
@@ -685,10 +685,20 @@ static bool AIGenerateAltBNodePath(object *obj, vector *start_pos, int *start_ro
           //					ASSERT(bnode >= 0 && bnode < BNode_GetBNListPtr(r)->num_nodes);
         }
 
-        // Add the last room...
+        // Add the last room. A runtime-generated BNode graph (MP maps ship none — see bnode_gen.cpp) can
+        // leave a room's portal-nodes disconnected (buried-center rooms, room-center node in solid) or a
+        // portal's node pruned (bnode_index == -1). Hand-authored SP graphs never do, so the engine
+        // originally asserted here; for generated graphs degrade gracefully — bail so the caller falls
+        // back to the alt-path / BOA route (and our reach-door layer) instead of crashing.
+        if (bnode < 0 || last_node < 0) {
+          f_path_exists = false;
+          goto done;
+        }
         bool f_ok = BNode_FindPath(cur_room, last_node, bnode, obj->size);
-        ASSERT(f_ok);
-        ASSERT(BNode_PathNumNodes);
+        if (!f_ok || !BNode_PathNumNodes) {
+          f_path_exists = false;
+          goto done;
+        }
 
         int i;
         for (i = 0; i < BNode_PathNumNodes; i++) {
@@ -699,7 +709,7 @@ static bool AIGenerateAltBNodePath(object *obj, vector *start_pos, int *start_ro
         int portal = BOA_DetermineStartRoomPortal(next_room, NULL, cur_room, NULL);
         if (next_room <= Highest_room_index) {
           bnode = Rooms[next_room].portals[portal].bnode_index;
-          ASSERT(bnode >= 0);
+          // bnode may be -1 on a generated graph (portal node pruned); guarded before BNode_FindPath.
         } else {
           int croom = BOA_connect[next_room - Highest_room_index - 1][portal].roomnum;
           int cportal = BOA_connect[next_room - Highest_room_index - 1][portal].portal;
@@ -713,7 +723,7 @@ static bool AIGenerateAltBNodePath(object *obj, vector *start_pos, int *start_ro
         }
 
         last_node = bnode;
-        ASSERT(last_node >= 0);
+        // last_node may be -1 on a generated graph; the BNode_FindPath guards (above/below) degrade.
       }
     } else {
       if (next_room == BOA_NO_PATH) {
@@ -732,10 +742,16 @@ static bool AIGenerateAltBNodePath(object *obj, vector *start_pos, int *start_ro
       goto done;
     }
 
-    // Add the last room...
+    // Add the last room (see the generated-graph note above — same graceful degrade).
+    if (last_node < 0) {
+      f_path_exists = false;
+      goto done;
+    }
     bool f_ok = BNode_FindPath(*end_room, last_node, bnode, obj->size);
-    ASSERT(f_ok);
-    ASSERT(BNode_PathNumNodes);
+    if (!f_ok || !BNode_PathNumNodes) {
+      f_path_exists = false;
+      goto done;
+    }
     int i;
     for (i = 0; i < BNode_PathNumNodes; i++) {
       pos = &bnlist->nodes[BNode_Path[i]].pos;
@@ -837,7 +853,8 @@ static bool AIGenerateBNodePath(object *obj, vector *start_pos, int *start_room,
 
         if (cur_room <= Highest_room_index) {
           bnode = Rooms[cur_room].portals[portal].bnode_index;
-          ASSERT(bnode >= 0 && bnode < BNode_GetBNListPtr(cur_room)->num_nodes);
+          // bnode may be -1 here on a runtime-generated graph (the portal's node was pruned as
+          // unopenable); the guard before BNode_FindPath below degrades gracefully.
         } else {
           int croom = BOA_connect[cur_room - Highest_room_index - 1][portal].roomnum;
           int cportal = BOA_connect[cur_room - Highest_room_index - 1][portal].portal;
@@ -850,10 +867,20 @@ static bool AIGenerateBNodePath(object *obj, vector *start_pos, int *start_room,
           //					ASSERT(bnode >= 0 && bnode < BNode_GetBNListPtr(r)->num_nodes);
         }
 
-        // Add the last room...
+        // Add the last room. A runtime-generated BNode graph (MP maps ship none — see bnode_gen.cpp) can
+        // leave a room's portal-nodes disconnected (buried-center rooms, room-center node in solid) or a
+        // portal's node pruned (bnode_index == -1). Hand-authored SP graphs never do, so the engine
+        // originally asserted here; for generated graphs degrade gracefully — bail so the caller falls
+        // back to the alt-path / BOA route (and our reach-door layer) instead of crashing.
+        if (bnode < 0 || last_node < 0) {
+          f_path_exists = false;
+          goto done;
+        }
         bool f_ok = BNode_FindPath(cur_room, last_node, bnode, obj->size);
-        ASSERT(f_ok);
-        ASSERT(BNode_PathNumNodes);
+        if (!f_ok || !BNode_PathNumNodes) {
+          f_path_exists = false;
+          goto done;
+        }
 
         int i;
         for (i = 0; i < BNode_PathNumNodes; i++) {
@@ -867,7 +894,7 @@ static bool AIGenerateBNodePath(object *obj, vector *start_pos, int *start_room,
         } else {
           if (next_room <= Highest_room_index) {
             last_node = Rooms[next_room].portals[portal].bnode_index;
-            ASSERT(last_node >= 0 && last_node < BNode_GetBNListPtr(next_room)->num_nodes);
+            // last_node may be -1 on a generated graph (portal node pruned); guarded before BNode_FindPath.
           } else {
             int croom = BOA_connect[next_room - Highest_room_index - 1][portal].roomnum;
             int cportal = BOA_connect[next_room - Highest_room_index - 1][portal].portal;
@@ -898,10 +925,16 @@ static bool AIGenerateBNodePath(object *obj, vector *start_pos, int *start_room,
       goto done;
     }
 
-    // Add the last room...
+    // Add the last room (see the generated-graph note above — same graceful degrade).
+    if (last_node < 0) {
+      f_path_exists = false;
+      goto done;
+    }
     bool f_ok = BNode_FindPath(*end_room, last_node, bnode, obj->size);
-    ASSERT(f_ok);
-    ASSERT(BNode_PathNumNodes);
+    if (!f_ok || !BNode_PathNumNodes) {
+      f_path_exists = false;
+      goto done;
+    }
     int i;
     for (i = 0; i < BNode_PathNumNodes; i++) {
       pos = &bnlist->nodes[BNode_Path[i]].pos;

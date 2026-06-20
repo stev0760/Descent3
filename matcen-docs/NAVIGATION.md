@@ -75,6 +75,18 @@ native `AIGenerateBNodePath` then threads complex rooms exactly as on single-pla
 the via/skeleton layer (§4.2) remain the safety net for rooms the generator leaves sparse. Confirm per map
 with `$navdump` → `bnode_allocated=true` / per-room `bnode_count>0`.
 
+**Path-follower tolerance (required companion change, `aipath.cpp`).** `AIGenerateBNodePath` /
+`AIGenerateAltBNodePath` were written for hand-authored, human-verified graphs: they `ASSERT` that within
+every room on the route the entry- and exit-portal nodes are connected (`BNode_FindPath` succeeds) and
+that every routed portal has a node (`bnode_index >= 0`). A *generated* graph breaks both in pathological
+rooms — a buried-center room whose center node is in solid leaves the portal-nodes disconnected, and a
+portal pruned as unopenable leaves `bnode_index == -1`. So those asserts are relaxed to **graceful bails**
+(`f_path_exists = false; goto done`), routing the case into the engine's existing "no path found" handler
+→ alt-path → BOA → our reach-door layer (§4.2). Good rooms are unaffected (the predicates hold); only the
+pathological ones degrade instead of crashing. This is the minimal completion of the generation repair —
+without it the engine asserts the moment a bot routes through a buried-center room (it crashed on
+townofbree before this change).
+
 ### 2.3 The path-follower pipeline
 `GoalAddGoal(AIG_GET_TO_POS/OBJ)` → `AIPathAllocPath` (`aipath.cpp:990`) builds the full path:
 - Beeline if LOS is clear; else a BNode/BOA path along the BOA room chain.
