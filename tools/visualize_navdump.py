@@ -93,6 +93,25 @@ def main():
             svg.append(f'<rect x="{tx(fc[0])-2.5:.1f}" y="{tz(fc[2])-2.5:.1f}" width="5" height="5" '
                        f'fill="{c}" stroke="#000" stroke-width="0.5"/>')
 
+        # Pseudo-BNode skeleton (12.5b): the interior-waypoint graph our bots synthesize when the
+        # engine baked no BNodes (skel_nodes present only when bnode_allocated is false). Edges =
+        # hull-clear legs; cyan dots = the synthesized interior waypoints (portals are the blue ticks).
+        snodes = r.get("skel_nodes")
+        if snodes:
+            nportals = r.get("skel_portal_count", 0)
+            sedges = r.get("skel_edges", [])
+            for i, mask in enumerate(sedges):
+                ax, az = tx(snodes[i][0]), tz(snodes[i][2])
+                for j in range(i + 1, len(snodes)):
+                    if mask & (1 << j):
+                        bx, bz = tx(snodes[j][0]), tz(snodes[j][2])
+                        col = "#0cc" if (i >= nportals or j >= nportals) else "#557"  # cyan if pseudo-touching
+                        svg.append(f'<line x1="{ax:.1f}" y1="{az:.1f}" x2="{bx:.1f}" y2="{bz:.1f}" '
+                                   f'stroke="{col}" stroke-width="0.7" stroke-opacity="0.85"/>')
+            for k in range(nportals, len(snodes)):
+                svg.append(f'<circle cx="{tx(snodes[k][0]):.1f}" cy="{tz(snodes[k][2]):.1f}" r="2.5" '
+                           f'fill="#0ff" stroke="#000" stroke-width="0.4"/>')
+
     # Powerups
     for pu in d.get("powerups", []):
         pos = pu.get("pos")
@@ -109,7 +128,7 @@ def main():
     ly = H - 40
     svg.append(f'<text x="{pad}" y="{ly}" fill="#fff">room fill: green=convex … red=labyrinth (blocked portal legs)  | '
                f'dot: path_pnt (green=open center, red=buried)  | portal: blue=open orange=tight red=impassable  | '
-               f'diamond: powerup (green/orange=review/red=troll)</text>')
+               f'diamond: powerup (green/orange=review/red=troll)  | cyan dot+line: pseudo-bnode + hull-clear edge</text>')
     svg.append(f'<text x="{pad}" y="{ly+18}" fill="#aaa">{os.path.basename(path)} — {len(rooms)} interior rooms, '
                f'top-down X/Z, h = room height (Y)</text>')
     svg.append("</svg>")

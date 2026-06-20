@@ -31,6 +31,40 @@ def load(path):
         return json.load(f)
 
 
+def skel_portal_components(r):
+    """For a room's pseudo-bnode skeleton (12.5b), how many connected components do the PORTAL nodes
+    fall into over the full portal+pseudo edge graph? 1 = every portal can reach every other through the
+    skeleton (the BFS can route between any pair). >1 = some portals stay unreachable even WITH the
+    synthesized interior nodes → reach-door/Stage-2 territory. Returns (n_pseudo, n_portal_components)
+    or None if the room carries no skel dump."""
+    snodes = r.get("skel_nodes")
+    if not snodes:
+        return None
+    n = len(snodes)
+    np = r.get("skel_portal_count", 0)
+    edges = r.get("skel_edges", [])
+    seen = [False] * n
+    comp = [-1] * n
+    cid = 0
+    for s in range(n):
+        if seen[s]:
+            continue
+        stack = [s]
+        seen[s] = True
+        comp[s] = cid
+        while stack:
+            u = stack.pop()
+            mask = edges[u] if u < len(edges) else 0
+            for v in range(n):
+                if v != u and not seen[v] and (mask & (1 << v)):
+                    seen[v] = True
+                    comp[v] = cid
+                    stack.append(v)
+        cid += 1
+    pcomps = {comp[i] for i in range(min(np, n))}
+    return (n - np, len(pcomps))
+
+
 def analyze(path, data):
     rooms = data.get("rooms", [])
     summary = data.get("summary", {})
@@ -43,12 +77,35 @@ def analyze(path, data):
     bn_alloc = data.get("bnode_allocated")
     if bn_alloc is not None:
         rooms_no_bn = sum(1 for r in rooms if r.get("bnode_count", 0) == 0)
-        tag = "OK" if bn_alloc else "ABSENT — engine bakes NO in-room waypoints; reactive reach-the-door fallback owns this map"
+        tag = "OK" if bn_alloc else "ABSENT — engine bakes NO in-room waypoints; our pseudo-bnode skeleton owns this map"
         print(f"- bnodes: allocated={bn_alloc} verified={data.get('bnode_verified')}  | "
               f"rooms with 0 bnodes: {rooms_no_bn}/{len(rooms)}  [{tag}]")
     if summary:
         print(f"- summary: {json.dumps(summary)}")
     print()
+
+    # Pseudo-BNode skeleton (12.5b) — present only when the engine baked no BNodes ($navdump emits our
+    # synthesized interior-waypoint graph). The efficacy metric: did the synthesized nodes RECONNECT each
+    # room's portals into one component (so the BFS can route between any pair)?
+    skel_rooms = [r for r in rooms if r.get("skel_nodes")]
+    if skel_rooms:
+        gen = [r for r in skel_rooms if len(r["skel_nodes"]) > r.get("skel_portal_count", 0)]
+        total_pseudo = sum(len(r["skel_nodes"]) - r.get("skel_portal_count", 0) for r in gen)
+        frag = []
+        for r in gen:
+            res = skel_portal_components(r)
+            if res and res[1] > 1:
+                frag.append((r["id"], res[1], res[0]))
+        print("## Pseudo-BNode skeleton (12.5b — our synthesized in-room waypoints)")
+        print(f"  rooms with synthesized interior nodes: {len(gen)}/{len(skel_rooms)}  |  "
+              f"total pseudo-bnodes: {total_pseudo}")
+        if frag:
+            print("  portals STILL in >1 component after pseudo-bnodes (reach-door owns these; Stage-2 candidates):")
+            for rid, ncomp, npseudo in sorted(frag, key=lambda t: -t[1]):
+                print(f"    room {rid:>4}: portals span {ncomp} components (+{npseudo} pseudo synthesized)")
+        else:
+            print("  every synthesized room's portals reconnected into ONE component  [pseudo-bnodes sufficient]")
+        print()
 
     # --- Obstacle-type histogram --------------------------------------------
     type_hist = Counter()

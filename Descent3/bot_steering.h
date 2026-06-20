@@ -42,6 +42,7 @@
 // reverted engine-BNode experiment, which pruned at 5.0 and pinned bots in [5.0, 6.676) gaps.
 #define BOT_PSEUDO_BNODE_RADIUS 6.0f   // hull-aware clearance radius for pseudo-bnode edges (primary tuning knob)
 #define BOT_PSEUDO_BNODE_OFFSET 8.0f   // push portal offset-nodes this far off the portal face into the room
+#define BOT_SKEL_MAX_NODES 32          // skeleton node cap per room (portal nodes + pseudo-bnodes)
 
 // Dynamic penalty: a traversal failure bumps a portal's cost so the router reroutes; it decays
 // over time. Capped well below IMPASSABLE so a bumped portal stays usable as a last resort.
@@ -86,6 +87,12 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
 // (probed FROM the portal — trustworthy start point)? False = buried/void path_pnt (hollow-core
 // ring or labyrinth center) — the navdump's annulus detector.
 bool BotRoomPathPntReachable(int room_idx);
+
+// $navdump diagnostic (12.5b): dump a room's skeleton graph — node positions (portal nodes
+// [0,*portal_count_out), then pseudo-bnodes) and the per-node hull-clear edge bitmask. Builds the
+// skeleton lazily; returns the total node count (0 if the room is external/invalid). Caller arrays
+// must hold BOT_SKEL_MAX_NODES entries.
+int BotSkelDumpRoom(int room_idx, vector *pos_out, uint32_t *edges_out, int *portal_count_out);
 
 // Phase 12 troll-powerup gate: true when every portal into the room is geo-impassable for a ship
 // (grates/slits/locked doors) — a sealed pocket. Powerup selection skips items in such rooms so

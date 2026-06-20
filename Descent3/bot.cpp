@@ -3907,9 +3907,30 @@ bool BotNavDump(const char *filename) {
     // FROM the portals — a buried/void center; LOS readings FROM such a path_pnt are untrustworthy)
     fprintf(fp, "      \"path_pnt_reachable\": %s,\n",
             (rm.flags & RF_EXTERNAL) ? "true" : (BotRoomPathPntReachable(r) ? "true" : "false"));
-    // Engine in-room waypoints for this room (0 = none baked → reactive reach-the-door fallback owns it)
+    // Engine in-room waypoints for this room (0 = none baked → our pseudo-bnode skeleton owns it)
     bn_list *bnl = BNode_GetBNListPtr(r);
     fprintf(fp, "      \"bnode_count\": %d,\n", bnl ? bnl->num_nodes : 0);
+
+    // Pseudo-BNode skeleton (12.5b): our synthesized in-room waypoint graph. Dumped only when the engine
+    // baked NO BNodes (the MP case where our skeleton is the active in-room nav layer; on SP/baked maps
+    // bn_info above is the nav data and the skeleton is unused). Nodes [0,skel_portal_count) are portal
+    // path_pnts; the rest are pseudo-bnodes. skel_edges[i] = bitmask of hull-clear legs from node i.
+    // Reflects the live $pseudobnodes state. See NAVIGATION.md §4.2.
+    if (!BNode_allocated) {
+      vector spos[BOT_SKEL_MAX_NODES];
+      uint32_t sedges[BOT_SKEL_MAX_NODES];
+      int sportals = 0;
+      int sn = BotSkelDumpRoom(r, spos, sedges, &sportals);
+      fprintf(fp, "      \"skel_portal_count\": %d, \"skel_node_count\": %d,\n", sportals, sn);
+      fprintf(fp, "      \"skel_nodes\": [");
+      for (int i = 0; i < sn; i++)
+        fprintf(fp, "%s[%.2f,%.2f,%.2f]", i ? "," : "", spos[i].x(), spos[i].y(), spos[i].z());
+      fprintf(fp, "],\n");
+      fprintf(fp, "      \"skel_edges\": [");
+      for (int i = 0; i < sn; i++)
+        fprintf(fp, "%s%u", i ? "," : "", (unsigned)sedges[i]);
+      fprintf(fp, "],\n");
+    }
 
     // Per-portal detail
     fprintf(fp, "      \"portals\": [\n");

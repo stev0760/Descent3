@@ -291,7 +291,7 @@ static bool ViaSegmentClear(int startroom, const vector &a, const vector &b, flo
 // 12.5b: nodes are no longer implicitly the portals — pseudo-bnodes (interior waypoints) are appended
 // after the portal nodes, so positions are stored explicitly. Portal nodes occupy indices [0, num_portals);
 // pseudo-bnodes [num_portals, skel_node_count). 32 slots (MAX_ROOMS=400, so the static cost is trivial).
-#define SKEL_MAX_NODES 32
+#define SKEL_MAX_NODES BOT_SKEL_MAX_NODES // public cap lives in bot_steering.h (navdump sizes its arrays by it)
 
 static vector skel_node_pos[MAX_ROOMS][SKEL_MAX_NODES]; // node world positions (portals first, then pseudo)
 static uint32_t skel_edges[MAX_ROOMS][SKEL_MAX_NODES];  // bit j of [room][i]: leg i↔j is hull-clear
@@ -414,6 +414,34 @@ bool BotRoomPathPntReachable(int room_idx) {
       return true;
   }
   return false;
+}
+
+// $navdump diagnostic (12.5b): dump the room's skeleton graph for offline tooling. Builds it lazily,
+// copies node positions (portals [0,np) then pseudo-bnodes) + per-node edge bitmasks into caller arrays
+// (sized BOT_SKEL_MAX_NODES). Returns total node count; 0 for external/invalid rooms. Reflects the live
+// $pseudobnodes state (off → only portal nodes).
+int BotSkelDumpRoom(int room_idx, vector *pos_out, uint32_t *edges_out, int *portal_count_out) {
+  if (portal_count_out)
+    *portal_count_out = 0;
+  SkelLevelReset();
+  if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used || (Rooms[room_idx].flags & RF_EXTERNAL))
+    return 0;
+  room &rm = Rooms[room_idx];
+  int np = SkelPortalCount(rm);
+  if (np < 1)
+    return 0;
+  if (!skel_built[room_idx])
+    SkelBuild(room_idx);
+  int n = skel_node_count[room_idx];
+  for (int i = 0; i < n; i++) {
+    if (pos_out)
+      pos_out[i] = skel_node_pos[room_idx][i];
+    if (edges_out)
+      edges_out[i] = skel_edges[room_idx][i];
+  }
+  if (portal_count_out)
+    *portal_count_out = np;
+  return n;
 }
 
 BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_room, vector *via_out,
