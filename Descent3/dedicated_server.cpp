@@ -890,6 +890,19 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     }
     return true;
   }
+  if (stricmp(command, "pseudobnodes") == 0) {
+    if (stricmp(operand, "on") == 0) {
+      Bot_pseudo_bnodes_enabled = true;
+      PrintDedicatedMessage("Pseudo-BNode interior waypoints ON (regenerated on next level)\n");
+    } else if (stricmp(operand, "off") == 0) {
+      Bot_pseudo_bnodes_enabled = false;
+      PrintDedicatedMessage("Pseudo-BNode interior waypoints OFF (regenerated on next level)\n");
+    } else {
+      PrintDedicatedMessage("Usage: $pseudobnodes on|off  (current: %s)\n",
+                            Bot_pseudo_bnodes_enabled ? "on" : "off");
+    }
+    return true;
+  }
   if (stricmp(command, "botdifficulty") == 0) {
     if (!operand[0]) {
       PrintDedicatedMessage("Usage: $botdifficulty <index|all> <level>\n");
@@ -953,6 +966,7 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     PrintDedicatedMessage("  $navdump [file]        - Dump current level nav geometry to JSON (diagnostic)\n");
     PrintDedicatedMessage("  $botmov on|off         - Toggle movement debug logging\n");
     PrintDedicatedMessage("  $terrainsteer on|off   - Toggle outdoor terrain steering (Phase 8.1)\n");
+    PrintDedicatedMessage("  $pseudobnodes on|off   - Toggle skeleton interior waypoints (Phase 12.5b)\n");
     PrintDedicatedMessage("  $botmode               - Show detected game mode\n");
     PrintDedicatedMessage("  $botobj                - Show objective state (CTF flags, orbs, etc.)\n");
     PrintDedicatedMessage("  $servercaps            - Print server capabilities\n");

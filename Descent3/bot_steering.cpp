@@ -59,6 +59,7 @@ bool Bot_terrain_steering_enabled = true;
 // portal toward the goal is known, aim at it anyway and let the engine grind the bot to the threshold.
 // Kill-switch for the §7 goal-aware-escape regression history (flip + rebuild to A/B).
 bool Bot_reach_door_enabled = true;
+bool Bot_pseudo_bnodes_enabled = true; // 12.5b: synthesize interior waypoints in disconnected rooms ($pseudobnodes)
 
 // Per-level portal passability cache. Catches geometry-based blockage (bunker slits,
 // barred openings) that portal flags miss. -1=unchecked, 0=blocked, 1=passable.
@@ -287,9 +288,14 @@ static bool ViaSegmentClear(int startroom, const vector &a, const vector &b, flo
 // Build that per-room skeleton once (cached per level), then BFS from the exit portal back to
 // the nearest bot-visible node and hand out the FIRST hop as the via. No target LOS required —
 // hop chains compose with the normal via commitment/arrival machinery (NAVIGATION.md §7 12.3).
-#define SKEL_MAX_NODES 16
+// 12.5b: nodes are no longer implicitly the portals — pseudo-bnodes (interior waypoints) are appended
+// after the portal nodes, so positions are stored explicitly. Portal nodes occupy indices [0, num_portals);
+// pseudo-bnodes [num_portals, skel_node_count). 32 slots (MAX_ROOMS=400, so the static cost is trivial).
+#define SKEL_MAX_NODES 32
 
-static uint16_t skel_edges[MAX_ROOMS][SKEL_MAX_NODES]; // bit j of [room][i]: leg i↔j is hull-clear
+static vector skel_node_pos[MAX_ROOMS][SKEL_MAX_NODES]; // node world positions (portals first, then pseudo)
+static uint32_t skel_edges[MAX_ROOMS][SKEL_MAX_NODES];  // bit j of [room][i]: leg i↔j is hull-clear
+static uint8_t skel_node_count[MAX_ROOMS];              // total nodes built (portals + pseudo)
 static int8_t skel_built[MAX_ROOMS];
 static int8_t room_buried[MAX_ROOMS]; // -1 unknown, else BotRoomPathPntReachable() == false
 static int skel_level_checksum = 0;
@@ -315,22 +321,81 @@ static bool RoomBuriedCenter(int room_idx) {
   return room_buried[room_idx] == 1;
 }
 
-static int SkelNodeCount(const room &rm) { return rm.num_portals < SKEL_MAX_NODES ? rm.num_portals : SKEL_MAX_NODES; }
+static int SkelPortalCount(const room &rm) {
+  return rm.num_portals < SKEL_MAX_NODES ? rm.num_portals : SKEL_MAX_NODES;
+}
 
+// Build the per-room node graph: the portal nodes (guaranteed-flyable points) plus, in rooms where
+// some portal pair has no direct hull-clear leg, **pseudo-bnodes** — interior waypoints the BFS can
+// hop through to route AROUND an obstacle between two portals. This is the bot-code analog of the
+// engine's BNode generator (offset-into-room + center node), but layered on top of crude-BOA via the
+// via machinery and **hull-aware** so we never synthesize an unflyable edge (the lesson that sank the
+// reverted engine-BNode experiment: it kept edges down to max_rad 5.0 while the ship hull is ~6.676).
+// Phase 12.5b — gated by Bot_pseudo_bnodes_enabled (NAVIGATION.md §4.2).
 static void SkelBuild(int room_idx) {
   room &rm = Rooms[room_idx];
-  int n = SkelNodeCount(rm);
-  for (int i = 0; i < n; i++)
+  int np = SkelPortalCount(rm);
+
+  for (int i = 0; i < SKEL_MAX_NODES; i++)
     skel_edges[room_idx][i] = 0;
-  for (int i = 0; i < n; i++) {
-    for (int j = i + 1; j < n; j++) {
-      if (ViaSegmentClear(room_idx, rm.portals[i].path_pnt, rm.portals[j].path_pnt, BOT_PORTAL_SHIP_RADIUS, nullptr)) {
-        skel_edges[room_idx][i] |= (uint16_t)(1 << j);
-        skel_edges[room_idx][j] |= (uint16_t)(1 << i);
+
+  // Portal nodes.
+  for (int i = 0; i < np; i++)
+    skel_node_pos[room_idx][i] = rm.portals[i].path_pnt;
+  int n = np;
+
+  // Portal↔portal edges (existing validated 2.5 radius — don't disturb known-good routing).
+  bool disconnected_pair = false;
+  for (int i = 0; i < np; i++) {
+    for (int j = i + 1; j < np; j++) {
+      if (ViaSegmentClear(room_idx, skel_node_pos[room_idx][i], skel_node_pos[room_idx][j], BOT_PORTAL_SHIP_RADIUS,
+                          nullptr)) {
+        skel_edges[room_idx][i] |= (1u << j);
+        skel_edges[room_idx][j] |= (1u << i);
+      } else {
+        disconnected_pair = true; // a portal pair with no straight leg — the via-fail rooms
       }
     }
   }
+
+  // Pseudo-bnodes: only when a portal pair is disconnected (most rooms are fully connected → no cost).
+  if (Bot_pseudo_bnodes_enabled && np >= 2 && disconnected_pair) {
+    int first_pseudo = n;
+    // (a) one node per portal, pushed off the portal face into the room's airspace (mirrors the
+    // engine generator's path_pnt + normal*k). Keep only if it's actually reachable from its portal.
+    for (int i = 0; i < np && n < SKEL_MAX_NODES; i++) {
+      vector off = rm.portals[i].path_pnt + rm.faces[rm.portals[i].portal_face].normal * BOT_PSEUDO_BNODE_OFFSET;
+      if (ViaSegmentClear(room_idx, rm.portals[i].path_pnt, off, BOT_PSEUDO_BNODE_RADIUS, nullptr))
+        skel_node_pos[room_idx][n++] = off;
+    }
+    // (b) portal-centroid node — lands in airspace for bent/L/convex rooms even when the bbox-center
+    // path_pnt is buried in solid (which is exactly why the engine's center node stranded there).
+    if (n < SKEL_MAX_NODES) {
+      vector cen{};
+      for (int i = 0; i < np; i++)
+        cen = cen + rm.portals[i].path_pnt;
+      cen = cen * (1.0f / (float)np);
+      skel_node_pos[room_idx][n++] = cen;
+    }
+    // Edges touching the new pseudo-nodes, tested at the **real hull** so the BFS never routes a bot
+    // into a gap it can't fit (an isolated pseudo-node simply gets no edges and is ignored).
+    for (int i = first_pseudo; i < n; i++) {
+      for (int j = 0; j < i; j++) {
+        if (ViaSegmentClear(room_idx, skel_node_pos[room_idx][i], skel_node_pos[room_idx][j], BOT_PSEUDO_BNODE_RADIUS,
+                            nullptr)) {
+          skel_edges[room_idx][i] |= (1u << j);
+          skel_edges[room_idx][j] |= (1u << i);
+        }
+      }
+    }
+  }
+
+  skel_node_count[room_idx] = (uint8_t)n;
   skel_built[room_idx] = 1;
+  if (n > np) { // pseudo-bnodes synthesized — confirm generation + placement (grep "pseudo-bnodes")
+    LOG_DEBUG.printf("BOT: pseudo-bnodes room %d: +%d interior nodes (%d portals, buried=%d)", room_idx, n - np, np,
+                     RoomBuriedCenter(room_idx) ? 1 : 0);
+  }
 }
 
 bool BotRoomPathPntReachable(int room_idx) {
@@ -423,34 +488,36 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
     }
   }
 
-  // --- Pass 3 (12.3): portal-skeleton hop. ---
+  // --- Pass 3 (12.3 + 12.5b): skeleton hop over portals AND pseudo-bnodes. ---
   {
     SkelLevelReset();
     int room_idx = obj->roomnum;
     room &rm = Rooms[room_idx];
-    int n = SkelNodeCount(rm);
-    if (n >= 2) {
+    int np = SkelPortalCount(rm);
+    if (np >= 2) {
       if (!skel_built[room_idx])
         SkelBuild(room_idx);
+      int n = skel_node_count[room_idx]; // portal nodes [0,np), then pseudo-bnodes [np,n)
 
       // Exit set: the portal(s) toward the routed next room (cross-room target), or the nodes
-      // that can see the target (same-room target — e.g. a powerup across the ring).
+      // that can see the target (same-room target — e.g. a powerup across the ring). Only PORTAL
+      // nodes lead to other rooms, so the cross-room scan is bounded by np.
       uint32_t exits = 0;
       if (target_room != room_idx) {
         int next_room = BotComputeRoute(room_idx, target_room);
         if (next_room < 0)
           next_room = target_room;
-        for (int i = 0; i < n; i++)
+        for (int i = 0; i < np; i++)
           if (rm.portals[i].croom == next_room)
             exits |= (1u << i);
         if (!exits) { // router said something not adjacent (shouldn't happen) — direct fallback
-          for (int i = 0; i < n; i++)
+          for (int i = 0; i < np; i++)
             if (rm.portals[i].croom == target_room)
               exits |= (1u << i);
         }
       } else {
         for (int i = 0; i < n; i++)
-          if (ViaSegmentClear(room_idx, rm.portals[i].path_pnt, target_pos, radius, nullptr))
+          if (ViaSegmentClear(room_idx, skel_node_pos[room_idx][i], target_pos, radius, nullptr))
             exits |= (1u << i);
       }
 
@@ -463,13 +530,13 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
         // ship-flyable from i, which is where the bot effectively is.
         uint32_t vis = 0, standing = 0;
         for (int i = 0; i < n; i++) {
-          float nd = vm_VectorDistanceQuick(&obj->pos, &rm.portals[i].path_pnt);
+          float nd = vm_VectorDistanceQuick(&obj->pos, &skel_node_pos[room_idx][i]);
           if (nd < BOT_VIA_ARRIVE_DIST) {
             standing |= (1u << i);
             vis |= skel_edges[room_idx][i]; // neighbors reachable via the proven corridor
             continue;
           }
-          if (ViaSegmentClear(room_idx, obj->pos, rm.portals[i].path_pnt, radius, nullptr))
+          if (ViaSegmentClear(room_idx, obj->pos, skel_node_pos[room_idx][i], radius, nullptr))
             vis |= (1u << i);
         }
         vis &= ~standing; // never hop to where we already are
@@ -493,7 +560,7 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
           while (hop < 0 && qh < qt) {
             int u = qq[qh++];
             for (int v = 0; v < n; v++) {
-              if (!(skel_edges[room_idx][u] & (1 << v)) || dist_n[v] >= 0)
+              if (!(skel_edges[room_idx][u] & (1u << v)) || dist_n[v] >= 0)
                 continue;
               dist_n[v] = dist_n[u] + 1;
               qq[qt++] = v;
@@ -507,28 +574,28 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
 
         if (hop >= 0) {
           if (via_out)
-            *via_out = rm.portals[hop].path_pnt;
+            *via_out = skel_node_pos[room_idx][hop];
           if (skeleton_out)
             *skeleton_out = true;
           return BOT_VIA_FOUND;
         }
 
         // Reactive reach-the-door fallback (12.4): the egress portal toward the goal is known (exits)
-        // but no clean skeleton path reaches it — the buried-center / no-clear-leg rooms of BNode-less
-        // custom maps, where the engine bakes no in-room waypoints (NAVIGATION.md). Aim straight at the
-        // nearest egress portal anyway and let the engine's wall-avoidance grind the bot to the
-        // threshold; crossing it = progress. Still a goal-aware AIG_GET_TO_POS waypoint, never a
-        // steering force. Marked skeleton so the existing chain-cap -> suspend -> room-progress-timeout
-        // -> dyn-bump -> reroute machinery governs it: if the bot keeps reaching the door region without
-        // crossing, it reroutes (or, if this is the only way out, keeps trying — no worse than the churn
-        // it replaces, which it also silences by returning FOUND instead of NONE).
+        // but no clean skeleton path reaches it — buried-center / no-clear-leg rooms where even the
+        // pseudo-bnodes found no hull-clear interior route. Aim straight at the nearest egress portal
+        // anyway and let the engine's wall-avoidance grind the bot to the threshold; crossing it =
+        // progress. Still a goal-aware AIG_GET_TO_POS waypoint, never a steering force. Marked skeleton
+        // so the existing chain-cap -> suspend -> room-progress-timeout -> dyn-bump -> reroute machinery
+        // governs it: if the bot keeps reaching the door region without crossing, it reroutes (or, if
+        // this is the only way out, keeps trying — no worse than the churn it replaces, which it also
+        // silences by returning FOUND instead of NONE).
         if (Bot_reach_door_enabled && RoomBuriedCenter(room_idx)) {
           int best = -1;
           float best_d = 1e30f;
-          for (int i = 0; i < n; i++) {
+          for (int i = 0; i < np; i++) {
             if (!(exits & (1u << i)))
               continue;
-            float d = vm_VectorDistanceQuick(&obj->pos, &rm.portals[i].path_pnt);
+            float d = vm_VectorDistanceQuick(&obj->pos, &skel_node_pos[room_idx][i]);
             if (d < best_d) {
               best_d = d;
               best = i;
@@ -536,7 +603,7 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
           }
           if (best >= 0) {
             if (via_out)
-              *via_out = rm.portals[best].path_pnt;
+              *via_out = skel_node_pos[room_idx][best];
             if (skeleton_out)
               *skeleton_out = true;
             return BOT_VIA_FOUND;

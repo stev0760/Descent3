@@ -228,32 +228,47 @@ ceiling-blocked.
 
 ---
 
-## 4.2 In-room navigation on BNode-less custom maps (Phase 12.4)
+## 4.2 In-room navigation on BNode-less custom maps (Phase 12.4 reach-door + 12.5b pseudo-BNodes)
 
-**Why a separate layer.** §2.2: the engine's in-room waypoints (BNodes) are baked into the level file
-only, with no runtime generator. Old custom maps ship without them → the engine threads a room with just
-its `path_pnt` + portal points, which fails outright in **buried-center / no-clear-portal-leg** rooms
-(Bree's tavern: 1820 faces, unreachable bbox-center `path_pnt`, 2 portals with no clear leg between them
-→ 703 via-search-fails). Our portal-skeleton go-around (§4 via-points) also gives up there — it only
-connects *portals* with hull-clear legs, and there are none.
+**Why a separate layer.** §2.2: the engine's in-room waypoints (BNodes) are baked into the level file only —
+MP maps never carry them, and runtime *engine* BNode generation was **tried and reverted** (§8: it
+displaced the working crude-BOA path, broke the skeleton's foundation, and demanded cascading engine
+edits). Without BNodes the engine threads a room with just its `path_pnt` + portal points, which fails
+outright in **buried-center / no-clear-portal-leg** rooms (Bree's tavern: 1820 faces, unreachable
+bbox-center `path_pnt`, 2 portals with no clear leg between them → 703 via-search-fails). So we build the
+missing in-room waypoints **in our own skeleton**, on top of crude-BOA, never touching the engine.
 
-**Reactive reach-the-door fallback (`Bot_reach_door_enabled`, default on, `BotFindViaPoint`).** When the
-skeleton knows the egress portal toward the goal (`exits`) but finds no clean path to it, *in a
-`RoomBuriedCenter` room*, commit the bot to the **nearest egress portal's `path_pnt`** anyway and let the
-engine's wall-avoidance grind it to the threshold; crossing it = progress. It is a **goal waypoint
-(`AIG_GET_TO_POS`), never a steering force** — so it complements the engine's one controller and is
-categorically unlike the reverted flow/potential-fields (§8, Phase 7). Marked as a skeleton hop, so the
-existing **chain-cap → suspend → room-progress-timeout → dyn-bump → reroute** machinery governs it: a bot
-that keeps reaching the door region without crossing reroutes around the room (if an alternate exists),
-or — if it's the only way out — keeps trying, never worse than the churn it replaces (which it also
-silences, returning `FOUND` instead of `NONE`). Genuinely unsolvable rooms (no alternate route + no
-reachable door) are a map defect no nav layer fixes.
+**Pseudo-BNode interior waypoints (Phase 12.5b — `Bot_pseudo_bnodes_enabled`, `$pseudobnodes`, `SkelBuild`).**
+The portal skeleton (§4) connects only *portals* with hull-clear legs; in a room where two portals have no
+direct leg it has no edge and the bot is stranded. So when `SkelBuild` finds a disconnected portal pair, it
+synthesizes **interior nodes** and connects them, giving the Pass-3 BFS a multi-hop route *around* the
+obstacle:
+- **offset nodes** — one per portal, pushed off the portal face into the room (`path_pnt + face_normal*k`,
+  the engine generator's trick);
+- a **portal-centroid node** — lands in airspace for bent/L/convex rooms even when the bbox-center
+  `path_pnt` is buried in solid (precisely why the engine's center node stranded there).
 
-**Deferred tier — interior-waypoint synthesis (a runtime BNode substitute).** Only if the reactive
-fallback leaves bots stalling: sample interior 3D points (along bot→exit, then a point-cloud), keep the
-hull-clear ones (`ViaSegmentClear`), and path through them — generating the in-room waypoints the engine
-won't. Same `AIG_GET_TO_POS` waypoint architecture; smoother motion *when a hull-clear path exists*, but
-no help when one doesn't (so the reactive fallback stays the backstop).
+**Hull-aware** is the crux: pseudo-node edges are tested at the real ship hull (`BOT_PSEUDO_BNODE_RADIUS`
+≈ 6.0, hull 6.676), so we never synthesize an unflyable edge — the exact mistake (`max_rad 5.0`) that sank
+the reverted engine generation. It is **purely additive**: nodes appear only in disconnected rooms, the
+existing portal edges are untouched (no regression on rooms that already routed), and an isolated
+pseudo-node simply gets no edges and is ignored. Each hop is delivered through the same `AIG_GET_TO_POS`
+channel and governed by the same chain-cap → suspend → reroute machinery. This is the bot-code realization
+of the in-room waypoints the engine won't generate — the principled replacement for the reverted engine
+BNode generation. **Staged:** Stage 1 (offset + centroid, shipped) cracks bent/L/multi-portal rooms;
+Stage 2 (off-axis interior sampling) is a follow-up only if buried *central-obstacle* rooms still stall.
+
+**Reactive reach-the-door fallback (`Bot_reach_door_enabled`, default on, `BotFindViaPoint`) — the backstop**
+for when even the pseudo-bnodes find no hull-clear interior route. When the skeleton knows the egress portal
+toward the goal (`exits`) but finds no clean path to it, *in a `RoomBuriedCenter` room*, commit the bot to
+the **nearest egress portal's `path_pnt`** anyway and let the engine's wall-avoidance grind it to the
+threshold; crossing it = progress. It is a **goal waypoint (`AIG_GET_TO_POS`), never a steering force** — so
+it complements the engine's one controller and is categorically unlike the reverted flow/potential-fields
+(§8, Phase 7). Marked as a skeleton hop, so the existing **chain-cap → suspend → room-progress-timeout →
+dyn-bump → reroute** machinery governs it: a bot that keeps reaching the door region without crossing
+reroutes around the room (if an alternate exists), or — if it's the only way out — keeps trying, never worse
+than the churn it replaces (which it also silences, returning `FOUND` instead of `NONE`). Genuinely
+unsolvable rooms (no alternate route + no reachable door) are a map defect no nav layer fixes.
 
 ---
 
@@ -583,21 +598,22 @@ BOA — a bug (the router would be silently overriding BOA everywhere), not a fe
   anchor graph (nodes = entrances + ridge-saddle waypoints, edges = heightfield-LOS-clear legs). Build
   when a target map needs it (a full parallel terrain nav-grid was scoped and rejected as too costly —
   git history of `NAV_OVERHAUL_3.md`; this is the minimal form).
-- **Cramped concave room clusters with constrained egress — reactive fallback shipped (12.4), pending
+- **Cramped concave room clusters with constrained egress — pseudo-BNodes shipped (12.5b), pending
   soak.** A small volume densely subdivided into many non-convex chambers joined by tight portals, where
   the goal lies *outside* the cluster and is reachable only through one (or few) egress portal(s). The
   cluster's own interior faces occlude the steer line in every direction, so the intra-room via/skeleton
   go-around searches and gives up — the bot churns inside, never threading back out. Stacked chambers /
   vertical shafts compound it. Signature: a large `via-search-fail` count piled in one room with **0 hard
   pins** (soft search-and-fail) — the worst single room across the Fellowship soak logged **703**.
-  **Root cause = §2.2 (the engine bakes no BNodes on these maps).** Fix shipped: the **reactive
-  reach-the-door fallback** (`Bot_reach_door_enabled`, `BotFindViaPoint`) — when the skeleton knows the
-  egress portal but can't reach it cleanly in a `RoomBuriedCenter` room, aim at the nearest egress portal
-  anyway (a goal waypoint, not a steering force) and let the engine grind to the threshold; marked
-  skeleton so the existing chain-cap → suspend → dyn-bump → reroute machinery governs it. The deferred
-  tier (only if this leaves bots stalling) is interior-waypoint synthesis — a runtime BNode substitute
-  (§4.2). Surfaced by a custom map that dressed the cluster as a multi-storey building, but the geometry
-  is generic: any cramped, concave, single-chokepoint room pocket in a mine.
+  **Root cause = §2.2 (MP maps carry no baked BNodes; runtime engine generation was tried and reverted).**
+  Fix shipped: **pseudo-BNode interior waypoints** (§4.2, `SkelBuild`, `Bot_pseudo_bnodes_enabled`) — when
+  a portal pair has no direct hull-clear leg, synthesize offset + centroid interior nodes (hull-aware
+  edges) so the skeleton BFS hops *around* the obstacle; the **reactive reach-the-door fallback**
+  (`Bot_reach_door_enabled`) remains the backstop for rooms where even those find no route. Both deliver
+  goal waypoints (`AIG_GET_TO_POS`), never steering forces, governed by the chain-cap → suspend → dyn-bump
+  → reroute machinery. Surfaced by a custom map that dressed the cluster as a multi-storey building, but
+  the geometry is generic: any cramped, concave, single-chokepoint room pocket in a mine. **A/B with
+  `$pseudobnodes`; the gate is doorsofmoria no-regression + townofbree via-fail collapse.**
 - **Breakable-grate / destructible-obstacle passability — second priority.** Bots treat a destructible
   grate / breakable pane as a permanent wall: the engine and our passability layer mark the portal
   impassable, and the bot never *shoots it open* to pass. On maps that wall off zones with grates this

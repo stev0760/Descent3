@@ -37,6 +37,12 @@
 #define BOT_PORTAL_TIGHT_RADIUS 4.0f   // comfortable-margin test: fits but no slack -> tightness penalty
 #define BOT_PORTAL_TIGHT_PENALTY 40.0f // cost added for a tight-but-passable opening (~one BOA hop)
 
+// Pseudo-bnode (interior-waypoint) synthesis — Phase 12.5b. Edges among synthesized nodes are tested at
+// the REAL ship hull (~6.676) so we never route a bot into a gap it can't fit — the lesson from the
+// reverted engine-BNode experiment, which pruned at 5.0 and pinned bots in [5.0, 6.676) gaps.
+#define BOT_PSEUDO_BNODE_RADIUS 6.0f   // hull-aware clearance radius for pseudo-bnode edges (primary tuning knob)
+#define BOT_PSEUDO_BNODE_OFFSET 8.0f   // push portal offset-nodes this far off the portal face into the room
+
 // Dynamic penalty: a traversal failure bumps a portal's cost so the router reroutes; it decays
 // over time. Capped well below IMPASSABLE so a bumped portal stays usable as a last resort.
 #define BOT_PORTAL_DYN_BUMP 80.0f // penalty added per traversal failure (~two BOA hops)
@@ -92,6 +98,7 @@ extern bool Bot_terrain_steering_enabled;
 
 // Phase 12.4: reactive "reach-the-door" in-room fallback for BNode-less custom maps (default ON).
 extern bool Bot_reach_door_enabled;
+extern bool Bot_pseudo_bnodes_enabled;
 
 // Portal passability check: casts a ship-radius ray through the portal opening
 // to detect geometry-based blockage (bunker slits, barred windows). Results

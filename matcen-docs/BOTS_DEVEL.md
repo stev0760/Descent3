@@ -67,6 +67,35 @@ a room lacking BNode data — a latent crash independent of bots).
 
 ---
 
+### Pseudo-BNodes in the bot-code skeleton (Phase 12.5b, 0.9.2-dev, 2026-06-20, UNTESTED)
+
+**The principled replacement for the reverted engine-BNode generation (below).** Same goal — in-room
+waypoints so bots thread complex rooms — but built in *our* skeleton, on top of the engine's crude-BOA
+path, touching **zero** engine files. The portal skeleton (`SkelBuild`, `bot_steering.cpp`) connected only
+*portals* with hull-clear legs; in a room where two portals have no direct leg it had no edge → via-fail →
+churn. Now, when `SkelBuild` finds a disconnected portal pair, it synthesizes **interior nodes**:
+- **offset nodes** — one per portal, pushed off the portal face into the room (`path_pnt + face_normal*k`,
+  the engine generator's trick);
+- a **portal-centroid node** — in airspace for bent/L/convex rooms even when the bbox-center `path_pnt` is
+  buried in solid (exactly where the engine's center node stranded).
+
+The existing Pass-3 BFS then hops the bot through these interior waypoints to round an obstacle between two
+portals; delivery is the same `AIG_GET_TO_POS` channel, governed by the same chain-cap → suspend → reroute
+machinery (node-agnostic, so no changes there). **Hull-aware** is the crux and the lesson banked from the
+reverted experiment: pseudo-node edges test at the real ship hull (`BOT_PSEUDO_BNODE_RADIUS` ≈ 6.0 vs the
+6.676 hull), so we never synthesize an unflyable edge (the generation kept edges down to `max_rad 5.0` and
+pinned bots). **Purely additive:** nodes appear only in disconnected rooms, existing portal edges are
+unchanged (no regression on rooms that already routed), an isolated pseudo-node just gets no edges.
+
+Data structure: the skeleton cache now stores explicit node positions (`skel_node_pos`, portals first then
+pseudo), widened to 32 nodes / `uint32_t` edges (MAX_ROOMS=400 → trivial static cost). Toggle
+`$pseudobnodes` (default ON; flip + reload a level to A/B). A `LOG_DEBUG "pseudo-bnodes room N: +K"` line
+confirms generation + placement. **Staged:** Stage 1 (offset + centroid, shipped) cracks bent/L/multi-portal
+rooms; Stage 2 (off-axis interior sampling) is the follow-up only if buried *central-obstacle* rooms still
+stall. Bot code only — `bot_steering.cpp/.h`, `dedicated_server.cpp` (command). Doc: `NAVIGATION.md` §4.2.
+**Verify:** A/B soak — doorsofmoria **no regression** (back to ~5 kills, the gate the engine generation
+failed) + townofbree room-60 via-fail collapse + captures > 0.
+
 ### Runtime BNode generation (Phase 12.5) — TRIED AND REVERTED (2026-06-20)
 
 **Attempted, regressed, reverted.** We generated real engine BNodes at MP level load — ported Outrage's
