@@ -318,6 +318,21 @@ already sees the door, the graph defers (the ring/beeline flies the final approa
 bot code only. `$navdump` emits the per-region graph (`outdoor_graph[]`); `visualize_navdump.py` draws it
 (magenta squares = doors, yellow dots = perimeter anchors, magenta lines = go-around edges).
 
+**Soft-hop bridge across disconnected graphs (Phase 12.7 — `$navbridge` / `$softfollow`, default ON).** Both
+the indoor skeleton (§4.2) and the outdoor graph above fragment on real maps — a free-standing divider splits
+a room's portal sub-graphs (khazaddum 20/31), or buildings split the region graph into components (townofbree
+= 11 components, 7/13 doors reachable). The BFS then dead-ends and the bot pins. The fix is the user's: *a
+crude connection that doesn't build more graphs — stop adhering strictly to node points.* When the BFS can't
+reach the target, **return the best node TOWARD it as a soft progress hop** and let the engine's avoid-walls
+thread the gap (indoor: the §4.2 reach-the-door fallback, generalized from buried-only to all 2-component
+rooms; outdoor: `BotOutdoorGraphHop` returns the bot-visible node nearest the target door instead of failing).
+Marked `skeleton` so chain-cap → suspend → reroute bounds it — it makes progress or reroutes, never grinds
+forever. No graph edges are synthesized (a hull-gated bridge adds nothing; an ungated one aims into walls).
+Companion loosening (`$softfollow`): `BotViaPointTick` drops a committed detour the instant the straight line
+to the real target re-clears (`BotStraightLineClear`) — so the bot flows through, not rigidly node-to-node —
+without circling (the line only clears once the obstacle is passed; skeleton chain hops are exempt). This is
+the routing-layer realization of "complement BOA, don't fight it" (§8): we only ever set the engine's goal.
+
 ---
 
 ## 5. Diagnostics

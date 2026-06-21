@@ -67,6 +67,40 @@ a room lacking BNode data — a latent crash independent of bots).
 
 ---
 
+### Soft-hop bridge + commitment loosening (Phase 12.7, 0.9.3-dev, 2026-06-21, UNTESTED)
+
+**One mechanism, the user's own framing: "a crude connection between disconnected graphs that doesn't
+involve building more graphs — by making bots not adhere strictly to node points."** The 13.5h Stage-B soak
+(`testing-2026-06-21T02-18-20`, 56 rounds, 0 crashes, captures +30%) re-ranked the failures: the dominant
+remaining hard-pins are **disconnected node graphs** — indoor 2-component rooms (khazaddum 20/31 = 80 hard
+pins, the soak's worst bucket; `buried=0`, pseudo-bnodes built but the two portal sub-graphs don't connect)
+and the fragmented outdoor graph (townofbree: 11 components, only 7/13 doors BFS-reachable). Both dead-end
+the BFS → the bot pins. Version bumped 0.9.2→**0.9.3-dev** for the depth of the behavior change.
+
+Two changes, bot code only, both toggle-gated for clean A/B:
+- **Soft progress hop (`$navbridge`, default ON).** When the node-graph BFS can't reach the target, don't
+  return NONE (→ beeline into a wall → pin) — hand the bot the best node *toward* the target and let the
+  engine's `AIF_AVOID_WALLS` thread the gap. Indoor: the 12.4 reach-the-door fallback is **generalized from
+  buried-center-only to all 2-component rooms** (`bot_steering.cpp` — one gate: `Bot_soft_hop_enabled ||
+  RoomBuriedCenter`), so khazaddum's open-center divider rooms get a soft aim at the egress portal the engine
+  can deflect around. Outdoor: `BotOutdoorGraphHop` returns the **bot-visible node nearest the target door**
+  (greedy progress) instead of `false`. Both marked `skeleton` so the existing chain-cap → suspend → reroute
+  governs them — no infinite grind, reroutes if it truly can't cross. No new graph edges synthesized (a
+  hull-gated bridge edge adds nothing — disconnected already = not hull-clear; an ungated one aims into
+  walls), so this is purely "help the engine bridge the gap."
+- **Soft via-follow / early release (`$softfollow`, default ON).** `BotViaPointTick` releases a committed
+  detour the moment the straight line to the real target re-clears (`BotStraightLineClear`, one fvi probe) —
+  the bot stops flying precisely to a node it no longer needs once it's rounded the obstacle. Loosens the
+  per-via commitment (the "rigid, node-to-node" feel the user flagged) without reintroducing circling: the
+  line only clears once the obstacle is genuinely passed. Skeleton hops are exempt (a chain hop's target line
+  is usually still blocked by the next obstacle; releasing mid-chain would strand it).
+
+**Out of scope (separate frontier):** towerofisengard (0 caps/7 rounds, 81 hard) is a **destroyable-grate**
+problem — bots won't shoot the grates sealing the path, so no bridge/soft-follow helps (NAVIGATION.md §7).
+**Verify:** soak — khazaddum 20/31 + townofbree 60 hard-pins collapse (the headline metric); townofbree
+outdoor doors reachable + carrier brings the flag home; FPV reads as continuous arcs; A/B `$navbridge` /
+`$softfollow`; gate: doorsofmoria + the healthy connected maps unchanged. Doc: `NAVIGATION.md` §4.3.
+
 ### Outdoor connecting graph — Stage B (Phase 12.6, 0.9.2-dev, 2026-06-20, UNTESTED)
 
 **The global outdoor planner — bots route multi-hop AROUND building footprints instead of locking onto one

@@ -208,7 +208,7 @@ static cvar_entry CVars[] = {
     // Bot config file path — "BotConfig=bots.cfg" in dedicated.cfg points to a separate
     // bot roster file using the same Key=Value syntax. Parsed by BotLoadRosterFile() after
     // the first level loads. If absent, no bots are auto-spawned (backwards compatible).
-    {"BotConfig", CVAR_TYPE_STRING, Bot_config_file, -1, 259, CVAR_GAMEINIT},                                // 36
+    {"BotConfig", CVAR_TYPE_STRING, Bot_config_file, -1, 259, CVAR_GAMEINIT}, // 36
 };
 
 #define CVAR_TIMELIMIT 1
@@ -354,8 +354,7 @@ int LoadServerConfigFile() {
   while (inf.ReadLine()) {
     int cmd;
 
-    while ((cmd = inf.ParseLine(operand, INFFILE_LINELEN)) > INFFILE_ERROR &&
-           cmd != INFFILE_SYMBOL) {
+    while ((cmd = inf.ParseLine(operand, INFFILE_LINELEN)) > INFFILE_ERROR && cmd != INFFILE_SYMBOL) {
       SetCVar(CVars[cmd].varname, operand, true);
     }
   }
@@ -808,9 +807,8 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     } else {
       for (int i = 0; i < MAX_BOTS; i++) {
         if (Bots[i].active)
-          PrintDedicatedMessage("  Bot %d: '%s' slot=%d ship=%s diff=%s %s\n", i, Bots[i].callsign,
-                                Bots[i].player_slot, Ships[Bots[i].ship_index].name,
-                                BotDifficultyName(Bots[i].difficulty),
+          PrintDedicatedMessage("  Bot %d: '%s' slot=%d ship=%s diff=%s %s\n", i, Bots[i].callsign, Bots[i].player_slot,
+                                Ships[Bots[i].ship_index].name, BotDifficultyName(Bots[i].difficulty),
                                 Bots[i].awaiting_respawn ? "(dead)" : "(alive)");
       }
     }
@@ -898,8 +896,7 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
       Bot_pseudo_bnodes_enabled = false;
       PrintDedicatedMessage("Pseudo-BNode interior waypoints OFF (regenerated on next level)\n");
     } else {
-      PrintDedicatedMessage("Usage: $pseudobnodes on|off  (current: %s)\n",
-                            Bot_pseudo_bnodes_enabled ? "on" : "off");
+      PrintDedicatedMessage("Usage: $pseudobnodes on|off  (current: %s)\n", Bot_pseudo_bnodes_enabled ? "on" : "off");
     }
     return true;
   }
@@ -924,11 +921,37 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
       Bot_outdoor_graph_enabled = false;
       PrintDedicatedMessage("Outdoor connecting graph OFF\n");
     } else {
-      PrintDedicatedMessage("Usage: $outdoorgraph on|off  (current: %s)\n",
-                            Bot_outdoor_graph_enabled ? "on" : "off");
+      PrintDedicatedMessage("Usage: $outdoorgraph on|off  (current: %s)\n", Bot_outdoor_graph_enabled ? "on" : "off");
     }
     return true;
   }
+
+  if (stricmp(command, "navbridge") == 0) {
+    if (stricmp(operand, "on") == 0) {
+      Bot_soft_hop_enabled = true;
+      PrintDedicatedMessage("Soft-hop bridge across disconnected graphs ON\n");
+    } else if (stricmp(operand, "off") == 0) {
+      Bot_soft_hop_enabled = false;
+      PrintDedicatedMessage("Soft-hop bridge across disconnected graphs OFF\n");
+    } else {
+      PrintDedicatedMessage("Usage: $navbridge on|off  (current: %s)\n", Bot_soft_hop_enabled ? "on" : "off");
+    }
+    return true;
+  }
+
+  if (stricmp(command, "softfollow") == 0) {
+    if (stricmp(operand, "on") == 0) {
+      Bot_soft_follow_enabled = true;
+      PrintDedicatedMessage("Soft via-follow (early release) ON\n");
+    } else if (stricmp(operand, "off") == 0) {
+      Bot_soft_follow_enabled = false;
+      PrintDedicatedMessage("Soft via-follow (early release) OFF\n");
+    } else {
+      PrintDedicatedMessage("Usage: $softfollow on|off  (current: %s)\n", Bot_soft_follow_enabled ? "on" : "off");
+    }
+    return true;
+  }
+
   if (stricmp(command, "botdifficulty") == 0) {
     if (!operand[0]) {
       PrintDedicatedMessage("Usage: $botdifficulty <index|all> <level>\n");
@@ -995,6 +1018,9 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     PrintDedicatedMessage("  $pseudobnodes on|off   - Toggle skeleton interior waypoints (Phase 12.5b)\n");
     PrintDedicatedMessage("  $outdoorvia on|off     - Toggle outdoor lateral go-around (Phase 12.6)\n");
     PrintDedicatedMessage("  $outdoorgraph on|off   - Toggle outdoor connecting graph (Phase 12.6 Stage B)\n");
+    PrintDedicatedMessage(
+        "  $navbridge on|off      - Toggle soft-hop bridge across disconnected graphs (Phase 12.7)\n");
+    PrintDedicatedMessage("  $softfollow on|off     - Toggle soft via-follow / early release (Phase 12.7)\n");
     PrintDedicatedMessage("  $botmode               - Show detected game mode\n");
     PrintDedicatedMessage("  $botobj                - Show objective state (CTF flags, orbs, etc.)\n");
     PrintDedicatedMessage("  $servercaps            - Print server capabilities\n");

@@ -40,20 +40,20 @@
 // Pseudo-bnode (interior-waypoint) synthesis — Phase 12.5b. Edges among synthesized nodes are tested at
 // the REAL ship hull (~6.676) so we never route a bot into a gap it can't fit — the lesson from the
 // reverted engine-BNode experiment, which pruned at 5.0 and pinned bots in [5.0, 6.676) gaps.
-#define BOT_PSEUDO_BNODE_RADIUS 6.0f   // hull-aware clearance radius for pseudo-bnode edges (primary tuning knob)
-#define BOT_PSEUDO_BNODE_OFFSET 8.0f   // push portal offset-nodes this far off the portal face into the room
-#define BOT_SKEL_MAX_NODES 32          // skeleton node cap per room (portal nodes + pseudo-bnodes)
+#define BOT_PSEUDO_BNODE_RADIUS 6.0f // hull-aware clearance radius for pseudo-bnode edges (primary tuning knob)
+#define BOT_PSEUDO_BNODE_OFFSET 8.0f // push portal offset-nodes this far off the portal face into the room
+#define BOT_SKEL_MAX_NODES 32        // skeleton node cap per room (portal nodes + pseudo-bnodes)
 
 // Outdoor connecting graph — Phase 12.6 Stage B. The outdoor analog of the room skeleton: a per-
 // terrain-region node graph (entrance approach points + structure perimeter anchors) BFS'd to route a
 // bot AROUND a building footprint to a door behind it (the reactive ring can't — its candidate must see
 // the door, which the structure occludes). Edges are hull-clear AND ceiling-capped (the low Bree ceiling
 // forces lateral routes). Built once per level, cached per region.
-#define BOT_OGRAPH_MAX_NODES 64        // node cap per terrain region (entrance nodes + perimeter anchors); uint64 mask
-#define BOT_OGRAPH_RADIUS 6.0f         // hull-aware clearance for outdoor graph edges (matches pseudo-bnode hull)
-#define BOT_OGRAPH_PERIM_MARGIN 20.0f  // push structure-bbox corners this far out into navigable airspace
-#define BOT_OGRAPH_CEIL_MARGIN 30.0f   // keep perimeter-anchor height this far below the outdoor ceiling
-#define BOT_OGRAPH_MATCH_DIST 40.0f    // target_pos must be within this of an entrance node to graph-route to it
+#define BOT_OGRAPH_MAX_NODES 64       // node cap per terrain region (entrance nodes + perimeter anchors); uint64 mask
+#define BOT_OGRAPH_RADIUS 6.0f        // hull-aware clearance for outdoor graph edges (matches pseudo-bnode hull)
+#define BOT_OGRAPH_PERIM_MARGIN 20.0f // push structure-bbox corners this far out into navigable airspace
+#define BOT_OGRAPH_CEIL_MARGIN 30.0f  // keep perimeter-anchor height this far below the outdoor ceiling
+#define BOT_OGRAPH_MATCH_DIST 40.0f   // target_pos must be within this of an entrance node to graph-route to it
 
 // Dynamic penalty: a traversal failure bumps a portal's cost so the router reroutes; it decays
 // over time. Capped well below IMPASSABLE so a bumped portal stays usable as a last resort.
@@ -125,6 +125,20 @@ extern bool Bot_reach_door_enabled;
 extern bool Bot_pseudo_bnodes_enabled;
 extern bool Bot_outdoor_via_enabled;
 extern bool Bot_outdoor_graph_enabled; // 12.6 Stage B: connecting graph for multi-hop go-around ($outdoorgraph)
+
+// Phase 12.7 — the "crude connection between disconnected graphs" + commitment loosening.
+// $navbridge: when the node-graph BFS can't reach the target (fragmented skeleton / outdoor graph), hand the
+//   bot the best node TOWARD the target as a soft progress hop and let the engine's avoid-walls thread the
+//   gap — instead of dead-ending into a pin. "Help the engine bridge the gap," no new graph edges.
+// $softfollow: release a committed via the moment the straight line to the real target re-clears, so the bot
+//   stops adhering strictly to a node it no longer needs (loosens the per-via commitment → less rigid feel).
+extern bool Bot_soft_hop_enabled;
+extern bool Bot_soft_follow_enabled;
+
+// 12.7 soft-follow helper: is the hull-radius straight line from obj to target_pos clear (no wall/terrain,
+// and outdoors no ceiling)? Lightweight single-probe predicate used for early via-release. target_room is
+// unused today (fvi starts from obj->roomnum) but kept for symmetry with the via API.
+bool BotStraightLineClear(object *obj, const vector &target_pos, int target_room);
 
 // Portal passability check: casts a ship-radius ray through the portal opening
 // to detect geometry-based blockage (bunker slits, barred windows). Results

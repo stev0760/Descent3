@@ -62,6 +62,8 @@ bool Bot_reach_door_enabled = true;
 bool Bot_pseudo_bnodes_enabled = true; // 12.5b: synthesize interior waypoints in disconnected rooms ($pseudobnodes)
 bool Bot_outdoor_via_enabled = true;   // 12.6: lateral go-around outdoors (around structures) ($outdoorvia)
 bool Bot_outdoor_graph_enabled = true; // 12.6 Stage B: connecting graph multi-hop go-around ($outdoorgraph)
+bool Bot_soft_hop_enabled = true;      // 12.7: soft progress hop across disconnected graphs ($navbridge)
+bool Bot_soft_follow_enabled = true;   // 12.7: early via-release when the real-target line clears ($softfollow)
 
 // Per-level portal passability cache. Catches geometry-based blockage (bunker slits,
 // barred openings) that portal flags miss. -1=unchecked, 0=blocked, 1=passable.
@@ -293,6 +295,16 @@ static bool ViaSegmentClear(int startroom, const vector &a, const vector &b, flo
   return true;
 }
 
+// 12.7 soft-follow predicate: hull-radius straight line obj->target clear? Single fvi probe (no ring search),
+// ceiling-aware outdoors. Used by the early via-release: once the obstacle is rounded and this is true, the
+// committed detour is no longer needed and can be dropped immediately.
+bool BotStraightLineClear(object *obj, const vector &target_pos, int target_room) {
+  if (!obj)
+    return false;
+  (void)target_room;
+  return ViaSegmentClear(obj->roomnum, obj->pos, target_pos, obj->size, nullptr, OBJECT_OUTSIDE(obj) != 0);
+}
+
 // --- Phase 12.3: portal-skeleton traversal (pass 3 of the via search) ---
 // In buried-center rooms (hollow-core rings like abend2's discs, labyrinths like nysa 41/69) no
 // single point has hull LOS to both the bot and the target — the ring passes fail by
@@ -334,9 +346,7 @@ static bool RoomBuriedCenter(int room_idx) {
   return room_buried[room_idx] == 1;
 }
 
-static int SkelPortalCount(const room &rm) {
-  return rm.num_portals < SKEL_MAX_NODES ? rm.num_portals : SKEL_MAX_NODES;
-}
+static int SkelPortalCount(const room &rm) { return rm.num_portals < SKEL_MAX_NODES ? rm.num_portals : SKEL_MAX_NODES; }
 
 // Build the per-room node graph: the portal nodes (guaranteed-flyable points) plus, in rooms where
 // some portal pair has no direct hull-clear leg, **pseudo-bnodes** — interior waypoints the BFS can
@@ -561,8 +571,7 @@ static void OGraphBuild(int region) {
   }
   ograph_count[region] = (uint8_t)n;
   ograph_built[region] = 1;
-  LOG_DEBUG.printf("BOT: outdoor graph region %d: %d nodes (%d entrances, %d perimeter)", region, n, n_ent,
-                   n - n_ent);
+  LOG_DEBUG.printf("BOT: outdoor graph region %d: %d nodes (%d entrances, %d perimeter)", region, n, n_ent, n - n_ent);
 }
 
 // BFS the region graph for a hull-clear, ceiling-capped multi-hop route from the bot to the entrance
@@ -637,8 +646,32 @@ static bool BotOutdoorGraphHop(object *obj, const vector &target_pos, float radi
       }
     }
   }
-  if (hop < 0)
-    return false;
+  if (hop < 0) {
+    // Soft progress hop (12.7 $navbridge): the graph is fragmented — the target door is in a component the
+    // bot's visible set can't reach (townofbree's 11-component town: only 7/13 doors BFS-reachable). Rather
+    // than dead-end (-> NONE -> beeline into a wall -> pin), step TOWARD the door: pick the bot-visible node
+    // nearest the target and hand it back. The engine threads the leg; if it's a true building local-minimum
+    // the existing skeleton chain-cap -> suspend -> reroute catches it (no worse than the pin it replaces).
+    if (!Bot_soft_hop_enabled)
+      return false;
+    float bot_to_tgt = vm_VectorDistanceQuick(&obj->pos, &ograph_node[region][tgt].pos);
+    int best = -1;
+    float best_d = bot_to_tgt; // only accept a node strictly closer to the door than we are (real progress)
+    for (int i = 0; i < n; i++) {
+      if (!(vis & (1ull << i)))
+        continue;
+      float d = vm_VectorDistanceQuick(&ograph_node[region][i].pos, &ograph_node[region][tgt].pos);
+      if (d < best_d) {
+        best_d = d;
+        best = i;
+      }
+    }
+    if (best < 0)
+      return false; // no visible node makes progress toward the door — let the beeline/ring try
+    if (via_out)
+      *via_out = ograph_node[region][best].pos;
+    return true;
+  }
   if (via_out)
     *via_out = ograph_node[region][hop].pos;
   return true;
@@ -863,16 +896,17 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
           return BOT_VIA_FOUND;
         }
 
-        // Reactive reach-the-door fallback (12.4): the egress portal toward the goal is known (exits)
-        // but no clean skeleton path reaches it — buried-center / no-clear-leg rooms where even the
-        // pseudo-bnodes found no hull-clear interior route. Aim straight at the nearest egress portal
-        // anyway and let the engine's wall-avoidance grind the bot to the threshold; crossing it =
-        // progress. Still a goal-aware AIG_GET_TO_POS waypoint, never a steering force. Marked skeleton
-        // so the existing chain-cap -> suspend -> room-progress-timeout -> dyn-bump -> reroute machinery
-        // governs it: if the bot keeps reaching the door region without crossing, it reroutes (or, if
-        // this is the only way out, keeps trying — no worse than the churn it replaces, which it also
-        // silences by returning FOUND instead of NONE).
-        if (Bot_reach_door_enabled && RoomBuriedCenter(room_idx)) {
+        // Soft progress hop toward the egress portal (12.4 reach-the-door, generalized in 12.7): the
+        // exit toward the goal is known (exits) but no clean skeleton path reaches it — the room's two
+        // portal sub-graphs are disconnected (a free-standing divider, or a buried center). Aim straight
+        // at the nearest egress portal anyway and let the engine's wall-avoidance thread the bot toward
+        // it — "help the engine bridge the gap." Still a goal-aware AIG_GET_TO_POS waypoint, never a
+        // steering force; marked skeleton so chain-cap -> suspend -> room-progress-timeout -> dyn-bump ->
+        // reroute governs it (no infinite grind; reroutes if it can't cross). 12.4 fired only in
+        // RoomBuriedCenter rooms; $navbridge (12.7) extends it to ALL 2-component rooms — the open-center
+        // case (khazaddum 20/31, buried=0) where the engine CAN deflect around the divider to the exit,
+        // the soak's #1 hard-pin bucket. $navbridge off restores the buried-only 12.4 behavior.
+        if (Bot_reach_door_enabled && (Bot_soft_hop_enabled || RoomBuriedCenter(room_idx))) {
           int best = -1;
           float best_d = 1e30f;
           for (int i = 0; i < np; i++) {

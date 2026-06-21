@@ -1328,8 +1328,8 @@ static void BotDoHoldStationNav(int bot_index) {
   bool via_active = false;
   {
     int steer_room = -1;
-    vector steer_pos = BotGetActiveSteerPoint(obj, Bots[bot_index].order_anchor_pos,
-                                              Bots[bot_index].order_anchor_room, &steer_room);
+    vector steer_pos =
+        BotGetActiveSteerPoint(obj, Bots[bot_index].order_anchor_pos, Bots[bot_index].order_anchor_room, &steer_room);
     via_active = BotViaPointTick(bot_index, steer_pos, steer_room, pgi, nullptr) != 0;
   }
   if (!via_active && !(pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)) {
@@ -1393,6 +1393,20 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
   // Committed: hold course to the via until reached or the commitment lapses. The commit window
   // is what prevents per-tick side flipping (the old net_disp 28-43 circling signature).
   if (Bots[bot_index].via_expires > Gametime) {
+    // 12.7 soft-follow ($softfollow): release the detour the MOMENT the straight line to the real target
+    // re-clears — the bot has rounded the obstacle and no longer needs to fly precisely to the via node.
+    // This loosens the per-via commitment (the "rigid, flies strictly node-to-node" feel) WITHOUT
+    // reintroducing circling: the line only clears once the obstacle is genuinely passed, so it can't
+    // flip back to blocked from the same spot. Skeleton hops aren't released this way — a chain hop's
+    // target line is usually still blocked by the NEXT obstacle, and releasing mid-chain strands it.
+    if (Bot_soft_follow_enabled && !Bots[bot_index].via_is_skeleton &&
+        BotStraightLineClear(obj, target_pos, target_room)) {
+      Bots[bot_index].via_expires = 0.0f;
+      if (goal_slot >= 0 && goal_slot < MAX_GOALS && obj->ai_info->goals[goal_slot].used)
+        GoalClearGoal(obj, &obj->ai_info->goals[goal_slot]);
+      goal_slot = -1; // caller re-issues the (now-clear) real target this tick
+      return 0;
+    }
     if (vm_VectorDistanceQuick(&obj->pos, &Bots[bot_index].via_point) < BOT_VIA_ARRIVE_DIST) {
       Bots[bot_index].via_expires = 0.0f;
       if (goal_slot >= 0 && goal_slot < MAX_GOALS && obj->ai_info->goals[goal_slot].used)
@@ -2662,9 +2676,9 @@ static void BotUpdateState(int bot_index) {
         vector steer_pos = BotGetActiveSteerPoint(obj, pu->pos, OBJECT_OUTSIDE(pu) ? -1 : pu->roomnum, &steer_room);
         via_active = BotViaPointTick(bot_index, steer_pos, steer_room, pgi, &via_verdict) != 0;
         if (!via_active)
-          Bots[bot_index].via_seal_count =
-              ((pu_same_room || pu_adjacent_room) && via_verdict == BOT_VIA_NONE) ? Bots[bot_index].via_seal_count + 1
-                                                                                  : 0;
+          Bots[bot_index].via_seal_count = ((pu_same_room || pu_adjacent_room) && via_verdict == BOT_VIA_NONE)
+                                               ? Bots[bot_index].via_seal_count + 1
+                                               : 0;
       }
 
       if (Bots[bot_index].via_seal_count >= BOT_VIA_SEALED_TICKS) {
@@ -4009,7 +4023,7 @@ bool BotNavDump(const char *filename) {
       bool pf_block_f = (po.flags & PF_BLOCK) && !(po.flags & PF_BLOCK_REMOVABLE);
       bool pf_small_f = (po.flags & PF_TOO_SMALL_FOR_ROBOT) != 0;
       bool rendered = (po.flags & PF_RENDER_FACES) && !(po.flags & PF_RENDERED_FLYTHROUGH);
-      doorway *dw = rm.doorway_data ? rm.doorway_data
+      doorway *dw = rm.doorway_data                                           ? rm.doorway_data
                     : (cr >= 0 && cr <= Highest_room_index && Rooms[cr].used) ? Rooms[cr].doorway_data
                                                                               : nullptr;
       const char *ptype;
@@ -5370,9 +5384,10 @@ void BotDoFrame() {
                 Bots[i].chasing_powerup_timer = 0.0f;
                 float pu_dist = vm_VectorDistanceQuick(&obj->pos, &Objects[pu_obj].pos);
                 char tdiag[128];
-                LOG_DEBUG.printf("BOT: '%s' room progress timeout (room %d, net_disp=%.0f) — chasing '%s' (dist=%.0f)%s",
-                                 Bots[i].callsign, cur_room, net_disp, Object_info[Objects[pu_obj].id].name, pu_dist,
-                                 BotTerrainDiag(obj, stuck_dest, tdiag, sizeof(tdiag)));
+                LOG_DEBUG.printf(
+                    "BOT: '%s' room progress timeout (room %d, net_disp=%.0f) — chasing '%s' (dist=%.0f)%s",
+                    Bots[i].callsign, cur_room, net_disp, Object_info[Objects[pu_obj].id].name, pu_dist,
+                    BotTerrainDiag(obj, stuck_dest, tdiag, sizeof(tdiag)));
               } else {
                 char tdiag[128];
                 LOG_DEBUG.printf("BOT: '%s' room progress timeout (room %d, net_disp=%.0f) — picking new destination%s",
