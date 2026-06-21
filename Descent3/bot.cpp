@@ -4206,6 +4206,37 @@ bool BotNavDump(const char *filename) {
   }
   fprintf(fp, "\n  ],\n");
 
+  // Outdoor connecting graph (12.6 Stage B): the per-terrain-region entrance/perimeter go-around graph.
+  // Nodes [0,ent_count) are entrance approach points (doors); the rest are structure-perimeter anchors.
+  // edges[i] = bitmask of hull-clear, ceiling-capped legs from node i. Lets visualize_navdump.py draw the
+  // outdoor route mesh the external rooms otherwise omit. Reflects the live $outdoorgraph state.
+  fprintf(fp, "  \"outdoor_graph\": [\n");
+  {
+    int n_regions = BOA_num_terrain_regions;
+    bool first_rgn = true;
+    for (int rg = 0; rg < n_regions; rg++) {
+      vector gpos[BOT_OGRAPH_MAX_NODES];
+      uint64_t gedges[BOT_OGRAPH_MAX_NODES];
+      int ent = 0;
+      int gn = BotOGraphDump(rg, gpos, gedges, &ent);
+      if (gn <= 0)
+        continue;
+      if (!first_rgn)
+        fprintf(fp, ",\n");
+      first_rgn = false;
+      fprintf(fp, "    {\"region\": %d, \"node_count\": %d, \"ent_count\": %d,\n", rg, gn, ent);
+      fprintf(fp, "      \"nodes\": [");
+      for (int i = 0; i < gn; i++)
+        fprintf(fp, "%s[%.2f,%.2f,%.2f]", i ? "," : "", gpos[i].x(), gpos[i].y(), gpos[i].z());
+      fprintf(fp, "],\n");
+      fprintf(fp, "      \"edges\": [");
+      for (int i = 0; i < gn; i++)
+        fprintf(fp, "%s%llu", i ? "," : "", (unsigned long long)gedges[i]);
+      fprintf(fp, "]}");
+    }
+  }
+  fprintf(fp, "\n  ],\n");
+
   fprintf(fp,
           "  \"summary\": {\"passability_disagreements\": %d, \"blocked_portal_legs\": %d, "
           "\"bbox_center_pathpnts\": %d, \"breakable_glass_portals\": %d, \"forcefield_portals\": %d, "

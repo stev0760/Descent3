@@ -112,6 +112,28 @@ def main():
                 svg.append(f'<circle cx="{tx(snodes[k][0]):.1f}" cy="{tz(snodes[k][2]):.1f}" r="2.5" '
                            f'fill="#0ff" stroke="#000" stroke-width="0.4"/>')
 
+    # Outdoor connecting graph (12.6 Stage B): the per-terrain-region go-around mesh. Magenta lines =
+    # hull-clear, ceiling-capped legs; magenta squares = entrance approach points (the doors); yellow
+    # dots = structure-perimeter anchors. Drawn on the same X/Z canvas as the interior rooms.
+    for g in d.get("outdoor_graph", []):
+        nodes = g.get("nodes", [])
+        edges = g.get("edges", [])
+        ent = g.get("ent_count", 0)
+        for i, mask in enumerate(edges):
+            ax, az = tx(nodes[i][0]), tz(nodes[i][2])
+            for j in range(i + 1, len(nodes)):
+                if mask & (1 << j):
+                    bx, bz = tx(nodes[j][0]), tz(nodes[j][2])
+                    svg.append(f'<line x1="{ax:.1f}" y1="{az:.1f}" x2="{bx:.1f}" y2="{bz:.1f}" '
+                               f'stroke="#e3c" stroke-width="0.8" stroke-opacity="0.8"/>')
+        for k, nd in enumerate(nodes):
+            x, z = tx(nd[0]), tz(nd[2])
+            if k < ent:  # entrance approach point (door)
+                svg.append(f'<rect x="{x-3:.1f}" y="{z-3:.1f}" width="6" height="6" '
+                           f'fill="#e3c" stroke="#000" stroke-width="0.5"/>')
+            else:        # perimeter anchor
+                svg.append(f'<circle cx="{x:.1f}" cy="{z:.1f}" r="2.5" fill="#ee4" stroke="#000" stroke-width="0.4"/>')
+
     # Powerups
     for pu in d.get("powerups", []):
         pos = pu.get("pos")
@@ -128,7 +150,8 @@ def main():
     ly = H - 40
     svg.append(f'<text x="{pad}" y="{ly}" fill="#fff">room fill: green=convex … red=labyrinth (blocked portal legs)  | '
                f'dot: path_pnt (green=open center, red=buried)  | portal: blue=open orange=tight red=impassable  | '
-               f'diamond: powerup (green/orange=review/red=troll)  | cyan dot+line: pseudo-bnode + hull-clear edge</text>')
+               f'diamond: powerup (green/orange=review/red=troll)  | cyan dot+line: pseudo-bnode + hull-clear edge  | '
+               f'magenta sq+line: outdoor entrance + go-around edge, yellow dot: perimeter anchor</text>')
     svg.append(f'<text x="{pad}" y="{ly+18}" fill="#aaa">{os.path.basename(path)} — {len(rooms)} interior rooms, '
                f'top-down X/Z, h = room height (Y)</text>')
     svg.append("</svg>")

@@ -44,6 +44,17 @@
 #define BOT_PSEUDO_BNODE_OFFSET 8.0f   // push portal offset-nodes this far off the portal face into the room
 #define BOT_SKEL_MAX_NODES 32          // skeleton node cap per room (portal nodes + pseudo-bnodes)
 
+// Outdoor connecting graph — Phase 12.6 Stage B. The outdoor analog of the room skeleton: a per-
+// terrain-region node graph (entrance approach points + structure perimeter anchors) BFS'd to route a
+// bot AROUND a building footprint to a door behind it (the reactive ring can't — its candidate must see
+// the door, which the structure occludes). Edges are hull-clear AND ceiling-capped (the low Bree ceiling
+// forces lateral routes). Built once per level, cached per region.
+#define BOT_OGRAPH_MAX_NODES 64        // node cap per terrain region (entrance nodes + perimeter anchors); uint64 mask
+#define BOT_OGRAPH_RADIUS 6.0f         // hull-aware clearance for outdoor graph edges (matches pseudo-bnode hull)
+#define BOT_OGRAPH_PERIM_MARGIN 20.0f  // push structure-bbox corners this far out into navigable airspace
+#define BOT_OGRAPH_CEIL_MARGIN 30.0f   // keep perimeter-anchor height this far below the outdoor ceiling
+#define BOT_OGRAPH_MATCH_DIST 40.0f    // target_pos must be within this of an entrance node to graph-route to it
+
 // Dynamic penalty: a traversal failure bumps a portal's cost so the router reroutes; it decays
 // over time. Capped well below IMPASSABLE so a bumped portal stays usable as a last resort.
 #define BOT_PORTAL_DYN_BUMP 80.0f // penalty added per traversal failure (~two BOA hops)
@@ -94,6 +105,12 @@ bool BotRoomPathPntReachable(int room_idx);
 // must hold BOT_SKEL_MAX_NODES entries.
 int BotSkelDumpRoom(int room_idx, vector *pos_out, uint32_t *edges_out, int *portal_count_out);
 
+// $navdump diagnostic (12.6 Stage B): dump a terrain region's outdoor connecting graph — node positions
+// (entrance approach nodes [0,*ent_count_out), then perimeter anchors) and per-node hull-clear edge
+// bitmasks (uint64). Builds the graph lazily; returns total node count (0 if region out of range).
+// Caller arrays must hold BOT_OGRAPH_MAX_NODES entries.
+int BotOGraphDump(int region, vector *pos_out, uint64_t *edges_out, int *ent_count_out);
+
 // Phase 12 troll-powerup gate: true when every portal into the room is geo-impassable for a ship
 // (grates/slits/locked doors) — a sealed pocket. Powerup selection skips items in such rooms so
 // bots never chase (and wedge against) an item the engine wrongly believes is reachable.
@@ -107,6 +124,7 @@ extern bool Bot_terrain_steering_enabled;
 extern bool Bot_reach_door_enabled;
 extern bool Bot_pseudo_bnodes_enabled;
 extern bool Bot_outdoor_via_enabled;
+extern bool Bot_outdoor_graph_enabled; // 12.6 Stage B: connecting graph for multi-hop go-around ($outdoorgraph)
 
 // Portal passability check: casts a ship-radius ray through the portal opening
 // to detect geometry-based blockage (bunker slits, barred windows). Results

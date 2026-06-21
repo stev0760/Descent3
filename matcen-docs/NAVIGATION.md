@@ -295,10 +295,28 @@ mid-flight), carrying the approach point in `oa_steer_pos`/`oa_steer_room`. Pass
 skeleton) stays indoor-only — outdoors `obj->roomnum` is a terrain cell, not a room index. Toggle
 `$outdoorvia` (default ON); bot code only, so indoor nav can't regress.
 
-**Stage B (deferred) — the outdoor connecting graph.** If the reactive ring local-minima-pins on large
-structures: a cached per-region node graph (BOA_connect entrance approach points + structure perimeter
-anchors, hull-clear ceiling-capped edges) BFS'd for multi-hop point-to-point routing around buildings — the
-outdoor analog of the room skeleton (§4.2), with the `$navdump` emit extended to draw it.
+**Stage B — the outdoor connecting graph (`$outdoorgraph`, default ON).** Stage A's reactive ring is
+single-hop and local: its candidate via must *see* the target door, so when a whole structure occludes the
+door the ring returns NONE and the bot pins (the 2026-06-20 soak showed a bot spending an entire ~10-min
+round seeking one entrance it never reached, and `towerofisengard` TOTAL_BREAKDOWN — 0 caps, 327 entrance
+misses). Stage B is the global planner — the outdoor analog of the room skeleton (§4.2). Cached per terrain
+region (`OGraphBuild`), its nodes are:
+- **Entrance approach points** — one per `BOA_connect[region]` door, offset out of the face (the same point
+  Stage A aims at). These are the BFS *targets*.
+- **Perimeter anchors** — the 4 horizontal bbox corners of each unique structure room, pushed out by a
+  margin into airspace at mid-height (capped under `Ceiling_height`). These let the BFS route *around* a
+  footprint to a door on its far side.
+
+Edges are hull-clear **and** ceiling-capped (`ViaSegmentClear` + `FQ_CHECK_CEILING`, startroom = the
+terrain cell under the node). A node buried in a hill/wall or above the ceiling simply gets no clear edge
+and is ignored — self-cleaning, like pseudo-bnode synthesis. `BotOutdoorGraphHop` finds the entrance node
+nearest the resolved door, then BFS's outward from it over the edges and returns the first bot-visible node
+as the via — the bot-adjacent node on a shortest route around the building. It's wired as a new pass in
+`BotFindViaPoint`'s outdoor branch, *after* the reactive ring (cheap near-detour first), marked
+`skeleton_out` so the same chain-cap → suspend → reroute machinery governs the multi-hop chain. If the bot
+already sees the door, the graph defers (the ring/beeline flies the final approach). Toggle `$outdoorgraph`;
+bot code only. `$navdump` emits the per-region graph (`outdoor_graph[]`); `visualize_navdump.py` draws it
+(magenta squares = doors, yellow dots = perimeter anchors, magenta lines = go-around edges).
 
 ---
 

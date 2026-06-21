@@ -915,6 +915,20 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     }
     return true;
   }
+
+  if (stricmp(command, "outdoorgraph") == 0) {
+    if (stricmp(operand, "on") == 0) {
+      Bot_outdoor_graph_enabled = true;
+      PrintDedicatedMessage("Outdoor connecting graph ON\n");
+    } else if (stricmp(operand, "off") == 0) {
+      Bot_outdoor_graph_enabled = false;
+      PrintDedicatedMessage("Outdoor connecting graph OFF\n");
+    } else {
+      PrintDedicatedMessage("Usage: $outdoorgraph on|off  (current: %s)\n",
+                            Bot_outdoor_graph_enabled ? "on" : "off");
+    }
+    return true;
+  }
   if (stricmp(command, "botdifficulty") == 0) {
     if (!operand[0]) {
       PrintDedicatedMessage("Usage: $botdifficulty <index|all> <level>\n");
@@ -980,6 +994,7 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     PrintDedicatedMessage("  $terrainsteer on|off   - Toggle outdoor terrain steering (Phase 8.1)\n");
     PrintDedicatedMessage("  $pseudobnodes on|off   - Toggle skeleton interior waypoints (Phase 12.5b)\n");
     PrintDedicatedMessage("  $outdoorvia on|off     - Toggle outdoor lateral go-around (Phase 12.6)\n");
+    PrintDedicatedMessage("  $outdoorgraph on|off   - Toggle outdoor connecting graph (Phase 12.6 Stage B)\n");
     PrintDedicatedMessage("  $botmode               - Show detected game mode\n");
     PrintDedicatedMessage("  $botobj                - Show objective state (CTF flags, orbs, etc.)\n");
     PrintDedicatedMessage("  $servercaps            - Print server capabilities\n");

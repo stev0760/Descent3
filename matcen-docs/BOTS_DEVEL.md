@@ -67,6 +67,37 @@ a room lacking BNode data — a latent crash independent of bots).
 
 ---
 
+### Outdoor connecting graph — Stage B (Phase 12.6, 0.9.2-dev, 2026-06-20, UNTESTED)
+
+**The global outdoor planner — bots route multi-hop AROUND building footprints instead of locking onto one
+unreachable entrance.** The Stage A soak (`testing-2026-06-20T19-15-15`, 5h/9 maps) confirmed Stage A is
+live and stable (0 crashes) and didn't regress the connected maps, but its **reactive ring is single-hop**:
+a candidate via must *see* the target door, so when a whole structure occludes the door the ring returns
+NONE and the bot pins. Uncontaminated autonomous data showed it plainly — a bot spent essentially the
+**entire ~10-min townofbree round** seeking room 62's door without reaching it; `towerofisengard` was a
+TOTAL_BREAKDOWN (0 caps, 327 entrance-misses, 260 ground-pins). This is the local-minima limit the plan
+flagged for Stage A.
+
+Stage B (bot code only, engine *includes* only) — the outdoor analog of the room skeleton (§4.2):
+- **`OGraphBuild(region)`** — cached per terrain region. Nodes: **entrance approach points** (one per
+  `BOA_connect[region]` door, offset out of the face — the BFS targets) + **perimeter anchors** (the 4
+  horizontal bbox corners of each unique structure room, pushed out by `BOT_OGRAPH_PERIM_MARGIN` into
+  airspace at mid-height, capped under `Ceiling_height`). Edges: hull-clear **and** ceiling-capped
+  (`ViaSegmentClear` + `FQ_CHECK_CEILING`, startroom = the terrain cell under the node). Buried/over-ceiling
+  nodes get no edge and are ignored — self-cleaning, like pseudo-bnode synthesis.
+- **`BotOutdoorGraphHop`** — finds the entrance node nearest the resolved door, BFS's outward from it over
+  the edges, returns the first **bot-visible** node as the via (the bot-adjacent node on a shortest route
+  around the building). Defers if the bot already sees the door (ring/beeline flies the final approach).
+- **Wiring** — a new pass in `BotFindViaPoint`'s outdoor branch, *after* the reactive ring (cheap near-
+  detour first), marked `skeleton_out` so the same chain-cap → suspend → reroute machinery governs the
+  multi-hop chain. **No engine files.** Toggle `$outdoorgraph` (default ON).
+- **Diagnostic** — `$navdump` emits `outdoor_graph[]` per region (`BotOGraphDump`); `visualize_navdump.py`
+  draws it (magenta squares = doors, yellow dots = perimeter anchors, magenta lines = go-around edges).
+
+**Verify:** townofbree + towerofisengard FPV recon + soak — the whole-round entrance lock breaks (bots
+thread around buildings to reachable doors), `OUTDOOR_ENTRANCE_MISS`/ground-pins drop, isengard scores;
+A/B `$outdoorgraph` on/off; doorsofmoria + indoor maps unchanged. Doc: `NAVIGATION.md` §4.3.
+
 ### Outdoor lateral go-around — Stage A (Phase 12.6, 0.9.2-dev, 2026-06-20, UNTESTED)
 
 **Extends the via go-around OUTDOORS so bots route laterally around building structures instead of

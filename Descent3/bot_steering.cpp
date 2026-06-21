@@ -61,6 +61,7 @@ bool Bot_terrain_steering_enabled = true;
 bool Bot_reach_door_enabled = true;
 bool Bot_pseudo_bnodes_enabled = true; // 12.5b: synthesize interior waypoints in disconnected rooms ($pseudobnodes)
 bool Bot_outdoor_via_enabled = true;   // 12.6: lateral go-around outdoors (around structures) ($outdoorvia)
+bool Bot_outdoor_graph_enabled = true; // 12.6 Stage B: connecting graph multi-hop go-around ($outdoorgraph)
 
 // Per-level portal passability cache. Catches geometry-based blockage (bunker slits,
 // barred openings) that portal flags miss. -1=unchecked, 0=blocked, 1=passable.
@@ -456,6 +457,219 @@ int BotSkelDumpRoom(int room_idx, vector *pos_out, uint32_t *edges_out, int *por
   return n;
 }
 
+// --- Outdoor connecting graph (Stage B, 12.6) ---------------------------------------------------
+// The reactive ring (BotFindViaPoint passes 1-2) is single-hop and local: its candidate via must SEE
+// the target door, so when a whole structure occludes the door the ring returns NONE and the bot pins
+// (soak: a bot spent an entire ~10-min round seeking one entrance it never reached). The connecting
+// graph is the global planner — the outdoor analog of the room skeleton (pass 3). Per terrain region it
+// nodes the entrance approach points (the doors) plus structure-perimeter anchors (bbox corners pushed
+// into airspace), connects them with hull-clear, CEILING-CAPPED legs (the low Bree ceiling forces
+// lateral routes), and BFS's from the goal door back to a bot-visible node — the first hop. Multi-hop
+// point-to-point routing AROUND footprints, governed by the same via commitment/chain-cap machinery.
+// Bot code only; engine includes (BOA_connect, terrain cells, Ceiling_height). Gated $outdoorgraph.
+struct OGraphNode {
+  vector pos;
+  int ent_room;   // entrance approach node: the structure room behind this door (perimeter anchor: -1)
+  int ent_portal; // entrance approach node: the terrain-facing portal     (perimeter anchor: -1)
+};
+static OGraphNode ograph_node[MAX_BOA_TERRAIN_REGIONS][BOT_OGRAPH_MAX_NODES];
+static uint64_t ograph_edges[MAX_BOA_TERRAIN_REGIONS][BOT_OGRAPH_MAX_NODES]; // bit j of [rgn][i]: leg i<->j clear
+static uint8_t ograph_count[MAX_BOA_TERRAIN_REGIONS];
+static int8_t ograph_built[MAX_BOA_TERRAIN_REGIONS];
+static int ograph_level_checksum = 0;
+
+static void OGraphLevelReset() {
+  if (ograph_level_checksum != BOA_mine_checksum) {
+    memset(ograph_built, 0, sizeof(ograph_built));
+    ograph_level_checksum = BOA_mine_checksum;
+  }
+}
+
+static void OGraphBuild(int region) {
+  OGraphLevelReset();
+  int n = 0;
+  int nconn = BOA_num_connect[region];
+  if (nconn > MAX_PATH_PORTALS)
+    nconn = MAX_PATH_PORTALS;
+
+  // (1) Entrance approach nodes — one per terrain-facing door, offset OUT of the face into airspace
+  // (the same approach point Stage A aims at; the face normal points INTO the room, so subtract it).
+  // Guaranteed-good airspace just outside a real door; these are the BFS targets.
+  for (int c = 0; c < nconn && n < BOT_OGRAPH_MAX_NODES; c++) {
+    int er = BOA_connect[region][c].roomnum;
+    int ep = BOA_connect[region][c].portal;
+    if (er < 0 || er > Highest_room_index || !Rooms[er].used)
+      continue;
+    if (ep < 0 || ep >= Rooms[er].num_portals)
+      continue;
+    portal &po = Rooms[er].portals[ep];
+    ograph_node[region][n].pos = po.path_pnt - Rooms[er].faces[po.portal_face].normal * BOT_OUTDOOR_APPROACH_OFFSET;
+    ograph_node[region][n].ent_room = er;
+    ograph_node[region][n].ent_portal = ep;
+    n++;
+  }
+  int n_ent = n;
+
+  // (2) Perimeter anchors — the 4 horizontal bbox corners of each UNIQUE structure room, pushed out by
+  // a margin into navigable airspace at mid-height (capped under the ceiling). These let the BFS route
+  // AROUND a footprint to a door on the far side. A corner buried in a hill / wall / above the ceiling
+  // simply gets no clear edge and is ignored (self-cleaning, like pseudo-bnode synthesis).
+  for (int c = 0; c < nconn && n < BOT_OGRAPH_MAX_NODES; c++) {
+    int er = BOA_connect[region][c].roomnum;
+    if (er < 0 || er > Highest_room_index || !Rooms[er].used)
+      continue;
+    bool dup = false;
+    for (int k = 0; k < c; k++)
+      if (BOA_connect[region][k].roomnum == er) {
+        dup = true;
+        break;
+      }
+    if (dup)
+      continue;
+    room &rm = Rooms[er];
+    float m = BOT_OGRAPH_PERIM_MARGIN;
+    float cy = (rm.min_xyz.y() + rm.max_xyz.y()) * 0.5f;
+    float ceil_cap = Ceiling_height - BOT_OGRAPH_CEIL_MARGIN;
+    if (cy > ceil_cap)
+      cy = ceil_cap;
+    const float xs[2] = {rm.min_xyz.x() - m, rm.max_xyz.x() + m};
+    const float zs[2] = {rm.min_xyz.z() - m, rm.max_xyz.z() + m};
+    for (int xi = 0; xi < 2 && n < BOT_OGRAPH_MAX_NODES; xi++)
+      for (int zi = 0; zi < 2 && n < BOT_OGRAPH_MAX_NODES; zi++) {
+        ograph_node[region][n].pos.x() = xs[xi];
+        ograph_node[region][n].pos.y() = cy;
+        ograph_node[region][n].pos.z() = zs[zi];
+        ograph_node[region][n].ent_room = -1;
+        ograph_node[region][n].ent_portal = -1;
+        n++;
+      }
+  }
+
+  // Edges: hull-clear, ceiling-capped legs between every node pair. Probe startroom = the terrain cell
+  // under node i (a valid outdoor fvi start). check_ceiling rejects over-the-top legs under a low ceiling.
+  for (int i = 0; i < n; i++)
+    ograph_edges[region][i] = 0;
+  for (int i = 0; i < n; i++) {
+    int sr = GetTerrainRoomFromPos(&ograph_node[region][i].pos);
+    for (int j = i + 1; j < n; j++) {
+      if (ViaSegmentClear(sr, ograph_node[region][i].pos, ograph_node[region][j].pos, BOT_OGRAPH_RADIUS, nullptr,
+                          true)) {
+        ograph_edges[region][i] |= (1ull << j);
+        ograph_edges[region][j] |= (1ull << i);
+      }
+    }
+  }
+  ograph_count[region] = (uint8_t)n;
+  ograph_built[region] = 1;
+  LOG_DEBUG.printf("BOT: outdoor graph region %d: %d nodes (%d entrances, %d perimeter)", region, n, n_ent,
+                   n - n_ent);
+}
+
+// BFS the region graph for a hull-clear, ceiling-capped multi-hop route from the bot to the entrance
+// node nearest target_pos, AROUND any structure between them. Returns the first hop (bot-adjacent node
+// on a shortest node-path to the door) in *via_out. False when there is no graph, target_pos matches no
+// modeled door, the bot already sees the door (let the ring/beeline fly the final approach), or the
+// graph doesn't connect the two. Mirrors pass-3's exit-set BFS, in terrain-region node space.
+static bool BotOutdoorGraphHop(object *obj, const vector &target_pos, float radius, vector *via_out) {
+  OGraphLevelReset();
+  int region = TERRAIN_REGION(CELLNUM(obj->roomnum));
+  if (region < 0 || region >= MAX_BOA_TERRAIN_REGIONS)
+    return false;
+  if (!ograph_built[region])
+    OGraphBuild(region);
+  int n = ograph_count[region];
+  if (n < 2)
+    return false;
+
+  // Target node = the entrance node closest to target_pos (the door the caller resolved). target_pos is
+  // a door's approach offset, so it lands near an entrance node; if not, this isn't a door we model.
+  int tgt = -1;
+  float tgt_d = BOT_OGRAPH_MATCH_DIST;
+  for (int i = 0; i < n; i++) {
+    if (ograph_node[region][i].ent_room < 0)
+      continue; // anchors aren't destinations
+    float d = vm_VectorDistanceQuick(&target_pos, &ograph_node[region][i].pos);
+    if (d < tgt_d) {
+      tgt_d = d;
+      tgt = i;
+    }
+  }
+  if (tgt < 0)
+    return false;
+
+  // Visible set: graph nodes the bot can reach directly (hull-clear, ceiling-capped). A node the bot is
+  // effectively standing at contributes its neighbors instead (the cached edge proves those legs fly).
+  uint64_t vis = 0, standing = 0;
+  int sr = obj->roomnum;
+  for (int i = 0; i < n; i++) {
+    float nd = vm_VectorDistanceQuick(&obj->pos, &ograph_node[region][i].pos);
+    if (nd < BOT_VIA_ARRIVE_DIST) {
+      standing |= (1ull << i);
+      vis |= ograph_edges[region][i];
+      continue;
+    }
+    if (ViaSegmentClear(sr, obj->pos, ograph_node[region][i].pos, radius, nullptr, true))
+      vis |= (1ull << i);
+  }
+  vis &= ~standing;
+  if (!vis)
+    return false;
+  if (vis & (1ull << tgt))
+    return false; // bot already sees the door — let the ring / beeline finish the approach
+
+  // BFS outward FROM the target node over edges; the first bot-visible node reached is the hop.
+  int distn[BOT_OGRAPH_MAX_NODES], q[BOT_OGRAPH_MAX_NODES], qh = 0, qt = 0;
+  for (int i = 0; i < n; i++)
+    distn[i] = -1;
+  distn[tgt] = 0;
+  q[qt++] = tgt;
+  int hop = -1;
+  while (hop < 0 && qh < qt) {
+    int u = q[qh++];
+    for (int v = 0; v < n; v++) {
+      if (!(ograph_edges[region][u] & (1ull << v)) || distn[v] >= 0)
+        continue;
+      distn[v] = distn[u] + 1;
+      q[qt++] = v;
+      if (vis & (1ull << v)) {
+        hop = v;
+        break;
+      }
+    }
+  }
+  if (hop < 0)
+    return false;
+  if (via_out)
+    *via_out = ograph_node[region][hop].pos;
+  return true;
+}
+
+// $navdump diagnostic (12.6 Stage B): dump a terrain region's outdoor connecting graph — node positions
+// (entrance nodes [0,*ent_count_out), then perimeter anchors) + per-node edge bitmasks. Builds it lazily;
+// returns total node count (0 for an out-of-range region). Caller arrays hold BOT_OGRAPH_MAX_NODES entries.
+int BotOGraphDump(int region, vector *pos_out, uint64_t *edges_out, int *ent_count_out) {
+  if (ent_count_out)
+    *ent_count_out = 0;
+  OGraphLevelReset();
+  if (region < 0 || region >= MAX_BOA_TERRAIN_REGIONS)
+    return 0;
+  if (!ograph_built[region])
+    OGraphBuild(region);
+  int n = ograph_count[region];
+  int ent = 0;
+  for (int i = 0; i < n; i++) {
+    if (pos_out)
+      pos_out[i] = ograph_node[region][i].pos;
+    if (edges_out)
+      edges_out[i] = ograph_edges[region][i];
+    if (ograph_node[region][i].ent_room >= 0)
+      ent++;
+  }
+  if (ent_count_out)
+    *ent_count_out = ent;
+  return n;
+}
+
 BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_room, vector *via_out,
                              bool *skeleton_out) {
   if (skeleton_out)
@@ -536,6 +750,24 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
         }
       }
     }
+  }
+
+  // --- Outdoor connecting graph (Stage B, 12.6): the outdoor analog of pass 3. When the reactive ring
+  // above can't find a lateral via that SEES the door (a whole structure occludes it), BFS the per-region
+  // entrance/perimeter graph for a hull-clear, ceiling-capped multi-hop route AROUND the footprint and
+  // hand out the first hop. Marked skeleton so the chain-cap/suspend/reroute machinery governs the chain. ---
+  if (is_outdoor) {
+    if (Bot_outdoor_graph_enabled) {
+      vector hop;
+      if (BotOutdoorGraphHop(obj, target_pos, radius, &hop)) {
+        if (via_out)
+          *via_out = hop;
+        if (skeleton_out)
+          *skeleton_out = true;
+        return BOT_VIA_FOUND;
+      }
+    }
+    return BOT_VIA_NONE;
   }
 
   // --- Pass 3 (12.3 + 12.5b): skeleton hop over portals AND pseudo-bnodes. Indoor-only: it indexes
