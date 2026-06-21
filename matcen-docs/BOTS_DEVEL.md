@@ -88,23 +88,26 @@ Two changes, bot code only, both toggle-gated for clean A/B:
   governs them — no infinite grind, reroutes if it truly can't cross. No new graph edges synthesized (a
   hull-gated bridge edge adds nothing — disconnected already = not hull-clear; an ungated one aims into
   walls), so this is purely "help the engine bridge the gap."
-- **Soft via-follow / early release (`$softfollow`, ~~default ON~~ → DEFAULT OFF, circling regression).**
-  `BotViaPointTick` releases a committed detour the moment the straight line to the real target re-clears
-  (`BotStraightLineClear`). Intended to loosen the "rigid, node-to-node" feel — but it **regressed**: it fires
-  INSIDE the commit window (before the arrival check), so when the target line flickers clear/blocked as the
-  bot moves laterally past an obstacle, it release→recommit oscillates — the exact circling the 4s commit
-  window exists to prevent. The 2026-06-21T16-23 test cratered via-arrival **73%→18% on darkjourney** (a
-  CONNECTED map where only this fires — the clean culprit) and the user saw circling + flat scores. **Disabled
-  by default** (`Bot_soft_follow_enabled = false`); kept toggle-gated for a future non-oscillating redesign
-  (hysteresis / release-once-on-pass, not target-line flicker). Rigidity remains an open, lower-priority item.
+- **Soft via-follow / early release (`$softfollow`) — TRIED then REMOVED.** `BotViaPointTick` released a
+  committed detour the moment the straight line to the target re-cleared (`BotStraightLineClear`). Intended to
+  loosen the "rigid, node-to-node" feel, it **regressed**: it fired INSIDE the commit window, so the target
+  line flickering clear/blocked as the bot moved laterally past an obstacle → release→recommit oscillation =
+  the exact circling the 4s commit window exists to prevent (16-23 test: via-arrival **73%→18% on darkjourney**,
+  a CONNECTED map where only this fires). Disabled (`a2cb681e`), then **removed entirely** (code + toggle +
+  `BotStraightLineClear` helper deleted) per the user ("didn't work at all"). darkjourney recovered to 65%
+  once off. Rigidity stays open but **any future fix must be non-oscillating** (release-once-after-passing,
+  not target-line early-release).
 
 **Out of scope (separate frontier):** towerofisengard (0 caps/7 rounds, 81 hard) is a **destroyable-grate**
 problem — bots won't shoot the grates sealing the path, so no bridge/soft-follow helps (NAVIGATION.md §7).
-**Verify (re-soak after the soft-follow disable):** the headline is khazaddum 20/31 + townofbree 60 hard-pins
-collapsing from the soft-hop bridge (the 16-23 short run stopped before khazaddum ran — untested). Early
-positive sign there: townofbree hard-pins were 1/round (vs ~5 historically), so the bridge looks like it
-reduces dead-pins; soft-follow's circling was masking it. Gate: doorsofmoria + the healthy connected maps
-(esp. darkjourney via-arrival back to ~70%+) unchanged. Doc: `NAVIGATION.md` §4.3.
+**Soak verdict (`testing-2026-06-21T17-44`, ~5h/21rnds, 0 crashes) — soft-hop is a PARTIAL win.** The
+mechanism works: khazaddum room 20 via-fails **1083→3**, room 31 **1053→5** (dead-ends eliminated), hard-pins
+~13→7/rnd — bots now *move* instead of dead-pinning. But it does **not yet produce a crossing**: still 0
+caps/khazaddum, via-arrival only 40% (the engine can't thread the divider to completion → trades dead-pin for
+grind, total stucks/rnd 95→106). Circling confirmed fixed by the removal (darkjourney via-arrival 18→65%).
+townofbree watch-item: via-arrival 64→54% (possible over-grind); net captures flat (1.48 vs 1.55/rnd). **NEXT
+FIX (#1):** a lateral go-around *waypoint* — synthesize a pseudo-bnode beside the divider both portal
+components can see (a flyable path across), not "aim at the far door." Doc: `NAVIGATION.md` §4.3 / §7.0.
 
 ### Outdoor connecting graph — Stage B (Phase 12.6, 0.9.2-dev, 2026-06-20, UNTESTED)
 

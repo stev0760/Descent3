@@ -328,13 +328,14 @@ thread the gap (indoor: the §4.2 reach-the-door fallback, generalized from buri
 rooms; outdoor: `BotOutdoorGraphHop` returns the bot-visible node nearest the target door instead of failing).
 Marked `skeleton` so chain-cap → suspend → reroute bounds it — it makes progress or reroutes, never grinds
 forever. No graph edges are synthesized (a hull-gated bridge adds nothing; an ungated one aims into walls).
-Companion loosening (`$softfollow`, **DEFAULT OFF — circling regression**): `BotViaPointTick` drops a
-committed detour the instant the straight line to the real target re-clears. Intended to flow through nodes,
-but it fires inside the commit window, so the target line flickering clear/blocked as the bot moves laterally
-past an obstacle causes release→recommit **oscillation** (2026-06-21 test: via-arrival 73%→18% on the
-connected darkjourney). Disabled pending a non-oscillating redesign (hysteresis / release-once-on-pass).
-The soft-hop bridge above is the routing-layer realization of "complement BOA, don't fight it" (§8): we only
-ever set the engine's goal — and it correctly respects the commit window (no circling).
+Companion loosening (`$softfollow`) was tried — `BotViaPointTick` dropping a committed detour the instant the
+straight line to the target re-cleared — and **REMOVED**: it fired inside the commit window, so the target
+line flickering clear/blocked as the bot moved laterally past an obstacle caused release→recommit
+**oscillation** (2026-06-21: via-arrival 73%→18% on the connected darkjourney, recovered to 65% once removed).
+A real rigidity fix must be non-oscillating (release-once-*after-passing*), not target-line flicker (§7.0
+ledger). The soft-hop bridge above is the routing-layer realization of "complement BOA, don't fight it" (§8):
+we only ever set the engine's goal — and it correctly respects the commit window (no circling). Its soak
+verdict is a **partial** win — it ends the dead-pins but not yet the crossing (§7.0 #1).
 
 ---
 
@@ -377,7 +378,7 @@ BOA — a bug (the router would be silently overriding BOA everywhere), not a fe
 
 ## 7. Open problems (roadmap)
 
-### 7.0 Current status snapshot — 2026-06-21 (0.9.3-dev)
+### 7.0 Current status snapshot — 2026-06-21 eve (0.9.3-dev)
 
 *A scannable checkpoint so we stop re-deriving state. Update the date + toggle table + ledger whenever a soak
 or a toggle default changes. The narrative subsections below explain the "why"; this is the "what, right now."*
@@ -390,34 +391,47 @@ or a toggle default changes. The narrative subsections below explain the "why"; 
 | `$pseudobnodes` | ON | 12.5b | validated (doorsofmoria 0→2 caps, 0 indoor hard pins) |
 | `$outdoorvia` | ON | 12.6 A | validated net-positive (reactive ring, ceiling-aware) |
 | `$outdoorgraph` | ON | 12.6 B | validated net-positive (13.5h soak: 0 crashes, captures +30%) |
-| `$navbridge` | ON | 12.7 | **UNTESTED on its headline target** (soft-hop across disconnected graphs) |
-| `$softfollow` | **OFF** | 12.7 | **DISABLED — circling regression** (do not re-enable as-is; see ledger) |
+| `$navbridge` | ON | 12.7 | **mechanism validated, PARTIAL** — kills dead-ends but not yet a crossing (see #1) |
+
+(`$softfollow` was **removed** — see ledger; do not re-add as target-line early-release.)
 
 **Open issues, priority-ordered:**
 
-1. **[HEADLINE / UNTESTED] Indoor 2-component rooms.** khazaddum 20/31 (= **80 hard pins**, the worst bucket
-   of the 13.5h soak) and townofbree 60 are rooms whose pseudo-bnode skeleton has two disconnected portal
-   sub-graphs (`buried=0`, open center, but the BFS dead-ends across a free-standing divider). The 12.7
-   **soft-hop bridge (`$navbridge`)** generalizes the reach-the-door fallback to all such rooms to fix this —
-   but the 2026-06-21 short run was stopped before khazaddum ran, so **it has never been soak-tested.**
-   *Early positive proxy:* townofbree hard-pins were 1/round (vs ~5 historically). **NEXT: re-soak reaching
-   khazaddum; the headline metric is its 80-hard-pin bucket collapsing.**
+1. **[HEADLINE — soft-hop PARTIAL win] Indoor 2-component rooms.** khazaddum 20/31 + townofbree 60: pseudo-
+   bnode skeleton has two disconnected portal sub-graphs (`buried=0`, open center, BFS dead-ends across a
+   free-standing divider). The 12.7 **soft-hop bridge (`$navbridge`)** soak verdict (`testing-2026-06-21T17-44`,
+   ~5h/21rnds): the **mechanism works — dead-ends collapsed** (khazaddum room 20 via-fails 1083→3, room 31
+   1053→5; hard-pins ~13/rnd→7/rnd), bots now *move* instead of dead-pinning. **BUT it does not yet produce a
+   crossing** — still 0 caps/khazaddum, via-arrival only 40%: the bot drifts at the far exit portal but the
+   engine's avoid-walls **can't thread the divider to completion** (trades dead-pin for grind; total stucks/rnd
+   actually rose 95→106, almost all "moving-but-slow"). **NEXT FIX = a lateral go-around *waypoint*:** synthesize
+   a pseudo-bnode placed *beside* the divider that BOTH portal components can see (a genuinely flyable path
+   across), instead of "aim at the far door + hope avoid-walls rounds it." This is the real connector the
+   `buried=0` divider rooms need. (Watch-item: townofbree via-arrival dipped 64%→54% — soft-hop may over-grind
+   its rooms; net captures flat.)
 2. **[OPEN] Outdoor connecting-graph fragmentation.** townofbree's region graph = 11 components, only 7/13
    doors BFS-reachable (bbox-corner anchors bury in geometry; doors 3/8/12 isolated). `$navbridge`'s outdoor
    greedy hop softens this; if it local-minimum-pins, the deferred fix is **outward-normal anchor placement**
    (anchors in the street, not at bbox corners) + the node-cap (64 = `uint64` mask; isengard saturates it).
-3. **[BLOCKED — SEPARATE FRONTIER] Destroyable-grate maps (towerofisengard).** 0 caps / 7 rounds / 81 hard.
+3. **[OPEN — observed, carrier-critical] Decorative concave-alcove trap.** User FPV (2026-06-21): a townofbree
+   structure has an **aesthetic alcove shaped like a front doorway but with NO actual door/portal** (solid
+   decorative recess). A flag carrier sprinting home flew *into* the alcove and could not escape — a concave
+   pocket is a local-minimum that avoid-walls presses on all sides. Distinct from the divider problem; it cost
+   a near-capture. Likely the carrier home-nav / entrance-resolve / soft-hop aiming at a point in/near the
+   recess. Candidate fixes: reject entrance/approach targets that resolve to a non-portal concavity; or a
+   carrier "backed into a dead pocket" escape (detect no-portal concave + reverse out). Needs a repro/navdump.
+4. **[BLOCKED — SEPARATE FRONTIER] Destroyable-grate maps (towerofisengard).** 0 caps / 7 rounds / 81 hard.
    Bots won't *shoot* the breakable grates sealing the path, so no routing/bridge helps. Needs grate
    passability + shoot-to-open behavior (see §7 breakable-grate item + `OBSTACLE_GEOMETRY.md`). Not a nav-
    layer bug — do **not** chase it with routing changes.
-4. **[DEFERRED] Rigidity / node-to-node feel.** The `$softfollow` attempt regressed (circling). A real fix
-   needs a non-oscillating loosening (hysteresis, or release-once-after-passing the via — NOT target-line
-   flicker). Lower priority than 1–2.
-5. **[DEFERRED — from the 12.7 plan] Router traversal penalty (§3 of the plan) + outward-normal anchors (§4).**
+5. **[DEFERRED] Rigidity / node-to-node feel.** The `$softfollow` early-release attempt was **removed** (it
+   regressed into circling — see ledger). A real fix needs a non-oscillating loosening (hysteresis, or
+   release-once-*after-passing* the via — NOT target-line flicker). Lower priority than 1–3.
+6. **[DEFERRED — from the 12.7 plan] Router traversal penalty (§3 of the plan) + outward-normal anchors (§4).**
    Validate the soft-hop core (#1) before adding these.
-6. **[DEFERRED] Rough-terrain line-of-flight.** Bots ground-pin into hillsides on open heightfield (Fellowship
+7. **[DEFERRED] Rough-terrain line-of-flight.** Bots ground-pin into hillsides on open heightfield (Fellowship
    real-terrain soak). Deferred behind the structured-map work above.
-7. **[ENGINE-LEVEL, ongoing] Intra-room interior-obstacle press** — the long-standing press detailed below;
+8. **[ENGINE-LEVEL, ongoing] Intra-room interior-obstacle press** — the long-standing press detailed below;
    the via/skeleton machinery is the running mitigation.
 
 **Tried & reverted ledger (so we don't re-chase these ghosts):**
@@ -426,9 +440,11 @@ or a toggle default changes. The narrative subsections below explain the "why"; 
   nothing `BNode_allocated` flag *displaced* working crude-BOA everywhere, and the generator pruned edges to
   `max_rad 5.0` vs the 6.676 ship hull → unflyable. Pivoted to additive **pseudo-bnodes** instead. Do not
   retry whole-graph BNode generation.
-- **`$softfollow` early via-release** (`09d70cd2`) → **DISABLED by default** (`a2cb681e`). Fired inside the
-  commit window → target-line flicker → release/recommit **circling** (darkjourney via-arrival 73%→18%).
-  Any rigidity fix must not re-open this.
+- **`$softfollow` early via-release** (`09d70cd2`) → disabled (`a2cb681e`) → **REMOVED entirely** (code +
+  toggle + `BotStraightLineClear` helper deleted). Fired inside the commit window → target-line flicker →
+  release/recommit **circling** (darkjourney via-arrival 73%→18%, recovered to 65% once off). User verdict:
+  "didn't work at all." Any future rigidity fix must be non-oscillating (release-once-after-passing), not
+  target-line early-release.
 - **Goal-ward escape + strafe-through-lip** (2026-05-30 batch) → **REVERTED** (back to Phase-10 base). Felt
   broadly worse; the strafe path never actually fired. Do not resurrect.
 

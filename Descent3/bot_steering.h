@@ -126,19 +126,12 @@ extern bool Bot_pseudo_bnodes_enabled;
 extern bool Bot_outdoor_via_enabled;
 extern bool Bot_outdoor_graph_enabled; // 12.6 Stage B: connecting graph for multi-hop go-around ($outdoorgraph)
 
-// Phase 12.7 — the "crude connection between disconnected graphs" + commitment loosening.
-// $navbridge: when the node-graph BFS can't reach the target (fragmented skeleton / outdoor graph), hand the
-//   bot the best node TOWARD the target as a soft progress hop and let the engine's avoid-walls thread the
-//   gap — instead of dead-ending into a pin. "Help the engine bridge the gap," no new graph edges.
-// $softfollow: release a committed via the moment the straight line to the real target re-clears, so the bot
-//   stops adhering strictly to a node it no longer needs (loosens the per-via commitment → less rigid feel).
+// Phase 12.7 — the "crude connection between disconnected graphs" ($navbridge): when the node-graph BFS can't
+// reach the target (fragmented skeleton / outdoor graph), hand the bot the best node TOWARD the target as a
+// soft progress hop and let the engine's avoid-walls thread the gap — instead of dead-ending into a pin.
+// "Help the engine bridge the gap," no new graph edges. ($softfollow commitment-loosening was tried alongside
+// this and REMOVED — it re-introduced circling; see NAVIGATION.md §7.0 ledger.)
 extern bool Bot_soft_hop_enabled;
-extern bool Bot_soft_follow_enabled;
-
-// 12.7 soft-follow helper: is the hull-radius straight line from obj to target_pos clear (no wall/terrain,
-// and outdoors no ceiling)? Lightweight single-probe predicate used for early via-release. target_room is
-// unused today (fvi starts from obj->roomnum) but kept for symmetry with the via API.
-bool BotStraightLineClear(object *obj, const vector &target_pos, int target_room);
 
 // Portal passability check: casts a ship-radius ray through the portal opening
 // to detect geometry-based blockage (bunker slits, barred windows). Results

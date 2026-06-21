@@ -1392,21 +1392,9 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
 
   // Committed: hold course to the via until reached or the commitment lapses. The commit window
   // is what prevents per-tick side flipping (the old net_disp 28-43 circling signature).
+  // (12.7 $softfollow early-release was tried here and REMOVED — it fired inside this window and
+  // re-introduced the circling it was meant to avoid; see NAVIGATION.md §7.0 ledger.)
   if (Bots[bot_index].via_expires > Gametime) {
-    // 12.7 soft-follow ($softfollow): release the detour the MOMENT the straight line to the real target
-    // re-clears — the bot has rounded the obstacle and no longer needs to fly precisely to the via node.
-    // This loosens the per-via commitment (the "rigid, flies strictly node-to-node" feel) WITHOUT
-    // reintroducing circling: the line only clears once the obstacle is genuinely passed, so it can't
-    // flip back to blocked from the same spot. Skeleton hops aren't released this way — a chain hop's
-    // target line is usually still blocked by the NEXT obstacle, and releasing mid-chain strands it.
-    if (Bot_soft_follow_enabled && !Bots[bot_index].via_is_skeleton &&
-        BotStraightLineClear(obj, target_pos, target_room)) {
-      Bots[bot_index].via_expires = 0.0f;
-      if (goal_slot >= 0 && goal_slot < MAX_GOALS && obj->ai_info->goals[goal_slot].used)
-        GoalClearGoal(obj, &obj->ai_info->goals[goal_slot]);
-      goal_slot = -1; // caller re-issues the (now-clear) real target this tick
-      return 0;
-    }
     if (vm_VectorDistanceQuick(&obj->pos, &Bots[bot_index].via_point) < BOT_VIA_ARRIVE_DIST) {
       Bots[bot_index].via_expires = 0.0f;
       if (goal_slot >= 0 && goal_slot < MAX_GOALS && obj->ai_info->goals[goal_slot].used)

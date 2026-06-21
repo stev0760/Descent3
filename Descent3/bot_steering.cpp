@@ -62,14 +62,10 @@ bool Bot_reach_door_enabled = true;
 bool Bot_pseudo_bnodes_enabled = true; // 12.5b: synthesize interior waypoints in disconnected rooms ($pseudobnodes)
 bool Bot_outdoor_via_enabled = true;   // 12.6: lateral go-around outdoors (around structures) ($outdoorvia)
 bool Bot_outdoor_graph_enabled = true; // 12.6 Stage B: connecting graph multi-hop go-around ($outdoorgraph)
-bool Bot_soft_hop_enabled = true; // 12.7: soft progress hop across disconnected graphs ($navbridge)
-// 12.7 early via-release — DEFAULT OFF. It fires INSIDE the commit window (before the arrival check), so the
-// instant the line to target flickers clear it drops the via, then re-commits when it re-blocks → release/
-// recommit oscillation. That defeats the very commit window that exists to stop circling (the soak
-// 2026-06-21T16-23 cratered via-arrival 73%→18% on darkjourney, a CONNECTED map where only this fires — the
-// clean culprit for the "circling, scores not ticking up" feel). Loosening rigidity needs a non-oscillating
-// design (hysteresis / release-once-on-pass), not target-line flicker. Kept toggle-gated for that future work.
-bool Bot_soft_follow_enabled = false; // 12.7: early via-release ($softfollow) — OFF (circling regression)
+bool Bot_soft_hop_enabled = true;      // 12.7: soft progress hop across disconnected graphs ($navbridge)
+// 12.7 $softfollow early via-release was REMOVED (validated as a dead end): it fired inside the via commit
+// window and re-introduced the exact circling it meant to avoid (darkjourney via-arrival 73%→18%). Any future
+// rigidity-loosening must be non-oscillating (hysteresis / release-once-after-passing). See NAVIGATION.md §7.0.
 
 // Per-level portal passability cache. Catches geometry-based blockage (bunker slits,
 // barred openings) that portal flags miss. -1=unchecked, 0=blocked, 1=passable.
@@ -299,16 +295,6 @@ static bool ViaSegmentClear(int startroom, const vector &a, const vector &b, flo
   if (check_ceiling && ht == HIT_CEILING)
     return false;
   return true;
-}
-
-// 12.7 soft-follow predicate: hull-radius straight line obj->target clear? Single fvi probe (no ring search),
-// ceiling-aware outdoors. Used by the early via-release: once the obstacle is rounded and this is true, the
-// committed detour is no longer needed and can be dropped immediately.
-bool BotStraightLineClear(object *obj, const vector &target_pos, int target_room) {
-  if (!obj)
-    return false;
-  (void)target_room;
-  return ViaSegmentClear(obj->roomnum, obj->pos, target_pos, obj->size, nullptr, OBJECT_OUTSIDE(obj) != 0);
 }
 
 // --- Phase 12.3: portal-skeleton traversal (pass 3 of the via search) ---

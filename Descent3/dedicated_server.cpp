@@ -939,19 +939,6 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     return true;
   }
 
-  if (stricmp(command, "softfollow") == 0) {
-    if (stricmp(operand, "on") == 0) {
-      Bot_soft_follow_enabled = true;
-      PrintDedicatedMessage("Soft via-follow (early release) ON\n");
-    } else if (stricmp(operand, "off") == 0) {
-      Bot_soft_follow_enabled = false;
-      PrintDedicatedMessage("Soft via-follow (early release) OFF\n");
-    } else {
-      PrintDedicatedMessage("Usage: $softfollow on|off  (current: %s)\n", Bot_soft_follow_enabled ? "on" : "off");
-    }
-    return true;
-  }
-
   if (stricmp(command, "botdifficulty") == 0) {
     if (!operand[0]) {
       PrintDedicatedMessage("Usage: $botdifficulty <index|all> <level>\n");
@@ -1020,7 +1007,6 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     PrintDedicatedMessage("  $outdoorgraph on|off   - Toggle outdoor connecting graph (Phase 12.6 Stage B)\n");
     PrintDedicatedMessage(
         "  $navbridge on|off      - Toggle soft-hop bridge across disconnected graphs (Phase 12.7)\n");
-    PrintDedicatedMessage("  $softfollow on|off     - Toggle soft via-follow / early release (Phase 12.7)\n");
     PrintDedicatedMessage("  $botmode               - Show detected game mode\n");
     PrintDedicatedMessage("  $botobj                - Show objective state (CTF flags, orbs, etc.)\n");
     PrintDedicatedMessage("  $servercaps            - Print server capabilities\n");
