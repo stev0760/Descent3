@@ -142,7 +142,7 @@ tight-slit DISAGREE territory (e.g. nysa r69→r73, megafactory r10→r11).
 
 ---
 
-## 5. Known gaps / TODO (for the 0.9.2-dev nav + powerup pass)
+## 5. Known gaps / TODO (Phase 12 nav + powerup pass, 0.9.3-dev)
 
 1. **`BotPortalGeoCost` does not exempt `TF_BREAKABLE`.** A breakable-glass portal is
    engine-passable (BOA routes through, our bot can shatter it) but our swept probe hits the

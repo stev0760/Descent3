@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Matcen **0.9.2-dev** — **Phase 12: intra-room via-point steering** (in progress). 0.9.2 is the targeted *final, canonical, fixed navigation-and-steering* build: it attacks the one remaining nav blocker — the engine's intra-room interior-obstacle press (a free-standing glass/pillar *face* between the path node and the exit portal), a **known engine limitation reproducible in vanilla retail D3 with robots**. Full diagnosis (navdump-confirmed: `los_from_pathpnt_clear=0`, pure steering, 93% EXPLORE, limit-cycle) and the via-point plan live in `NAVIGATION.md` §7 + §2.5. **The Phase 12 mechanism is now implemented** (via-point detour keyed on the engine's current path node, sealed-powerup abandon + sealed-room selection gate), and **Phase 12.2 hardens the powerup guards** after the pyroplace soak: a global per-level troll strike table (repeat chase-timeouts/seal-abandons retire an item level-wide — the only defense against approach-sealed glass-pocket trolls no straight-line probe can see, e.g. pyroplace Mega/Blackshark), a wrong-side rescue (item across a bulletproof-glass corridor divider → reroute through the neighbor whose portal sees it), a via cycle cap (a via must lead to a room change or yield to rerouting — the abend2 mirror-room dance), and via support in the `!follow` escort branch. Awaiting validation on the 4-map indoor rotation (abend2/pumphouse/nysa/pyroplace) before any "fixed" claim. **Phase 12.3 "portal-skeleton traversal" is implemented (2026-06-12, untested)** (NAVIGATION.md §7 12.3): when the via ring search fails, a per-room portal skeleton (portal path_pnts + hull-clear legs, cached) is BFS'd toward the routed exit and the first hop issued as the via — invariant-derived intra-room traversal for buried-center rooms (rings/labyrinths/divided). Step-zero offline detector validation passed (13/14 pin rooms across 5 maps). Generality gate pending: official-map regression + two fresh community holdout maps. **Chat Stage 6 "Orders as Goals" is also in (2026-06-11, untested):** orders now own navigation via anchors + a lifecycle with player feedback — new `!hold`/`!stay` verb (hold the speaker's position), `!defend` anchors to a post outside CTF, escort offset stations + BLOCKED detection/reports for `!follow`/`!cover`, enriched `!status`. See `CHAT_COMMANDS.md` §Stage 6. **Matcen 0.9.1 (stable) remains the pinned fallback** — Phase 11's validated cost-aware Dijkstra router (routing-only on the Phase 10 two-layer base; the engine still does all steering), explicitly **not** the steering override Phase 10 removed.
+**Status:** Matcen **0.9.3-dev** — **Phase 12: nav for custom/arbitrary geometry** (in progress; targeted *final, canonical, fixed navigation-and-steering* build). **The live current-status snapshot — toggle table, priority-ordered open issues, tried-&-reverted ledger — is `NAVIGATION.md` §7.0; read that first.** The phase entries below (newest first: 12.7 soft-hop bridge → 12.6 outdoor graph → 12.5b pseudo-bnodes → …) are the dated build history. The original headline blocker was the engine's intra-room interior-obstacle press (a free-standing glass/pillar *face* between the path node and the exit portal), a **known engine limitation reproducible in vanilla retail D3 with robots**; the via-point / pseudo-bnode / soft-hop stack is the running mitigation. Full diagnosis (navdump-confirmed: `los_from_pathpnt_clear=0`, pure steering, 93% EXPLORE, limit-cycle) and the via-point plan live in `NAVIGATION.md` §7 + §2.5. **The Phase 12 mechanism is now implemented** (via-point detour keyed on the engine's current path node, sealed-powerup abandon + sealed-room selection gate), and **Phase 12.2 hardens the powerup guards** after the pyroplace soak: a global per-level troll strike table (repeat chase-timeouts/seal-abandons retire an item level-wide — the only defense against approach-sealed glass-pocket trolls no straight-line probe can see, e.g. pyroplace Mega/Blackshark), a wrong-side rescue (item across a bulletproof-glass corridor divider → reroute through the neighbor whose portal sees it), a via cycle cap (a via must lead to a room change or yield to rerouting — the abend2 mirror-room dance), and via support in the `!follow` escort branch. Awaiting validation on the 4-map indoor rotation (abend2/pumphouse/nysa/pyroplace) before any "fixed" claim. **Phase 12.3 "portal-skeleton traversal" is implemented (2026-06-12, untested)** (NAVIGATION.md §7 12.3): when the via ring search fails, a per-room portal skeleton (portal path_pnts + hull-clear legs, cached) is BFS'd toward the routed exit and the first hop issued as the via — invariant-derived intra-room traversal for buried-center rooms (rings/labyrinths/divided). Step-zero offline detector validation passed (13/14 pin rooms across 5 maps). Generality gate pending: official-map regression + two fresh community holdout maps. **Chat Stage 6 "Orders as Goals" is also in (2026-06-11, untested):** orders now own navigation via anchors + a lifecycle with player feedback — new `!hold`/`!stay` verb (hold the speaker's position), `!defend` anchors to a post outside CTF, escort offset stations + BLOCKED detection/reports for `!follow`/`!cover`, enriched `!status`. See `CHAT_COMMANDS.md` §Stage 6. **Matcen 0.9.1 (stable) remains the pinned fallback** — Phase 11's validated cost-aware Dijkstra router (routing-only on the Phase 10 two-layer base; the engine still does all steering), explicitly **not** the steering override Phase 10 removed.
 
 ## Engine Files Modified — Single-Player / Robo-Anarchy / Co-op Impact Audit
 
@@ -67,7 +67,7 @@ a room lacking BNode data — a latent crash independent of bots).
 
 ---
 
-### Soft-hop bridge + commitment loosening (Phase 12.7, 0.9.3-dev, 2026-06-21, UNTESTED)
+### Soft-hop bridge + commitment loosening (Phase 12.7, 0.9.3-dev, 2026-06-21) — soft-hop PARTIAL win; $softfollow REMOVED
 
 **One mechanism, the user's own framing: "a crude connection between disconnected graphs that doesn't
 involve building more graphs — by making bots not adhere strictly to node points."** The 13.5h Stage-B soak
@@ -109,7 +109,7 @@ townofbree watch-item: via-arrival 64→54% (possible over-grind); net captures 
 FIX (#1):** a lateral go-around *waypoint* — synthesize a pseudo-bnode beside the divider both portal
 components can see (a flyable path across), not "aim at the far door." Doc: `NAVIGATION.md` §4.3 / §7.0.
 
-### Outdoor connecting graph — Stage B (Phase 12.6, 0.9.2-dev, 2026-06-20, UNTESTED)
+### Outdoor connecting graph — Stage B (Phase 12.6, 0.9.2-dev, 2026-06-20) — VALIDATED net-positive (13.5h soak: 0 crashes, captures +30%)
 
 **The global outdoor planner — bots route multi-hop AROUND building footprints instead of locking onto one
 unreachable entrance.** The Stage A soak (`testing-2026-06-20T19-15-15`, 5h/9 maps) confirmed Stage A is
@@ -140,7 +140,7 @@ Stage B (bot code only, engine *includes* only) — the outdoor analog of the ro
 thread around buildings to reachable doors), `OUTDOOR_ENTRANCE_MISS`/ground-pins drop, isengard scores;
 A/B `$outdoorgraph` on/off; doorsofmoria + indoor maps unchanged. Doc: `NAVIGATION.md` §4.3.
 
-### Outdoor lateral go-around — Stage A (Phase 12.6, 0.9.2-dev, 2026-06-20, UNTESTED)
+### Outdoor lateral go-around — Stage A (Phase 12.6, 0.9.2-dev, 2026-06-20) — VALIDATED stable (single-hop; superseded by Stage B's graph)
 
 **Extends the via go-around OUTDOORS so bots route laterally around building structures instead of
 straight-line-pinning on exterior walls.** Pseudo-BNodes (12.5b) fixed indoor nav, but the user's FPV
@@ -172,7 +172,7 @@ multi-hop routing around large structures, if Stage A's reactive ring leaves loc
 townofbree FPV recon + soak — outdoor `OUTDOOR_ENTRANCE_MISS`/ground-pins drop, the high-corner wedge stops,
 indoor maps unchanged. Doc: `NAVIGATION.md` §4.3.
 
-### Pseudo-BNodes in the bot-code skeleton (Phase 12.5b, 0.9.2-dev, 2026-06-20, UNTESTED)
+### Pseudo-BNodes in the bot-code skeleton (Phase 12.5b, 0.9.2-dev, 2026-06-20) — VALIDATED (doorsofmoria 0→2 caps, 0 indoor hard pins)
 
 **The principled replacement for the reverted engine-BNode generation (below).** Same goal — in-room
 waypoints so bots thread complex rooms — but built in *our* skeleton, on top of the engine's crude-BOA

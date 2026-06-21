@@ -5,9 +5,11 @@
 > `NAV_CONSOLIDATION.md` pile (now folded in — see §8 History). Deep engine research lives in
 > `PATHFINDING_CODEBASE_EXPLORE.md`; per-frame field/constant detail in `BOT_DEV_REFERENCE.md`.
 
-**Status:** Matcen 0.9.1-dev. Two-layer architecture (Phase 10) + cost-aware Dijkstra router
-(Phase 11, under test). Outdoor height-awareness and the engine path-follower's portal-transition
-wobble are the open problems (§7).
+**Status:** Matcen 0.9.3-dev. Two-layer architecture (Phase 10) + cost-aware Dijkstra router (Phase 11) +
+the Phase 12 in-room / outdoor go-around stack (via-points, pseudo-bnodes, outdoor connecting graph, soft-hop
+bridge). **For the live current-status snapshot — toggle states, priority-ordered open issues, and the
+tried-&-reverted ledger — see §7.0** (kept current per soak). The narrative sections below are the design
+rationale; §7.0 is "what's true right now."
 
 ---
 
@@ -450,9 +452,10 @@ or a toggle default changes. The narrative subsections below explain the "why"; 
 
 ---
 
-- **Intra-room interior-obstacle press — KNOWN ENGINE LIMITATION (Phase 12 / 0.9.2 target).**
-  *This is the headline nav problem and the goal of the 0.9.2 build.* Earlier notes filed this under a
-  speculative "portal-transition wobble" and guessed the obstacle was a `FPF_SOLID|FPF_PORTAL` glass
+- **Intra-room interior-obstacle press — KNOWN ENGINE LIMITATION (Phase 12, ongoing mitigation).**
+  *This was the original headline nav problem; the via-point / pseudo-bnode / soft-hop stack (§4.2, §7.0 #1)
+  is the running mitigation — it ends the dead-pins but not yet every crossing.* Earlier notes filed this
+  under a speculative "portal-transition wobble" and guessed the obstacle was a `FPF_SOLID|FPF_PORTAL` glass
   *portal*. The `pumphouse.json` navdump (2026-06-08) **disproves that** and pins it precisely:
 
   - **It is an interior FACE, not a portal.** pumphouse (`pumphouse.d3m` → `small.d3l`) has **zero**
