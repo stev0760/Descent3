@@ -328,10 +328,13 @@ thread the gap (indoor: the §4.2 reach-the-door fallback, generalized from buri
 rooms; outdoor: `BotOutdoorGraphHop` returns the bot-visible node nearest the target door instead of failing).
 Marked `skeleton` so chain-cap → suspend → reroute bounds it — it makes progress or reroutes, never grinds
 forever. No graph edges are synthesized (a hull-gated bridge adds nothing; an ungated one aims into walls).
-Companion loosening (`$softfollow`): `BotViaPointTick` drops a committed detour the instant the straight line
-to the real target re-clears (`BotStraightLineClear`) — so the bot flows through, not rigidly node-to-node —
-without circling (the line only clears once the obstacle is passed; skeleton chain hops are exempt). This is
-the routing-layer realization of "complement BOA, don't fight it" (§8): we only ever set the engine's goal.
+Companion loosening (`$softfollow`, **DEFAULT OFF — circling regression**): `BotViaPointTick` drops a
+committed detour the instant the straight line to the real target re-clears. Intended to flow through nodes,
+but it fires inside the commit window, so the target line flickering clear/blocked as the bot moves laterally
+past an obstacle causes release→recommit **oscillation** (2026-06-21 test: via-arrival 73%→18% on the
+connected darkjourney). Disabled pending a non-oscillating redesign (hysteresis / release-once-on-pass).
+The soft-hop bridge above is the routing-layer realization of "complement BOA, don't fight it" (§8): we only
+ever set the engine's goal — and it correctly respects the commit window (no circling).
 
 ---
 

@@ -62,8 +62,14 @@ bool Bot_reach_door_enabled = true;
 bool Bot_pseudo_bnodes_enabled = true; // 12.5b: synthesize interior waypoints in disconnected rooms ($pseudobnodes)
 bool Bot_outdoor_via_enabled = true;   // 12.6: lateral go-around outdoors (around structures) ($outdoorvia)
 bool Bot_outdoor_graph_enabled = true; // 12.6 Stage B: connecting graph multi-hop go-around ($outdoorgraph)
-bool Bot_soft_hop_enabled = true;      // 12.7: soft progress hop across disconnected graphs ($navbridge)
-bool Bot_soft_follow_enabled = true;   // 12.7: early via-release when the real-target line clears ($softfollow)
+bool Bot_soft_hop_enabled = true; // 12.7: soft progress hop across disconnected graphs ($navbridge)
+// 12.7 early via-release — DEFAULT OFF. It fires INSIDE the commit window (before the arrival check), so the
+// instant the line to target flickers clear it drops the via, then re-commits when it re-blocks → release/
+// recommit oscillation. That defeats the very commit window that exists to stop circling (the soak
+// 2026-06-21T16-23 cratered via-arrival 73%→18% on darkjourney, a CONNECTED map where only this fires — the
+// clean culprit for the "circling, scores not ticking up" feel). Loosening rigidity needs a non-oscillating
+// design (hysteresis / release-once-on-pass), not target-line flicker. Kept toggle-gated for that future work.
+bool Bot_soft_follow_enabled = false; // 12.7: early via-release ($softfollow) — OFF (circling regression)
 
 // Per-level portal passability cache. Catches geometry-based blockage (bunker slits,
 // barred openings) that portal flags miss. -1=unchecked, 0=blocked, 1=passable.
