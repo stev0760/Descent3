@@ -5,11 +5,15 @@
 > `NAV_CONSOLIDATION.md` pile (now folded in — see §8 History). Deep engine research lives in
 > `PATHFINDING_CODEBASE_EXPLORE.md`; per-frame field/constant detail in `BOT_DEV_REFERENCE.md`.
 
-**Status:** Matcen 0.9.3-dev. Two-layer architecture (Phase 10) + cost-aware Dijkstra router (Phase 11) +
-the Phase 12 in-room / outdoor go-around stack (via-points, pseudo-bnodes, outdoor connecting graph, soft-hop
-bridge). **For the live current-status snapshot — toggle states, priority-ordered open issues, and the
-tried-&-reverted ledger — see §7.0** (kept current per soak). The narrative sections below are the design
-rationale; §7.0 is "what's true right now."
+**Status:** Matcen 0.9.3 (stable, pinned). Two-layer architecture (Phase 10) + cost-aware Dijkstra router
+(Phase 11) + the Phase 12 in-room / outdoor go-around stack (via-points, pseudo-bnodes, outdoor connecting
+graph, soft-hop bridge). This is the validated "good-enough" navigation baseline — bots reach objectives
+across the map pool. **The next milestone, 0.9.4, is a ground-up navigation rewrite: a volumetric
+grid-seeded roadmap with hierarchical routing — see `GRID_NAV_DESIGN.md`** (the canonical 0.9.4 spec; it
+supersedes the per-room portal skeleton + outdoor connecting graph below once landed). **For the live
+current-status snapshot — toggle states, priority-ordered open issues, and the tried-&-reverted ledger —
+see §7.0** (kept current per soak). The narrative sections below are the design rationale; §7.0 is "what's
+true right now."
 
 ---
 
@@ -380,10 +384,21 @@ BOA — a bug (the router would be silently overriding BOA everywhere), not a fe
 
 ## 7. Open problems (roadmap)
 
-### 7.0 Current status snapshot — 2026-06-21 eve (0.9.3-dev)
+### 7.0 Current status snapshot — 2026-06-22 (0.9.3 STABLE pinned; 0.9.4 grid-roadmap rewrite next)
 
 *A scannable checkpoint so we stop re-deriving state. Update the date + toggle table + ledger whenever a soak
 or a toggle default changes. The narrative subsections below explain the "why"; this is the "what, right now."*
+
+> **Milestone shift (2026-06-22):** the Phase 12 stack below (portal skeleton + pseudo-bnodes + outdoor graph
+> + soft-hop bridge) is **pinned as the stable 0.9.3 baseline** — validated "good enough," bots reach
+> objectives across the map pool. The remaining open issues (#1 indoor 2-component dividers, #2 outdoor
+> fragmentation, #3 alcove trap, and the broader interior-coverage gap) all share **one root: a
+> portal-derived graph that is too sparse to cover a room's interior volume** — confirmed visually on
+> townofbree (room 60 = 186×127×**97** buried labyrinth with ~5 portal-clustered nodes; room 61 = a
+> 57×401×**123** shaft). Rather than keep bolting per-symptom fixes onto the portal graph, **0.9.4 replaces
+> the substrate** with a **volumetric grid-seeded roadmap + hierarchical routing** (canonical spec:
+> `GRID_NAV_DESIGN.md`). The lateral-go-around-waypoint fix (formerly #1's "NEXT FIX") is **dropped** — it
+> would add more portal-derived nodes to the graph that is itself the problem; the roadmap subsumes it.
 
 **Runtime nav toggles (defaults in `bot_steering.cpp`; all `$cmd on|off` on the dedicated console):**
 
@@ -406,11 +421,12 @@ or a toggle default changes. The narrative subsections below explain the "why"; 
    1053→5; hard-pins ~13/rnd→7/rnd), bots now *move* instead of dead-pinning. **BUT it does not yet produce a
    crossing** — still 0 caps/khazaddum, via-arrival only 40%: the bot drifts at the far exit portal but the
    engine's avoid-walls **can't thread the divider to completion** (trades dead-pin for grind; total stucks/rnd
-   actually rose 95→106, almost all "moving-but-slow"). **NEXT FIX = a lateral go-around *waypoint*:** synthesize
-   a pseudo-bnode placed *beside* the divider that BOTH portal components can see (a genuinely flyable path
-   across), instead of "aim at the far door + hope avoid-walls rounds it." This is the real connector the
-   `buried=0` divider rooms need. (Watch-item: townofbree via-arrival dipped 64%→54% — soft-hop may over-grind
-   its rooms; net captures flat.)
+   actually rose 95→106, almost all "moving-but-slow"). **RESOLUTION → 0.9.4 grid roadmap.** The earlier plan
+   here — a lateral go-around *waypoint* placed beside the divider — is **dropped**: it adds more
+   portal-derived nodes to the very graph that's already too sparse. The 0.9.4 volumetric grid-seeded roadmap
+   (`GRID_NAV_DESIGN.md`) puts nodes throughout the room *interior* (and edges them hull-clear), which is the
+   actual connector these divider rooms need — and the same substrate fixes #2 and the interior-coverage gap.
+   (Watch-item retained for 0.9.4 validation: townofbree via-arrival dipped 64%→54% under soft-hop.)
 2. **[OPEN] Outdoor connecting-graph fragmentation.** townofbree's region graph = 11 components, only 7/13
    doors BFS-reachable (bbox-corner anchors bury in geometry; doors 3/8/12 isolated). `$navbridge`'s outdoor
    greedy hop softens this; if it local-minimum-pins, the deferred fix is **outward-normal anchor placement**
