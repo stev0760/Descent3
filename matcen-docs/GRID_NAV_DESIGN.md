@@ -75,6 +75,81 @@ parallel routes the bot needs. A roadmap exposes those routes for free, and "fla
 exposure cost term to the same search*. Building the substrate now means flanking later is a cost function,
 not a re-architecture. This is the strongest reason to invest in the substrate rather than keep patching.
 
+### 1.6 Technique grounding, prior art & where the novelty lives
+
+The substrate is two proven techniques composed; the novelty is the composition, not the parts.
+
+**PRM — Probabilistic Roadmap Method** (Kavraki, Švestka, Latombe & Overmars, 1996). Sample points in a
+space's free region, connect near neighbors with collision-checked edges, graph-search the roadmap at query
+time. 20+ years standard in robotics (6+ DOF arm manipulation, ground-vehicle and multi-robot routing, 3D
+drone navigation). **Our variant is deterministic (grid-seeded), not random** — a 3D lattice instead of
+random sampling. Deterministic roadmaps are a known PRM variant; grid seeding is more debuggable and
+predictable (it renders cleanly in `$navdump`/SVG and makes "why does room X fail" diagnosable), at the cost
+that a regular lattice can **miss a passage wider than the ship hull but narrower than the lattice spacing**
+— the one blind spot. Formally this makes us **resolution-complete** (finds a path if one exists *at the
+lattice resolution*), not probabilistically complete. That blind spot is **cheap to detect at build time**:
+a room whose roadmap fails to connect its own portals (or culls to a suspiciously low edge count) is the
+signal to locally densify / drop a few relaxed samples, else fall back to the 0.9.3 skeleton.
+
+**HPA\* — Hierarchical Pathfinding A\*** (Botea, Müller & Schaeffer, 2004). Abstract a grid map into
+clusters, precompute each cluster's entrance-to-entrance crossing costs, search the small abstract graph
+first and refine inside clusters only as needed — built for large game maps where a flat per-query grid
+search is too big. **The decisive fit for D3: the engine already gives us the cluster decomposition HPA\*
+normally has to derive.**
+
+| HPA\* concept | D3 equivalent (already exists) |
+|---|---|
+| Cluster | A **room** |
+| Entrance / transition node | A **portal** (`path_pnt`) |
+| Abstract-graph search | `BotComputeRoute` (cost-aware Dijkstra over the room graph) |
+| Intra-cluster refinement | the **volumetric roadmap** (the new part) |
+
+So we don't build an abstraction layer — D3's room/portal topology *is* the cluster graph, and our router
+*is* the abstract search; the roadmap supplies only the missing intra-cluster path. And HPA\*'s build-time
+step — *precompute each cluster's entrance-pair crossing cost* — maps exactly to "**precompute, per room, the
+roadmap distance between each pair of its portals**," which is precisely the deferred **router traversal
+penalty** (`NAVIGATION.md` §7.0 #6): a maze-room's portals are far apart in roadmap distance, an open room's
+are close, so feeding that as the inter-portal edge weight makes the router prefer genuinely-crossable rooms.
+That "deferred hack" is just the HPA\* precompute step — part of the architecture, not a bolt-on (Stage 2).
+
+**Prior art, and the honest novelty claim.** Each layer has decades of precedent; **no documented precedent
+we're aware of has the *combination*:**
+- **Quake III AAS** (van Waveren) — a *3D* area decomposition *with* area clustering (proto-hierarchical),
+  but it models a **gravity-bound surface agent** via discrete, typed reachabilities (walk / jump /
+  rocket-jump / jumppad / elevator / teleport). It is reachability *on surfaces*, not free-flight volume
+  sampling. (Don't call AAS "2D/flat" — a reviewer will correct you; the real distinction is
+  surface-locomotion vs free-flight.)
+- **Unreal / UT** — designer-hand-placed nav points + a reachability graph; no roadmap, no grid seeding.
+- **Descent 3 itself** — the BNode system was editor-authored per single-player level and never run on any MP
+  map; no MP bot framework existed.
+
+The novelty is the **intersection**: a deterministic-PRM + HPA\* nav substrate inside a **6DOF flight
+volume**, driving a Quake/UT-style competitive MP bot framework. The risk profile follows directly — the
+*components* have known failure modes; the *integration seams* don't. That's where the surprises will come,
+and it is exactly what Stage 1 tests.
+
+**The 6DOF twist — harder geometry, simpler cost.** Quake / UT / D3-SP all assume a floor: Z is
+gravity/jump, a room is a 2D polygon with a ceiling, reachability is *typed*. A D3 ship flies full 6DOF, so a
+room is a **volume** (186×127×97) with no surfaces, no gravity, no reachability types. That makes the
+*geometry* harder (sample volume, not a floor) but the *cost model far simpler* than AAS: **no climb penalty,
+no slope cutoff, no jump-reachability typing — a vertical edge costs exactly what a horizontal one does. Cost
+is pure Euclidean distance, one edge type.** All of AAS's reachability-typing machinery — the genuinely
+complicated part of arena-shooter nav — **we do not build at all.**
+
+**Where the integration risk actually lives** (proven parts, novel seams):
+1. **A statically-clear edge isn't necessarily flyable at speed.** PRM/HPA\* assume the agent tracks the
+   polyline; a momentum-carrying ship carves a turn radius and can overshoot a corner into a wall even when
+   the segment's static hull-sweep is clear. The engine's avoid-walls absorbs most of it — so **edge
+   clearance must carry margin beyond the hull, scaled to expected speed.** (Ground-robot PRM dodges this
+   with stop-and-turn; UAV planners add an explicit curvature constraint.)
+2. **Lattice spacing is a control-loop parameter, not just a coverage one.** It must match the engine
+   path-follower's arrival radius + lookahead: too fine → the bot never cleanly "arrives," re-issues,
+   thrashes (the 0.9.3 skeleton-hop failure); too coarse → corner-cuts into walls. Tune against *observed
+   steering*, not graph metrics.
+3. **`fvi`-clear ≠ traversable for dynamic/edge geometry.** The sphere-sweep inherits every caveat in
+   `OBSTACLE_GEOMETRY.md` — moving doors, fly-through forcefields the probe reads inconsistently, thin
+   diagonal slits the ship's non-spherical collision snags on.
+
 ---
 
 ## 2. The approach: volumetric grid-seeded roadmap + hierarchical routing
@@ -215,18 +290,21 @@ From the BNODE-gen revert and the skeleton work (`project_bnode_generation.md`, 
 Build the **per-room** volumetric roadmap (§4 steps 1–4) for the bot's *current* room only, on demand.
 Have `BotFindViaPoint` (`bot_steering.cpp:698`) route over it for **same-room** and **next-portal** targets,
 in place of the portal skeleton, when `$gridnav` is on. No hierarchical router yet, no outdoor, no flanking.
-**Gate (the whole rewrite hinges on this):**
-- A bot **reaches an arbitrary interior point in townofbree room 60** (e.g. follow-order to a player mid-room) — the 0.9.3 BLOCKED case.
-- A bot **traverses room 61's shaft** end to end.
+**Gate (the whole rewrite hinges on this — and it is a *dynamic* test, not boolean reachability):**
+- A bot **reaches an arbitrary interior point in townofbree room 60** (e.g. follow-order to a player mid-room) — the 0.9.3 BLOCKED case — **and reaches it cleanly**: a continuous arc, bounded waypoint re-issues, at flight speed, no oscillation. *A bot that grinds to the point over 40 s of via-thrash has NOT passed — that is the soft-hop failure in a new coat. The real question is whether PRM works when "free space" is a 6DOF flight volume with momentum (§1.6), and that is only answerable by watching the motion.*
+- A bot **traverses room 61's shaft** end to end, same clean-motion criterion (this is the vertical / 3D test).
 - Worst-room build cost is acceptable (measure first-visit hitch; target < a few ms/room, bounded).
 - `$gridnav off` = 0.9.3 behavior; the good map pool (gollumspursuit/dwarrodelf/shirebaggins/orbital) unchanged with it on.
-If Stage 1 fails the reachability gate, the approach is wrong — stop here, having spent little.
+If Stage 1 fails this gate, the approach is wrong — stop here, having spent little.
 
 ### Stage 2 — Hierarchical routing. Local grid Dijkstra under the room-graph router.
 Wire the fine roadmap under `BotComputeRoute` (§3): coarse room route → local roadmap Dijkstra over
-current+next room → first waypoint. Replace the per-room skeleton calls in the via path. **Gate:** khazaddum
-20/31 divider **crossed** (caps > 0); townofbree room-60 via-fails collapse; no regression on the good pool;
-A/B `$gridnav` quantifies the delta.
+current+next room → first waypoint. Replace the per-room skeleton calls in the via path. **Also fold in the
+HPA\* precompute step** (§1.6): cache, per room, the roadmap distance between each pair of its portals and
+feed it as the inter-portal edge weight in `BotComputeRoute` — the principled form of the deferred router
+traversal penalty (`NAVIGATION.md` §7.0 #6), so the router prefers genuinely-crossable rooms for free.
+**Gate:** khazaddum 20/31 divider **crossed** (caps > 0); townofbree room-60 via-fails collapse; no
+regression on the good pool; A/B `$gridnav` quantifies the delta.
 
 ### Stage 3 — Outdoor unification. One substrate across the seam.
 Extend the lattice over terrain regions (§5); connect through entrance nodes; retire `OGraphBuild` /
@@ -254,7 +332,8 @@ nav-substrate validation; sequenced after the substrate is the stable default.
 | Per-query Dijkstra cost (bots replan often) | Coarse room route caps the fine search to current+next room; cache the room route |
 | Regression to the good 0.9.3 build | `$gridnav` default OFF until each gate passes; 0.9.3 path stays live as fallback; A/B every stage |
 | Repeat of the BNODE-gen failure | Our layer only, `AIG_GET_TO_POS` waypoints, never `BNode_allocated`, hull radius correct (§7) |
-| Lattice misses a thin passage | Add structural portal nodes (§4.3) + tune spacing; fall back to 0.9.3 skeleton for that room if roadmap is empty |
+| Lattice misses a thin passage (resolution-completeness blind spot, §1.6) | Build-time detector: a room that fails to connect its own portals → locally densify / relaxed samples, else fall back to the 0.9.3 skeleton for that room |
+| Static-clear edge not flyable at speed (6DOF momentum, §1.6) | Edge clearance carries margin beyond the hull, scaled to speed; coarse spacing so the engine path-follower owns the dynamics; Stage 1's gate tests *clean* motion, not just reachability |
 | Substrate creeps into per-frame steering | Hard rule: roadmap outputs a waypoint, never a heading (§3 invariant) |
 
 ---
@@ -277,8 +356,10 @@ nav-substrate validation; sequenced after the substrate is the stable default.
   tune against the room-60/61 gate + load cost.
 - **Connectivity.** 6-neighbor (cheap, may miss diagonals through doorway corners) vs 26-neighbor (denser,
   more probes). Likely 26 for indoor tight rooms, 6 outdoors.
-- **Lattice vs Poisson/relaxed sampling.** Grid is debuggable; a relaxed sample covers awkward volumes with
-  fewer nodes. Grid first; revisit only if node budget bites.
+- **Lattice vs Poisson/relaxed sampling.** Grid is debuggable and resolution-complete (§1.6); a relaxed
+  sample covers awkward volumes with fewer nodes but is harder to diagnose. Grid first, with the build-time
+  detector (a room that fails to connect its own portals → locally densify / drop a few relaxed samples);
+  revisit fully only if node budget bites.
 - **When to fall back.** If a room's roadmap culls to near-empty (degenerate geometry), defer that room to
   the 0.9.3 skeleton rather than strand the bot.
 
@@ -286,6 +367,11 @@ nav-substrate validation; sequenced after the substrate is the stable default.
 
 ## 12. References
 
+- **PRM:** Kavraki, Švestka, Latombe & Overmars (1996), "Probabilistic Roadmaps for Path Planning in
+  High-Dimensional Configuration Spaces," *IEEE Trans. Robotics and Automation* 12(4):566–580. (§1.6 — our
+  variant is the deterministic / grid-seeded, resolution-complete form.)
+- **HPA\*:** Botea, Müller & Schaeffer (2004), "Near Optimal Hierarchical Path-Finding," *Journal of Game
+  Development* 1(1):7–28. (§1.6 — D3's rooms/portals *are* the cluster/entrance decomposition.)
 - `NAVIGATION.md` — two-layer model, complement principle, §7.0 live status (this rewrite is the resolution
   of §7.0 issues #1/#2/#3 and the interior-coverage gap).
 - `project_bnode_generation.md` (memory) — why engine-BNode-gen was reverted; the BNODE-universal guard.
