@@ -2,10 +2,6 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Collaborative Workflow
-
-**Claude Code** is the primary agentic coding assistant for this project (implementation, feature work, analysis). The persistent knowledge base lives in `matcen-docs/` and the auto-memory and is shared across sessions with human reviewers and other AI agents — **keep it accurate and free of stale or superseded context** (a doc that still presents a reverted/dropped approach as "the plan" actively misleads the next reader).
-
 ## Build Commands
 
 Descent 3 uses CMake (3.20+) with Ninja, vcpkg for dependencies, and requires C++17. Set `VCPKG_ROOT` before building.
