@@ -105,9 +105,12 @@ mechanism works: khazaddum room 20 via-fails **1083→3**, room 31 **1053→5** 
 ~13→7/rnd — bots now *move* instead of dead-pinning. But it does **not yet produce a crossing**: still 0
 caps/khazaddum, via-arrival only 40% (the engine can't thread the divider to completion → trades dead-pin for
 grind, total stucks/rnd 95→106). Circling confirmed fixed by the removal (darkjourney via-arrival 18→65%).
-townofbree watch-item: via-arrival 64→54% (possible over-grind); net captures flat (1.48 vs 1.55/rnd). **NEXT
-FIX (#1):** a lateral go-around *waypoint* — synthesize a pseudo-bnode beside the divider both portal
-components can see (a flyable path across), not "aim at the far door." Doc: `NAVIGATION.md` §4.3 / §7.0.
+townofbree watch-item: via-arrival 64→54% (possible over-grind); net captures flat (1.48 vs 1.55/rnd).
+**Resolution → 0.9.4 grid roadmap (2026-06-22).** The lateral-go-around-*waypoint* idea floated here was
+**dropped**: it would add more portal-derived nodes to a graph that is itself too sparse in the room
+interior. The interior-coverage root cause (confirmed on townofbree: room 60 = a 186×127×97 buried labyrinth
+with ~5 portal-clustered nodes) is addressed by the **0.9.4 volumetric grid-seeded roadmap rewrite**
+(`GRID_NAV_DESIGN.md`); see `NAVIGATION.md` §7.0.
 
 ### Outdoor connecting graph — Stage B (Phase 12.6, 0.9.2-dev, 2026-06-20) — VALIDATED net-positive (13.5h soak: 0 crashes, captures +30%)
 
@@ -316,6 +319,13 @@ The bot system adds AI-controlled players to the Descent 3 dedicated server. Bot
 - **Retail client compatibility:** This is a hard constraint. Bots must never introduce new packet types or require client-side changes.
 
 ## Phased Roadmap
+
+> **Historical phase roadmap — status cells reflect when each phase was built, not live state.** Notably the
+> **Phase 7–9 bot-side steering layers (flow field, potential field, occupancy dispersal) were removed in
+> Phase 10** — any "In progress"/"Complete" below for those rows is superseded. Navigation is now the
+> two-layer model (Phase 10) + cost-aware router (Phase 11) + the Phase 12 nav stack, pinned at **0.9.3
+> stable**, with the **0.9.4 grid-roadmap rewrite** next (`GRID_NAV_DESIGN.md`). Live status: `NAVIGATION.md`
+> §7.0.
 
 | Phase | Scope | Status |
 |-------|-------|--------|
@@ -615,7 +625,7 @@ Phase 3.5 replaces CT_AI's direct velocity control with real thrust-based physic
 | MPF_AFTERBURNER | Never set | Set when afterburner active |
 | Speed scalar | N/A | 1.3× in terrain (matches players) |
 
-### Phase 3.6: Navigation Refinements (In Progress)
+### Phase 3.6: Navigation Refinements (Complete)
 
 Addressed regression where bots would get stuck on geometry or collide head-on with walls.
 

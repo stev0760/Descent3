@@ -4,10 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Collaborative Workflow
 
-This project uses both **Claude Code** and **Gemini** as agentic coding assistants. 
-- **Claude Code** is the primary assistant for implementation and feature work.
-- **Gemini** acts as a companion agent for review, analysis, and secondary tasks.
-Refer to `GEMINI.md` for Gemini-specific guidance.
+**Claude Code** is the primary agentic coding assistant for this project (implementation, feature work, analysis). The persistent knowledge base lives in `matcen-docs/` and the auto-memory and is shared across sessions with human reviewers and other AI agents — **keep it accurate and free of stale or superseded context** (a doc that still presents a reverted/dropped approach as "the plan" actively misleads the next reader).
 
 ## Build Commands
 

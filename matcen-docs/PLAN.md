@@ -2,6 +2,12 @@
 
 ## Current Status
 
+> **Historical roadmap — not live status.** This is the original full phase plan (Phase 0 → release). For
+> what's true *right now* (current version, nav toggles, open issues, tried-&-reverted ledger) read
+> `NAVIGATION.md` §7.0 and the header of `BOTS_DEVEL.md`. Current build: **0.9.3 stable**; next milestone
+> **0.9.4** — the navigation rewrite (`GRID_NAV_DESIGN.md`). The table below is preserved as the project's
+> phase history.
+
 | Phase | Scope | Status |
 |-------|-------|--------|
 | 0 | Wandering bots — spawn, move, die, respawn | Complete |

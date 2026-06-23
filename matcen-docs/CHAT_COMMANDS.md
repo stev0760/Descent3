@@ -4,7 +4,7 @@ Phase 6.0 infrastructure: chat-based bot command system. Enables squad orders, g
 awareness, and bot personality expression. Foundational layer for all objective-mode work
 (CTF, Entropy, Co-op, Monsterball).
 
-**Status:** Stages 1-3 shipped (0.8.8-0.8.13). **Stage 6 "Orders as Goals" implemented 2026-06-11 (0.9.2-dev, untested — see Stage 6 section)**. Historical Stage 3 status: Stages 1-2 complete (0.8.8-0.8.9). Matcen 0.8.10 added non-team-mode guard. Matcen 0.8.11-dev adds game-mode detection (`BotGameMode`, `$botmode`), objective-state polling (`bot_objective.h`/`.cpp` — CTF flags, Hyper-Anarchy orb, Hoard counts, Monsterball), FSM integration (`BotGetObjectiveRoom()` + `BotGetObjectiveTargetBias()` + `BotObjectiveLean`), Tier 2 verbs (`!hunt`, `!regroup`/`!form up`, `!attack flag`/`!defend flag`), and CTF behavior tuning: smart flag filter in `BotCanCollectPowerup` (skip own AT_HOME, allow DROPPED for returns), carrier state suppression (stay EXPLORE, HUNT only for urgent threats), score beeline (`AIG_GET_TO_OBJ` + bline on home flag), wait-at-home when own flag stolen, forced defender retarget on flag theft (`Prev_flag_state` transition detection), carrier thrust override (full speed + AB when scoring possible, 0.3f drift when waiting). `!get <powerup>` deferred (requires powerup awareness). Next: CTF smoke test, then strip `-dev` for 0.9.0.
+**Status:** Stages 1–6 shipped in **0.9.3 stable**. Stages 1–3 = chat infrastructure + squad roles + Tier 1/2 verbs (0.8.8–0.8.13); game-mode detection (`BotGameMode`, `$botmode`), objective-state polling (`bot_objective.h`/`.cpp` — CTF flags, Hyper-Anarchy orb, Hoard counts, Monsterball), FSM integration (`BotGetObjectiveRoom()`/`BotGetObjectiveTargetBias()`/`BotObjectiveLean`), Tier 2 verbs (`!hunt`, `!regroup`/`!form up`, `!attack flag`/`!defend flag`), and CTF behavior tuning all landed across 0.8.11–0.8.13. **Stage 6 "Orders as Goals"** — orders own navigation via anchors + a lifecycle with player feedback (`!hold`/`!stay`, `!defend`, escort offset stations, BLOCKED detection/reports, enriched `!status`) — shipped with the Phase 12 nav work (see the Stage 6 section below). `!get <powerup>` deferred (needs powerup awareness). Open follow-up: routing the `!follow`/escort path through the cost-aware router so squad commands behave on complex maps (sequenced after the 0.9.4 nav rewrite).
 
 ## Research Summary
 
@@ -243,7 +243,7 @@ in open rooms. Novel design, no direct prior art.
 **Goal:** Monsterball, command chaining, squad grouping. Monsterball bot play is a significant
 physics challenge (ball-push mechanics, goal positioning) and may require dedicated R&D.
 
-## Stage 6: Command Overhaul — Orders as Goals (IMPLEMENTED 2026-06-11, UNTESTED)
+## Stage 6: Command Overhaul — Orders as Goals (IMPLEMENTED 2026-06-11 — shipped in 0.9.3 stable)
 
 **As built:** everything below shipped in one pass except formation types (Stage 4 as planned).
 Deltas/notes: `!hold` aliases are `!stay` and `!defend here` (also `!holdposition`); plain
