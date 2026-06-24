@@ -23,6 +23,7 @@
 #include "bot_chat.h"
 #include "bot_objective.h"
 #include "bot_steering.h"
+#include "bot_roadmap.h"
 #include <climits>
 #include <cmath>
 #include <filesystem>
@@ -3962,6 +3963,27 @@ bool BotNavDump(const char *filename) {
       fprintf(fp, "      \"skel_edges\": [");
       for (int i = 0; i < sn; i++)
         fprintf(fp, "%s%u", i ? "," : "", (unsigned)sedges[i]);
+      fprintf(fp, "],\n");
+    }
+
+    // 0.9.4 volumetric roadmap (Stage 1): node positions + per-node component id, so visualize_navdump.py
+    // can color the interior by component — one color over a room's whole volume = connected coverage (the
+    // room-60/61 hole-filling headline visual). Built lazily here; on a huge map $navdump may take a moment.
+    {
+      static vector rpos[2048];
+      static int rcomp[2048];
+      int rcc = 0;
+      bool rdegen = false;
+      int rn = BotRoadmapDumpRoom(r, rpos, rcomp, 2048, &rcc, &rdegen);
+      fprintf(fp, "      \"roadmap_node_count\": %d, \"roadmap_comp_count\": %d, \"roadmap_degenerate\": %s,\n", rn,
+              rcc, rdegen ? "true" : "false");
+      fprintf(fp, "      \"roadmap_nodes\": [");
+      for (int i = 0; i < rn; i++)
+        fprintf(fp, "%s[%.2f,%.2f,%.2f]", i ? "," : "", rpos[i].x(), rpos[i].y(), rpos[i].z());
+      fprintf(fp, "],\n");
+      fprintf(fp, "      \"roadmap_comp\": [");
+      for (int i = 0; i < rn; i++)
+        fprintf(fp, "%s%d", i ? "," : "", rcomp[i]);
       fprintf(fp, "],\n");
     }
 

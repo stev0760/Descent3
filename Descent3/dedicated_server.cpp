@@ -134,6 +134,7 @@
 #include "bot.h"
 #include "bot_objective.h"
 #include "bot_steering.h"
+#include "bot_roadmap.h"
 #include "object.h"
 #include "vecmat.h"
 
@@ -939,6 +940,19 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     return true;
   }
 
+  if (stricmp(command, "gridnav") == 0) {
+    if (stricmp(operand, "on") == 0) {
+      Bot_gridnav_enabled = true;
+      PrintDedicatedMessage("Volumetric grid roadmap (0.9.4) ON\n");
+    } else if (stricmp(operand, "off") == 0) {
+      Bot_gridnav_enabled = false;
+      PrintDedicatedMessage("Volumetric grid roadmap OFF (0.9.3 skeleton)\n");
+    } else {
+      PrintDedicatedMessage("Usage: $gridnav on|off  (current: %s)\n", Bot_gridnav_enabled ? "on" : "off");
+    }
+    return true;
+  }
+
   if (stricmp(command, "botdifficulty") == 0) {
     if (!operand[0]) {
       PrintDedicatedMessage("Usage: $botdifficulty <index|all> <level>\n");
@@ -1007,6 +1021,7 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     PrintDedicatedMessage("  $outdoorgraph on|off   - Toggle outdoor connecting graph (Phase 12.6 Stage B)\n");
     PrintDedicatedMessage(
         "  $navbridge on|off      - Toggle soft-hop bridge across disconnected graphs (Phase 12.7)\n");
+    PrintDedicatedMessage("  $gridnav on|off        - Toggle volumetric grid roadmap (0.9.4; off = 0.9.3)\n");
     PrintDedicatedMessage("  $botmode               - Show detected game mode\n");
     PrintDedicatedMessage("  $botobj                - Show objective state (CTF flags, orbs, etc.)\n");
     PrintDedicatedMessage("  $servercaps            - Print server capabilities\n");

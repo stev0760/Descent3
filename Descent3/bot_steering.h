@@ -87,6 +87,12 @@ enum BotViaResult {
   BOT_VIA_NONE = 2,  // line blocked and no clear via-point exists — fall back / sealed-target evidence
 };
 
+// Shared hull-radius swept-segment clearance test (the nav substrate's one geometry primitive — used by
+// the via search, the pseudo-bnode skeleton, AND the 0.9.4 volumetric roadmap for node growth, edge
+// probing, and Theta* line-of-sight). True when a sphere of `radius` sweeps a→b without hitting wall/
+// terrain. Indoor use only (no ceiling check); `startroom` is the fvi start room (the bot's room for a→b).
+bool BotSegmentClear(int startroom, const vector &a, const vector &b, float radius);
+
 // Probe the hull-radius line obj→target_pos and search for a go-around via-point when an interior
 // face blocks it. target_room = the room target_pos is in (fvi start room for the via→target leg).
 // 12.3: when the ring passes fail, a portal-skeleton hop may be returned instead (an intermediate

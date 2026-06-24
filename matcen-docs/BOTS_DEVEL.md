@@ -67,6 +67,36 @@ a room lacking BNode data — a latent crash independent of bots).
 
 ---
 
+### 0.9.4-dev Stage 1 — Volumetric grid roadmap + Lazy Theta\* (2026-06-23, UNTESTED — build blocked locally by GCC16/vcpkg, code verified -fsyntax-only)
+
+The ground-up nav rewrite begins (canonical spec: `GRID_NAV_DESIGN.md`). **New file `Descent3/bot_roadmap.cpp`**
+builds a per-room **volumetric grid-seeded roadmap** (deterministic PRM) and routes it with **Lazy Theta\***
+(any-angle), replacing the portal-skeleton pass of the via search behind toggle **`$gridnav` (default ON)**.
+
+- **Grow-from-seed build:** seed nodes = portal `path_pnt`s (guaranteed playable); a 3D lattice (X/Y/Z,
+  20u) is BFS-grown, accepting a cell only when a hull-CLEAR SWEPT edge (`BotSegmentClear`, shared from
+  `bot_steering.cpp`) reaches it from an already-accepted node — robust against the void/deep-solid fvi
+  false-clears a standalone point-probe suffers in exactly these rooms. Components fall out via union-find;
+  a room whose lattice never populates is flagged **degenerate → 0.9.3 skeleton fallback**. Cached per
+  level (`BOA_mine_checksum`).
+- **Query:** Lazy Theta\* from the bot's nearest visible node to the in-room target / next-room seam node
+  (different-component → fall back). Delivery = the **furthest path vertex with clear LOS from the bot**
+  (greedy string-pull) as the existing `AIG_GET_TO_POS` via, marked skeleton so the chain-cap/suspend
+  governor bounds it. Output is a waypoint — never `movement_dir`, never `BNode_allocated` (the invariants).
+- **Decisions:** Lazy Theta\* from the start; FIXED clearance margin (`BOT_ROADMAP_CLEARANCE` ≈ 8.0, not
+  speed-scaled → one graph at all speeds); `$gridnav` default ON with the skeleton as fallback. **Guardrail:
+  two fix-on commits max to pass the Stage 1 gate.**
+- **Diagnostics:** `$navdump` emits `roadmap_nodes`/`roadmap_comp`/`roadmap_degenerate` per room;
+  `tools/visualize_navdump.py` draws roadmap nodes colored by connected component (one color over a room =
+  connected interior coverage — the room-60/61 hole-filling visual).
+- **Gate (dynamic, pending):** a bot reaches an arbitrary interior point in townofbree room 60 and
+  traverses room 61's shaft with *clean motion* (continuous arc, bounded re-issues, no thrash); build cost
+  bounded; `$gridnav off` = 0.9.3, good pool unchanged with it on. Files: `bot_roadmap.cpp/.h`,
+  `bot_steering.cpp/.h` (shared `BotSegmentClear` + `BotFindViaPoint` hook), `dedicated_server.cpp`
+  (`$gridnav`), `bot.cpp` (navdump emit), CMake (+source, version 0.9.3→**0.9.4-dev**).
+
+---
+
 ### Soft-hop bridge + commitment loosening (Phase 12.7 — ships in 0.9.3 stable, 2026-06-21) — soft-hop PARTIAL win; $softfollow REMOVED
 
 **One mechanism, the user's own framing: "a crude connection between disconnected graphs that doesn't

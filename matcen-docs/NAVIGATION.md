@@ -409,8 +409,15 @@ or a toggle default changes. The narrative subsections below explain the "why"; 
 | `$outdoorvia` | ON | 12.6 A | validated net-positive (reactive ring, ceiling-aware) |
 | `$outdoorgraph` | ON | 12.6 B | validated net-positive (13.5h soak: 0 crashes, captures +30%) |
 | `$navbridge` | ON | 12.7 | **mechanism validated, PARTIAL** — kills dead-ends but not yet a crossing (see #1) |
+| `$gridnav` | **ON** | 0.9.4 S1 | **NEW, UNTESTED** — volumetric grid roadmap + Lazy Theta\* (replaces the skeleton via-pass indoors; degenerate rooms fall back to the skeleton). `off` = 0.9.3. See `GRID_NAV_DESIGN.md`. |
 
 (`$softfollow` was **removed** — see ledger; do not re-add as target-line early-release.)
+
+> **0.9.4-dev Stage 1 landed (2026-06-23, UNTESTED).** The grid-roadmap substrate (`bot_roadmap.cpp`) is
+> built and wired behind `$gridnav` (default ON); the skeleton/pseudo-bnode stack below stays live as the
+> per-room fallback and the `$gridnav off` baseline. Pending the Stage 1 clean-motion gate (townofbree room
+> 60/61). Once Stages 1–4 validate, this whole §7.0 Phase-12 stack is what gets deleted (`GRID_NAV_DESIGN.md`
+> Stage 4).
 
 **Open issues, priority-ordered:**
 

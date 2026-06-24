@@ -29,6 +29,7 @@
 
 #include "bot_steering.h"
 #include "bot.h"
+#include "bot_roadmap.h"
 #include "BOA.h"
 #include "doorway.h"
 #include "findintersection.h"
@@ -295,6 +296,13 @@ static bool ViaSegmentClear(int startroom, const vector &a, const vector &b, flo
   if (check_ceiling && ht == HIT_CEILING)
     return false;
   return true;
+}
+
+// Public wrapper (declared in bot_steering.h) — the nav substrate's shared indoor hull-sweep primitive.
+// Indoor use: no ceiling check (the global ceiling plane could false-hit a room above it). Used by the
+// 0.9.4 volumetric roadmap (bot_roadmap.cpp) for node growth, edge probing, and Theta* line-of-sight.
+bool BotSegmentClear(int startroom, const vector &a, const vector &b, float radius) {
+  return ViaSegmentClear(startroom, a, b, radius, nullptr, false);
 }
 
 // --- Phase 12.3: portal-skeleton traversal (pass 3 of the via search) ---
@@ -725,6 +733,22 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
   if (dist < 1.0f)
     return BOT_VIA_CLEAR; // on top of the target — nothing to round
   dir = dir * (1.0f / dist);
+
+  // 0.9.4 Stage 1: route the bot's current room over its volumetric grid-seeded roadmap (Lazy Theta*),
+  // replacing the portal-skeleton pass for indoor same-room / next-portal targets. Returns a furthest-
+  // visible waypoint marked as a skeleton hop (so the existing chain-cap/suspend/reroute governor bounds
+  // it); on BOT_VIA_NONE (degenerate room / disconnected components / bot can't see the graph) we fall
+  // through to the 0.9.3 rings + skeleton. $gridnav off restores 0.9.3 exactly. (Outdoor roadmap = Stage 3.)
+  if (Bot_gridnav_enabled && !is_outdoor) {
+    vector rv;
+    if (BotRoadmapFindVia(obj, target_pos, target_room, &rv) == BOT_VIA_FOUND) {
+      if (via_out)
+        *via_out = rv;
+      if (skeleton_out)
+        *skeleton_out = true;
+      return BOT_VIA_FOUND;
+    }
+  }
 
   // Buried-center rooms (hollow-core rings, see RoomBuriedCenter): skip the ring passes — their
   // candidates hug the core wall and bounce-suspend — and go straight to the portal skeleton.

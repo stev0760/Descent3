@@ -8,9 +8,27 @@
 > read `project_bnode_generation.md` / `project_pseudo_bnodes.md` (memory) for the hard-won lessons this
 > spec must honor.
 
-**Status:** Design / planning. Target milestone **0.9.4** (becomes `0.9.4-dev` when Stage 1 code starts).
-The stable **0.9.3** Phase 12 stack stays in place and remains the fallback until each stage proves out.
-Nothing here ships until its stage's verification gate passes.
+**Status:** **Stage 1 IN PROGRESS — `0.9.4-dev` (UNTESTED).** The per-room volumetric roadmap + Lazy Theta\*
+query is built (`Descent3/bot_roadmap.cpp`, toggle `$gridnav`) and wired into `BotFindViaPoint`; pending the
+Stage 1 clean-motion gate (townofbree room 60 / room 61). The stable **0.9.3** Phase 12 skeleton stays live
+as the per-room fallback (degenerate rooms / disconnected components) and the `$gridnav off` A/B baseline.
+
+**Decisions locked for the build (deviations/sharpenings from §4 below — all deliberate):**
+1. **Local search = Lazy Theta\*** (any-angle), not grid-Dijkstra-then-smooth — straight segments by
+   construction, LOS = the shared `BotSegmentClear` hull-sweep; delivery = the **furthest path vertex with
+   clear LOS from the bot** (greedy string-pull). This is the make-or-break for the clean-motion gate.
+2. **Grow-from-seed construction**, not standalone "cull a point if a probe is clear" (§4 step 2 was
+   unreliable — a ray from a void/hollow-core point false-clears, a proximity test false-clears a point
+   deep in solid). Seed from portal `path_pnt`s, accept a lattice cell only when a hull-swept edge reaches
+   it from an already-accepted node; a sweep into solid always hits the boundary face → robust by
+   construction, and components fall out for free.
+3. **FIXED clearance margin, not speed-scaled** (`BOT_ROADMAP_CLEARANCE` = ~hull 6.676 + fixed ≈ 8.0).
+   Keeps the roadmap ONE graph at all speeds — avoids the speed-dependent-edge-cost spiral (§1.6 risk #1
+   resolved toward fixed). Tune against observed motion, not graph metrics.
+4. **`$gridnav` default ON** (move-fast call) — the 0.9.3 skeleton stays the degenerate-room fallback, and
+   `$gridnav off` reproduces 0.9.3 for A/B.
+5. **Process guardrail: two fix-on commits max to pass Stage 1.** Three is spaghetti forming → STOP and
+   reassess.
 
 ---
 

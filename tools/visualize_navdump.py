@@ -112,6 +112,18 @@ def main():
                 svg.append(f'<circle cx="{tx(snodes[k][0]):.1f}" cy="{tz(snodes[k][2]):.1f}" r="2.5" '
                            f'fill="#0ff" stroke="#000" stroke-width="0.4"/>')
 
+        # 0.9.4 volumetric roadmap (Stage 1): interior nodes colored by connected COMPONENT. One color
+        # filling a room's whole footprint = connected interior coverage (the room-60/61 hole-filling
+        # headline visual); two colors in a room = a divider the roadmap couldn't bridge through open air.
+        rnodes = r.get("roadmap_nodes")
+        if rnodes:
+            rcomp = r.get("roadmap_comp", [])
+            palette = ["#5f5", "#f80", "#08f", "#f5f", "#ff5", "#5ff", "#f55", "#8f8", "#c6f", "#fc6"]
+            for k, nd in enumerate(rnodes):
+                c = palette[(rcomp[k] if k < len(rcomp) else 0) % len(palette)]
+                svg.append(f'<circle cx="{tx(nd[0]):.1f}" cy="{tz(nd[2]):.1f}" r="1.6" '
+                           f'fill="{c}" fill-opacity="0.8"/>')
+
     # Outdoor connecting graph (12.6 Stage B): the per-terrain-region go-around mesh. Magenta lines =
     # hull-clear, ceiling-capped legs; magenta squares = entrance approach points (the doors); yellow
     # dots = structure-perimeter anchors. Drawn on the same X/Z canvas as the interior rooms.
@@ -151,7 +163,8 @@ def main():
     svg.append(f'<text x="{pad}" y="{ly}" fill="#fff">room fill: green=convex … red=labyrinth (blocked portal legs)  | '
                f'dot: path_pnt (green=open center, red=buried)  | portal: blue=open orange=tight red=impassable  | '
                f'diamond: powerup (green/orange=review/red=troll)  | cyan dot+line: pseudo-bnode + hull-clear edge  | '
-               f'magenta sq+line: outdoor entrance + go-around edge, yellow dot: perimeter anchor</text>')
+               f'magenta sq+line: outdoor entrance + go-around edge, yellow dot: perimeter anchor  | '
+               f'small dots: 0.9.4 roadmap nodes (colored by connected component)</text>')
     svg.append(f'<text x="{pad}" y="{ly+18}" fill="#aaa">{os.path.basename(path)} — {len(rooms)} interior rooms, '
                f'top-down X/Z, h = room height (Y)</text>')
     svg.append("</svg>")
