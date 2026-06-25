@@ -734,22 +734,6 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
     return BOT_VIA_CLEAR; // on top of the target — nothing to round
   dir = dir * (1.0f / dist);
 
-  // 0.9.4 Stage 1: route the bot's current room over its volumetric grid-seeded roadmap (Lazy Theta*),
-  // replacing the portal-skeleton pass for indoor same-room / next-portal targets. Returns a furthest-
-  // visible waypoint marked as a skeleton hop (so the existing chain-cap/suspend/reroute governor bounds
-  // it); on BOT_VIA_NONE (degenerate room / disconnected components / bot can't see the graph) we fall
-  // through to the 0.9.3 rings + skeleton. $gridnav off restores 0.9.3 exactly. (Outdoor roadmap = Stage 3.)
-  if (Bot_gridnav_enabled && !is_outdoor) {
-    vector rv;
-    if (BotRoadmapFindVia(obj, target_pos, target_room, &rv) == BOT_VIA_FOUND) {
-      if (via_out)
-        *via_out = rv;
-      if (skeleton_out)
-        *skeleton_out = true;
-      return BOT_VIA_FOUND;
-    }
-  }
-
   // Buried-center rooms (hollow-core rings, see RoomBuriedCenter): skip the ring passes — their
   // candidates hug the core wall and bounce-suspend — and go straight to the portal skeleton.
   if (!RoomBuriedCenter(obj->roomnum)) {
@@ -822,6 +806,21 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
   // --- Pass 3 (12.3 + 12.5b): skeleton hop over portals AND pseudo-bnodes. Indoor-only: it indexes
   // Rooms[obj->roomnum], which is a terrain cell outdoors. The outdoor connecting graph is Stage B. ---
   if (!is_outdoor) {
+    // 0.9.4 Stage 1: the volumetric grid roadmap (Lazy Theta*) is the pass-3 in-room planner, IN PLACE OF
+    // the portal skeleton — and it runs AFTER the reactive rings above, so healthy rooms keep their light
+    // 0.9.3 behavior (rings resolve the easy cases) and the roadmap only engages where they fail. Returns a
+    // furthest-visible waypoint marked skeleton (the chain-cap/suspend governor bounds it); on BOT_VIA_NONE
+    // (degenerate / disconnected / unseen) we fall through to the skeleton BFS below. $gridnav off = 0.9.3.
+    if (Bot_gridnav_enabled) {
+      vector rv;
+      if (BotRoadmapFindVia(obj, target_pos, target_room, &rv) == BOT_VIA_FOUND) {
+        if (via_out)
+          *via_out = rv;
+        if (skeleton_out)
+          *skeleton_out = true;
+        return BOT_VIA_FOUND;
+      }
+    }
     SkelLevelReset();
     int room_idx = obj->roomnum;
     room &rm = Rooms[room_idx];
