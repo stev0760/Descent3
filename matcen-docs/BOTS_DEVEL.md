@@ -1079,6 +1079,19 @@ Investigation revealed that bots were missing from the end-of-level scoreboard b
 
 See [PLAN.md](PLAN.md) for the full phase plan and risk assessment. See [NAVIGATION.md](NAVIGATION.md) for the Phase 4.0 navigation overhaul design.
 
+### Pre-Release Cleanup: Consistent `$` command surface (do before public release)
+
+The dedicated-console diagnostic/toggle commands grew organically and have **no consistent naming convention** — they're hard to recall and easy to mis-type (e.g. `$gridnav` got typed as `$navgrid`, silently losing a control soak; a `$navgrid` alias was added as a stopgap). Two inconsistencies to fix:
+
+- **The `nav` token floats position:** prefix (`$navdump`, `$navbridge`), suffix (`$gridnav`), or absent (`$terrainsteer`, `$pseudobnodes`, `$outdoorvia`, `$outdoorgraph`). This is *why* `$navgrid` felt natural — the surface taught a `nav`-first pattern that `gridnav` breaks.
+- **Bot commands mix verb/noun order:** verb-first (`$addbot`, `$removebot`, `$removebots`) vs noun-first (`$botlist`, `$botstat`, `$botmode`, `$botobj`, `$botdifficulty`, `$bothelp`, `$botmov`).
+
+**Pick one convention and enforce it.** Two options:
+- **A (cheap):** fixed domain prefix + feature — every nav command `nav`-first (`$navgrid`, `$navbridge`, `$navterrain`, `$navbnodes`, `$navoutdoor`, `$navdump`), every bot command `bot`-first; every toggle ends in `on|off`.
+- **B (best UX, shrinks the wall of `$bothelp`):** namespace into subcommands — `$nav grid on|off`, `$nav bridge on|off`, `$nav dump [file]`; `$bot add …`, `$bot list`, `$bot stat …`. Bare `$nav` / `$bot` print their submenu. Reduces recall to two verbs.
+
+Keep all current names as **hidden aliases** through the transition so nothing breaks. Low-priority polish, not urgent — but a UX debt to clear before the dev-facing surface ships to the community. Handlers live in `dedicated_server.cpp`.
+
 ### Phase 4.0: Navigation Overhaul (Complete)
 
 Implemented all four changes from `NAVIGATION.md`. Key improvements:
