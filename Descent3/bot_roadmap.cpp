@@ -39,6 +39,7 @@
 #include <cfloat>
 #include <cmath>
 #include <queue>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
 
@@ -223,6 +224,49 @@ RoadmapRoom *Build(int room_idx) {
           rr->lattice_nodes++;
           q.push(w);
         }
+  }
+
+  // 2b. Component bridge (GRID_NAV_DESIGN section 4 step 5). Grow-from-seed leaves a room's interior as
+  // several components when a NAVIGABLE gap is wider than the neighbour-connect radius (sp*1.8 = 36u): e.g.
+  // townofbree's tavern (room 60), where an upper gallery sits ~45u above the main floor through open air,
+  // so the two halves never get an edge probed and fragment. For each cross-component node pair within
+  // BOT_ROADMAP_BRIDGE_LEN, probe a hull-clear swept edge; if clear, add it and union the components. The
+  // probe gate is the safety: a SOLID divider stays split (correct — there is no in-room path), only a
+  // genuinely-flyable gap bridges. Closest pairs first, so a transitive A-B-C merge resolves cleanly.
+  {
+    const int N0 = (int)rr->node.size();
+    int root0 = UFFind(uf, 0);
+    bool multi = false;
+    for (int i = 1; i < N0 && !multi; i++)
+      if (UFFind(uf, i) != root0)
+        multi = true;
+    if (multi && N0 <= BOT_ROADMAP_BRIDGE_MAX_NODES) { // single-component rooms skip the O(n^2) scan
+      std::vector<std::tuple<float, int, int>> cand;
+      for (int i = 0; i < N0; i++)
+        for (int j = i + 1; j < N0; j++) {
+          if (UFFind(uf, i) == UFFind(uf, j))
+            continue;
+          float d = Dist(rr->node[i], rr->node[j]);
+          if (d <= BOT_ROADMAP_BRIDGE_LEN)
+            cand.emplace_back(d, i, j);
+        }
+      std::sort(cand.begin(), cand.end());
+      int bridged = 0;
+      for (auto &c : cand) {
+        int i = std::get<1>(c), j = std::get<2>(c);
+        if (UFFind(uf, i) == UFFind(uf, j))
+          continue; // already merged transitively
+        if (BotSegmentClear(room_idx, rr->node[i], rr->node[j], BOT_ROADMAP_CLEARANCE)) {
+          rr->adj[i].push_back(j);
+          rr->adj[j].push_back(i);
+          UFUnion(uf, i, j);
+          bridged++;
+        }
+      }
+      if (bridged) {
+        LOG_DEBUG.printf("BOT: roadmap room %d: bridged %d component gaps", room_idx, bridged);
+      }
+    }
   }
 
   // 3. Compress components to dense ids.

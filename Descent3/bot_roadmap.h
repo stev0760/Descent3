@@ -42,6 +42,12 @@ extern bool Bot_gridnav_enabled;
 #define BOT_ROADMAP_SPACING 20.0f  // 3D lattice spacing (control-loop param: matches engine arrival/lookahead)
 #define BOT_ROADMAP_MAX_LATTICE 20000 // per-room candidate-cell cap; spacing auto-coarsens past this
 
+// Component bridge (GRID_NAV_DESIGN section 4 step 5): connect grow-from-seed components separated by a
+// navigable gap wider than the neighbour-connect radius (sp*1.8 = 36u) but still flyable — e.g. an upper
+// gallery ~45u above a tavern floor through open air. Hull-probe-gated, so solid dividers stay split.
+#define BOT_ROADMAP_BRIDGE_LEN 55.0f       // max cross-component gap to attempt bridging (catches ~40-45u splits)
+#define BOT_ROADMAP_BRIDGE_MAX_NODES 1200  // skip the O(n^2) bridge scan above this (huge rooms are ~1 component)
+
 // Stage 1 query. Find a go-around waypoint by routing the bot's CURRENT room's volumetric roadmap with
 // Lazy Theta* toward target_pos (same room) or the seam node toward the next room (cross room). Returns
 // BOT_VIA_FOUND (+ *via_out = furthest-visible vertex on the any-angle path) on success, or BOT_VIA_NONE
