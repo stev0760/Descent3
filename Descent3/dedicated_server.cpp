@@ -940,7 +940,7 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     return true;
   }
 
-  if (stricmp(command, "gridnav") == 0) {
+  if (stricmp(command, "gridnav") == 0 || stricmp(command, "navgrid") == 0) {
     if (stricmp(operand, "on") == 0) {
       Bot_gridnav_enabled = true;
       PrintDedicatedMessage("Volumetric grid roadmap (0.9.4) ON\n");
@@ -1021,7 +1021,8 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     PrintDedicatedMessage("  $outdoorgraph on|off   - Toggle outdoor connecting graph (Phase 12.6 Stage B)\n");
     PrintDedicatedMessage(
         "  $navbridge on|off      - Toggle soft-hop bridge across disconnected graphs (Phase 12.7)\n");
-    PrintDedicatedMessage("  $gridnav on|off        - Toggle volumetric grid roadmap (0.9.4; off = 0.9.3)\n");
+    PrintDedicatedMessage(
+        "  $gridnav on|off        - Toggle volumetric grid roadmap (0.9.4; off = 0.9.3) [alias: $navgrid]\n");
     PrintDedicatedMessage("  $botmode               - Show detected game mode\n");
     PrintDedicatedMessage("  $botobj                - Show objective state (CTF flags, orbs, etc.)\n");
     PrintDedicatedMessage("  $servercaps            - Print server capabilities\n");
