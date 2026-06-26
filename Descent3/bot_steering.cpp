@@ -305,6 +305,25 @@ bool BotSegmentClear(int startroom, const vector &a, const vector &b, float radi
   return ViaSegmentClear(startroom, a, b, radius, nullptr, false);
 }
 
+// Outdoor segment-clearance (0.9.4 Stage 3, declared in bot_steering.h). The terrain cell under `a` is a
+// valid fvi start (an RF_EXTERNAL room is not); check_ceiling rejects legs up over the outdoor ceiling.
+// This is the one geometry primitive the roadmap's terrain-region build + query run on (mirrors how
+// OGraphBuild starts its edge probes — GetTerrainRoomFromPos + ceiling-capped ViaSegmentClear).
+bool BotSegmentClearOutdoor(const vector &a, const vector &b, float radius) {
+  vector start = a; // GetTerrainRoomFromPos takes a mutable vector*
+  int sr = GetTerrainRoomFromPos(&start);
+  return ViaSegmentClear(sr, a, b, radius, nullptr, true);
+}
+
+int BotOutdoorRegion(int roomnum) {
+  if (!ROOMNUM_OUTSIDE(roomnum))
+    return -1;
+  int r = TERRAIN_REGION(CELLNUM(roomnum));
+  return (r >= 0 && r < MAX_BOA_TERRAIN_REGIONS) ? r : -1;
+}
+
+float BotOutdoorCeilingCap() { return Ceiling_height - BOT_ALTITUDE_CEILING_MARGIN; }
+
 // --- Phase 12.3: portal-skeleton traversal (pass 3 of the via search) ---
 // In buried-center rooms (hollow-core rings like abend2's discs, labyrinths like nysa 41/69) no
 // single point has hull LOS to both the bot and the target — the ring passes fail by
@@ -790,6 +809,21 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
   // entrance/perimeter graph for a hull-clear, ceiling-capped multi-hop route AROUND the footprint and
   // hand out the first hop. Marked skeleton so the chain-cap/suspend/reroute machinery governs the chain. ---
   if (is_outdoor) {
+    // 0.9.4 Stage 3: route the bot's terrain region over the volumetric roadmap (Lazy Theta*) FIRST — it
+    // nodes the airspace around structures, so the local search threads laterally around an occluding wall /
+    // footprint instead of beelining into it. On BOT_VIA_NONE (no region graph / disconnected / bot can't
+    // see a node) fall through to the 12.6 connecting graph, then NONE. $gridnav off = the 0.9.3 outdoor
+    // stack. Marked skeleton so the chain-cap/suspend/reroute governor bounds the hop chain.
+    if (Bot_gridnav_enabled) {
+      vector rv;
+      if (BotRoadmapFindViaOutdoor(obj, target_pos, target_room, &rv) == BOT_VIA_FOUND) {
+        if (via_out)
+          *via_out = rv;
+        if (skeleton_out)
+          *skeleton_out = true;
+        return BOT_VIA_FOUND;
+      }
+    }
     if (Bot_outdoor_graph_enabled) {
       vector hop;
       if (BotOutdoorGraphHop(obj, target_pos, radius, &hop)) {

@@ -51,6 +51,14 @@ extern bool Bot_gridnav_enabled;
 #define BOT_ROADMAP_BRIDGE_LEN 55.0f       // max cross-component gap to attempt bridging (catches ~40-45u splits)
 #define BOT_ROADMAP_BRIDGE_MAX_NODES 1200  // skip the O(n^2) bridge scan above this (huge rooms are ~1 component)
 
+// Stage 3 (outdoor): the SAME roadmap grown over a terrain REGION's airspace, so the local search threads
+// laterally around outdoor structures (the Bree-wall class) instead of beelining into them. Seeds = the
+// region's BOA_connect door approach points; the lattice extent = the region's structure bboxes expanded
+// into airspace, Y-capped under the outdoor ceiling (no sky-fly). Coarser spacing than indoor — open
+// airspace needs less density, and it keeps the per-region build cost bounded (the scaling lever).
+#define BOT_ROADMAP_OUTDOOR_SPACING 30.0f // terrain-region lattice spacing (coarser than the 20u indoor grid)
+#define BOT_ROADMAP_OUTDOOR_MARGIN 60.0f  // expand each structure bbox this far into airspace to scope the lattice
+
 // Stage 1 query. Find a go-around waypoint by routing the bot's CURRENT room's volumetric roadmap with
 // Lazy Theta* toward target_pos (same room) or the seam node toward the next room (cross room). Returns
 // BOT_VIA_FOUND (+ *via_out = furthest-visible vertex on the any-angle path) on success, or BOT_VIA_NONE
@@ -58,10 +66,23 @@ extern bool Bot_gridnav_enabled;
 // back to the 0.9.3 skeleton. Indoor only; outdoor is Stage 3.
 BotViaResult BotRoadmapFindVia(object *obj, const vector &target_pos, int target_room, vector *via_out);
 
+// Stage 3 query (outdoor). Route the bot's terrain REGION over its volumetric roadmap toward target_pos,
+// threading laterally around structures. Same any-angle Lazy Theta* + furthest-visible delivery as the
+// indoor query. Returns BOT_VIA_FOUND (+ *via_out) or BOT_VIA_NONE (no region graph / start & goal in
+// different components / bot can't see the graph) — the caller then falls back to the 12.6 outdoor
+// connecting graph. Bot must be outside. Outdoor is gated by $gridnav alongside the indoor roadmap.
+BotViaResult BotRoadmapFindViaOutdoor(object *obj, const vector &target_pos, int target_room, vector *via_out);
+
 // $navdump diagnostic: build (lazily) and dump a room's roadmap — node world positions + per-node
 // component id. Returns node count (0 = external/invalid). Sets *comp_count_out and *degenerate_out.
 // Caller arrays must hold max_nodes entries.
 int BotRoadmapDumpRoom(int room_idx, vector *pos_out, int *comp_out, int max_nodes, int *comp_count_out,
                        bool *degenerate_out);
+
+// $navdump diagnostic (Stage 3): build (lazily) + dump a terrain region's outdoor roadmap — node world
+// positions + per-node component id. Returns node count (0 = empty/out-of-range region). Sets
+// *comp_count_out and *degenerate_out. Caller arrays must hold max_nodes entries.
+int BotRoadmapDumpRegion(int region, vector *pos_out, int *comp_out, int max_nodes, int *comp_count_out,
+                         bool *degenerate_out);
 
 #endif // BOT_ROADMAP_H

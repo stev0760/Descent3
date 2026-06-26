@@ -329,10 +329,37 @@ traversal penalty (`NAVIGATION.md` §7.0 #6), so the router prefers genuinely-cr
 **Gate:** khazaddum 20/31 divider **crossed** (caps > 0); townofbree room-60 via-fails collapse; no
 regression on the good pool; A/B `$gridnav` quantifies the delta.
 
-### Stage 3 — Outdoor unification. One substrate across the seam.
-Extend the lattice over terrain regions (§5); connect through entrance nodes; retire `OGraphBuild` /
-`BotOutdoorGraphHop` behind the toggle. **Gate:** townofbree outdoor doors reachable; carrier brings the flag
-home; alcove trap gone; shirebaggins outdoor (9 caps/rnd) holds or improves; no sky-fly (agl cap honored).
+### Stage 3 — Outdoor unification. One substrate across the seam. **(BUILT, UNTESTED — 0.9.4-dev)**
+Extend the lattice over terrain regions; connect through entrance nodes; retire `OGraphBuild` /
+`BotOutdoorGraphHop` behind the toggle. Built as a **drop-in replacement for the outdoor `BotOutdoorGraphHop`
+pass** in `BotFindViaPoint` (`is_outdoor` branch), behind `$gridnav`, with the 12.6 connecting graph kept
+live as the bring-up fallback (Stage 4 deletes it). Mandated by the first valid soak (`19df158b`): outdoor
+entrance-miss was the #1 failure class — isengard 343/344, doorsofmoria 104/127, townofbree 90/115.
+
+**What was built (`bot_roadmap.cpp` / `BotRoadmapFindViaOutdoor`):**
+- **The crux — fvi from terrain.** An `RF_EXTERNAL` room can't start an fvi trace, but the terrain *cell*
+  can. `BotSegmentClearOutdoor` (bot_steering.cpp) resolves the cell under the start with
+  `GetTerrainRoomFromPos` and runs the ceiling-capped `ViaSegmentClear` — exactly how `OGraphBuild` probes
+  its edges. So the probe sees `HIT_TERRAIN` (ground), `HIT_WALL` (structures), and `HIT_CEILING` (sky cap).
+- **Shared core.** Indoor and outdoor share one grow/Theta\*/delivery core (`GrowFromSeeds` + `QueryVia`);
+  the *only* difference is the probe (`RoadmapLOS` dispatches on `rr->outdoor`). The validated indoor path is
+  byte-identical — for an indoor room `RoadmapLOS` == the old `BotSegmentClear(room_idx,…)`.
+- **Per-region build.** Seeds = the region's `BOA_connect` door approach points (offset out of the face into
+  airspace — the 12.6 entrance points). Lattice extent = the region's structure bboxes expanded by
+  `BOT_ROADMAP_OUTDOOR_MARGIN` (60u) into airspace, **Y-capped under the outdoor ceiling** (`BotOutdoorCeilingCap`
+  = `Ceiling_height − 50`) so growth can't climb into the sky (the build-side no-sky-fly bound). Coarser
+  spacing (`BOT_ROADMAP_OUTDOOR_SPACING` 30u) — open airspace needs less density and it bounds build cost
+  (the scaling lever). Cached per region, invalidated on `BOA_mine_checksum`.
+- **Query.** Same Lazy Theta\* + furthest-visible delivery. v1 goal = the node nearest the target's position
+  (the door transition is the engine's job; a structure-targeted seam goal is a Stage 3.5 refinement).
+- **Diagnostics.** `$navdump` emits `outdoor_roadmap[]` per region; `visualize_navdump.py` colors the airspace
+  shell by component (one color spanning a wall's flyable side = connected go-around coverage).
+
+**Offline checkpoint (do first):** `$navdump` on townofbree/isengard → the terrain shell fills around the
+structures, one component spanning the wall's flyable side. **Gate (dynamic):** outdoor doors reachable; bots
+round the Bree wall (`OUTDOOR_ENTRANCE_MISS` drops); carrier brings the flag home; alcove trap gone;
+shirebaggins outdoor caps hold; no sky-fly (agl cap honored, the 0/2397>150 signature stays); `$gridnav off`
+= the 0.9.3 outdoor stack unchanged.
 
 ### Stage 4 — Retire the old substrate (the simplification payoff).
 Once Stages 1–3 are validated, **delete** the portal-skeleton pseudo-bnode synthesis, the outdoor connecting

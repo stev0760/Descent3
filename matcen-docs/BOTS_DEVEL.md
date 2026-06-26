@@ -67,6 +67,30 @@ a room lacking BNode data — a latent crash independent of bots).
 
 ---
 
+### 0.9.4-dev Stage 3 — Outdoor unification (2026-06-26, BUILT, UNTESTED)
+
+The volumetric roadmap extended over terrain so bots route *around* outdoor structures instead of beelining
+into them. Mandated by the first valid Stage-1 soak (`19df158b`), where **outdoor entrance-miss was the #1
+failure class** (isengard 343/344, doorsofmoria 104/127, townofbree 90/115 stucks routed into a structure).
+
+- **The crux (solved):** an `RF_EXTERNAL` room can't start an fvi trace, but the terrain *cell* can.
+  `BotSegmentClearOutdoor` resolves the cell with `GetTerrainRoomFromPos` and runs the ceiling-capped
+  `ViaSegmentClear` (how `OGraphBuild` already probes) — so the probe sees ground, structures, and the sky cap.
+- **Shared core, indoor untouched:** indoor + outdoor share one grow/Theta\*/delivery core; the only
+  difference is the probe (`RoadmapLOS` dispatches on `rr->outdoor`). For an indoor room `RoadmapLOS` is
+  byte-identical to the old `BotSegmentClear(room_idx,…)`, so Stage 1 behavior is unchanged.
+- **Per-region build (`BotRoadmapFindViaOutdoor`):** seeds = the region's `BOA_connect` door approach points;
+  lattice extent = the region's structure bboxes expanded 60u into airspace, **Y-capped under the outdoor
+  ceiling** (no sky-fly); coarser 30u spacing (the scaling lever). Wired into `BotFindViaPoint`'s `is_outdoor`
+  branch behind **`$gridnav`** (the same toggle gates indoor + outdoor), with `BotOutdoorGraphHop` kept as the
+  bring-up fallback (Stage 4 deletes it). `$navdump` emits `outdoor_roadmap[]`; visualizer colors it by
+  component. No engine-file edits.
+- **Gate:** offline — the terrain shell fills around structures, one component spanning the wall's flyable
+  side. Dynamic — Bree wall rounded (`OUTDOOR_ENTRANCE_MISS` drops), carrier brings the flag home, no sky-fly,
+  `$gridnav off` = the 0.9.3 outdoor stack. Canonical: `GRID_NAV_DESIGN.md` Stage 3.
+
+---
+
 ### 0.9.4-dev Stage 1 — Volumetric grid roadmap + Lazy Theta\* (2026-06-23, UNTESTED — build blocked locally by GCC16/vcpkg, code verified -fsyntax-only)
 
 The ground-up nav rewrite begins (canonical spec: `GRID_NAV_DESIGN.md`). **New file `Descent3/bot_roadmap.cpp`**

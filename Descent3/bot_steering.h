@@ -93,6 +93,20 @@ enum BotViaResult {
 // terrain. Indoor use only (no ceiling check); `startroom` is the fvi start room (the bot's room for a→b).
 bool BotSegmentClear(int startroom, const vector &a, const vector &b, float radius);
 
+// Outdoor variant (0.9.4 Stage 3): resolves the terrain cell under `a` as the fvi start room (an
+// RF_EXTERNAL room can't start an fvi trace, but the terrain cell can) and enables the ceiling check,
+// so it rejects legs into the ground, into a structure, OR up over the invisible outdoor ceiling.
+// The volumetric roadmap uses this for terrain-region node growth, edge probing, and Theta* LOS.
+bool BotSegmentClearOutdoor(const vector &a, const vector &b, float radius);
+
+// The terrain region a roomnum belongs to (0..MAX_BOA_TERRAIN_REGIONS-1), or -1 when it is not an
+// outdoor/terrain roomnum. The roadmap keys its per-region outdoor graph by this.
+int BotOutdoorRegion(int roomnum);
+
+// Lattice ceiling cap for outdoor roadmap growth — keep nodes this far below the outdoor ceiling plane
+// so the local search never routes a bot up into the sky (the no-sky-fly bound, applied at build time).
+float BotOutdoorCeilingCap();
+
 // Probe the hull-radius line obj→target_pos and search for a go-around via-point when an interior
 // face blocks it. target_room = the room target_pos is in (fvi start room for the via→target leg).
 // 12.3: when the ring passes fail, a portal-skeleton hop may be returned instead (an intermediate

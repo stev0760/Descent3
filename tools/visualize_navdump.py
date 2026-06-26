@@ -146,6 +146,18 @@ def main():
             else:        # perimeter anchor
                 svg.append(f'<circle cx="{x:.1f}" cy="{z:.1f}" r="2.5" fill="#ee4" stroke="#000" stroke-width="0.4"/>')
 
+    # 0.9.4 outdoor roadmap (Stage 3): the per-terrain-region airspace lattice, nodes colored by connected
+    # COMPONENT. One color spanning a structure's flyable side = connected go-around coverage (bots can route
+    # around the wall); two colors split by a footprint = a structure the lattice couldn't thread around.
+    for g in d.get("outdoor_roadmap", []):
+        nodes = g.get("nodes", [])
+        comp = g.get("comp", [])
+        palette = ["#5f5", "#f80", "#08f", "#f5f", "#ff5", "#5ff", "#f55", "#8f8", "#c6f", "#fc6"]
+        for k, nd in enumerate(nodes):
+            c = palette[(comp[k] if k < len(comp) else 0) % len(palette)]
+            svg.append(f'<circle cx="{tx(nd[0]):.1f}" cy="{tz(nd[2]):.1f}" r="1.4" '
+                       f'fill="{c}" fill-opacity="0.7"/>')
+
     # Powerups
     for pu in d.get("powerups", []):
         pos = pu.get("pos")

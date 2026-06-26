@@ -4261,6 +4261,38 @@ bool BotNavDump(const char *filename) {
   }
   fprintf(fp, "\n  ],\n");
 
+  // 0.9.4 Stage 3: the per-terrain-region outdoor roadmap — node positions + per-node component id, so
+  // visualize_navdump.py can color the airspace shell around structures by component (one color spanning a
+  // wall's flyable side = connected outdoor coverage — the go-around-the-Bree-wall headline). Built lazily;
+  // reflects the live $gridnav state.
+  fprintf(fp, "  \"outdoor_roadmap\": [\n");
+  {
+    bool first_rgn = true;
+    for (int rg = 0; rg < BOA_num_terrain_regions; rg++) {
+      static vector rrpos[4096];
+      static int rrcomp[4096];
+      int rcc = 0;
+      bool rdeg = false;
+      int rgn_n = BotRoadmapDumpRegion(rg, rrpos, rrcomp, 4096, &rcc, &rdeg);
+      if (rgn_n <= 0)
+        continue;
+      if (!first_rgn)
+        fprintf(fp, ",\n");
+      first_rgn = false;
+      fprintf(fp, "    {\"region\": %d, \"node_count\": %d, \"comp_count\": %d, \"degenerate\": %s,\n", rg,
+              rgn_n, rcc, rdeg ? "true" : "false");
+      fprintf(fp, "      \"nodes\": [");
+      for (int i = 0; i < rgn_n; i++)
+        fprintf(fp, "%s[%.2f,%.2f,%.2f]", i ? "," : "", rrpos[i].x(), rrpos[i].y(), rrpos[i].z());
+      fprintf(fp, "],\n");
+      fprintf(fp, "      \"comp\": [");
+      for (int i = 0; i < rgn_n; i++)
+        fprintf(fp, "%s%d", i ? "," : "", rrcomp[i]);
+      fprintf(fp, "]}");
+    }
+  }
+  fprintf(fp, "\n  ],\n");
+
   fprintf(fp,
           "  \"summary\": {\"passability_disagreements\": %d, \"blocked_portal_legs\": %d, "
           "\"bbox_center_pathpnts\": %d, \"breakable_glass_portals\": %d, \"forcefield_portals\": %d, "
