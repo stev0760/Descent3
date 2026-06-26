@@ -22,7 +22,12 @@ as the per-room fallback (degenerate rooms / disconnected components) and the `$
    deep in solid). Seed from portal `path_pnt`s, accept a lattice cell only when a hull-swept edge reaches
    it from an already-accepted node; a sweep into solid always hits the boundary face → robust by
    construction, and components fall out for free.
-3. **FIXED clearance margin, not speed-scaled** (`BOT_ROADMAP_CLEARANCE` = ~hull 6.676 + fixed ≈ 8.0).
+3. **Clearance is a CONNECTIVITY radius (= ship hull + a sliver), not a flight-safety margin** —
+   `BOT_ROADMAP_CLEARANCE` **7.0** (Pyro hull ~6.676 + a sliver). The original 8.0 baked a "momentum
+   margin" into the edge test, which over-rejected tight passages (a ~7u tavern doorway the hull clears)
+   and falsely fragmented rooms; the engine's avoid-walls owns flight safety, so the graph only needs to
+   ask "does the hull fit." Never set BELOW the hull (the reverted bnode-gen max_rad 5.0 mistake). Fixed,
+   not speed-scaled → one graph at all speeds.
    Keeps the roadmap ONE graph at all speeds — avoids the speed-dependent-edge-cost spiral (§1.6 risk #1
    resolved toward fixed). Tune against observed motion, not graph metrics.
 4. **`$gridnav` default ON** (move-fast call) — the 0.9.3 skeleton stays the degenerate-room fallback, and

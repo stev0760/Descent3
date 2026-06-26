@@ -35,10 +35,13 @@
 // per-room fallback for degenerate rooms, and $gridnav off reproduces 0.9.3 for A/B).
 extern bool Bot_gridnav_enabled;
 
-// Single shared clearance for node growth, edge probing, AND Theta* line-of-sight. ~ship hull (6.676) plus
-// a FIXED momentum margin — deliberately NOT speed-scaled, so the roadmap is ONE graph at all speeds
-// (avoids the speed-dependent-edge-cost spiral). Primary tuning knob; tune against OBSERVED motion.
-#define BOT_ROADMAP_CLEARANCE 8.0f // ~hull 6.676 + ~1.3 fixed margin
+// Single shared clearance for node growth, edge probing, AND Theta* line-of-sight. This is a CONNECTIVITY
+// radius: it must track the ship HULL so the roadmap doesn't falsely reject a passage the ship actually
+// fits through — it is NOT a flight-safety/momentum margin (the engine's avoid-walls owns flight safety).
+// The original 8.0 was over-conservative and falsely fragmented tight rooms (a ~7u tavern doorway the hull
+// clears read as blocked -> disconnected components). Keep it at hull + a sliver, and never BELOW the hull
+// (sub-hull edges route a bot through a gap it doesn't fit — the reverted bnode-gen max_rad 5.0 mistake).
+#define BOT_ROADMAP_CLEARANCE 7.0f // Pyro hull ~6.676 + a sliver; connectivity radius, not a safety margin
 #define BOT_ROADMAP_SPACING 20.0f  // 3D lattice spacing (control-loop param: matches engine arrival/lookahead)
 #define BOT_ROADMAP_MAX_LATTICE 20000 // per-room candidate-cell cap; spacing auto-coarsens past this
 
