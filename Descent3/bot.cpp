@@ -1547,8 +1547,24 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   pgi = -1;
 
   goal_info gi_info{};
-  gi_info.pos = (wp_room == goal_room) ? final_pos : Rooms[wp_room].path_pnt;
-  gi_info.roomnum = wp_room;
+  vector dest = (wp_room == goal_room) ? final_pos : Rooms[wp_room].path_pnt;
+  int dest_room = wp_room;
+  // 0.9.4 Stage 2 ($gridroute): plan the in-room leg over the volumetric grid PROACTIVELY. The raw portal
+  // path_pnt is a single point the engine path-follower stalls on inside a buried-center / multi-level room;
+  // the grid threads the interior to a furthest-visible waypoint instead. Pass wp_room as the target room so
+  // the roadmap routes to the seam toward the next hop (cross-room) or to the destination point (in-room final
+  // hop, wp_room == obj->roomnum). On FOUND, aim the engine at that in-room waypoint; on NONE/degenerate keep
+  // the path_pnt (today's behavior). Indoor only — outdoors the region roadmap already runs via the reactive
+  // BotViaPointTick above. Carriers share this function, so this is also the "escape out of the structure" fix.
+  if (Bot_gridnav_enabled && Bot_gridroute_enabled && !OBJECT_OUTSIDE(obj)) {
+    vector gvia;
+    if (BotRoadmapFindVia(obj, dest, wp_room, &gvia) == BOT_VIA_FOUND) {
+      dest = gvia;
+      dest_room = obj->roomnum; // the grid waypoint is reachable from the bot's current room
+    }
+  }
+  gi_info.pos = dest;
+  gi_info.roomnum = dest_room;
   pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
   Bots[bot_index].explore_dest_room = wp_room;
   Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;

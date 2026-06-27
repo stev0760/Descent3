@@ -51,6 +51,30 @@ extern bool Bot_gridnav_enabled;
 #define BOT_ROADMAP_BRIDGE_LEN 55.0f       // max cross-component gap to attempt bridging (catches ~40-45u splits)
 #define BOT_ROADMAP_BRIDGE_MAX_NODES 1200  // skip the O(n^2) bridge scan above this (huge rooms are ~1 component)
 
+// Corner-rounding component bridge (Stage 3.5 prototype, $gridbridge). The straight bridge above only spans
+// a gap a SINGLE hull-clear segment crosses; it cannot connect two components split by a WALL whose only link
+// is a lateral go-around — the Bree-tavern class: the open-air component vs. the door-approach pocket, divided
+// by the structure facade. This pass inserts ONE intermediate vertex M swept off the A-B midline (laterally to
+// round the wall's end, or vertically to clear over the top) so both legs A->M and M->B are hull-clear. It is
+// probe-gated like the straight bridge — a fully enclosed pocket with no flyable corner stays split (correct).
+// A spatial hash + attempt budget bound it on the large OUTDOOR regions the node-capped straight bridge skips
+// (that skip is exactly why outdoor regions stayed at 2-3 components and the Bree entrance went unbridged).
+#define BOT_ROADMAP_CORNER_LEN 220.0f        // max straight A-B span (endpoints) to attempt corner-rounding
+#define BOT_ROADMAP_CORNER_OFFSET_MAX 120.0f // max lateral/vertical midpoint offset swept to find the open corner
+#define BOT_ROADMAP_CORNER_MAX_ATTEMPTS 240  // cap corner-insertion attempts per build (closest pairs first)
+
+extern bool Bot_roadmap_corner_enabled; // $gridbridge — corner-rounding component bridge (Stage 3.5 prototype)
+
+// Stage 2 ($gridroute, prototype): route the in-room leg of objective/carrier nav over the volumetric grid
+// PROACTIVELY, not just reactively when a straight line is blocked. Today the router (BotSetRoutedGoal) aims
+// the engine at the raw portal path_pnt of the next room; in a buried-center / multi-level room the engine
+// path-follower stalls flying to that single point, and the reactive via only engages if the LINE happens to
+// be blocked — so normal in-room traversal (and a carrier's escape OUT of a structure) gets no grid help even
+// though the grid has the interior nodes to plan it. With this on, the router asks the roadmap for a
+// furthest-visible waypoint toward the destination and aims there, falling back to the path_pnt when the room
+// roadmap is degenerate. Indoor only (outdoor already routes its region roadmap via the reactive path).
+extern bool Bot_gridroute_enabled;
+
 // Stage 3 (outdoor): the SAME roadmap grown over a terrain REGION's airspace, so the local search threads
 // laterally around outdoor structures (the Bree-wall class) instead of beelining into them. Seeds = the
 // region's BOA_connect door approach points; the lattice extent = the region's structure bboxes expanded

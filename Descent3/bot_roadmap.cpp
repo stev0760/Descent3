@@ -49,7 +49,9 @@
 #include <unordered_map>
 #include <vector>
 
-bool Bot_gridnav_enabled = true; // $gridnav — default ON for 0.9.4
+bool Bot_gridnav_enabled = true;        // $gridnav — default ON for 0.9.4
+bool Bot_roadmap_corner_enabled = true; // $gridbridge — corner-rounding component bridge (Stage 3.5 prototype)
+bool Bot_gridroute_enabled = true;      // $gridroute — proactive in-room grid planning for objective/carrier nav
 
 namespace {
 
@@ -263,6 +265,124 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
       }
       if (bridged) {
         LOG_DEBUG.printf("BOT: roadmap %s %d: bridged %d component gaps", kind, id, bridged);
+      }
+    }
+  }
+
+  // 2b. Corner-rounding bridge (Stage 3.5 prototype, $gridbridge). The straight bridge above connects only
+  // gaps a single hull-clear segment spans, and it is node-capped (skipped on the big outdoor regions) — which
+  // is precisely why outdoor regions stayed at 2-3 components and the Bree door went unbridged. This pass
+  // connects components whose only link is a lateral GO-AROUND by inserting ONE swept midpoint vertex so the
+  // two legs round the wall's end (or clear over the top). It is hull-probe-gated (a sealed pocket stays
+  // split) and bounded by a spatial hash + attempt budget, so it runs regardless of node count.
+  if (Bot_roadmap_corner_enabled) {
+    const int N0 = (int)rr->node.size();
+    int root0 = UFFind(uf, 0);
+    bool multi = false;
+    for (int i = 1; i < N0 && !multi; i++)
+      if (UFFind(uf, i) != root0)
+        multi = true;
+    if (multi) {
+      // Spatial hash (cell = CORNER_LEN) → gather cross-component pairs within CORNER_LEN without an O(n^2)
+      // scan over the large outdoor node sets.
+      const float cell = BOT_ROADMAP_CORNER_LEN;
+      auto Pack = [](int a, int b, int c) -> int64_t {
+        return ((int64_t)(a & 0x1FFFFF) << 42) | ((int64_t)(b & 0x1FFFFF) << 21) | (int64_t)(c & 0x1FFFFF);
+      };
+      auto KeyOf = [&](const vector &p) -> int64_t {
+        return Pack((int)std::floor(p.x() / cell), (int)std::floor(p.y() / cell), (int)std::floor(p.z() / cell));
+      };
+      std::unordered_map<int64_t, std::vector<int>> grid;
+      grid.reserve(N0 * 2);
+      for (int i = 0; i < N0; i++)
+        grid[KeyOf(rr->node[i])].push_back(i);
+
+      std::vector<std::tuple<float, int, int>> cand;
+      for (int i = 0; i < N0; i++) {
+        int bx = (int)std::floor(rr->node[i].x() / cell), by = (int)std::floor(rr->node[i].y() / cell),
+            bz = (int)std::floor(rr->node[i].z() / cell);
+        for (int dx = -1; dx <= 1; dx++)
+          for (int dy = -1; dy <= 1; dy++)
+            for (int dz = -1; dz <= 1; dz++) {
+              auto it = grid.find(Pack(bx + dx, by + dy, bz + dz));
+              if (it == grid.end())
+                continue;
+              for (int j : it->second) {
+                if (j <= i || UFFind(uf, i) == UFFind(uf, j))
+                  continue;
+                float d = Dist(rr->node[i], rr->node[j]);
+                if (d <= BOT_ROADMAP_CORNER_LEN)
+                  cand.emplace_back(d, i, j);
+              }
+            }
+      }
+      std::sort(cand.begin(), cand.end()); // closest pairs first (the natural gap mouths)
+
+      int bridged = 0, attempts = 0;
+      for (auto &c : cand) {
+        if (attempts >= BOT_ROADMAP_CORNER_MAX_ATTEMPTS)
+          break;
+        int i = std::get<1>(c), j = std::get<2>(c);
+        if (UFFind(uf, i) == UFFind(uf, j))
+          continue; // merged transitively by an earlier bridge
+        attempts++;
+        const vector A = rr->node[i], B = rr->node[j];
+
+        // Direct edge first (subsumes the straight bridge for the big outdoor N its node cap skipped).
+        if (RoadmapLOS(rr, A, B)) {
+          rr->adj[i].push_back(j);
+          rr->adj[j].push_back(i);
+          UFUnion(uf, i, j);
+          bridged++;
+          continue;
+        }
+
+        // Sweep a midpoint laterally (perp to A-B in the horizontal plane) and vertically to round the corner.
+        const vector ab = B - A;
+        vector mid = (A + B) * 0.5f;
+        vector up;
+        up.x() = 0.0f;
+        up.y() = 1.0f;
+        up.z() = 0.0f;
+        vector perp;
+        vm_CrossProduct(&perp, &ab, &up);
+        if (vm_NormalizeVector(&perp) < 0.01f) {
+          perp.x() = 1.0f; // A-B is vertical: pick an arbitrary horizontal perpendicular
+          perp.y() = 0.0f;
+          perp.z() = 0.0f;
+        }
+        vector axes[2] = {perp, up};
+        const float signs[2] = {1.0f, -1.0f};
+        bool found = false;
+        vector M;
+        for (float off = sp; off <= BOT_ROADMAP_CORNER_OFFSET_MAX && !found; off += sp)
+          for (int ax = 0; ax < 2 && !found; ax++)
+            for (int sg = 0; sg < 2 && !found; sg++) {
+              vector cm = mid + axes[ax] * (off * signs[sg]);
+              if (RoadmapLOS(rr, A, cm) && RoadmapLOS(rr, cm, B)) {
+                M = cm;
+                found = true;
+              }
+            }
+        if (!found)
+          continue;
+
+        int w = (int)rr->node.size();
+        rr->node.push_back(M);
+        rr->adj.emplace_back();
+        rr->tweight.push_back(0.0f);
+        uf.push_back(w);
+        rr->adj[i].push_back(w);
+        rr->adj[w].push_back(i);
+        rr->adj[j].push_back(w);
+        rr->adj[w].push_back(j);
+        UFUnion(uf, i, w);
+        UFUnion(uf, j, w);
+        rr->lattice_nodes++; // the inserted waypoint is real navigable coverage
+        bridged++;
+      }
+      if (bridged) {
+        LOG_DEBUG.printf("BOT: roadmap %s %d: corner-bridged %d (%d attempts)", kind, id, bridged, attempts);
       }
     }
   }

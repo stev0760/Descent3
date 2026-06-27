@@ -953,6 +953,33 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     return true;
   }
 
+  if (stricmp(command, "gridbridge") == 0) {
+    if (stricmp(operand, "on") == 0) {
+      Bot_roadmap_corner_enabled = true;
+      PrintDedicatedMessage("Corner-rounding component bridge (Stage 3.5) ON\n");
+    } else if (stricmp(operand, "off") == 0) {
+      Bot_roadmap_corner_enabled = false;
+      PrintDedicatedMessage("Corner-rounding component bridge OFF\n");
+    } else {
+      PrintDedicatedMessage("Usage: $gridbridge on|off  (current: %s)\n",
+                            Bot_roadmap_corner_enabled ? "on" : "off");
+    }
+    return true;
+  }
+
+  if (stricmp(command, "gridroute") == 0) {
+    if (stricmp(operand, "on") == 0) {
+      Bot_gridroute_enabled = true;
+      PrintDedicatedMessage("Proactive in-room grid routing (Stage 2) ON\n");
+    } else if (stricmp(operand, "off") == 0) {
+      Bot_gridroute_enabled = false;
+      PrintDedicatedMessage("Proactive in-room grid routing OFF (reactive-only)\n");
+    } else {
+      PrintDedicatedMessage("Usage: $gridroute on|off  (current: %s)\n", Bot_gridroute_enabled ? "on" : "off");
+    }
+    return true;
+  }
+
   if (stricmp(command, "botdifficulty") == 0) {
     if (!operand[0]) {
       PrintDedicatedMessage("Usage: $botdifficulty <index|all> <level>\n");
