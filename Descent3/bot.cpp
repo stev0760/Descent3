@@ -1558,7 +1558,7 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   // BotViaPointTick above. Carriers share this function, so this is also the "escape out of the structure" fix.
   if (Bot_gridnav_enabled && Bot_gridroute_enabled && !OBJECT_OUTSIDE(obj)) {
     vector gvia;
-    if (BotRoadmapFindVia(obj, dest, wp_room, &gvia) == BOT_VIA_FOUND) {
+    if (BotRoadmapFindVia(obj, dest, wp_room, &gvia, /*proactive=*/true) == BOT_VIA_FOUND) {
       dest = gvia;
       dest_room = obj->roomnum; // the grid waypoint is reachable from the bot's current room
     }

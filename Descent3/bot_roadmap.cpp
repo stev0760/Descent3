@@ -63,6 +63,8 @@ struct RoadmapRoom {
   std::vector<float> tweight;          // tactical weight — flanking hook (Stage 5), unused now
   std::vector<int> portal_seed;        // portal index -> node index of its seam seed (indoor; size = num_portals)
   int comp_count = 0;
+  int orig_comp_count = 0;             // components BEFORE the bridges merged them — the room-complexity signal
+                                       // the proactive router gates on (>1 = fragmented interior = needs the grid)
   int lattice_nodes = 0;               // accepted lattice cells (0 => degenerate: no interior coverage gained)
   bool degenerate = false;             // no usable interior roadmap -> caller falls back to the skeleton
   bool outdoor = false;                // false: indoor room (probe from probe_room); true: terrain region
@@ -225,6 +227,17 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
           rr->lattice_nodes++;
           q.push(w);
         }
+  }
+
+  // Capture the PRE-BRIDGE component count (the room-complexity signal the proactive router gates on): how
+  // fragmented growth left the interior BEFORE the bridges merge it. >1 = geometric separation that direct
+  // portal-path routing stalls on -> the room earns proactive grid routing; ==1 = simple room -> direct
+  // reactive routing only (proactively grid-routing it just adds indirection — the soak-measured easy-pool dip).
+  {
+    std::unordered_map<int, int> roots;
+    for (int i = 0; i < (int)rr->node.size(); i++)
+      roots[UFFind(uf, i)] = 1;
+    rr->orig_comp_count = (int)roots.size();
   }
 
   // 2. Component bridge (GRID_NAV_DESIGN section 4 step 5). Grow-from-seed leaves the interior as several
@@ -407,8 +420,9 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
   // the seeds, so defer to the 0.9.3 skeleton (indoor) / connecting graph (outdoor).
   rr->degenerate = (rr->lattice_nodes == 0);
 
-  LOG_DEBUG.printf("BOT: roadmap %s %d: %d nodes (%d seeds + %d lattice), %d comps, sp=%.0f%s", kind, id, N,
-                   n_seed, rr->lattice_nodes, rr->comp_count, sp, rr->degenerate ? " [DEGENERATE]" : "");
+  LOG_DEBUG.printf("BOT: roadmap %s %d: %d nodes (%d seeds + %d lattice), %d comps, sp=%.0f%s%s", kind, id, N,
+                   n_seed, rr->lattice_nodes, rr->comp_count, sp, rr->degenerate ? " [DEGENERATE]" : "",
+                   rr->orig_comp_count > 1 ? " [COMPLEX]" : "");
 }
 
 // Build the per-room volumetric roadmap (indoor). room_idx must be a valid interior room.
@@ -662,13 +676,23 @@ BotViaResult QueryVia(RoadmapRoom *rr, object *obj, int goal, vector *via_out) {
 
 } // namespace
 
-BotViaResult BotRoadmapFindVia(object *obj, const vector &target_pos, int target_room, vector *via_out) {
+BotViaResult BotRoadmapFindVia(object *obj, const vector &target_pos, int target_room, vector *via_out,
+                               bool proactive) {
   if (!obj || OBJECT_OUTSIDE(obj))
     return BOT_VIA_NONE; // outdoor uses BotRoadmapFindViaOutdoor
   const int room_idx = obj->roomnum;
   RoadmapRoom *rr = Get(room_idx);
   if (!rr || rr->degenerate)
     return BOT_VIA_NONE; // no usable interior roadmap -> 0.9.3 skeleton fallback
+
+  // Selective gate (the $gridroute gate): a PROACTIVE call (objective/carrier routing, NOT a reactive blocked
+  // line) only engages in a COMPLEX room — one whose airspace fragmented before the bridges merged it. Simple
+  // single-component rooms route fine on the direct portal path_pnt; proactively grid-routing them just adds
+  // indirection (the soak-measured easy-pool regression: gollums/darkjourney recovered with gridroute off,
+  // khazaddum's divider rooms collapsed). Reactive calls (proactive=false) always run — a blocked line in a
+  // simple room still needs a go-around.
+  if (proactive && rr->orig_comp_count <= 1)
+    return BOT_VIA_NONE;
 
   // Goal node: the nearest node to an in-room target, or the seam node toward the next room.
   int goal = -1;

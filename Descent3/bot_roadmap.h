@@ -41,7 +41,12 @@ extern bool Bot_gridnav_enabled;
 // The original 8.0 was over-conservative and falsely fragmented tight rooms (a ~7u tavern doorway the hull
 // clears read as blocked -> disconnected components). Keep it at hull + a sliver, and never BELOW the hull
 // (sub-hull edges route a bot through a gap it doesn't fit — the reverted bnode-gen max_rad 5.0 mistake).
-#define BOT_ROADMAP_CLEARANCE 7.0f // Pyro hull ~6.676 + a sliver; connectivity radius, not a safety margin
+// Pyro hull ~6.676. This is a pure FIT radius (connectivity), NOT a flight-safety margin — the engine's
+// avoid-walls owns flight safety. 7.0 still over-rejected the tightest real doorways (the townofbree tavern
+// BASEMENT door, where the blue key lives — a bot/player can barely fit → grid sealed the room → via-dance +
+// "sealed" powerup abandons in room 60). Dropped to a hair over the hull so a gap the ship physically clears
+// is accepted. NEVER set below the hull (the reverted bnode-gen max_rad 5.0 routed bots into gaps they jam in).
+#define BOT_ROADMAP_CLEARANCE 6.7f // hull 6.676 + 0.024 sliver — fit radius, not a safety margin
 #define BOT_ROADMAP_SPACING 20.0f  // 3D lattice spacing (control-loop param: matches engine arrival/lookahead)
 #define BOT_ROADMAP_MAX_LATTICE 20000 // per-room candidate-cell cap; spacing auto-coarsens past this
 
@@ -88,7 +93,13 @@ extern bool Bot_gridroute_enabled;
 // BOT_VIA_FOUND (+ *via_out = furthest-visible vertex on the any-angle path) on success, or BOT_VIA_NONE
 // when the room has no usable roadmap / start & goal are in different components — the caller then falls
 // back to the 0.9.3 skeleton. Indoor only; outdoor is Stage 3.
-BotViaResult BotRoadmapFindVia(object *obj, const vector &target_pos, int target_room, vector *via_out);
+//
+// `proactive` = the selective gridroute gate. When true (objective/carrier routing, not a reactive blocked
+// line), the call returns NONE in a SIMPLE single-component room — only COMPLEX rooms (airspace fragmented
+// before the bridges merged it) earn proactive grid routing; simple rooms route fine on the direct path_pnt.
+// Reactive callers leave it false (a blocked line always needs a go-around regardless of room complexity).
+BotViaResult BotRoadmapFindVia(object *obj, const vector &target_pos, int target_room, vector *via_out,
+                               bool proactive = false);
 
 // Stage 3 query (outdoor). Route the bot's terrain REGION over its volumetric roadmap toward target_pos,
 // threading laterally around structures. Same any-angle Lazy Theta* + furthest-visible delivery as the
