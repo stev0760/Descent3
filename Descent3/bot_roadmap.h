@@ -70,6 +70,14 @@ extern bool Bot_gridnav_enabled;
 
 extern bool Bot_roadmap_corner_enabled; // $gridbridge — corner-rounding component bridge (Stage 3.5 prototype)
 
+// Selective gridroute complexity gate (the floor that fixes the tiny-room false positive). A room earns
+// PROACTIVE grid routing only if BOTH: (a) its airspace fragmented before the bridges merged it
+// (orig_comp_count>1 = non-convex / multi-level), AND (b) it has real interior volume (>= this many accepted
+// lattice nodes). Without the floor, a small room whose few portal seeds growth couldn't connect but the
+// BRIDGE did reads "fragmented" and over-routes (skybox anarchy: trivial 1-6-lattice rooms tagged complex).
+// Genuinely complex rooms (khazaddum divider, the Bree tavern) carry 32+ lattice; simple rooms ≤14 — gap at ~24.
+#define BOT_ROADMAP_COMPLEX_MIN_LATTICE 24
+
 // Stage 2 ($gridroute, prototype): route the in-room leg of objective/carrier nav over the volumetric grid
 // PROACTIVELY, not just reactively when a straight line is blocked. Today the router (BotSetRoutedGoal) aims
 // the engine at the raw portal path_pnt of the next room; in a buried-center / multi-level room the engine

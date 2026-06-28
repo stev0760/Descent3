@@ -63,8 +63,9 @@ struct RoadmapRoom {
   std::vector<float> tweight;          // tactical weight — flanking hook (Stage 5), unused now
   std::vector<int> portal_seed;        // portal index -> node index of its seam seed (indoor; size = num_portals)
   int comp_count = 0;
-  int orig_comp_count = 0;             // components BEFORE the bridges merged them — the room-complexity signal
-                                       // the proactive router gates on (>1 = fragmented interior = needs the grid)
+  int orig_comp_count = 0;             // components BEFORE the bridges merged them (>1 = non-convex / multi-level)
+  bool complex = false;                // proactive grid routing gate: orig_comp_count>1 AND a lattice-node floor
+                                       // (fragmented AND real interior volume — rejects the tiny-room false positive)
   int lattice_nodes = 0;               // accepted lattice cells (0 => degenerate: no interior coverage gained)
   bool degenerate = false;             // no usable interior roadmap -> caller falls back to the skeleton
   bool outdoor = false;                // false: indoor room (probe from probe_room); true: terrain region
@@ -420,9 +421,13 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
   // the seeds, so defer to the 0.9.3 skeleton (indoor) / connecting graph (outdoor).
   rr->degenerate = (rr->lattice_nodes == 0);
 
+  // Complexity gate: fragmented before bridging AND real interior volume (the lattice floor rejects the
+  // tiny-room false positive where the bridge — not growth — connected a few sparse portal seeds).
+  rr->complex = (rr->orig_comp_count > 1 && rr->lattice_nodes >= BOT_ROADMAP_COMPLEX_MIN_LATTICE);
+
   LOG_DEBUG.printf("BOT: roadmap %s %d: %d nodes (%d seeds + %d lattice), %d comps, sp=%.0f%s%s", kind, id, N,
                    n_seed, rr->lattice_nodes, rr->comp_count, sp, rr->degenerate ? " [DEGENERATE]" : "",
-                   rr->orig_comp_count > 1 ? " [COMPLEX]" : "");
+                   rr->complex ? " [COMPLEX]" : "");
 }
 
 // Build the per-room volumetric roadmap (indoor). room_idx must be a valid interior room.
@@ -691,7 +696,7 @@ BotViaResult BotRoadmapFindVia(object *obj, const vector &target_pos, int target
   // indirection (the soak-measured easy-pool regression: gollums/darkjourney recovered with gridroute off,
   // khazaddum's divider rooms collapsed). Reactive calls (proactive=false) always run — a blocked line in a
   // simple room still needs a go-around.
-  if (proactive && rr->orig_comp_count <= 1)
+  if (proactive && !rr->complex)
     return BOT_VIA_NONE;
 
   // Goal node: the nearest node to an in-room target, or the seam node toward the next room.
