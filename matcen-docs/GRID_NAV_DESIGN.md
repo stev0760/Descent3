@@ -8,10 +8,18 @@
 > read `project_bnode_generation.md` / `project_pseudo_bnodes.md` (memory) for the hard-won lessons this
 > spec must honor.
 
-**Status:** **Stage 1 IN PROGRESS — `0.9.4-dev` (UNTESTED).** The per-room volumetric roadmap + Lazy Theta\*
-query is built (`Descent3/bot_roadmap.cpp`, toggle `$gridnav`) and wired into `BotFindViaPoint`; pending the
-Stage 1 clean-motion gate (townofbree room 60 / room 61). The stable **0.9.3** Phase 12 skeleton stays live
-as the per-room fallback (degenerate rooms / disconnected components) and the `$gridnav off` A/B baseline.
+**Status:** **SHIPPED — Matcen `0.9.4` (validated).** Stages 1+3 are in: the per-room **and** per-terrain-region
+volumetric roadmap + Lazy Theta\* (`Descent3/bot_roadmap.cpp`, `$gridnav`), hull-aware connectivity
+(corner-bridging across wall-split components `$gridbridge`; clearance dropped to **6.7u**), and **selective**
+proactive in-room routing (`$gridroute`, gated to genuinely complex rooms — `orig_comp_count>1` AND ≥24 lattice
+nodes) driving objective, carrier, and `!follow`-escort nav. A 9-map Fellowship soak measured **captures +58%
+vs 0.9.3** (best build to date). The 0.9.3 Phase 12 skeleton stays live as the per-room fallback (degenerate
+rooms / disconnected components) and the `$gridnav off` A/B baseline. **Stage 2 (full HPA\*) arrived early via the
+selective gridroute gate.** Open/deferred (see `NAVIGATION.md` §7.0): Stage 4 (retire the old substrate), thin-room
+densification (khazaddum disconnected dividers), and a **known growth-probe over-reach** — `ViaSegmentClear` can
+place a static hull sphere into a sealed pocket over a lattice step (nysa room-41 decoration Megas read reachable),
+handled by the evidence-based troll-powerup backstop; a stricter probe was deferred as too risky to the
+connectivity gains. Stage 5 (flanking weights) still pending.
 
 **Decisions locked for the build (deviations/sharpenings from §4 below — all deliberate):**
 1. **Local search = Lazy Theta\*** (any-angle), not grid-Dijkstra-then-smooth — straight segments by

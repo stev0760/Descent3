@@ -5,15 +5,15 @@
 > `NAV_CONSOLIDATION.md` pile (now folded in — see §8 History). Deep engine research lives in
 > `PATHFINDING_CODEBASE_EXPLORE.md`; per-frame field/constant detail in `BOT_DEV_REFERENCE.md`.
 
-**Status:** Matcen 0.9.3 (stable, pinned). Two-layer architecture (Phase 10) + cost-aware Dijkstra router
-(Phase 11) + the Phase 12 in-room / outdoor go-around stack (via-points, pseudo-bnodes, outdoor connecting
-graph, soft-hop bridge). This is the validated "good-enough" navigation baseline — bots reach objectives
-across the map pool. **The next milestone, 0.9.4, is a ground-up navigation rewrite: a volumetric
-grid-seeded roadmap with hierarchical routing — see `GRID_NAV_DESIGN.md`** (the canonical 0.9.4 spec; it
-supersedes the per-room portal skeleton + outdoor connecting graph below once landed). **For the live
-current-status snapshot — toggle states, priority-ordered open issues, and the tried-&-reverted ledger —
-see §7.0** (kept current per soak). The narrative sections below are the design rationale; §7.0 is "what's
-true right now."
+**Status:** Matcen 0.9.4 (current — the volumetric grid-roadmap milestone). The ground-up nav rewrite
+(`GRID_NAV_DESIGN.md`) shipped: a per-room/per-region grid-seeded volumetric roadmap routed with any-angle
+Lazy Theta\*, hull-aware (6.7u fit clearance + corner-bridging across wall-split components), with **selective**
+proactive in-room routing (gated to genuinely complex rooms) driving objective, carrier, and escort nav. A
+9-map Fellowship soak measured **captures +58% vs 0.9.3** (best build to date). The Phase 10–12 stack below
+(two-layer architecture + cost-aware Dijkstra router + portal skeleton / pseudo-bnodes / outdoor connecting
+graph) remains live as the `$gridnav off` fallback and is the design rationale for the substrate. **For the
+live current-status snapshot — toggle states, open issues, and the tried-&-reverted ledger — see §7.0** (kept
+current per soak). The narrative sections below are the design rationale; §7.0 is "what's true right now."
 
 ---
 
@@ -384,7 +384,7 @@ BOA — a bug (the router would be silently overriding BOA everywhere), not a fe
 
 ## 7. Open problems (roadmap)
 
-### 7.0 Current status snapshot — 2026-06-22 (0.9.3 STABLE pinned; 0.9.4 grid-roadmap rewrite next)
+### 7.0 Current status snapshot — 2026-06-28 (0.9.4 SHIPPED — volumetric grid-roadmap milestone)
 
 *A scannable checkpoint so we stop re-deriving state. Update the date + toggle table + ledger whenever a soak
 or a toggle default changes. The narrative subsections below explain the "why"; this is the "what, right now."*
@@ -409,17 +409,40 @@ or a toggle default changes. The narrative subsections below explain the "why"; 
 | `$outdoorvia` | ON | 12.6 A | validated net-positive (reactive ring, ceiling-aware) |
 | `$outdoorgraph` | ON | 12.6 B | validated net-positive (13.5h soak: 0 crashes, captures +30%) |
 | `$navbridge` | ON | 12.7 | **mechanism validated, PARTIAL** — kills dead-ends but not yet a crossing (see #1) |
-| `$gridnav` | **ON** | 0.9.4 S1 | **NEW, UNTESTED** — volumetric grid roadmap + Lazy Theta\* (replaces the skeleton via-pass indoors; degenerate rooms fall back to the skeleton). `off` = 0.9.3. See `GRID_NAV_DESIGN.md`. |
+| `$gridnav` | **ON** | 0.9.4 | **VALIDATED** — volumetric grid roadmap + Lazy Theta\* (replaces the skeleton via-pass indoors; degenerate rooms fall back to the skeleton). `off` = 0.9.3. See `GRID_NAV_DESIGN.md`. |
+| `$gridbridge` | **ON** | 0.9.4 | **VALIDATED** — corner-rounding component bridge (one swept midpoint to connect components split by a wall; hull-gated, spatial-hashed). Collapsed townofbree/khazaddum dividers. |
+| `$gridroute` | **ON** | 0.9.4 | **VALIDATED** — proactive in-room grid routing, gated to genuinely complex rooms (`orig_comp_count>1` AND ≥24 lattice nodes). Fellowship soak: overall captures +58% vs 0.9.3, khazaddum 0.2→1.0. Also drives carrier + `!follow`/`!cover`/`!hold` escort nav. |
 
 (`$softfollow` was **removed** — see ledger; do not re-add as target-line early-release.)
 
-> **0.9.4-dev Stage 1 landed (2026-06-23, UNTESTED).** The grid-roadmap substrate (`bot_roadmap.cpp`) is
-> built and wired behind `$gridnav` (default ON); the skeleton/pseudo-bnode stack below stays live as the
-> per-room fallback and the `$gridnav off` baseline. Pending the Stage 1 clean-motion gate (townofbree room
-> 60/61). Once Stages 1–4 validate, this whole §7.0 Phase-12 stack is what gets deleted (`GRID_NAV_DESIGN.md`
-> Stage 4).
+> **0.9.4 SHIPPED (2026-06-28).** The volumetric grid-roadmap rewrite is in and validated (`$gridnav`/
+> `$gridbridge`/`$gridroute`, all ON). Indoor + outdoor roadmap (Stages 1+3), corner-bridging across
+> wall-split components, a 6.7u hull-fit clearance, and **selective** proactive in-room routing (engaged only
+> in genuinely complex rooms — `orig_comp_count>1` AND ≥24 lattice nodes — so simple maps keep direct routing).
+> The same router drives objective, carrier, and `!follow`/`!cover`/`!hold` escort nav. A 9-map Fellowship soak
+> measured **overall captures +58% vs 0.9.3** (best build to date; khazaddum 0.2→1.0, several maps at career
+> highs). The 0.9.3 skeleton/pseudo-bnode stack below stays live as the `$gridnav off` fallback for degenerate
+> rooms. More live testing is ongoing.
 
-**Open issues, priority-ordered:**
+**Open issues (0.9.4):**
+
+0. **[OPEN — deferred] Thin-geometry disconnected rooms.** khazaddum's divider rooms are *thin* (room 13 = 5
+   nodes) and stay genuinely 2-component after bridging; the lattice is too sparse to route across, and the
+   roadmap can't cross disconnected components. No global gate change recovers it without re-breaking the easy
+   pool (shirebaggins has 22 such tiny fragmented rooms). Fix = a dedicated **thin-room densification** pass —
+   its own track, not a gate tweak. khazaddum remains a chronically-marginal outlier (caps noisy near 0).
+0a. **[OPEN — minor, self-healing] Roadmap growth over-reach into sealed pockets.** On maps with a sealed
+   sub-structure a ship can't enter (nysa room 41's 4 decoration Megas, walled by sub-ship slits), the
+   hull-swept growth probe (`ViaSegmentClear`) can place a *static* sphere into the pocket over a lattice step,
+   so the lattice grows in and *every* geometric reachability check (roadmap, navdump verdict) reads it as
+   reachable — bots chase it briefly. Handled by the **evidence-based troll-powerup backstop** (repeat
+   chase-timeouts retire the item level-wide). A stricter growth probe was **deferred** — too risky to the
+   connectivity gains for a minor, self-healing issue.
+0b. **[OPEN — approach precision] Tight-doorway threading.** A door barely wider than the hull (townofbree
+   tavern basement) is now *routable* (6.7u clearance) but the engine path-follower still struggles to *thread*
+   it cleanly. Reachability solved; fine-approach piloting is the edge.
+
+**Superseded Phase-12 issues (historical — the 0.9.4 roadmap is the resolution for #1/#2; kept for context):**
 
 1. **[HEADLINE — soft-hop PARTIAL win] Indoor 2-component rooms.** khazaddum 20/31 + townofbree 60: pseudo-
    bnode skeleton has two disconnected portal sub-graphs (`buried=0`, open center, BFS dead-ends across a
