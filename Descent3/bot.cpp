@@ -1159,6 +1159,7 @@ static void BotDoStuckClear(int bot_index) {
 static vector BotGetActiveSteerPoint(object *obj, const vector &goal_pos, int goal_room, int *steer_room);
 static int BotViaPointTick(int bot_index, const vector &target_pos, int target_room, int &goal_slot,
                            BotViaResult *verdict_out);
+static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_pos, bool *reissued);
 
 // Stage 6: shared BLOCKED detection for anchored orders. Marks progress whenever the bot has
 // moved BOT_ORDER_PROGRESS_EPS since the last mark (any direction — via dance legs count); after
@@ -1261,29 +1262,46 @@ static bool BotNavigateToFollowTarget(int bot_index) {
   if (Bots[bot_index].order_state == ORDER_ON_STATION)
     Bots[bot_index].order_state = ORDER_EN_ROUTE; // player moved off — resume silently
 
-  // 12.2d: interior-obstacle go-around for the escort branch — !follow's original use case is
-  // extracting a wedged bot, which needs the same via support as explore nav (navmapping10:
-  // Shadow stayed pinned in abend2 room 30 through an entire FOLLOW because this was missing).
-  bool via_active = false;
-  {
+  // Far/close split — the responsiveness fix. CLOSE + LOS = beeline (the tight-escort + wedged-bot rescue
+  // case), with the reactive via go-around if an interior face blocks the straight line. FAR or out of sight =
+  // route there over the SAME cost-aware Dijkstra + grid roadmap the carrier uses (BotSetRoutedGoal), instead
+  // of handing the engine a raw GET_TO_OBJ it can't path on a BNODE-less MP map — that engine fallback was the
+  // "follow feels unresponsive across the map" regression. Outdoor legs (bot or target outside the mine) keep
+  // the engine track + terrain steering: the room router (BotComputeRoute) indexes interior rooms only.
+  int tgt_room = OBJECT_OUTSIDE(tgt_obj) ? -1 : (int)tgt_obj->roomnum;
+  bool routed = false;
+
+  if (BotHasLOS(obj, tgt_obj) && dist < BOT_FOLLOW_BEELINE_DIST) {
+    // Close + line of sight: beeline. Via tick first (round a blocking face — the wedged-bot rescue), else
+    // GET_TO the offset station (same room = formation spacing) or the player (in LOS through a portal).
     int steer_room = -1;
-    vector steer_pos =
-        BotGetActiveSteerPoint(obj, tgt_obj->pos, OBJECT_OUTSIDE(tgt_obj) ? -1 : (int)tgt_obj->roomnum, &steer_room);
-    via_active = BotViaPointTick(bot_index, steer_pos, steer_room, pgi, nullptr) != 0;
-  }
-
-  if (!via_active) {
-    if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
-      GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
-
-    if (dist < BOT_ESCORT_STATION_DIST * 2.5f && obj->roomnum == tgt_obj->roomnum) {
-      // Close + same room: steer at the offset station for formation spacing
-      goal_info gi_info{};
-      gi_info.pos = station;
-      gi_info.roomnum = obj->roomnum;
-      pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
-    } else {
-      // Far / different room: track the player object (engine follows the moving target)
+    vector steer_pos = BotGetActiveSteerPoint(obj, tgt_obj->pos, tgt_room, &steer_room);
+    if (BotViaPointTick(bot_index, steer_pos, steer_room, pgi, nullptr) == 0) {
+      if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+        GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+      if (tgt_room >= 0 && (int)obj->roomnum == tgt_room) {
+        goal_info gi_info{};
+        gi_info.pos = station;
+        gi_info.roomnum = obj->roomnum;
+        pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
+      } else {
+        int tgt_handle = tgt_obj->handle;
+        pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f, GF_SPEED_ATTACK | GF_OBJ_IS_TARGET);
+      }
+    }
+  } else if (!OBJECT_OUTSIDE(obj) && tgt_room >= 0) {
+    // Far + both interior: route over our Dijkstra + grid roadmap (carrier-grade). Recomputed each tick from
+    // the bot's current room, so it tracks the moving player; goal = the player's room + position.
+    bool reissued = false;
+    BotSetRoutedGoal(bot_index, tgt_room, tgt_obj->pos, &reissued);
+    routed = true;
+  } else {
+    // Outdoor leg: engine tracks the moving player; terrain steering + via handle the local geometry.
+    int steer_room = -1;
+    vector steer_pos = BotGetActiveSteerPoint(obj, tgt_obj->pos, tgt_room, &steer_room);
+    if (BotViaPointTick(bot_index, steer_pos, steer_room, pgi, nullptr) == 0) {
+      if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+        GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
       int tgt_handle = tgt_obj->handle;
       pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f, GF_SPEED_ATTACK | GF_OBJ_IS_TARGET);
     }
@@ -1292,8 +1310,12 @@ static bool BotNavigateToFollowTarget(int bot_index) {
   // Stage 6: BLOCKED detection + forced-repath escalation — the silent-failure fix.
   BotOrderProgressCheck(bot_index, obj, "Can't reach you!");
 
-  Bots[bot_index].explore_dest_room = -1;
-  Bots[bot_index].explore_room_timer = 0.0f;
+  if (!routed) {
+    // BotSetRoutedGoal owns explore_dest_room/timer (its "already en route" guard); reset them only when we
+    // steered directly (beeline / outdoor) so a later return to roaming starts clean.
+    Bots[bot_index].explore_dest_room = -1;
+    Bots[bot_index].explore_room_timer = 0.0f;
+  }
   return true;
 }
 
@@ -1325,19 +1347,24 @@ static void BotDoHoldStationNav(int bot_index) {
   if (Bots[bot_index].order_state == ORDER_ON_STATION)
     Bots[bot_index].order_state = ORDER_EN_ROUTE; // drifted/chased off — head back silently
 
-  // Routed approach with via support (same machinery as explore/escort nav)
-  bool via_active = false;
-  {
+  // Route to the post over the Dijkstra + grid roadmap when interior (carrier-grade) — a raw GET_TO_POS
+  // stalls on a far anchor in a BNODE-less map, same as follow nav did. Outdoor anchor/bot legs keep the via +
+  // GET_TO_POS path. Recomputed each tick; converges to the anchor's room, then its position.
+  if (!OBJECT_OUTSIDE(obj) && Bots[bot_index].order_anchor_room >= 0 &&
+      !ROOMNUM_OUTSIDE(Bots[bot_index].order_anchor_room)) {
+    bool reissued = false;
+    BotSetRoutedGoal(bot_index, Bots[bot_index].order_anchor_room, Bots[bot_index].order_anchor_pos, &reissued);
+  } else {
     int steer_room = -1;
     vector steer_pos =
         BotGetActiveSteerPoint(obj, Bots[bot_index].order_anchor_pos, Bots[bot_index].order_anchor_room, &steer_room);
-    via_active = BotViaPointTick(bot_index, steer_pos, steer_room, pgi, nullptr) != 0;
-  }
-  if (!via_active && !(pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)) {
-    goal_info gi_info{};
-    gi_info.pos = Bots[bot_index].order_anchor_pos;
-    gi_info.roomnum = Bots[bot_index].order_anchor_room;
-    pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
+    if (BotViaPointTick(bot_index, steer_pos, steer_room, pgi, nullptr) == 0 &&
+        !(pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)) {
+      goal_info gi_info{};
+      gi_info.pos = Bots[bot_index].order_anchor_pos;
+      gi_info.roomnum = Bots[bot_index].order_anchor_room;
+      pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
+    }
   }
 
   BotOrderProgressCheck(bot_index, obj, "Can't get there!");
@@ -3562,7 +3589,11 @@ static void BotApplyThrust(int bot_index) {
       // "silent indoors" cooldown: a carrier is already a hunted beacon, so urgency beats
       // stealth. They use the short outdoor cooldown everywhere for a near-sustained sprint.
       // (HA carriers are excluded — they hunt for kills indoors, not rush, see line ~2727.)
-      bool sprint_carrier = BotIsCarryingEnemyFlag(bot_index) || BotIsHoardCarrier(bot_index);
+      // A far escort under orders also sustains the sprint (short cooldown) so it keeps up with a moving /
+      // afterburning human instead of falling behind on the long indoor cooldown.
+      bool far_escort = (Bots[bot_index].squad_role == SQUAD_FOLLOW || Bots[bot_index].squad_role == SQUAD_COVER) &&
+                        Bots[bot_index].order_state == ORDER_EN_ROUTE;
+      bool sprint_carrier = BotIsCarryingEnemyFlag(bot_index) || BotIsHoardCarrier(bot_index) || far_escort;
       burst_timer = (is_outdoor || sprint_carrier) ? -BOT_AB_COOLDOWN_OUTDOOR : -BOT_AB_COOLDOWN_INDOOR;
     }
   } else if (burst_timer < 0.0f) {

@@ -304,6 +304,7 @@ enum BotOrderState : uint8_t {
 #define BOT_ORDER_REPORT_THROTTLE 30.0f // min seconds between repeated BLOCKED reports
 #define BOT_ESCORT_STATION_DIST 45.0f   // escort offset-station distance behind the followed player
 #define BOT_ESCORT_STATION_ARRIVE 25.0f // within this of the offset station = ON_STATION (escort)
+#define BOT_FOLLOW_BEELINE_DIST 150.0f   // within this AND with LOS = beeline the player (tight escort); else route
 
 struct BotDifficultyParams {
   float aim_error_deg;        // max angular offset added to aim (degrees)
