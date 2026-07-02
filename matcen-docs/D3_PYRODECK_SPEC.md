@@ -205,7 +205,7 @@ exists. Adding or removing a diagnostic command is invisible churn; a real capab
 |------|----------|---------------|
 | **1 — Stable contract** | `$servercaps` (anchor), `$botlist`, `$addbot` / `$removebot` / `$removebots` / `$botdifficulty` (fire-and-forget verbs), `$botmode`, plus the vanilla `$scores` / player / team / settings commands in §5.3 | parse output, build UI, feature-gate |
 | **2 — Semi-stable** | `$botstat` *status* line (line 1 only), `$botobj` | expose as console/help text; avoid hard output parsers |
-| **3 — Volatile diagnostics (mid-flight)** | `$botstat` **nav: line** (`route:goal=… dijkstra=… boa=… gcost=…`), `$navdump` JSON schema, `$terrainsteer`, `$botmov` | reference as text only — **zero** output binding |
+| **3 — Volatile diagnostics (mid-flight)** | `$botstat` **nav: line** (`route:goal=… dijkstra=… boa=… gcost=…`), the `$nav` namespace (0.9.5: bare `$nav` = toggle table, `$nav <name> on|off`, `$nav dump [file]` = the nav-geometry JSON; flat pre-0.9.5 names `$navdump`/`$gridnav`/`$terrainsteer`/… remain hidden aliases), `$botmov` | reference as text only — **zero** output binding |
 
 **Tier 3 detail.** These commands exist to support active bot-AI/navigation debugging and change shape without
 notice. As of 0.9.1 the in-flight intra-room steering work (the "pumphouse glass-press" fix) is expected to change

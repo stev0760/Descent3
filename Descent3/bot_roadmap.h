@@ -46,15 +46,15 @@ extern bool Bot_gridnav_enabled;
 // BASEMENT door, where the blue key lives — a bot/player can barely fit → grid sealed the room → via-dance +
 // "sealed" powerup abandons in room 60). Dropped to a hair over the hull so a gap the ship physically clears
 // is accepted. NEVER set below the hull (the reverted bnode-gen max_rad 5.0 routed bots into gaps they jam in).
-#define BOT_ROADMAP_CLEARANCE 6.7f // hull 6.676 + 0.024 sliver — fit radius, not a safety margin
-#define BOT_ROADMAP_SPACING 20.0f  // 3D lattice spacing (control-loop param: matches engine arrival/lookahead)
+#define BOT_ROADMAP_CLEARANCE 6.7f    // hull 6.676 + 0.024 sliver — fit radius, not a safety margin
+#define BOT_ROADMAP_SPACING 20.0f     // 3D lattice spacing (control-loop param: matches engine arrival/lookahead)
 #define BOT_ROADMAP_MAX_LATTICE 20000 // per-room candidate-cell cap; spacing auto-coarsens past this
 
 // Component bridge (GRID_NAV_DESIGN section 4 step 5): connect grow-from-seed components separated by a
 // navigable gap wider than the neighbour-connect radius (sp*1.8 = 36u) but still flyable — e.g. an upper
 // gallery ~45u above a tavern floor through open air. Hull-probe-gated, so solid dividers stay split.
-#define BOT_ROADMAP_BRIDGE_LEN 55.0f       // max cross-component gap to attempt bridging (catches ~40-45u splits)
-#define BOT_ROADMAP_BRIDGE_MAX_NODES 1200  // skip the O(n^2) bridge scan above this (huge rooms are ~1 component)
+#define BOT_ROADMAP_BRIDGE_LEN 55.0f      // max cross-component gap to attempt bridging (catches ~40-45u splits)
+#define BOT_ROADMAP_BRIDGE_MAX_NODES 1200 // skip the O(n^2) bridge scan above this (huge rooms are ~1 component)
 
 // Corner-rounding component bridge (Stage 3.5 prototype, $gridbridge). The straight bridge above only spans
 // a gap a SINGLE hull-clear segment crosses; it cannot connect two components split by a WALL whose only link
@@ -115,6 +115,12 @@ BotViaResult BotRoadmapFindVia(object *obj, const vector &target_pos, int target
 // different components / bot can't see the graph) — the caller then falls back to the 12.6 outdoor
 // connecting graph. Bot must be outside. Outdoor is gated by $gridnav alongside the indoor roadmap.
 BotViaResult BotRoadmapFindViaOutdoor(object *obj, const vector &target_pos, int target_room, vector *via_out);
+
+// Drop every cached room/region roadmap; each rebuilds lazily on its next query. Needed when a
+// BUILD-TIME parameter changes at runtime — today that's the $nav bridge toggle (corner-bridging runs
+// in GrowFromSeeds, so a cached roadmap keeps the bridges it was built with; without this flush the
+// toggle is a false A/B lever until the next level load).
+void BotRoadmapInvalidate();
 
 // $navdump diagnostic: build (lazily) and dump a room's roadmap — node world positions + per-node
 // component id. Returns node count (0 = external/invalid). Sets *comp_count_out and *degenerate_out.

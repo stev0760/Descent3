@@ -57,28 +57,26 @@ namespace {
 
 // Per-room/region roadmap. Lazily built on first need, cached, freed/rebuilt on BOA_mine_checksum change.
 struct RoadmapRoom {
-  std::vector<vector> node;            // node world positions (seeds first, then accepted lattice cells)
-  std::vector<std::vector<int>> adj;   // adjacency: hull-clear lattice-neighbor / seam edges
-  std::vector<int> comp;               // connected-component id per node (0..comp_count-1)
-  std::vector<float> tweight;          // tactical weight — flanking hook (Stage 5), unused now
-  std::vector<int> portal_seed;        // portal index -> node index of its seam seed (indoor; size = num_portals)
+  std::vector<vector> node;          // node world positions (seeds first, then accepted lattice cells)
+  std::vector<std::vector<int>> adj; // adjacency: hull-clear lattice-neighbor / seam edges
+  std::vector<int> comp;             // connected-component id per node (0..comp_count-1)
+  std::vector<float> tweight;        // tactical weight — flanking hook (Stage 5), unused now
+  std::vector<int> portal_seed;      // portal index -> node index of its seam seed (indoor; size = num_portals)
   int comp_count = 0;
-  int orig_comp_count = 0;             // components BEFORE the bridges merged them (>1 = non-convex / multi-level)
-  bool complex = false;                // proactive grid routing gate: orig_comp_count>1 AND a lattice-node floor
-                                       // (fragmented AND real interior volume — rejects the tiny-room false positive)
-  int lattice_nodes = 0;               // accepted lattice cells (0 => degenerate: no interior coverage gained)
-  bool degenerate = false;             // no usable interior roadmap -> caller falls back to the skeleton
-  bool outdoor = false;                // false: indoor room (probe from probe_room); true: terrain region
-  int probe_room = -1;                 // indoor fvi start room for the segment probe (unused when outdoor)
+  int orig_comp_count = 0; // components BEFORE the bridges merged them (>1 = non-convex / multi-level)
+  bool complex = false;    // proactive grid routing gate: orig_comp_count>1 AND a lattice-node floor
+                           // (fragmented AND real interior volume — rejects the tiny-room false positive)
+  int lattice_nodes = 0;   // accepted lattice cells (0 => degenerate: no interior coverage gained)
+  bool degenerate = false; // no usable interior roadmap -> caller falls back to the skeleton
+  bool outdoor = false;    // false: indoor room (probe from probe_room); true: terrain region
+  int probe_room = -1;     // indoor fvi start room for the segment probe (unused when outdoor)
 };
 
 RoadmapRoom *g_room[MAX_ROOMS] = {nullptr};
 RoadmapRoom *g_region[MAX_BOA_TERRAIN_REGIONS] = {nullptr};
 int g_checksum = 0;
 
-void ResetIfStale() {
-  if (g_checksum == BOA_mine_checksum)
-    return;
+void FreeAll() {
   for (int i = 0; i < MAX_ROOMS; i++) {
     delete g_room[i];
     g_room[i] = nullptr;
@@ -87,6 +85,12 @@ void ResetIfStale() {
     delete g_region[i];
     g_region[i] = nullptr;
   }
+}
+
+void ResetIfStale() {
+  if (g_checksum == BOA_mine_checksum)
+    return;
+  FreeAll();
   g_checksum = BOA_mine_checksum;
 }
 
@@ -138,9 +142,12 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     Nx = (int)std::floor((mx.x() - mn.x()) / sp) + 1;
     Ny = (int)std::floor((mx.y() - mn.y()) / sp) + 1;
     Nz = (int)std::floor((mx.z() - mn.z()) / sp) + 1;
-    if (Nx < 1) Nx = 1;
-    if (Ny < 1) Ny = 1;
-    if (Nz < 1) Nz = 1;
+    if (Nx < 1)
+      Nx = 1;
+    if (Ny < 1)
+      Ny = 1;
+    if (Nz < 1)
+      Nz = 1;
     if ((long)Nx * Ny * Nz <= BOT_ROADMAP_MAX_LATTICE || sp > 200.0f)
       break;
     sp *= 1.5f;
@@ -152,9 +159,7 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     v.z() = mn.z() + iz * sp;
     return v;
   };
-  auto CellKey = [&](int ix, int iy, int iz) -> int64_t {
-    return ((int64_t)ix * (Ny + 2) + iy) * (Nz + 2) + iz;
-  };
+  auto CellKey = [&](int ix, int iy, int iz) -> int64_t { return ((int64_t)ix * (Ny + 2) + iy) * (Nz + 2) + iz; };
 
   // cell -> accepted node index. A cell absent from the map is an un-accepted candidate (every in-range
   // lattice cell is a candidate; growth decides acceptance — we never standalone-probe a point).
@@ -425,8 +430,8 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
   // tiny-room false positive where the bridge — not growth — connected a few sparse portal seeds).
   rr->complex = (rr->orig_comp_count > 1 && rr->lattice_nodes >= BOT_ROADMAP_COMPLEX_MIN_LATTICE);
 
-  LOG_DEBUG.printf("BOT: roadmap %s %d: %d nodes (%d seeds + %d lattice), %d comps, sp=%.0f%s%s", kind, id, N,
-                   n_seed, rr->lattice_nodes, rr->comp_count, sp, rr->degenerate ? " [DEGENERATE]" : "",
+  LOG_DEBUG.printf("BOT: roadmap %s %d: %d nodes (%d seeds + %d lattice), %d comps, sp=%.0f%s%s", kind, id, N, n_seed,
+                   rr->lattice_nodes, rr->comp_count, sp, rr->degenerate ? " [DEGENERATE]" : "",
                    rr->complex ? " [COMPLEX]" : "");
 }
 
@@ -680,6 +685,8 @@ BotViaResult QueryVia(RoadmapRoom *rr, object *obj, int goal, vector *via_out) {
 }
 
 } // namespace
+
+void BotRoadmapInvalidate() { FreeAll(); }
 
 BotViaResult BotRoadmapFindVia(object *obj, const vector &target_pos, int target_room, vector *via_out,
                                bool proactive) {

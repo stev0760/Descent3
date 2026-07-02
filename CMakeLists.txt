@@ -36,7 +36,7 @@ project(Descent3
 # Matcen fork version (semver with optional pre-release suffix)
 set(MATCEN_VERSION_MAJOR 0)
 set(MATCEN_VERSION_MINOR 9)
-set(MATCEN_VERSION_PATCH 4)
+set(MATCEN_VERSION_PATCH 5)
 set(MATCEN_VERSION_SUFFIX "")
 
 if (${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})

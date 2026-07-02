@@ -400,18 +400,23 @@ or a toggle default changes. The narrative subsections below explain the "why"; 
 > `GRID_NAV_DESIGN.md`). The lateral-go-around-waypoint fix (formerly #1's "NEXT FIX") is **dropped** — it
 > would add more portal-derived nodes to the graph that is itself the problem; the roadmap subsumes it.
 
-**Runtime nav toggles (defaults in `bot_steering.cpp`; all `$cmd on|off` on the dedicated console):**
+**Runtime nav toggles (0.9.5 surface: bare `$nav` prints this table live; `$nav <name> on|off` flips one;
+the pre-0.9.5 flat names remain hidden aliases. Defaults in `bot_steering.cpp`/`bot_roadmap.cpp`):**
 
-| Toggle | Default | Phase | State |
-|---|---|---|---|
-| `$terrainsteer` | ON | 8.1 | validated (outdoor entrance redirect; un-flattened engine `movement_dir`) |
-| `$pseudobnodes` | ON | 12.5b | validated (doorsofmoria 0→2 caps, 0 indoor hard pins) |
-| `$outdoorvia` | ON | 12.6 A | validated net-positive (reactive ring, ceiling-aware) |
-| `$outdoorgraph` | ON | 12.6 B | validated net-positive (13.5h soak: 0 crashes, captures +30%) |
-| `$navbridge` | ON | 12.7 | **mechanism validated, PARTIAL** — kills dead-ends but not yet a crossing (see #1) |
-| `$gridnav` | **ON** | 0.9.4 | **VALIDATED** — volumetric grid roadmap + Lazy Theta\* (replaces the skeleton via-pass indoors; degenerate rooms fall back to the skeleton). `off` = 0.9.3. See `GRID_NAV_DESIGN.md`. |
-| `$gridbridge` | **ON** | 0.9.4 | **VALIDATED** — corner-rounding component bridge (one swept midpoint to connect components split by a wall; hull-gated, spatial-hashed). Collapsed townofbree/khazaddum dividers. |
-| `$gridroute` | **ON** | 0.9.4 | **VALIDATED** — proactive in-room grid routing, gated to genuinely complex rooms (`orig_comp_count>1` AND ≥24 lattice nodes). Fellowship soak: overall captures +58% vs 0.9.3, khazaddum 0.2→1.0. Also drives carrier + `!follow`/`!cover`/`!hold` escort nav. |
+| `$nav` name | Flat alias | Default | Phase | State |
+|---|---|---|---|---|
+| `terrain` | `$terrainsteer` | ON | 8.1 | validated (outdoor entrance redirect; un-flattened engine `movement_dir`) |
+| `bnodes` | `$pseudobnodes` | ON | 12.5b | validated (doorsofmoria 0→2 caps, 0 indoor hard pins) |
+| `outdoorvia` | `$outdoorvia` | ON | 12.6 A | validated net-positive (reactive ring, ceiling-aware) |
+| `outdoorgraph` | `$outdoorgraph` | ON | 12.6 B | validated net-positive (13.5h soak: 0 crashes, captures +30%) |
+| `softhop` | `$navbridge` | ON | 12.7 | **mechanism validated, PARTIAL** — kills dead-ends but not yet a crossing (see #1) |
+| `grid` | `$gridnav`/`$navgrid` | **ON** | 0.9.4 | **VALIDATED** — volumetric grid roadmap + Lazy Theta\* (replaces the skeleton via-pass indoors; degenerate rooms fall back to the skeleton). `off` = 0.9.3. See `GRID_NAV_DESIGN.md`. |
+| `bridge` | `$gridbridge` | **ON** | 0.9.4 | **VALIDATED** — corner-rounding component bridge (one swept midpoint to connect components split by a wall; hull-gated, spatial-hashed). Collapsed townofbree/khazaddum dividers. **Build-time param: toggling it flushes the roadmap cache (0.9.5 `BotRoadmapInvalidate`) — before 0.9.5 a mid-level toggle was silently inert on already-built rooms.** |
+| `route` | `$gridroute` | **ON** | 0.9.4 | **VALIDATED** — proactive in-room grid routing, gated to genuinely complex rooms (`orig_comp_count>1` AND ≥24 lattice nodes). Fellowship soak: overall captures +58% vs 0.9.3, khazaddum 0.2→1.0. Also drives carrier + `!follow`/`!cover`/`!hold` escort nav. |
+
+Watch out for the near-collision: **`$nav bridge` = the 0.9.4 corner bridge; the OLD `$navbridge` = the
+12.7 soft-hop (`$nav softhop`).** The five `[legacy 0.9.3]` rows (terrain/bnodes/outdoorvia/outdoorgraph/
+softhop) gate the fallback substrate and are deleted together with that code in Stage 4.
 
 (`$softfollow` was **removed** — see ledger; do not re-add as target-line early-release.)
 

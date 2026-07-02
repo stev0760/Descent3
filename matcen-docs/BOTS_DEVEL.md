@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Matcen **0.9.4 (current)** — **the volumetric grid-roadmap navigation milestone**: the ground-up rewrite shipped (grid-seeded volumetric roadmap + any-angle Lazy Theta\*, hull-aware connectivity with corner-bridging and a 6.7u fit clearance, **selective** proactive in-room routing driving objective/carrier/`!follow`-escort nav; a 9-map Fellowship soak measured **captures +58% vs 0.9.3**, best build to date). Canonical spec `GRID_NAV_DESIGN.md`; live status + open issues `NAVIGATION.md` §7.0. The Phase 12 portal-skeleton/pseudo-bnode stack stays live as the `$gridnav off` fallback. **The live current-status snapshot — toggle table, priority-ordered open issues, tried-&-reverted ledger — is `NAVIGATION.md` §7.0; read that first.** The phase entries below (newest first: 12.7 soft-hop bridge → 12.6 outdoor graph → 12.5b pseudo-bnodes → …) are the dated build history. The original headline blocker was the engine's intra-room interior-obstacle press (a free-standing glass/pillar *face* between the path node and the exit portal), a **known engine limitation reproducible in vanilla retail D3 with robots**; the via-point / pseudo-bnode / soft-hop stack is the running mitigation. Full diagnosis (navdump-confirmed: `los_from_pathpnt_clear=0`, pure steering, 93% EXPLORE, limit-cycle) and the via-point plan live in `NAVIGATION.md` §7 + §2.5. **The Phase 12 mechanism is now implemented** (via-point detour keyed on the engine's current path node, sealed-powerup abandon + sealed-room selection gate), and **Phase 12.2 hardens the powerup guards** after the pyroplace soak: a global per-level troll strike table (repeat chase-timeouts/seal-abandons retire an item level-wide — the only defense against approach-sealed glass-pocket trolls no straight-line probe can see, e.g. pyroplace Mega/Blackshark), a wrong-side rescue (item across a bulletproof-glass corridor divider → reroute through the neighbor whose portal sees it), a via cycle cap (a via must lead to a room change or yield to rerouting — the abend2 mirror-room dance), and via support in the `!follow` escort branch. Awaiting validation on the 4-map indoor rotation (abend2/pumphouse/nysa/pyroplace) before any "fixed" claim. **Phase 12.3 "portal-skeleton traversal" is implemented (2026-06-12, untested)** (NAVIGATION.md §7 12.3): when the via ring search fails, a per-room portal skeleton (portal path_pnts + hull-clear legs, cached) is BFS'd toward the routed exit and the first hop issued as the via — invariant-derived intra-room traversal for buried-center rooms (rings/labyrinths/divided). Step-zero offline detector validation passed (13/14 pin rooms across 5 maps). Generality gate pending: official-map regression + two fresh community holdout maps. **Chat Stage 6 "Orders as Goals" is also in (2026-06-11, untested):** orders now own navigation via anchors + a lifecycle with player feedback — new `!hold`/`!stay` verb (hold the speaker's position), `!defend` anchors to a post outside CTF, escort offset stations + BLOCKED detection/reports for `!follow`/`!cover`, enriched `!status`. See `CHAT_COMMANDS.md` §Stage 6. **Matcen 0.9.3 is now the pinned stable baseline** (the full Phase 11 router + Phase 12 nav stack, validated good-enough across the map pool); 0.9.1/Phase 11 was the prior fallback. The engine still does all steering — the bot only ever sets the goal.
+**Status:** Matcen **0.9.5 (current)** — 0.9.4's volumetric grid-roadmap milestone plus the `$nav` console namespace + `$gridbridge` cache-flush fix (see the 0.9.5 entry). **0.9.4** was **the volumetric grid-roadmap navigation milestone**: the ground-up rewrite shipped (grid-seeded volumetric roadmap + any-angle Lazy Theta\*, hull-aware connectivity with corner-bridging and a 6.7u fit clearance, **selective** proactive in-room routing driving objective/carrier/`!follow`-escort nav; a 9-map Fellowship soak measured **captures +58% vs 0.9.3**, best build to date). Canonical spec `GRID_NAV_DESIGN.md`; live status + open issues `NAVIGATION.md` §7.0. The Phase 12 portal-skeleton/pseudo-bnode stack stays live as the `$gridnav off` fallback. **The live current-status snapshot — toggle table, priority-ordered open issues, tried-&-reverted ledger — is `NAVIGATION.md` §7.0; read that first.** The phase entries below (newest first: 12.7 soft-hop bridge → 12.6 outdoor graph → 12.5b pseudo-bnodes → …) are the dated build history. The original headline blocker was the engine's intra-room interior-obstacle press (a free-standing glass/pillar *face* between the path node and the exit portal), a **known engine limitation reproducible in vanilla retail D3 with robots**; the via-point / pseudo-bnode / soft-hop stack is the running mitigation. Full diagnosis (navdump-confirmed: `los_from_pathpnt_clear=0`, pure steering, 93% EXPLORE, limit-cycle) and the via-point plan live in `NAVIGATION.md` §7 + §2.5. **The Phase 12 mechanism is now implemented** (via-point detour keyed on the engine's current path node, sealed-powerup abandon + sealed-room selection gate), and **Phase 12.2 hardens the powerup guards** after the pyroplace soak: a global per-level troll strike table (repeat chase-timeouts/seal-abandons retire an item level-wide — the only defense against approach-sealed glass-pocket trolls no straight-line probe can see, e.g. pyroplace Mega/Blackshark), a wrong-side rescue (item across a bulletproof-glass corridor divider → reroute through the neighbor whose portal sees it), a via cycle cap (a via must lead to a room change or yield to rerouting — the abend2 mirror-room dance), and via support in the `!follow` escort branch. Awaiting validation on the 4-map indoor rotation (abend2/pumphouse/nysa/pyroplace) before any "fixed" claim. **Phase 12.3 "portal-skeleton traversal" is implemented (2026-06-12, untested)** (NAVIGATION.md §7 12.3): when the via ring search fails, a per-room portal skeleton (portal path_pnts + hull-clear legs, cached) is BFS'd toward the routed exit and the first hop issued as the via — invariant-derived intra-room traversal for buried-center rooms (rings/labyrinths/divided). Step-zero offline detector validation passed (13/14 pin rooms across 5 maps). Generality gate pending: official-map regression + two fresh community holdout maps. **Chat Stage 6 "Orders as Goals" is also in (2026-06-11, untested):** orders now own navigation via anchors + a lifecycle with player feedback — new `!hold`/`!stay` verb (hold the speaker's position), `!defend` anchors to a post outside CTF, escort offset stations + BLOCKED detection/reports for `!follow`/`!cover`, enriched `!status`. See `CHAT_COMMANDS.md` §Stage 6. **Matcen 0.9.3 is now the pinned stable baseline** (the full Phase 11 router + Phase 12 nav stack, validated good-enough across the map pool); 0.9.1/Phase 11 was the prior fallback. The engine still does all steering — the bot only ever sets the goal.
 
 ## Engine Files Modified — Single-Player / Robo-Anarchy / Co-op Impact Audit
 
@@ -66,6 +66,21 @@ grtext_Reset (dedicated-server buffer overflow) and the `bnode.cpp` assert-harde
 a room lacking BNode data — a latent crash independent of bots).
 
 ---
+
+### 0.9.5 — `$nav` command namespace + `$gridbridge` cache-flush fix (2026-07-01)
+
+Post-0.9.4 console cleanup (the "Pre-Release Cleanup" item below, Option B) plus a review-found bug:
+
+- **`$gridbridge` was a false A/B lever.** Corner-bridging runs at roadmap *build* time, but roadmaps are
+  cached until the mine checksum changes — so toggling it mid-level silently did nothing for already-built
+  rooms. New `BotRoadmapInvalidate()` (`bot_roadmap.cpp`) drops the cache on an actual value change; each
+  roadmap rebuilds lazily on its next query. Mid-level A/B of the bridge is now trustworthy.
+- **`$nav` namespace.** One entry point for the nav surface: bare `$nav` = live toggle-status table (didn't
+  exist before), `$nav <name> on|off`, `$nav dump [file]`. Table-driven (`Nav_toggles[]` in
+  `dedicated_server.cpp`) — replaced 8 copy-pasted handler blocks. All flat names kept as hidden aliases;
+  `$bothelp` shrinks to two nav lines. `$nav bridge` = corner bridge; old `$navbridge` soft-hop = `$nav
+  softhop`. The five 0.9.3-substrate toggles stay (tagged `[legacy 0.9.3]`) until Stage 4 deletes them with
+  the fallback code they gate. Bot-management commands untouched (Pyrodeck Tier-1 contracts).
 
 ### 0.9.4 — Selective gate + follow/escort responsiveness + SHIPPED (2026-06-28, VALIDATED)
 
@@ -1124,18 +1139,21 @@ Investigation revealed that bots were missing from the end-of-level scoreboard b
 
 See [PLAN.md](PLAN.md) for the full phase plan and risk assessment. See [NAVIGATION.md](NAVIGATION.md) for the Phase 4.0 navigation overhaul design.
 
-### Pre-Release Cleanup: Consistent `$` command surface (do before public release)
+### Pre-Release Cleanup: Consistent `$` command surface — **DONE for nav (0.9.5, Option B)**
 
-The dedicated-console diagnostic/toggle commands grew organically and have **no consistent naming convention** — they're hard to recall and easy to mis-type (e.g. `$gridnav` got typed as `$navgrid`, silently losing a control soak; a `$navgrid` alias was added as a stopgap). Two inconsistencies to fix:
+The dedicated-console diagnostic/toggle commands grew organically with no consistent naming convention —
+hard to recall, easy to mis-type (e.g. `$gridnav` got typed as `$navgrid`, silently losing a control soak).
+**Resolved in 0.9.5 with Option B (namespace):** all nav toggles/diagnostics live under one `$nav` command —
+bare `$nav` prints the live toggle table (with `[legacy 0.9.3]` tags), `$nav <name> on|off` flips one,
+`$nav dump [file]` writes the nav JSON. Every pre-0.9.5 flat name (`$gridnav`/`$navgrid`, `$gridbridge`,
+`$gridroute`, `$terrainsteer`, `$pseudobnodes`, `$outdoorvia`, `$outdoorgraph`, `$navbridge`, `$navdump`)
+still works as a **hidden alias** (dropped from `$bothelp`). Naming note: `$nav bridge` = the 0.9.4
+corner-rounding bridge (old `$gridbridge`); the old `$navbridge` soft-hop is `$nav softhop`.
 
-- **The `nav` token floats position:** prefix (`$navdump`, `$navbridge`), suffix (`$gridnav`), or absent (`$terrainsteer`, `$pseudobnodes`, `$outdoorvia`, `$outdoorgraph`). This is *why* `$navgrid` felt natural — the surface taught a `nav`-first pattern that `gridnav` breaks.
-- **Bot commands mix verb/noun order:** verb-first (`$addbot`, `$removebot`, `$removebots`) vs noun-first (`$botlist`, `$botstat`, `$botmode`, `$botobj`, `$botdifficulty`, `$bothelp`, `$botmov`).
-
-**Pick one convention and enforce it.** Two options:
-- **A (cheap):** fixed domain prefix + feature — every nav command `nav`-first (`$navgrid`, `$navbridge`, `$navterrain`, `$navbnodes`, `$navoutdoor`, `$navdump`), every bot command `bot`-first; every toggle ends in `on|off`.
-- **B (best UX, shrinks the wall of `$bothelp`):** namespace into subcommands — `$nav grid on|off`, `$nav bridge on|off`, `$nav dump [file]`; `$bot add …`, `$bot list`, `$bot stat …`. Bare `$nav` / `$bot` print their submenu. Reduces recall to two verbs.
-
-Keep all current names as **hidden aliases** through the transition so nothing breaks. Low-priority polish, not urgent — but a UX debt to clear before the dev-facing surface ships to the community. Handlers live in `dedicated_server.cpp`.
+Bot-management commands (`$addbot`, `$botlist`, `$botstat`, …) were deliberately left as-is: the D3
+Pyrodeck spec treats them as Tier-1 parse contracts and they're established muscle memory. The verb/noun
+mixing there is accepted; revisit only if the surface grows again. Handlers in `dedicated_server.cpp`
+(table-driven `Nav_toggles[]`).
 
 ### Phase 4.0: Navigation Overhaul (Complete)
 

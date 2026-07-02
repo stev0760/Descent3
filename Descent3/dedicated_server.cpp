@@ -729,6 +729,81 @@ void ParseLine(char *srcline, char *command, char *operand, int cmdlen, int oprl
     operand[0] = 0;
 }
 
+// --- $nav namespace (0.9.5) ---------------------------------------------------------------------
+// One entry point for the navigation toggle/diagnostic surface (the BOTS_DEVEL.md "Pre-Release
+// Cleanup", Option B): bare `$nav` prints the live toggle table, `$nav <name> on|off` flips one,
+// `$nav dump [file]` writes the nav-geometry JSON. The pre-0.9.5 flat command names stay as HIDDEN
+// aliases (soak scripts + muscle memory keep working; they're gone from $bothelp). Rows tagged
+// legacy gate the 0.9.3 fallback substrate and are deleted together with that code in Stage 4
+// (GRID_NAV_DESIGN.md). NOTE the near-collision: `$nav bridge` = the 0.9.4 corner-rounding bridge
+// ($gridbridge), while the OLD `$navbridge` = the 12.7 soft-hop, now `$nav softhop`.
+struct NavToggle {
+  const char *sub;    // $nav <sub> on|off
+  const char *alias;  // legacy flat command name (hidden)
+  const char *alias2; // second flat alias, or nullptr
+  bool *flag;
+  const char *desc;
+  bool legacy;  // 0.9.3 fallback substrate — retired in Stage 4
+  bool rebuild; // BUILD-TIME roadmap parameter: flush cached roadmaps when the value changes
+};
+static const NavToggle Nav_toggles[] = {
+    {"grid", "gridnav", "navgrid", &Bot_gridnav_enabled, "volumetric grid roadmap (0.9.4; off = 0.9.3 substrate)",
+     false, false},
+    {"bridge", "gridbridge", nullptr, &Bot_roadmap_corner_enabled, "corner-rounding component bridge", false, true},
+    {"route", "gridroute", nullptr, &Bot_gridroute_enabled, "proactive in-room grid routing (complex rooms)", false,
+     false},
+    {"terrain", "terrainsteer", nullptr, &Bot_terrain_steering_enabled, "outdoor terrain steering / entrance redirect",
+     true, false},
+    {"bnodes", "pseudobnodes", nullptr, &Bot_pseudo_bnodes_enabled, "pseudo-BNode skeleton interior waypoints", true,
+     false},
+    {"outdoorvia", "outdoorvia", nullptr, &Bot_outdoor_via_enabled, "outdoor lateral go-around ring", true, false},
+    {"outdoorgraph", "outdoorgraph", nullptr, &Bot_outdoor_graph_enabled, "outdoor connecting graph (multi-hop)", true,
+     false},
+    {"softhop", "navbridge", nullptr, &Bot_soft_hop_enabled, "soft-hop bridge across disconnected graphs", true, false},
+};
+
+// match_subs: also match the bare $nav sub-token names. The flat-alias dispatch passes false so a
+// top-level `$bridge`/`$route` etc. still falls through to the game DLL untouched.
+static const NavToggle *NavToggleFind(const char *name, bool match_subs) {
+  for (const NavToggle &t : Nav_toggles) {
+    if (match_subs && stricmp(name, t.sub) == 0)
+      return &t;
+    if (stricmp(name, t.alias) == 0 || (t.alias2 && stricmp(name, t.alias2) == 0))
+      return &t;
+  }
+  return nullptr;
+}
+
+static void NavToggleSet(const NavToggle *t, const char *value) {
+  if (stricmp(value, "on") != 0 && stricmp(value, "off") != 0) {
+    PrintDedicatedMessage("Usage: $nav %s on|off  (current: %s)\n", t->sub, *t->flag ? "on" : "off");
+    return;
+  }
+  bool want = (stricmp(value, "on") == 0);
+  bool changed = (*t->flag != want);
+  *t->flag = want;
+  PrintDedicatedMessage("nav %s %s - %s\n", t->sub, want ? "ON" : "OFF", t->desc);
+  if (changed && t->rebuild) {
+    // Build-time parameter: cached roadmaps were built with the old value and would silently keep it
+    // until the next level load (the false-A/B trap). Drop them; each rebuilds lazily on next query.
+    BotRoadmapInvalidate();
+    PrintDedicatedMessage("Roadmaps invalidated - each rebuilds on its next query with the new setting\n");
+  }
+}
+
+static bool DedicatedNavDump(const char *operand) {
+  char fname[128];
+  if (operand[0])
+    snprintf(fname, sizeof(fname), "%s", operand);
+  else
+    snprintf(fname, sizeof(fname), "navdump.json");
+  if (BotNavDump(fname))
+    PrintDedicatedMessage("Nav geometry dumped to '%s' (see log for summary)\n", fname);
+  else
+    PrintDedicatedMessage("Nav dump FAILED to write '%s'\n", fname);
+  return true;
+}
+
 // Handle bot management commands. Returns true if the command was a bot command.
 static bool DedicatedHandleBotCommand(const char *command, const char *operand) {
   if (stricmp(command, "addbot") == 0) {
@@ -852,16 +927,39 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
       PrintDedicatedMessage("No bots active (or invalid index)\n");
     return true;
   }
-  if (stricmp(command, "navdump") == 0) {
-    char fname[128];
-    if (operand[0])
-      snprintf(fname, sizeof(fname), "%s", operand);
-    else
-      snprintf(fname, sizeof(fname), "navdump.json");
-    if (BotNavDump(fname))
-      PrintDedicatedMessage("Nav geometry dumped to '%s' (see log for summary)\n", fname);
-    else
-      PrintDedicatedMessage("Nav dump FAILED to write '%s'\n", fname);
+  if (stricmp(command, "nav") == 0) {
+    // Split "<sub> [value]" out of the operand (ParseLine strtok-mutates, so copy first).
+    char nav_buf[255] = {};
+    strncpy(nav_buf, operand, sizeof(nav_buf) - 1);
+    char sub[64] = {};
+    char value[192] = {};
+    ParseLine(nav_buf, sub, value, sizeof(sub), sizeof(value));
+
+    if (!sub[0]) {
+      PrintDedicatedMessage("Navigation toggles ($nav <name> on|off):\n");
+      for (const NavToggle &t : Nav_toggles)
+        PrintDedicatedMessage("  %-13s %-3s  %s%s\n", t.sub, *t.flag ? "ON" : "off", t.desc,
+                              t.legacy ? " [legacy 0.9.3]" : "");
+      PrintDedicatedMessage("  %-13s      dump nav geometry to JSON: $nav dump [file]\n", "dump");
+      return true;
+    }
+    if (stricmp(sub, "dump") == 0)
+      return DedicatedNavDump(value);
+    const NavToggle *t = NavToggleFind(sub, true);
+    if (!t) {
+      PrintDedicatedMessage("Unknown nav toggle '%s' - type $nav for the list\n", sub);
+      return true;
+    }
+    NavToggleSet(t, value);
+    return true;
+  }
+  if (stricmp(command, "navdump") == 0) { // hidden flat alias of $nav dump (Pyrodeck spec references it)
+    return DedicatedNavDump(operand);
+  }
+  // Hidden flat aliases for the $nav toggles (pre-0.9.5 names: $gridnav/$navgrid, $gridbridge,
+  // $gridroute, $terrainsteer, $pseudobnodes, $outdoorvia, $outdoorgraph, $navbridge).
+  if (const NavToggle *t = NavToggleFind(command, false)) {
+    NavToggleSet(t, operand);
     return true;
   }
   if (stricmp(command, "botmov") == 0) {
@@ -876,110 +974,6 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     }
     return true;
   }
-  if (stricmp(command, "terrainsteer") == 0) {
-    if (stricmp(operand, "on") == 0) {
-      Bot_terrain_steering_enabled = true;
-      PrintDedicatedMessage("Outdoor terrain steering ON\n");
-    } else if (stricmp(operand, "off") == 0) {
-      Bot_terrain_steering_enabled = false;
-      PrintDedicatedMessage("Outdoor terrain steering OFF\n");
-    } else {
-      PrintDedicatedMessage("Usage: $terrainsteer on|off  (current: %s)\n",
-                            Bot_terrain_steering_enabled ? "on" : "off");
-    }
-    return true;
-  }
-  if (stricmp(command, "pseudobnodes") == 0) {
-    if (stricmp(operand, "on") == 0) {
-      Bot_pseudo_bnodes_enabled = true;
-      PrintDedicatedMessage("Pseudo-BNode interior waypoints ON (regenerated on next level)\n");
-    } else if (stricmp(operand, "off") == 0) {
-      Bot_pseudo_bnodes_enabled = false;
-      PrintDedicatedMessage("Pseudo-BNode interior waypoints OFF (regenerated on next level)\n");
-    } else {
-      PrintDedicatedMessage("Usage: $pseudobnodes on|off  (current: %s)\n", Bot_pseudo_bnodes_enabled ? "on" : "off");
-    }
-    return true;
-  }
-  if (stricmp(command, "outdoorvia") == 0) {
-    if (stricmp(operand, "on") == 0) {
-      Bot_outdoor_via_enabled = true;
-      PrintDedicatedMessage("Outdoor lateral go-around ON\n");
-    } else if (stricmp(operand, "off") == 0) {
-      Bot_outdoor_via_enabled = false;
-      PrintDedicatedMessage("Outdoor lateral go-around OFF\n");
-    } else {
-      PrintDedicatedMessage("Usage: $outdoorvia on|off  (current: %s)\n", Bot_outdoor_via_enabled ? "on" : "off");
-    }
-    return true;
-  }
-
-  if (stricmp(command, "outdoorgraph") == 0) {
-    if (stricmp(operand, "on") == 0) {
-      Bot_outdoor_graph_enabled = true;
-      PrintDedicatedMessage("Outdoor connecting graph ON\n");
-    } else if (stricmp(operand, "off") == 0) {
-      Bot_outdoor_graph_enabled = false;
-      PrintDedicatedMessage("Outdoor connecting graph OFF\n");
-    } else {
-      PrintDedicatedMessage("Usage: $outdoorgraph on|off  (current: %s)\n", Bot_outdoor_graph_enabled ? "on" : "off");
-    }
-    return true;
-  }
-
-  if (stricmp(command, "navbridge") == 0) {
-    if (stricmp(operand, "on") == 0) {
-      Bot_soft_hop_enabled = true;
-      PrintDedicatedMessage("Soft-hop bridge across disconnected graphs ON\n");
-    } else if (stricmp(operand, "off") == 0) {
-      Bot_soft_hop_enabled = false;
-      PrintDedicatedMessage("Soft-hop bridge across disconnected graphs OFF\n");
-    } else {
-      PrintDedicatedMessage("Usage: $navbridge on|off  (current: %s)\n", Bot_soft_hop_enabled ? "on" : "off");
-    }
-    return true;
-  }
-
-  if (stricmp(command, "gridnav") == 0 || stricmp(command, "navgrid") == 0) {
-    if (stricmp(operand, "on") == 0) {
-      Bot_gridnav_enabled = true;
-      PrintDedicatedMessage("Volumetric grid roadmap (0.9.4) ON\n");
-    } else if (stricmp(operand, "off") == 0) {
-      Bot_gridnav_enabled = false;
-      PrintDedicatedMessage("Volumetric grid roadmap OFF (0.9.3 skeleton)\n");
-    } else {
-      PrintDedicatedMessage("Usage: $gridnav on|off  (current: %s)\n", Bot_gridnav_enabled ? "on" : "off");
-    }
-    return true;
-  }
-
-  if (stricmp(command, "gridbridge") == 0) {
-    if (stricmp(operand, "on") == 0) {
-      Bot_roadmap_corner_enabled = true;
-      PrintDedicatedMessage("Corner-rounding component bridge (Stage 3.5) ON\n");
-    } else if (stricmp(operand, "off") == 0) {
-      Bot_roadmap_corner_enabled = false;
-      PrintDedicatedMessage("Corner-rounding component bridge OFF\n");
-    } else {
-      PrintDedicatedMessage("Usage: $gridbridge on|off  (current: %s)\n",
-                            Bot_roadmap_corner_enabled ? "on" : "off");
-    }
-    return true;
-  }
-
-  if (stricmp(command, "gridroute") == 0) {
-    if (stricmp(operand, "on") == 0) {
-      Bot_gridroute_enabled = true;
-      PrintDedicatedMessage("Proactive in-room grid routing (Stage 2) ON\n");
-    } else if (stricmp(operand, "off") == 0) {
-      Bot_gridroute_enabled = false;
-      PrintDedicatedMessage("Proactive in-room grid routing OFF (reactive-only)\n");
-    } else {
-      PrintDedicatedMessage("Usage: $gridroute on|off  (current: %s)\n", Bot_gridroute_enabled ? "on" : "off");
-    }
-    return true;
-  }
-
   if (stricmp(command, "botdifficulty") == 0) {
     if (!operand[0]) {
       PrintDedicatedMessage("Usage: $botdifficulty <index|all> <level>\n");
@@ -1040,16 +1034,9 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     PrintDedicatedMessage("  $botlist               - List active bots\n");
     PrintDedicatedMessage("  $botdifficulty <index|all> <level> - Change difficulty\n");
     PrintDedicatedMessage("  $botstat [index|all]   - Show bot status details\n");
-    PrintDedicatedMessage("  $navdump [file]        - Dump current level nav geometry to JSON (diagnostic)\n");
+    PrintDedicatedMessage("  $nav                   - Navigation toggles & status ($nav <name> on|off; bare = list)\n");
+    PrintDedicatedMessage("  $nav dump [file]       - Dump current level nav geometry to JSON (alias: $navdump)\n");
     PrintDedicatedMessage("  $botmov on|off         - Toggle movement debug logging\n");
-    PrintDedicatedMessage("  $terrainsteer on|off   - Toggle outdoor terrain steering (Phase 8.1)\n");
-    PrintDedicatedMessage("  $pseudobnodes on|off   - Toggle skeleton interior waypoints (Phase 12.5b)\n");
-    PrintDedicatedMessage("  $outdoorvia on|off     - Toggle outdoor lateral go-around (Phase 12.6)\n");
-    PrintDedicatedMessage("  $outdoorgraph on|off   - Toggle outdoor connecting graph (Phase 12.6 Stage B)\n");
-    PrintDedicatedMessage(
-        "  $navbridge on|off      - Toggle soft-hop bridge across disconnected graphs (Phase 12.7)\n");
-    PrintDedicatedMessage(
-        "  $gridnav on|off        - Toggle volumetric grid roadmap (0.9.4; off = 0.9.3) [alias: $navgrid]\n");
     PrintDedicatedMessage("  $botmode               - Show detected game mode\n");
     PrintDedicatedMessage("  $botobj                - Show objective state (CTF flags, orbs, etc.)\n");
     PrintDedicatedMessage("  $servercaps            - Print server capabilities\n");
