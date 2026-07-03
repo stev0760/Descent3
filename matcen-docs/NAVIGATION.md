@@ -547,7 +547,13 @@ BOA — a bug (the router would be silently overriding BOA everywhere), not a fe
 
 ## 7. Open problems (roadmap)
 
-### 7.0 Current status snapshot — 2026-06-28 (0.9.4 SHIPPED — volumetric grid-roadmap milestone)
+### 7.0 Current status snapshot — 2026-07-03 (0.9.5; grid roadmap validated, next phase scoped in §7.1)
+
+> **Playtest 2026-07-02 (operator FPV):** grid navigation confirmed as the right foundation —
+> "needs refinement, not replacement." khazaddum: some captures (roadmap working). townofbree: 0
+> captures — bots *not stuck*, but can't fine-thread outdoor spaces precisely enough (→ #0b, a
+> grid *parameter tuning* track, not architecture). pyroplace team anarchy: combat AI solid, no
+> regressions. Next phase = **dynamic-obstacle response** (§7.1).
 
 *A scannable checkpoint so we stop re-deriving state. Update the date + toggle table + ledger whenever a soak
 or a toggle default changes. The narrative subsections below explain the "why"; this is the "what, right now."*
@@ -606,9 +612,12 @@ softhop) gate the fallback substrate and are deleted together with that code in 
    reachable — bots chase it briefly. Handled by the **evidence-based troll-powerup backstop** (repeat
    chase-timeouts retire the item level-wide). A stricter growth probe was **deferred** — too risky to the
    connectivity gains for a minor, self-healing issue.
-0b. **[OPEN — approach precision] Tight-doorway threading.** A door barely wider than the hull (townofbree
-   tavern basement) is now *routable* (6.7u clearance) but the engine path-follower still struggles to *thread*
-   it cleanly. Reachability solved; fine-approach piloting is the edge.
+0b. **[OPEN — approach precision] Tight-doorway threading / outdoor fine-threading.** A door barely wider
+   than the hull (townofbree tavern basement) is now *routable* (6.7u clearance) but the engine path-follower
+   still struggles to *thread* it cleanly. Same family outdoors: townofbree 2026-07-02 playtest — bots not
+   stuck, but can't fine-thread outdoor spaces precisely enough → 0 caps. Reachability solved; fine-approach
+   piloting is the edge. **This is grid parameter tuning, not architecture** — keep it a separate track from
+   the §7.1 dynamic-obstacle phase so each can be A/B'd alone.
 0c. **[ROADMAP — Stage 4, from the retired spec] Retire the old substrate.** Once no remaining role exists
    for it, **delete** the portal-skeleton pseudo-bnode synthesis, the outdoor connecting graph, the soft-hop
    bridge, and the reach-door fallback (§4.2–§4.3) plus their five `[legacy 0.9.3]` toggles — subsumed by
@@ -642,10 +651,14 @@ softhop) gate the fallback substrate and are deleted together with that code in 
    a near-capture. Likely the carrier home-nav / entrance-resolve / soft-hop aiming at a point in/near the
    recess. Candidate fixes: reject entrance/approach targets that resolve to a non-portal concavity; or a
    carrier "backed into a dead pocket" escape (detect no-portal concave + reverse out). Needs a repro/navdump.
-4. **[BLOCKED — SEPARATE FRONTIER] Destroyable-grate maps (towerofisengard).** 0 caps / 7 rounds / 81 hard.
-   Bots won't *shoot* the breakable grates sealing the path, so no routing/bridge helps. Needs grate
-   passability + shoot-to-open behavior (see §7 breakable-grate item + `OBSTACLE_GEOMETRY.md`). Not a nav-
-   layer bug — do **not** chase it with routing changes.
+4. **[SCOPED → §7.1] Destroyable-grate maps (towerofisengard).** 0 caps / 7 rounds / 81 hard.
+   Bots won't *shoot* the breakable grates sealing the path, so no routing/bridge helps. Not a nav-layer
+   bug — do **not** chase it with routing changes. **Reframed 2026-07-03 (navdump component analysis):**
+   the "grates partition the map" model is *unsupported by the static data* — isengard's navdump shows both
+   flags reachable (7/7 clear approaches) inside a 35-room main component, **zero `TF_BREAKABLE` portals**
+   on the whole map. The dump is object-blind (§7.1), so the real blocker is grate *objects* in open portals
+   and/or path-follower failure in the fragmented hub (room 34 = 8 portal sub-components). Isengard is too
+   complicated as a first test; the phase gates on **splusv1** first (§7.1), isengard after.
 5. **[DEFERRED] Rigidity / node-to-node feel.** The `$softfollow` early-release attempt was **removed** (it
    regressed into circling — see ledger). A real fix needs a non-oscillating loosening (hysteresis, or
    release-once-*after-passing* the via — NOT target-line flicker). Lower priority than 1–3.
@@ -671,6 +684,95 @@ softhop) gate the fallback substrate and are deleted together with that code in 
   broadly worse; the strafe path never actually fired. Do not resurrect.
 
 ---
+
+### 7.1 Next phase — dynamic-obstacle response (scoped 2026-07-03, not yet built)
+
+**Theme: the bot responds to the world *as it is now*, not as the load-time roadmap said.** The 0.9.4
+static substrate is validated (§3.5); the remaining game-breaking failures are things the roadmap's
+probes physically **cannot see** — grate objects, breakable glass, blastable doors — plus reacting to a
+blocked route *before* pinning. This matters structurally for CTF today and Entropy next (room access is
+the game mechanic there). Three stages, one toggle-gated feature each.
+
+**Grounding facts (verified against code + navdumps, 2026-07-02/03):**
+- **All our static tooling is object-blind.** `ProbePortalClearance` casts with
+  `FQ_IGNORE_MOVING_OBJECTS` and no `FQ_CHECK_OBJS` (`bot_steering.cpp:88`) — it hits walls only. The
+  navdump inherits this. A destroyable grate **object** sitting in a geometrically-open portal is
+  invisible to the roadmap, the geocost layer, and every offline analysis.
+- **Test map = splusv1** (small anarchy map, 2 grates: room 10→3 and 10→4). The grates are
+  `OF_DESTROYABLE` **objects** in open portals — the map has **zero** `TF_BREAKABLE` faces. The 10→3/4
+  portals read tight/DISAGREE from the room-10 side for *geometric* reasons (buried `path_pnt` →
+  asymmetric swept-hull), so that impassability **persists after the grate breaks** — which is why
+  routing-through is deferred (below). Rooms 3/4 are 20×20×10 dead-end closets (no powerups in the dump;
+  snapshot caveat).
+- **The missile-suicide mechanism is in the combat loop, not stuck-clear.** Stuck-clear priority 2
+  (`OF_DESTROYABLE` blocker) fires the **primary** only (`BotFireAtObject`, `bot.cpp`); the
+  secondary-first branch of `BotBreakGlassObstacle` is reachable only via a `TF_BREAKABLE` face —
+  absent on splusv1. The actual kill path: grates are **see-through ≠ passable** (`OBSTACLE_GEOMETRY.md`)
+  → a pinned bot acquires an enemy *behind* the grate → `BotDoSecondaryFiring` launches a homing/smart —
+  the splash self-guard (`bot.cpp:732`) measures distance to the **target** (far), not to the **first
+  obstruction** (the grate at the nose) → point-blank detonation, repeatedly. Also: the `is_splash` list
+  omits Concussion/Homing/Guided/Cyclone (all carry blast damage), and `BotFireSecondaryAtPosition` has
+  no guard at all (latent, glass path).
+
+**Stage 1 — firing-layer obstruction guard (fixes the suicide everywhere).** Before releasing any
+splash secondary, ray-cast the aim line; if the first hit (wall **or** object) is inside the
+splash-guard radius, hold fire or fall back to primary. One check covers grate-adjacent,
+glass-adjacent, and pillar-adjacent suicide in combat *and* clearing. Extend the `is_splash` list to
+every blast-damage secondary. Smallest diff, unconditional win — ship first.
+
+**Stage 2 — safe + proactive obstacle clearing (`$nav grate`, default ON).**
+- `BotClearObstacleSafely(bot, target, need_matter)`: within splash range **never** a secondary.
+  Grate object → **Laser** (always owned, zero splash, works on any destroyable); glass
+  (`need_matter`) → Vauss → MassDriver. Rework `BotBreakGlassObstacle` to drop the secondary-first
+  branch and route stuck-clear priorities 2+3 through it.
+- **Proactive trigger:** `BotPortalBreakableObstacle(room, portal, &obj)` scans the committed route's
+  next portal for an `OF_DESTROYABLE` object; when found and the bot is approaching, start clearing
+  *before* the 1.5s stuck pin. No object found → dormant (self-verifying on every other map).
+- **Discriminator firewall (the no-regress line): only shoot things that actually open.**
+  `TF_BREAKABLE` glass → matter weapon only; `OF_DESTROYABLE` object / `DF_BLASTABLE` door → any
+  weapon; **never** `TF_DESTROYABLE` cosmetic faces (never open) or permanent tight slits (DISAGREE
+  `pf_too_small` bars — shoot-through but unbreakable → infinite ammo-dump pin).
+- **Gate:** splusv1 — bot clears both grates with laser, **zero self-damage deaths**, and proceeds.
+  No-regress: doorsofmoria/pyromania glass still shatters (matter path intact); official maps
+  unaffected (no grate objects → dormant).
+
+**Stage 3 — progress-monitor replan (replan-from-current-pose).** Move the replan trigger from
+"stuck timer expired" (reactive) to a stall detector: **net displacement below threshold over N ticks**
+(the same hard criterion as the analyzer's `net_disp<10` hard-pin discriminator) → re-query the roadmap
+from the current pose → re-aim; fall through to `BotDoStuckClear` if replanning can't progress. This
+*generalizes* the existing chain-cap → suspend → reroute machinery into a continuous monitor — a wiring
+change, not a substrate change. Natural consumer of Stage 2: a replan that finds the blocker breakable
+hands it to the clearing logic instead of routing around.
+- **Event-driven, not polled** — robotics stacks re-plan at fixed 200ms because the sensed world
+  changes continuously; ours changes only when something breaks/opens/blocks. Trigger on stall.
+- **HARD CONSTRAINT (the `$softfollow` tombstone, ledger above): non-oscillating.** The stall
+  criterion must be displacement-based only — never route-quality or target-line re-checks inside a
+  commit window (that exact mechanism cratered via-arrival 73%→18%). Hysteresis: once a replan fires,
+  commit to the new route for a minimum window.
+
+**Deferred out of this phase (decided 2026-07-03):**
+- **Routing-through grates** (finite break-cost in `BotPortalGeoCost`): requires the asymmetric-probe
+  fix (splusv1 10→3/4 stays geo-impassable after the grate dies) + a non-cached dynamic overlay + a map
+  where something worth reaching sits behind a grate (splusv1's closets are empty). Bundle all three
+  when a payoff map appears.
+- **"Frontier exploration" → correctly named: visit-recency patrol bias.** The robotics concept (seek
+  *unknown* space — Yamauchi 1997, §9) doesn't transfer: BSP is ground truth, the roadmap covers the
+  level at load, D3 has no unknown. What remains is a behavior-layer roam-variety heuristic —
+  anarchy-only if ever (in CTF it's a detour tax on a fixed objective). Not navigation; file with
+  game-mode/behavior work.
+- **Anti-adopt list (from the 2026-06-30 ExynAI/robotics synthesis — keep verbatim):** no
+  OctoMap/probabilistic occupancy (BSP is noiseless binary truth); no Nav2 port (borrow the costmap
+  layer/recovery-behavior *patterns*, never the ROS stack); no sensor-fusion loop (nothing drifts).
+  Secondary tier (later, maybe): spline-smoothed trajectories, behavior-tree FSM refactor, costmap
+  layer formalization.
+
+*(Provenance: ExynAI research synthesis 2026-06-30 — production mine-drone SLAM stack, same
+perception→volumetric-map→planner→local-steering family as §3.5. Its gap analysis ranked frontier +
+replan as the top steals; the 2026-07-02/03 code/navdump review re-ranked dynamic-obstacle awareness
+above both, corrected the frontier framing, and fixed two citations — frontier = Yamauchi 1997, not
+Yamaguchi 1998 (formation control); Lazy Theta\* = Nash/Koenig/Tovey 2010, not Incremental Phi\* 2009.)*
+
+### 7.2 Long-standing open problems (narrative)
 
 - **Intra-room interior-obstacle press — KNOWN ENGINE LIMITATION (Phase 12, ongoing mitigation).**
   *This was the original headline nav problem; the via-point / pseudo-bnode / soft-hop stack (§4.2, §7.0 #1)
@@ -976,12 +1078,11 @@ softhop) gate the fallback substrate and are deleted together with that code in 
   → reroute machinery. Surfaced by a custom map that dressed the cluster as a multi-storey building, but
   the geometry is generic: any cramped, concave, single-chokepoint room pocket in a mine. **A/B with
   `$pseudobnodes`; the gate is doorsofmoria no-regression + townofbree via-fail collapse.**
-- **Breakable-grate / destructible-obstacle passability — second priority.** Bots treat a destructible
-  grate / breakable pane as a permanent wall: the engine and our passability layer mark the portal
-  impassable, and the bot never *shoots it open* to pass. On maps that wall off zones with grates this
-  **partitions the map into sealed regions** — bots can't reach each other (0 kills) or the flag
-  (Fellowship's Isengard). Geometry flags in `OBSTACLE_GEOMETRY.md`. A fix needs a "shoot-to-open"
-  behaviour on a blocked-but-*breakable* portal that lies on the committed route.
+- **Breakable-grate / destructible-obstacle passability — SCOPED, see §7.1.** Bots treat a destructible
+  grate / breakable pane as a permanent wall and never *shoot it open* to pass. Now the next phase's
+  Stage 2, with the 2026-07-03 corrections: the blockers are `OF_DESTROYABLE` *objects* (dump-blind),
+  the suicide risk is the combat loop's splash secondaries at see-through targets, and the first test
+  map is splusv1 (not Isengard). Geometry flags in `OBSTACLE_GEOMETRY.md`.
 - **Multi-flag CTF.** In 4-team CTF, deliberately hoarding multiple enemy flags before cashing in is
   not implemented (bots only do it opportunistically).
 
@@ -1045,6 +1146,13 @@ came from feeding it better goals. Keep that line.
   Length Analysis in 3D," *AAAI 2010*. (The §3.5 local search.)
 - **Quake III AAS:** van Waveren (2001), "The Quake III Arena Bot" (MSc thesis) — the
   surface-locomotion contrast case for the §3.5 novelty claim.
+- **Frontier exploration:** Yamauchi (1997), "A Frontier-Based Approach for Autonomous Exploration,"
+  *IEEE CIRA 1997*. (§7.1 — evaluated and **deferred**: D3 has no unknown space; the transferable
+  residue is a behavior-layer visit-recency patrol bias. Cite Yamauchi, not Yamaguchi 1998 — that
+  paper is multi-robot formation control.)
+- **Recovery/replan patterns:** ROS 2 Nav2 (docs.nav2.org — costmap layers, recovery behaviors) and
+  Move Base Flex — *pattern* references for §7.1 Stage 3 (replan-from-current-pose). Borrow the
+  patterns, never port the stacks.
 - `OBSTACLE_GEOMETRY.md` — how the engine represents passable geometry (what `fvi` probes must respect).
 - `PATHFINDING_CODEBASE_EXPLORE.md` — Guide-bot navigation analysis (engine pathfinding deep dive).
 - `townofbree.json` / `.svg` / `.png` — the canonical worst-case geometry the 0.9.4 substrate was
