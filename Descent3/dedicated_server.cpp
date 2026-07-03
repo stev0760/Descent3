@@ -735,7 +735,7 @@ void ParseLine(char *srcline, char *command, char *operand, int cmdlen, int oprl
 // `$nav dump [file]` writes the nav-geometry JSON. The pre-0.9.5 flat command names stay as HIDDEN
 // aliases (soak scripts + muscle memory keep working; they're gone from $bothelp). Rows tagged
 // legacy gate the 0.9.3 fallback substrate and are deleted together with that code in Stage 4
-// (GRID_NAV_DESIGN.md). NOTE the near-collision: `$nav bridge` = the 0.9.4 corner-rounding bridge
+// (NAVIGATION.md section 3.5). NOTE the near-collision: `$nav bridge` = the 0.9.4 corner-rounding bridge
 // ($gridbridge), while the OLD `$navbridge` = the 12.7 soft-hop, now `$nav softhop`.
 struct NavToggle {
   const char *sub;    // $nav <sub> on|off

@@ -2,16 +2,18 @@
 
 > **Read this before modifying any navigation, routing, or steering code.** This is the single
 > source of truth for how Matcen bots move. It supersedes the old `NAV_OVERHAUL*.md` /
-> `NAV_CONSOLIDATION.md` pile (now folded in — see §8 History). Deep engine research lives in
-> `PATHFINDING_CODEBASE_EXPLORE.md`; per-frame field/constant detail in `BOT_DEV_REFERENCE.md`.
+> `NAV_CONSOLIDATION.md` pile **and the retired `GRID_NAV_DESIGN.md`** (the 0.9.4 spec — shipped,
+> validated, and folded in as §3.5–§3.6 + §8 History; original in git history). Deep engine research
+> lives in `PATHFINDING_CODEBASE_EXPLORE.md`; per-frame field/constant detail in `BOT_DEV_REFERENCE.md`.
 
-**Status:** Matcen 0.9.4 (current — the volumetric grid-roadmap milestone). The ground-up nav rewrite
-(`GRID_NAV_DESIGN.md`) shipped: a per-room/per-region grid-seeded volumetric roadmap routed with any-angle
-Lazy Theta\*, hull-aware (6.7u fit clearance + corner-bridging across wall-split components), with **selective**
-proactive in-room routing (gated to genuinely complex rooms) driving objective, carrier, and escort nav. A
-9-map Fellowship soak measured **captures +58% vs 0.9.3** (best build to date). The Phase 10–12 stack below
+**Status:** Matcen 0.9.5 (current — 0.9.4's volumetric grid-roadmap milestone + the `$nav` console
+namespace and the `$gridbridge` cache-flush fix). The ground-up 0.9.4 nav rewrite shipped and validated: a
+per-room/per-region grid-seeded volumetric roadmap routed with any-angle Lazy Theta\*, hull-aware (6.7u fit
+clearance + corner-bridging across wall-split components), with **selective** proactive in-room routing
+(gated to genuinely complex rooms) driving objective, carrier, and escort nav — see **§3.5**. A 9-map
+Fellowship soak measured **captures +58% vs 0.9.3** (best build to date). The Phase 10–12 stack below
 (two-layer architecture + cost-aware Dijkstra router + portal skeleton / pseudo-bnodes / outdoor connecting
-graph) remains live as the `$gridnav off` fallback and is the design rationale for the substrate. **For the
+graph) remains live as the `$gridnav off` fallback (§4.2–§4.3) until Stage 4 retires it. **For the
 live current-status snapshot — toggle states, open issues, and the tried-&-reverted ledger — see §7.0** (kept
 current per soak). The narrative sections below are the design rationale; §7.0 is "what's true right now."
 
@@ -64,6 +66,11 @@ points** — no intra-room waypoints. In a buried-center room that `path_pnt` is
 engine aims the bot **into the wall**. This is a durable engine limitation, not a fork regression, and
 it is *the* reason complex rooms on custom maps are unnavigable by the engine alone (see §4.2). Confirm
 per map with `$navdump` → `bnode_allocated` / per-room `bnode_count`.
+**Guard: "no BNodes" is universal — it is *never* a per-map root cause.** Every MP map, official *and*
+custom, healthy *and* broken, ships with `bnode_allocated=false` (vanilla D3 MP had no AI players, so the
+editor's BNode pass was never run on any MP map). The entire bot nav stack since Phase 3.6 is a substitute
+for this missing data; what distinguishes a *problem* map is interior coverage (§8, 0.9.4 entry). Runtime
+*engine* BNode generation was tried and reverted — see the §7.0 ledger; the substitute lives in **our** layer.
 
 ### 2.3 The path-follower pipeline
 `GoalAddGoal(AIG_GET_TO_POS/OBJ)` → `AIPathAllocPath` (`aipath.cpp:990`) builds the full path:
@@ -108,11 +115,40 @@ relief. Don't justify nav design by pool pressure.
 
 ---
 
-## 3. Routing layer — the cost-aware router (Phase 11)
+## 3. Routing layer — hierarchical: coarse room router + fine volumetric roadmap
 
-`bot_steering.cpp`. Routing only — it returns a *room*, never a steering vector. Active in objective
-modes only (`BotGetObjectiveRoom()` returns -1 in anarchy/team/robo/coop → the router is never
-reached there, so those modes are behavior-identical to the pre-Phase-11 base).
+Since 0.9.4 the routing layer is **two tiers** (the HPA\* pattern — Botea 2004, §9 refs — with D3's
+room/portal topology as the cluster decomposition we never had to derive):
+
+```
+            ┌─────────────────────────────────────────────────────────────┐
+   COARSE   │  BotComputeRoute  (room-graph Dijkstra — §3.1, Phase 11)     │
+  (rooms)   │  from_room → goal_room → next-hop room                       │
+            └───────────────┬─────────────────────────────────────────────┘
+                            │  room sequence
+            ┌───────────────▼─────────────────────────────────────────────┐
+   FINE     │  Volumetric roadmap + Lazy Theta*  (§3.5, 0.9.4 — local)     │
+  (volume)  │  bot node → … → exit/target node, over hull-clear grid edges │
+            └───────────────┬─────────────────────────────────────────────┘
+                            │  waypoint (AIG_GET_TO_POS sub-goal)
+            ┌───────────────▼─────────────────────────────────────────────┐
+  STEERING  │  Engine path-follower + AIF_AVOID_WALLS  (§4 — UNCHANGED)    │
+  (engine)  │  flies the ship to the waypoint, deflecting off walls        │
+            └─────────────────────────────────────────────────────────────┘
+```
+
+| HPA\* concept | D3 equivalent (already exists) |
+|---|---|
+| Cluster | A **room** |
+| Entrance / transition node | A **portal** (`path_pnt`) |
+| Abstract-graph search | `BotComputeRoute` (§3.1, cost-aware Dijkstra over the room graph) |
+| Intra-cluster refinement | the **volumetric roadmap** (§3.5) |
+
+§3.1–§3.4 describe the coarse tier (`bot_steering.cpp`); §3.5 the fine tier (`bot_roadmap.cpp`).
+Both are routing only — they return a *room* / a *waypoint*, never a steering vector. The coarse
+router is active in objective modes only (`BotGetObjectiveRoom()` returns -1 in
+anarchy/team/robo/coop → the router is never reached there, so those modes are behavior-identical
+to the pre-Phase-11 base).
 
 ### 3.1 `BotComputeRoute(from, goal) -> next_room | -1`
 Dijkstra over the **interior** room graph (no terrain-region expansion → no sky-routing). Edge cost:
@@ -156,6 +192,104 @@ The engine ignores our route if handed the far goal (it re-plans via its own BOA
 **adjacent next hop** as an `AIG_GET_TO_POS` goal; the engine path-follows that short hop, and we
 recompute on room-entry. The bot flows portal-to-portal along *our* route. Wired into:
 `BotDoExploreRoaming` (objective nav), `BotDoCarrierNav`, `BotDoHoardCarrierNav`.
+
+### 3.5 The volumetric grid-seeded roadmap (0.9.4 — `bot_roadmap.cpp`, `$gridnav`/`$gridbridge`/`$gridroute`)
+
+*(The 0.9.4 rewrite, formerly specified in the retired `GRID_NAV_DESIGN.md`. Shipped 2026-06-28,
+validated: Fellowship 9-map soak captures +58% vs 0.9.3.)*
+
+**Why it exists.** The 0.9.3 substitute for the missing engine BNodes (portal skeleton +
+pseudo-bnodes, §4.2) places nodes **at and just inside portals** — enough to route between portals
+in convex-ish rooms, but with no coverage of a room's *interior volume*. Two failure modes,
+confirmed on townofbree: **through-room thrash** (a handful of portal-clustered nodes can't capture
+a winding multi-level room → portal-to-portal oscillation, 83/90 stucks "moving-but-slow") and
+**in-room-target unreachability** (no node at an arbitrary interior point → a bot ordered to a
+player or chasing a dropped flag can't path to it *even when adjacent*). The geometry is **3D**
+(room 60 = 186×127×**97** buried labyrinth; room 61 = a 57×401×**123** shaft) — a top-down scheme
+can't represent it. Rather than keep bolting per-symptom fixes onto the portal graph, 0.9.4
+replaced the substrate: a **deterministic (grid-seeded) PRM** — see §9 refs — supplying the
+intra-cluster refinement of the §3 hierarchy.
+
+**Construction (grow-from-seed — the robustness crux).** Per room (indoors) / per terrain region
+(outdoors), built **lazily** on first need, cached, invalidated on `BOA_mine_checksum` — and
+explicitly flushed by `BotRoadmapInvalidate()` when a build-time toggle flips (`$nav bridge`,
+0.9.5 — before that, a mid-level toggle was silently inert on already-built rooms).
+
+1. **Seed** from portal `path_pnt`s (points a ship *provably* occupied).
+2. **Grow**: lay a 3D lattice over the room bbox (`BOT_ROADMAP_SPACING` 20u indoor,
+   `BOT_ROADMAP_OUTDOOR_SPACING` 30u; auto-coarsens past `BOT_ROADMAP_MAX_LATTICE` 20000 cells);
+   accept a lattice cell only when a **hull-swept edge reaches it from an already-accepted node**.
+   Never "cull a point if a probe is clear" — a ray from a void/hollow-core point false-clears; a
+   sweep into solid always hits the boundary face, so growth is robust by construction and
+   **connected components fall out for free**.
+3. **Clearance is a CONNECTIVITY radius, not a flight-safety margin** — `BOT_ROADMAP_CLEARANCE`
+   **6.7** (Pyro hull 6.676 + a sliver). A larger "momentum margin" (the original 8.0) over-rejected
+   tight passages the hull clears (a ~7u tavern doorway) and falsely fragmented rooms; the engine's
+   avoid-walls owns flight safety. **Never set below the hull** (the reverted bnode-gen `max_rad
+   5.0` mistake). Fixed, not speed-scaled → one graph at all speeds.
+4. **Component bridging** (`$gridbridge`): grow-from-seed leaves wall-split interiors as separate
+   components; the **corner bridge** sweeps a single midpoint (lateral/vertical offsets up to
+   `BOT_ROADMAP_CORNER_OFFSET_MAX` 120u over spans ≤ `BOT_ROADMAP_CORNER_LEN` 220u, hull-gated,
+   spatial-hashed, attempts capped) to round the wall corner and connect them. Collapsed the
+   townofbree/khazaddum divider rooms. A gap through solid stays unbridged — that's correct.
+
+**Query & delivery.** Local search = **Lazy Theta\*** (any-angle — §9 refs), not
+grid-Dijkstra-then-smooth: straight segments by construction, LOS = the shared hull-sweep.
+Delivery = the **furthest path vertex with clear LOS from the bot** (greedy string-pull), handed
+to the engine as an ordinary `AIG_GET_TO_POS` sub-goal. The engine does all steering (§3
+invariant); the roadmap outputs a waypoint, never a heading.
+
+**Selective engagement (`$gridroute`).** Proactive in-room routing runs only in **genuinely
+complex rooms** — `orig_comp_count > 1` AND ≥ `BOT_ROADMAP_COMPLEX_MIN_LATTICE` (24) lattice nodes
+— so simple maps keep direct routing (no behavior change where the engine was already fine). The
+same router drives objective, carrier, and `!follow`/`!cover`/`!hold` escort nav (escort: route
+when far, beeline when close with LOS).
+
+**Outdoor unification.** The lattice doesn't care whether a cell is "in a room" or "over terrain"
+— `BotRoadmapFindViaOutdoor` builds per terrain region with the same grow/Theta\*/delivery core
+(`GrowFromSeeds` + `QueryVia`; `RoadmapLOS` dispatches on `rr->outdoor`). The outdoor probe crux:
+an `RF_EXTERNAL` room can't start an fvi trace, but the terrain *cell* can — `BotSegmentClearOutdoor`
+resolves it via `GetTerrainRoomFromPos` and runs the ceiling-capped sweep (sees `HIT_TERRAIN`,
+`HIT_WALL`, `HIT_CEILING`). Seeds = the region's `BOA_connect` door approach points; lattice extent
+= structure bboxes + `BOT_ROADMAP_OUTDOOR_MARGIN` (60u), Y-capped under `Ceiling_height − 50` (the
+build-side no-sky-fly bound). A portal contributes a node just inside and just outside — that seam
+edge *is* the indoor↔outdoor connection. Outdoors gains a real router for the first time; the
+decorative-alcove carrier trap (§7.0) becomes a non-issue (a concave recess has no through-edges).
+
+**Fallback.** Degenerate rooms (roadmap culls to near-empty, or components stay disconnected) fall
+back to the 0.9.3 skeleton (§4.2); `$gridnav off` reproduces the full 0.9.3 stack for A/B. Stage 4
+(§7.0 roadmap) deletes the fallback once it has no remaining role.
+
+**Known limits (live — see §7.0 open issues):**
+- **Resolution-completeness blind spot:** a regular lattice can miss a passage wider than the hull
+  but narrower than the spacing. Detectable at build time (a room that fails to connect its own
+  portals); the thin-room densification track (§7.0 #0) is the open fix for khazaddum-class rooms.
+- **Statically-clear ≠ flyable at speed:** a momentum-carrying ship carves a turn radius; the
+  engine's avoid-walls absorbs most of it, and the lattice spacing is a *control-loop* parameter
+  (matches the path-follower's arrival radius/lookahead) — tune against observed motion, not graph
+  metrics. Residual: fine-approach threading of hull-width doorways (§7.0 #0b).
+- **`fvi`-clear ≠ traversable** for dynamic geometry — the sweep inherits every caveat in
+  `OBSTACLE_GEOMETRY.md` (doors, forcefields, grate *objects* — see §7.0 #4); and the growth probe
+  can over-reach into sealed pockets over a lattice step (§7.0 #0a, handled by the troll backstop).
+
+**Prior art & the novelty claim (for reviewers).** Each layer has decades of precedent — PRM
+(Kavraki 1996), HPA\* (Botea 2004), Lazy Theta\* (Nash 2010); Quake III's AAS is a 3D decomposition
+but models *surface locomotion* with typed reachabilities (walk/jump/rocket-jump), not free-flight
+volume sampling. No documented precedent combines a deterministic-PRM + HPA\* substrate inside a
+**6DOF flight volume** driving a competitive MP bot framework. The 6DOF twist cuts both ways:
+harder geometry (sample a volume, not a floor) but a far simpler cost model than AAS — no climb
+penalty, no jump typing, one edge type, pure Euclidean cost. The integration seams (momentum vs.
+static clearance, lattice-vs-control-loop coupling) are where the surprises live — and where the
+open issues above sit.
+
+### 3.6 Flanking hook (reserved — Stage 5, not yet built)
+
+The roadmap reserves a per-node/per-edge **tactical weight**. Flanking = run the local search as
+A\* with an added cost term (node exposure to a threat's LOS/expected facing); the roadmap then
+returns an approach that hugs cover or comes from an unexpected bearing/altitude. Nothing about
+the substrate is flanking-specific — the hook exists so the behavior layer can later supply a cost
+function without a re-architecture. Sequenced after the substrate is the stable default (§7.0
+roadmap, Stage 5).
 
 ---
 
@@ -236,6 +370,11 @@ ceiling-blocked.
 
 ## 4.2 In-room navigation on BNode-less custom maps (Phase 12.4 reach-door + 12.5b pseudo-BNodes)
 
+> **[FALLBACK SUBSTRATE — 0.9.3].** Since 0.9.4 the volumetric roadmap (§3.5) is the primary
+> in-room substrate; this layer serves degenerate rooms (roadmap culls to near-empty /
+> disconnected) and the `$gridnav off` A/B baseline. It is deleted together with its toggles at
+> Stage 4 (§7.0 roadmap). Kept documented until then — it is still live code.
+
 **Why a separate layer.** §2.2: the engine's in-room waypoints (BNodes) are baked into the level file only —
 MP maps never carry them, and runtime *engine* BNode generation was **tried and reverted** (§8: it
 displaced the working crude-BOA path, broke the skeleton's foundation, and demanded cascading engine
@@ -279,6 +418,10 @@ unsolvable rooms (no alternate route + no reachable door) are a map defect no na
 ---
 
 ## 4.3 Outdoor lateral go-around (Phase 12.6 — `$outdoorvia`)
+
+> **[FALLBACK SUBSTRATE — 0.9.3].** Since 0.9.4 the outdoor roadmap (§3.5) replaces the
+> connecting graph as the primary outdoor go-around; this layer is the `$gridnav off` fallback,
+> deleted at Stage 4 (§7.0 roadmap).
 
 §4.1 redirects an outdoor bot's goal to the near structure entrance and lets the engine fly the straight 3D
 approach. But on an *urban* outdoor map (Town of Bree) the buildings' exterior walls form alleys and
@@ -361,6 +504,19 @@ nav: dest_room=5 num_paths=1 path=0/3 mdir|0.98| ahead:WALL d=12.3 solid=0 porta
 active. DIVERGE at a wide-open portal (`gcost=0`, no penalty) means the base cost isn't reproducing
 BOA — a bug (the router would be silently overriding BOA everywhere), not a feature.
 
+**Roadmap / console surface (0.9.4–0.9.5):**
+- **`$nav`** (bare) — live toggle table; `$nav <name> on|off` flips one; `$nav dump` = `$navdump`.
+  All pre-0.9.5 flat names remain hidden aliases. Watch the near-collision: **`$nav bridge` = the
+  0.9.4 corner bridge (`$gridbridge`); `$nav softhop` = the OLD 12.7 `$navbridge` soft-hop.**
+- **`$navdump`** — emits per-room roadmap node/edge/component counts and the per-region
+  `outdoor_roadmap[]` alongside the legacy `skel_*` fields. Format changes → update
+  `D3_PYRODECK_SPEC.md`.
+- **`tools/visualize_navdump.py`** — draws roadmap nodes colored by component + edges (distinct
+  from the legacy cyan pseudo-bnodes); an outdoor shell colored one component across a wall's
+  flyable side = connected go-around coverage.
+- **`tools/analyze_bot_log.py`** — hard-pin / via-arrival / BLOCKED-order metrics are the A/B
+  scorecard across substrate versions.
+
 ---
 
 ## 6. Invariants (don't regress these)
@@ -379,6 +535,13 @@ BOA — a bug (the router would be silently overriding BOA everywhere), not a fe
 5. **Proven-before-prune / proven-before-default.** Behavior changes land under `-dev`, validated on
    the test rotation (abend2 glass, SewerRat tunnels, an open map, anarchy/team) before the suffix is
    stripped. The Phase 8.1b revert is the cautionary tale.
+6. **Hull radius is real.** Probe and edge at the true ship hull (6.676 / `BOT_ROADMAP_CLEARANCE`
+   6.7) — never below it (the reverted bnode-gen `max_rad 5.0` routed bots through gaps they don't
+   fit), and never inflate it into a "safety margin" (the 8.0 clearance falsely fragmented rooms;
+   the engine's avoid-walls owns flight safety).
+7. **Our layer only; never displace the engine's working path.** Feed `AIG_GET_TO_POS` waypoints;
+   never touch `BNode_allocated` or the engine's path build (the BNODE-gen revert, §7.0 ledger).
+   Keep a working fallback substrate live behind a toggle until its replacement passes its gate.
 
 ---
 
@@ -396,8 +559,8 @@ or a toggle default changes. The narrative subsections below explain the "why"; 
 > portal-derived graph that is too sparse to cover a room's interior volume** — confirmed visually on
 > townofbree (room 60 = 186×127×**97** buried labyrinth with ~5 portal-clustered nodes; room 61 = a
 > 57×401×**123** shaft). Rather than keep bolting per-symptom fixes onto the portal graph, **0.9.4 replaces
-> the substrate** with a **volumetric grid-seeded roadmap + hierarchical routing** (canonical spec:
-> `GRID_NAV_DESIGN.md`). The lateral-go-around-waypoint fix (formerly #1's "NEXT FIX") is **dropped** — it
+> the substrate** with a **volumetric grid-seeded roadmap + hierarchical routing** (**§3.5**; the original
+> spec `GRID_NAV_DESIGN.md` is retired into this doc). The lateral-go-around-waypoint fix (formerly #1's "NEXT FIX") is **dropped** — it
 > would add more portal-derived nodes to the graph that is itself the problem; the roadmap subsumes it.
 
 **Runtime nav toggles (0.9.5 surface: bare `$nav` prints this table live; `$nav <name> on|off` flips one;
@@ -410,7 +573,7 @@ the pre-0.9.5 flat names remain hidden aliases. Defaults in `bot_steering.cpp`/`
 | `outdoorvia` | `$outdoorvia` | ON | 12.6 A | validated net-positive (reactive ring, ceiling-aware) |
 | `outdoorgraph` | `$outdoorgraph` | ON | 12.6 B | validated net-positive (13.5h soak: 0 crashes, captures +30%) |
 | `softhop` | `$navbridge` | ON | 12.7 | **mechanism validated, PARTIAL** — kills dead-ends but not yet a crossing (see #1) |
-| `grid` | `$gridnav`/`$navgrid` | **ON** | 0.9.4 | **VALIDATED** — volumetric grid roadmap + Lazy Theta\* (replaces the skeleton via-pass indoors; degenerate rooms fall back to the skeleton). `off` = 0.9.3. See `GRID_NAV_DESIGN.md`. |
+| `grid` | `$gridnav`/`$navgrid` | **ON** | 0.9.4 | **VALIDATED** — volumetric grid roadmap + Lazy Theta\* (replaces the skeleton via-pass indoors; degenerate rooms fall back to the skeleton). `off` = 0.9.3. See §3.5. |
 | `bridge` | `$gridbridge` | **ON** | 0.9.4 | **VALIDATED** — corner-rounding component bridge (one swept midpoint to connect components split by a wall; hull-gated, spatial-hashed). Collapsed townofbree/khazaddum dividers. **Build-time param: toggling it flushes the roadmap cache (0.9.5 `BotRoadmapInvalidate`) — before 0.9.5 a mid-level toggle was silently inert on already-built rooms.** |
 | `route` | `$gridroute` | **ON** | 0.9.4 | **VALIDATED** — proactive in-room grid routing, gated to genuinely complex rooms (`orig_comp_count>1` AND ≥24 lattice nodes). Fellowship soak: overall captures +58% vs 0.9.3, khazaddum 0.2→1.0. Also drives carrier + `!follow`/`!cover`/`!hold` escort nav. |
 
@@ -446,6 +609,12 @@ softhop) gate the fallback substrate and are deleted together with that code in 
 0b. **[OPEN — approach precision] Tight-doorway threading.** A door barely wider than the hull (townofbree
    tavern basement) is now *routable* (6.7u clearance) but the engine path-follower still struggles to *thread*
    it cleanly. Reachability solved; fine-approach piloting is the edge.
+0c. **[ROADMAP — Stage 4, from the retired spec] Retire the old substrate.** Once no remaining role exists
+   for it, **delete** the portal-skeleton pseudo-bnode synthesis, the outdoor connecting graph, the soft-hop
+   bridge, and the reach-door fallback (§4.2–§4.3) plus their five `[legacy 0.9.3]` toggles — subsumed by
+   §3.5. This is the net-line-count payoff; §4.2/§4.3 collapse into a pointer when it lands.
+0d. **[ROADMAP — Stage 5] Flanking weights.** The §3.6 exposure-cost A\* mode, wired into the
+   tactical/combat layer. A behavior milestone, sequenced after the substrate is the stable default.
 
 **Superseded Phase-12 issues (historical — the 0.9.4 roadmap is the resolution for #1/#2; kept for context):**
 
@@ -459,7 +628,7 @@ softhop) gate the fallback substrate and are deleted together with that code in 
    actually rose 95→106, almost all "moving-but-slow"). **RESOLUTION → 0.9.4 grid roadmap.** The earlier plan
    here — a lateral go-around *waypoint* placed beside the divider — is **dropped**: it adds more
    portal-derived nodes to the very graph that's already too sparse. The 0.9.4 volumetric grid-seeded roadmap
-   (`GRID_NAV_DESIGN.md`) puts nodes throughout the room *interior* (and edges them hull-clear), which is the
+   (§3.5) puts nodes throughout the room *interior* (and edges them hull-clear), which is the
    actual connector these divider rooms need — and the same substrate fixes #2 and the interior-coverage gap.
    (Watch-item retained for 0.9.4 validation: townofbree via-arrival dipped 64%→54% under soft-hop.)
 2. **[OPEN] Outdoor connecting-graph fragmentation.** townofbree's region graph = 11 components, only 7/13
@@ -838,9 +1007,45 @@ Condensed from the retired `NAV_OVERHAUL.md` / `_2` / `_3` / `NAV_CONSOLIDATION.
   (`$potentialfield`/`$flowfield`/`$navrouting`/`$botpathfind`/`$botdispersal`). A/B-validated that the
   lean stack plays as well or better. Confirmed the glass stall is **engine-level and
   toggle-independent**. This is the base Phase 11 builds on.
-- **Phase 11 — cost-aware router (this doc, §3).** Rebuilt Dijkstra as routing-only, with graded
+- **Phase 11 — cost-aware router (this doc, §3.1–3.4).** Rebuilt Dijkstra as routing-only, with graded
   soft-cost geometry, dynamic obstacle penalties, and waypoint-injection delivery — adding the route
   intelligence the engine lacks **without** re-introducing a steering override.
+- **Phase 12 (0.9.2–0.9.3) — the portal-derived substrate.** Intra-room via-points, troll-powerup
+  guards, the portal skeleton, pseudo-bnodes, the outdoor connecting graph, and the soft-hop bridge
+  (§4.2–§4.3, §7.0 "superseded" issues). Validated "good enough" and pinned as the stable 0.9.3
+  baseline (2026-06-22) — but every remaining failure shared one root: **a portal-derived graph is
+  too sparse to cover a room's interior volume.** Also in this era: runtime *engine* BNode
+  generation tried and **reverted** (displaced working crude-BOA; pruned edges below the hull —
+  §7.0 ledger), which settled the "no BNodes is universal, never a per-map root cause" guard (§2.2).
+- **0.9.4 (2026-06-28) — the volumetric grid-roadmap rewrite (§3.5).** Replaced the portal-derived
+  substrate with a deterministic grid-seeded PRM + hierarchical (HPA\*-pattern) routing, per the
+  now-retired `GRID_NAV_DESIGN.md` spec (folded into this doc; original in git history). The spec's
+  headline framing held up: *a replacement, not an addition* — the roadmap subsumes the skeleton,
+  pseudo-bnodes, outdoor graph, soft-hop, and reach-door mechanisms (five bolt-ons → one substrate
+  + one router; the physical deletion is Stage 4, §7.0 0c). Its Stage-1 gate was **dynamic, not
+  boolean** — "reaches an arbitrary interior point *cleanly*, at flight speed, no oscillation" —
+  precisely because the soft-hop era proved reachability-on-paper ≠ a crossing. Shipped `$gridnav`/
+  `$gridbridge`/`$gridroute` default ON; Fellowship 9-map soak captures +58% vs 0.9.3 (best build
+  to date). 0.9.5 followed with the `$nav` console namespace + the `$gridbridge` cache-flush fix
+  (mid-level A/B toggles are now trustworthy).
 
 **The throughline:** every regression came from overriding the engine's steering; every durable win
 came from feeding it better goals. Keep that line.
+
+---
+
+## 9. References
+
+- **PRM:** Kavraki, Švestka, Latombe & Overmars (1996), "Probabilistic Roadmaps for Path Planning in
+  High-Dimensional Configuration Spaces," *IEEE Trans. Robotics and Automation* 12(4):566–580.
+  (Our variant is the deterministic / grid-seeded, resolution-complete form — §3.5.)
+- **HPA\*:** Botea, Müller & Schaeffer (2004), "Near Optimal Hierarchical Path-Finding," *Journal of
+  Game Development* 1(1):7–28. (D3's rooms/portals *are* the cluster/entrance decomposition — §3.)
+- **Lazy Theta\*:** Nash, Koenig & Tovey (2010), "Lazy Theta\*: Any-Angle Path Planning and Path
+  Length Analysis in 3D," *AAAI 2010*. (The §3.5 local search.)
+- **Quake III AAS:** van Waveren (2001), "The Quake III Arena Bot" (MSc thesis) — the
+  surface-locomotion contrast case for the §3.5 novelty claim.
+- `OBSTACLE_GEOMETRY.md` — how the engine represents passable geometry (what `fvi` probes must respect).
+- `PATHFINDING_CODEBASE_EXPLORE.md` — Guide-bot navigation analysis (engine pathfinding deep dive).
+- `townofbree.json` / `.svg` / `.png` — the canonical worst-case geometry the 0.9.4 substrate was
+  designed against.

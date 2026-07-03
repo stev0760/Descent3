@@ -2,12 +2,11 @@
 
 Design documents, reference material, and specifications for the Matcen multiplayer bot fork of Descent 3. These documents are the project's persistent knowledge base, referenced by human developers and AI coding agents (`CLAUDE.md`) across sessions.
 
-**Current status:** Matcen **0.9.3** (stable, pinned). Next milestone: **0.9.4** — a ground-up navigation rewrite (volumetric grid-seeded roadmap). The single live "what's true right now" snapshot — nav toggles, open issues, and the tried-&-reverted ledger — is **`NAVIGATION.md` §7.0**; read that before treating anything below as current.
+**Current status:** Matcen **0.9.5** (current — 0.9.4's volumetric grid-roadmap navigation milestone + the `$nav` console namespace). The single live "what's true right now" snapshot — nav toggles, open issues, and the tried-&-reverted ledger — is **`NAVIGATION.md` §7.0**; read that before treating anything below as current.
 
 | Document | Purpose |
 |----------|---------|
-| [NAVIGATION.md](NAVIGATION.md) | **Canonical** bot navigation design: two-layer model, Phase 11 cost-aware router, Phase 12 nav stack, engine reference, **§7.0 live status**, history |
-| [GRID_NAV_DESIGN.md](GRID_NAV_DESIGN.md) | **Canonical 0.9.4 spec** — the volumetric grid-seeded roadmap + hierarchical routing rewrite (replaces the per-room skeleton + outdoor graph) |
+| [NAVIGATION.md](NAVIGATION.md) | **Canonical** bot navigation design: hierarchical routing (coarse room router + **§3.5 volumetric grid roadmap**, the shipped 0.9.4 rewrite), engine reference, **§7.0 live status**, history. Absorbs the retired `GRID_NAV_DESIGN.md` spec |
 | [OBSTACLE_GEOMETRY.md](OBSTACLE_GEOMETRY.md) | **Authoritative** reference for how the engine represents passable/impassable geometry (walls, glass, grates, doors, forcefields) |
 | [BOT_DEV_REFERENCE.md](BOT_DEV_REFERENCE.md) | Architecture, FSM, constants, engine API patterns, gotchas |
 | [BOTS_DEVEL.md](BOTS_DEVEL.md) | Phase history and implementation notes (newest-first build log; current status lives in its header + NAVIGATION §7.0) |

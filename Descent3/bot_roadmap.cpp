@@ -16,7 +16,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-// 0.9.4 — volumetric grid-seeded roadmap + Lazy Theta*. See bot_roadmap.h / GRID_NAV_DESIGN.md.
+// 0.9.4 — volumetric grid-seeded roadmap + Lazy Theta*. See bot_roadmap.h / NAVIGATION.md section 3.5.
 //
 // Build (grow-from-seed): seed the node set with guaranteed-playable points (indoor: a room's portal
 // path_pnts; outdoor: a terrain region's door approach points), then BFS-grow a 3D lattice outward,
@@ -246,7 +246,7 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     rr->orig_comp_count = (int)roots.size();
   }
 
-  // 2. Component bridge (GRID_NAV_DESIGN section 4 step 5). Grow-from-seed leaves the interior as several
+  // 2. Component bridge (NAVIGATION.md section 3.5, construction step 4). Grow-from-seed leaves the interior as several
   // components when a NAVIGABLE gap is wider than the neighbour-connect radius (sp*1.8): e.g. townofbree's
   // tavern, where an upper gallery sits above the main floor through open air. For each cross-component node
   // pair within BOT_ROADMAP_BRIDGE_LEN, probe a hull-clear swept edge; if clear, add it and union the

@@ -26,7 +26,8 @@
 //
 // Honors the project invariants: our layer only (output is an AIG_GET_TO_POS waypoint, never movement_dir,
 // never BNode_allocated); additive + toggle-gated; hull radius real and FIXED (no speed-scaled clearance);
-// complement the engine path-follower, don't override. Canonical spec: matcen-docs/GRID_NAV_DESIGN.md.
+// complement the engine path-follower, don't override. Canonical design: matcen-docs/NAVIGATION.md
+// section 3.5 (absorbs the retired GRID_NAV_DESIGN.md spec).
 
 #include "object.h"
 #include "bot_steering.h" // BotViaResult, BotSegmentClear
@@ -50,7 +51,7 @@ extern bool Bot_gridnav_enabled;
 #define BOT_ROADMAP_SPACING 20.0f     // 3D lattice spacing (control-loop param: matches engine arrival/lookahead)
 #define BOT_ROADMAP_MAX_LATTICE 20000 // per-room candidate-cell cap; spacing auto-coarsens past this
 
-// Component bridge (GRID_NAV_DESIGN section 4 step 5): connect grow-from-seed components separated by a
+// Component bridge (NAVIGATION.md section 3.5, construction step 4): connect grow-from-seed components separated by a
 // navigable gap wider than the neighbour-connect radius (sp*1.8 = 36u) but still flyable — e.g. an upper
 // gallery ~45u above a tavern floor through open air. Hull-probe-gated, so solid dividers stay split.
 #define BOT_ROADMAP_BRIDGE_LEN 55.0f      // max cross-component gap to attempt bridging (catches ~40-45u splits)
