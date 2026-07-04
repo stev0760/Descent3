@@ -235,6 +235,9 @@
 #define BOT_STUCK_FIGHT_TIMER 1.5f    // seconds stuck before firing to clear the blockage
 #define BOT_STUCK_ENEMY_RADIUS 50.0f  // proximity radius to detect a player/bot we're jammed against
 #define BOT_STUCK_OBSTACLE_DIST 40.0f // forward ray length to detect blocking destructible objects
+#define BOT_GLASS_SCAN_DIST 80.0f     // proactive glass detection range — must comfortably exceed the 30u
+                                      // splash guard so a missile-only loadout (spawn concussions) gets a
+                                      // wide firing window instead of the 10u sliver a 40u ray would leave
 #define BOT_STUCK_ABANDON_TIME 5.0f   // seconds stuck before abandoning goal and switching to EXPLORE
 
 // Altitude constraint (Phase 3.20)

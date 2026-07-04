@@ -1227,7 +1227,9 @@ static void BotProactiveObstacleClear(int bot_index) {
 
   fvi_query fq{};
   fvi_info hit{};
-  vector end = obj->pos + obj->orient.fvec * BOT_STUCK_OBSTACLE_DIST;
+  // One ray serves both passes: glass is engaged out to BOT_GLASS_SCAN_DIST (a missile-only
+  // spawn loadout needs the wide >30u window), objects only inside BOT_STUCK_OBSTACLE_DIST.
+  vector end = obj->pos + obj->orient.fvec * BOT_GLASS_SCAN_DIST;
   fq.p0 = &obj->pos;
   fq.p1 = &end;
   fq.startroom = obj->roomnum;
@@ -1270,6 +1272,8 @@ static void BotProactiveObstacleClear(int bot_index) {
 
   if (hit_type != HIT_OBJECT || hit.hit_object[0] < 0)
     return;
+  if (hit.hit_dist > BOT_STUCK_OBSTACLE_DIST)
+    return; // objects keep the original short engagement range; only glass uses the long ray
   object *blocker = &Objects[hit.hit_object[0]];
   if (!(blocker->flags & OF_DESTROYABLE))
     return;
