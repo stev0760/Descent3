@@ -7,10 +7,13 @@ live navigation status is in [NAVIGATION.md](NAVIGATION.md) §7.0.
 Versioning: `0.8.x` = feature releases; `0.9.x` = the navigation-milestone series.
 A `-dev` suffix marks an in-test build that has not yet passed its validation gate.
 
-## [0.9.6-dev] — in test (2026-07-03)
+## [0.9.6] — 2026-07-04
 
-**Destructible-obstacle response.** Bots stop treating breakable grates and glass as permanent
-walls — and stop killing themselves trying to fight through them.
+**Destructible-obstacle response and objective focus.** Bots stop treating breakable grates and
+glass as permanent walls, stop killing themselves trying to fight through them, and stay focused
+on the objective instead of wandering off after every powerup. Validated by an 8.8-hour 9-map
+soak at the project's best-ever capture rate (2.67/round, +8.5% over 0.9.4), tripling captures
+on the hardest connected map in the pool, with zero crashes.
 
 - Fixed the splash self-kill at grates: bots no longer fire missiles at enemies seen through a
   grate or at obstacles inside their own blast radius. Line-of-sight now requires a clear line to

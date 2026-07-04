@@ -14,7 +14,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 **No client modifications required.** Retail D3 v1.5 clients and compatible engines (PiccuEngine) connect and play against bots as-is. A server with no bot configuration behaves exactly like vanilla D3.
 
-**Current release: 0.9.5.** In development: 0.9.6 — destructible-obstacle handling (bots shoot out breakable grates and glass panes on their route instead of treating them as permanent walls).
+**Current release: 0.9.6** — destructible-obstacle handling and objective focus: bots shoot out breakable glass and grates on their route instead of treating them as walls, stay committed to the objective instead of wandering off after every powerup, and no longer splash-damage themselves fighting through obstacles. Validated by an 8.8-hour, 9-map soak at the project's best-ever capture rate — including the **first fully autonomous bot flag captures** on a 324-room glass-maze map that bots previously could not navigate at all.
 
 ### Features
 
@@ -89,8 +89,8 @@ Available in the dedicated server console or via remote telnet:
 
 ### Roadmap
 
-*   **0.9.6 (in test)** — destructible-obstacle response: bots clear breakable grates and glass with a safe weapon instead of pinning against them or splash-damaging themselves; glass-gated maps become routable.
-*   **Progress-monitor replanning** — replan from the bot's current position on loss of progress, before it visibly gets stuck.
+*   **Progress-monitor replanning (0.9.7)** — replan from the bot's current position on loss of progress, before it visibly gets stuck.
+*   **Outdoor terrain refinement** — fine-threading of urban outdoor maps and rough-terrain line-of-flight (the remaining hard maps: Town of Bree, Tower of Isengard).
 *   **Entropy** — virus transport and room capture. A unique D3 mode with no FPS analogue; bots will make it playable again for the first time in years.
 *   **Monsterball** — ball-push physics and positional play.
 *   **Co-op** — squad behavior for mission play. Deferred until after the versus modes are polished.

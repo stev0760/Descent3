@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Matcen **0.9.6-dev (in test)** — dynamic-obstacle response: the grate/glass splash-suicide fix, `$nav grate` proactive clearing, and `$nav glass` break-cost routing (see the 0.9.6-dev entry; gates = splusv1 grates, bsidectf L3 glass). Last stable: **0.9.5**.
+**Status:** Matcen **0.9.6 (current, stable — released 2026-07-04)** — dynamic-obstacle response + objective arbitration: grate/glass splash-suicide fixes, `$nav grate`/`$nav glass` clearing and routing, `$nav commit` objective commitment, troll-strike discipline. Validated: first autonomous bot captures on bsidectf L3, then an 8.8h 9-map Fellowship soak at **2.67 capt/rnd (best ever, +8.5% vs 0.9.4; khazaddum 1.0→3.0), 0 crashes, 0 false obstacle-clear fires**. Next: **0.9.7-dev** = Stage 3 progress-monitor replan (`NAVIGATION.md` §7.1).
 
 - **Live status** (toggle table, priority-ordered open issues, tried-&-reverted ledger): **`NAVIGATION.md` §7.0** — read that first.
 - **Canonical nav design**: `NAVIGATION.md` §3.5 (the 0.9.4 volumetric grid roadmap; the retired `GRID_NAV_DESIGN.md` spec is folded into it). The 0.9.3 portal-skeleton stack stays live as the `$gridnav off` fallback until Stage 4 retires it.
@@ -73,7 +73,19 @@ a room lacking BNode data — a latent crash independent of bots).
 
 ---
 
-### 0.9.6-dev — Dynamic-obstacle response Stages 1+2 (2026-07-03, BUILT, UNTESTED)
+### 0.9.6 — Dynamic-obstacle response + objective arbitration (2026-07-03/04, RELEASED 2026-07-04)
+
+> **Release validation:** (1) first autonomous bot flag captures on bsidectf L3 (Sixgun + Squid,
+> 45-min 4v4; Router Nav 46→962 after arbitration landed). (2) Overnight Fellowship regression
+> soak (8h48m, 27 rounds, 9 maps): **2.67 capt/rnd — best ever, +8.5% vs the 0.9.4 baseline**;
+> khazaddum 1.0→3.0, shirebaggins 9.0; strike discipline near-silent on the healthy pool
+> (0 retirements on 5/9 maps; leapoffaith 0 HARD/26 mobile); combat intact (174 kills); 0 crashes;
+> 0 false grate/glass fires on glass-free maps. Known-and-unchanged: isengard 0/0 + townofbree 0
+> caps (the outdoor-terrain track, ~0 at baseline too; townofbree's 27 retirements are confined to
+> its failing house cluster rooms 56–60). Grate clear path remains opportunistically-unvalidated —
+> no bot has yet flown at a grate; dormant-safe proven across every session.
+
+*(Built as 0.9.6-dev, 2026-07-03:)*
 
 The first build of the §7.1 phase (`NAVIGATION.md` — canonical spec + as-built deltas). Bot code only
 (`bot.cpp`/`bot.h` + a `NavToggle` row); gate map = **splusv1** (2 destroyable grates).

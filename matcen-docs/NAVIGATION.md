@@ -6,8 +6,9 @@
 > validated, and folded in as §3.5–§3.6 + §8 History; original in git history). Deep engine research
 > lives in `PATHFINDING_CODEBASE_EXPLORE.md`; per-frame field/constant detail in `BOT_DEV_REFERENCE.md`.
 
-**Status:** Matcen 0.9.5 (current — 0.9.4's volumetric grid-roadmap milestone + the `$nav` console
-namespace and the `$gridbridge` cache-flush fix). The ground-up 0.9.4 nav rewrite shipped and validated: a
+**Status:** Matcen 0.9.6 (current — dynamic-obstacle response + objective arbitration, released
+2026-07-04: glass/grate clearing, `$nav commit`, strike discipline; best-ever 2.67 capt/rnd soak,
+first autonomous captures on bsidectf L3 — see §7.1). The ground-up 0.9.4 nav rewrite shipped and validated: a
 per-room/per-region grid-seeded volumetric roadmap routed with any-angle Lazy Theta\*, hull-aware (6.7u fit
 clearance + corner-bridging across wall-split components), with **selective** proactive in-room routing
 (gated to genuinely complex rooms) driving objective, carrier, and escort nav — see **§3.5**. A 9-map
@@ -547,13 +548,16 @@ BOA — a bug (the router would be silently overriding BOA everywhere), not a fe
 
 ## 7. Open problems (roadmap)
 
-### 7.0 Current status snapshot — 2026-07-03 (0.9.5; grid roadmap validated, next phase scoped in §7.1)
+### 7.0 Current status snapshot — 2026-07-04 (0.9.6 RELEASED; §7.1 Stages 1–2b validated, Stage 3 next as 0.9.7-dev)
 
-> **Playtest 2026-07-02 (operator FPV):** grid navigation confirmed as the right foundation —
-> "needs refinement, not replacement." khazaddum: some captures (roadmap working). townofbree: 0
-> captures — bots *not stuck*, but can't fine-thread outdoor spaces precisely enough (→ #0b, a
-> grid *parameter tuning* track, not architecture). pyroplace team anarchy: combat AI solid, no
-> regressions. Next phase = **dynamic-obstacle response** (§7.1).
+> **0.9.6 release soak (2026-07-04, 8h48m Fellowship 9-map, 27 rnds):** **2.67 capt/rnd — best
+> ever** (+8.5% vs 0.9.4); khazaddum 1.0→3.0, shirebaggins 9.0; 0 crashes; strike discipline
+> near-silent on healthy maps; 0 false grate/glass fires. First autonomous captures on bsidectf
+> L3 (2026-07-04). Remaining fronts unchanged and next: **Stage 3 replan** (§7.1 — HARD-share
+> gate) then the **outdoor-terrain track** (isengard 0/0 TOTAL_BREAKDOWN, townofbree 0 caps with
+> the room-56–60 house cluster dominating: 121 moving-slow stucks, 148 HARD chase timeouts, 27
+> item retirements — all confined there). Log artifact to fix: `BotViaPointTick` via lines print
+> raw outdoor roomnums (0x8000xxxx → huge negatives) polluting analyzer room columns.
 
 *A scannable checkpoint so we stop re-deriving state. Update the date + toggle table + ledger whenever a soak
 or a toggle default changes. The narrative subsections below explain the "why"; this is the "what, right now."*
@@ -582,9 +586,9 @@ the pre-0.9.5 flat names remain hidden aliases. Defaults in `bot_steering.cpp`/`
 | `grid` | `$gridnav`/`$navgrid` | **ON** | 0.9.4 | **VALIDATED** — volumetric grid roadmap + Lazy Theta\* (replaces the skeleton via-pass indoors; degenerate rooms fall back to the skeleton). `off` = 0.9.3. See §3.5. |
 | `bridge` | `$gridbridge` | **ON** | 0.9.4 | **VALIDATED** — corner-rounding component bridge (one swept midpoint to connect components split by a wall; hull-gated, spatial-hashed). Collapsed townofbree/khazaddum dividers. **Build-time param: toggling it flushes the roadmap cache (0.9.5 `BotRoadmapInvalidate`) — before 0.9.5 a mid-level toggle was silently inert on already-built rooms.** |
 | `route` | `$gridroute` | **ON** | 0.9.4 | **VALIDATED** — proactive in-room grid routing, gated to genuinely complex rooms (`orig_comp_count>1` AND ≥24 lattice nodes). Fellowship soak: overall captures +58% vs 0.9.3, khazaddum 0.2→1.0. Also drives carrier + `!follow`/`!cover`/`!hold` escort nav. |
-| `grate` | `$grateclear` | **ON** | 0.9.6 | **BUILT, UNTESTED** — proactive destroyable-obstacle clearing (§7.1 Stage 2): forward ray hits an `OF_DESTROYABLE` clutter/building object → laser it out *before* the stuck pin; forward ray hits a `TF_BREAKABLE` pane → shatter it on approach (matter weapons only). Gates only the proactive pass; the safe-weapon selection in reactive stuck-clear is unconditional. Gate map: splusv1 (grates; first session: dormant-as-designed, bots never approached). |
-| `commit` | `$objcommit` | **ON** | 0.9.6 | **BUILT, UNTESTED** — objective commitment: while routing to an objective, powerup candidates must be within `BOT_POWERUP_ONPATH_RADIUS` (120u), **same-or-adjacent room**, AND **visible** (`BotHasLOS` — unseen-item beelines through maze walls were the L3 wall-slamming; occluded/vent/behind-glass items never start a chase). Gear-up (default-laser) bots keep the wide 500u reach but are LOS-gated too — nothing visible → explore-roam's visited-room curiosity moves them to fresh sightlines (emergent room-sweep). Anarchy selection unchanged. |
-| `glass` | `$glassroute` | **ON** | 0.9.6 | **BUILT, UNTESTED** — Stage 2b: `TF_BREAKABLE` glass portals get finite `BOT_PORTAL_GLASS_PENALTY` (120) instead of IMPASSABLE, re-aligning the router with BOA (which already routes through glass). Glass-sealed rooms stop reading "sealed" → their powerups become selectable. Toggling flushes the geocost/passability caches (`BotGeoCostInvalidate` — the $gridbridge lesson). Gate map: **bsidectf L3** (207 glass portals, 69 "sealed" powerups). Expect via-fail noise at glass lines (via can't see through the pane; the breaker opens it on press/approach). |
+| `grate` | `$grateclear` | **ON** | 0.9.6 | **DORMANT-SAFE VALIDATED** (0 false fires across all 0.9.6 soaks; clear path itself still awaits a bot actually flying at a grate) — proactive destroyable-obstacle clearing (§7.1 Stage 2): forward ray hits an `OF_DESTROYABLE` clutter/building object → laser it out *before* the stuck pin; forward ray hits a `TF_BREAKABLE` pane → shatter it on approach (matter weapons only). Gates only the proactive pass; the safe-weapon selection in reactive stuck-clear is unconditional. Gate map: splusv1 (grates; first session: dormant-as-designed, bots never approached). |
+| `commit` | `$objcommit` | **ON** | 0.9.6 | **VALIDATED** (L3: Router Nav 46→962; release soak best-ever 2.67 capt/rnd) — objective commitment: while routing to an objective, powerup candidates must be within `BOT_POWERUP_ONPATH_RADIUS` (120u), **same-or-adjacent room**, AND **visible** (`BotHasLOS` — unseen-item beelines through maze walls were the L3 wall-slamming; occluded/vent/behind-glass items never start a chase). Gear-up (default-laser) bots keep the wide 500u reach but are LOS-gated too — nothing visible → explore-roam's visited-room curiosity moves them to fresh sightlines (emergent room-sweep). Anarchy selection unchanged. |
+| `glass` | `$glassroute` | **ON** | 0.9.6 | **VALIDATED** (bsidectf L3: 55 proactive clears, first bot captures; 0 false fires on glass-free maps) — Stage 2b: `TF_BREAKABLE` glass portals get finite `BOT_PORTAL_GLASS_PENALTY` (120) instead of IMPASSABLE, re-aligning the router with BOA (which already routes through glass). Glass-sealed rooms stop reading "sealed" → their powerups become selectable. Toggling flushes the geocost/passability caches (`BotGeoCostInvalidate` — the $gridbridge lesson). Gate map: **bsidectf L3** (207 glass portals, 69 "sealed" powerups). Expect via-fail noise at glass lines (via can't see through the pane; the breaker opens it on press/approach). |
 
 Watch out for the near-collision: **`$nav bridge` = the 0.9.4 corner bridge; the OLD `$navbridge` = the
 12.7 soft-hop (`$nav softhop`).** The five `[legacy 0.9.3]` rows (terrain/bnodes/outdoorvia/outdoorgraph/
