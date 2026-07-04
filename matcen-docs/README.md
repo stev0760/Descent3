@@ -6,6 +6,7 @@ Design documents, reference material, and specifications for the Matcen multipla
 
 | Document | Purpose |
 |----------|---------|
+| [CHANGELOG.md](CHANGELOG.md) | **Release notes**, newest first — the readable "what shipped when" (deep history: BOTS_DEVEL.md) |
 | [NAVIGATION.md](NAVIGATION.md) | **Canonical** bot navigation design: hierarchical routing (coarse room router + **§3.5 volumetric grid roadmap**, the shipped 0.9.4 rewrite), engine reference, **§7.0 live status**, history. Absorbs the retired `GRID_NAV_DESIGN.md` spec |
 | [OBSTACLE_GEOMETRY.md](OBSTACLE_GEOMETRY.md) | **Authoritative** reference for how the engine represents passable/impassable geometry (walls, glass, grates, doors, forcefields) |
 | [BOT_DEV_REFERENCE.md](BOT_DEV_REFERENCE.md) | Architecture, FSM, constants, engine API patterns, gotchas |

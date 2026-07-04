@@ -5,7 +5,9 @@
 
 - **Live status** (toggle table, priority-ordered open issues, tried-&-reverted ledger): **`NAVIGATION.md` §7.0** — read that first.
 - **Canonical nav design**: `NAVIGATION.md` §3.5 (the 0.9.4 volumetric grid roadmap; the retired `GRID_NAV_DESIGN.md` spec is folded into it). The 0.9.3 portal-skeleton stack stays live as the `$gridnav off` fallback until Stage 4 retires it.
-- **This file** is the dated build history, newest first. The governing principle throughout: the engine does all steering — the bot only ever sets the goal.
+- **This file** is the dated build history, newest first — the deep engineering log. For the
+  readable release-notes view, see **`CHANGELOG.md`**. The governing principle throughout: the
+  engine does all steering — the bot only ever sets the goal.
 
 ## Engine Files Modified — Single-Player / Robo-Anarchy / Co-op Impact Audit
 

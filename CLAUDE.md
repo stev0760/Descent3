@@ -28,7 +28,8 @@ ctest --preset linux -C Debug
 All Matcen fork documentation lives in **`matcen-docs/`**:
 
 - **`matcen-docs/BOT_DEV_REFERENCE.md`** — living developer reference: architecture, FSM, constants, engine API patterns, critical gotchas (and a navigation summary). **Read this before modifying bot code.**
-- **`matcen-docs/BOTS_DEVEL.md`** — phase history and roadmap. Update when a phase completes.
+- **`matcen-docs/BOTS_DEVEL.md`** — phase history and roadmap (the deep engineering log). Update when a phase completes.
+- **`matcen-docs/CHANGELOG.md`** — release-notes view, newest first, user-facing voice (what a server operator notices — no phase numbers or soak codenames). **Add an entry on every version bump and keep the `-dev` entry current while in test; promote it to a dated release entry when the suffix is stripped.**
 - **`matcen-docs/NAVIGATION.md`** — **canonical bot navigation design**: the hierarchical routing model (coarse room-graph Dijkstra + fine volumetric grid roadmap, steering = engine), the 0.9.4 grid-seeded roadmap substrate (§3.5 — robotics PRM + HPA\* + Lazy Theta\*), the engine pathfinding reference, open problems, and consolidated history. **Read this before modifying navigation, routing, or steering code.** Supersedes the retired `NAV_OVERHAUL*.md` / `NAV_CONSOLIDATION.md` docs **and the retired `GRID_NAV_DESIGN.md`** (the 0.9.4 spec — shipped, validated, folded in; originals in git history). The live current-status snapshot (toggles, open issues, tried-&-reverted ledger) is its §7.0.
 - **`matcen-docs/OBSTACLE_GEOMETRY.md`** — **authoritative reference for how the engine represents passable/impassable geometry**: walls, regular vs. bulletproof glass, grates/slits, breakable objects, destroyable-decor faces, doors, forcefields — with the deciding engine functions (`GetFacePhysicsFlags`, `BOA_PassablePortal`, `find_small_portals`), the flag glossary, and what our bot does for each. **Read this before modifying navigation, portal passability, powerup selection, or stuck-clear code** — it captures hard-won engine facts (e.g. see-through ≠ passable; `TF_BREAKABLE` = breakable glass, kinetic-only; bulletproof glass = engine-impassable) so they don't have to be re-derived.
 - **`matcen-docs/PATHFINDING_CODEBASE_EXPLORE.md`** — Guide-bot navigation analysis: how single-player bots navigate complex passages vs. our multiplayer bots. Deep engine research, cited by `NAVIGATION.md` (still accurate).
@@ -145,7 +146,7 @@ Rules:
 
 ## Documentation Updates
 
-When committing feature work, bug fixes, or version bumps, **always update `README.md`** alongside `matcen-docs/BOTS_DEVEL.md` and `matcen-docs/BOT_MANAGEMENT.md`. The README is user-facing and must reflect the current version, feature set, and status.
+When committing feature work, bug fixes, or version bumps, **always update `README.md` and `matcen-docs/CHANGELOG.md`** alongside `matcen-docs/BOTS_DEVEL.md` and `matcen-docs/BOT_MANAGEMENT.md`. The README is user-facing and must reflect the current version, feature set, and status; the CHANGELOG entry is the release-notes voice (no internal phase numbers or soak codenames).
 
 ## CI
 

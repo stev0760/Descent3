@@ -109,6 +109,7 @@ Available in the dedicated server console or via remote telnet:
 
 Architecture deep-dives, implementation history, and specifications live in [`matcen-docs/`](matcen-docs/):
 
+*   [CHANGELOG.md](matcen-docs/CHANGELOG.md) — release notes, newest first
 *   [NAVIGATION.md](matcen-docs/NAVIGATION.md) — **canonical navigation design**: hierarchical routing, the volumetric roadmap, engine reference, live status, history
 *   [BOT_DEV_REFERENCE.md](matcen-docs/BOT_DEV_REFERENCE.md) — architecture, state machine, constants, engine API patterns
 *   [BOTS_DEVEL.md](matcen-docs/BOTS_DEVEL.md) — dated build history, newest first
