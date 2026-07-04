@@ -15,7 +15,9 @@ giving up on an unreachable pickup (without unfairly marking it a troll item), o
 their route — instead of pressing a wall until a long timeout fires. A slower second watchdog
 catches circling (moving, but going nowhere over ~8 seconds) the fast one can't see. Validated
 indoors: zero false trips across a three-map test run, and "hopeless chase" pins collapsed from
-about half of all chase timeouts to 5–11%.
+about half of all chase timeouts to 5–11%. **Currently shipped default-off** (`$nav replan on`
+to enable) while an outdoor side effect is investigated — on terrain maps the constant
+re-planning appears to keep bots churning navigation instead of fighting.
 
 - New `$nav outroute` (default on): on outdoor terrain, a bot whose straight line to its goal is
   blocked by a hill or building now follows the map's outdoor waypoint lattice around the

@@ -65,7 +65,13 @@ int Num_bots = 0;
 bool Bot_debug_movement = false; // Toggle with "$botmov on/off" console command
 bool Bot_grate_clear_enabled = true;      // $nav grate — proactive destroyable-obstacle clearing (0.9.6 Stage 2)
 bool Bot_objective_commit_enabled = true; // $nav commit — opportunistic-only powerups while on an objective route
-bool Bot_stall_replan_enabled = true;     // $nav replan — Stage 3 progress-monitor replan (0.9.7)
+// $nav replan — Stage 3 progress-monitor replan (0.9.7). DEFAULT OFF pending the outdoor A/B
+// (2026-07-04): operator observed replan-era isengard bots nav-churning (hill re-entry loop, tunnel
+// turn-arounds) where pre-replan builds fought outside more — suspicion is the fast-window
+// release/abort/re-pick churn starves combat + commitment outdoors. Indoor value is real
+// (BsideCTF: 0 circle false positives, HARD share 50%->5-11%), so the machinery stays and the
+// toggle re-enables it live for A/B; re-default ON only after an outdoor-clean soak.
+bool Bot_stall_replan_enabled = false;
 BotGameMode Bot_game_mode = BGM_UNKNOWN;
 
 // --- Bot roster config (Phase 5.1) ---
