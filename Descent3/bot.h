@@ -85,6 +85,9 @@
 // Powerup collection (Phase 3.8)
 #define BOT_POWERUP_SEEK_RADIUS 350.0f   // scan radius for powerup objects
 #define BOT_POWERUP_ONPATH_RADIUS 120.0f // tighter radius during objective nav — grab items on the way
+#define BOT_CHASE_STRIKE_MAX_DISP 25.0f  // chase-timeout troll strike only if the bot's NET displacement over
+                                         // the whole chase is under this — a mobile bot on a long maze route
+                                         // is a slow chase, not evidence of a troll item (0.9.6)
 #define BOT_LOW_SHIELDS_PCT 0.30f        // seek shield powerups when below 30% shields
 #define BOT_LOW_ENERGY 25.0f             // seek energy powerups when below 25 energy units
 
@@ -411,6 +414,7 @@ struct bot_info {
   // Powerup chase tracking (Phase 4.03) — detect when chasing an unreachable powerup
   int chasing_powerup_handle;  // handle of powerup being pursued, or OBJECT_HANDLE_NONE
   float chasing_powerup_timer; // seconds spent chasing current powerup without collecting it
+  vector chase_start_pos;      // bot position when this chase began — strike discipline (0.9.6)
 
   // Long-term powerup blacklist (Phase 7.4) — survives BotClearActiveGoal so the 12-second
   // Plasmacannon loop is broken. Set when a powerup chase times out; checked in BotFindBestPowerup.
@@ -467,6 +471,8 @@ extern bot_info Bots[MAX_BOTS];
 extern int Num_bots;
 extern bool Bot_debug_movement;      // When true, log bot+player velocity every ~0.5s
 extern bool Bot_grate_clear_enabled; // $nav grate — proactive destroyable-obstacle clearing (0.9.6 Stage 2)
+extern bool Bot_objective_commit_enabled; // $nav commit — objective commitment: opportunistic-only powerups
+                                          // (same/adjacent room) while routing to an objective (0.9.6)
 extern BotGameMode Bot_game_mode;
 
 // Bot name suffix — appended to all bot callsigns for identification.

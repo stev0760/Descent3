@@ -22,6 +22,11 @@ walls — and stop killing themselves trying to fight through them.
   safe distance) and fly through. Glass-gated maps (e.g. *Batteries Included*: 207 glass portals)
   become navigable for the first time.
 - Nav-cache flush extended so mid-level `$nav` A/B toggles of routing parameters are trustworthy.
+- New `$nav commit` (default on): in objective modes, bots stay committed to the objective —
+  powerups are grabbed in passing (same or adjacent room) instead of pulling bots into cross-map
+  detours. Fresh-spawn bots still gear up before committing.
+- Fairer "troll powerup" detection: an item is only marked unreachable when a bot demonstrably
+  pinned trying to reach it — a slow chase through a maze no longer counts against it.
 
 ## [0.9.5] — 2026-07-01
 

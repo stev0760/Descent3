@@ -103,6 +103,17 @@ The first build of the §7.1 phase (`NAVIGATION.md` — canonical spec + as-buil
   Toggle flush: `BotGeoCostInvalidate()` (geocost + passability caches) on rebuild-tagged rows.
   Gate map: **bsidectf L3 "Batteries Included"** — 207 glass portals / 69 "sealed" powerups in the
   navdump; broken for bots pre-0.9.6.
+- **Objective commitment + strike discipline (`$nav commit` / `$objcommit`, default ON; added after
+  the first bsidectf L3 session).** The 7-min L3 CTF run validated the glass stack mechanically
+  (18 proactive clears, 136 matter shots, 29 glass-priced portals, 86% via-reach) but exposed
+  **objective starvation**: 34 objective waypoint issues vs 20 powerup chase-timeouts — on a
+  219-powerup maze there is *always* a powerup goal, and EXPLORE only defers to the objective
+  router when there isn't one. Fix: on-objective powerup candidates must be **same-or-adjacent
+  room** (the 120u on-path radius is Euclidean and reaches through maze walls), with a gear-up
+  exemption for default-laser-only bots. AND **8 legitimate items were troll-retired in 7 min**
+  by the time-based timeout strike — now a timeout strikes only when chase net-displacement
+  < 25u (hard-pin signature); mobile slow chases get the personal blacklist only. Via-seal
+  geometric strikes unchanged. New logs: `objective detour`, `disp=N HARD|mobile` timeout lines.
 - **Stage 3 (progress-monitor replan) NOT built** — sequenced behind the splusv1/bsidectf gates.
 - **First splusv1 session** (`testing-2026-07-04T01-02-00`, 30min/3rnds): 0 crashes, 0 nav stucks,
   combat "very challenging" (Stage 1 no-regress); proactive clear 0 fires = dormant-as-designed

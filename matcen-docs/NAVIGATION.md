@@ -583,6 +583,7 @@ the pre-0.9.5 flat names remain hidden aliases. Defaults in `bot_steering.cpp`/`
 | `bridge` | `$gridbridge` | **ON** | 0.9.4 | **VALIDATED** — corner-rounding component bridge (one swept midpoint to connect components split by a wall; hull-gated, spatial-hashed). Collapsed townofbree/khazaddum dividers. **Build-time param: toggling it flushes the roadmap cache (0.9.5 `BotRoadmapInvalidate`) — before 0.9.5 a mid-level toggle was silently inert on already-built rooms.** |
 | `route` | `$gridroute` | **ON** | 0.9.4 | **VALIDATED** — proactive in-room grid routing, gated to genuinely complex rooms (`orig_comp_count>1` AND ≥24 lattice nodes). Fellowship soak: overall captures +58% vs 0.9.3, khazaddum 0.2→1.0. Also drives carrier + `!follow`/`!cover`/`!hold` escort nav. |
 | `grate` | `$grateclear` | **ON** | 0.9.6 | **BUILT, UNTESTED** — proactive destroyable-obstacle clearing (§7.1 Stage 2): forward ray hits an `OF_DESTROYABLE` clutter/building object → laser it out *before* the stuck pin; forward ray hits a `TF_BREAKABLE` pane → shatter it on approach (matter weapons only). Gates only the proactive pass; the safe-weapon selection in reactive stuck-clear is unconditional. Gate map: splusv1 (grates; first session: dormant-as-designed, bots never approached). |
+| `commit` | `$objcommit` | **ON** | 0.9.6 | **BUILT, UNTESTED** — objective commitment: while routing to an objective, powerup candidates must be within `BOT_POWERUP_ONPATH_RADIUS` (120u) **AND same-or-adjacent room** (the Euclidean radius reaches through maze walls — the batteriesincluded distraction loop). Gear-up exemption: default-laser-only bots keep the wide search until armed. |
 | `glass` | `$glassroute` | **ON** | 0.9.6 | **BUILT, UNTESTED** — Stage 2b: `TF_BREAKABLE` glass portals get finite `BOT_PORTAL_GLASS_PENALTY` (120) instead of IMPASSABLE, re-aligning the router with BOA (which already routes through glass). Glass-sealed rooms stop reading "sealed" → their powerups become selectable. Toggling flushes the geocost/passability caches (`BotGeoCostInvalidate` — the $gridbridge lesson). Gate map: **bsidectf L3** (207 glass portals, 69 "sealed" powerups). Expect via-fail noise at glass lines (via can't see through the pane; the breaker opens it on press/approach). |
 
 Watch out for the near-collision: **`$nav bridge` = the 0.9.4 corner bridge; the OLD `$navbridge` = the
@@ -717,6 +718,17 @@ softhop) gate the fallback substrate and are deleted together with that code in 
 >   face (either side) is `TF_BREAKABLE`; the proactive clearer also shatters panes on approach
 >   (matter option required — no laser-spam at glass). Routing-through-**grates** stays deferred
 >   (dynamic objects, asymmetric probe, no payoff map).
+> - **Objective arbitration + strike discipline (2026-07-03, after the first bsidectf L3 session):**
+>   the 7-min L3 log proved the substrate (18 proactive glass clears, 56% DIVERGE, 86% via-reach)
+>   but exposed **objective starvation** — only 34 objective waypoint issues vs 20 chase-timeouts,
+>   with **8 legitimate powerups troll-retired in 7 minutes** by the time-based timeout strike.
+>   Fixes: **`$nav commit`** (on-objective powerup candidates must be same-or-adjacent room, not
+>   just inside the wall-blind 120u radius; default-laser bots exempt until armed) and **strike
+>   discipline** (timeout strikes only when chase net-displacement < 25u — the hard-pin signature;
+>   mobile slow chases get the personal 60s blacklist only. The via-seal geometric strike is
+>   unchanged). New log lines: `objective detour — chasing powerup in room R`, and timeout lines
+>   now carry `disp=N HARD|mobile`. Watch item: items behind breakable glass could seal-strike if
+>   the pane outlives `BOT_VIA_SEALED_TICKS` — L3 showed 0 sealed abandons, so not yet observed.
 > - Stage 3 (progress-monitor replan) is **not built** — sequenced behind the splusv1/bsidectf gates.
 
 **Theme: the bot responds to the world *as it is now*, not as the load-time roadmap said.** The 0.9.4

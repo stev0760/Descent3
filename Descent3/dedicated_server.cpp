@@ -756,6 +756,8 @@ static const NavToggle Nav_toggles[] = {
      false, false},
     {"glass", "glassroute", nullptr, &Bot_glass_route_enabled, "route through breakable glass (finite break cost)",
      false, true},
+    {"commit", "objcommit", nullptr, &Bot_objective_commit_enabled,
+     "objective commitment (opportunistic-only powerups en route)", false, false},
     {"terrain", "terrainsteer", nullptr, &Bot_terrain_steering_enabled, "outdoor terrain steering / entrance redirect",
      true, false},
     {"bnodes", "pseudobnodes", nullptr, &Bot_pseudo_bnodes_enabled, "pseudo-BNode skeleton interior waypoints", true,

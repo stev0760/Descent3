@@ -63,7 +63,8 @@
 bot_info Bots[MAX_BOTS];
 int Num_bots = 0;
 bool Bot_debug_movement = false; // Toggle with "$botmov on/off" console command
-bool Bot_grate_clear_enabled = true; // $nav grate — proactive destroyable-obstacle clearing (0.9.6 Stage 2)
+bool Bot_grate_clear_enabled = true;      // $nav grate — proactive destroyable-obstacle clearing (0.9.6 Stage 2)
+bool Bot_objective_commit_enabled = true; // $nav commit — opportunistic-only powerups while on an objective route
 BotGameMode Bot_game_mode = BGM_UNKNOWN;
 
 // --- Bot roster config (Phase 5.1) ---
@@ -2479,6 +2480,24 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
     if (dist > seek_radius)
       continue;
 
+    // Objective commitment (0.9.6, $nav commit): the on-path radius is Euclidean and reaches
+    // THROUGH walls — on a dense office map "within 120u" spans three rooms of maze detour, so
+    // committed bots still wandered off-route. Indoors, an on-path candidate must also be in the
+    // bot's own room or one portal away: a true grab-in-passing, never a cross-maze detour.
+    if (max_dist_override > 0.0f && Bot_objective_commit_enabled && !OBJECT_OUTSIDE(obj) && !OBJECT_OUTSIDE(p) &&
+        p->roomnum != obj->roomnum) {
+      bool adjacent = false;
+      room &br = Rooms[obj->roomnum];
+      for (int pp = 0; pp < br.num_portals; pp++) {
+        if (br.portals[pp].croom == (int)p->roomnum) {
+          adjacent = true;
+          break;
+        }
+      }
+      if (!adjacent)
+        continue;
+    }
+
     // Name-based prioritization (case-insensitive substring match)
     const char *raw = Object_info[p->id].name;
     char lower[64] = {};
@@ -2805,8 +2824,12 @@ static void BotUpdateState(int bot_index) {
       if (obj_room >= 0 && Rooms[obj_room].used && obj_room != (int)obj->roomnum)
         on_objective = true;
     }
-    int pu_obj = on_objective ? BotFindBestPowerup(bot_index, need_sh, low_energy, 0, BOT_POWERUP_ONPATH_RADIUS)
-                              : BotFindBestPowerup(bot_index, need_sh, low_energy);
+    // Gear-up exemption (0.9.6): a bot with only its default laser needs a weapon before it can
+    // usefully contest an objective — let it run the normal wide search, then commit once armed.
+    bool gear_up = BotHasOnlyDefaultPrimary(bot_index);
+    int pu_obj = (on_objective && !gear_up)
+                     ? BotFindBestPowerup(bot_index, need_sh, low_energy, 0, BOT_POWERUP_ONPATH_RADIUS)
+                     : BotFindBestPowerup(bot_index, need_sh, low_energy);
     bool holding_for_weapon = false;
     if (pu_obj >= 0) {
       // Check if this powerup is a weapon (not health/energy)
@@ -2828,6 +2851,10 @@ static void BotUpdateState(int bot_index) {
         Bots[bot_index].chasing_powerup_handle = tgt_handle;
         Bots[bot_index].chasing_powerup_timer = 0.0f;
         Bots[bot_index].via_seal_count = 0;
+        Bots[bot_index].chase_start_pos = obj->pos; // strike discipline: net displacement measured from here
+        if (on_objective)
+          LOG_DEBUG.printf("BOT NAV: '%s' objective detour — chasing powerup in room %d",
+                           Bots[bot_index].callsign, OBJECT_OUTSIDE(&Objects[pu_obj]) ? -1 : Objects[pu_obj].roomnum);
       }
 
       // Phase 12: interior-obstacle handling on the powerup line. GLOBAL — powerups are chased in
@@ -5511,11 +5538,23 @@ void BotDoFrame() {
         if (Bots[i].chasing_powerup_handle != OBJECT_HANDLE_NONE) {
           Bots[i].blacklisted_powerup_handle = Bots[i].chasing_powerup_handle;
           Bots[i].blacklisted_powerup_expires = Gametime + BOT_POWERUP_BLACKLIST_DURATION;
-          LOG_DEBUG.printf("BOT: '%s' powerup chase timeout (%.1fs) — blacklisting for %.0fs", Bots[i].callsign,
-                           Bots[i].chasing_powerup_timer, BOT_POWERUP_BLACKLIST_DURATION);
-          // 12.2b: a timeout is behavioral evidence of unreachability — strike toward level-wide
-          // retirement (catches approach-sealed trolls no geometric probe can see).
-          BotTrollStrike(Bots[i].chasing_powerup_handle, Bots[i].callsign);
+          // Strike discipline (0.9.6): a timeout alone is NOT evidence of a troll item. On maze
+          // maps a legitimate chase through glass/office detours routinely outlives the timer —
+          // batteriesincluded retired 8 real items in 7 minutes this way. Strike only when the
+          // bot went NOWHERE over the whole chase (hard-pin signature, the analyzer's net_disp
+          // criterion); a mobile bot just gets its personal 60s blacklist and moves on. Genuine
+          // seals still strike immediately via the via-seal path (geometric evidence).
+          float chase_disp = vm_VectorDistanceQuick(&obj->pos, &Bots[i].chase_start_pos);
+          if (chase_disp < BOT_CHASE_STRIKE_MAX_DISP) {
+            LOG_DEBUG.printf("BOT: '%s' powerup chase timeout (%.1fs, disp=%.0f HARD) — blacklist %.0fs + strike",
+                             Bots[i].callsign, Bots[i].chasing_powerup_timer, chase_disp,
+                             BOT_POWERUP_BLACKLIST_DURATION);
+            BotTrollStrike(Bots[i].chasing_powerup_handle, Bots[i].callsign);
+          } else {
+            LOG_DEBUG.printf("BOT: '%s' powerup chase timeout (%.1fs, disp=%.0f mobile) — blacklist %.0fs, no strike",
+                             Bots[i].callsign, Bots[i].chasing_powerup_timer, chase_disp,
+                             BOT_POWERUP_BLACKLIST_DURATION);
+          }
         }
         int &pgi = Bots[i].powerup_goal_index;
         if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info && obj->ai_info->goals[pgi].used)
