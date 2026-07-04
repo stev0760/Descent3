@@ -1360,7 +1360,48 @@ static void BotStallMonitor(int bot_index) {
   if (!eligible) {
     Bots[bot_index].stall_check_time = 0.0f;
     Bots[bot_index].stall_streak = 0;
+    Bots[bot_index].circle_check_time = 0.0f;
     return;
+  }
+
+  // Slow window — CIRCLING (the analyzer's "moving-but-slow" class, live). A via/skeleton dance
+  // in a grid-degenerate room (isengard 37, bree 56: hop -> arrive -> re-probe -> hop, 15-45u
+  // legs netting ~40u/12s) clears the fast window every second, so only a longer baseline sees
+  // it. No turn/door qualification needed — nothing innocent spends 8s netting under 35u while
+  // the engine is being asked to move. Response: suspend the via layer in this room (the 12.2c
+  // mechanism, but displacement-triggered — the arrival-count trigger is skeleton-exempt and
+  // never fired here) and drop the goal that is being danced around.
+  if (Bots[bot_index].circle_check_time <= 0.0f || Gametime < Bots[bot_index].circle_check_time) {
+    Bots[bot_index].circle_check_time = Gametime;
+    Bots[bot_index].circle_check_pos = obj->pos;
+  } else if (Gametime - Bots[bot_index].circle_check_time >= BOT_CIRCLE_WINDOW) {
+    float cdisp = vm_VectorDistanceQuick(&obj->pos, &Bots[bot_index].circle_check_pos);
+    Bots[bot_index].circle_check_time = Gametime;
+    Bots[bot_index].circle_check_pos = obj->pos;
+    if (cdisp < BOT_CIRCLE_DISP) {
+      Bots[bot_index].via_expires = 0.0f;
+      Bots[bot_index].via_suspend_until = Gametime + BOT_VIA_SUSPEND_TIME;
+      Bots[bot_index].via_suspend_room = obj->roomnum;
+      if (Bots[bot_index].powerup_goal_index >= 0 && Bots[bot_index].chasing_powerup_handle != OBJECT_HANDLE_NONE) {
+        Bots[bot_index].blacklisted_powerup_handle = Bots[bot_index].chasing_powerup_handle;
+        Bots[bot_index].blacklisted_powerup_expires = Gametime + BOT_POWERUP_BLACKLIST_DURATION;
+        int &pgi = Bots[bot_index].powerup_goal_index;
+        if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+          GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+        pgi = -1;
+        Bots[bot_index].chasing_powerup_handle = OBJECT_HANDLE_NONE;
+        Bots[bot_index].chasing_powerup_timer = 0.0f;
+        Bots[bot_index].via_seal_count = 0;
+      } else if (Bots[bot_index].explore_dest_room >= 0 && BotGetObjectiveRoom(bot_index) < 0) {
+        Bots[bot_index].explore_dest_room = -1;
+        Bots[bot_index].explore_room_timer = 0.0f;
+      }
+      Bots[bot_index].stall_action_until = Gametime + BOT_STALL_COOLDOWN;
+      LOG_DEBUG.printf("BOT NAV: '%s' stall-replan: circling (disp=%.0f/%.0fs) — via suspended in room %d",
+                       Bots[bot_index].callsign, cdisp, BOT_CIRCLE_WINDOW,
+                       OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum);
+      return;
+    }
   }
 
   // Open (or re-open after level change — Gametime can reset) the sample window

@@ -761,6 +761,15 @@ softhop) gate the fallback substrate and are deleted together with that code in 
 >   thresholds: via release ≥2 qualified windows, chase abort ≥3, re-pick ≥4 and free-roam-only.
 >   Lesson for the ledger: "non-oscillating" must be checked against EVERY zero-displacement
 >   state, not just the target-line flicker — turning IS stationary.
+>   **v3 (same day): the slow window — circling detection.** v2's residual "confusion" was traced
+>   live (isengard room 37, Viper): a **skeleton-via dance on a same-room target in a
+>   grid-degenerate room** — hop→arrive→re-probe→hop, 15–45u legs netting ~40u/12s. The fast 1s
+>   window reads that as progress (each second moves >8u); circling is displacement at small
+>   timescales, none at large ones. v3 adds an 8s window (<35u net = circling) → suspend the via
+>   layer in this room (the 12.2c mechanism, displacement-triggered — the arrival-count trigger
+>   is skeleton-exempt and never fired) + abort the danced chase (no strike) / re-pick a free-roam
+>   dest. This is the pre-existing bree-room-56 "moving-but-slow" class detected live — NOT a
+>   Stage-3 regression; the durable fix for those rooms remains grid densification (§7.0 #0).
 > - **Also 0.9.7: swept grate-detection ray.** Isengard field data (operator killed THROUGH a
 >   grate by a bot; grate died to stray fire; detector logged nothing) proved grate bars have
 >   gaps a zero-width ray threads. The proactive probe now runs a second pass at

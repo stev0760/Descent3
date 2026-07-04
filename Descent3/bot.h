@@ -97,6 +97,11 @@
 #define BOT_STALL_WINDOW 1.0f   // seconds per displacement sample window
 #define BOT_STALL_DISP 8.0f     // net displacement under this per window = stalled (flight speed is 30-60 u/s)
 #define BOT_STALL_COOLDOWN 3.0f // hysteresis: min seconds between stall ACTIONS (detector keeps sampling)
+// Second octave — CIRCLING (the analyzer's "moving-but-slow" class, live): a via/skeleton dance
+// moves >8u every second but nets ~40u over twelve, so the fast window reads it as progress.
+// The slow window measures net displacement at the dance's own timescale.
+#define BOT_CIRCLE_WINDOW 8.0f // seconds per slow-window sample
+#define BOT_CIRCLE_DISP 35.0f  // net displacement under this per slow window = circling, not traveling
 
 // Grate detection probe radius (0.9.7): grate bars have gaps a zero-width ray threads — bots shot
 // players THROUGH isengard grates while the rad-0 detector saw nothing. Sweep at a sub-hull radius
@@ -436,6 +441,8 @@ struct bot_info {
   float stall_check_time;   // Gametime when the current sample window opened
   int stall_streak;         // consecutive stalled windows (resets on any window with progress)
   float stall_action_until; // Gametime until which stall ACTIONS are on cooldown (hysteresis)
+  vector circle_check_pos;  // slow-window start position (circling detection)
+  float circle_check_time;  // Gametime when the slow window opened
 
   // Long-term powerup blacklist (Phase 7.4) — survives BotClearActiveGoal so the 12-second
   // Plasmacannon loop is broken. Set when a powerup chase times out; checked in BotFindBestPowerup.
