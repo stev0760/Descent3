@@ -27,6 +27,11 @@ walls — and stop killing themselves trying to fight through them.
   detours. Fresh-spawn bots still gear up before committing.
 - Fairer "troll powerup" detection: an item is only marked unreachable when a bot demonstrably
   pinned trying to reach it — a slow chase through a maze no longer counts against it.
+- Bots only chase items they can *see* while heading for an objective (and while gearing up after
+  spawn) — no more beelines into walls toward items three rooms away. When nothing is visible,
+  bots sweep room to room using their visited-room memory.
+- **Milestone:** first fully autonomous bot flag captures on *Batteries Included* (324-room
+  glass-maze benchmark) — a map bots could not previously navigate at all.
 
 ## [0.9.5] — 2026-07-01
 

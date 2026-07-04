@@ -688,7 +688,17 @@ softhop) gate the fallback substrate and are deleted together with that code in 
 
 ---
 
-### 7.1 Next phase — dynamic-obstacle response (scoped 2026-07-03; **Stages 1+2 BUILT 2026-07-03, 0.9.6-dev, UNTESTED**)
+### 7.1 Next phase — dynamic-obstacle response (scoped 2026-07-03; Stages 1+2+2b + arbitration BUILT — **FIRST AUTONOMOUS BOT CAPTURES on bsidectf L3, 2026-07-04**)
+
+> **Milestone (2026-07-04, 45-min L3 4v4 run):** `Sixgun` and `Squid` each captured a flag with
+> minimal human presence — the first bot captures ever on the 324-room glass-maze benchmark, which
+> was fully sealed to bots before 0.9.6. Scorecard vs the pre-arbitration run: Router Nav 46 →
+> **962** (objective routing now dominates), 91% via-arrival, 55 proactive glass clears, carrier
+> ticks 0 → 41. **Remaining refinement target (feeds Stage 3):** 428 of 860 chase timeouts were
+> HARD (bot visible-locked on an item its flight path can't reach — rad-0 LOS passes where the
+> 6.7u hull can't follow) → 13 items mass-retired (see the analyzer's new `TROLL_MASS_RETIRE`
+> tripwire). The Stage 3 progress-monitor replan is the designed fix: abort/reroute on stall in
+> ~1s instead of an 8s wall-press. Hot rooms: 1 (200 via-fails), 35, 116; top item class: Shield.
 
 > **As-built deltas from the plan below (all deliberate):**
 > - **Stage 1 grew a third fix — `BotHasLOS` tightening:** `HIT_OBJECT` now counts as

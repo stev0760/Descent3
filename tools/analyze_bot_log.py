@@ -72,6 +72,15 @@ RE_ORDER_BLOCKED = re.compile(r"BOT ORDER: '([^']*)' BLOCKED in room (-?\d+)")
 RE_POWERUP_PIN = re.compile(r"room progress timeout \(room (-?\d+), net_disp=(-?\d+)\) — chasing '([^']+)'")
 RE_NET_DISP = re.compile(r"net_disp=(-?\d+)")  # carried by stuck-escalation + room-progress-timeout lines
 
+# 0.9.6 objective arbitration ($nav commit) + strike discipline + proactive obstacle clearing.
+# The 8s chase-timeout wording changed in 0.9.6 (carries disp= + a HARD|mobile strike verdict);
+# the legacy pattern is kept so pre-0.9.6 logs still count.
+RE_OBJ_DETOUR = re.compile(r"objective detour( \(gear-up\))? — chasing powerup in room (-?\d+)")
+RE_CHASE_TIMEOUT = re.compile(r"powerup chase timeout \([\d.]+s, disp=(-?\d+) (HARD|mobile)\)")
+RE_CHASE_TIMEOUT_LEGACY = re.compile(r"powerup chase timeout \([\d.]+s\) — blacklisting")
+RE_GLASS_CLEAR = re.compile(r"proactive-clearing breakable glass \(room (-?\d+)")
+RE_GRATE_CLEAR = re.compile(r"proactive-clearing destroyable obstacle \(type=\d+ objnum=\d+ room (-?\d+)\)")
+
 # Outdoor diagnostic suffix appended (by BotTerrainDiag) to outdoor stuck/escalation/escape lines:
 #   " | TERRAIN cell=X,Z rgn=R agl=A spd=S dest=D(TERRAIN|STRUCT|none)"
 # Present only outdoors, so it doubles as the outdoor-event detector, spatial bucket, and why-classifier.
@@ -166,6 +175,15 @@ def new_map_stats():
         "powerup_pin_items_hard": Counter(),
         "bot_carrier_ticks": Counter(),
         "bot_carrier_deaths": Counter(),
+        # 0.9.6 objective arbitration + dynamic-obstacle response
+        "obj_detours_committed": 0,  # on-objective opportunistic grabs (120u + same/adjacent room + LOS)
+        "obj_detours_gearup": 0,     # default-laser bots: wide-radius but LOS-gated grabs
+        "chase_to_hard": 0,          # 8s chase timeouts convicted (net disp < 25u = hard-pin) -> troll strike
+        "chase_to_mobile": 0,        # 8s chase timeouts spared (mobile) -> personal blacklist only
+        "chase_to_legacy": 0,        # pre-0.9.6 timeout lines (no verdict recorded)
+        "glass_clears": 0,           # proactive breakable-glass shatters ($nav grate)
+        "glass_clear_rooms": Counter(),
+        "grate_clears": 0,           # proactive destroyable-object clears ($nav grate)
         "first_ts": None,
         "last_ts": None,
     }
@@ -316,6 +334,38 @@ def parse_log(path):
                     s["powerup_pins_hard"] += 1
                     s["powerup_pin_rooms_hard"][room] += 1
                     s["powerup_pin_items_hard"][item] += 1
+                continue
+
+            m = RE_OBJ_DETOUR.search(line)
+            if m:
+                if m.group(1):
+                    s["obj_detours_gearup"] += 1
+                else:
+                    s["obj_detours_committed"] += 1
+                continue
+
+            m = RE_CHASE_TIMEOUT.search(line)
+            if m:
+                if m.group(2) == "HARD":
+                    s["chase_to_hard"] += 1
+                else:
+                    s["chase_to_mobile"] += 1
+                continue
+
+            m = RE_CHASE_TIMEOUT_LEGACY.search(line)
+            if m:
+                s["chase_to_legacy"] += 1
+                continue
+
+            m = RE_GLASS_CLEAR.search(line)
+            if m:
+                s["glass_clears"] += 1
+                s["glass_clear_rooms"][int(m.group(1))] += 1
+                continue
+
+            m = RE_GRATE_CLEAR.search(line)
+            if m:
+                s["grate_clears"] += 1
                 continue
 
             m = RE_GAME_MODE.search(line)
@@ -502,6 +552,17 @@ def detect_anomalies(stats):
                               f"'{top_item[0]}' x{top_item[1]}, {room_lbl} x{top_room[1]}. AMBIGUOUS: "
                               f"troll/unreachable powerup OR plain wall-press during a chase — cross-ref "
                               f"$navdump powerup verdict for that room (no troll powerups on official maps)"))
+
+        # 0.9.6 tripwire: mass troll retirement — many items struck out in one round is far more
+        # likely nav failure (bots hard-pinning on reachable items) than a map full of trolls.
+        # Cross-ref the retired items against the navdump powerup verdicts before believing them.
+        if len(s["trolls_retired"]) >= 6:
+            names = ", ".join(f"{n} (rm {r})" for n, r in s["trolls_retired"][:6])
+            anomalies.append((name, "TROLL_MASS_RETIRE",
+                              f"{len(s['trolls_retired'])} powerups retired level-wide in one map — "
+                              f"probable false convictions from hard-pin chases on reachable items "
+                              f"(threading/approach failures). First: {names}. Cross-ref $navdump "
+                              f"verdicts; if they read reachable, the fix is nav, not the items"))
 
         # Phase 12.2b tripwire: an OBJECTIVE item (flag/orb) got troll-retired — nav failures in
         # its approach room struck it out, silently turning bots off the game objective. The
@@ -710,6 +771,33 @@ def print_report(stats, total_lines, log_path):
                   f"| {fails_str} "
                   f"| {sealed_str} "
                   f"| {skel_str} |")
+        print()
+
+    # 0.9.6 — objective arbitration ($nav commit) + proactive obstacle clearing ($nav grate/glass).
+    has_096 = any(s["obj_detours_committed"] or s["obj_detours_gearup"] or s["chase_to_hard"] or
+                  s["chase_to_mobile"] or s["glass_clears"] or s["grate_clears"] for s in stats.values())
+    if has_096:
+        print(f"## Objective Arbitration & Obstacle Clearing (0.9.6)")
+        print()
+        print(f"Committed grab = on-objective opportunistic pickup (120u + same/adjacent room + LOS); "
+              f"gear-up grab = default-laser bot, wide radius but LOS-gated. Chase timeouts split by the "
+              f"strike verdict: HARD (net disp < 25u over the chase — struck toward troll retirement) vs "
+              f"mobile (spared: personal blacklist only). A high HARD share means bots still start chases "
+              f"they can't physically finish — a threading/approach problem, not arbitration. Glass/grate "
+              f"clears = proactive shots that opened a route.")
+        print()
+        print(f"| Map | Committed grabs | Gear-up grabs | Chase timeouts (HARD/mobile) | Glass clears (top rooms) | Grate clears |")
+        print(f"|---|---|---|---|---|---|")
+        for name, s in sorted(stats.items()):
+            timeouts = s["chase_to_hard"] + s["chase_to_mobile"]
+            to_str = f"{timeouts} ({s['chase_to_hard']}/{s['chase_to_mobile']})"
+            if s["chase_to_legacy"]:
+                to_str += f" +{s['chase_to_legacy']} legacy"
+            glass_str = str(s["glass_clears"])
+            if s["glass_clears"]:
+                glass_str += " (" + ", ".join(f"{r}x{c}" for r, c in s["glass_clear_rooms"].most_common(3)) + ")"
+            print(f"| {name} | {s['obj_detours_committed']} | {s['obj_detours_gearup']} "
+                  f"| {to_str} | {glass_str} | {s['grate_clears']} |")
         print()
 
     # Phase 12.2 — wrong-side rescues, cycle-cap suspensions, troll retirements.
