@@ -2484,17 +2484,25 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
     // THROUGH walls — on a dense office map "within 120u" spans three rooms of maze detour, so
     // committed bots still wandered off-route. Indoors, an on-path candidate must also be in the
     // bot's own room or one portal away: a true grab-in-passing, never a cross-maze detour.
-    if (max_dist_override > 0.0f && Bot_objective_commit_enabled && !OBJECT_OUTSIDE(obj) && !OBJECT_OUTSIDE(p) &&
-        p->roomnum != obj->roomnum) {
-      bool adjacent = false;
-      room &br = Rooms[obj->roomnum];
-      for (int pp = 0; pp < br.num_portals; pp++) {
-        if (br.portals[pp].croom == (int)p->roomnum) {
-          adjacent = true;
-          break;
+    if (max_dist_override > 0.0f && Bot_objective_commit_enabled && !OBJECT_OUTSIDE(obj) && !OBJECT_OUTSIDE(p)) {
+      if (p->roomnum != obj->roomnum) {
+        bool adjacent = false;
+        room &br = Rooms[obj->roomnum];
+        for (int pp = 0; pp < br.num_portals; pp++) {
+          if (br.portals[pp].croom == (int)p->roomnum) {
+            adjacent = true;
+            break;
+          }
         }
+        if (!adjacent)
+          continue;
       }
-      if (!adjacent)
+      // Grab what you can SEE. Adjacency alone still chained forever on item-dense mazes (grab →
+      // hop one room → new adjacent item → repeat), and every remaining hard pin was a bot
+      // pressing a wall toward an item it couldn't see (first L3 4v4 run: strikes all disp 0-4).
+      // An occluded item — through a wall, behind unbroken glass, up a vent — doesn't start a
+      // chase; the objective leg continues. Breaking the pane makes it visible AND collectible.
+      if (!BotHasLOS(obj, p))
         continue;
     }
 
