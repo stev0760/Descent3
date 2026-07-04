@@ -582,6 +582,7 @@ the pre-0.9.5 flat names remain hidden aliases. Defaults in `bot_steering.cpp`/`
 | `grid` | `$gridnav`/`$navgrid` | **ON** | 0.9.4 | **VALIDATED** — volumetric grid roadmap + Lazy Theta\* (replaces the skeleton via-pass indoors; degenerate rooms fall back to the skeleton). `off` = 0.9.3. See §3.5. |
 | `bridge` | `$gridbridge` | **ON** | 0.9.4 | **VALIDATED** — corner-rounding component bridge (one swept midpoint to connect components split by a wall; hull-gated, spatial-hashed). Collapsed townofbree/khazaddum dividers. **Build-time param: toggling it flushes the roadmap cache (0.9.5 `BotRoadmapInvalidate`) — before 0.9.5 a mid-level toggle was silently inert on already-built rooms.** |
 | `route` | `$gridroute` | **ON** | 0.9.4 | **VALIDATED** — proactive in-room grid routing, gated to genuinely complex rooms (`orig_comp_count>1` AND ≥24 lattice nodes). Fellowship soak: overall captures +58% vs 0.9.3, khazaddum 0.2→1.0. Also drives carrier + `!follow`/`!cover`/`!hold` escort nav. |
+| `grate` | `$grateclear` | **ON** | 0.9.6 | **BUILT, UNTESTED** — proactive destroyable-obstacle clearing (§7.1 Stage 2): forward ray hits an `OF_DESTROYABLE` clutter/building object → laser it out *before* the stuck pin. Gates only the proactive pass; the safe-weapon selection in reactive stuck-clear is unconditional. Gate map: splusv1. |
 
 Watch out for the near-collision: **`$nav bridge` = the 0.9.4 corner bridge; the OLD `$navbridge` = the
 12.7 soft-hop (`$nav softhop`).** The five `[legacy 0.9.3]` rows (terrain/bnodes/outdoorvia/outdoorgraph/
@@ -685,7 +686,27 @@ softhop) gate the fallback substrate and are deleted together with that code in 
 
 ---
 
-### 7.1 Next phase — dynamic-obstacle response (scoped 2026-07-03, not yet built)
+### 7.1 Next phase — dynamic-obstacle response (scoped 2026-07-03; **Stages 1+2 BUILT 2026-07-03, 0.9.6-dev, UNTESTED**)
+
+> **As-built deltas from the plan below (all deliberate):**
+> - **Stage 1 grew a third fix — `BotHasLOS` tightening:** `HIT_OBJECT` now counts as
+>   line-of-sight only when the hit object IS the target (it used to accept *any* object hit as
+>   "clear" — the literal see-through≠passable bug). Bots no longer fire *any* weapon at enemies
+>   behind grate objects, and no longer fire through stationary teammates. Broadest-reach change
+>   of the batch (8 call sites: firing, follow-beeline, combat state, aim facing) — the -dev
+>   playtest judges it.
+> - **The splash guard now covers ALL secondaries** (dropped the six-weapon `is_splash` list —
+>   Concussion/Homing/Guided/Cyclone carry blast damage too). Closest-range secondary combat
+>   inside 30u is gone with it; deliberate (it was self-damage).
+> - **Stage 2's proactive trigger is a forward-ray, not the route-portal scan** the plan
+>   sketched: reuse the stuck-clear 40u fvec ray every frame (`BotProactiveObstacleClear`),
+>   allowlist `OBJ_CLUTTER`/`OBJ_BUILDING` + `OF_DESTROYABLE`. Fires exactly when the bot is
+>   flying at the obstacle, needs no route state, and covers every nav layer (engine path, grid
+>   waypoint, via) — strictly more general than portal lookup, still dormant with no such objects.
+> - **The toggle gates only the proactive pass.** The safe-weapon rework of reactive stuck-clear
+>   (laser for objects, no point-blank secondaries for glass) is an unconditional bug fix —
+>   `$nav grate off` must not resurrect the suicide.
+> - Stage 3 (progress-monitor replan) is **not built** — sequenced behind the splusv1 gate.
 
 **Theme: the bot responds to the world *as it is now*, not as the load-time roadmap said.** The 0.9.4
 static substrate is validated (§3.5); the remaining game-breaking failures are things the roadmap's

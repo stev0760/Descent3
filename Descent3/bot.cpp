@@ -63,6 +63,7 @@
 bot_info Bots[MAX_BOTS];
 int Num_bots = 0;
 bool Bot_debug_movement = false; // Toggle with "$botmov on/off" console command
+bool Bot_grate_clear_enabled = true; // $nav grate — proactive destroyable-obstacle clearing (0.9.6 Stage 2)
 BotGameMode Bot_game_mode = BGM_UNKNOWN;
 
 // --- Bot roster config (Phase 5.1) ---
@@ -210,8 +211,12 @@ static bool BotHasLOS(object *obj, object *target) {
   fq.ignore_obj_list = nullptr;
   fq.flags = FQ_CHECK_OBJS | FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS | FQ_IGNORE_MOVING_OBJECTS;
   int hit_type = fvi_FindIntersection(&fq, &hit);
-  // HIT_NONE = clear path, HIT_OBJECT = hit an object (target or another player) — still valid
-  return (hit_type == HIT_NONE || hit_type == HIT_OBJECT);
+  if (hit_type == HIT_NONE)
+    return true;
+  // HIT_OBJECT counts as line-of-sight only when the object hit IS the target. A grate/scenery
+  // object in an open portal used to read as "clear" here (see-through != passable), so bots
+  // emptied whole loadouts into grate bars — and splashed themselves with the missiles.
+  return (hit_type == HIT_OBJECT && hit.hit_object[0] == OBJNUM(target));
 }
 
 // Window for "recently fired" cloak reveal — audible muzzle flash/report window.
@@ -654,6 +659,30 @@ static void BotSelectBestSecondary(int bot_index) {
   }
 }
 
+// Splash-obstruction guard: the target-distance check alone can't protect the shooter — the
+// target may be far while the first thing on the aim line is a wall edge, pillar, or a grate
+// OBJECT sitting in an open portal (see-through != passable, OBSTACLE_GEOMETRY.md). Cast the aim
+// line out to the splash self-guard radius; ANY hit inside it means the round detonates in our
+// own splash.
+static bool BotSplashAimObstructed(object *obj, vector *aim_pos) {
+  vector dir = *aim_pos - obj->pos;
+  float len = vm_GetMagnitude(&dir);
+  if (len < 1.0f)
+    return true;
+  vector end = obj->pos + dir * (BOT_SPLASH_SELF_GUARD / len);
+
+  fvi_query fq{};
+  fvi_info hit{};
+  fq.p0 = &obj->pos;
+  fq.p1 = &end;
+  fq.startroom = obj->roomnum;
+  fq.rad = 0.0f;
+  fq.thisobjnum = OBJNUM(obj);
+  fq.ignore_obj_list = nullptr;
+  fq.flags = FQ_CHECK_OBJS | FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS;
+  return fvi_FindIntersection(&fq, &hit) != HIT_NONE;
+}
+
 // Fire the bot's secondary weapon (missiles) at its current AI target.
 // Concussion: barrage at close-to-medium range.
 // Mega: long range only with self-guard.
@@ -726,10 +755,10 @@ static void BotDoSecondaryFiring(int bot_index) {
       return;
   }
 
-  // Universal splash self-guard
-  bool is_splash = (wb_index == MEGA_INDEX || wb_index == BLACKSHARK_INDEX || wb_index == IMPACTMORTAR_INDEX ||
-                    wb_index == FRAG_INDEX || wb_index == SMART_INDEX || wb_index == NAPALMROCKET_INDEX);
-  if (is_splash && dist < BOT_SPLASH_SELF_GUARD)
+  // Universal splash self-guard — every D3 secondary detonates with blast damage (Concussion/
+  // Homing/Guided/Cyclone included; their radii are small but lethal point-blank over repeated
+  // impacts), so the guard applies to all of them.
+  if (dist < BOT_SPLASH_SELF_GUARD)
     return;
 
   // Compute aim position
@@ -756,6 +785,11 @@ static void BotDoSecondaryFiring(int bot_index) {
   vm_NormalizeVector(&to_aim);
   float dot = vm_DotProduct(&to_aim, &obj->orient.fvec);
   if (dot < BOT_SECONDARY_AIM_DOT)
+    return;
+
+  // Firing-layer obstruction guard: hold fire when the first hit on the aim line — wall OR
+  // object — is inside our own splash radius, even though the target itself is far away.
+  if (BotSplashAimObstructed(obj, &aim_pos))
     return;
 
   if (!WBIsBatteryReady(obj, wb, wb_index))
@@ -1032,38 +1066,65 @@ static void BotFireSecondaryAtPosition(int bot_index, vector *pos) {
   }
 }
 
-// Break glass obstacle: use a matter weapon (secondary missile, Vauss, or Mass Driver).
-// Glass (TF_BREAKABLE portal faces) requires WF_MATTER_WEAPON to shatter.
-static void BotBreakGlassObstacle(int bot_index, vector *target_pos) {
+// Fire a specific primary battery at a position/object via a temporary weapon swap.
+static void BotFirePrimaryBatteryAt(int bot_index, int wb_index, object *blocker, vector *target_pos) {
   int slot = Bots[bot_index].player_slot;
   int saved_primary = Players[slot].weapon[PW_PRIMARY].index;
+  Players[slot].weapon[PW_PRIMARY].index = wb_index;
+  if (blocker)
+    BotFireAtObject(bot_index, blocker);
+  else
+    BotFireAtPosition(bot_index, target_pos);
+  Players[slot].weapon[PW_PRIMARY].index = saved_primary;
+}
 
-  // Try secondary first — all secondaries are matter weapons (missiles, concussions)
-  int sec_wb = Players[slot].weapon[PW_SECONDARY].index;
-  if (sec_wb >= 10 && sec_wb < 20 && Players[slot].weapon_ammo[sec_wb] > 0) {
-    BotFireSecondaryAtPosition(bot_index, target_pos);
-    LOG_DEBUG.printf("BOT: '%s' firing secondary at glass obstacle", Bots[bot_index].callsign);
+// Clear a blocking obstacle WITHOUT splash-suiciding (0.9.6 Stage 2). The old glass path fired a
+// secondary missile first, unconditionally — but it runs when the obstacle is at most
+// BOT_STUCK_OBSTACLE_DIST (40u), usually well inside BOT_SPLASH_SELF_GUARD (30u): point-blank
+// splash, repeated every battery cycle, killed the bot at splusv1's grates.
+//
+// blocker != nullptr → a destroyable OBJECT (grate, crate): any weapon damages it, so use the
+//   Laser — always owned, zero splash, energy-only. need_matter is ignored for objects.
+// blocker == nullptr → a TF_BREAKABLE glass face at target_pos: needs a MATTER weapon
+//   (WF_MATTER_WEAPON). Beyond splash range a missile is fine; inside it, matter primaries only
+//   (Vauss → Mass Driver).
+static void BotClearObstacleSafely(int bot_index, object *blocker, vector *target_pos, bool need_matter) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+
+  if (blocker || !need_matter) {
+    if (Players[slot].energy > 0.0f) {
+      BotFirePrimaryBatteryAt(bot_index, LASER_INDEX, blocker, target_pos);
+      return;
+    }
+    // Out of energy — whatever primary is loaded (still never a secondary this close)
+    if (blocker)
+      BotFireAtObject(bot_index, blocker);
+    else
+      BotFireAtPosition(bot_index, target_pos);
     return;
   }
 
-  // Try Vauss (battery 1, ammo/matter weapon)
+  // Glass face: missile only when the pane is beyond our own splash radius
+  float dist = vm_VectorDistanceQuick(&obj->pos, target_pos);
+  if (dist >= BOT_SPLASH_SELF_GUARD) {
+    int sec_wb = Players[slot].weapon[PW_SECONDARY].index;
+    if (sec_wb >= 10 && sec_wb < 20 && Players[slot].weapon_ammo[sec_wb] > 0) {
+      BotFireSecondaryAtPosition(bot_index, target_pos);
+      LOG_DEBUG.printf("BOT: '%s' firing secondary at glass obstacle", Bots[bot_index].callsign);
+      return;
+    }
+  }
   if (Players[slot].weapon_flags & HAS_FLAG(VAUSS_INDEX)) {
-    Players[slot].weapon[PW_PRIMARY].index = VAUSS_INDEX;
-    BotFireAtPosition(bot_index, target_pos);
-    Players[slot].weapon[PW_PRIMARY].index = saved_primary;
+    BotFirePrimaryBatteryAt(bot_index, VAUSS_INDEX, nullptr, target_pos);
     LOG_DEBUG.printf("BOT: '%s' firing Vauss at glass obstacle", Bots[bot_index].callsign);
     return;
   }
-
-  // Try Mass Driver (battery 6, ammo/matter weapon)
   if (Players[slot].weapon_flags & HAS_FLAG(MASSDRIVER_INDEX)) {
-    Players[slot].weapon[PW_PRIMARY].index = MASSDRIVER_INDEX;
-    BotFireAtPosition(bot_index, target_pos);
-    Players[slot].weapon[PW_PRIMARY].index = saved_primary;
+    BotFirePrimaryBatteryAt(bot_index, MASSDRIVER_INDEX, nullptr, target_pos);
     LOG_DEBUG.printf("BOT: '%s' firing Mass Driver at glass obstacle", Bots[bot_index].callsign);
     return;
   }
-
   // No matter weapon available — fire primary anyway (won't break glass but might unstick)
   BotFireAtPosition(bot_index, target_pos);
 }
@@ -1126,7 +1187,7 @@ static void BotDoStuckClear(int bot_index) {
                         !BotIsPlayerEnemy(bot_index, blocker->id));
     if (!is_teammate && blocker->type != OBJ_NONE && blocker->type != OBJ_GHOST && blocker->type != OBJ_POWERUP &&
         (blocker->flags & OF_DESTROYABLE)) {
-      BotFireAtObject(bot_index, blocker);
+      BotClearObstacleSafely(bot_index, blocker, nullptr, false);
       LOG_DEBUG.printf("BOT: '%s' blasting destructible obstacle (type=%d)", Bots[bot_index].callsign, blocker->type);
       return;
     }
@@ -1143,12 +1204,54 @@ static void BotDoStuckClear(int bot_index) {
       face &fp = Rooms[face_room].faces[face_num];
       int16_t tmap = fp.tmap;
       if (tmap >= 0 && (GameTextures[tmap].flags & TF_BREAKABLE) && fp.portal_num >= 0) {
-        BotBreakGlassObstacle(bot_index, &hit.hit_face_pnt[0]);
+        BotClearObstacleSafely(bot_index, nullptr, &hit.hit_face_pnt[0], true);
         LOG_DEBUG.printf("BOT: '%s' breaking glass obstacle in room %d face %d", Bots[bot_index].callsign, face_room,
                          face_num);
         return;
       }
     }
+  }
+}
+
+// Proactive obstacle clearing (0.9.6 Stage 2, "$nav grate"): a destroyable scenery object dead
+// ahead on the flight line — a grate filling a portal opening, a crate in a corridor — is shot
+// out with a safe weapon BEFORE the 1.5s stuck pin instead of after it. Runs every frame from
+// BotDoFrame when enabled; dormant on maps without such objects (the forward ray never hits one).
+// Conservative type allowlist (clutter/building): players and robots are combat's job, doors open
+// themselves (blastable locked doors stay with the reactive stuck-clear path).
+static void BotProactiveObstacleClear(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  if (!obj->ai_info)
+    return;
+
+  fvi_query fq{};
+  fvi_info hit{};
+  vector end = obj->pos + obj->orient.fvec * BOT_STUCK_OBSTACLE_DIST;
+  fq.p0 = &obj->pos;
+  fq.p1 = &end;
+  fq.startroom = obj->roomnum;
+  fq.rad = 0.0f;
+  fq.thisobjnum = OBJNUM(obj);
+  fq.ignore_obj_list = nullptr;
+  fq.flags = FQ_CHECK_OBJS | FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS;
+
+  if (fvi_FindIntersection(&fq, &hit) != HIT_OBJECT || hit.hit_object[0] < 0)
+    return;
+  object *blocker = &Objects[hit.hit_object[0]];
+  if (blocker->type != OBJ_CLUTTER && blocker->type != OBJ_BUILDING)
+    return;
+  if (!(blocker->flags & OF_DESTROYABLE))
+    return;
+
+  BotClearObstacleSafely(bot_index, blocker, nullptr, false);
+
+  // Log once per engagement window, not per shot
+  static float grate_log_time[MAX_BOTS];
+  if (Gametime - grate_log_time[bot_index] > 5.0f || Gametime < grate_log_time[bot_index]) {
+    grate_log_time[bot_index] = Gametime;
+    LOG_DEBUG.printf("BOT NAV: '%s' proactive-clearing destroyable obstacle (type=%d objnum=%d room %d)",
+                     Bots[bot_index].callsign, blocker->type, hit.hit_object[0], obj->roomnum);
   }
 }
 
@@ -5558,6 +5661,11 @@ void BotDoFrame() {
 
     // Apply thrust-based movement every frame (also advances stuck_timer — must precede StuckClear)
     BotApplyThrust(i);
+
+    // Proactive obstacle clearing ($nav grate): destroyable grate/crate dead ahead → shoot it
+    // out with a safe weapon before the stuck pin, not after
+    if (Bot_grate_clear_enabled)
+      BotProactiveObstacleClear(i);
 
     // Stuck-clear: when pinned by a player/bot or blocking destructible object, fight through it
     if (Bots[i].stuck_timer > BOT_STUCK_FIGHT_TIMER)

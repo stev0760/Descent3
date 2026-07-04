@@ -752,6 +752,8 @@ static const NavToggle Nav_toggles[] = {
     {"bridge", "gridbridge", nullptr, &Bot_roadmap_corner_enabled, "corner-rounding component bridge", false, true},
     {"route", "gridroute", nullptr, &Bot_gridroute_enabled, "proactive in-room grid routing (complex rooms)", false,
      false},
+    {"grate", "grateclear", nullptr, &Bot_grate_clear_enabled, "proactive destroyable-obstacle (grate) clearing",
+     false, false},
     {"terrain", "terrainsteer", nullptr, &Bot_terrain_steering_enabled, "outdoor terrain steering / entrance redirect",
      true, false},
     {"bnodes", "pseudobnodes", nullptr, &Bot_pseudo_bnodes_enabled, "pseudo-BNode skeleton interior waypoints", true,

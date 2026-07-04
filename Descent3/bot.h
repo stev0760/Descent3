@@ -462,7 +462,8 @@ struct bot_info {
 
 extern bot_info Bots[MAX_BOTS];
 extern int Num_bots;
-extern bool Bot_debug_movement; // When true, log bot+player velocity every ~0.5s
+extern bool Bot_debug_movement;      // When true, log bot+player velocity every ~0.5s
+extern bool Bot_grate_clear_enabled; // $nav grate — proactive destroyable-obstacle clearing (0.9.6 Stage 2)
 extern BotGameMode Bot_game_mode;
 
 // Bot name suffix — appended to all bot callsigns for identification.
