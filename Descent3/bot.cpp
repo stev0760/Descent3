@@ -1239,10 +1239,23 @@ static void BotProactiveObstacleClear(int bot_index) {
   if (fvi_FindIntersection(&fq, &hit) != HIT_OBJECT || hit.hit_object[0] < 0)
     return;
   object *blocker = &Objects[hit.hit_object[0]];
-  if (blocker->type != OBJ_CLUTTER && blocker->type != OBJ_BUILDING)
-    return;
   if (!(blocker->flags & OF_DESTROYABLE))
     return;
+  if (blocker->type != OBJ_CLUTTER && blocker->type != OBJ_BUILDING) {
+    // Diagnostic: a destroyable SCENERY object of a non-allowlisted type is dead ahead. If a
+    // grate map stays sealed with $nav grate ON, this line names the type to admit. Players and
+    // robots also carry OF_DESTROYABLE — those are combat's job, not a missing allowlist entry.
+    if (blocker->type != OBJ_PLAYER && blocker->type != OBJ_ROBOT && blocker->type != OBJ_GHOST &&
+        blocker->type != OBJ_WEAPON) {
+      static float skip_log_time[MAX_BOTS];
+      if (Gametime - skip_log_time[bot_index] > 5.0f || Gametime < skip_log_time[bot_index]) {
+        skip_log_time[bot_index] = Gametime;
+        LOG_DEBUG.printf("BOT NAV: '%s' proactive-clear SKIP: destroyable type=%d id=%d not allowlisted (room %d)",
+                         Bots[bot_index].callsign, blocker->type, blocker->id, obj->roomnum);
+      }
+    }
+    return;
+  }
 
   BotClearObstacleSafely(bot_index, blocker, nullptr, false);
 

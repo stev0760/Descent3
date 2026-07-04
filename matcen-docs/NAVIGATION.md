@@ -754,8 +754,9 @@ every blast-damage secondary. Smallest diff, unconditional win — ship first.
   weapon; **never** `TF_DESTROYABLE` cosmetic faces (never open) or permanent tight slits (DISAGREE
   `pf_too_small` bars — shoot-through but unbreakable → infinite ammo-dump pin).
 - **Gate:** splusv1 — bot clears both grates with laser, **zero self-damage deaths**, and proceeds.
-  No-regress: doorsofmoria/pyromania glass still shatters (matter path intact); official maps
-  unaffected (no grate objects → dormant).
+  Glass no-regress: **bsidectf level 3** (Outrage-offices rendition, real `TF_BREAKABLE` glass
+  walling off rooms/vents — the map was totally broken pre-0.9.6; few tested maps have true
+  breakable glass, doorsofmoria does NOT). Official maps unaffected (no grate objects → dormant).
 
 **Stage 3 — progress-monitor replan (replan-from-current-pose).** Move the replan trigger from
 "stuck timer expired" (reactive) to a stall detector: **net displacement below threshold over N ticks**

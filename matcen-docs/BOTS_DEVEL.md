@@ -88,9 +88,10 @@ The first build of the §7.1 phase (`NAVIGATION.md` — canonical spec + as-buil
   hit → laser it out *before* the 1.5s pin. Dormant on maps without such objects. Log:
   `BOT NAV: ... proactive-clearing destroyable obstacle` (5s throttle).
 - **Stage 3 (progress-monitor replan) NOT built** — sequenced behind the splusv1 gate.
-- **Verify:** splusv1 FPV — bots laser both grates open, zero self-kills; doorsofmoria glass
-  no-regress; combat feel (the `BotHasLOS` tightening is the broadest-reach change — bots now hold
-  fire when any non-target object blocks the line, including stationary teammates).
+- **Verify:** splusv1 FPV — bots laser both grates open, zero self-kills; glass no-regress on
+  **bsidectf level 3** (real `TF_BREAKABLE` glass; doorsofmoria has none — later test); combat
+  feel (the `BotHasLOS` tightening is the broadest-reach change — bots now hold fire when any
+  non-target object blocks the line, including stationary teammates).
 
 ### 0.9.5 — `$nav` command namespace + `$gridbridge` cache-flush fix (2026-07-01)
 
