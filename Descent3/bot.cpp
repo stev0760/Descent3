@@ -1379,10 +1379,46 @@ static void BotStallMonitor(int bot_index) {
     Bots[bot_index].stall_streak = 0;
     return;
   }
+
+  // Low displacement — but is the bot actually PRESSING, or innocently stationary? v2
+  // qualification (the 0.9.7 first-flight lesson: 48 via releases in two rounds = the circling
+  // this feature was meant to end):
+  // (a) A TURNING ship reads as stalled — it translates along fvec, so a bot mid-turn toward a
+  //     fresh via has ~0 displacement for up to a second. That is what the 4s via commit window
+  //     exists to survive; releasing at 1s re-created oscillation through the back door. Same
+  //     divergence signal as the afterburner facing gate.
+  // (b) A bot nosing a DOOR while it opens (1-2s) is waiting, not stalled.
+  {
+    vector mdir = obj->ai_info->movement_dir;
+    float mmag = vm_GetMagnitude(&mdir);
+    if (mmag < 0.1f)
+      return; // engine isn't asking for movement this frame — nothing to stall against
+    mdir = mdir * (1.0f / mmag);
+    if (vm_DotProduct(&mdir, &obj->orient.fvec) < 0.6f)
+      return; // mid-turn: not yet facing the direction the engine wants — don't count the window
+  }
+  {
+    fvi_query dq{};
+    fvi_info dh{};
+    vector dend = obj->pos + obj->orient.fvec * 30.0f;
+    dq.p0 = &obj->pos;
+    dq.p1 = &dend;
+    dq.startroom = obj->roomnum;
+    dq.rad = 0.0f;
+    dq.thisobjnum = OBJNUM(obj);
+    dq.ignore_obj_list = nullptr;
+    dq.flags = FQ_CHECK_OBJS | FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS;
+    if (fvi_FindIntersection(&dq, &dh) == HIT_OBJECT && dh.hit_object[0] >= 0 &&
+        Objects[dh.hit_object[0]].type == OBJ_DOOR)
+      return; // waiting on a door — the engine carries the bot through when it opens
+  }
   Bots[bot_index].stall_streak++;
 
   if (Gametime < Bots[bot_index].stall_action_until)
     return; // hysteresis — let the previous action (or the stuck machinery) play out
+
+  if (Bots[bot_index].stall_streak < 2)
+    return; // one qualified stalled window is not evidence yet — require 2s of genuine press
 
   // Action 1: release a committed via the bot cannot reach
   if (Bots[bot_index].via_expires > Gametime) {
@@ -1393,7 +1429,7 @@ static void BotStallMonitor(int bot_index) {
     return;
   }
 
-  if (Bots[bot_index].stall_streak < 2)
+  if (Bots[bot_index].stall_streak < 3)
     return; // give the engine one more window before firmer action
 
   // Action 2: abort a stalled powerup chase — blacklist, never a strike
@@ -1414,8 +1450,11 @@ static void BotStallMonitor(int bot_index) {
     return;
   }
 
-  // Action 3: re-pick the routed/explore destination from the bot's actual position
-  if (Bots[bot_index].explore_dest_room >= 0) {
+  // Action 3: re-pick the FREE-ROAM explore destination from the bot's actual position. On an
+  // objective leg the destination is the objective — clearing it just recomputes the same route
+  // (churn, and the backtrack feel from the first flight); the router already recomputes on every
+  // room advance, and the dyn-penalty/room-progress machinery owns objective-route rerouting.
+  if (Bots[bot_index].explore_dest_room >= 0 && BotGetObjectiveRoom(bot_index) < 0) {
     Bots[bot_index].explore_dest_room = -1;
     Bots[bot_index].explore_room_timer = 0.0f;
     Bots[bot_index].stall_action_until = Gametime + BOT_STALL_COOLDOWN;

@@ -588,7 +588,7 @@ the pre-0.9.5 flat names remain hidden aliases. Defaults in `bot_steering.cpp`/`
 | `route` | `$gridroute` | **ON** | 0.9.4 | **VALIDATED** — proactive in-room grid routing, gated to genuinely complex rooms (`orig_comp_count>1` AND ≥24 lattice nodes). Fellowship soak: overall captures +58% vs 0.9.3, khazaddum 0.2→1.0. Also drives carrier + `!follow`/`!cover`/`!hold` escort nav. |
 | `grate` | `$grateclear` | **ON** | 0.9.6 | **DORMANT-SAFE VALIDATED** (0 false fires across all 0.9.6 soaks; clear path itself still awaits a bot actually flying at a grate) — proactive destroyable-obstacle clearing (§7.1 Stage 2): forward ray hits an `OF_DESTROYABLE` clutter/building object → laser it out *before* the stuck pin; forward ray hits a `TF_BREAKABLE` pane → shatter it on approach (matter weapons only). Gates only the proactive pass; the safe-weapon selection in reactive stuck-clear is unconditional. Gate map: splusv1 (grates; first session: dormant-as-designed, bots never approached). |
 | `commit` | `$objcommit` | **ON** | 0.9.6 | **VALIDATED** (L3: Router Nav 46→962; release soak best-ever 2.67 capt/rnd) — objective commitment: while routing to an objective, powerup candidates must be within `BOT_POWERUP_ONPATH_RADIUS` (120u), **same-or-adjacent room**, AND **visible** (`BotHasLOS` — unseen-item beelines through maze walls were the L3 wall-slamming; occluded/vent/behind-glass items never start a chase). Gear-up (default-laser) bots keep the wide 500u reach but are LOS-gated too — nothing visible → explore-roam's visited-room curiosity moves them to fresh sightlines (emergent room-sweep). Anarchy selection unchanged. |
-| `replan` | `$stallreplan` | **ON** | 0.9.7 | **BUILT, UNTESTED** — Stage 3 progress-monitor replan (§7.1): 1s displacement windows; a stalled bot (net disp < 8u) releases its via / aborts its chase (no strike) / re-picks its route, gentlest-first, 3s action cooldown. Gate: HARD chase-timeout share collapses (L3 428/860, bree 148/452 baselines). |
+| `replan` | `$stallreplan` | **ON** | 0.9.7 | **v2 IN TEST** — Stage 3 progress-monitor replan (§7.1). **v1 REGRESSED** (first flight: 48 via releases/2 rnds → circling — a TURNING ship reads as stalled; door-waits too). v2 qualification: a stalled window only counts when fvec is aligned with `movement_dir` (mid-turn excluded — the AB-gate signal) and no door is dead ahead; via release needs 2 qualified windows, chase abort 3, re-pick 4 — and re-pick is free-roam-only (objective routes recompute anyway). Gate unchanged: HARD-share collapse (L3 428/860, bree 148/452). |
 | `glass` | `$glassroute` | **ON** | 0.9.6 | **VALIDATED** (bsidectf L3: 55 proactive clears, first bot captures; 0 false fires on glass-free maps) — Stage 2b: `TF_BREAKABLE` glass portals get finite `BOT_PORTAL_GLASS_PENALTY` (120) instead of IMPASSABLE, re-aligning the router with BOA (which already routes through glass). Glass-sealed rooms stop reading "sealed" → their powerups become selectable. Toggling flushes the geocost/passability caches (`BotGeoCostInvalidate` — the $gridbridge lesson). Gate map: **bsidectf L3** (207 glass portals, 69 "sealed" powerups). Expect via-fail noise at glass lines (via can't see through the pane; the breaker opens it on press/approach). |
 
 Watch out for the near-collision: **`$nav bridge` = the 0.9.4 corner bridge; the OLD `$navbridge` = the
@@ -753,6 +753,14 @@ softhop) gate the fallback substrate and are deleted together with that code in 
 >   destination. 3s action cooldown (hysteresis). Non-oscillating by construction: the trigger is
 >   displacement ≈ 0, a failure signal — a via the bot is actually flying toward moves 30–60u per
 >   window and is never released mid-flight (contrast the $softfollow target-line flicker).
+>   **v1 field regression + v2 fix (same day):** first flight produced circling — 48 via releases
+>   in two rounds. Root cause: displacement ≈ 0 is ALSO a bot turning in place toward a fresh via
+>   (translation is along fvec; a big heading change is ~1s of zero displacement) or nosing a door
+>   while it opens — the exact phases the 4s via commit window exists to survive. v2 counts a
+>   stalled window only when fvec‖movement_dir (dot ≥ 0.6) and no OBJ_DOOR within 30u ahead;
+>   thresholds: via release ≥2 qualified windows, chase abort ≥3, re-pick ≥4 and free-roam-only.
+>   Lesson for the ledger: "non-oscillating" must be checked against EVERY zero-displacement
+>   state, not just the target-line flicker — turning IS stationary.
 > - **Also 0.9.7: swept grate-detection ray.** Isengard field data (operator killed THROUGH a
 >   grate by a bot; grate died to stray fire; detector logged nothing) proved grate bars have
 >   gaps a zero-width ray threads. The proactive probe now runs a second pass at
