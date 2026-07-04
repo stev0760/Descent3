@@ -1371,7 +1371,14 @@ static void BotStallMonitor(int bot_index) {
   // the engine is being asked to move. Response: suspend the via layer in this room (the 12.2c
   // mechanism, but displacement-triggered — the arrival-count trigger is skeleton-exempt and
   // never fired here) and drop the goal that is being danced around.
-  if (Bots[bot_index].circle_check_time <= 0.0f || Gametime < Bots[bot_index].circle_check_time) {
+  // INDOOR ONLY: outdoors the "nothing innocent" premise is false — slow terrain threading against
+  // a hillside legitimately nets 15-33u/8s (isengard 2026-07-04: Zed tripped this ~18x in 2.5min,
+  // each trip suspending the via layer — the only mechanism producing outdoor progress — and the
+  // outroute leg never converged). Outdoor wedges stay covered by stuck escalation + the 12.2c
+  // arrival-count via suspension, both of which fired correctly in that trace.
+  if (OBJECT_OUTSIDE(obj)) {
+    Bots[bot_index].circle_check_time = 0.0f;
+  } else if (Bots[bot_index].circle_check_time <= 0.0f || Gametime < Bots[bot_index].circle_check_time) {
     Bots[bot_index].circle_check_time = Gametime;
     Bots[bot_index].circle_check_pos = obj->pos;
   } else if (Gametime - Bots[bot_index].circle_check_time >= BOT_CIRCLE_WINDOW) {

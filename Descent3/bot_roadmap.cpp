@@ -680,6 +680,17 @@ BotViaResult QueryVia(RoadmapRoom *rr, object *obj, int goal, vector *via_out) {
       break;
     }
   }
+  // Terrain-shadow collapse guard (isengard hillside, 2026-07-04): the bot hovers up to via-arrive
+  // distance OFF the start node, and from that offset even the first edge's far vertex can fail the
+  // hull-LOS probe (the hillside clips the sweep). The string-pull then collapses to the start node
+  // itself — the bot "arrives" instantly, re-probes, collapses again ("8 arrivals without crossing",
+  // zero net progress). The edge start->path[1] is hull-swept by construction, so when the bot is
+  // already effectively AT the start node, hand out path[1]: the engine's avoid-walls covers the
+  // small offset back onto the edge. (When the bot is far from the start node, aiming at it is
+  // legitimate progress toward the lattice — leave that case alone.)
+  if (via_node == path.front() && path.size() > 1 &&
+      Dist(obj->pos, rr->node[via_node]) < BOT_VIA_ARRIVE_DIST + BOT_ROADMAP_CLEARANCE)
+    via_node = path[1];
   if (via_out)
     *via_out = rr->node[via_node];
   return BOT_VIA_FOUND;
