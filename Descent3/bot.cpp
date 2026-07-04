@@ -1236,7 +1236,39 @@ static void BotProactiveObstacleClear(int bot_index) {
   fq.ignore_obj_list = nullptr;
   fq.flags = FQ_CHECK_OBJS | FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS;
 
-  if (fvi_FindIntersection(&fq, &hit) != HIT_OBJECT || hit.hit_object[0] < 0)
+  int hit_type = fvi_FindIntersection(&fq, &hit);
+
+  // Breakable glass pane dead ahead (0.9.6 Stage 2b): shatter it on approach so the bot flies
+  // through without the stuck pin. Matter weapons only — with no matter option, stay quiet and
+  // let the reactive stuck path handle it once pinned (don't spam lasers that can't break glass).
+  if (hit_type == HIT_WALL && hit.hit_face_room[0] >= 0 && hit.hit_face[0] >= 0) {
+    int face_room = hit.hit_face_room[0];
+    int face_num = hit.hit_face[0];
+    if (face_room <= Highest_room_index && Rooms[face_room].used && face_num < Rooms[face_room].num_faces) {
+      face &fp = Rooms[face_room].faces[face_num];
+      int16_t tmap = fp.tmap;
+      if (tmap >= 0 && (GameTextures[tmap].flags & TF_BREAKABLE) && fp.portal_num >= 0) {
+        bool has_matter_primary = (Players[slot].weapon_flags & HAS_FLAG(VAUSS_INDEX)) ||
+                                  (Players[slot].weapon_flags & HAS_FLAG(MASSDRIVER_INDEX));
+        float dist = vm_VectorDistanceQuick(&obj->pos, &hit.hit_face_pnt[0]);
+        int sec_wb = Players[slot].weapon[PW_SECONDARY].index;
+        bool has_safe_missile = (dist >= BOT_SPLASH_SELF_GUARD && sec_wb >= 10 && sec_wb < 20 &&
+                                 Players[slot].weapon_ammo[sec_wb] > 0);
+        if (has_matter_primary || has_safe_missile) {
+          BotClearObstacleSafely(bot_index, nullptr, &hit.hit_face_pnt[0], true);
+          static float glass_log_time[MAX_BOTS];
+          if (Gametime - glass_log_time[bot_index] > 5.0f || Gametime < glass_log_time[bot_index]) {
+            glass_log_time[bot_index] = Gametime;
+            LOG_DEBUG.printf("BOT NAV: '%s' proactive-clearing breakable glass (room %d face %d)",
+                             Bots[bot_index].callsign, face_room, face_num);
+          }
+        }
+      }
+    }
+    return;
+  }
+
+  if (hit_type != HIT_OBJECT || hit.hit_object[0] < 0)
     return;
   object *blocker = &Objects[hit.hit_object[0]];
   if (!(blocker->flags & OF_DESTROYABLE))

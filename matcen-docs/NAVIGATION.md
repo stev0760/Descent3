@@ -582,7 +582,8 @@ the pre-0.9.5 flat names remain hidden aliases. Defaults in `bot_steering.cpp`/`
 | `grid` | `$gridnav`/`$navgrid` | **ON** | 0.9.4 | **VALIDATED** — volumetric grid roadmap + Lazy Theta\* (replaces the skeleton via-pass indoors; degenerate rooms fall back to the skeleton). `off` = 0.9.3. See §3.5. |
 | `bridge` | `$gridbridge` | **ON** | 0.9.4 | **VALIDATED** — corner-rounding component bridge (one swept midpoint to connect components split by a wall; hull-gated, spatial-hashed). Collapsed townofbree/khazaddum dividers. **Build-time param: toggling it flushes the roadmap cache (0.9.5 `BotRoadmapInvalidate`) — before 0.9.5 a mid-level toggle was silently inert on already-built rooms.** |
 | `route` | `$gridroute` | **ON** | 0.9.4 | **VALIDATED** — proactive in-room grid routing, gated to genuinely complex rooms (`orig_comp_count>1` AND ≥24 lattice nodes). Fellowship soak: overall captures +58% vs 0.9.3, khazaddum 0.2→1.0. Also drives carrier + `!follow`/`!cover`/`!hold` escort nav. |
-| `grate` | `$grateclear` | **ON** | 0.9.6 | **BUILT, UNTESTED** — proactive destroyable-obstacle clearing (§7.1 Stage 2): forward ray hits an `OF_DESTROYABLE` clutter/building object → laser it out *before* the stuck pin. Gates only the proactive pass; the safe-weapon selection in reactive stuck-clear is unconditional. Gate map: splusv1. |
+| `grate` | `$grateclear` | **ON** | 0.9.6 | **BUILT, UNTESTED** — proactive destroyable-obstacle clearing (§7.1 Stage 2): forward ray hits an `OF_DESTROYABLE` clutter/building object → laser it out *before* the stuck pin; forward ray hits a `TF_BREAKABLE` pane → shatter it on approach (matter weapons only). Gates only the proactive pass; the safe-weapon selection in reactive stuck-clear is unconditional. Gate map: splusv1 (grates; first session: dormant-as-designed, bots never approached). |
+| `glass` | `$glassroute` | **ON** | 0.9.6 | **BUILT, UNTESTED** — Stage 2b: `TF_BREAKABLE` glass portals get finite `BOT_PORTAL_GLASS_PENALTY` (120) instead of IMPASSABLE, re-aligning the router with BOA (which already routes through glass). Glass-sealed rooms stop reading "sealed" → their powerups become selectable. Toggling flushes the geocost/passability caches (`BotGeoCostInvalidate` — the $gridbridge lesson). Gate map: **bsidectf L3** (207 glass portals, 69 "sealed" powerups). Expect via-fail noise at glass lines (via can't see through the pane; the breaker opens it on press/approach). |
 
 Watch out for the near-collision: **`$nav bridge` = the 0.9.4 corner bridge; the OLD `$navbridge` = the
 12.7 soft-hop (`$nav softhop`).** The five `[legacy 0.9.3]` rows (terrain/bnodes/outdoorvia/outdoorgraph/
@@ -706,7 +707,17 @@ softhop) gate the fallback substrate and are deleted together with that code in 
 > - **The toggle gates only the proactive pass.** The safe-weapon rework of reactive stuck-clear
 >   (laser for objects, no point-blank secondaries for glass) is an unconditional bug fix —
 >   `$nav grate off` must not resurrect the suicide.
-> - Stage 3 (progress-monitor replan) is **not built** — sequenced behind the splusv1 gate.
+> - **Stage 2b (2026-07-03, after the first splusv1 session): glass break-cost routing built** —
+>   `$nav glass`, default ON. Grates turned out to be a deliberate rarity on MP maps (operator:
+>   two known testable maps, one incidental; no client-side destroyable feedback in MP), so the
+>   phase's routing-through effort went to **glass** instead, where it's clean: `TF_BREAKABLE` is
+>   a static face flag the navdump already sees (bsidectf L3 = **207 glass portals**, a fifth of
+>   the map's doorways — unplayable for bots without this). `BotPortalGeoCost` returns
+>   `BOT_PORTAL_GLASS_PENALTY` (120, ~3 hops of detour tolerance) for a swept-blocked portal whose
+>   face (either side) is `TF_BREAKABLE`; the proactive clearer also shatters panes on approach
+>   (matter option required — no laser-spam at glass). Routing-through-**grates** stays deferred
+>   (dynamic objects, asymmetric probe, no payoff map).
+> - Stage 3 (progress-monitor replan) is **not built** — sequenced behind the splusv1/bsidectf gates.
 
 **Theme: the bot responds to the world *as it is now*, not as the load-time roadmap said.** The 0.9.4
 static substrate is validated (§3.5); the remaining game-breaking failures are things the roadmap's

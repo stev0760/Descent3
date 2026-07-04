@@ -754,6 +754,8 @@ static const NavToggle Nav_toggles[] = {
      false},
     {"grate", "grateclear", nullptr, &Bot_grate_clear_enabled, "proactive destroyable-obstacle (grate) clearing",
      false, false},
+    {"glass", "glassroute", nullptr, &Bot_glass_route_enabled, "route through breakable glass (finite break cost)",
+     false, true},
     {"terrain", "terrainsteer", nullptr, &Bot_terrain_steering_enabled, "outdoor terrain steering / entrance redirect",
      true, false},
     {"bnodes", "pseudobnodes", nullptr, &Bot_pseudo_bnodes_enabled, "pseudo-BNode skeleton interior waypoints", true,
@@ -786,10 +788,11 @@ static void NavToggleSet(const NavToggle *t, const char *value) {
   *t->flag = want;
   PrintDedicatedMessage("nav %s %s - %s\n", t->sub, want ? "ON" : "OFF", t->desc);
   if (changed && t->rebuild) {
-    // Build-time parameter: cached roadmaps were built with the old value and would silently keep it
-    // until the next level load (the false-A/B trap). Drop them; each rebuilds lazily on next query.
+    // Build-time parameter: cached roadmaps/geocosts were built with the old value and would silently
+    // keep it until the next level load (the false-A/B trap). Drop them; each rebuilds lazily on query.
     BotRoadmapInvalidate();
-    PrintDedicatedMessage("Roadmaps invalidated - each rebuilds on its next query with the new setting\n");
+    BotGeoCostInvalidate();
+    PrintDedicatedMessage("Nav caches invalidated - roadmaps/geocosts rebuild on their next query\n");
   }
 }
 

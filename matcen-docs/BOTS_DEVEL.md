@@ -87,7 +87,21 @@ The first build of the §7.1 phase (`NAVIGATION.md` — canonical spec + as-buil
   the stuck-clear 40u forward ray runs every frame; `OF_DESTROYABLE` + `OBJ_CLUTTER`/`OBJ_BUILDING`
   hit → laser it out *before* the 1.5s pin. Dormant on maps without such objects. Log:
   `BOT NAV: ... proactive-clearing destroyable obstacle` (5s throttle).
-- **Stage 3 (progress-monitor replan) NOT built** — sequenced behind the splusv1 gate.
+- **Stage 2b — glass break-cost routing (`$nav glass` / `$glassroute`, default ON; added after the
+  first splusv1 session).** Grates are a deliberate rarity on MP maps (operator intel), so the
+  routing-through effort went to glass: `BotPortalGeoCost` returns `BOT_PORTAL_GLASS_PENALTY` (120)
+  instead of IMPASSABLE for a swept-blocked portal whose face (either side) is `TF_BREAKABLE` —
+  re-aligning our router with BOA, which already routes through glass. Glass-sealed rooms stop
+  reading "sealed" → powerups selectable. Proactive clearer extended: `TF_BREAKABLE` pane dead
+  ahead → shatter on approach (only with a matter option — Vauss/MassDriver, or a missile ≥30u).
+  Toggle flush: `BotGeoCostInvalidate()` (geocost + passability caches) on rebuild-tagged rows.
+  Gate map: **bsidectf L3 "Batteries Included"** — 207 glass portals / 69 "sealed" powerups in the
+  navdump; broken for bots pre-0.9.6.
+- **Stage 3 (progress-monitor replan) NOT built** — sequenced behind the splusv1/bsidectf gates.
+- **First splusv1 session** (`testing-2026-07-04T01-02-00`, 30min/3rnds): 0 crashes, 0 nav stucks,
+  combat "very challenging" (Stage 1 no-regress); proactive clear 0 fires = dormant-as-designed
+  (bots never approached the incentive-less grates). Killer-less deaths explained: the map's
+  "sauna" heat-damage room (environmental, pre-existing, reduced vs before per operator).
 - **Verify:** splusv1 FPV — bots laser both grates open, zero self-kills; glass no-regress on
   **bsidectf level 3** (real `TF_BREAKABLE` glass; doorsofmoria has none — later test); combat
   feel (the `BotHasLOS` tightening is the broadest-reach change — bots now hold fire when any

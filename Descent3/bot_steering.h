@@ -36,6 +36,7 @@
 #define BOT_PORTAL_SHIP_RADIUS 2.5f    // swept-sphere fit test: can a ship fly through at all?
 #define BOT_PORTAL_TIGHT_RADIUS 4.0f   // comfortable-margin test: fits but no slack -> tightness penalty
 #define BOT_PORTAL_TIGHT_PENALTY 40.0f // cost added for a tight-but-passable opening (~one BOA hop)
+#define BOT_PORTAL_GLASS_PENALTY 120.0f // TF_BREAKABLE glass: crossable after a shatter (~3 hops detour tolerance)
 
 // Pseudo-bnode (interior-waypoint) synthesis — Phase 12.5b. Edges among synthesized nodes are tested at
 // the REAL ship hull (~6.676) so we never route a bot into a gap it can't fit — the lesson from the
@@ -152,6 +153,17 @@ extern bool Bot_outdoor_graph_enabled; // 12.6 Stage B: connecting graph for mul
 // "Help the engine bridge the gap," no new graph edges. ($softfollow commitment-loosening was tried alongside
 // this and REMOVED — it re-introduced circling; see NAVIGATION.md §7.0 ledger.)
 extern bool Bot_soft_hop_enabled;
+
+// 0.9.6 Stage 2b ($nav glass): route through TF_BREAKABLE glass portals at a finite break cost
+// instead of IMPASSABLE. The engine's BOA already routes through them; this re-aligns our router
+// so glass-gated maps (bsidectf L3: 207 glass portals) are bot-crossable — the bot shatters the
+// pane on approach (proactive clear) or on the stuck pin (reactive), then proceeds.
+extern bool Bot_glass_route_enabled;
+
+// Flush the per-level portal geometry caches (geocost + passability). Needed when a toggle that
+// changes cached verdicts flips mid-level ($nav glass) — same false-A/B trap as the 0.9.5
+// $gridbridge cache-flush fix, same cure.
+void BotGeoCostInvalidate();
 
 // Portal passability check: casts a ship-radius ray through the portal opening
 // to detect geometry-based blockage (bunker slits, barred windows). Results

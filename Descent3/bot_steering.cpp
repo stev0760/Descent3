@@ -33,6 +33,7 @@
 #include "BOA.h"
 #include "doorway.h"
 #include "findintersection.h"
+#include "gametexture.h"
 #include "multi.h"
 #include "player.h"
 #include "room.h"
@@ -64,6 +65,7 @@ bool Bot_pseudo_bnodes_enabled = true; // 12.5b: synthesize interior waypoints i
 bool Bot_outdoor_via_enabled = true;   // 12.6: lateral go-around outdoors (around structures) ($outdoorvia)
 bool Bot_outdoor_graph_enabled = true; // 12.6 Stage B: connecting graph multi-hop go-around ($outdoorgraph)
 bool Bot_soft_hop_enabled = true;      // 12.7: soft progress hop across disconnected graphs ($navbridge)
+bool Bot_glass_route_enabled = true;   // 0.9.6 2b: breakable-glass portals get a finite break cost ($nav glass)
 // 12.7 $softfollow early via-release was REMOVED (validated as a dead end): it fired inside the via commit
 // window and re-introduced the exact circling it meant to avoid (darkjourney via-arrival 73%→18%). Any future
 // rigidity-loosening must be non-oscillating (hysteresis / release-once-after-passing). See NAVIGATION.md §7.0.
@@ -107,6 +109,13 @@ static bool ProbePortalClearance(int room_idx, int connected_room, const portal 
 
   int probe_hit = fvi_FindIntersection(&fq, &hit);
   return !(probe_hit == HIT_WALL || probe_hit == HIT_TERRAIN);
+}
+
+// Flush the per-level portal geometry caches. A toggle that changes cached verdicts ($nav glass)
+// would otherwise be silently inert mid-level — the 0.9.5 $gridbridge false-A/B trap.
+void BotGeoCostInvalidate() {
+  pf_geocost_level_checksum = 0;
+  pf_passable_level_checksum = 0;
 }
 
 bool BotCheckPortalPassable(int room_idx, int portal_idx) {
@@ -205,6 +214,31 @@ float BotPortalGeoCost(int room_idx, int portal_idx) {
 
   // Geometry: a ship-radius sphere must pass, or it's a grate/slit (shoot-through-only).
   if (!ProbePortalClearance(room_idx, connected_room, pt, BOT_PORTAL_SHIP_RADIUS)) {
+    // 0.9.6 Stage 2b ($nav glass): TF_BREAKABLE glass blocks the probe but is crossable after a
+    // shatter — the engine's BOA routes through it. Finite break cost instead of IMPASSABLE, so
+    // the router takes glass when it's the best (or only) route and the clearing logic opens it.
+    // Check the portal face on BOTH sides — the breakable texture may live on either room's face.
+    if (Bot_glass_route_enabled) {
+      bool glass = false;
+      for (int side = 0; side < 2 && !glass; side++) {
+        const room *rp = (side == 0) ? &Rooms[room_idx] : &Rooms[connected_room];
+        int pface = -1;
+        if (side == 0)
+          pface = pt.portal_face;
+        else if (pt.cportal >= 0 && pt.cportal < Rooms[connected_room].num_portals)
+          pface = Rooms[connected_room].portals[pt.cportal].portal_face;
+        if (pface >= 0 && pface < rp->num_faces) {
+          int16_t tmap = rp->faces[pface].tmap;
+          if (tmap >= 0 && (GameTextures[tmap].flags & TF_BREAKABLE))
+            glass = true;
+        }
+      }
+      if (glass) {
+        LOG_DEBUG << "[Nav] Room " << room_idx << " portal " << portal_idx
+                  << " breakable glass -> finite break cost";
+        return cached = BOT_PORTAL_GLASS_PENALTY;
+      }
+    }
     LOG_DEBUG << "[Nav] Room " << room_idx << " portal " << portal_idx << " IMPASSABLE (ship-radius probe blocked)";
     return cached = BOT_PORTAL_IMPASSABLE;
   }
