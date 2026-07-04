@@ -81,6 +81,11 @@ RE_CHASE_TIMEOUT_LEGACY = re.compile(r"powerup chase timeout \([\d.]+s\) — bla
 RE_GLASS_CLEAR = re.compile(r"proactive-clearing breakable glass \(room (-?\d+)")
 RE_GRATE_CLEAR = re.compile(r"proactive-clearing destroyable obstacle \(type=\d+ objnum=\d+ room (-?\d+)\)")
 
+# 0.9.7 Stage 3 — progress-monitor replan ($nav replan): stalled window (net disp < 8u in 1s) ->
+# gentlest applicable action. via = committed via released; chase = powerup chase aborted (no
+# strike); route = explore/routed destination re-picked.
+RE_STALL_REPLAN = re.compile(r"stall-replan: (via released|chase aborted|route re-pick)")
+
 # Outdoor diagnostic suffix appended (by BotTerrainDiag) to outdoor stuck/escalation/escape lines:
 #   " | TERRAIN cell=X,Z rgn=R agl=A spd=S dest=D(TERRAIN|STRUCT|none)"
 # Present only outdoors, so it doubles as the outdoor-event detector, spatial bucket, and why-classifier.
@@ -184,6 +189,9 @@ def new_map_stats():
         "glass_clears": 0,           # proactive breakable-glass shatters ($nav grate)
         "glass_clear_rooms": Counter(),
         "grate_clears": 0,           # proactive destroyable-object clears ($nav grate)
+        "stall_via": 0,              # 0.9.7 stall actions: committed via released
+        "stall_chase": 0,            # 0.9.7 stall actions: powerup chase aborted (no strike)
+        "stall_route": 0,            # 0.9.7 stall actions: explore/routed destination re-picked
         "first_ts": None,
         "last_ts": None,
     }
@@ -366,6 +374,17 @@ def parse_log(path):
             m = RE_GRATE_CLEAR.search(line)
             if m:
                 s["grate_clears"] += 1
+                continue
+
+            m = RE_STALL_REPLAN.search(line)
+            if m:
+                kind = m.group(1)
+                if kind == "via released":
+                    s["stall_via"] += 1
+                elif kind == "chase aborted":
+                    s["stall_chase"] += 1
+                else:
+                    s["stall_route"] += 1
                 continue
 
             m = RE_GAME_MODE.search(line)
@@ -775,9 +794,10 @@ def print_report(stats, total_lines, log_path):
 
     # 0.9.6 — objective arbitration ($nav commit) + proactive obstacle clearing ($nav grate/glass).
     has_096 = any(s["obj_detours_committed"] or s["obj_detours_gearup"] or s["chase_to_hard"] or
-                  s["chase_to_mobile"] or s["glass_clears"] or s["grate_clears"] for s in stats.values())
+                  s["chase_to_mobile"] or s["glass_clears"] or s["grate_clears"] or
+                  s["stall_via"] or s["stall_chase"] or s["stall_route"] for s in stats.values())
     if has_096:
-        print(f"## Objective Arbitration & Obstacle Clearing (0.9.6)")
+        print(f"## Objective Arbitration & Obstacle Clearing (0.9.6/0.9.7)")
         print()
         print(f"Committed grab = on-objective opportunistic pickup (120u + same/adjacent room + LOS); "
               f"gear-up grab = default-laser bot, wide radius but LOS-gated. Chase timeouts split by the "
@@ -786,8 +806,8 @@ def print_report(stats, total_lines, log_path):
               f"they can't physically finish — a threading/approach problem, not arbitration. Glass/grate "
               f"clears = proactive shots that opened a route.")
         print()
-        print(f"| Map | Committed grabs | Gear-up grabs | Chase timeouts (HARD/mobile) | Glass clears (top rooms) | Grate clears |")
-        print(f"|---|---|---|---|---|---|")
+        print(f"| Map | Committed grabs | Gear-up grabs | Chase timeouts (HARD/mobile) | Stall replans (via/chase/route) | Glass clears (top rooms) | Grate clears |")
+        print(f"|---|---|---|---|---|---|---|")
         for name, s in sorted(stats.items()):
             timeouts = s["chase_to_hard"] + s["chase_to_mobile"]
             to_str = f"{timeouts} ({s['chase_to_hard']}/{s['chase_to_mobile']})"
@@ -796,8 +816,10 @@ def print_report(stats, total_lines, log_path):
             glass_str = str(s["glass_clears"])
             if s["glass_clears"]:
                 glass_str += " (" + ", ".join(f"{r}x{c}" for r, c in s["glass_clear_rooms"].most_common(3)) + ")"
+            stall_total = s["stall_via"] + s["stall_chase"] + s["stall_route"]
+            stall_str = f"{stall_total} ({s['stall_via']}/{s['stall_chase']}/{s['stall_route']})"
             print(f"| {name} | {s['obj_detours_committed']} | {s['obj_detours_gearup']} "
-                  f"| {to_str} | {glass_str} | {s['grate_clears']} |")
+                  f"| {to_str} | {stall_str} | {glass_str} | {s['grate_clears']} |")
         print()
 
     # Phase 12.2 — wrong-side rescues, cycle-cap suspensions, troll retirements.

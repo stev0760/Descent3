@@ -758,6 +758,8 @@ static const NavToggle Nav_toggles[] = {
      false, true},
     {"commit", "objcommit", nullptr, &Bot_objective_commit_enabled,
      "objective commitment (opportunistic-only powerups en route)", false, false},
+    {"replan", "stallreplan", nullptr, &Bot_stall_replan_enabled,
+     "progress-monitor replan (stall -> release via / abort chase / re-pick route)", false, false},
     {"terrain", "terrainsteer", nullptr, &Bot_terrain_steering_enabled, "outdoor terrain steering / entrance redirect",
      true, false},
     {"bnodes", "pseudobnodes", nullptr, &Bot_pseudo_bnodes_enabled, "pseudo-BNode skeleton interior waypoints", true,

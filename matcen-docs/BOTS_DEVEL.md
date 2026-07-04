@@ -1,7 +1,7 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Matcen **0.9.6 (current, stable — released 2026-07-04)** — dynamic-obstacle response + objective arbitration: grate/glass splash-suicide fixes, `$nav grate`/`$nav glass` clearing and routing, `$nav commit` objective commitment, troll-strike discipline. Validated: first autonomous bot captures on bsidectf L3, then an 8.8h 9-map Fellowship soak at **2.67 capt/rnd (best ever, +8.5% vs 0.9.4; khazaddum 1.0→3.0), 0 crashes, 0 false obstacle-clear fires**. Next: **0.9.7-dev** = Stage 3 progress-monitor replan (`NAVIGATION.md` §7.1).
+**Status:** Matcen **0.9.7-dev (in test)** — Stage 3 progress-monitor replan + swept grate ray (see entry; gate = HARD-share collapse). Last stable: **0.9.6 (released 2026-07-04)** — dynamic-obstacle response + objective arbitration: grate/glass splash-suicide fixes, `$nav grate`/`$nav glass` clearing and routing, `$nav commit` objective commitment, troll-strike discipline. Validated: first autonomous bot captures on bsidectf L3, then an 8.8h 9-map Fellowship soak at **2.67 capt/rnd (best ever, +8.5% vs 0.9.4; khazaddum 1.0→3.0), 0 crashes, 0 false obstacle-clear fires**. Next: **0.9.7-dev** = Stage 3 progress-monitor replan (`NAVIGATION.md` §7.1).
 
 - **Live status** (toggle table, priority-ordered open issues, tried-&-reverted ledger): **`NAVIGATION.md` §7.0** — read that first.
 - **Canonical nav design**: `NAVIGATION.md` §3.5 (the 0.9.4 volumetric grid roadmap; the retired `GRID_NAV_DESIGN.md` spec is folded into it). The 0.9.3 portal-skeleton stack stays live as the `$gridnav off` fallback until Stage 4 retires it.
@@ -72,6 +72,26 @@ grtext_Reset (dedicated-server buffer overflow) and the `bnode.cpp` assert-harde
 a room lacking BNode data — a latent crash independent of bots).
 
 ---
+
+### 0.9.7-dev — Stage 3 progress-monitor replan + swept grate ray (2026-07-04, BUILT, UNTESTED)
+
+The dynamic re-routing layer (`NAVIGATION.md` §7.1 Stage 3, `$nav replan` / `$stallreplan`, default
+ON) plus the grate-detection fix from isengard field data. Bot code only.
+
+- **Stall monitor (`BotStallMonitor`)**: 1s displacement windows while navigating (EXPLORE only;
+  hold-order/escort bots exempt). Stalled (net disp < 8u) → gentlest-first: release the committed
+  via (next `BotViaPointTick` re-searches from the CURRENT pose), after 2 windows abort a powerup
+  chase (personal blacklist, NO strike), or re-pick the explore/routed destination. 3s action
+  cooldown. Non-oscillating: trigger = displacement ≈ 0 (failure signal), never target-line
+  re-checks (the $softfollow tombstone).
+- **Swept grate ray**: grate bars have gaps a rad-0 ray threads (bots killed players THROUGH
+  isengard grates while the detector logged nothing). Second probe pass at sub-hull
+  `BOT_GRATE_PROBE_RADIUS` 5.0 collides like a ship. Blocker handling refactored into
+  `BotTryClearBlockerObject` (shared by both passes, keeps the SKIP diagnostic).
+- Via log lines print room −1 outdoors (was raw 0x8000xxxx cell encoding polluting the analyzer).
+- Analyzer: `RE_STALL_REPLAN` + via/chase/route counters + report column.
+- **Gate:** HARD chase-timeout share collapses vs baselines (L3 428/860, townofbree 148/452);
+  no capture regression on the good pool; isengard/bree feel check (wedged bots recover in ~1-2s).
 
 ### 0.9.6 — Dynamic-obstacle response + objective arbitration (2026-07-03/04, RELEASED 2026-07-04)
 

@@ -65,6 +65,7 @@ int Num_bots = 0;
 bool Bot_debug_movement = false; // Toggle with "$botmov on/off" console command
 bool Bot_grate_clear_enabled = true;      // $nav grate — proactive destroyable-obstacle clearing (0.9.6 Stage 2)
 bool Bot_objective_commit_enabled = true; // $nav commit — opportunistic-only powerups while on an objective route
+bool Bot_stall_replan_enabled = true;     // $nav replan — Stage 3 progress-monitor replan (0.9.7)
 BotGameMode Bot_game_mode = BGM_UNKNOWN;
 
 // --- Bot roster config (Phase 5.1) ---
@@ -1214,12 +1215,48 @@ static void BotDoStuckClear(int bot_index) {
   }
 }
 
+// Shared blocker handler for both proactive probe passes: filter to destroyable scenery
+// (clutter/building allowlist — players and robots are combat's job, doors open themselves),
+// clear it with a safe weapon, and log. Emits the SKIP diagnostic naming any destroyable type
+// outside the allowlist so a sealed grate map tells us what to admit.
+static void BotTryClearBlockerObject(int bot_index, object *obj, int blocker_objnum) {
+  object *blocker = &Objects[blocker_objnum];
+  if (!(blocker->flags & OF_DESTROYABLE))
+    return;
+  if (blocker->type != OBJ_CLUTTER && blocker->type != OBJ_BUILDING) {
+    if (blocker->type != OBJ_PLAYER && blocker->type != OBJ_ROBOT && blocker->type != OBJ_GHOST &&
+        blocker->type != OBJ_WEAPON) {
+      static float skip_log_time[MAX_BOTS];
+      if (Gametime - skip_log_time[bot_index] > 5.0f || Gametime < skip_log_time[bot_index]) {
+        skip_log_time[bot_index] = Gametime;
+        LOG_DEBUG.printf("BOT NAV: '%s' proactive-clear SKIP: destroyable type=%d id=%d not allowlisted (room %d)",
+                         Bots[bot_index].callsign, blocker->type, blocker->id,
+                         OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum);
+      }
+    }
+    return;
+  }
+
+  BotClearObstacleSafely(bot_index, blocker, nullptr, false);
+
+  // Log once per engagement window, not per shot
+  static float grate_log_time[MAX_BOTS];
+  if (Gametime - grate_log_time[bot_index] > 5.0f || Gametime < grate_log_time[bot_index]) {
+    grate_log_time[bot_index] = Gametime;
+    LOG_DEBUG.printf("BOT NAV: '%s' proactive-clearing destroyable obstacle (type=%d objnum=%d room %d)",
+                     Bots[bot_index].callsign, blocker->type, blocker_objnum,
+                     OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum);
+  }
+}
+
 // Proactive obstacle clearing (0.9.6 Stage 2, "$nav grate"): a destroyable scenery object dead
 // ahead on the flight line — a grate filling a portal opening, a crate in a corridor — is shot
 // out with a safe weapon BEFORE the 1.5s stuck pin instead of after it. Runs every frame from
 // BotDoFrame when enabled; dormant on maps without such objects (the forward ray never hits one).
 // Conservative type allowlist (clutter/building): players and robots are combat's job, doors open
 // themselves (blastable locked doors stay with the reactive stuck-clear path).
+// 0.9.7: two probe passes — rad-0 (glass faces + direct object hits), then a swept sub-hull-radius
+// pass that catches bar-gap grates the zero-width ray threads.
 static void BotProactiveObstacleClear(int bot_index) {
   int slot = Bots[bot_index].player_slot;
   object *obj = &Objects[Players[slot].objnum];
@@ -1271,37 +1308,120 @@ static void BotProactiveObstacleClear(int bot_index) {
     return;
   }
 
-  if (hit_type != HIT_OBJECT || hit.hit_object[0] < 0)
+  if (hit_type == HIT_OBJECT && hit.hit_object[0] >= 0) {
+    if (hit.hit_dist <= BOT_STUCK_OBSTACLE_DIST)
+      BotTryClearBlockerObject(bot_index, obj, hit.hit_object[0]);
+    return; // an object on the line (cleared or not) — nothing useful behind it to sweep for
+  }
+
+  // Swept second pass (0.9.7): grate bars have GAPS a zero-width ray threads — bots shot players
+  // THROUGH isengard grates while this detector saw nothing, and stray combat fire is what
+  // actually killed the grates. Re-probe at a sub-hull radius so the ray collides like a ship,
+  // not a bullet. Objects only: a wall the sweep grazes is not an obstacle (the ship isn't
+  // flying the wall line), and glass faces were already handled by the rad-0 pass above.
+  fvi_query fq2{};
+  fvi_info hit2{};
+  vector end2 = obj->pos + obj->orient.fvec * BOT_STUCK_OBSTACLE_DIST;
+  fq2.p0 = &obj->pos;
+  fq2.p1 = &end2;
+  fq2.startroom = obj->roomnum;
+  fq2.rad = BOT_GRATE_PROBE_RADIUS;
+  fq2.thisobjnum = OBJNUM(obj);
+  fq2.ignore_obj_list = nullptr;
+  fq2.flags = FQ_CHECK_OBJS | FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS;
+  if (fvi_FindIntersection(&fq2, &hit2) == HIT_OBJECT && hit2.hit_object[0] >= 0)
+    BotTryClearBlockerObject(bot_index, obj, hit2.hit_object[0]);
+}
+
+// 0.9.7 Stage 3 — progress-monitor replan ("$nav replan"). Samples net displacement in
+// BOT_STALL_WINDOW windows while the bot is navigating (EXPLORE, not parked on a hold order, not
+// escorting). A stalled window means the bot physically cannot move toward its current aim — act
+// gentlest-first, one action per cooldown:
+//   1. Active via commitment -> release it (via_expires = 0). The next BotViaPointTick hits its
+//      "lapsed without arrival" branch, cleans its own goal slot, and re-searches from the
+//      CURRENT pose — replan-from-current-pose through the existing machinery.
+//   2. Stalled powerup chase (2+ windows) -> abort: personal blacklist, NO troll strike (a stall
+//      says nothing about the item; the via-seal path keeps striking genuine seals). Retires the
+//      8s wall-press window that produced the mass false retirements.
+//   3. Routed/explore leg (2+ windows) -> clear the destination so the next roam/router tick
+//      recomputes from the bot's actual room.
+// NON-OSCILLATING (the $softfollow tombstone): the trigger is displacement ~= 0 — a FAILURE
+// signal. A via the bot is actually flying toward moves it 30-60u per window and is never
+// released mid-flight; only a via it cannot move toward gets dropped.
+static void BotStallMonitor(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  if (!obj->ai_info)
     return;
-  if (hit.hit_dist > BOT_STUCK_OBSTACLE_DIST)
-    return; // objects keep the original short engagement range; only glass uses the long ray
-  object *blocker = &Objects[hit.hit_object[0]];
-  if (!(blocker->flags & OF_DESTROYABLE))
-    return;
-  if (blocker->type != OBJ_CLUTTER && blocker->type != OBJ_BUILDING) {
-    // Diagnostic: a destroyable SCENERY object of a non-allowlisted type is dead ahead. If a
-    // grate map stays sealed with $nav grate ON, this line names the type to admit. Players and
-    // robots also carry OF_DESTROYABLE — those are combat's job, not a missing allowlist entry.
-    if (blocker->type != OBJ_PLAYER && blocker->type != OBJ_ROBOT && blocker->type != OBJ_GHOST &&
-        blocker->type != OBJ_WEAPON) {
-      static float skip_log_time[MAX_BOTS];
-      if (Gametime - skip_log_time[bot_index] > 5.0f || Gametime < skip_log_time[bot_index]) {
-        skip_log_time[bot_index] = Gametime;
-        LOG_DEBUG.printf("BOT NAV: '%s' proactive-clear SKIP: destroyable type=%d id=%d not allowlisted (room %d)",
-                         Bots[bot_index].callsign, blocker->type, blocker->id, obj->roomnum);
-      }
-    }
+
+  bool eligible = (Bots[bot_index].state == BOT_STATE_EXPLORE) &&
+                  (Bots[bot_index].order_anchor_type != ORDER_ANCHOR_POSITION) &&
+                  (Bots[bot_index].squad_role != SQUAD_FOLLOW) && (Bots[bot_index].squad_role != SQUAD_COVER);
+  if (!eligible) {
+    Bots[bot_index].stall_check_time = 0.0f;
+    Bots[bot_index].stall_streak = 0;
     return;
   }
 
-  BotClearObstacleSafely(bot_index, blocker, nullptr, false);
+  // Open (or re-open after level change — Gametime can reset) the sample window
+  if (Bots[bot_index].stall_check_time <= 0.0f || Gametime < Bots[bot_index].stall_check_time) {
+    Bots[bot_index].stall_check_time = Gametime;
+    Bots[bot_index].stall_check_pos = obj->pos;
+    return;
+  }
+  if (Gametime - Bots[bot_index].stall_check_time < BOT_STALL_WINDOW)
+    return;
 
-  // Log once per engagement window, not per shot
-  static float grate_log_time[MAX_BOTS];
-  if (Gametime - grate_log_time[bot_index] > 5.0f || Gametime < grate_log_time[bot_index]) {
-    grate_log_time[bot_index] = Gametime;
-    LOG_DEBUG.printf("BOT NAV: '%s' proactive-clearing destroyable obstacle (type=%d objnum=%d room %d)",
-                     Bots[bot_index].callsign, blocker->type, hit.hit_object[0], obj->roomnum);
+  float disp = vm_VectorDistanceQuick(&obj->pos, &Bots[bot_index].stall_check_pos);
+  Bots[bot_index].stall_check_time = Gametime;
+  Bots[bot_index].stall_check_pos = obj->pos;
+  if (disp >= BOT_STALL_DISP) {
+    Bots[bot_index].stall_streak = 0;
+    return;
+  }
+  Bots[bot_index].stall_streak++;
+
+  if (Gametime < Bots[bot_index].stall_action_until)
+    return; // hysteresis — let the previous action (or the stuck machinery) play out
+
+  // Action 1: release a committed via the bot cannot reach
+  if (Bots[bot_index].via_expires > Gametime) {
+    Bots[bot_index].via_expires = 0.0f;
+    Bots[bot_index].stall_action_until = Gametime + BOT_STALL_COOLDOWN;
+    LOG_DEBUG.printf("BOT NAV: '%s' stall-replan: via released (disp=%.0f, room %d)", Bots[bot_index].callsign, disp,
+                     OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum);
+    return;
+  }
+
+  if (Bots[bot_index].stall_streak < 2)
+    return; // give the engine one more window before firmer action
+
+  // Action 2: abort a stalled powerup chase — blacklist, never a strike
+  if (Bots[bot_index].powerup_goal_index >= 0 && Bots[bot_index].chasing_powerup_handle != OBJECT_HANDLE_NONE) {
+    Bots[bot_index].blacklisted_powerup_handle = Bots[bot_index].chasing_powerup_handle;
+    Bots[bot_index].blacklisted_powerup_expires = Gametime + BOT_POWERUP_BLACKLIST_DURATION;
+    int &pgi = Bots[bot_index].powerup_goal_index;
+    if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+      GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+    pgi = -1;
+    Bots[bot_index].chasing_powerup_handle = OBJECT_HANDLE_NONE;
+    Bots[bot_index].chasing_powerup_timer = 0.0f;
+    Bots[bot_index].via_seal_count = 0;
+    Bots[bot_index].stall_action_until = Gametime + BOT_STALL_COOLDOWN;
+    Bots[bot_index].stall_streak = 0;
+    LOG_DEBUG.printf("BOT NAV: '%s' stall-replan: chase aborted (disp=%.0f) — blacklist %.0fs, no strike",
+                     Bots[bot_index].callsign, disp, BOT_POWERUP_BLACKLIST_DURATION);
+    return;
+  }
+
+  // Action 3: re-pick the routed/explore destination from the bot's actual position
+  if (Bots[bot_index].explore_dest_room >= 0) {
+    Bots[bot_index].explore_dest_room = -1;
+    Bots[bot_index].explore_room_timer = 0.0f;
+    Bots[bot_index].stall_action_until = Gametime + BOT_STALL_COOLDOWN;
+    Bots[bot_index].stall_streak = 0;
+    LOG_DEBUG.printf("BOT NAV: '%s' stall-replan: route re-pick (disp=%.0f, room %d)", Bots[bot_index].callsign, disp,
+                     OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum);
   }
 }
 
@@ -1599,7 +1719,8 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
           Bots[bot_index].via_skel_chain = 0;
           Bots[bot_index].via_arrivals_same_room = 0;
           LOG_DEBUG.printf("BOT NAV: '%s' via suspended in room %d (%d arrivals without crossing)",
-                           Bots[bot_index].callsign, obj->roomnum, BOT_VIA_SKEL_CHAIN_CAP);
+                           Bots[bot_index].callsign, OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum,
+                           BOT_VIA_SKEL_CHAIN_CAP);
         } else if (!bounce) {
           if (!Bots[bot_index].via_is_skeleton)
             Bots[bot_index].via_arrivals_same_room = 1;
@@ -1609,7 +1730,8 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
           Bots[bot_index].via_suspend_room = obj->roomnum;
           Bots[bot_index].via_arrivals_same_room = 0;
           LOG_DEBUG.printf("BOT NAV: '%s' via suspended in room %d (%d arrivals without crossing)",
-                           Bots[bot_index].callsign, obj->roomnum, BOT_VIA_CYCLE_CAP);
+                           Bots[bot_index].callsign, OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum,
+                           BOT_VIA_CYCLE_CAP);
         }
       } else {
         Bots[bot_index].via_arrival_room = obj->roomnum;
@@ -1625,7 +1747,7 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
         Bots[bot_index].room_progress_timer = 0.0f;
         Bots[bot_index].room_progress_stuck_count = 0;
       }
-      LOG_DEBUG.printf("BOT NAV: '%s' via-point reached (room %d)", Bots[bot_index].callsign, obj->roomnum);
+      LOG_DEBUG.printf("BOT NAV: '%s' via-point reached (room %d)", Bots[bot_index].callsign, OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum);
       return 0;
     }
     if (!(goal_slot >= 0 && goal_slot < MAX_GOALS && obj->ai_info->goals[goal_slot].used))
@@ -1661,7 +1783,7 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
     if (r == BOT_VIA_NONE && Gametime - Bots[bot_index].via_fail_last_log > 5.0f) {
       Bots[bot_index].via_fail_last_log = Gametime;
       LOG_DEBUG.printf("BOT NAV: '%s' via search failed in room %d (target room %d)", Bots[bot_index].callsign,
-                       obj->roomnum, target_room);
+                       OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum, target_room);
     }
     return 0;
   }
@@ -1675,7 +1797,7 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
                      target_room);
   else
     LOG_DEBUG.printf("BOT NAV: '%s' via-point detour in room %d (target room %d occluded)", Bots[bot_index].callsign,
-                     obj->roomnum, target_room);
+                     OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum, target_room);
   return 1;
 }
 
@@ -5769,6 +5891,10 @@ void BotDoFrame() {
 
     // Apply thrust-based movement every frame (also advances stuck_timer — must precede StuckClear)
     BotApplyThrust(i);
+
+    // Stage 3 ($nav replan): 1s progress windows; stalled → release via / abort chase / re-pick route
+    if (Bot_stall_replan_enabled)
+      BotStallMonitor(i);
 
     // Proactive obstacle clearing ($nav grate): destroyable grate/crate dead ahead → shoot it
     // out with a safe weapon before the stuck pin, not after

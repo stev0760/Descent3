@@ -588,6 +588,7 @@ the pre-0.9.5 flat names remain hidden aliases. Defaults in `bot_steering.cpp`/`
 | `route` | `$gridroute` | **ON** | 0.9.4 | **VALIDATED** — proactive in-room grid routing, gated to genuinely complex rooms (`orig_comp_count>1` AND ≥24 lattice nodes). Fellowship soak: overall captures +58% vs 0.9.3, khazaddum 0.2→1.0. Also drives carrier + `!follow`/`!cover`/`!hold` escort nav. |
 | `grate` | `$grateclear` | **ON** | 0.9.6 | **DORMANT-SAFE VALIDATED** (0 false fires across all 0.9.6 soaks; clear path itself still awaits a bot actually flying at a grate) — proactive destroyable-obstacle clearing (§7.1 Stage 2): forward ray hits an `OF_DESTROYABLE` clutter/building object → laser it out *before* the stuck pin; forward ray hits a `TF_BREAKABLE` pane → shatter it on approach (matter weapons only). Gates only the proactive pass; the safe-weapon selection in reactive stuck-clear is unconditional. Gate map: splusv1 (grates; first session: dormant-as-designed, bots never approached). |
 | `commit` | `$objcommit` | **ON** | 0.9.6 | **VALIDATED** (L3: Router Nav 46→962; release soak best-ever 2.67 capt/rnd) — objective commitment: while routing to an objective, powerup candidates must be within `BOT_POWERUP_ONPATH_RADIUS` (120u), **same-or-adjacent room**, AND **visible** (`BotHasLOS` — unseen-item beelines through maze walls were the L3 wall-slamming; occluded/vent/behind-glass items never start a chase). Gear-up (default-laser) bots keep the wide 500u reach but are LOS-gated too — nothing visible → explore-roam's visited-room curiosity moves them to fresh sightlines (emergent room-sweep). Anarchy selection unchanged. |
+| `replan` | `$stallreplan` | **ON** | 0.9.7 | **BUILT, UNTESTED** — Stage 3 progress-monitor replan (§7.1): 1s displacement windows; a stalled bot (net disp < 8u) releases its via / aborts its chase (no strike) / re-picks its route, gentlest-first, 3s action cooldown. Gate: HARD chase-timeout share collapses (L3 428/860, bree 148/452 baselines). |
 | `glass` | `$glassroute` | **ON** | 0.9.6 | **VALIDATED** (bsidectf L3: 55 proactive clears, first bot captures; 0 false fires on glass-free maps) — Stage 2b: `TF_BREAKABLE` glass portals get finite `BOT_PORTAL_GLASS_PENALTY` (120) instead of IMPASSABLE, re-aligning the router with BOA (which already routes through glass). Glass-sealed rooms stop reading "sealed" → their powerups become selectable. Toggling flushes the geocost/passability caches (`BotGeoCostInvalidate` — the $gridbridge lesson). Gate map: **bsidectf L3** (207 glass portals, 69 "sealed" powerups). Expect via-fail noise at glass lines (via can't see through the pane; the breaker opens it on press/approach). |
 
 Watch out for the near-collision: **`$nav bridge` = the 0.9.4 corner bridge; the OLD `$navbridge` = the
@@ -743,7 +744,20 @@ softhop) gate the fallback substrate and are deleted together with that code in 
 >   unchanged). New log lines: `objective detour — chasing powerup in room R`, and timeout lines
 >   now carry `disp=N HARD|mobile`. Watch item: items behind breakable glass could seal-strike if
 >   the pane outlives `BOT_VIA_SEALED_TICKS` — L3 showed 0 sealed abandons, so not yet observed.
-> - Stage 3 (progress-monitor replan) is **not built** — sequenced behind the splusv1/bsidectf gates.
+> - **Stage 3 BUILT (2026-07-04, 0.9.7-dev, UNTESTED — `$nav replan`).** As-built: a per-bot
+>   1s-window displacement monitor (EXPLORE only; hold-order and escort bots exempt) with three
+>   gentlest-first actions on stall — (1) release the committed via (`via_expires = 0`; the next
+>   `BotViaPointTick` cleans its own goal slot and re-searches from the CURRENT pose), (2) after 2
+>   stalled windows, abort a powerup chase (personal blacklist, **no strike** — retires the 8s
+>   wall-press window that produced the mass false retirements), (3) re-pick the explore/routed
+>   destination. 3s action cooldown (hysteresis). Non-oscillating by construction: the trigger is
+>   displacement ≈ 0, a failure signal — a via the bot is actually flying toward moves 30–60u per
+>   window and is never released mid-flight (contrast the $softfollow target-line flicker).
+> - **Also 0.9.7: swept grate-detection ray.** Isengard field data (operator killed THROUGH a
+>   grate by a bot; grate died to stray fire; detector logged nothing) proved grate bars have
+>   gaps a zero-width ray threads. The proactive probe now runs a second pass at
+>   `BOT_GRATE_PROBE_RADIUS` (5.0, sub-hull) so it collides like a ship, not a bullet. Plus: via
+>   log lines print room −1 outdoors instead of the raw 0x8000xxxx cell encoding.
 
 **Theme: the bot responds to the world *as it is now*, not as the load-time roadmap said.** The 0.9.4
 static substrate is validated (§3.5); the remaining game-breaking failures are things the roadmap's

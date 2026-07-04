@@ -7,6 +7,14 @@ live navigation status is in [NAVIGATION.md](NAVIGATION.md) §7.0.
 Versioning: `0.8.x` = feature releases; `0.9.x` = the navigation-milestone series.
 A `-dev` suffix marks an in-test build that has not yet passed its validation gate.
 
+## [0.9.7-dev] — in test (2026-07-04)
+
+**Dynamic re-routing.** Bots notice within about a second that they are not making progress and
+re-plan from where they actually are — releasing a stale waypoint, giving up on an unreachable
+pickup (without unfairly marking it a troll item), or re-picking their route — instead of
+pressing a wall until a long timeout fires. Also fixes grate detection: grate bars have gaps a
+zero-width ray passes through, so the detection probe now sweeps at near-ship width.
+
 ## [0.9.6] — 2026-07-04
 
 **Destructible-obstacle response and objective focus.** Bots stop treating breakable grates and

@@ -88,6 +88,21 @@
 #define BOT_CHASE_STRIKE_MAX_DISP 25.0f  // chase-timeout troll strike only if the bot's NET displacement over
                                          // the whole chase is under this — a mobile bot on a long maze route
                                          // is a slow chase, not evidence of a troll item (0.9.6)
+
+// 0.9.7 Stage 3 — progress-monitor replan ($nav replan). Detect zero-progress in ~1s and re-plan
+// from the CURRENT pose instead of pressing until the 8s chase timeout / 12s room timeout.
+// NON-OSCILLATING BY CONSTRUCTION (the $softfollow tombstone): the trigger is net displacement
+// ≈ 0 — a FAILURE signal only a bot that physically cannot move toward its via/goal produces —
+// never a target-line re-check, which flickers on a bot moving laterally past an obstacle.
+#define BOT_STALL_WINDOW 1.0f   // seconds per displacement sample window
+#define BOT_STALL_DISP 8.0f     // net displacement under this per window = stalled (flight speed is 30-60 u/s)
+#define BOT_STALL_COOLDOWN 3.0f // hysteresis: min seconds between stall ACTIONS (detector keeps sampling)
+
+// Grate detection probe radius (0.9.7): grate bars have gaps a zero-width ray threads — bots shot
+// players THROUGH isengard grates while the rad-0 detector saw nothing. Sweep at a sub-hull radius
+// so the probe collides like a ship, not a bullet. Below the 6.7 hull so it can't false-positive
+// an opening a ship fits through.
+#define BOT_GRATE_PROBE_RADIUS 5.0f
 #define BOT_LOW_SHIELDS_PCT 0.30f        // seek shield powerups when below 30% shields
 #define BOT_LOW_ENERGY 25.0f             // seek energy powerups when below 25 energy units
 
@@ -416,6 +431,12 @@ struct bot_info {
   float chasing_powerup_timer; // seconds spent chasing current powerup without collecting it
   vector chase_start_pos;      // bot position when this chase began — strike discipline (0.9.6)
 
+  // 0.9.7 Stage 3 progress-monitor replan state
+  vector stall_check_pos;   // position at the start of the current sample window
+  float stall_check_time;   // Gametime when the current sample window opened
+  int stall_streak;         // consecutive stalled windows (resets on any window with progress)
+  float stall_action_until; // Gametime until which stall ACTIONS are on cooldown (hysteresis)
+
   // Long-term powerup blacklist (Phase 7.4) — survives BotClearActiveGoal so the 12-second
   // Plasmacannon loop is broken. Set when a powerup chase times out; checked in BotFindBestPowerup.
   int blacklisted_powerup_handle;    // handle of recently-timed-out powerup; OBJECT_HANDLE_NONE = none
@@ -473,6 +494,7 @@ extern bool Bot_debug_movement;      // When true, log bot+player velocity every
 extern bool Bot_grate_clear_enabled; // $nav grate — proactive destroyable-obstacle clearing (0.9.6 Stage 2)
 extern bool Bot_objective_commit_enabled; // $nav commit — objective commitment: opportunistic-only powerups
                                           // (same/adjacent room) while routing to an objective (0.9.6)
+extern bool Bot_stall_replan_enabled;     // $nav replan — Stage 3 progress-monitor replan (0.9.7)
 extern BotGameMode Bot_game_mode;
 
 // Bot name suffix — appended to all bot callsigns for identification.
