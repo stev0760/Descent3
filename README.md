@@ -8,32 +8,38 @@ To build the game, follow build instructions in the [BUILD.md](BUILD.md) file.
 
 Build or runtime issues should be reported on our [GitHub tracker](https://github.com/DescentDevelopers/Descent3/issues).
 
-## Matcen — Multiplayer Bots (Experimental)
+## Matcen — Multiplayer Bots
 
-> **Matcen 0.9.5** — 0.9.4's volumetric-grid navigation milestone, plus the consolidated `$nav` console namespace and a corner-bridge cache-flush fix (mid-level nav A/B toggles are now trustworthy). 0.9.4 — Bots now route over a **grid-seeded volumetric roadmap** built at runtime for every map (robotics PRM + any-angle Lazy Theta\*), which replaces the sparse portal skeleton in complex interiors. A **selective complexity gate** runs the heavy in-room planner only where the geometry actually needs it (multi-component / multi-story rooms), leaving simple rooms on direct routing — a 9-map Fellowship soak measured **captures up ~58%** over the 0.9.3 baseline (the best build to date), with several maps at career highs. The roadmap is **hull-aware** (a 6.7u fit clearance, plus corner-bridging that connects components split by a wall), and the **same router now drives objective, carrier, and `!follow`/`!cover`/`!hold` escort navigation**, so squad commands are responsive again. Background — 0.9.3 gave bots **dynamically-built navigation over arbitrary level geometry**: on custom maps that ship no in-room waypoints, the bots synthesize their own *pseudo-BNode* skeleton (Phase 12.5b), fly an *outdoor connecting graph* point-to-point around buildings (Phase 12.6), and — newest — **bridge disconnected pieces of that graph by soft progress hops** (Phase 12.7): when the route graph can't reach a target, the bot heads toward the best node *toward* it and lets the engine's wall-avoidance thread the gap, instead of pinning. The same release loosens per-waypoint commitment so movement reads as continuous arcs rather than rigid node-to-node steps. **Outdoor nav was redesigned and validated** (Phase 8.1, *subtractive*): the engine already produces a full-3D heading to any goal, so the fork stopped mangling it (deleted the vestigial sky-flatten band-aid) and instead hands the engine the right target — captures jumped sharply on outdoor CTF maps and real-terrain soaks showed **zero sky-fly**. The frontiers now are **in-room nav on old custom maps** — where the original editor baked no in-room waypoints (BNodes), so a reactive *reach-the-door* fallback grinds bots out of otherwise-unnavigable rooms — and the **intra-room interior-obstacle press** (Phase 12; see below). **0.9.4 ships that rewrite** (design: `matcen-docs/NAVIGATION.md` §3.5): the volumetric roadmap with hull-aware connectivity, proactive in-room routing gated to complex rooms, and the same router driving objective, carrier, and escort nav — for the deep non-convex, multi-story rooms the portal skeleton couldn't fully cover. Phase 11 added a cost-aware Dijkstra router, building on the Phase 10 two-layer base (a thin goal-routing layer + the engine path-follower, after the Phase 7–9 bot-side steering layers were removed for fighting the engine), Phase 11 adds routing intelligence back — as a **routing-only** layer. A Dijkstra search over the room graph picks the route (weighting tight, grated, blocked, and runtime-obstructed portals); the engine still does all the steering. It is delivered by *waypoint injection* — feeding the engine the adjacent next-hop room so it follows our route — and is scoped to objective modes (CTF/Hoard/Hyper-Anarchy); Anarchy and Team Anarchy are unchanged. Geometry-impassable openings (shoot-through-only bunker slits/grates) are routed around, and the verdict is a *soft* cost that can never wall off a hub. Validated over a 10.5h CTF soak (4 maps, 326 captures, 0 crashes); the router earns its keep on complex maps (Polaris: 18% of routes diverge from the engine's greedy default toward the best capture rate). The remaining blocker is a **known engine-side limitation, reproducible in vanilla retail D3 with robot enemies**: in non-convex rooms a free-standing interior obstacle (glass cover, pillar) sits between the engine's path node and the exit portal, so the path-follower presses it. `$navdump` confirms it (`los_from_pathpnt_clear=0` predicts the affected rooms; the obstacle is a room *face*, not a portal). **0.9.3 attacks this** with intra-room via-point injection (Phase 12) — go-around via-points delivered as engine sub-goals, plus sealed "troll" powerup abandon/skip and (Phase 12.2) level-wide troll-powerup retirement, wrong-side rescue around bulletproof-glass dividers, and a via cycle cap. Phase 12.5b–12.7 extend it to custom/arbitrary geometry (pseudo-bnode skeleton, outdoor connecting graph, soft-hop bridge); the dead-pins are largely gone but some interior-divider crossings still don't complete — **not yet claimed fully fixed** (live status: `matcen-docs/NAVIGATION.md` §7.0). The bot **chat-command system was overhauled (Stage 6 "Orders as Goals")**: orders now have destinations and a lifecycle with feedback — `!hold`/`!stay` posts a bot at your position, `!defend` holds a position in any mode, `!follow`/`!cover` escorts fly offset formation stations, and bots report "In position." / "Can't reach you!" instead of failing silently. `$navdump` writes runtime nav geometry (BOA routing, portal passability, per-room concavity) to JSON for offline analysis.
+**Matcen** adds a server-side multiplayer bot system to Descent 3 — the bots the game never shipped with. Bots occupy real player slots on dedicated and listen servers and appear to every client as ordinary players, tagged with a ` [BOT]` callsign suffix.
 
-This fork — "Matcen" — adds a **server-side multiplayer bot system** to Descent 3. Bots occupy real player slots on dedicated servers or listen servers, appearing and acting as normal players. All bots are tagged with ` [BOT]` as a callsign suffix for easy identification.
+**No client modifications required.** Retail D3 v1.5 clients and compatible engines (PiccuEngine) connect and play against bots as-is. A server with no bot configuration behaves exactly like vanilla D3.
 
-**No client mods required.** Retail D3 v1.5 clients can connect and play against these bots immediately.
+**Current release: 0.9.5.** In development: 0.9.6 — destructible-obstacle handling (bots shoot out breakable grates and glass panes on their route instead of treating them as permanent walls).
 
-### Key Features
+### Features
 
-*   **Combat AI:** 5-state FSM (EXPLORE, HUNT, COMBAT, FLEE, EVADE) with predictive lead aiming. Bots circle-strafe, use afterburners to chase or escape, and dodge homing missiles with chaff bursts.
-*   **Perception:** Bots honor player cloaking and participate in the engine's noise-awareness pipeline. A cloaked player is invisible unless revealed by afterburner, headlight aimed at the bot, napalm, or recent weapon fire. Bots hear weapon discharge and afterburner within a 60-unit radius — a cloaked attacker firing at point-blank is detected and engaged.
-*   **Full Physics:** Bots obey the same inertia, momentum, and tri-chord physics as human players.
-*   **Weapon System:** Tactical primary switching (energy vs. ammo based on range and resources), secondary fire with splash-damage guards, and smart powerup collection with LOS scoring.
-*   **Loadout Awareness:** Bots self-classify into WEAK/GOOD/ELITE tiers and adjust aggression accordingly — poorly-armed bots hunt upgrades before engaging.
-*   **Navigation:** Engine-integrated BOA+BNode pathfinding with visited-room memory. A thin routing layer picks the route; the engine path-follower does the steering (with its native wall and friend avoidance). In objective modes a **cost-aware Dijkstra router** chooses the room sequence — preferring roomier doors, routing around impassable slits/grates, and rerouting around portals that fail at runtime — delivered to the engine as adjacent waypoints. Bots orient to their travel direction indoors so the afterburner facing gate drives them along the path. Outdoor terrain steering (`$terrainsteer`) regulates altitude/sky-routing.
-*   **Game Modes:** Anarchy, Team Anarchy, Robo-Anarchy, CTF (flag-chasing prioritization, carrier home-rush, fumble pile-on, role auto-assignment), Hyper-Anarchy (orb carrier aggression), and Hoard (scarcity-adaptive collect-and-deliver). Bots persist across level transitions. Further objective modes (Entropy, Monsterball) are on the roadmap.
-*   **Chat Commands:** Bots respond to `!` prefixed commands in multiplayer chat (team modes). Squad orders with destinations and feedback (Stage 6 "Orders as Goals"): `!attack`, `!target`, `!defend`, `!hold`/`!stay`, `!follow`, `!cover`, `!hunt`, `!freelance`, `!status`, `!ping`. Ordered bots navigate to a post or formation station, report "In position." on arrival and "Can't reach you!" when blocked, and return to their post after combat. Supports all-chat, team-chat, and DM addressing (by name prefix or slot). Works on all D3-compatible clients.
-*   **Ship Selection:** Pyro-GL, Phoenix, Magnum-AHT, or Black Pyro (requires Mercenary expansion).
-*   **Difficulty:** Five levels (Trainee → Insane) scaling aim, reaction time, evasion, and turn rate. Set globally or per-bot.
-*   **Team Assignment:** Pre-assign bots to specific teams in the config (`BotTeam1=2`) or at the console (`$addbot Reaper pyro hotshot 2`). Out-of-range values auto-balance. Ignored in non-team modes.
-*   **In-Game Setup:** "Bot Settings" screen in the listen-server flow — scrollable roster for up to 16 bots, per-bot name/ship/difficulty, saves with `.mps` presets.
+*   **Combat AI** — a five-state model (explore, hunt, combat, flee, evade) with predictive lead aiming. Bots circle-strafe, use afterburners to chase and escape, and drop chaff against homing missiles.
+*   **Perception** — bots honor cloaking (a cloaked player is invisible unless revealed by afterburner, headlight, napalm, or weapon fire) and hear weapons and afterburners within a 60-unit radius.
+*   **Physics parity** — bots fly under the same inertia, momentum, and tri-chord rules as human players.
+*   **Weapons and loadout** — range- and resource-aware weapon switching, splash-damage self-guards, and smart powerup collection. Bots rate their own equipment and pick fights accordingly — a poorly-armed bot hunts upgrades before engaging.
+*   **Navigation** — a runtime-built volumetric roadmap over arbitrary map geometry, hierarchical routing, and engine-native steering. See [Navigation](#navigation) below.
+*   **Game modes** — Anarchy, Team Anarchy, Robo-Anarchy, CTF (role auto-assignment, carrier play, flag recovery), Hyper-Anarchy, and Hoard. Bots persist across level transitions. Entropy and Monsterball are next on the roadmap.
+*   **Squad orders** — bots respond to `!` chat commands with real navigation and spoken feedback: `!attack`, `!target`, `!defend`, `!hold`, `!follow`, `!cover`, `!hunt`, `!freelance`, `!status`, `!ping`. Orders work from all-chat, team-chat, or direct message; an ordered bot reports "In position." on arrival and "Can't reach you!" when blocked.
+*   **Ships and difficulty** — Pyro-GL, Phoenix, Magnum-AHT, or Black Pyro (requires Mercenary). Five difficulty levels (Trainee → Insane) scale aim, reaction time, evasion, and turn rate — globally or per-bot.
+*   **Team assignment** — pre-assign bots to teams in the config or at the console; anything else auto-balances.
+*   **In-game setup** — a Bot Settings screen in the listen-server flow: scrollable roster for up to 16 bots with per-bot name, ship, and difficulty, saved with `.mps` presets.
+
+### Navigation
+
+Multiplayer maps ship with no AI waypoint data — Descent 3 multiplayer never had bots, so the level editor's waypoint pass was never run on any of them. Matcen builds what's missing at runtime: on level load, the server grows a **volumetric roadmap** — a lattice of flight-verified waypoints, in the tradition of robotics probabilistic roadmaps — through every room and terrain region, tested against the real ship hull so bots are never routed through gaps they can't fly.
+
+Routing is hierarchical. A cost-aware router picks the room sequence, preferring roomier doors, pricing tight and breakable openings, and rerouting around obstructions discovered at runtime; an any-angle planner (Lazy Theta\*) threads complex room interiors. Steering stays with the engine's native path-follower and avoidance code, so bot movement inherits the game's own flight feel rather than fighting it. Breakable glass and destructible grates are treated as doors that need opening: bots shoot them out en route with an appropriate weapon.
+
+The full design — including the engine reference, live tuning status, and the ledger of approaches tried and reverted — is in [`matcen-docs/NAVIGATION.md`](matcen-docs/NAVIGATION.md).
 
 ### Server Configuration
 
-Bots are configured via a separate config file referenced from `dedicated.cfg`, and can be managed live via console/telnet. For listen servers (hosting from the client), use the in-game Bot Settings screen instead.
+Bots are configured via a separate config file referenced from `dedicated.cfg`, and can be managed live from the console or telnet. For listen servers (hosting from the client), use the in-game Bot Settings screen instead.
 
 ```ini
 ; In dedicated.cfg — add this line to enable bots
@@ -63,53 +69,51 @@ A server with no `BotConfig` line runs without bots — fully backwards compatib
 
 **Difficulty levels:** `trainee`, `rookie`, `hotshot` (default), `ace`, `insane`. Set globally with `BotDifficulty=` or per-bot with `BotDifficulty1=`, etc.
 
-**Team assignment:** `BotTeam<n>=1..4` (1-indexed). Omit for auto-balance. Values `1`–`4` that exceed the game's active team count produce a warning and auto-balance. Values outside `1`–`4` silently auto-balance (no warning — they can never be valid). Has no effect in non-team game modes (anarchy, etc.).
+**Team assignment:** `BotTeam<n>=1..4` (1-indexed). Omit for auto-balance. Values that exceed the game's active team count warn and auto-balance; values outside `1`–`4` silently auto-balance. No effect in non-team modes.
 
 ### Console Commands
 
-These commands are available in the dedicated server console (or via remote telnet):
+Available in the dedicated server console or via remote telnet:
 
 | Command | Description |
 | :--- | :--- |
-| `$addbot <name> [ship] [difficulty] [team]` | Adds a bot with optional ship, difficulty, and team (1–4). E.g., `$addbot Reaper phoenix ace 2`. |
-| `$removebot <index>` | Removes a specific bot (use `$botlist` to find the index). |
-| `$removebots` | Removes all active bots. |
-| `$botlist` | Displays a list of all current bots with ship, difficulty, and status. |
-| `$botdifficulty <index\|all> <level>` | Changes difficulty mid-game (e.g., `$botdifficulty all insane`). |
-| `$botstat [index\|all]` | Displays real-time physics/state data for debugging. |
-| `$servercaps` | Prints server capabilities for remote admin tool handshake. |
-| `$nav` | Navigation toggle & diagnostic namespace: bare `$nav` lists all toggles with live state, `$nav <name> on\|off` flips one, `$nav dump [file]` writes the nav-geometry JSON. (Pre-0.9.5 flat names like `$gridnav`/`$terrainsteer`/`$navdump` still work as hidden aliases.) |
-| `$bothelp` | Lists all bot commands. |
+| `$addbot <name> [ship] [difficulty] [team]` | Add a bot, e.g. `$addbot Reaper phoenix ace 2`. |
+| `$removebot <index>` | Remove one bot (see `$botlist` for indices). |
+| `$removebots` | Remove all bots. |
+| `$botlist` | List current bots with ship, difficulty, and status. |
+| `$botdifficulty <index\|all> <level>` | Change difficulty mid-game. |
+| `$botstat [index\|all]` | Real-time state and physics readout for debugging. |
+| `$nav` | Navigation namespace: bare `$nav` lists all toggles with live state, `$nav <name> on\|off` flips one, `$nav dump [file]` writes nav geometry to JSON for offline analysis. |
+| `$servercaps` | Print server capabilities (remote-admin handshake). |
+| `$bothelp` | List all bot commands. |
 
 ### Roadmap
 
-**In development: 0.9.6-dev** — dynamic-obstacle response (bots stop missile-suiciding on destroyable grates and proactively shoot them out of the flight path with a safe weapon — `$nav grate`; spec + status: `matcen-docs/NAVIGATION.md` §7.1). **0.9.5 is the current stable build** — 0.9.4's volumetric-grid navigation milestone plus a console cleanup: the nav toggle/diagnostic surface is consolidated under one **`$nav`** namespace (bare `$nav` shows a live status table; old flat names remain hidden aliases), and toggling the corner bridge (`$nav bridge`) now correctly flushes cached roadmaps so mid-level A/B testing is trustworthy. **0.9.4 was the volumetric-grid navigation milestone.** The ground-up nav rewrite (`matcen-docs/NAVIGATION.md` §3.5) is in: a per-room/per-region **grid-seeded volumetric roadmap** routed with any-angle Lazy Theta\*, hull-aware (6.7u fit clearance + corner-bridging across wall-split components), with **proactive in-room routing gated to genuinely complex rooms** (a lattice-floored complexity test that leaves simple maps on direct routing). The same router now drives objective, carrier, **and `!follow`/`!cover`/`!hold` escort** navigation (far → Dijkstra route, close + line-of-sight → beeline), so squad commands are responsive again. A 9-map Fellowship soak measured **captures up ~58%** over 0.9.3 (best build to date). The roadmap also lays the spatial substrate for tactical behaviors like flanking. More live testing is ongoing; `$gridnav` retains the 0.9.3 skeleton as an A/B fallback. Live status, open issues, and tried-&-reverted ledger: `matcen-docs/NAVIGATION.md` §7.0. Next:
+*   **0.9.6 (in test)** — destructible-obstacle response: bots clear breakable grates and glass with a safe weapon instead of pinning against them or splash-damaging themselves; glass-gated maps become routable.
+*   **Progress-monitor replanning** — replan from the bot's current position on loss of progress, before it visibly gets stuck.
+*   **Entropy** — virus transport and room capture. A unique D3 mode with no FPS analogue; bots will make it playable again for the first time in years.
+*   **Monsterball** — ball-push physics and positional play.
+*   **Co-op** — squad behavior for mission play. Deferred until after the versus modes are polished.
 
-*   **Entropy** — Virus transport and room capture. A unique D3 mode with no clear FPS analogue — bots will make it easily accessible for the first time in years.
-*   **Monsterball** — Ball-push physics and positional play.
-*   **Co-op** — Follow-the-leader squad behavior for mission play. Deferred post-launch due to complexity.
+### Known Limitations
 
-### Known Issues
-
-*   **Thin-geometry divider rooms:** The 0.9.4 volumetric roadmap covers deep non-convex / multi-story interiors that the old portal skeleton couldn't, and captures rose ~58% across the map pool. The remaining hard case is **thin, genuinely-disconnected rooms** (e.g. khazaddum's 5-node divider rooms) where the lattice is too sparse to route across the split — a dedicated thin-room densification pass is deferred. Full live status, open issues, and tried-&-reverted ledger: `matcen-docs/NAVIGATION.md` §7.0.
-*   **Sealed "troll"/decoration powerups (roadmap over-reach):** On some maps a powerup floats inside a sealed sub-structure a ship can't enter (e.g. nysa room 41's 4 Megas, walled by sub-ship slits). The roadmap's hull-swept growth probe can *over-reach* a static sphere into such a pocket over a lattice step, so geometric reachability checks read it as reachable — bots chase it briefly. This is handled by the **evidence-based troll-powerup backstop** (repeat chase-timeouts retire the item level-wide), so it self-corrects; a stricter growth probe was considered and **deferred** as too risky to the hard-won connectivity gains for a minor, self-healing issue.
-*   **Tight-doorway approach precision:** A doorway barely wider than the ship hull (e.g. townofbree's tavern basement door) is now *routable* by the roadmap, but the engine path-follower can still struggle to *thread* it cleanly — reachability is solved, fine-approach piloting is the open edge.
-*   **Outdoor height-awareness:** *Resolved* (Phase 8.1 subtractive redesign — bots reach elevated/shaft structure entrances; real-terrain soaks show zero sky-fly). Remaining outdoor edges: rough-terrain line-of-flight (ground-pinning into hillsides) and decorative concave alcoves (an aesthetic doorway-shaped recess with no real portal can trap a flag carrier).
-*   **Destroyable-grate maps:** Bots don't yet *shoot* breakable grates that seal a path, so grate-gated zones (e.g. Tower of Isengard) are unreachable — a separate behavior frontier, not a routing bug.
-*   **Map design limits:** Most maps play well, but some — extreme verticality, deep mazes, or deliberately obtuse geometry — simply won't suit bots. The goal is a solid experience across the majority of maps, not every map.
-*   **Multi-flag CTF scoring:** In 4-team CTF a player can cash in multiple opposing flags at once for a bonus (2 flags = 3 pts, 3 = 9 pts). Bots only do this opportunistically; they don't deliberately hoard flags before scoring.
-*   **Client compatibility:** Tested with retail D3 v1.5 and PiccuEngine (Windows v1.5-compatible).
-*   **Weapon usage diversity:** Weapon selection hierarchy may need further tuning as more combat data is gathered.
-*   **Team rebalancing:** Teams can be pre-assigned per-bot in config. Dynamic rebalancing when humans join/leave is planned.
+*   **Thin divider rooms** — a few rooms with paper-thin disconnected sections remain hard to route across; a densification pass is planned.
+*   **Tight-doorway precision** — doorways barely wider than the ship are routable, but the engine path-follower can be clumsy threading them.
+*   **Outdoor edges** — bots can ground-pin against steep hillsides on rough terrain, and a decorative concave alcove (a doorway-shaped recess with no real door) can trap a flag carrier.
+*   **Decoration powerups** — items sealed inside non-enterable scenery are occasionally chased briefly, then retired level-wide by an evidence-based backstop; self-correcting.
+*   **Multi-flag CTF** — in 4-team CTF, bots don't deliberately hoard multiple flags for the bonus cash-in; they only do it opportunistically.
+*   **Map fit** — most maps play well, but extreme verticality or deliberately obtuse geometry won't suit bots. The goal is a great experience on the majority of maps, not all of them.
+*   **Team rebalancing** — dynamic rebalancing as humans join and leave is planned; pre-assignment works today.
 
 ### For Developers
 
-For a deep dive into the architecture, FSM logic, and implementation history, see:
-*   [BOTS_DEVEL.md](matcen-docs/BOTS_DEVEL.md) — Phase history and roadmap
-*   [BOT_DEV_REFERENCE.md](matcen-docs/BOT_DEV_REFERENCE.md) — Architecture, FSM, constants, engine API patterns
-*   [BOT_MANAGEMENT.md](matcen-docs/BOT_MANAGEMENT.md) — Phase 5 bot management: config, ships, difficulty, remote admin
-*   [CHAT_COMMANDS.md](matcen-docs/CHAT_COMMANDS.md) — Chat command system: research, verb taxonomy, staged rollout
-*   [NAVIGATION.md](matcen-docs/NAVIGATION.md) — **canonical** bot navigation design: two-layer model, the Phase 11 cost-aware router, engine reference, and history
+Architecture deep-dives, implementation history, and specifications live in [`matcen-docs/`](matcen-docs/):
+
+*   [NAVIGATION.md](matcen-docs/NAVIGATION.md) — **canonical navigation design**: hierarchical routing, the volumetric roadmap, engine reference, live status, history
+*   [BOT_DEV_REFERENCE.md](matcen-docs/BOT_DEV_REFERENCE.md) — architecture, state machine, constants, engine API patterns
+*   [BOTS_DEVEL.md](matcen-docs/BOTS_DEVEL.md) — dated build history, newest first
+*   [BOT_MANAGEMENT.md](matcen-docs/BOT_MANAGEMENT.md) — configuration, ships, difficulty, remote administration
+*   [CHAT_COMMANDS.md](matcen-docs/CHAT_COMMANDS.md) — the chat command system: research, verb taxonomy, rollout
 
 ## Contributing
 Anyone can contribute! We have an active Discord presence at [Descent Developer Network](https://discord.gg/GNy5CUQ). Patches should be submitted on GitHub.

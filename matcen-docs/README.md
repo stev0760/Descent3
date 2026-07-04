@@ -2,7 +2,7 @@
 
 Design documents, reference material, and specifications for the Matcen multiplayer bot fork of Descent 3. These documents are the project's persistent knowledge base, referenced by human developers and AI coding agents (`CLAUDE.md`) across sessions.
 
-**Current status:** Matcen **0.9.5** (current — 0.9.4's volumetric grid-roadmap navigation milestone + the `$nav` console namespace). The single live "what's true right now" snapshot — nav toggles, open issues, and the tried-&-reverted ledger — is **`NAVIGATION.md` §7.0**; read that before treating anything below as current.
+**Current status:** Matcen **0.9.6-dev** (in test — destructible-obstacle response); last stable **0.9.5**. The single live "what's true right now" snapshot — nav toggles, open issues, and the tried-&-reverted ledger — is **`NAVIGATION.md` §7.0**; read that before treating anything below as current.
 
 | Document | Purpose |
 |----------|---------|
