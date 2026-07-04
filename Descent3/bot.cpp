@@ -2420,7 +2420,7 @@ static void BotTrollStrike(int handle, const char *botname) {
 }
 
 static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy, int min_priority = 0,
-                              float max_dist_override = -1.0f) {
+                              float max_dist_override = -1.0f, bool require_los = false) {
   int slot = Bots[bot_index].player_slot;
   object *obj = &Objects[Players[slot].objnum];
 
@@ -2484,8 +2484,9 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
     // THROUGH walls — on a dense office map "within 120u" spans three rooms of maze detour, so
     // committed bots still wandered off-route. Indoors, an on-path candidate must also be in the
     // bot's own room or one portal away: a true grab-in-passing, never a cross-maze detour.
-    if (max_dist_override > 0.0f && Bot_objective_commit_enabled && !OBJECT_OUTSIDE(obj) && !OBJECT_OUTSIDE(p)) {
-      if (p->roomnum != obj->roomnum) {
+    bool commit_filter = (max_dist_override > 0.0f);
+    if ((commit_filter || require_los) && Bot_objective_commit_enabled && !OBJECT_OUTSIDE(obj) && !OBJECT_OUTSIDE(p)) {
+      if (commit_filter && p->roomnum != obj->roomnum) {
         bool adjacent = false;
         room &br = Rooms[obj->roomnum];
         for (int pp = 0; pp < br.num_portals; pp++) {
@@ -2502,6 +2503,9 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
       // pressing a wall toward an item it couldn't see (first L3 4v4 run: strikes all disp 0-4).
       // An occluded item — through a wall, behind unbroken glass, up a vent — doesn't start a
       // chase; the objective leg continues. Breaking the pane makes it visible AND collectible.
+      // Gear-up bots pass require_los WITHOUT the radius/adjacency shrink: wide reach for
+      // anything visible, and when nothing is visible the explore-roam visited-room curiosity
+      // moves them to a fresh room with fresh sightlines — the emergent room-sweep.
       if (!BotHasLOS(obj, p))
         continue;
     }
@@ -2833,11 +2837,18 @@ static void BotUpdateState(int bot_index) {
         on_objective = true;
     }
     // Gear-up exemption (0.9.6): a bot with only its default laser needs a weapon before it can
-    // usefully contest an objective — let it run the normal wide search, then commit once armed.
+    // usefully contest an objective — keep the wide seek radius, but LOS-gated like everyone
+    // else on objective (chase only what it can SEE; unseen-item beelines through maze walls
+    // were the fresh-spawn wall-slamming). Nothing visible → no powerup goal → explore-roam's
+    // visited-room curiosity moves it to a new room and new sightlines. Commit once armed.
     bool gear_up = BotHasOnlyDefaultPrimary(bot_index);
-    int pu_obj = (on_objective && !gear_up)
-                     ? BotFindBestPowerup(bot_index, need_sh, low_energy, 0, BOT_POWERUP_ONPATH_RADIUS)
-                     : BotFindBestPowerup(bot_index, need_sh, low_energy);
+    int pu_obj;
+    if (on_objective && !gear_up)
+      pu_obj = BotFindBestPowerup(bot_index, need_sh, low_energy, 0, BOT_POWERUP_ONPATH_RADIUS);
+    else if (on_objective)
+      pu_obj = BotFindBestPowerup(bot_index, need_sh, low_energy, 0, -1.0f, true);
+    else
+      pu_obj = BotFindBestPowerup(bot_index, need_sh, low_energy);
     bool holding_for_weapon = false;
     if (pu_obj >= 0) {
       // Check if this powerup is a weapon (not health/energy)
@@ -2861,8 +2872,9 @@ static void BotUpdateState(int bot_index) {
         Bots[bot_index].via_seal_count = 0;
         Bots[bot_index].chase_start_pos = obj->pos; // strike discipline: net displacement measured from here
         if (on_objective)
-          LOG_DEBUG.printf("BOT NAV: '%s' objective detour — chasing powerup in room %d",
-                           Bots[bot_index].callsign, OBJECT_OUTSIDE(&Objects[pu_obj]) ? -1 : Objects[pu_obj].roomnum);
+          LOG_DEBUG.printf("BOT NAV: '%s' objective detour%s — chasing powerup in room %d",
+                           Bots[bot_index].callsign, gear_up ? " (gear-up)" : "",
+                           OBJECT_OUTSIDE(&Objects[pu_obj]) ? -1 : Objects[pu_obj].roomnum);
       }
 
       // Phase 12: interior-obstacle handling on the powerup line. GLOBAL — powerups are chased in
