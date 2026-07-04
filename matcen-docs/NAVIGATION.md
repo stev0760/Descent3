@@ -589,6 +589,14 @@ BOA — a bug (the router would be silently overriding BOA everywhere), not a fe
 > **D. Only after A-C: re-default replan per its A/B verdict, re-run the Fellowship regression
 > soak (0.9.6 baseline: 2.67 capt/rnd), and gate 0.9.7 on no-regression + isengard/bree improved.**
 >
+> **Early A-side result (operator, 2026-07-04 eve, replan-off build):** positive — bots on BOTH
+> teams got outside and did things (the pre-replan outdoor behavior back). Zed still nosed the
+> hill (expected — that's the B/C goal-and-coverage problem, not replan). **NEW tracked gap:
+> `!follow` did not work OUTDOORS** (operator tried it to shepherd Zed off the hill) — the escort
+> router presumably has no outdoor leg handling (outdoor target room / outdoor bot roomnum falls
+> through). Triage alongside B: escort nav should reuse the same `BotOutdoorRouteLeg` treatment
+> as objective legs.
+>
 > **BsideCTF full-run verdict (2026-07-04, 3 maps, user in lobby):** the circling pathology is
 > **isolated to large terrain maps with disconnected interiors** (isengard, bree). Indoor/enclosed
 > (Nightmare Castle, L3) and *open* outdoor (Mysterious Isle: 0 outdoor hard-stucks) are healthy —
