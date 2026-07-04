@@ -548,16 +548,24 @@ BOA — a bug (the router would be silently overriding BOA everywhere), not a fe
 
 ## 7. Open problems (roadmap)
 
-### 7.0 Current status snapshot — 2026-07-04 (0.9.6 RELEASED; §7.1 Stages 1–2b validated, Stage 3 next as 0.9.7-dev)
+### 7.0 Current status snapshot — 2026-07-04 (0.9.7-dev: Stage 3 replan v3 indoor-validated; terrain track piece 2 built)
 
+> **BsideCTF full-run verdict (2026-07-04, 3 maps, user in lobby):** the circling pathology is
+> **isolated to large terrain maps with disconnected interiors** (isengard, bree). Indoor/enclosed
+> (Nightmare Castle, L3) and *open* outdoor (Mysterious Isle: 0 outdoor hard-stucks) are healthy —
+> L3 hit 2 bot caps in a single round (equal to its all-time best), replan v3 circle-window had
+> **zero false positives**, HARD chase-timeout share 5–11% (was ~50%). Root of the outdoor failure:
+> **the coarse router has no outdoor tier** — cross-terrain legs beeline and only get lattice help
+> as a blocked-line rescue after the wedge. **Terrain track piece 2 (`$nav outroute`) built** (see
+> toggle table); piece 1 (terrain regions as coarse-router nodes via `BOA_connect`) is next.
+>
 > **0.9.6 release soak (2026-07-04, 8h48m Fellowship 9-map, 27 rnds):** **2.67 capt/rnd — best
 > ever** (+8.5% vs 0.9.4); khazaddum 1.0→3.0, shirebaggins 9.0; 0 crashes; strike discipline
 > near-silent on healthy maps; 0 false grate/glass fires. First autonomous captures on bsidectf
-> L3 (2026-07-04). Remaining fronts unchanged and next: **Stage 3 replan** (§7.1 — HARD-share
-> gate) then the **outdoor-terrain track** (isengard 0/0 TOTAL_BREAKDOWN, townofbree 0 caps with
-> the room-56–60 house cluster dominating: 121 moving-slow stucks, 148 HARD chase timeouts, 27
-> item retirements — all confined there). Log artifact to fix: `BotViaPointTick` via lines print
-> raw outdoor roomnums (0x8000xxxx → huge negatives) polluting analyzer room columns.
+> L3 (2026-07-04). Remaining outdoor fronts: isengard 0/0 TOTAL_BREAKDOWN, townofbree 0 caps with
+> the room-56–60 house cluster dominating (121 moving-slow stucks, 148 HARD chase timeouts, 27
+> item retirements — all confined there). ~~Log artifact: via lines print raw outdoor roomnums~~
+> (fixed — `OBJECT_OUTSIDE` guards).
 
 *A scannable checkpoint so we stop re-deriving state. Update the date + toggle table + ledger whenever a soak
 or a toggle default changes. The narrative subsections below explain the "why"; this is the "what, right now."*
@@ -588,7 +596,8 @@ the pre-0.9.5 flat names remain hidden aliases. Defaults in `bot_steering.cpp`/`
 | `route` | `$gridroute` | **ON** | 0.9.4 | **VALIDATED** — proactive in-room grid routing, gated to genuinely complex rooms (`orig_comp_count>1` AND ≥24 lattice nodes). Fellowship soak: overall captures +58% vs 0.9.3, khazaddum 0.2→1.0. Also drives carrier + `!follow`/`!cover`/`!hold` escort nav. |
 | `grate` | `$grateclear` | **ON** | 0.9.6 | **DORMANT-SAFE VALIDATED** (0 false fires across all 0.9.6 soaks; clear path itself still awaits a bot actually flying at a grate) — proactive destroyable-obstacle clearing (§7.1 Stage 2): forward ray hits an `OF_DESTROYABLE` clutter/building object → laser it out *before* the stuck pin; forward ray hits a `TF_BREAKABLE` pane → shatter it on approach (matter weapons only). Gates only the proactive pass; the safe-weapon selection in reactive stuck-clear is unconditional. Gate map: splusv1 (grates; first session: dormant-as-designed, bots never approached). |
 | `commit` | `$objcommit` | **ON** | 0.9.6 | **VALIDATED** (L3: Router Nav 46→962; release soak best-ever 2.67 capt/rnd) — objective commitment: while routing to an objective, powerup candidates must be within `BOT_POWERUP_ONPATH_RADIUS` (120u), **same-or-adjacent room**, AND **visible** (`BotHasLOS` — unseen-item beelines through maze walls were the L3 wall-slamming; occluded/vent/behind-glass items never start a chase). Gear-up (default-laser) bots keep the wide 500u reach but are LOS-gated too — nothing visible → explore-roam's visited-room curiosity moves them to fresh sightlines (emergent room-sweep). Anarchy selection unchanged. |
-| `replan` | `$stallreplan` | **ON** | 0.9.7 | **v2 IN TEST** — Stage 3 progress-monitor replan (§7.1). **v1 REGRESSED** (first flight: 48 via releases/2 rnds → circling — a TURNING ship reads as stalled; door-waits too). v2 qualification: a stalled window only counts when fvec is aligned with `movement_dir` (mid-turn excluded — the AB-gate signal) and no door is dead ahead; via release needs 2 qualified windows, chase abort 3, re-pick 4 — and re-pick is free-roam-only (objective routes recompute anyway). Gate unchanged: HARD-share collapse (L3 428/860, bree 148/452). |
+| `replan` | `$stallreplan` | **ON** | 0.9.7 | **v3 — INDOOR-VALIDATED (BsideCTF full run 2026-07-04)**: zero circle-suspension false positives across 3 indoor/enclosed maps, HARD chase-timeout share collapsed to 5–11% (was ~50% on L3) — the release gate passed on that pool. History: **v1 REGRESSED** (48 via releases/2 rnds — a TURNING ship reads as stalled; door-waits too); v2 = fvec·movement_dir ≥0.6 qualification + no-door-ahead + streak thresholds (via 2 / chase 3 / re-pick 4, re-pick free-roam-only); v3 adds the **slow window** (8s/35u) for circling that lives an octave below wall-press — displacement at 1s scale, none at 8s scale (the skeleton-via dance) → suspend via + abort chase/re-pick. Outdoor verdict rides on the terrain track (`outroute`). |
+| `outroute` | `$outdoorroute` | **ON** | 0.9.7 | **BUILT (2026-07-04, UNTESTED)** — terrain track piece 2: proactive outdoor lattice following on objective legs. The coarse router has no outdoor tier, so an outdoor bot's leg to a cross-terrain goal (entrance approach, carrier run home, order anchor) was a straight beeline, with the region lattice consulted only as a blocked-line rescue *after* the hillside wedge (the isengard/bree wedge→recover→re-acquire circling loop). Now the leg issue point pre-checks the straight line (`BotSegmentClearOutdoor` at hull radius): **clear = beeline exactly as today** (open terrain e.g. mysterious_isle untouched — the regression guard); **blocked = aim at the lattice's furthest-visible waypoint toward the target now, from a healthy position**. Waypoints advance at goal-completion cadence (`AIG_GET_TO_POS` self-clears at `circle_distance` ≈10u) — no early release, no per-tick recompute (the `$softfollow` class). Hooks: `BotSetRoutedGoal` (router/carrier legs) + the Phase 8.1 entrance-seek re-issue. Substrate healthy where it matters: bree region roadmap = 1893 nodes, **1 component**. Log: `outdoor-route wp (goal\|entrance room N, Xu leg)`; analyzer section "Outdoor Lattice Routing". Gate maps: isengard (137/137 entrance-miss, valley circling), bree carrier returns (138 ground-pins). |
 | `glass` | `$glassroute` | **ON** | 0.9.6 | **VALIDATED** (bsidectf L3: 55 proactive clears, first bot captures; 0 false fires on glass-free maps) — Stage 2b: `TF_BREAKABLE` glass portals get finite `BOT_PORTAL_GLASS_PENALTY` (120) instead of IMPASSABLE, re-aligning the router with BOA (which already routes through glass). Glass-sealed rooms stop reading "sealed" → their powerups become selectable. Toggling flushes the geocost/passability caches (`BotGeoCostInvalidate` — the $gridbridge lesson). Gate map: **bsidectf L3** (207 glass portals, 69 "sealed" powerups). Expect via-fail noise at glass lines (via can't see through the pane; the breaker opens it on press/approach). |
 
 Watch out for the near-collision: **`$nav bridge` = the 0.9.4 corner bridge; the OLD `$navbridge` = the
@@ -744,7 +753,8 @@ softhop) gate the fallback substrate and are deleted together with that code in 
 >   unchanged). New log lines: `objective detour — chasing powerup in room R`, and timeout lines
 >   now carry `disp=N HARD|mobile`. Watch item: items behind breakable glass could seal-strike if
 >   the pane outlives `BOT_VIA_SEALED_TICKS` — L3 showed 0 sealed abandons, so not yet observed.
-> - **Stage 3 BUILT (2026-07-04, 0.9.7-dev, UNTESTED — `$nav replan`).** As-built: a per-bot
+> - **Stage 3 BUILT (2026-07-04, 0.9.7-dev — `$nav replan`; v3 INDOOR-VALIDATED same day, see
+>   §7.0 toggle table).** As-built: a per-bot
 >   1s-window displacement monitor (EXPLORE only; hold-order and escort bots exempt) with three
 >   gentlest-first actions on stall — (1) release the committed via (`via_expires = 0`; the next
 >   `BotViaPointTick` cleans its own goal slot and re-searches from the CURRENT pose), (2) after 2
@@ -775,6 +785,11 @@ softhop) gate the fallback substrate and are deleted together with that code in 
 >   gaps a zero-width ray threads. The proactive probe now runs a second pass at
 >   `BOT_GRATE_PROBE_RADIUS` (5.0, sub-hull) so it collides like a ship, not a bullet. Plus: via
 >   log lines print room −1 outdoors instead of the raw 0x8000xxxx cell encoding.
+> - **Terrain track piece 2 BUILT (2026-07-04, 0.9.7-dev, UNTESTED — `$nav outroute`).** Proactive
+>   outdoor lattice following on objective legs (`BotOutdoorRouteLeg` in bot.cpp; hooks in
+>   `BotSetRoutedGoal` + the Phase 8.1 entrance-seek re-issue). Full rationale and behavior in
+>   the §7.0 toggle-table row. Piece 1 (terrain regions as coarse-router nodes over `BOA_connect`
+>   edges, so `BotComputeRoute` can plan interior→terrain→interior) remains next.
 
 **Theme: the bot responds to the world *as it is now*, not as the load-time roadmap said.** The 0.9.4
 static substrate is validated (§3.5); the remaining game-breaking failures are things the roadmap's

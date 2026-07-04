@@ -25,7 +25,9 @@ RE_LEVEL_OPEN = re.compile(r"Opening level '([^']+)'")
 RE_TIMESTAMP = re.compile(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+)")
 RE_GAME_MODE = re.compile(r"Detected game mode: (\S+)")
 RE_STUCK = re.compile(r"stuck escalation \(room (-?\d+)")
-RE_CAPTURE = re.compile(r"\((\w+)\) captures the (\w+) Flag")
+# g1=player name (bots carry the " [BOT]" suffix), g2=team. Split bot vs human captures —
+# soak stats must not credit bots with captures a human in the lobby made.
+RE_CAPTURE = re.compile(r"\*?(.+?) \((\w+)\) captures the \w+ Flag")
 RE_KILL = re.compile(r"was killed by")
 # Carrier nav — tolerant of both the pre-Phase-11 ("-> home N") and Phase-11 waypoint-injection
 # ("-> wp W (home N)" / Hoard "(K orbs) room R -> wp W (goal N)") formats. g1=current room, g2=goal.
@@ -85,6 +87,10 @@ RE_GRATE_CLEAR = re.compile(r"proactive-clearing destroyable obstacle \(type=\d+
 # gentlest applicable action. via = committed via released; chase = powerup chase aborted (no
 # strike); route = explore/routed destination re-picked.
 RE_STALL_REPLAN = re.compile(r"stall-replan: (via released|chase aborted|route re-pick|circling)")
+# 0.9.7 terrain track piece 2 ($nav outroute): a terrain-blocked outdoor leg redirected to a region-
+# lattice waypoint at goal-issue time. g1 = leg kind (goal = router/carrier leg, entrance = Phase 8.1
+# door approach), g2 = target room, g3 = straight-line leg length (u).
+RE_OUTDOOR_ROUTE = re.compile(r"outdoor-route wp \((goal|entrance) room (-?\d+), (\d+)u leg\)")
 
 # Outdoor diagnostic suffix appended (by BotTerrainDiag) to outdoor stuck/escalation/escape lines:
 #   " | TERRAIN cell=X,Z rgn=R agl=A spd=S dest=D(TERRAIN|STRUCT|none)"
@@ -119,7 +125,9 @@ def new_map_stats():
     return {
         "rounds": 0,
         "game_mode": "Unknown",
-        "captures": 0,
+        "captures": 0,               # ALL captures (bot + human)
+        "human_caps": 0,             # captures by players without the [BOT] suffix
+        "human_cappers": Counter(),
         "team_caps": Counter(),
         "kills": 0,
         "stucks": 0,
@@ -189,6 +197,8 @@ def new_map_stats():
         "glass_clears": 0,           # proactive breakable-glass shatters ($nav grate)
         "glass_clear_rooms": Counter(),
         "grate_clears": 0,           # proactive destroyable-object clears ($nav grate)
+        "outroute_goal": 0,          # $nav outroute lattice redirects on router/carrier legs
+        "outroute_ent": 0,           # $nav outroute lattice redirects on entrance-approach legs
         "stall_via": 0,              # 0.9.7 stall actions: committed via released
         "stall_chase": 0,            # 0.9.7 stall actions: powerup chase aborted (no strike)
         "stall_route": 0,            # 0.9.7 stall actions: explore/routed destination re-picked
@@ -390,6 +400,14 @@ def parse_log(path):
                     s["stall_route"] += 1
                 continue
 
+            m = RE_OUTDOOR_ROUTE.search(line)
+            if m:
+                if m.group(1) == "entrance":
+                    s["outroute_ent"] += 1
+                else:
+                    s["outroute_goal"] += 1
+                continue
+
             m = RE_GAME_MODE.search(line)
             if m:
                 s["game_mode"] = m.group(1)
@@ -414,7 +432,10 @@ def parse_log(path):
             m = RE_CAPTURE.search(line)
             if m:
                 s["captures"] += 1
-                s["team_caps"][m.group(1)] += 1
+                if "[BOT]" not in m.group(1):
+                    s["human_caps"] += 1
+                    s["human_cappers"][m.group(1).strip()] += 1
+                s["team_caps"][m.group(2)] += 1
                 continue
 
             if RE_KILL.search(line):
@@ -464,11 +485,13 @@ def detect_anomalies(stats):
     anomalies = []
     for name, s in stats.items():
         rounds = max(s["rounds"], 1)
-        cap_rate = s["captures"] / rounds
+        bot_caps = s["captures"] - s["human_caps"]
+        cap_rate = bot_caps / rounds
         mode = s["game_mode"]
 
         # Flag pickup failure: CTF mode, bots navigate to flag rooms but never capture
-        if mode == "CTF" and s["kills"] > 10 and s["captures"] == 0:
+        # (judged on BOT captures only — a human capping doesn't exonerate the bots)
+        if mode == "CTF" and s["kills"] > 10 and bot_caps == 0:
             if s["obj_nav"] > 0 and s["stucks"] < 20:
                 anomalies.append((name, "FLAG_PICKUP_FAILURE",
                                   f"CTF mode with {s['kills']} kills and {s['obj_nav']} objective nav events "
@@ -539,8 +562,8 @@ def detect_anomalies(stats):
                                   f"{cap_rate:.1f} captures/round"))
 
         # Carrier survivability
-        if s["carrier_deaths"] > 20 and s["captures"] > 0:
-            ratio = s["carrier_deaths"] / s["captures"]
+        if s["carrier_deaths"] > 20 and bot_caps > 0:
+            ratio = s["carrier_deaths"] / bot_caps
             if ratio > 15:
                 anomalies.append((name, "CARRIER_SURVIVABILITY",
                                   f"{ratio:.1f} carrier deaths per capture"))
@@ -675,6 +698,7 @@ def print_report(stats, total_lines, log_path):
 
     total_rounds = sum(s["rounds"] for s in stats.values())
     total_caps = sum(s["captures"] for s in stats.values())
+    total_human_caps = sum(s["human_caps"] for s in stats.values())
     total_kills = sum(s["kills"] for s in stats.values())
     total_stucks = sum(s["stucks"] for s in stats.values())
 
@@ -686,7 +710,14 @@ def print_report(stats, total_lines, log_path):
     print(f"**Maps:** {', '.join(maps)} ({total_rounds} total rounds)")
     modes = set(s["game_mode"] for s in stats.values())
     print(f"**Game mode(s):** {', '.join(modes)}")
-    print(f"**Totals:** {total_caps} captures, {total_kills} kills, {total_stucks} stucks")
+    cap_note = f"{total_caps - total_human_caps} bot captures"
+    if total_human_caps:
+        cappers = Counter()
+        for s in stats.values():
+            cappers.update(s["human_cappers"])
+        who = ", ".join(f"{n} x{c}" for n, c in cappers.most_common())
+        cap_note += f" (+{total_human_caps} human: {who})"
+    print(f"**Totals:** {cap_note}, {total_kills} kills, {total_stucks} stucks")
     print()
 
     # Anomalies (top of report for visibility)
@@ -700,14 +731,18 @@ def print_report(stats, total_lines, log_path):
     # Per-map summary table
     print(f"## Per-Map Summary")
     print()
-    print(f"| Map | Rounds | Mode | Captures (/rnd) | Kills (/rnd) | Stucks (/rnd) | Carrier Deaths | Avg Death Dist |")
+    print(f"| Map | Rounds | Mode | Bot Captures (/rnd) | Kills (/rnd) | Stucks (/rnd) | Carrier Deaths | Avg Death Dist |")
     print(f"|---|---|---|---|---|---|---|---|")
     for name in maps:
         s = stats[name]
         r = max(s["rounds"], 1)
         avg_dd, _, _, _ = fmt_dist_buckets(s["carrier_dists"])
+        bot_caps = s["captures"] - s["human_caps"]
+        cap_cell = f"{bot_caps} ({bot_caps/r:.1f})"
+        if s["human_caps"]:
+            cap_cell += f" +{s['human_caps']} human"
         print(f"| {name} | {s['rounds']} | {s['game_mode']} "
-              f"| {s['captures']} ({s['captures']/r:.1f}) "
+              f"| {cap_cell} "
               f"| {s['kills']} ({s['kills']/r:.0f}) "
               f"| {s['stucks']} ({s['stucks']/r:.1f}) "
               f"| {s['carrier_deaths']} "
@@ -929,6 +964,27 @@ def print_report(stats, total_lines, log_path):
                 print(f"| {name} | {s['oa_seek_events']} | {top_rooms} |")
             print()
 
+    # 0.9.7 terrain track piece 2 ($nav outroute): terrain-blocked outdoor legs redirected onto the
+    # region lattice at goal-issue time. Waypoints advance at goal-completion cadence, so each count
+    # is one waypoint hop. Read against the Outdoor Steering section: routes up + entrance-miss /
+    # ground-pin down = the lattice-following is landing.
+    if any(s["outroute_goal"] or s["outroute_ent"] for s in stats.values()):
+        print(f"## Outdoor Lattice Routing ($nav outroute, 0.9.7)")
+        print()
+        print("Terrain-blocked objective legs redirected to region-lattice waypoints instead of "
+              "beelining (one count = one waypoint hop). `goal legs` = router/carrier legs; "
+              "`entrance legs` = Phase 8.1 door approaches (the Isengard entrance-miss class).")
+        print()
+        print(f"| Map | Waypoint hops | goal legs | entrance legs |")
+        print(f"|---|---|---|---|")
+        for name in maps:
+            s = stats[name]
+            total = s["outroute_goal"] + s["outroute_ent"]
+            if not total:
+                continue
+            print(f"| {name} | {total} | {s['outroute_goal']} | {s['outroute_ent']} |")
+        print()
+
     # Carrier death distance buckets
     has_deaths = any(s["carrier_dists"] for s in stats.values())
     if has_deaths:
@@ -1032,7 +1088,7 @@ def export_csv(stats, total_lines, log_path, out_dir):
     basename = os.path.splitext(os.path.basename(log_path))[0]
 
     # -- summary.csv --
-    header = ["map", "rounds", "mode", "captures", "captures_per_round",
+    header = ["map", "rounds", "mode", "bot_captures", "bot_captures_per_round", "human_captures",
               "kills", "kills_per_round", "stucks", "stucks_per_round",
               "carrier_deaths", "avg_death_dist",
               "carrier_nav_ticks", "outdoor_carrier_pct",
@@ -1052,7 +1108,7 @@ def export_csv(stats, total_lines, log_path, out_dir):
         outdoor_s_pct = f"{s['outdoor_stucks']/s['stucks']*100:.0f}" if s["stucks"] else ""
         rows.append([
             name, s["rounds"], s["game_mode"],
-            s["captures"], f"{s['captures']/r:.1f}",
+            s["captures"] - s["human_caps"], f"{(s['captures'] - s['human_caps'])/r:.1f}", s["human_caps"],
             s["kills"], f"{s['kills']/r:.0f}",
             s["stucks"], f"{s['stucks']/r:.1f}",
             s["carrier_deaths"], avg_dd,

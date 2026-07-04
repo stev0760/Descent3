@@ -52,6 +52,7 @@
 bool Bot_gridnav_enabled = true;        // $gridnav — default ON for 0.9.4
 bool Bot_roadmap_corner_enabled = true; // $gridbridge — corner-rounding component bridge (Stage 3.5 prototype)
 bool Bot_gridroute_enabled = true;      // $gridroute — proactive in-room grid planning for objective/carrier nav
+bool Bot_outdoor_route_enabled = true;  // $nav outroute — proactive outdoor lattice following on objective legs
 
 namespace {
 

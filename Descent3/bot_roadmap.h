@@ -89,6 +89,18 @@ extern bool Bot_roadmap_corner_enabled; // $gridbridge — corner-rounding compo
 // roadmap is degenerate. Indoor only (outdoor already routes its region roadmap via the reactive path).
 extern bool Bot_gridroute_enabled;
 
+// 0.9.7 terrain track, piece 2 ($nav outroute): follow the outdoor region lattice PROACTIVELY on
+// objective legs. Without this, an outdoor bot's leg to a cross-terrain goal (entrance approach point,
+// carrier run home, order anchor) is a straight AIG_GET_TO_POS beeline — the coarse router has no
+// outdoor tier — and the lattice is only consulted as a blocked-line rescue AFTER the bot has wedged
+// on a hillside (the isengard/bree wedge->recover->re-acquire circling loop). With this on, the leg
+// issue point pre-checks the straight line (BotSegmentClearOutdoor at hull radius): clear = beeline
+// exactly as today (open terrain e.g. mysterious_isle is untouched); blocked = aim at the lattice's
+// furthest-visible waypoint toward the target NOW, from a healthy position. The waypoint advances at
+// goal-completion cadence (AIG_GET_TO_POS self-clears at circle_distance) — no early release, no
+// per-tick recompute (the $softfollow oscillation class).
+extern bool Bot_outdoor_route_enabled;
+
 // Stage 3 (outdoor): the SAME roadmap grown over a terrain REGION's airspace, so the local search threads
 // laterally around outdoor structures (the Bree-wall class) instead of beelining into them. Seeds = the
 // region's BOA_connect door approach points; the lattice extent = the region's structure bboxes expanded

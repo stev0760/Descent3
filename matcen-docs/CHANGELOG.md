@@ -9,11 +9,23 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
 
 ## [0.9.7-dev] — in test (2026-07-04)
 
-**Dynamic re-routing.** Bots notice within about a second that they are not making progress and
-re-plan from where they actually are — releasing a stale waypoint, giving up on an unreachable
-pickup (without unfairly marking it a troll item), or re-picking their route — instead of
-pressing a wall until a long timeout fires. Also fixes grate detection: grate bars have gaps a
-zero-width ray passes through, so the detection probe now sweeps at near-ship width.
+**Dynamic re-routing and outdoor route-following.** Bots notice within about a second that they
+are not making progress and re-plan from where they actually are — releasing a stale waypoint,
+giving up on an unreachable pickup (without unfairly marking it a troll item), or re-picking
+their route — instead of pressing a wall until a long timeout fires. A slower second watchdog
+catches circling (moving, but going nowhere over ~8 seconds) the fast one can't see. Validated
+indoors: zero false trips across a three-map test run, and "hopeless chase" pins collapsed from
+about half of all chase timeouts to 5–11%.
+
+- New `$nav outroute` (default on): on outdoor terrain, a bot whose straight line to its goal is
+  blocked by a hill or building now follows the map's outdoor waypoint lattice around the
+  obstacle from the start, instead of flying into the hillside and recovering over and over (the
+  circling seen on large terrain maps). Open terrain with a clear line keeps the direct flight
+  unchanged.
+- Grate detection fixed: grate bars have gaps a zero-width ray passes through, so the detection
+  probe now sweeps at near-ship width.
+- Log analyzer now attributes flag captures to bots vs. human players, so soak stats can't be
+  inflated by a human playing on the server.
 
 ## [0.9.6] — 2026-07-04
 

@@ -1881,6 +1881,29 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
   return 1;
 }
 
+// 0.9.7 terrain track, piece 2 ($nav outroute): proactive outdoor lattice following on objective legs.
+// The coarse router has no outdoor tier, so an outdoor bot's leg to a cross-terrain goal is a straight
+// beeline; the region lattice only engaged as a blocked-line RESCUE after the bot wedged on a hillside
+// (the isengard/bree wedge->recover->re-acquire circling loop). This redirects the leg at GOAL-ISSUE
+// time instead: straight line hull-clear = keep the beeline (open terrain unchanged); blocked = aim at
+// the lattice's furthest-visible waypoint toward the target, from a healthy position. The waypoint
+// advances at goal-completion cadence (AIG_GET_TO_POS self-clears at circle_distance ~10u, reopening
+// the caller's hold-check) — no early release, no per-tick recompute (the $softfollow oscillation
+// class). Args by value so callers may pass their dest as both target and out. Returns true when
+// dest/dest_room were redirected to a lattice waypoint.
+static bool BotOutdoorRouteLeg(object *obj, vector target_pos, int target_room, vector *dest, int *dest_room) {
+  if (!Bot_gridnav_enabled || !Bot_outdoor_route_enabled || !OBJECT_OUTSIDE(obj))
+    return false;
+  if (BotSegmentClearOutdoor(obj->pos, target_pos, obj->size))
+    return false; // straight leg is flyable — beeline, exactly today's behavior
+  vector gvia;
+  if (BotRoadmapFindViaOutdoor(obj, target_pos, target_room, &gvia) != BOT_VIA_FOUND)
+    return false; // no region lattice / disconnected / bot sees no node — beeline + reactive rescue
+  *dest = gvia;
+  *dest_room = obj->roomnum; // outdoor waypoint: the bot's terrain cell is the valid goal roomnum
+  return true;
+}
+
 // Navigate the bot portal-to-portal through the level when in EXPLORE state with no nearby pickups.
 // Phase 11 waypoint injection — the single mechanism all objective navigation uses to follow the
 // cost-aware router. Computes the next room on the Dijkstra route to goal_room and aims the engine
@@ -1944,6 +1967,11 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
       dest = gvia;
       dest_room = obj->roomnum; // the grid waypoint is reachable from the bot's current room
     }
+  } else if (BotOutdoorRouteLeg(obj, dest, dest_room, &dest, &dest_room)) {
+    // Terrain track piece 2: the outdoor analog of the branch above — the leg to the goal is
+    // terrain-blocked, so aim at the region lattice's next waypoint instead of the beeline.
+    LOG_DEBUG.printf("BOT NAV: '%s' outdoor-route wp (goal room %d, %.0fu leg)", Bots[bot_index].callsign, goal_room,
+                     vm_VectorDistanceQuick(&obj->pos, &final_pos));
   }
   gi_info.pos = dest;
   gi_info.roomnum = dest_room;
@@ -2089,11 +2117,19 @@ static void BotDoExploreRoaming(int bot_index) {
           goal_info gi_info{};
           gi_info.pos = ent_pos;
           gi_info.roomnum = ent_room;
+          // Terrain track piece 2 ($nav outroute): the leg to the door approach point is THE
+          // isengard entrance-miss beeline — when it's terrain-blocked, follow the region lattice
+          // toward it (waypoint advances on goal completion, en_route holds between waypoints).
+          bool routed = BotOutdoorRouteLeg(obj, ent_pos, ent_room, &gi_info.pos, &gi_info.roomnum);
           pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
           Bots[bot_index].explore_dest_room = ent_room;
           Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
-          LOG_DEBUG.printf("BOT: '%s' outdoor entrance-seek -> room %d portal %d (obj %d)", Bots[bot_index].callsign,
-                           ent_room, ent_portal, obj_room);
+          if (routed)
+            LOG_DEBUG.printf("BOT NAV: '%s' outdoor-route wp (entrance room %d, %.0fu leg)", Bots[bot_index].callsign,
+                             ent_room, vm_VectorDistanceQuick(&obj->pos, &ent_pos));
+          else
+            LOG_DEBUG.printf("BOT: '%s' outdoor entrance-seek -> room %d portal %d (obj %d)", Bots[bot_index].callsign,
+                             ent_room, ent_portal, obj_room);
         }
         return;
       }
