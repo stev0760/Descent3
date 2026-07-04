@@ -569,7 +569,16 @@ BOA — a bug (the router would be silently overriding BOA everywhere), not a fe
 > Check: `$nav dump` AFTER bots have flown outdoors (region roadmap is lazily built — the old
 > isengard dump has no `outdoor_roadmap[]`), then `visualize_navdump.py` to see node coverage vs
 > the ridge. If coverage is the gap: widen margin / seed from terrain-region hull instead of
-> structure bboxes (build-time param → cache flush on toggle).
+> structure bboxes (build-time param → cache flush on toggle). **Operator map intent (2026-07-04)
+> makes this THE pivotal check for isengard:** the room-20 door is the MAIN door; the map's low
+> invisible ceiling deliberately forbids flying over the hill — the intended route is THROUGH THE
+> VALLEY and around (a designed battle bottleneck). The ceiling-capped lattice is the right tool
+> *iff* its extent (structure bboxes + 60u) actually nodes the valley; a node-less valley means no
+> around-route exists to string-pull, and the bot can only nose the hill. Bree = same class but
+> worse (vertical wall bisects the map, structures meet the high ceiling with vertical walls) —
+> yet its lattice measured comp_count=1, so routes should exist there; judge by leg convergence.
+> Operator framing to keep: **Fellowship.mn3 is near worst-case for custom D3 maps — make these
+> work and almost any community map will** (the generality benchmark, not an outlier).
 > **C. Zed's hill re-entry loop is a GOAL problem, not a steering problem.** Entrance resolver
 > picks door room 20 across the hill; every escape is followed by re-acquiring the same
 > unreachable-by-beeline target. Durable fix is the terrain track proper: **piece 1** (terrain
