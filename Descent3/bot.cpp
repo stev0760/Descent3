@@ -1943,10 +1943,54 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   // via-point sub-goal before resuming the routed waypoint. Carriers call this every tick, so
   // via arrival/expiry is fully maintained here; explore nav maintains it en route in
   // BotDoExploreRoaming's still-navigating branch.
+  //
+  // 0.9.7 seam guard ($nav seam), computed in the same block since it needs the same steer probe:
+  // our waypoint hop is ADJACENT by construction, but the engine path-follows to it over its own
+  // BOA table, which can price the direct door out and detour through a third room (Polaris
+  // room-99 carrier deadlock: direct door BOA 93 vs a 34+10 wind-tunnel loop the ship can't fly
+  // backward — the via layer then chased the engine's detour target, "arriving" without ever
+  // crossing). When the engine's steer target leaves {current, waypoint}, re-aim just past the
+  // direct portal, claimed in the CURRENT room so the engine steers straight with no BOA path.
+  bool seam_redirect = false;
+  vector seam_pnt{};
   {
     vector goal_pos = (wp_room == goal_room) ? final_pos : Rooms[wp_room].path_pnt;
     int steer_room = -1;
     vector steer_pos = BotGetActiveSteerPoint(obj, goal_pos, wp_room, &steer_room);
+    if (Bot_seam_guard_enabled && !OBJECT_OUTSIDE(obj) && wp_room != obj->roomnum && wp_room >= 0 &&
+        wp_room <= Highest_room_index && Rooms[wp_room].used && !ROOMNUM_OUTSIDE(steer_room) && steer_room >= 0 &&
+        steer_room <= Highest_room_index && Rooms[steer_room].used && steer_room != obj->roomnum &&
+        steer_room != wp_room) {
+      room &crm = Rooms[obj->roomnum];
+      int best_p = -1;
+      float best_geo = BOT_PORTAL_IMPASSABLE;
+      for (int p = 0; p < crm.num_portals; p++) {
+        if (crm.portals[p].croom != wp_room)
+          continue;
+        float g = BotPortalGeoCost(obj->roomnum, p);
+        if (g < best_geo) {
+          best_geo = g;
+          best_p = p;
+        }
+      }
+      if (best_p >= 0 && best_geo < BOT_PORTAL_IMPASSABLE && BotPortalWindDir(obj->roomnum, best_p) >= 0) {
+        const portal &pt = crm.portals[best_p];
+        vector through = Rooms[wp_room].path_pnt - pt.path_pnt;
+        float td = vm_GetMagnitude(&through);
+        if (td > 1.0f) {
+          float push = (td * 0.6f < BOT_SEAM_PUSH_DIST) ? td * 0.6f : BOT_SEAM_PUSH_DIST;
+          seam_pnt = pt.path_pnt + through * (push / td);
+        } else {
+          seam_pnt = Rooms[wp_room].path_pnt;
+        }
+        seam_redirect = true;
+        LOG_DEBUG.printf("BOT NAV: '%s' seam guard: engine path detours via room %d — aiming through portal to %d",
+                         Bots[bot_index].callsign, steer_room, wp_room);
+        // The via probe should cover our bot->door line, not the engine's detour target.
+        steer_pos = seam_pnt;
+        steer_room = wp_room;
+      }
+    }
     if (BotViaPointTick(bot_index, steer_pos, steer_room, Bots[bot_index].pursuit_goal_index, nullptr)) {
       Bots[bot_index].explore_dest_room = wp_room; // keep waypoint bookkeeping for progress/hold checks
       if (Bots[bot_index].explore_room_timer <= 0.0f)
@@ -1957,8 +2001,10 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
 
   int &pgi = Bots[bot_index].pursuit_goal_index;
   bool goal_valid = (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used);
-  if (goal_valid && Bots[bot_index].explore_dest_room == wp_room && Bots[bot_index].explore_room_timer > 0.0f)
+  if (goal_valid && Bots[bot_index].explore_dest_room == wp_room && Bots[bot_index].explore_room_timer > 0.0f &&
+      !seam_redirect)
     return wp_room; // already en route to this waypoint — leave the engine path alone
+                    // (a live seam redirect falls through: the CURRENT goal is what produced the detoured path)
 
   if (goal_valid)
     GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
@@ -1974,7 +2020,13 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   // hop, wp_room == obj->roomnum). On FOUND, aim the engine at that in-room waypoint; on NONE/degenerate keep
   // the path_pnt (today's behavior). Indoor only — outdoors the region roadmap already runs via the reactive
   // BotViaPointTick above. Carriers share this function, so this is also the "escape out of the structure" fix.
-  if (Bot_gridnav_enabled && Bot_gridroute_enabled && !OBJECT_OUTSIDE(obj)) {
+  if (seam_redirect) {
+    // 0.9.7 seam guard: aim just past the direct portal, claimed in the CURRENT room — a
+    // same-room goal gives the engine nothing to BOA-path (and detour) on; it steers straight
+    // at the doorway, and the push-through offset (> arrive radius) makes arrival = crossing.
+    dest = seam_pnt;
+    dest_room = obj->roomnum;
+  } else if (Bot_gridnav_enabled && Bot_gridroute_enabled && !OBJECT_OUTSIDE(obj)) {
     vector gvia;
     if (BotRoadmapFindVia(obj, dest, wp_room, &gvia, /*proactive=*/true) == BOT_VIA_FOUND) {
       dest = gvia;
@@ -4438,6 +4490,12 @@ bool BotNavDump(const char *filename) {
     // FROM the portals — a buried/void center; LOS readings FROM such a path_pnt are untrustworthy)
     fprintf(fp, "      \"path_pnt_reachable\": %s,\n",
             (rm.flags & RF_EXTERNAL) ? "true" : (BotRoomPathPntReachable(r) ? "true" : "false"));
+    // Wind (0.9.7 $nav wind): a strong vector marks a speed-tunnel room — a one-way routing gate.
+    {
+      vector w = rm.wind;
+      float wm = vm_GetMagnitude(&w);
+      fprintf(fp, "      \"wind\": [%.2f,%.2f,%.2f], \"wind_mag\": %.2f,\n", w.x(), w.y(), w.z(), wm);
+    }
     // Engine in-room waypoints for this room (0 = none baked → our pseudo-bnode skeleton owns it)
     bn_list *bnl = BNode_GetBNListPtr(r);
     fprintf(fp, "      \"bnode_count\": %d,\n", bnl ? bnl->num_nodes : 0);

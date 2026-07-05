@@ -160,6 +160,34 @@ extern bool Bot_soft_hop_enabled;
 // pane on approach (proactive clear) or on the stuck pin (reactive), then proceeds.
 extern bool Bot_glass_route_enabled;
 
+// 0.9.7 wind tunnels ($nav wind): a room with a strong wind vector (bedlam QuadSomniac/Polaris
+// "speed tunnels") is a ONE-WAY gate — the physics push (wind * drag * 16, physics.cpp) exceeds
+// ship thrust, so WITH the wind is a boosted shortcut and AGAINST it is physically impossible.
+// BOA and the engine path-follower are both wind-blind; the router gates direction here:
+// against-wind edges excluded, with-wind edges discounted so a downwind goal biases the bot
+// toward the tunnel intake. Deliberately UNCACHED — scripts can change room wind at runtime
+// (multisafe SetRoomWind), and the check is a few dot products on room-advance only.
+extern bool Bot_wind_route_enabled;
+#define BOT_WIND_TUNNEL_MIN 10.0f    // |Rooms[].wind| at/above this = a real tunnel, not ambient drift
+#define BOT_WIND_AXIS_DOT 0.35f      // |dot(travel,wind)| beyond this = aligned/opposed (else a side portal)
+#define BOT_WIND_EDGE_DISCOUNT 0.25f // with-wind edge cost multiplier (the boost makes the hop cheap)
+
+// Wind classification for traversing room_idx's portal portal_idx (direction room -> croom):
+// +1 = with the wind (boosted), -1 = against the wind (impossible), 0 = no strong wind involved.
+// Checks both sides: exiting a windy room (can't leave through the upwind mouth) and entering a
+// windy room (can't enter through the downwind/exhaust mouth).
+int BotPortalWindDir(int room_idx, int portal_idx);
+
+// 0.9.7 adjacent-hop seam guard ($nav seam): the engine's own BOA path to our routed ADJACENT
+// waypoint can detour through a third room (Polaris room-99 carrier deadlock: BOA prices the
+// direct home door at 93 vs a 34+10 loop through a wind tunnel the ship can't actually fly
+// backward — the bot hovered at the door while the via layer chased the engine's detour target).
+// When the engine's active steer target leaves {current room, waypoint room}, re-aim the goal
+// just past the direct portal instead, claimed in the CURRENT room so the engine steers straight
+// with no BOA path to detour on.
+extern bool Bot_seam_guard_enabled;
+#define BOT_SEAM_PUSH_DIST 25.0f // aim this far past the portal plane (> BOT_VIA_ARRIVE_DIST, so arrival = crossing)
+
 // Flush the per-level portal geometry caches (geocost + passability). Needed when a toggle that
 // changes cached verdicts flips mid-level ($nav glass) — same false-A/B trap as the 0.9.5
 // $gridbridge cache-flush fix, same cure.

@@ -66,6 +66,8 @@ bool Bot_outdoor_via_enabled = true;   // 12.6: lateral go-around outdoors (arou
 bool Bot_outdoor_graph_enabled = true; // 12.6 Stage B: connecting graph multi-hop go-around ($outdoorgraph)
 bool Bot_soft_hop_enabled = true;      // 12.7: soft progress hop across disconnected graphs ($navbridge)
 bool Bot_glass_route_enabled = true;   // 0.9.6 2b: breakable-glass portals get a finite break cost ($nav glass)
+bool Bot_wind_route_enabled = true;    // 0.9.7: wind-tunnel one-way gating + downwind shortcut bias ($nav wind)
+bool Bot_seam_guard_enabled = true;    // 0.9.7: re-aim through the direct door when the engine path detours ($nav seam)
 // 12.7 $softfollow early via-release was REMOVED (validated as a dead end): it fired inside the via commit
 // window and re-introduced the exact circling it meant to avoid (darkjourney via-arrival 73%→18%). Any future
 // rigidity-loosening must be non-oscillating (hysteresis / release-once-after-passing). See NAVIGATION.md §7.0.
@@ -1040,6 +1042,63 @@ bool BotRoomSealedForShip(int room_idx) {
   return any_portal; // portal-less rooms aren't "sealed" — there is nothing to gate
 }
 
+// --- Wind-tunnel one-way gating (0.9.7 $nav wind) ---
+// D3 wind tunnels are rooms with a wind vector the physics applies as a drag-scaled push
+// (physics.cpp: force = wind * drag * 16). A strong tunnel is a one-way gate with a speed boost.
+// Travel direction uses the same construction as ProbePortalClearance: portal path_pnt relative
+// to the room's path_pnt. Two constraints, either can veto:
+//   exiting a windy room: interior -> portal must not oppose the wind (can't fight upwind out);
+//   entering a windy room: portal -> interior must not oppose the wind (the exhaust mouth blows
+//   you straight back out).
+// Aligned traversal on either side reports +1 so the router's discount biases toward the intake.
+int BotPortalWindDir(int room_idx, int portal_idx) {
+  if (!Bot_wind_route_enabled)
+    return 0;
+  if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used)
+    return 0;
+  room &rm = Rooms[room_idx];
+  if (portal_idx < 0 || portal_idx >= rm.num_portals)
+    return 0;
+  const portal &pt = rm.portals[portal_idx];
+  int cr = pt.croom;
+  if (cr < 0 || cr > Highest_room_index || !Rooms[cr].used)
+    return 0;
+
+  int dir = 0;
+  // Exit constraint: leaving room_idx through this portal.
+  vector w = rm.wind;
+  float wm = vm_GetMagnitude(&w);
+  if (wm >= BOT_WIND_TUNNEL_MIN) {
+    vector t = pt.path_pnt - rm.path_pnt;
+    float tm = vm_GetMagnitude(&t);
+    if (tm > 0.1f) {
+      float d = vm_DotProduct(&t, &w) / (tm * wm);
+      if (d < -BOT_WIND_AXIS_DOT)
+        return -1; // upwind mouth — the push is stronger than the ship
+      if (d > BOT_WIND_AXIS_DOT)
+        dir = 1; // riding the wind out the downwind mouth
+    }
+  }
+  // Entry constraint: entering croom through its twin portal.
+  vector w2 = Rooms[cr].wind;
+  float wm2 = vm_GetMagnitude(&w2);
+  if (wm2 >= BOT_WIND_TUNNEL_MIN) {
+    vector entry = pt.path_pnt;
+    if (pt.cportal >= 0 && pt.cportal < Rooms[cr].num_portals)
+      entry = Rooms[cr].portals[pt.cportal].path_pnt;
+    vector t = Rooms[cr].path_pnt - entry;
+    float tm = vm_GetMagnitude(&t);
+    if (tm > 0.1f) {
+      float d = vm_DotProduct(&t, &w2) / (tm * wm2);
+      if (d < -BOT_WIND_AXIS_DOT)
+        return -1; // downwind/exhaust mouth — unenterable
+      if (d > BOT_WIND_AXIS_DOT)
+        dir = 1; // the intake — the tunnel carries us toward the interior
+    }
+  }
+  return dir;
+}
+
 // --- Cost-aware next-hop router (Phase 11) ---
 // Runs Dijkstra over the interior room graph from from_room to goal_room, weighting each
 // portal by BOA's base traversal cost plus our graded geometry cost (grates/slits excluded,
@@ -1106,6 +1165,12 @@ int BotComputeRoute(int from_room, int goal_room) {
       if (geo >= BOT_PORTAL_IMPASSABLE)
         continue; // grate/slit/locked — route around it
 
+      // 0.9.7 wind tunnels ($nav wind): against-wind traversal is physically impossible (the
+      // one-way gate), with-wind is a boosted shortcut the discount below biases toward.
+      int wdir = BotPortalWindDir(r, p);
+      if (wdir < 0)
+        continue;
+
       // Match the engine's BOA cost convention: forward + reverse portal cost (see BOA.cpp:1003).
       // This makes the router reproduce BOA_GetNextRoom when geo and dynamic costs are zero, so it
       // only diverges where geometry or a runtime penalty genuinely differs — it complements BOA's
@@ -1120,6 +1185,13 @@ int BotComputeRoute(int from_room, int goal_room) {
           base += rev;
       }
       float edge = base + geo + BotPortalDynPenalty(r, p);
+      if (wdir > 0) {
+        // Downwind hop: the tunnel's push makes the crossing near-free — bias the route toward
+        // the intake when the goal is on the far side. Floor keeps Dijkstra weights positive.
+        edge *= BOT_WIND_EDGE_DISCOUNT;
+        if (edge < 1.0f)
+          edge = 1.0f;
+      }
 
       float nc = nodes[r].cost + edge;
       if (nc < nodes[nr].cost) {

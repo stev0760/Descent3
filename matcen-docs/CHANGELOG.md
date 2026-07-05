@@ -31,6 +31,18 @@ re-planning appears to keep bots churning navigation instead of fighting.
   obstacle recovery use the older (0.9.3-era) go-around order that the Bedlam maps performed best
   on, without affecting indoor navigation. Used to pin down which outdoor change caused the
   regression above.
+- Bots now understand wind tunnels (`$nav wind`, default on). The one-way boost tunnels on maps
+  like Bedlam's Polaris and QuadSomniac used to trap flag carriers, who would try to fly home
+  backward through a tunnel that physically cannot be flown against. Routing now treats a strong
+  tunnel as a one-way gate — never entered or exited against the wind — and as a shortcut in its
+  boost direction, so a bot with a goal on the far side prefers the tunnel intake like a human
+  would. `$nav dump` now records each room's wind so tunnel layouts can be checked offline.
+- Fixed a deadlock where a flag carrier hovered in front of its own flag room without entering
+  (`$nav seam`, default on). The engine's built-in pathing could price the direct doorway out and
+  try to swing around through a longer loop (on Polaris, one that runs backward through a wind
+  tunnel), leaving the bot parked at the door it should just fly through. When the engine's path
+  wanders off the bot's intended one-room hop, the bot now aims straight through the connecting
+  doorway instead.
 - Grate detection fixed: grate bars have gaps a zero-width ray passes through, so the detection
   probe now sweeps at near-ship width.
 - Log analyzer now attributes flag captures to bots vs. human players, so soak stats can't be
