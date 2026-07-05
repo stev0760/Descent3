@@ -1917,6 +1917,56 @@ static bool BotOutdoorRouteLeg(object *obj, vector target_pos, int target_room, 
   return true;
 }
 
+// 0.9.7 Phase 8.2: two-stage outdoor entrance approach — the shared leg both outbound objective
+// nav and carrier/escort return legs use to get INTO a structure from terrain. Stage 1 (12.6):
+// aim at the standoff point 12u outside the resolved terrain-facing door (clear of the facade).
+// Stage 2 ($nav entry): once within BOT_ENTRY_COMMIT_DIST of the standoff, re-aim seam-style at a
+// point INSIDE the door room (toward its path_pnt — downward for a top-hatch, inward for a side
+// door), so goal arrival = crossing the portal. Before this, arrival at the standoff just
+// re-issued the same outside point and entering relied on drift — never converging on top-hatch/
+// shaft entrances (the entrance-miss stuck class throttling bedlam/fellowship attempt rates).
+// Once the bot's roomnum flips indoors the interior router owns the rest (entrance room need not
+// be the goal room). Returns false when not applicable (indoors, external/unresolvable goal).
+static bool BotOutdoorEntranceStage(object *obj, int goal_room, vector *dest, int *dest_room, int *ent_room_out,
+                                    int *ent_portal_out, bool *entry_out) {
+  if (entry_out)
+    *entry_out = false;
+  if (!Bot_terrain_steering_enabled || !OBJECT_OUTSIDE(obj))
+    return false;
+  if (goal_room < 0 || goal_room > Highest_room_index || !Rooms[goal_room].used ||
+      (Rooms[goal_room].flags & RF_EXTERNAL))
+    return false;
+  int ent_room = -1, ent_portal = -1;
+  if (!BotResolveOutdoorEntrance(obj, goal_room, &ent_room, &ent_portal))
+    return false;
+  portal &ep = Rooms[ent_room].portals[ent_portal];
+  // Stage 1: the 12.6 standoff — the face normal points INTO the room, so subtract to push outward.
+  vector out_pos = ep.path_pnt - Rooms[ent_room].faces[ep.portal_face].normal * BOT_OUTDOOR_APPROACH_OFFSET;
+  bool entry = false;
+  if (Bot_entry_commit_enabled && vm_VectorDistanceQuick(&obj->pos, &out_pos) < BOT_ENTRY_COMMIT_DIST) {
+    // Stage 2: commit through the door (same push-through construction as the $nav seam guard).
+    vector through = Rooms[ent_room].path_pnt - ep.path_pnt;
+    float td = vm_GetMagnitude(&through);
+    if (td > 1.0f) {
+      float push = (td * 0.6f < BOT_ENTRY_PUSH_DIST) ? td * 0.6f : BOT_ENTRY_PUSH_DIST;
+      *dest = ep.path_pnt + through * (push / td);
+    } else {
+      *dest = Rooms[ent_room].path_pnt;
+    }
+    entry = true;
+  } else {
+    *dest = out_pos;
+  }
+  *dest_room = ent_room;
+  if (ent_room_out)
+    *ent_room_out = ent_room;
+  if (ent_portal_out)
+    *ent_portal_out = ent_portal;
+  if (entry_out)
+    *entry_out = entry;
+  return true;
+}
+
 // Navigate the bot portal-to-portal through the level when in EXPLORE state with no nearby pickups.
 // Phase 11 waypoint injection — the single mechanism all objective navigation uses to follow the
 // cost-aware router. Computes the next room on the Dijkstra route to goal_room and aims the engine
@@ -2032,6 +2082,17 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
       dest = gvia;
       dest_room = obj->roomnum; // the grid waypoint is reachable from the bot's current room
     }
+  } else if (bool entry_commit = false;
+             BotOutdoorEntranceStage(obj, goal_room, &dest, &dest_room, nullptr, nullptr, &entry_commit)) {
+    // Phase 8.2: outdoor leg to an INTERIOR goal — carrier home run, escort/order anchor. These
+    // used to beeline at the goal room's nearest portal point with no entrance resolution at all
+    // (the Plutonium red carrier 24x-reissue trace: stuck outdoors aiming at an unreachable-by-
+    // beeline door). Now they get the same two-stage door approach as outbound objective nav.
+    if (!entry_commit && BotOutdoorRouteLeg(obj, dest, dest_room, &dest, &dest_room))
+      LOG_DEBUG.printf("BOT NAV: '%s' outdoor-route wp (entrance leg, goal %d)", Bots[bot_index].callsign, goal_room);
+    else
+      LOG_DEBUG.printf("BOT NAV: '%s' outdoor entrance %s -> room %d (goal %d)", Bots[bot_index].callsign,
+                       entry_commit ? "ENTRY" : "approach", dest_room, goal_room);
   } else if (BotOutdoorRouteLeg(obj, dest, dest_room, &dest, &dest_room)) {
     // Terrain track piece 2: the outdoor analog of the branch above — the leg to the goal is
     // terrain-blocked, so aim at the region lattice's next waypoint instead of the beeline.
@@ -2156,12 +2217,13 @@ static void BotDoExploreRoaming(int bot_index) {
     // is skipped and the interior router below runs (it owns the shaft descent / post interior).
     if (Bot_terrain_steering_enabled && OBJECT_OUTSIDE(obj)) {
       int ent_room = -1, ent_portal = -1;
-      if (BotResolveOutdoorEntrance(obj, obj_room, &ent_room, &ent_portal)) {
-        portal &ep = Rooms[ent_room].portals[ent_portal];
-        // 12.6: aim at a clean APPROACH point offset OUT of the door face (the face normal points INTO the
-        // room, so subtract it to push outward) — clear of the facade / open-door geometry the engine's
-        // straight line otherwise pins behind. Carry it to the en-route via maintenance below.
-        vector ent_pos = ep.path_pnt - Rooms[ent_room].faces[ep.portal_face].normal * BOT_OUTDOOR_APPROACH_OFFSET;
+      vector ent_pos;
+      int ent_dest_room = -1;
+      bool entry_commit = false;
+      // 8.2 two-stage approach: standoff point outside the door (12.6), then — within commit
+      // range — the push-through point INSIDE it ($nav entry). Carried to the en-route via
+      // maintenance below either way.
+      if (BotOutdoorEntranceStage(obj, obj_room, &ent_pos, &ent_dest_room, &ent_room, &ent_portal, &entry_commit)) {
         Bots[bot_index].oa_steer_pos = ent_pos;
         Bots[bot_index].oa_steer_room = ent_room;
         int &pgi = Bots[bot_index].pursuit_goal_index;
@@ -2172,8 +2234,9 @@ static void BotDoExploreRoaming(int bot_index) {
           Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
           return;
         }
-        // Line clear (or via reached this tick): head straight to the approach point. Re-issue only when
-        // the entrance changed or the goal lapsed (no per-tick churn).
+        // Line clear (or via reached this tick): head to the current stage's point. Re-issue only when
+        // the entrance changed or the goal lapsed (no per-tick churn) — stage advance rides goal
+        // completion: arriving at the standoff self-clears the goal, and the next issue commits entry.
         bool en_route = (Bots[bot_index].explore_dest_room == ent_room && pgi >= 0 && pgi < MAX_GOALS &&
                          obj->ai_info->goals[pgi].used && Bots[bot_index].explore_room_timer > 0.0f);
         if (!en_route) {
@@ -2185,11 +2248,15 @@ static void BotDoExploreRoaming(int bot_index) {
           // Terrain track piece 2 ($nav outroute): the leg to the door approach point is THE
           // isengard entrance-miss beeline — when it's terrain-blocked, follow the region lattice
           // toward it (waypoint advances on goal completion, en_route holds between waypoints).
-          bool routed = BotOutdoorRouteLeg(obj, ent_pos, ent_room, &gi_info.pos, &gi_info.roomnum);
+          // Skipped on the entry commit — that leg is a ~25u push through the door.
+          bool routed = !entry_commit && BotOutdoorRouteLeg(obj, ent_pos, ent_room, &gi_info.pos, &gi_info.roomnum);
           pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
           Bots[bot_index].explore_dest_room = ent_room;
           Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
-          if (routed)
+          if (entry_commit)
+            LOG_DEBUG.printf("BOT NAV: '%s' entrance ENTRY commit -> room %d portal %d (obj %d)",
+                             Bots[bot_index].callsign, ent_room, ent_portal, obj_room);
+          else if (routed)
             LOG_DEBUG.printf("BOT NAV: '%s' outdoor-route wp (entrance room %d, %.0fu leg)", Bots[bot_index].callsign,
                              ent_room, vm_VectorDistanceQuick(&obj->pos, &ent_pos));
           else

@@ -37,6 +37,13 @@ re-planning appears to keep bots churning navigation instead of fighting.
   tunnel as a one-way gate — never entered or exited against the wind — and as a shortcut in its
   boost direction, so a bot with a goal on the far side prefers the tunnel intake like a human
   would. `$nav dump` now records each room's wind so tunnel layouts can be checked offline.
+- Bots now actually enter structures from outside (`$nav entry`, default on). Flying to a
+  building's door worked, but nothing ever steered the bot through it — entering relied on
+  drifting across the threshold, which never happens for rooftop-hatch and shaft entrances (the
+  "fly up to the top, then down inside" structures on Bedlam and Fellowship maps). Bots now
+  commit through the doorway once they reach it. Flag carriers returning home from outdoors get
+  the same treatment — previously they aimed at a door point with no approach logic at all,
+  which is why carriers on some maps grabbed flags but circled outside their own base forever.
 - Fixed a deadlock where a flag carrier hovered in front of its own flag room without entering
   (`$nav seam`, default on). The engine's built-in pathing could price the direct doorway out and
   try to swing around through a longer loop (on Polaris, one that runs backward through a wind

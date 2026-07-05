@@ -188,6 +188,16 @@ int BotPortalWindDir(int room_idx, int portal_idx);
 extern bool Bot_seam_guard_enabled;
 #define BOT_SEAM_PUSH_DIST 25.0f // aim this far past the portal plane (> BOT_VIA_ARRIVE_DIST, so arrival = crossing)
 
+// 0.9.7 Phase 8.2 ($nav entry): stage-2 of the outdoor entrance approach. Stage 1 (12.6) aims at a
+// standoff point 12u OUTSIDE the resolved door; but nothing ever aimed the bot THROUGH it — arrival
+// at the standoff just re-issued the same outside point, so entering relied on drift (works for
+// side doors, never for top-hatch/shaft entrances: the bot hovers over the hatch forever — the
+// "fly up to the entrance then down into the structure" gap, and the entrance-miss stuck class
+// that throttles bedlam/fellowship attempt rates). With this on, a bot within BOT_ENTRY_COMMIT_DIST
+// of the standoff re-aims seam-style at a point INSIDE the door room (toward its path_pnt), so
+// goal arrival = crossing the portal; once the roomnum flips indoors, the interior router owns it.
+extern bool Bot_entry_commit_enabled;
+
 // Flush the per-level portal geometry caches (geocost + passability). Needed when a toggle that
 // changes cached verdicts flips mid-level ($nav glass) — same false-A/B trap as the 0.9.5
 // $gridbridge cache-flush fix, same cure.
