@@ -847,8 +847,10 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
     // nodes the airspace around structures, so the local search threads laterally around an occluding wall /
     // footprint instead of beelining into it. On BOT_VIA_NONE (no region graph / disconnected / bot can't
     // see a node) fall through to the 12.6 connecting graph, then NONE. $gridnav off = the 0.9.3 outdoor
-    // stack. Marked skeleton so the chain-cap/suspend/reroute governor bounds the hop chain.
-    if (Bot_gridnav_enabled) {
+    // stack; $nav outlattice off = 0.9.3 rescue order outdoors only (lattice skipped, connecting graph
+    // answers) while the indoor grid stays live — the bedlam triage lever. Marked skeleton so the
+    // chain-cap/suspend/reroute governor bounds the hop chain.
+    if (Bot_gridnav_enabled && Bot_outdoor_lattice_enabled) {
       vector rv;
       if (BotRoadmapFindViaOutdoor(obj, target_pos, target_room, &rv) == BOT_VIA_FOUND) {
         if (via_out)

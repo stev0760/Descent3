@@ -52,7 +52,18 @@
 bool Bot_gridnav_enabled = true;        // $gridnav — default ON for 0.9.4
 bool Bot_roadmap_corner_enabled = true; // $gridbridge — corner-rounding component bridge (Stage 3.5 prototype)
 bool Bot_gridroute_enabled = true;      // $gridroute — proactive in-room grid planning for objective/carrier nav
-bool Bot_outdoor_route_enabled = true;  // $nav outroute — proactive outdoor lattice following on objective legs
+// $nav outroute — proactive outdoor lattice following on objective legs. DEFAULT OFF 2026-07-05:
+// shipped ON untested and is the prime suspect for the bedlam outdoor-CTF collapse (Plutonium 16
+// flag grabs / 0 returns home; Polaris dead — see project bedlam-regression forensics). Re-enable
+// live with `$nav outroute on` for the isengard/bree A-side; re-default only after the bedlam
+// triage soak clears it.
+bool Bot_outdoor_route_enabled = false;
+// $nav outlattice — consult the outdoor region lattice (BotRoadmapFindViaOutdoor) in the
+// blocked-line via RESCUE, ahead of the 12.6B connecting graph. OFF = the 0.9.3 rescue order
+// (rings -> connecting graph), the bedlam gold-reference outdoor stack, without giving up the
+// indoor grid. The second triage lever: if bedlam stays broken with outroute off, this isolates
+// the 0.9.4 lattice-first ordering.
+bool Bot_outdoor_lattice_enabled = true;
 
 namespace {
 

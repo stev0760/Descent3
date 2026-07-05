@@ -101,6 +101,12 @@ extern bool Bot_gridroute_enabled;
 // per-tick recompute (the $softfollow oscillation class).
 extern bool Bot_outdoor_route_enabled;
 
+// $nav outlattice: gate the outdoor region lattice inside the blocked-line via rescue
+// (bot_steering.cpp pass ordering: rings -> [lattice] -> 12.6B connecting graph). OFF restores the
+// 0.9.3 rescue order outdoors while keeping the indoor grid — the bedlam triage lever isolating
+// the 0.9.4 lattice-first preference from the 0.9.7 proactive outroute redirect.
+extern bool Bot_outdoor_lattice_enabled;
+
 // Stage 3 (outdoor): the SAME roadmap grown over a terrain REGION's airspace, so the local search threads
 // laterally around outdoor structures (the Bree-wall class) instead of beelining into them. Seeds = the
 // region's BOA_connect door approach points; the lattice extent = the region's structure bboxes expanded

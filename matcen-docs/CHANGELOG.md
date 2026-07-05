@@ -19,11 +19,18 @@ about half of all chase timeouts to 5–11%. **Currently shipped default-off** (
 to enable) while an outdoor side effect is investigated — on terrain maps the constant
 re-planning appears to keep bots churning navigation instead of fighting.
 
-- New `$nav outroute` (default on): on outdoor terrain, a bot whose straight line to its goal is
-  blocked by a hill or building now follows the map's outdoor waypoint lattice around the
-  obstacle from the start, instead of flying into the hillside and recovering over and over (the
-  circling seen on large terrain maps). Open terrain with a clear line keeps the direct flight
-  unchanged.
+- New `$nav outroute` (**default off since 2026-07-05**): on outdoor terrain, a bot whose straight
+  line to its goal is blocked by a hill or building follows the map's outdoor waypoint lattice
+  around the obstacle from the start, instead of flying into the hillside and recovering over and
+  over (the circling seen on large terrain maps). Open terrain with a clear line keeps the direct
+  flight unchanged. Defaulted off after a log comparison across five weeks of soaks showed the
+  stock Bedlam outdoor maps regressing from their all-time best capture rates to zero while this
+  was on untested — flag carriers were grabbing the enemy flag and then getting lost flying home.
+  `$nav outroute on` re-enables it live for large-terrain-map testing.
+- New `$nav outlattice` (default on): companion diagnostic lever — turning it off makes outdoor
+  obstacle recovery use the older (0.9.3-era) go-around order that the Bedlam maps performed best
+  on, without affecting indoor navigation. Used to pin down which outdoor change caused the
+  regression above.
 - Grate detection fixed: grate bars have gaps a zero-width ray passes through, so the detection
   probe now sweeps at near-ship width.
 - Log analyzer now attributes flag captures to bots vs. human players, so soak stats can't be

@@ -762,6 +762,8 @@ static const NavToggle Nav_toggles[] = {
      "progress-monitor replan (stall -> release via / abort chase / re-pick route)", false, false},
     {"outroute", "outdoorroute", nullptr, &Bot_outdoor_route_enabled,
      "proactive outdoor lattice route-following (objective legs)", false, false},
+    {"outlattice", "outdoorlattice", nullptr, &Bot_outdoor_lattice_enabled,
+     "outdoor lattice via in blocked-line rescue (off = 0.9.3 rescue order)", false, false},
     {"terrain", "terrainsteer", nullptr, &Bot_terrain_steering_enabled, "outdoor terrain steering / entrance redirect",
      true, false},
     {"bnodes", "pseudobnodes", nullptr, &Bot_pseudo_bnodes_enabled, "pseudo-BNode skeleton interior waypoints", true,
