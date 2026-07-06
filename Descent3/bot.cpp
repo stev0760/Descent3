@@ -1348,10 +1348,30 @@ static void BotProactiveObstacleClear(int bot_index) {
   // the active AIG_GET_TO_POS goal), swept at the grate radius.
   vector tgt;
   bool have_tgt = false;
-  if (Bots[bot_index].via_expires > Gametime) {
+  // Priority 1: the ROUTED next room's portal. During a skeleton-via dance the committed via
+  // point AND the goal slot both hold the same in-room node (issue_via_goal reuses the goal
+  // slot), so neither ever points through the grated doorway — isengard-A/B verification run:
+  // 233 dance cycles in room 36, zero probe hits with via/goal targets only. The door the bot
+  // ultimately needs is the portal to explore_dest_room (adjacent by route construction).
+  if (!OBJECT_OUTSIDE(obj)) {
+    int dr = Bots[bot_index].explore_dest_room;
+    if (dr >= 0 && dr <= Highest_room_index && Rooms[dr].used && dr != obj->roomnum &&
+        obj->roomnum >= 0 && obj->roomnum <= Highest_room_index) {
+      room &crm = Rooms[obj->roomnum];
+      for (int p = 0; p < crm.num_portals; p++) {
+        if (crm.portals[p].croom == dr) {
+          tgt = crm.portals[p].path_pnt;
+          have_tgt = true;
+          break;
+        }
+      }
+    }
+  }
+  // Priority 2/3: the committed via point, else the active AIG_GET_TO_POS goal.
+  if (!have_tgt && Bots[bot_index].via_expires > Gametime) {
     tgt = Bots[bot_index].via_point;
     have_tgt = true;
-  } else {
+  } else if (!have_tgt) {
     int pgi = Bots[bot_index].pursuit_goal_index;
     if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used &&
         obj->ai_info->goals[pgi].type == AIG_GET_TO_POS) {
@@ -1363,7 +1383,9 @@ static void BotProactiveObstacleClear(int bot_index) {
     vector d = tgt - obj->pos;
     float dm = vm_GetMagnitude(&d);
     if (dm > 2.0f) {
-      float len = (dm < BOT_STUCK_OBSTACLE_DIST) ? dm : BOT_STUCK_OBSTACLE_DIST;
+      // Reach the glass-scan range, not just the near-obstacle range: the dance holds the bot
+      // 40-60u off the grated portal, and clearing a grate from range with a safe weapon is fine.
+      float len = (dm < BOT_GLASS_SCAN_DIST) ? dm : BOT_GLASS_SCAN_DIST;
       vector end3 = obj->pos + d * (len / dm);
       fvi_query fq3{};
       fvi_info hit3{};
