@@ -1227,8 +1227,19 @@ static void BotDoStuckClear(int bot_index) {
 // outside the allowlist so a sealed grate map tells us what to admit.
 static void BotTryClearBlockerObject(int bot_index, object *obj, int blocker_objnum) {
   object *blocker = &Objects[blocker_objnum];
-  if (!(blocker->flags & OF_DESTROYABLE))
+  if (!(blocker->flags & OF_DESTROYABLE)) {
+    // DIAG (throttled): a NON-destroyable object blocking the line used to bail silently — if a
+    // grate model ships without OF_DESTROYABLE, every probe hit vanishes without a trace and the
+    // clear code looks "dormant" (isengard room-36 investigation).
+    static float nondest_log_time[MAX_BOTS];
+    if (Gametime - nondest_log_time[bot_index] > 5.0f || Gametime < nondest_log_time[bot_index]) {
+      nondest_log_time[bot_index] = Gametime;
+      LOG_DEBUG.printf("BOT NAV: '%s' probe hit NON-destroyable object type=%d id=%d flags=0x%x (room %d)",
+                       Bots[bot_index].callsign, blocker->type, blocker->id, (unsigned)blocker->flags,
+                       OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum);
+    }
     return;
+  }
   if (blocker->type != OBJ_CLUTTER && blocker->type != OBJ_BUILDING) {
     if (blocker->type != OBJ_PLAYER && blocker->type != OBJ_ROBOT && blocker->type != OBJ_GHOST &&
         blocker->type != OBJ_WEAPON) {
@@ -1396,8 +1407,50 @@ static void BotProactiveObstacleClear(int bot_index) {
       fq3.thisobjnum = OBJNUM(obj);
       fq3.ignore_obj_list = nullptr;
       fq3.flags = FQ_CHECK_OBJS | FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS;
-      if (fvi_FindIntersection(&fq3, &hit3) == HIT_OBJECT && hit3.hit_object[0] >= 0)
+      int ht3 = fvi_FindIntersection(&fq3, &hit3);
+      if (ht3 == HIT_OBJECT && hit3.hit_object[0] >= 0) {
         BotTryClearBlockerObject(bot_index, obj, hit3.hit_object[0]);
+        return;
+      }
+    }
+  }
+
+  // Pass 4 (portal object scan): confined-tunnel geometry defeats swept rays — the instrumented
+  // isengard run measured a 5u sweep reading the sewer WALL at 25-40u before ever reaching the
+  // grate in the doorway (398 goal-line probes, 0 object hits, while four bots danced at grated
+  // portals). For the object case, don't raycast at all: walk the current room's portals and the
+  // object lists on both sides; a destroyable clutter/building parked within
+  // BOT_GRATE_PORTAL_NEAR of a doorway inside engagement range IS the obstacle. Throttled scan.
+  if (OBJECT_OUTSIDE(obj) || obj->roomnum < 0 || obj->roomnum > Highest_room_index)
+    return;
+  static float portal_scan_time[MAX_BOTS];
+  if (Gametime - portal_scan_time[bot_index] < 0.5f && Gametime >= portal_scan_time[bot_index])
+    return;
+  portal_scan_time[bot_index] = Gametime;
+  room &crm = Rooms[obj->roomnum];
+  for (int p = 0; p < crm.num_portals; p++) {
+    const portal &pt = crm.portals[p];
+    int cr = pt.croom;
+    if (cr < 0 || cr > Highest_room_index || !Rooms[cr].used)
+      continue;
+    vector pp = pt.path_pnt;
+    vector dp = pp - obj->pos;
+    if (vm_GetMagnitude(&dp) > BOT_GLASS_SCAN_DIST)
+      continue;
+    for (int side = 0; side < 2; side++) {
+      int rn = side ? cr : (int)obj->roomnum;
+      for (int on = Rooms[rn].objects; on != -1; on = Objects[on].next) {
+        object *o = &Objects[on];
+        if (!(o->flags & OF_DESTROYABLE))
+          continue;
+        if (o->type != OBJ_CLUTTER && o->type != OBJ_BUILDING)
+          continue;
+        vector od = o->pos - pp;
+        if (vm_GetMagnitude(&od) > BOT_GRATE_PORTAL_NEAR)
+          continue;
+        BotTryClearBlockerObject(bot_index, obj, on);
+        return;
+      }
     }
   }
 }
@@ -4850,6 +4903,35 @@ bool BotNavDump(const char *filename) {
   //   reachable         — room reachable AND >=1 clear approach.
   //   external_unprobed — outdoor/terrain powerup (FVI can't probe; not counted either way).
   int pu_reach = 0, pu_sealed = 0, pu_review = 0, pu_ext = 0;
+  // World objects (0.9.7): the dump was famously object-blind — grate/crate obstacles live in
+  // Objects[], invisible to every portal/face field above (the §7.1 caveat). Emit clutter,
+  // buildings, and doors with type/name/flags so obstacle forensics stop needing instrumented
+  // builds (isengard blastablegrate hunt).
+  fprintf(fp, "  \"objects\": [\n");
+  {
+    bool first_ob = true;
+    for (int i = 0; i <= Highest_object_index; i++) {
+      object *o = &Objects[i];
+      if (o->type != OBJ_CLUTTER && o->type != OBJ_BUILDING && o->type != OBJ_DOOR)
+        continue;
+      if (o->flags & (OF_DEAD | OF_DESTROYED))
+        continue;
+      const char *nm = "?";
+      if (o->type != OBJ_DOOR && o->id >= 0)
+        nm = Object_info[o->id].name;
+      if (!first_ob)
+        fprintf(fp, ",\n");
+      first_ob = false;
+      fprintf(fp,
+              "    {\"objnum\": %d, \"type\": %d, \"id\": %d, \"name\": \"%s\", \"flags\": %u, "
+              "\"destroyable\": %s, \"room\": %d, \"outside\": %s, \"pos\": [%.1f,%.1f,%.1f]}",
+              i, o->type, o->id, nm, (unsigned)o->flags, (o->flags & OF_DESTROYABLE) ? "true" : "false",
+              OBJECT_OUTSIDE(o) ? -1 : (int)o->roomnum, OBJECT_OUTSIDE(o) ? "true" : "false", o->pos.x(),
+              o->pos.y(), o->pos.z());
+    }
+    fprintf(fp, "\n  ],\n");
+  }
+
   fprintf(fp, "  \"powerups\": [\n");
   bool first_pu = true;
   for (int i = 0; i <= Highest_object_index; i++) {
