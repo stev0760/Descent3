@@ -1335,8 +1335,49 @@ static void BotProactiveObstacleClear(int bot_index) {
   fq2.thisobjnum = OBJNUM(obj);
   fq2.ignore_obj_list = nullptr;
   fq2.flags = FQ_CHECK_OBJS | FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS;
-  if (fvi_FindIntersection(&fq2, &hit2) == HIT_OBJECT && hit2.hit_object[0] >= 0)
+  if (fvi_FindIntersection(&fq2, &hit2) == HIT_OBJECT && hit2.hit_object[0] >= 0) {
     BotTryClearBlockerObject(bot_index, obj, hit2.hit_object[0]);
+    return;
+  }
+
+  // Goal-line pass (0.9.7, isengard room-36 repro): BOTH probes above look where the NOSE points,
+  // but a via-dancing or combat-facing bot presses a grate it never squarely faces — the first
+  // live grate sighting (Phantom + the 3-bot red cluster, all skeleton-via dancing in room 36 for
+  // minutes at blastablegrate objects, ZERO probe hits all session). What is actually blocked is
+  // the line to the point the bot is trying to REACH: probe toward the committed via point (or
+  // the active AIG_GET_TO_POS goal), swept at the grate radius.
+  vector tgt;
+  bool have_tgt = false;
+  if (Bots[bot_index].via_expires > Gametime) {
+    tgt = Bots[bot_index].via_point;
+    have_tgt = true;
+  } else {
+    int pgi = Bots[bot_index].pursuit_goal_index;
+    if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used &&
+        obj->ai_info->goals[pgi].type == AIG_GET_TO_POS) {
+      tgt = obj->ai_info->goals[pgi].g_info.pos;
+      have_tgt = true;
+    }
+  }
+  if (have_tgt) {
+    vector d = tgt - obj->pos;
+    float dm = vm_GetMagnitude(&d);
+    if (dm > 2.0f) {
+      float len = (dm < BOT_STUCK_OBSTACLE_DIST) ? dm : BOT_STUCK_OBSTACLE_DIST;
+      vector end3 = obj->pos + d * (len / dm);
+      fvi_query fq3{};
+      fvi_info hit3{};
+      fq3.p0 = &obj->pos;
+      fq3.p1 = &end3;
+      fq3.startroom = obj->roomnum;
+      fq3.rad = BOT_GRATE_PROBE_RADIUS;
+      fq3.thisobjnum = OBJNUM(obj);
+      fq3.ignore_obj_list = nullptr;
+      fq3.flags = FQ_CHECK_OBJS | FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS;
+      if (fvi_FindIntersection(&fq3, &hit3) == HIT_OBJECT && hit3.hit_object[0] >= 0)
+        BotTryClearBlockerObject(bot_index, obj, hit3.hit_object[0]);
+    }
+  }
 }
 
 // 0.9.7 Stage 3 — progress-monitor replan ("$nav replan"). Samples net displacement in
