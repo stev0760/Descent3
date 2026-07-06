@@ -1934,6 +1934,8 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
           LOG_DEBUG.printf("BOT NAV: '%s' via suspended in room %d (%d arrivals without crossing)",
                            Bots[bot_index].callsign, OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum,
                            BOT_VIA_SKEL_CHAIN_CAP);
+          if (!OBJECT_OUTSIDE(obj))
+            BotRoadmapMarkHardRoom(obj->roomnum); // evidence toward hard-room gridroute promotion
         } else if (!bounce) {
           if (!Bots[bot_index].via_is_skeleton)
             Bots[bot_index].via_arrivals_same_room = 1;
@@ -1942,6 +1944,8 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
           Bots[bot_index].via_suspend_until = Gametime + BOT_VIA_SUSPEND_TIME;
           Bots[bot_index].via_suspend_room = obj->roomnum;
           Bots[bot_index].via_arrivals_same_room = 0;
+          if (!OBJECT_OUTSIDE(obj))
+            BotRoadmapMarkHardRoom(obj->roomnum); // evidence toward hard-room gridroute promotion
           LOG_DEBUG.printf("BOT NAV: '%s' via suspended in room %d (%d arrivals without crossing)",
                            Bots[bot_index].callsign, OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum,
                            BOT_VIA_CYCLE_CAP);

@@ -64,6 +64,45 @@ bool Bot_outdoor_route_enabled = false;
 // indoor grid. The second triage lever: if bedlam stays broken with outroute off, this isolates
 // the 0.9.4 lattice-first ordering.
 bool Bot_outdoor_lattice_enabled = true;
+bool Bot_hard_room_enabled = true; // 0.9.7: evidence-gated gridroute promotion ($nav hardroom)
+
+// --- Evidence-gated hard-room promotion (0.9.7, the isengard room-36 lock) ---------------------
+// The static complexity gate (orig_comp_count>1) misses rooms that are SINGLE-component yet
+// unflyable by the raw path_pnt line: isengard room 36 has 2000+ lattice nodes, comp_count 1, a
+// concave center with portal lips sticking out (operator description) — carriers pressed the
+// 36->38 hop 22x per carry, all day, while proactive gridroute stayed gated off. Rather than
+// loosen the static gate (the measured easy-pool regression), promote a room on EVIDENCE: every
+// 12.2c via suspension ("arrivals without crossing") in a room counts against it; at
+// BOT_HARD_ROOM_SUSPENDS the room is promoted for the rest of the level and proactive grid
+// routing engages there. Same philosophy as troll retirement and dynamic portal penalties:
+// observe the failure, adapt the model, no per-map tuning.
+#define BOT_HARD_ROOM_SUSPENDS 3
+static uint8_t hard_room_suspends[MAX_ROOMS];
+static int hard_room_checksum = 0;
+
+static void HardRoomMaybeReset() {
+  if (hard_room_checksum != BOA_mine_checksum) {
+    std::fill_n(hard_room_suspends, MAX_ROOMS, (uint8_t)0);
+    hard_room_checksum = BOA_mine_checksum;
+  }
+}
+
+void BotRoadmapMarkHardRoom(int room_idx) {
+  if (!Bot_hard_room_enabled || room_idx < 0 || room_idx >= MAX_ROOMS)
+    return;
+  HardRoomMaybeReset();
+  if (hard_room_suspends[room_idx] >= BOT_HARD_ROOM_SUSPENDS)
+    return; // already promoted
+  if (++hard_room_suspends[room_idx] == BOT_HARD_ROOM_SUSPENDS)
+    LOG_DEBUG.printf("[Nav] room %d promoted to HARD (via suspensions) — proactive grid routing engaged", room_idx);
+}
+
+bool BotRoadmapRoomIsHard(int room_idx) {
+  if (!Bot_hard_room_enabled || room_idx < 0 || room_idx >= MAX_ROOMS)
+    return false;
+  HardRoomMaybeReset();
+  return hard_room_suspends[room_idx] >= BOT_HARD_ROOM_SUSPENDS;
+}
 
 namespace {
 
@@ -726,7 +765,7 @@ BotViaResult BotRoadmapFindVia(object *obj, const vector &target_pos, int target
   // indirection (the soak-measured easy-pool regression: gollums/darkjourney recovered with gridroute off,
   // khazaddum's divider rooms collapsed). Reactive calls (proactive=false) always run — a blocked line in a
   // simple room still needs a go-around.
-  if (proactive && !rr->complex)
+  if (proactive && !rr->complex && !BotRoadmapRoomIsHard(room_idx))
     return BOT_VIA_NONE;
 
   // Goal node: the nearest node to an in-room target, or the seam node toward the next room.

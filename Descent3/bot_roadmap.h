@@ -107,6 +107,14 @@ extern bool Bot_outdoor_route_enabled;
 // the 0.9.4 lattice-first preference from the 0.9.7 proactive outroute redirect.
 extern bool Bot_outdoor_lattice_enabled;
 
+// 0.9.7 evidence-gated hard-room promotion ($nav hardroom): rooms that accumulate 12.2c via
+// suspensions get proactive grid routing engaged even when the static complexity gate says
+// "simple" (the isengard room-36 class: single-component, huge, concave, unflyable by the raw
+// portal line). Mark on each suspension; promoted for the rest of the level at the threshold.
+extern bool Bot_hard_room_enabled;
+void BotRoadmapMarkHardRoom(int room_idx);
+bool BotRoadmapRoomIsHard(int room_idx);
+
 // Stage 3 (outdoor): the SAME roadmap grown over a terrain REGION's airspace, so the local search threads
 // laterally around outdoor structures (the Bree-wall class) instead of beelining into them. Seeds = the
 // region's BOA_connect door approach points; the lattice extent = the region's structure bboxes expanded
