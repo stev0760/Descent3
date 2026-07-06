@@ -37,6 +37,10 @@ re-planning appears to keep bots churning navigation instead of fighting.
   tunnel as a one-way gate — never entered or exited against the wind — and as a shortcut in its
   boost direction, so a bot with a goal on the far side prefers the tunnel intake like a human
   would. `$nav dump` now records each room's wind so tunnel layouts can be checked offline.
+- Outdoor bots now pick which door to enter using the same cost model the indoor router uses
+  (`$nav outtier`, default on) — wind tunnels, breakable glass, tight openings, and recent
+  blockages all count. Previously door choice used a rough engine estimate blind to all of
+  those, so a bot could commit to an entrance whose inside route was unflyable.
 - Bots now actually enter structures from outside (`$nav entry`, default on). Flying to a
   building's door worked, but nothing ever steered the bot through it — entering relied on
   drifting across the threshold, which never happens for rooftop-hatch and shaft entrances (the

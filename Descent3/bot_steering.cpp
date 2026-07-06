@@ -69,6 +69,7 @@ bool Bot_glass_route_enabled = true;   // 0.9.6 2b: breakable-glass portals get 
 bool Bot_wind_route_enabled = true;    // 0.9.7: wind-tunnel one-way gating + downwind shortcut bias ($nav wind)
 bool Bot_seam_guard_enabled = true;    // 0.9.7: re-aim through the direct door when the engine path detours ($nav seam)
 bool Bot_entry_commit_enabled = true;  // 0.9.7 Phase 8.2: commit THROUGH the door from the standoff point ($nav entry)
+bool Bot_outdoor_tier_enabled = true;  // 0.9.7 piece 1: entrance choice by full routed cost, not BOA estimate ($nav outtier)
 // 12.7 $softfollow early via-release was REMOVED (validated as a dead end): it fired inside the via commit
 // window and re-introduced the exact circling it meant to avoid (darkjourney via-arrival 73%→18%). Any future
 // rigidity-loosening must be non-oscillating (hysteresis / release-once-after-passing). See NAVIGATION.md §7.0.
@@ -1111,13 +1112,15 @@ int BotPortalWindDir(int room_idx, int portal_idx) {
 // through the sky when it did). If from or goal is outdoor, returns -1 and the engine takes over.
 // No result cache — edge costs are dynamic, and one run over even the largest D3 map (~215 rooms)
 // is microseconds; it runs only on room-advance.
-int BotComputeRoute(int from_room, int goal_room) {
+static float BotRouteDijkstra(int from_room, int goal_room, int *first_hop_out) {
+  if (first_hop_out)
+    *first_hop_out = -1;
   if (from_room < 0 || from_room > Highest_room_index || !Rooms[from_room].used)
-    return -1;
+    return 1e30f;
   if (goal_room < 0 || goal_room > Highest_room_index || !Rooms[goal_room].used)
-    return -1;
+    return 1e30f;
   if (from_room == goal_room)
-    return -1;
+    return 0.0f;
 
   const int max_nodes = Highest_room_index + 1;
 
@@ -1204,9 +1207,25 @@ int BotComputeRoute(int from_room, int goal_room) {
   }
 
   if (!nodes[goal_room].visited)
-    return -1;
-  return nodes[goal_room].first_hop;
+    return 1e30f;
+  if (first_hop_out)
+    *first_hop_out = nodes[goal_room].first_hop;
+  return nodes[goal_room].cost;
 }
+
+int BotComputeRoute(int from_room, int goal_room) {
+  int hop = -1;
+  if (from_room == goal_room)
+    return -1; // preserve the public contract: same-room = no hop
+  BotRouteDijkstra(from_room, goal_room, &hop);
+  return hop;
+}
+
+// Full routed path cost under OUR cost model (BOA base + graded geometry + wind one-way gating +
+// dynamic penalties) — what BotEstimatePathCost pretends to be but isn't (the BOA-chain estimate
+// is wind/glass/penalty-blind, so on a wind-tunnel map it can price an unflyable route as cheap).
+// 1e30 = no finite route.
+float BotComputeRouteCost(int from_room, int goal_room) { return BotRouteDijkstra(from_room, goal_room, nullptr); }
 
 // --- Path cost estimation via BOA chain ---
 
@@ -1269,10 +1288,47 @@ bool BotResolveOutdoorEntrance(const object *obj, int objective_room, int *out_r
   if (nconn > MAX_PATH_PORTALS)
     nconn = MAX_PATH_PORTALS;
 
-  // Pass 1 — choose the entrance ROOM. DIRECT: the objective structure is itself terrain-adjacent
-  // (a post / flag room). INDIRECT: the surface pavilion with the cheapest interior path down to a
-  // buried objective (shaft flags). A room may appear in several BOA_connect entries (one per
-  // terrain-facing door) — door choice is Pass 2.
+  // 0.9.7 terrain-track piece 1 ($nav outtier): choose entrance ROOM and DOOR jointly by the full
+  // routed cost — outdoor approach distance (bot -> door) + OUR router's interior cost from the
+  // entrance to the objective (wind one-way gating, glass break cost, graded geometry, dynamic
+  // penalties). The legacy path below scored rooms with the BOA-chain estimate, which is blind to
+  // all of those — on a wind-tunnel map it can pick an entrance whose "cheap" interior route runs
+  // backward through a tunnel the ship cannot fly. This is the coarse outdoor tier in embryo: the
+  // door the bot approaches IS the first hop of the cheapest real route.
+  if (Bot_outdoor_tier_enabled) {
+    int best_room = -1, best_door = -1;
+    float best_total = 1e30f;
+    for (int c = 0; c < nconn; c++) {
+      int er = BOA_connect[region][c].roomnum;
+      if (er < 0 || er > Highest_room_index || !Rooms[er].used)
+        continue;
+      int ep = BOA_connect[region][c].portal;
+      if (ep < 0 || ep >= Rooms[er].num_portals)
+        continue;
+      float interior = (er == objective_room) ? 0.0f : BotComputeRouteCost(er, objective_room);
+      if (interior >= 1e30f)
+        continue; // no finite interior route from this entrance (sealed / wind-gated / grates)
+      vector diff = Rooms[er].portals[ep].path_pnt - obj->pos;
+      float total = vm_GetMagnitude(&diff) + interior;
+      if (total < best_total) {
+        best_total = total;
+        best_room = er;
+        best_door = ep;
+      }
+    }
+    if (best_room < 0)
+      return false; // no connect entrance leads to the objective — caller keeps engine nav
+    if (out_room)
+      *out_room = best_room;
+    if (out_portal)
+      *out_portal = best_door;
+    return true;
+  }
+
+  // Legacy pass 1 ($nav outtier off) — choose the entrance ROOM. DIRECT: the objective structure
+  // is itself terrain-adjacent (a post / flag room). INDIRECT: the surface pavilion with the
+  // cheapest interior path down to a buried objective (shaft flags). A room may appear in several
+  // BOA_connect entries (one per terrain-facing door) — door choice is Pass 2.
   int ent_room = -1;
   bool direct = false;
   float best_cost = 1e30f;

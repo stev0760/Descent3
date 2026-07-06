@@ -198,6 +198,15 @@ extern bool Bot_seam_guard_enabled;
 // goal arrival = crossing the portal; once the roomnum flips indoors, the interior router owns it.
 extern bool Bot_entry_commit_enabled;
 
+// 0.9.7 terrain-track piece 1 ($nav outtier): outdoor entrance selection scores room+door jointly
+// by outdoor approach distance + OUR routed interior cost (wind/glass/geometry/penalty-aware,
+// via BotComputeRouteCost) instead of the blind BOA-chain estimate. The chosen door becomes the
+// first hop of the cheapest real route — the coarse outdoor tier in embryo.
+extern bool Bot_outdoor_tier_enabled;
+
+// Full routed path cost under the router's cost model; 1e30 = no finite route.
+float BotComputeRouteCost(int from_room, int goal_room);
+
 // Flush the per-level portal geometry caches (geocost + passability). Needed when a toggle that
 // changes cached verdicts flips mid-level ($nav glass) — same false-A/B trap as the 0.9.5
 // $gridbridge cache-flush fix, same cure.

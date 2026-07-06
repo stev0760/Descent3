@@ -770,6 +770,8 @@ static const NavToggle Nav_toggles[] = {
      "re-aim through the direct door when the engine path detours off-route", false, false},
     {"entry", "entrycommit", nullptr, &Bot_entry_commit_enabled,
      "commit THROUGH the structure door from the standoff point (stage-2 entrance)", false, false},
+    {"outtier", "outdoortier", nullptr, &Bot_outdoor_tier_enabled,
+     "entrance choice by full routed cost (wind/glass-aware), not BOA estimate", false, false},
     {"terrain", "terrainsteer", nullptr, &Bot_terrain_steering_enabled, "outdoor terrain steering / entrance redirect",
      true, false},
     {"bnodes", "pseudobnodes", nullptr, &Bot_pseudo_bnodes_enabled, "pseudo-BNode skeleton interior waypoints", true,
