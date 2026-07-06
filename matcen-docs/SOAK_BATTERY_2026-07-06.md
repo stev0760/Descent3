@@ -51,3 +51,14 @@ Roster: 6 bots 3v3 hotshot (soak-bots.cfg). NumTeams=2 everywhere.
 
 ### abend2 recheck (latch build, DONE 08:15): 0 flag events — but June baseline (navmapping22, 0.9.2) ALSO 0.
 abend2 = CHRONIC (the wall-press test bed; never converted). Latch tamed churn (173 firings vs 1685-class). Classification: glasshouse/fvi-chase-gate class + intra-room press — already-roadmapped tracks, NOT battery damage. Battery fully closed: every anomaly explained (seam churn = fixed; abend2 = chronic; isengard/bree/Polaris-cluster = piece-1-proper class).
+
+### OPERATOR TOPOLOGY (2026-07-06 ~17:50, live POV during slot-fix hour) — THE ISENGARD ROUTE MODEL
+- The sewers are the DESIGNED UNDER-HILL BYPASS. The valley-blocking hill (where blue clusters above ground) is the same obstacle red fails under ground: red's sewer cluster sits below an interior ascending slope ("hill" inside the tunnel) whose top holds the VERTICAL portals to the grate tunnels; one exit leads to the valley/tower side, the other to the far side of the hill.
+- Grates this round: already destroyed by bots; BLUE was flowing DOWN through the dead grates (bot-opened grates functioning as routes — first time ever).
+- Confirmed residual class: interior sloped-ascent to elevated/vertical portals (engine noses the slope; same family as outdoor elevated entrances). If hop commits fire in sewer rooms w/o crossings this hour → next fix = steep-through-vector approach handling (slow/climb), serving BOTH clusters (valley approach = piece-1-proper + this vertical component).
+
+### MOONSHOT VERDICT (gridall hour, 2026-07-06 18:24-19:27) — HYPOTHESIS FALSIFIED INFORMATIVELY
+- 0 caps, 1 grab. QueryVia in hard rooms: 269 FOUND : 4 NONE — ROUTING IS SOLVED.
+- 183 stuck escalations: 102 OUTDOORS (valley, piece-1-proper class, gridall is indoor-only) + 53 room 36 (vertical exit: grid finds paths, hands visible waypoints, ENGINE won'T CLIMB steep final vectors at cruise speed).
+- Named remaining fix (designed, NOT built — next session): PITCH-CLAMPED HOP LENGTH — when the via through-vector is steep, cap waypoint distance so the bot trades speed for climb (~10 lines at the via hand-out). Slot-fix note: commits at rm49 door dropped 133/hr -> 25/hr with nearest-slot pick + Quinn's grab reached it.
+- gridall easy-pool check NOT run (bedlam gridall A/B still pending — run before any Stage 4 decision).
