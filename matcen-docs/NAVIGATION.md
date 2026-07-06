@@ -548,7 +548,29 @@ BOA — a bug (the router would be silently overriding BOA everywhere), not a fe
 
 ## 7. Open problems (roadmap)
 
-### 7.0 Current status snapshot — 2026-07-05 (0.9.7-dev: bedlam outdoor-CTF regression found; outroute defaulted OFF; `$nav outlattice` triage lever added)
+### 7.0 Current status snapshot — 2026-07-06 (0.9.7-dev: entrance stack validated by overnight battery; seam latch; PIECE-1-PROPER staged)
+
+> **STAGED NEXT BLOCK (written 2026-07-06 morning — piece-1-proper: routed approach legs):**
+>
+> **The one remaining outdoor failure class** after the 07-05/06 fixes: the APPROACH leg from
+> terrain to an entrance standoff is still a beeline with reactive-only rescue. Evidence: Polaris
+> attempt rate lever-independent (~2 picks/rnd, all 35 entrance-miss events at ONE structure,
+> cells ~117-119,103-109), shirebaggins 18/19 entrance-miss, isengard 24/24 (cells 133-135,112),
+> Plutonium room-17 via-fail noise. Entry-commit fixed the last 30u; this is the last 300u.
+> **Design:** route the approach leg over the region lattice PROACTIVELY at goal-issue (reuse the
+> outroute delivery skeleton) but under two hard correctness rules — (1) **coverage-verified
+> FOUND**: string-pull must reach within R of the standoff, never "best-effort toward" (the orbit
+> class); (2) **monotone progress**: every handed-out waypoint strictly shrinks distance to the
+> standoff. If isengard-A's navdump shows valley coverage gaps, add the lattice-extent fix first
+> (widen `BOT_ROADMAP_OUTDOOR_MARGIN` / seed from terrain-region hull — build-param, cache-flush).
+> **Decision gate first: isengard-A/B manifests** (tools/manifests/battery/) — outroute ON vs
+> defaults on towerofisengard + the outdoor_roadmap coverage dump. If A converges legs, outroute's
+> machinery becomes piece-1-proper's follower and re-defaults ON; if not, the lattice-extent fix
+> precedes it. **Acceptance:** Polaris >5 picks/30min at the cluster; Plutonium red conv holds
+> >=20%; isengard leg convergence or first caps; bedlam+fellowship battery no-regression.
+> (The 07-04 triage plan below is EXECUTED: A/B verdicts in the toggle table; kept for history.)
+
+### (superseded) 7.0 snapshot — 2026-07-05 (bedlam outdoor-CTF regression found; outroute defaulted OFF; `$nav outlattice` triage lever added)
 
 > **BEDLAM FORENSICS (2026-07-05, log archaeology across 9 soaks May 26 → Jul 5):** the Jul-5 Windows
 > CTF soak (0.9.7-dev `135d2443`, 5 bots 3v2) collapsed the outdoor bedlam maps — **Plutonium 16 flag
