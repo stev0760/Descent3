@@ -48,3 +48,6 @@ Roster: 6 bots 3v3 hotshot (soak-bots.cfg). NumTeams=2 everywhere.
 - bside3 batteriesincluded: 1/1 cap, seam firings 13 (was 1685/soak, 1054 at one portal). LATCH FIXED IT.
 - doorsofmoria navdump: NO wind rooms — wind false-positive hypothesis ELIMINATED.
 - Conclusion: the battery's indoor anomalies (moria 0-events, bside 0-caps, likely abend2) = seam-guard churn, introduced yesterday, caught by the battery, fixed same night. All other new features individually clean.
+
+### abend2 recheck (latch build, DONE 08:15): 0 flag events — but June baseline (navmapping22, 0.9.2) ALSO 0.
+abend2 = CHRONIC (the wall-press test bed; never converted). Latch tamed churn (173 firings vs 1685-class). Classification: glasshouse/fvi-chase-gate class + intra-room press — already-roadmapped tracks, NOT battery damage. Battery fully closed: every anomaly explained (seam churn = fixed; abend2 = chronic; isengard/bree/Polaris-cluster = piece-1-proper class).
