@@ -140,6 +140,7 @@
 #define BOT_OUTDOOR_APPROACH_OFFSET 12.0f       // 12.6: aim this far OUT of a structure door (clear of facade/open-door)
 #define BOT_ENTRY_COMMIT_DIST 30.0f  // 8.2 ($nav entry): within this of the standoff point -> commit THROUGH the door
 #define BOT_ENTRY_PUSH_DIST 25.0f    // 8.2: aim this far INSIDE the door room (> engine arrive radius: arrival = entry)
+#define BOT_SEAM_RETRY_TIME 5.0f     // $nav seam: one redirect per waypoint room per this window (anti-churn latch)
 #define BOT_INDOOR_PROGRESS_DIST 50.0f          // indoors, also count this much displacement as progress (big-room fix)
 
 // Secondary weapon firing (Phase 3.10)
@@ -450,6 +451,13 @@ struct bot_info {
   // Plasmacannon loop is broken. Set when a powerup chase times out; checked in BotFindBestPowerup.
   int blacklisted_powerup_handle;    // handle of recently-timed-out powerup; OBJECT_HANDLE_NONE = none
   float blacklisted_powerup_expires; // Gametime when blacklist expires (0 = not blacklisted)
+
+  // 0.9.7 $nav seam rate latch: one redirect per (waypoint) target per window. Without it a hop
+  // the bot cannot actually cross (unbroken glass pane as the "direct door") re-fires the guard
+  // every nav tick — 1054 same-portal firings in one bsidectf round (goal churn, the $softfollow
+  // class). After one shot the goal gets BOT_SEAM_RETRY_TIME to work; stuck machinery owns it after.
+  int seam_wp_room;     // waypoint room the last seam redirect was issued for
+  float seam_next_time; // Gametime before which the guard stays quiet for that same waypoint
 
   // Intra-room via-point steering (Phase 12) — committed go-around waypoint state
   vector via_point;        // committed go-around waypoint (valid while Gametime < via_expires)

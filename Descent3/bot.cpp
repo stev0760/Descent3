@@ -2010,7 +2010,12 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
     if (Bot_seam_guard_enabled && !OBJECT_OUTSIDE(obj) && wp_room != obj->roomnum && wp_room >= 0 &&
         wp_room <= Highest_room_index && Rooms[wp_room].used && !ROOMNUM_OUTSIDE(steer_room) && steer_room >= 0 &&
         steer_room <= Highest_room_index && Rooms[steer_room].used && steer_room != obj->roomnum &&
-        steer_room != wp_room) {
+        steer_room != wp_room &&
+        // Anti-churn latch: one redirect per waypoint per window. A hop the bot cannot actually
+        // cross (unbroken glass as the "direct door") otherwise re-fires every tick — 1054
+        // same-portal firings in one bsidectf round. One shot, then the goal gets its window;
+        // stuck escalation owns a hop that still won't cross.
+        !(Bots[bot_index].seam_wp_room == wp_room && Gametime < Bots[bot_index].seam_next_time)) {
       room &crm = Rooms[obj->roomnum];
       int best_p = -1;
       float best_geo = BOT_PORTAL_IMPASSABLE;
@@ -2034,6 +2039,8 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
           seam_pnt = Rooms[wp_room].path_pnt;
         }
         seam_redirect = true;
+        Bots[bot_index].seam_wp_room = wp_room;
+        Bots[bot_index].seam_next_time = Gametime + BOT_SEAM_RETRY_TIME;
         LOG_DEBUG.printf("BOT NAV: '%s' seam guard: engine path detours via room %d — aiming through portal to %d",
                          Bots[bot_index].callsign, steer_room, wp_room);
         // The via probe should cover our bot->door line, not the engine's detour target.
