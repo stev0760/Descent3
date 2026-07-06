@@ -6225,6 +6225,12 @@ void BotDoFrame() {
           if (Bots[i].room_progress_stuck_count >= 2) {
             // Consecutive timeouts in same room — nav goal keeps failing. Force physical escape.
             // Preserve explore_dest_room so the escape handler can skip the failing portal.
+            // 0.9.7: this is ALSO hard-room evidence. Promotion originally counted only via
+            // suspensions — but a room that fails by WALL-PRESS (bots routed into the isengard
+            // sewer mound, plenty of open air around them) produces stuck timeouts, not via
+            // arrivals, and never convicted itself. Both failure currencies now count.
+            if (!OBJECT_OUTSIDE(obj))
+              BotRoadmapMarkHardRoom(cur_room);
             Bots[i].stuck_timer = BOT_STUCK_ABANDON_TIME + 0.1f;
             char tdiag[128];
             LOG_DEBUG.printf("BOT: '%s' stuck escalation (room %d, %d consecutive timeouts, net_disp=%.0f) — "
