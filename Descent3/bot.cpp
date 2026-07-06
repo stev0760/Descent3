@@ -1240,7 +1240,11 @@ static void BotTryClearBlockerObject(int bot_index, object *obj, int blocker_obj
     }
     return;
   }
-  if (blocker->type != OBJ_CLUTTER && blocker->type != OBJ_BUILDING) {
+  // OBJ_DOOR admitted 2026-07-06: a DESTROYABLE door is a blastable grate (isengard's six grates
+  // are OBJ_DOOR type 17, blastablegrate.OOF, OF_DESTROYABLE, geocost 0 "unlocked" doors that only
+  // open by dying). Normal doors are not OF_DESTROYABLE (the caller's gate), so "doors open
+  // themselves" still holds for them.
+  if (blocker->type != OBJ_CLUTTER && blocker->type != OBJ_BUILDING && blocker->type != OBJ_DOOR) {
     if (blocker->type != OBJ_PLAYER && blocker->type != OBJ_ROBOT && blocker->type != OBJ_GHOST &&
         blocker->type != OBJ_WEAPON) {
       static float skip_log_time[MAX_BOTS];
@@ -1443,8 +1447,8 @@ static void BotProactiveObstacleClear(int bot_index) {
         object *o = &Objects[on];
         if (!(o->flags & OF_DESTROYABLE))
           continue;
-        if (o->type != OBJ_CLUTTER && o->type != OBJ_BUILDING)
-          continue;
+        if (o->type != OBJ_CLUTTER && o->type != OBJ_BUILDING && o->type != OBJ_DOOR)
+          continue; // destroyable DOOR = blastable grate (isengard); normal doors aren't destroyable
         vector od = o->pos - pp;
         if (vm_GetMagnitude(&od) > BOT_GRATE_PORTAL_NEAR)
           continue;
