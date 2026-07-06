@@ -65,6 +65,10 @@ bool Bot_outdoor_route_enabled = false;
 // the 0.9.4 lattice-first ordering.
 bool Bot_outdoor_lattice_enabled = true;
 bool Bot_hard_room_enabled = true; // 0.9.7: evidence-gated gridroute promotion ($nav hardroom)
+// $nav gridall — proactive grid routing in EVERY room (deterministic-traversal A/B). With seam/
+// hop-commit/chain-cap-progress/entry live, the 0.9.4-era indirection cost of ungated proactive
+// routing may be gone. Default OFF until the both-pool A/B says otherwise.
+bool Bot_grid_always = false;
 
 // --- Evidence-gated hard-room promotion (0.9.7, the isengard room-36 lock) ---------------------
 // The static complexity gate (orig_comp_count>1) misses rooms that are SINGLE-component yet
@@ -790,7 +794,7 @@ BotViaResult BotRoadmapFindVia(object *obj, const vector &target_pos, int target
   // indirection (the soak-measured easy-pool regression: gollums/darkjourney recovered with gridroute off,
   // khazaddum's divider rooms collapsed). Reactive calls (proactive=false) always run — a blocked line in a
   // simple room still needs a go-around.
-  if (proactive && !rr->complex && !BotRoadmapRoomIsHard(room_idx))
+  if (proactive && !rr->complex && !Bot_grid_always && !BotRoadmapRoomIsHard(room_idx))
     return BOT_VIA_NONE;
 
   // Goal node: the nearest node to an in-room target, or the seam node toward the next room.

@@ -772,6 +772,8 @@ static const NavToggle Nav_toggles[] = {
      "commit THROUGH the structure door from the standoff point (stage-2 entrance)", false, false},
     {"outtier", "outdoortier", nullptr, &Bot_outdoor_tier_enabled,
      "entrance choice by full routed cost (wind/glass-aware), not BOA estimate", false, false},
+    {"gridall", "gridall", nullptr, &Bot_grid_always,
+     "proactive grid routing in EVERY room (deterministic traversal A/B)", false, false},
     {"hardroom", "hardroom", nullptr, &Bot_hard_room_enabled,
      "evidence-gated gridroute: via-suspension repeat offenders get proactive grid routing", false, false},
     {"terrain", "terrainsteer", nullptr, &Bot_terrain_steering_enabled, "outdoor terrain steering / entrance redirect",

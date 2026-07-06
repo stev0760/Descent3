@@ -112,6 +112,7 @@ extern bool Bot_outdoor_lattice_enabled;
 // "simple" (the isengard room-36 class: single-component, huge, concave, unflyable by the raw
 // portal line). Mark on each suspension; promoted for the rest of the level at the threshold.
 extern bool Bot_hard_room_enabled;
+extern bool Bot_grid_always; // $nav gridall: proactive grid routing everywhere (A/B lever, default OFF)
 void BotRoadmapMarkHardRoom(int room_idx);
 bool BotRoadmapRoomIsHard(int room_idx);
 
