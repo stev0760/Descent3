@@ -2140,10 +2140,15 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
     vector goal_pos = (wp_room == goal_room) ? final_pos : Rooms[wp_room].path_pnt;
     int steer_room = -1;
     vector steer_pos = BotGetActiveSteerPoint(obj, goal_pos, wp_room, &steer_room);
+    // Two triggers share the push-through: (a) engine steer target detours off-route (the Polaris
+    // wind-loop class); (b) 0.9.7 hop-commit — BOT_HOP_PRESS_TRIGGER consecutive re-issues of the
+    // SAME adjacent hop with no divergence (the isengard 36->38 doorway-lip press: 174 re-issues/
+    // hour with the path direct and correct; the engine just never threads the last 20u).
+    bool steer_divergent = !ROOMNUM_OUTSIDE(steer_room) && steer_room >= 0 && steer_room <= Highest_room_index &&
+                           Rooms[steer_room].used && steer_room != obj->roomnum && steer_room != wp_room;
+    bool hop_pressed = Bots[bot_index].hop_press_wp == wp_room && Bots[bot_index].hop_press_n >= BOT_HOP_PRESS_TRIGGER;
     if (Bot_seam_guard_enabled && !OBJECT_OUTSIDE(obj) && wp_room != obj->roomnum && wp_room >= 0 &&
-        wp_room <= Highest_room_index && Rooms[wp_room].used && !ROOMNUM_OUTSIDE(steer_room) && steer_room >= 0 &&
-        steer_room <= Highest_room_index && Rooms[steer_room].used && steer_room != obj->roomnum &&
-        steer_room != wp_room &&
+        wp_room <= Highest_room_index && Rooms[wp_room].used && (steer_divergent || hop_pressed) &&
         // Anti-churn latch: one redirect per waypoint per window. A hop the bot cannot actually
         // cross (unbroken glass as the "direct door") otherwise re-fires every tick — 1054
         // same-portal firings in one bsidectf round. One shot, then the goal gets its window;
@@ -2174,8 +2179,13 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
         seam_redirect = true;
         Bots[bot_index].seam_wp_room = wp_room;
         Bots[bot_index].seam_next_time = Gametime + BOT_SEAM_RETRY_TIME;
-        LOG_DEBUG.printf("BOT NAV: '%s' seam guard: engine path detours via room %d — aiming through portal to %d",
-                         Bots[bot_index].callsign, steer_room, wp_room);
+        Bots[bot_index].hop_press_n = 0; // the push-through consumed the press evidence
+        if (steer_divergent)
+          LOG_DEBUG.printf("BOT NAV: '%s' seam guard: engine path detours via room %d — aiming through portal to %d",
+                           Bots[bot_index].callsign, steer_room, wp_room);
+        else
+          LOG_DEBUG.printf("BOT NAV: '%s' hop commit: %d same-hop presses — aiming through portal to %d",
+                           Bots[bot_index].callsign, BOT_HOP_PRESS_TRIGGER, wp_room);
         // The via probe should cover our bot->door line, not the engine's detour target.
         steer_pos = seam_pnt;
         steer_room = wp_room;
@@ -2244,6 +2254,15 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
   Bots[bot_index].explore_dest_room = wp_room;
   Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
+  // Hop-commit press bookkeeping: consecutive re-issues of the same waypoint hop = the engine
+  // keeps failing the same doorway (crossing resets it via a new wp_room).
+  if (Bots[bot_index].hop_press_wp == wp_room) {
+    if (Bots[bot_index].hop_press_n < 250)
+      Bots[bot_index].hop_press_n++;
+  } else {
+    Bots[bot_index].hop_press_wp = wp_room;
+    Bots[bot_index].hop_press_n = 1;
+  }
   if (reissued)
     *reissued = true;
   return wp_room;

@@ -141,6 +141,9 @@
 #define BOT_ENTRY_COMMIT_DIST 30.0f  // 8.2 ($nav entry): within this of the standoff point -> commit THROUGH the door
 #define BOT_ENTRY_PUSH_DIST 25.0f    // 8.2: aim this far INSIDE the door room (> engine arrive radius: arrival = entry)
 #define BOT_SEAM_RETRY_TIME 5.0f     // $nav seam: one redirect per waypoint room per this window (anti-churn latch)
+#define BOT_HOP_PRESS_TRIGGER 4      // 0.9.7 hop-commit: same-hop re-issues before the seam push-through fires
+                                     // WITHOUT steer divergence (the 36->38 doorway-lip press: engine path is
+                                     // direct and correct, the lip approach just never crosses)
 #define BOT_GRATE_PORTAL_NEAR 30.0f  // $nav grate pass 4: a destroyable object within this of a portal = in the doorway
 #define BOT_INDOOR_PROGRESS_DIST 50.0f          // indoors, also count this much displacement as progress (big-room fix)
 
@@ -463,6 +466,8 @@ struct bot_info {
   // class). After one shot the goal gets BOT_SEAM_RETRY_TIME to work; stuck machinery owns it after.
   int seam_wp_room;     // waypoint room the last seam redirect was issued for
   float seam_next_time; // Gametime before which the guard stays quiet for that same waypoint
+  int hop_press_wp;     // 0.9.7 hop-commit: waypoint room of consecutive same-hop goal re-issues
+  uint8_t hop_press_n;  // count of consecutive re-issues at that hop (persistent doorway press)
 
   // Intra-room via-point steering (Phase 12) — committed go-around waypoint state
   vector via_point;        // committed go-around waypoint (valid while Gametime < via_expires)
