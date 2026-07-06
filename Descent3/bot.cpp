@@ -2155,18 +2155,25 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
         // stuck escalation owns a hop that still won't cross.
         !(Bots[bot_index].seam_wp_room == wp_room && Gametime < Bots[bot_index].seam_next_time)) {
       room &crm = Rooms[obj->roomnum];
+      // Among passable portals to the waypoint room, pick the one NEAREST THE BOT — not the
+      // first/lowest-geocost. The isengard flag antechambers (47->49, 45->48) are joined by SIX
+      // parallel slot portals (a pillared opening); first-found aimed bots diagonally through a
+      // pillar (133 hop commits at room 49's door in one hour, ~0 crossings). The near slot is
+      // the one the bot is actually lined up with.
       int best_p = -1;
-      float best_geo = BOT_PORTAL_IMPASSABLE;
+      float best_d = 1e30f;
       for (int p = 0; p < crm.num_portals; p++) {
         if (crm.portals[p].croom != wp_room)
           continue;
-        float g = BotPortalGeoCost(obj->roomnum, p);
-        if (g < best_geo) {
-          best_geo = g;
+        if (BotPortalGeoCost(obj->roomnum, p) >= BOT_PORTAL_IMPASSABLE)
+          continue;
+        float d = vm_VectorDistanceQuick(&obj->pos, &crm.portals[p].path_pnt);
+        if (d < best_d) {
+          best_d = d;
           best_p = p;
         }
       }
-      if (best_p >= 0 && best_geo < BOT_PORTAL_IMPASSABLE && BotPortalWindDir(obj->roomnum, best_p) >= 0) {
+      if (best_p >= 0 && BotPortalWindDir(obj->roomnum, best_p) >= 0) {
         const portal &pt = crm.portals[best_p];
         vector through = Rooms[wp_room].path_pnt - pt.path_pnt;
         float td = vm_GetMagnitude(&through);
