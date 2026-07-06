@@ -1,0 +1,10 @@
+{
+  "_comment": "Plutonium-only entrance entry-commit validation (Phase 8.2, $nav entry ON). Gate: RED team conversion > 0 (morning baseline: red 2 picks 0 caps, carrier stuck outdoors 24x re-issuing home 21, 78/100 entrance seeks at room 17). Watch: 'entrance ENTRY commit' + 'outdoor entrance ENTRY/approach' log lines, red picks AND caps, entrance-class outdoor stucks share.",
+  "server_dir": "/home/steve/Projects/Descent3-bot-testing-client/Descent3_testing",
+  "launch": ["./Descent3", "-dedicated", "./soak-dedicated-plutonium.cfg"],
+  "telnet_port": 2092,
+  "telnet_password": "test",
+  "phases": [{ "name": "entry-validation", "toggles": {}, "minutes": 30 }],
+  "navdump": {},
+  "max_minutes": 45
+}
