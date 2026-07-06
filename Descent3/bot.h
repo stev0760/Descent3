@@ -238,6 +238,10 @@
                                 // nodes can sit 20-30u apart) — but cap hops/room as the
                                 // ping-pong guard; a chain this long without a room change
                                 // isn't going anywhere
+#define BOT_VIA_CHAIN_PROGRESS 12.0f // 0.9.7: an arrival this much CLOSER to the target than the last
+                                     // one is measured progress, not ping-pong — resets the chain cap
+                                     // (isengard room 36: crossing a 2000-node concave hub takes >8
+                                     // short hops; the cap was executing legitimate threads mid-room)
 #define BOT_TROLL_STRIKES 3     // chase-timeout/seal strikes before a powerup is retired level-wide
 #define BOT_TROLL_TABLE_SIZE 32 // suspect powerups tracked per level (global, shared by all bots)
 

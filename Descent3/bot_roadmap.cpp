@@ -710,18 +710,43 @@ int Nearest(RoadmapRoom *rr, const vector &pos) {
 
 // Shared query body: route rr from the bot's nearest-visible node to `goal` and return the furthest-visible
 // path vertex (greedy string-pull) as the via. Used by both the indoor and outdoor entry points.
+// DIAG (0.9.7 hard-room instrumentation, throttled): which QueryVia outcome dominates in a
+// promoted room? 158 post-promotion suspensions in isengard room 36 = either NONE (which
+// branch?) or FOUND-but-chain-capped. One run with this histogram names the residual.
+static int qv_diag_n = 0;
+static void QvDiag(int room_or_region, const char *outcome) {
+  if (++qv_diag_n % 20 != 1) // every 20th hard-room query — histogram shape without log flood
+    return;
+  LOG_DEBUG.printf("[Nav] hard-room via diag: room %d -> %s", room_or_region, outcome);
+}
+
 BotViaResult QueryVia(RoadmapRoom *rr, object *obj, int goal, vector *via_out) {
+  bool diag = !OBJECT_OUTSIDE(obj) && BotRoadmapRoomIsHard(obj->roomnum);
   int start = NearestVisible(rr, obj->pos);
-  if (start < 0)
+  if (start < 0) {
+    if (diag)
+      QvDiag(obj->roomnum, "NONE:no-visible-node");
     return BOT_VIA_NONE; // bot can't see any node (wedged) — let the rings/skeleton try
-  if (goal < 0 || goal == start)
+  }
+  if (goal < 0 || goal == start) {
+    if (diag)
+      QvDiag(obj->roomnum, goal < 0 ? "NONE:no-goal-seam" : "NONE:goal==start");
     return BOT_VIA_NONE;
-  if (rr->comp[start] != rr->comp[goal])
+  }
+  if (rr->comp[start] != rr->comp[goal]) {
+    if (diag)
+      QvDiag(obj->roomnum, "NONE:disconnected-comps");
     return BOT_VIA_NONE; // roadmap genuinely can't connect them -> fallback
+  }
 
   std::vector<int> path;
-  if (!ThetaStar(rr, start, goal, path) || path.empty())
+  if (!ThetaStar(rr, start, goal, path) || path.empty()) {
+    if (diag)
+      QvDiag(obj->roomnum, "NONE:thetastar-fail");
     return BOT_VIA_NONE;
+  }
+  if (diag)
+    QvDiag(obj->roomnum, "FOUND");
 
   int via_node = path.front();
   for (int i = (int)path.size() - 1; i >= 0; i--) {

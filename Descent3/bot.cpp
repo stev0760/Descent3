@@ -1925,6 +1925,15 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
         // mid-crossing). They get their own generous per-room chain cap as the ping-pong guard.
         bool bounce = !Bots[bot_index].via_is_skeleton &&
                       vm_VectorDistanceQuick(&obj->pos, &Bots[bot_index].via_arrival_pos) < BOT_VIA_BOUNCE_DIST;
+        // 0.9.7: the chain cap yields to MEASURED progress — an arrival that lands meaningfully
+        // closer to the steer target than the previous one is a legitimate thread, not a
+        // ping-pong. QueryVia diag was 48:1 FOUND in promoted room 36 while the cap executed
+        // every crossing at hop 8 (158 suspensions/hour); crossing a huge concave room takes
+        // more hops than any constant. Ping-pong still trips the cap: bounces don't get closer.
+        if (Bots[bot_index].via_is_skeleton &&
+            vm_VectorDistanceQuick(&obj->pos, &target_pos) + BOT_VIA_CHAIN_PROGRESS <
+                vm_VectorDistanceQuick(&Bots[bot_index].via_arrival_pos, &target_pos))
+          Bots[bot_index].via_skel_chain = 0;
         if (Bots[bot_index].via_is_skeleton && ++Bots[bot_index].via_skel_chain >= BOT_VIA_SKEL_CHAIN_CAP) {
           cycle_capped = true;
           Bots[bot_index].via_suspend_until = Gametime + BOT_VIA_SUSPEND_TIME;
