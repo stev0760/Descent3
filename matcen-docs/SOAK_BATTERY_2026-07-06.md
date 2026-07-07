@@ -62,3 +62,8 @@ abend2 = CHRONIC (the wall-press test bed; never converted). Latch tamed churn (
 - 183 stuck escalations: 102 OUTDOORS (valley, piece-1-proper class, gridall is indoor-only) + 53 room 36 (vertical exit: grid finds paths, hands visible waypoints, ENGINE won'T CLIMB steep final vectors at cruise speed).
 - Named remaining fix (designed, NOT built — next session): PITCH-CLAMPED HOP LENGTH — when the via through-vector is steep, cap waypoint distance so the bot trades speed for climb (~10 lines at the via hand-out). Slot-fix note: commits at rm49 door dropped 133/hr -> 25/hr with nearest-slot pick + Quinn's grab reached it.
 - gridall easy-pool check NOT run (bedlam gridall A/B still pending — run before any Stage 4 decision).
+
+### ★★★ FIRST AUTONOMOUS TOWEROFISENGARD CAPTURE — 2026-07-06 19:52-19:55, finale round (3v3, gridall+outroute on, build 51613df3-era) ★★★
+*Reaper [BOT] (Red) captures the Blue Flag!* One grab, one capture, 100% conversion. THE COMPLETE ROUTE, every fix of the campaign in one run:
+47 (slot-door grab) -> 5 -> 25 (dead-grate doorway) -> 29 (tower core) -> 39 -> 36 (promoted hub) -> **38 (THE doorway — hop-commit territory, CROSSED)** -> 34 (fragmented room, CROSSED) -> 45 -> 48 HOME.
+Low density was the final key (operator's call): 3v3 removed the crossfire+convoy tax and one clean run went end-to-end. Room-36 climb passable at low density — pitch-clamp remains the fix to make it ROUTINE rather than possible.
