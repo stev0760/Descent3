@@ -753,10 +753,28 @@ BotViaResult QueryVia(RoadmapRoom *rr, object *obj, int goal, vector *via_out) {
     QvDiag(obj->roomnum, "FOUND");
 
   int via_node = path.front();
+  int via_i = 0;
   for (int i = (int)path.size() - 1; i >= 0; i--) {
     if (RoadmapLOS(rr, obj->pos, rr->node[path[i]])) {
       via_node = path[i];
+      via_i = i;
       break;
+    }
+  }
+  // DIAG (read-only, throttled): Fork A/B path-shape discriminator for the curve-following
+  // investigation (NAVIGATION.md §7.0). len/chord ~1.0 => Theta* handed a straight over-obstacle
+  // CHORD (Fork B — fix the straightening, not the hand-out); >1.3 => a WINDING route (Fork A — fix
+  // the hand-out). via_frac = how far along that path the greedy furthest-visible pick reached.
+  if (diag) {
+    static int shape_n = 0;
+    if (++shape_n % 20 == 1) {
+      float chord = Dist(rr->node[path.front()], rr->node[path.back()]);
+      float plen = 0.0f;
+      for (size_t i = 1; i < path.size(); i++)
+        plen += Dist(rr->node[path[i - 1]], rr->node[path[i]]);
+      LOG_DEBUG.printf("[Nav] hard-room path shape: room %d nodes=%d len/chord=%.2f via_frac=%.2f", obj->roomnum,
+                       (int)path.size(), chord > 1.0f ? plen / chord : 1.0f,
+                       path.size() > 1 ? (float)via_i / (int)(path.size() - 1) : 0.0f);
     }
   }
   // Terrain-shadow collapse guard (isengard hillside, 2026-07-04): the bot hovers up to via-arrive
