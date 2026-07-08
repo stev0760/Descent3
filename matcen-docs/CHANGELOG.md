@@ -19,15 +19,20 @@ about half of all chase timeouts to 5–11%. **Currently shipped default-off** (
 to enable) while an outdoor side effect is investigated — on terrain maps the constant
 re-planning appears to keep bots churning navigation instead of fighting.
 
-- **Dedicated CTF flag-runner role** (`$nav runner`, default on). Each team now fields one committed
-  flag-getter — the best-equipped bot — that heads for the enemy flag and, unlike a general
-  attacker, does **not** stop to grab powerups along the way (it still picks up a weapon first if it
-  spawned with only a laser). The rest of the team fills in a home defender (or two on bigger teams),
-  one reactive "flex" bot that drops back to defend the moment your flag is stolen, and support
-  attackers. Team makeup scales with team size and adjusts when human players are present. This
-  targets maps where bots grab the enemy flag rarely because every attacker keeps wandering off after
-  items instead of pushing the objective. `$nav runner off` restores the previous behavior (a simple
-  attacker/defender split with the best bot on defense) for comparison.
+- **Corner-hugging navigation** (`$nav curve`, default on). When a bot is handed a waypoint across a
+  bend — a spiral ramp, a corkscrew shaft, a curved corridor — it used to aim straight at the far end
+  and cut the *inside* of the curve into the wall (the classic "routed into the wall with room to
+  spare" cluster). Waypoints now keep a wider berth from geometry, so the bot hugs the corridor and
+  rounds the corner instead of pressing its inside edge; tight doorways still thread at hull width.
+  `$nav curve off` restores the old behavior.
+- **Dedicated CTF flag-runner role** (`$nav runner`, **default off** — an opt-in experiment). Each
+  team can field one committed flag-getter — the best-equipped bot — that heads for the enemy flag
+  and, unlike a general attacker, does not stop for powerups along the way, plus a home defender, a
+  reactive "flex" bot that drops back to defend when your flag is stolen, and support attackers, all
+  scaling with team size and human players. **Left off by default:** an A/B test showed it currently
+  hurts more than it helps — a bot that commits to a straight run *wedges* on the same tricky geometry
+  the corner-hugging fix above targets, while a wandering attacker stumbles into the flag more often.
+  It'll be revisited once navigation on those maps is solid. `$nav runner on` enables it live.
 - New `$nav outroute` (**default off since 2026-07-05**): on outdoor terrain, a bot whose straight
   line to its goal is blocked by a hill or building follows the map's outdoor waypoint lattice
   around the obstacle from the start, instead of flying into the hillside and recovering over and
