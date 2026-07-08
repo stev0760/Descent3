@@ -317,13 +317,6 @@ enum BotObjectiveLean {
   BOT_LEAN_BALANCED = 0, // no objective lean (non-objective modes or FOLLOW/COVER)
   BOT_LEAN_ATTACK,       // FREELANCE bots lean toward offense (flag grabbing, orb chasing)
   BOT_LEAN_DEFEND,       // FREELANCE bots lean toward defense (flag guarding)
-  // CTF dedicated-role model (0.9.7, $nav runner). RUNNER/FLEX nav like ATTACK (route to enemy
-  // flag) but differ in discipline: the RUNNER is the team's designated flag-getter — best-equipped,
-  // exactly one per team, and it does NOT detour for powerups (commit to the objective, gear-up
-  // excepted). FLEX is the reactive slot: attacks by default but is the first converted to defense
-  // when the team's own flag is stolen. Keep these AFTER DEFEND so the lean_names[] index holds.
-  BOT_LEAN_RUNNER,
-  BOT_LEAN_FLEX,
 };
 
 // Stage 6 "Orders as Goals" (CHAT_COMMANDS.md §Stage 6): an order is verb + anchor + lifecycle.
@@ -527,7 +520,6 @@ extern int Num_bots;
 extern bool Bot_debug_movement;      // When true, log bot+player velocity every ~0.5s
 extern bool Bot_grate_clear_enabled; // $nav grate — proactive destroyable-obstacle clearing (0.9.6 Stage 2)
 extern bool Bot_objective_commit_enabled; // $nav commit — objective commitment: opportunistic-only powerups
-extern bool Bot_dedicated_runner_enabled; // $nav runner — dedicated CTF flag-runner role (0.9.7)
                                           // (same/adjacent room) while routing to an objective (0.9.6)
 extern bool Bot_stall_replan_enabled;     // $nav replan — Stage 3 progress-monitor replan (0.9.7)
 extern BotGameMode Bot_game_mode;

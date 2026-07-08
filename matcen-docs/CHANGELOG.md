@@ -19,20 +19,6 @@ about half of all chase timeouts to 5–11%. **Currently shipped default-off** (
 to enable) while an outdoor side effect is investigated — on terrain maps the constant
 re-planning appears to keep bots churning navigation instead of fighting.
 
-- **Corner-hugging navigation** (`$nav curve`, **default off** — first attempt, didn't land). The idea:
-  a bot handed a waypoint across a bend (a spiral ramp, corkscrew shaft, curved corridor) used to aim
-  straight at the far end and cut the *inside* of the curve into the wall. This version makes waypoints
-  keep a wider berth from geometry. An isengard A/B showed it didn't fix the target cluster and slightly
-  increased wall-presses, so it's **left off** pending a reworked version that addresses the problem one
-  layer deeper. `$nav curve on` enables the current attempt live.
-- **Dedicated CTF flag-runner role** (`$nav runner`, **default off** — an opt-in experiment). Each
-  team can field one committed flag-getter — the best-equipped bot — that heads for the enemy flag
-  and, unlike a general attacker, does not stop for powerups along the way, plus a home defender, a
-  reactive "flex" bot that drops back to defend when your flag is stolen, and support attackers, all
-  scaling with team size and human players. **Left off by default:** an A/B test showed it currently
-  hurts more than it helps — a bot that commits to a straight run *wedges* on the same tricky geometry
-  the corner-hugging fix above targets, while a wandering attacker stumbles into the flag more often.
-  It'll be revisited once navigation on those maps is solid. `$nav runner on` enables it live.
 - New `$nav outroute` (**default off since 2026-07-05**): on outdoor terrain, a bot whose straight
   line to its goal is blocked by a hill or building follows the map's outdoor waypoint lattice
   around the obstacle from the start, instead of flying into the hillside and recovering over and

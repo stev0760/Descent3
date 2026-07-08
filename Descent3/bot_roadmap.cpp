@@ -69,19 +69,6 @@ bool Bot_hard_room_enabled = true; // 0.9.7: evidence-gated gridroute promotion 
 // hop-commit/chain-cap-progress/entry live, the 0.9.4-era indirection cost of ungated proactive
 // routing may be gone. Default OFF until the both-pool A/B says otherwise.
 bool Bot_grid_always = false;
-// $nav curve — curve-following hand-out (0.9.7, the isengard corkscrew / chord-cutting fix). The
-// committed via is flown as a straight AIG_GET_TO_POS with avoid-walls active, so the greedy
-// furthest-visible pick (a chord that merely clears the BARE hull 6.7) grazes the inside of a bend
-// and the engine deflects into it — the room-36 left-wall press. When on, the hand-out probe uses a
-// FATTER clearance (hull + avoid-walls margin) so the via hugs the corridor and the bot rounds
-// corners node-by-node; falls back to the bare-hull pick if nothing clears (tight doors still
-// thread). **DEFAULTED OFF 2026-07-08** — isengard 16-bot A/B (soak-20260708T070322) was net
-// negative: room-36 stucks flat/+9%, TOTAL stucks +20% (traded via-dances for wall-presses),
-// 0 caps either arm. Likely Fork B: Theta* straightens path[] over the mound at the GRAPH level,
-// so the hand-out has no off-chord node to walk back to (the plan's Fork-A-vs-B discriminator was
-// skipped). Next: instrument path-shape + fix the straightening layer, retest at 3v3 (capture
-// density). `$nav curve on` re-enables the lever.
-bool Bot_curve_handout_enabled = false;
 
 // --- Evidence-gated hard-room promotion (0.9.7, the isengard room-36 lock) ---------------------
 // The static complexity gate (orig_comp_count>1) misses rooms that are SINGLE-component yet
@@ -191,11 +178,9 @@ bool HasEdge(const std::vector<int> &al, int v) {
 // The roadmap's one geometry probe, dispatched by build kind. Indoor hull-sweeps from the room (no ceiling
 // check); outdoor resolves the terrain cell under the start point and ceiling-caps. Used for node growth,
 // edge probing, the component bridge, AND Theta* LOS — one primitive, so the graph and the query agree.
-bool RoadmapLOSr(const RoadmapRoom *rr, const vector &a, const vector &b, float radius) {
-  return rr->outdoor ? BotSegmentClearOutdoor(a, b, radius) : BotSegmentClear(rr->probe_room, a, b, radius);
-}
 bool RoadmapLOS(const RoadmapRoom *rr, const vector &a, const vector &b) {
-  return RoadmapLOSr(rr, a, b, BOT_ROADMAP_CLEARANCE);
+  return rr->outdoor ? BotSegmentClearOutdoor(a, b, BOT_ROADMAP_CLEARANCE)
+                     : BotSegmentClear(rr->probe_room, a, b, BOT_ROADMAP_CLEARANCE);
 }
 
 // Grow the lattice from the already-seeded rr->node[0..n_seed) over [mn,mx] at sp_start spacing: accept a
@@ -767,25 +752,11 @@ BotViaResult QueryVia(RoadmapRoom *rr, object *obj, int goal, vector *via_out) {
   if (diag)
     QvDiag(obj->roomnum, "FOUND");
 
-  // Curve-following hand-out ($nav curve): pick the furthest path vertex whose chord keeps the
-  // FATTER clearance, so the committed straight-line via hugs the corridor instead of grazing the
-  // inside of a bend (the isengard room-36 corkscrew left-wall press — the chord-cutting class).
-  float hc = Bot_curve_handout_enabled ? BOT_VIA_HANDOUT_CLEARANCE : BOT_ROADMAP_CLEARANCE;
   int via_node = path.front();
   for (int i = (int)path.size() - 1; i >= 0; i--) {
-    if (RoadmapLOSr(rr, obj->pos, rr->node[path[i]], hc)) {
+    if (RoadmapLOS(rr, obj->pos, rr->node[path[i]])) {
       via_node = path[i];
       break;
-    }
-  }
-  // Fatter probe found nothing past the start node — fall back to the bare-hull furthest-visible
-  // pick so tight doorways (hull-width, < the fat corridor) still thread node-to-node.
-  if (Bot_curve_handout_enabled && via_node == path.front() && path.size() > 1) {
-    for (int i = (int)path.size() - 1; i >= 0; i--) {
-      if (RoadmapLOS(rr, obj->pos, rr->node[path[i]])) {
-        via_node = path[i];
-        break;
-      }
     }
   }
   // Terrain-shadow collapse guard (isengard hillside, 2026-07-04): the bot hovers up to via-arrive
