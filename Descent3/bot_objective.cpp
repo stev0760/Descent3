@@ -844,10 +844,15 @@ int BotGetHoardOrbId() { return Obj_hoard_id; }
 
 // $nav runner — dedicated CTF flag-runner role (0.9.7). ON = 1 committed runner (best-equipped) +
 // defender(s) + a reactive flex + support attackers per team; OFF = the legacy binary attack/defend
-// split (the pre-runner A/B baseline). The theory under test: soft attack-LEAN bots get distracted
-// (powerups/combat) and never punch through a harder route to the enemy flag, so a team with no
-// dedicated, discipline-bound flag-getter under-converts on maps where the grab is contested.
-bool Bot_dedicated_runner_enabled = true;
+// split. **DEFAULTED OFF 2026-07-08** after the bsidectf A/B: the runner was a net negative
+// (caps/rnd 0.33 vs 0.58 legacy; grabs down; clearly stucks MORE — myst_isle 70 vs 6). Mechanism:
+// the disciplined beeline WEDGES on geometry the nav can't execute (the same curve/maze problem),
+// while a powerup-chasing attacker inadvertently explores its way to the flag. It did NOT fix the
+// batteries Red reach failure (0 grabs) → that asymmetry is nav/route, not focus. The one positive:
+// on flyable routes conversion improved (batteries Blue 71%->100%). Revisit ONLY after the
+// curve-following nav fix lands (a committed runner needs a route it can actually fly). Toggle kept
+// as an A/B lever; `$nav runner on` re-enables live.
+bool Bot_dedicated_runner_enabled = false;
 
 // Count connected HUMAN players on a team (a connected slot with no Bots[] entry). Feeds the
 // size-aware role split so bots add more defensive structure as a team fills with humans.
