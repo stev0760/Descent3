@@ -75,8 +75,13 @@ bool Bot_grid_always = false;
 // and the engine deflects into it — the room-36 left-wall press. When on, the hand-out probe uses a
 // FATTER clearance (hull + avoid-walls margin) so the via hugs the corridor and the bot rounds
 // corners node-by-node; falls back to the bare-hull pick if nothing clears (tight doors still
-// thread). Default ON; `$nav curve off` restores the bare-hull furthest-visible pick.
-bool Bot_curve_handout_enabled = true;
+// thread). **DEFAULTED OFF 2026-07-08** — isengard 16-bot A/B (soak-20260708T070322) was net
+// negative: room-36 stucks flat/+9%, TOTAL stucks +20% (traded via-dances for wall-presses),
+// 0 caps either arm. Likely Fork B: Theta* straightens path[] over the mound at the GRAPH level,
+// so the hand-out has no off-chord node to walk back to (the plan's Fork-A-vs-B discriminator was
+// skipped). Next: instrument path-shape + fix the straightening layer, retest at 3v3 (capture
+// density). `$nav curve on` re-enables the lever.
+bool Bot_curve_handout_enabled = false;
 
 // --- Evidence-gated hard-room promotion (0.9.7, the isengard room-36 lock) ---------------------
 // The static complexity gate (orig_comp_count>1) misses rooms that are SINGLE-component yet

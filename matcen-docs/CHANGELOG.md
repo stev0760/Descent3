@@ -19,12 +19,12 @@ about half of all chase timeouts to 5–11%. **Currently shipped default-off** (
 to enable) while an outdoor side effect is investigated — on terrain maps the constant
 re-planning appears to keep bots churning navigation instead of fighting.
 
-- **Corner-hugging navigation** (`$nav curve`, default on). When a bot is handed a waypoint across a
-  bend — a spiral ramp, a corkscrew shaft, a curved corridor — it used to aim straight at the far end
-  and cut the *inside* of the curve into the wall (the classic "routed into the wall with room to
-  spare" cluster). Waypoints now keep a wider berth from geometry, so the bot hugs the corridor and
-  rounds the corner instead of pressing its inside edge; tight doorways still thread at hull width.
-  `$nav curve off` restores the old behavior.
+- **Corner-hugging navigation** (`$nav curve`, **default off** — first attempt, didn't land). The idea:
+  a bot handed a waypoint across a bend (a spiral ramp, corkscrew shaft, curved corridor) used to aim
+  straight at the far end and cut the *inside* of the curve into the wall. This version makes waypoints
+  keep a wider berth from geometry. An isengard A/B showed it didn't fix the target cluster and slightly
+  increased wall-presses, so it's **left off** pending a reworked version that addresses the problem one
+  layer deeper. `$nav curve on` enables the current attempt live.
 - **Dedicated CTF flag-runner role** (`$nav runner`, **default off** — an opt-in experiment). Each
   team can field one committed flag-getter — the best-equipped bot — that heads for the enemy flag
   and, unlike a general attacker, does not stop for powerups along the way, plus a home defender, a
