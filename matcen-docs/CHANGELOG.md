@@ -19,6 +19,15 @@ about half of all chase timeouts to 5–11%. **Currently shipped default-off** (
 to enable) while an outdoor side effect is investigated — on terrain maps the constant
 re-planning appears to keep bots churning navigation instead of fighting.
 
+- **Dedicated CTF flag-runner role** (`$nav runner`, default on). Each team now fields one committed
+  flag-getter — the best-equipped bot — that heads for the enemy flag and, unlike a general
+  attacker, does **not** stop to grab powerups along the way (it still picks up a weapon first if it
+  spawned with only a laser). The rest of the team fills in a home defender (or two on bigger teams),
+  one reactive "flex" bot that drops back to defend the moment your flag is stolen, and support
+  attackers. Team makeup scales with team size and adjusts when human players are present. This
+  targets maps where bots grab the enemy flag rarely because every attacker keeps wandering off after
+  items instead of pushing the objective. `$nav runner off` restores the previous behavior (a simple
+  attacker/defender split with the best bot on defense) for comparison.
 - New `$nav outroute` (**default off since 2026-07-05**): on outdoor terrain, a bot whose straight
   line to its goal is blocked by a hill or building follows the map's outdoor waypoint lattice
   around the obstacle from the start, instead of flying into the hillside and recovering over and

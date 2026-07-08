@@ -1,0 +1,17 @@
+{
+  "_comment": "Overnight bsidectf A/B for the dedicated flag-runner role (0.9.7, commit b3e3a3ef code; binary hash-label lags one commit, string-verified). 3v3 (soak-bots.cfg), full 3-map rotation (Nightmarecastle/mysterious_isle/batteriesincluded), 15-min rounds. Interleaved A(runner on)/B(runner off/legacy) in 6-round blocks (= 2 full rotations each) so each condition sees every map equally across the night. Theory under test: a dedicated, powerup-disciplined flag-getter improves conversion on contested routes (batteries Red was 1 grab/8rnd, its attackers pinned on the room-118 powerup trap). Judge by flag_conversion.py per-map/team, A vs B; split the log at the '$nav runner on|off' echoes.",
+  "server_dir": "/home/steve/Projects/Descent3-bot-testing-client/Descent3_testing",
+  "launch": ["./Descent3", "-dedicated", "./soak-dedicated-bside.cfg"],
+  "telnet_port": 2092,
+  "telnet_password": "test",
+  "phases": [
+    {"name": "A1-runner-on",  "toggles": {"runner": true},  "rounds": 6},
+    {"name": "B1-runner-off", "toggles": {"runner": false}, "rounds": 6},
+    {"name": "A2-runner-on",  "toggles": {"runner": true},  "rounds": 6},
+    {"name": "B2-runner-off", "toggles": {"runner": false}, "rounds": 6},
+    {"name": "A3-runner-on",  "toggles": {"runner": true},  "rounds": 6},
+    {"name": "B3-runner-off", "toggles": {"runner": false}, "rounds": 6}
+  ],
+  "navdump": {},
+  "max_minutes": 660
+}
