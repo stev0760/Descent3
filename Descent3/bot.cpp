@@ -3378,8 +3378,17 @@ static void BotUpdateState(int bot_index) {
     // were the fresh-spawn wall-slamming). Nothing visible → no powerup goal → explore-roam's
     // visited-room curiosity moves it to a new room and new sightlines. Commit once armed.
     bool gear_up = BotHasOnlyDefaultPrimary(bot_index);
+    // 0.9.7 dedicated runner ($nav runner): the team's designated flag-getter commits to the enemy
+    // flag and does NOT detour for powerups — the discipline that separates it from a distractible
+    // attack-lean bot (the batteries room-118 powerup trap that ate Red's offense). It still gears
+    // up first if unarmed (a bare-laser runner can't fight through); once armed it chases nothing.
+    bool is_runner = Bot_dedicated_runner_enabled && BotGetGameMode() == BGM_CTF &&
+                     Bots[bot_index].squad_role == SQUAD_FREELANCE &&
+                     Bots[bot_index].objective_lean == BOT_LEAN_RUNNER && !BotIsCarryingEnemyFlag(bot_index);
     int pu_obj;
-    if (on_objective && !gear_up)
+    if (is_runner && !gear_up)
+      pu_obj = -1; // committed runner: no powerup detour
+    else if (on_objective && !gear_up)
       pu_obj = BotFindBestPowerup(bot_index, need_sh, low_energy, 0, BOT_POWERUP_ONPATH_RADIUS);
     else if (on_objective)
       pu_obj = BotFindBestPowerup(bot_index, need_sh, low_energy, 0, -1.0f, true);
@@ -3512,7 +3521,10 @@ static void BotUpdateState(int bot_index) {
     if (BotGetGameMode() == BGM_CTF && !BotIsCarryingEnemyFlag(bot_index)) {
       BotSquadRole role = Bots[bot_index].squad_role;
       bool is_attacker =
-          (role == SQUAD_ATTACK) || (role == SQUAD_FREELANCE && Bots[bot_index].objective_lean == BOT_LEAN_ATTACK);
+          (role == SQUAD_ATTACK) ||
+          (role == SQUAD_FREELANCE && (Bots[bot_index].objective_lean == BOT_LEAN_ATTACK ||
+                                       Bots[bot_index].objective_lean == BOT_LEAN_RUNNER ||
+                                       Bots[bot_index].objective_lean == BOT_LEAN_FLEX));
       if (is_attacker)
         ctf_pushing = true;
       // Fumble rush: any bot navigating to a dropped enemy flag also suppresses combat
@@ -3730,7 +3742,10 @@ static void BotUpdateState(int bot_index) {
     else if (BotGetGameMode() == BGM_CTF && Bots[bot_index].combat_idle_timer > BOT_CTF_ATTACK_COMBAT_TIMEOUT) {
       BotSquadRole role = Bots[bot_index].squad_role;
       bool is_attacker =
-          (role == SQUAD_ATTACK) || (role == SQUAD_FREELANCE && Bots[bot_index].objective_lean == BOT_LEAN_ATTACK);
+          (role == SQUAD_ATTACK) ||
+          (role == SQUAD_FREELANCE && (Bots[bot_index].objective_lean == BOT_LEAN_ATTACK ||
+                                       Bots[bot_index].objective_lean == BOT_LEAN_RUNNER ||
+                                       Bots[bot_index].objective_lean == BOT_LEAN_FLEX));
       if (is_attacker && !BotIsCarryingEnemyFlag(bot_index))
         new_state = BOT_STATE_EXPLORE;
     } else if (Bots[bot_index].combat_idle_timer > BOT_EVADE_COMBAT_TIMEOUT && shields < max_shields * 0.60f)
