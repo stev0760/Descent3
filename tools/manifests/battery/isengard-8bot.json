@@ -1,0 +1,10 @@
+{
+  "_comment": "8-bot isengard grate hunt on the door-fix build: outroute ON + full stack. Success = type=17 proactive-clear lines and a dead grate.",
+  "server_dir": "/home/steve/Projects/Descent3-bot-testing-client/Descent3_testing",
+  "launch": ["./Descent3", "-dedicated", "./soak-dedicated-isengard8.cfg"],
+  "telnet_port": 2092,
+  "telnet_password": "test",
+  "phases": [{"name": "grate-hunt", "toggles": {"outroute": true}, "rounds": 1}],
+  "navdump": {},
+  "max_minutes": 25
+}

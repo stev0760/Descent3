@@ -444,3 +444,16 @@ savegame/
 
 # Claude Code session exports
 2026-*.txt
+
+# Navdump JSON dumps ($navdump / $nav dump) + their visualize_navdump.py SVG/PNG renders.
+# These land in the repo root as scratch; the real, tracked config JSON is kept below.
+# (Scoped to the root with a leading slash so tools/manifests/*.json stays tracked.)
+/*.json
+/*.svg
+/*.png
+!/CMakePresets.json
+!/vcpkg.json
+!/vcpkg-configuration.json
+
+# Scratch analysis output accidentally written to the repo root
+/scratchpad_*.txt
