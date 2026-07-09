@@ -1,16 +1,15 @@
 {
-  "_comment": "Fix A ($nav strike: via-dance suspensions count toward troll strikes) + Fix B ($nav dense: thin-tube roadmap densification) attribution A/B. 4v4 continuous isengard (TimeLimit=180, never advances; SetLevel=2). gridall+outroute held ON throughout (proven diag environment). Blocks: OFF -> A-only -> A+B -> OFF -> A+B. Metrics, split at the '$nav strike|dense on|off' echoes: (1) Fix A: 'skeleton via in room 36 (target room 36)' count/hour + 'chasing powerup in room 36' re-entries + troll-retired events in room 36; (2) Fix B: VIA_SEARCH_FAIL in rooms 40/35/38 + seam-guard 'via room 40 - portal to 38' churn + densify build log lines; (3) end-to-end: any grabs/captures. dense is a rebuild param - toggling flushes roadmaps (0.9.5 mechanism), so mid-level flips are trustworthy.",
+  "_comment": "Fix A ($nav strike) + Fix B v2 ($nav dense, bidirectional+centerline ladder) A/B. v2 of this manifest: the first run inherited gridall+outroute ON from the curve-diag environment, which SUPPRESSED the pathology being measured (room-36 via-suspends ~0 vs 280-496/round on defaults) — this run holds every other toggle at DEFAULTS (gridall off, outroute off), matching the 2026-07-09 overnight baseline where the magnet/tube problems were measured. 4v4 continuous isengard (TimeLimit=180, SetLevel=2). Blocks: OFF -> A+B -> OFF -> A+B, 30 min each. Metrics, split at '$nav strike|dense on|off' echoes: Fix A = 'chasing powerup in room 36' re-entries + 'soft-strike' + room-36 'troll-retired' events + via suspends room 36; Fix B = 'roadmap room 40' build line (2 nodes DEGENERATE vs laddered), 'tube-densify' lines incl FAILED, VIA_SEARCH_FAIL rooms 40/35/38, seam 'via room 40 - portal to 38' churn. dense flips flush roadmap caches (rebuild=true).",
   "server_dir": "/home/steve/Projects/Descent3-bot-testing-client/Descent3_testing",
   "launch": ["./Descent3", "-dedicated", "./soak-dedicated-isengard-ab8.cfg"],
   "telnet_port": 2092,
   "telnet_password": "test",
   "phases": [
-    {"name": "OFF1",   "toggles": {"strike": false, "dense": false, "gridall": true, "outroute": true}, "minutes": 30},
-    {"name": "A1",     "toggles": {"strike": true,  "dense": false, "gridall": true, "outroute": true}, "minutes": 30},
-    {"name": "AB1",    "toggles": {"strike": true,  "dense": true,  "gridall": true, "outroute": true}, "minutes": 30},
-    {"name": "OFF2",   "toggles": {"strike": false, "dense": false, "gridall": true, "outroute": true}, "minutes": 30},
-    {"name": "AB2",    "toggles": {"strike": true,  "dense": true,  "gridall": true, "outroute": true}, "minutes": 30}
+    {"name": "OFF1", "toggles": {"strike": false, "dense": false, "gridall": false, "outroute": false}, "minutes": 30},
+    {"name": "AB1",  "toggles": {"strike": true,  "dense": true,  "gridall": false, "outroute": false}, "minutes": 30},
+    {"name": "OFF2", "toggles": {"strike": false, "dense": false, "gridall": false, "outroute": false}, "minutes": 30},
+    {"name": "AB2",  "toggles": {"strike": true,  "dense": true,  "gridall": false, "outroute": false}, "minutes": 30}
   ],
   "navdump": {},
-  "max_minutes": 170
+  "max_minutes": 140
 }

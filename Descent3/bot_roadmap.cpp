@@ -484,68 +484,96 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
   // DEGENERATE) and its tube-end seeds sit farther apart than BRIDGE_LEN, so neither bridge connects them —
   // the via layer then has nothing to hand out inside the tube (VIA_SEARCH_FAIL x159, seam churn 40->38).
   // Ladder: for each portal-seed pair that is still cross-component (or every long pair when the lattice
-  // never populated), walk the seed-to-seed segment at sub-spacing steps and hull-fit a chain of rung nodes,
-  // jittering a rung laterally when the direct point clips a wall. Chain edges + unions as we go, so the
-  // compression below sees the merge. Indoor only — outdoor regions have no tube class and huge seed spans.
+  // never populated), walk the seed-to-seed run at sub-spacing steps and hull-fit a chain of rung nodes.
+  // v2 (stage-1 A/B falsified v1 on the gate room — room 40 rebuilt with ZERO rungs): the walk now runs from
+  // BOTH ends (a grate/door object parked at one portal blocks every probe anchored on that seed — the
+  // 20->40 blastable grate; the far seed still ladders ~90% of the tube), and each rung offers a room
+  // bbox-CENTERLINE candidate alongside the chord (portal points can hug walls, making the raw chord clip;
+  // the cross-section center is where a hull actually fits in a thin tube). A qualifying pair that still
+  // places nothing logs a FAILED line — this pass must never fail silently again. Chain edges + unions as
+  // we go, so compression sees the merge. Indoor only — outdoor regions have no tube class.
   if (Bot_tube_densify_enabled && !rr->outdoor && n_seed >= 2) {
     const int lattice0 = rr->lattice_nodes;
     const float step = std::min(sp * 0.6f, 12.0f);
+    const vector bbc = (mn + mx) * 0.5f;
     int rungs = 0, pairs = 0;
     for (int i = 0; i < n_seed && rungs < BOT_ROADMAP_TUBE_RUNG_MAX; i++)
       for (int j = i + 1; j < n_seed && rungs < BOT_ROADMAP_TUBE_RUNG_MAX; j++) {
         if (lattice0 > 0 && UFFind(uf, i) == UFFind(uf, j))
           continue; // room has interior coverage and this pair already connects — nothing to ladder
-        const vector A = rr->node[i], B = rr->node[j];
-        vector dir = B - A;
-        const float d = vm_GetMagnitude(&dir);
-        if (d <= step * 1.5f || vm_NormalizeVector(&dir) < 0.01f)
-          continue;
-        // Jitter axes: perpendicular pair spanning the plane normal to the run (corner-bridge pattern).
-        vector up;
-        up.x() = 0.0f;
-        up.y() = 1.0f;
-        up.z() = 0.0f;
-        vector perp;
-        vm_CrossProduct(&perp, &dir, &up);
-        if (vm_NormalizeVector(&perp) < 0.01f) {
-          perp.x() = 1.0f;
-          perp.y() = 0.0f;
-          perp.z() = 0.0f;
+        {
+          vector span = rr->node[j] - rr->node[i];
+          if (vm_GetMagnitude(&span) <= step * 1.5f)
+            continue; // door-room-scale pair — a single probe-gated edge either exists or the gap is real
         }
-        vector perp2;
-        vm_CrossProduct(&perp2, &dir, &perp);
-        vm_NormalizeVector(&perp2);
         pairs++;
-        int prev = i;
-        vector prev_pos = A;
-        const int nsteps = (int)(d / step);
-        for (int s = 1; s < nsteps && rungs < BOT_ROADMAP_TUBE_RUNG_MAX; s++) {
-          const vector pt = A + dir * (s * step);
-          const float joff = sp * 0.25f;
-          const vector cands[5] = {pt, pt + perp * joff, pt - perp * joff, pt + perp2 * joff, pt - perp2 * joff};
-          for (const vector &cand : cands) {
-            if (!RoadmapLOS(rr, prev_pos, cand))
-              continue;
-            int w = (int)rr->node.size();
-            rr->node.push_back(cand);
-            rr->adj.emplace_back();
-            rr->tweight.push_back(0.0f);
-            uf.push_back(w);
-            rr->adj[prev].push_back(w);
-            rr->adj[w].push_back(prev);
-            UFUnion(uf, prev, w);
-            rr->lattice_nodes++; // rungs are real navigable coverage (clears the degenerate flag)
-            rungs++;
-            prev = w;
-            prev_pos = cand;
-            break;
+        const int pair_rungs0 = rungs;
+        // Two anchored walks: i-toward-j, then (if the pair is still split) j-toward-i.
+        for (int pass = 0; pass < 2 && rungs < BOT_ROADMAP_TUBE_RUNG_MAX; pass++) {
+          const int from = pass ? j : i, to = pass ? i : j;
+          if (pass && UFFind(uf, i) == UFFind(uf, j))
+            break; // first walk merged the pair — done
+          const vector A = rr->node[from], B = rr->node[to];
+          vector dir = B - A;
+          const float d = vm_GetMagnitude(&dir);
+          if (vm_NormalizeVector(&dir) < 0.01f)
+            continue;
+          // Jitter axes: perpendicular pair spanning the plane normal to the run (corner-bridge pattern).
+          vector up;
+          up.x() = 0.0f;
+          up.y() = 1.0f;
+          up.z() = 0.0f;
+          vector perp;
+          vm_CrossProduct(&perp, &dir, &up);
+          if (vm_NormalizeVector(&perp) < 0.01f) {
+            perp.x() = 1.0f;
+            perp.y() = 0.0f;
+            perp.z() = 0.0f;
+          }
+          vector perp2;
+          vm_CrossProduct(&perp2, &dir, &perp);
+          vm_NormalizeVector(&perp2);
+          int prev = from;
+          vector prev_pos = A;
+          const int nsteps = (int)(d / step);
+          for (int s = 1; s < nsteps && rungs < BOT_ROADMAP_TUBE_RUNG_MAX; s++) {
+            const vector pt = A + dir * (s * step);
+            // Centerline candidate: chord's along-run position, pulled to the room cross-section center
+            // (project the chord->center offset off the run axis so the walk still advances toward B).
+            vector off = bbc - pt;
+            off = off - dir * vm_DotProduct(&off, &dir);
+            const float joff = sp * 0.25f;
+            const vector cands[7] = {pt + off,        pt,        pt + off * 0.5f, pt + perp * joff,
+                                     pt - perp * joff, pt + perp2 * joff, pt - perp2 * joff};
+            for (const vector &cand : cands) {
+              if (!RoadmapLOS(rr, prev_pos, cand))
+                continue;
+              int w = (int)rr->node.size();
+              rr->node.push_back(cand);
+              rr->adj.emplace_back();
+              rr->tweight.push_back(0.0f);
+              uf.push_back(w);
+              rr->adj[prev].push_back(w);
+              rr->adj[w].push_back(prev);
+              UFUnion(uf, prev, w);
+              rr->lattice_nodes++; // rungs are real navigable coverage (clears the degenerate flag)
+              rungs++;
+              prev = w;
+              prev_pos = cand;
+              break;
+            }
+          }
+          // Close the chain onto the far seed (also covers a direct hull-clear A-B the bridges missed).
+          if (RoadmapLOS(rr, prev_pos, rr->node[to]) && !HasEdge(rr->adj[prev], to)) {
+            rr->adj[prev].push_back(to);
+            rr->adj[to].push_back(prev);
+            UFUnion(uf, prev, to);
           }
         }
-        // Close the chain onto the far seed (also covers a direct hull-clear A-B the bridges missed).
-        if (RoadmapLOS(rr, prev_pos, B) && !HasEdge(rr->adj[prev], j)) {
-          rr->adj[prev].push_back(j);
-          rr->adj[j].push_back(prev);
-          UFUnion(uf, prev, j);
+        if (rungs == pair_rungs0 && lattice0 == 0) {
+          vector span = rr->node[j] - rr->node[i];
+          LOG_DEBUG.printf("BOT: roadmap %s %d: tube-densify FAILED pair %d-%d (d=%.0f) — no hull-fit rung placed",
+                           kind, id, i, j, vm_GetMagnitude(&span));
         }
       }
     if (rungs) {
