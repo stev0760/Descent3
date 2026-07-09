@@ -65,6 +65,7 @@ int Num_bots = 0;
 bool Bot_debug_movement = false; // Toggle with "$botmov on/off" console command
 bool Bot_grate_clear_enabled = true;      // $nav grate — proactive destroyable-obstacle clearing (0.9.6 Stage 2)
 bool Bot_objective_commit_enabled = true; // $nav commit — opportunistic-only powerups while on an objective route
+bool Bot_soft_strike_enabled = true;      // $nav strike — same-room soft chase-aborts accrue troll strikes (0.9.7)
 // $nav replan — Stage 3 progress-monitor replan (0.9.7). DEFAULT OFF pending the outdoor A/B
 // (2026-07-04): operator observed replan-era isengard bots nav-churning (hill re-entry loop, tunnel
 // turn-arounds) where pre-replan builds fought outside more — suspicion is the fast-window
@@ -105,6 +106,7 @@ static const BotDifficultyParams *BotGetDiffParams(int bot_index) { return &kDif
 
 // Forward declarations for functions not exposed in headers
 static void BotDoUISpawn();
+static void BotTrollSoftStrike(int handle, const object *bot_obj, const char *botname); // $nav strike (0.9.7)
 extern void MultiSendPlayerEnteredGame(int which);
 extern void MultiSendRenewPlayer(int slot);
 extern void MultiSendPlayerDisconnect(int slot);
@@ -1522,6 +1524,8 @@ static void BotStallMonitor(int bot_index) {
         if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
           GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
         pgi = -1;
+        // $nav strike: circling next to the item it was chasing — the room-36 magnet signature
+        BotTrollSoftStrike(Bots[bot_index].chasing_powerup_handle, obj, Bots[bot_index].callsign);
         Bots[bot_index].chasing_powerup_handle = OBJECT_HANDLE_NONE;
         Bots[bot_index].chasing_powerup_timer = 0.0f;
         Bots[bot_index].via_seal_count = 0;
@@ -1606,7 +1610,8 @@ static void BotStallMonitor(int bot_index) {
   if (Bots[bot_index].stall_streak < 3)
     return; // give the engine one more window before firmer action
 
-  // Action 2: abort a stalled powerup chase — blacklist, never a strike
+  // Action 2: abort a stalled powerup chase — blacklist; a same-room abort also accrues
+  // soft troll evidence ($nav strike, half weight — see BotTrollSoftStrike)
   if (Bots[bot_index].powerup_goal_index >= 0 && Bots[bot_index].chasing_powerup_handle != OBJECT_HANDLE_NONE) {
     Bots[bot_index].blacklisted_powerup_handle = Bots[bot_index].chasing_powerup_handle;
     Bots[bot_index].blacklisted_powerup_expires = Gametime + BOT_POWERUP_BLACKLIST_DURATION;
@@ -1614,6 +1619,7 @@ static void BotStallMonitor(int bot_index) {
     if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
       GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
     pgi = -1;
+    BotTrollSoftStrike(Bots[bot_index].chasing_powerup_handle, obj, Bots[bot_index].callsign);
     Bots[bot_index].chasing_powerup_handle = OBJECT_HANDLE_NONE;
     Bots[bot_index].chasing_powerup_timer = 0.0f;
     Bots[bot_index].via_seal_count = 0;
@@ -2886,11 +2892,13 @@ static bool BotCanCollectPowerup(int bot_index, object *powerup) {
 // Uncollectable items never respawn, so their handles are stable for the whole level.
 static int Troll_handles[BOT_TROLL_TABLE_SIZE];
 static uint8_t Troll_strikes[BOT_TROLL_TABLE_SIZE];
+static uint8_t Troll_soft[BOT_TROLL_TABLE_SIZE]; // $nav strike: same-room soft-abort accumulator (0.9.7 Fix A)
 
 static void BotTrollTableReset() {
   for (int i = 0; i < BOT_TROLL_TABLE_SIZE; i++) {
     Troll_handles[i] = OBJECT_HANDLE_NONE;
     Troll_strikes[i] = 0;
+    Troll_soft[i] = 0;
   }
 }
 
@@ -2903,30 +2911,36 @@ static bool BotPowerupTrollRetired(int handle) {
   return false;
 }
 
+// Objective items (CTF flags, Hoard/Hyper orbs) are NEVER trolls — a nav-broken approach room
+// racks up chase timeouts on them just like a glass pocket does (navmapping13: nysa retired
+// FlagBlue after corner-stuck attackers struck it out, silently turning the team off the
+// objective). Strikes are for optional pickups only; objective failures belong to nav.
+// Shared by the hard-strike and soft-strike ($nav strike) paths so neither lets an exempt
+// item claim a table slot.
+static bool BotTrollExempt(int handle) {
+  object *p = ObjGet(handle);
+  if (p && p->type == OBJ_POWERUP) {
+    int ft = -1;
+    if (BotIsFlagPowerup(p->id, &ft))
+      return true;
+    const char *raw = Object_info[p->id].name;
+    char lower[64] = {};
+    strncpy(lower, raw ? raw : "", sizeof(lower) - 1);
+    for (int k = 0; lower[k]; k++)
+      lower[k] = (char)tolower((unsigned char)lower[k]);
+    // "flag" is name-broad on purpose: the CTF DLL also spawns ATTACHED flag powerups
+    // (ShipBlueFlag etc.) with ids outside Obj_flag_id — navmapping14 retired those 7 times.
+    if (strstr(lower, "flag") || strstr(lower, "hoardorb") || strstr(lower, "hyperorb"))
+      return true;
+  }
+  return false;
+}
+
 static void BotTrollStrike(int handle, const char *botname) {
   if (handle == OBJECT_HANDLE_NONE)
     return;
-  // Objective items (CTF flags, Hoard/Hyper orbs) are NEVER trolls — a nav-broken approach room
-  // racks up chase timeouts on them just like a glass pocket does (navmapping13: nysa retired
-  // FlagBlue after corner-stuck attackers struck it out, silently turning the team off the
-  // objective). Strikes are for optional pickups only; objective failures belong to nav.
-  {
-    object *p = ObjGet(handle);
-    if (p && p->type == OBJ_POWERUP) {
-      int ft = -1;
-      if (BotIsFlagPowerup(p->id, &ft))
-        return;
-      const char *raw = Object_info[p->id].name;
-      char lower[64] = {};
-      strncpy(lower, raw ? raw : "", sizeof(lower) - 1);
-      for (int k = 0; lower[k]; k++)
-        lower[k] = (char)tolower((unsigned char)lower[k]);
-      // "flag" is name-broad on purpose: the CTF DLL also spawns ATTACHED flag powerups
-      // (ShipBlueFlag etc.) with ids outside Obj_flag_id — navmapping14 retired those 7 times.
-      if (strstr(lower, "flag") || strstr(lower, "hoardorb") || strstr(lower, "hyperorb"))
-        return;
-    }
-  }
+  if (BotTrollExempt(handle))
+    return;
   int slot = -1, free_slot = -1;
   for (int i = 0; i < BOT_TROLL_TABLE_SIZE; i++) {
     if (Troll_handles[i] == handle) {
@@ -2952,6 +2966,51 @@ static void BotTrollStrike(int handle, const char *botname) {
     LOG_DEBUG.printf("BOT NAV: powerup troll-retired: '%s' (room %d) after %d strikes by '%s' — "
                      "suppressed for this level",
                      nm, rm, BOT_TROLL_STRIKES, botname);
+  }
+}
+
+// 0.9.7 Fix A ($nav strike). The hard-pin fairness rule (0.9.6: "a slow chase through a maze never counts
+// against the item") protects exactly the magnet class it was never meant to: items visible across a concave
+// room's inner wall with NO clear approach (isengard room 36: five 0/8-approach powerups -> 5640 same-room
+// via dances in one soak, zero retirements — every abort took the soft "no strike" path). Soft evidence at
+// half weight closes the loophole: a bot that gives up on a chase while standing IN the item's room —
+// circle-window abort, stall-replan abort, or a mobile chase timeout — accrues a soft count; every
+// BOT_TROLL_SOFT_PER_STRIKE of those converts to one real strike (flag/orb exemptions and the retire log
+// stay in BotTrollStrike). The same-room gate keeps the fairness intent: a long cross-map chase aborted
+// rooms away from the item still counts for nothing.
+static void BotTrollSoftStrike(int handle, const object *bot_obj, const char *botname) {
+  if (!Bot_soft_strike_enabled || handle == OBJECT_HANDLE_NONE || !bot_obj)
+    return;
+  if (BotTrollExempt(handle))
+    return; // flags/orbs never accrue soft counts or claim table slots
+  object *p = ObjGet(handle);
+  if (!p || OBJECT_OUTSIDE(p) || OBJECT_OUTSIDE(bot_obj) || p->roomnum != bot_obj->roomnum)
+    return; // not the standing-next-to-it signature — stay out of it
+  int slot = -1, free_slot = -1;
+  for (int i = 0; i < BOT_TROLL_TABLE_SIZE; i++) {
+    if (Troll_handles[i] == handle) {
+      slot = i;
+      break;
+    }
+    if (free_slot < 0 && Troll_handles[i] == OBJECT_HANDLE_NONE)
+      free_slot = i;
+  }
+  if (slot < 0) {
+    if (free_slot < 0)
+      return;
+    slot = free_slot;
+    Troll_handles[slot] = handle;
+    Troll_strikes[slot] = 0;
+    Troll_soft[slot] = 0;
+  }
+  if (Troll_strikes[slot] >= BOT_TROLL_STRIKES)
+    return; // already retired
+  if (++Troll_soft[slot] >= BOT_TROLL_SOFT_PER_STRIKE) {
+    Troll_soft[slot] = 0;
+    const char *nm = (p->type == OBJ_POWERUP) ? Object_info[p->id].name : "?";
+    LOG_DEBUG.printf("BOT NAV: '%s' soft-strike on powerup '%s' (room %d) — %d same-room aborts = 1 strike",
+                     botname, nm, (int)p->roomnum, BOT_TROLL_SOFT_PER_STRIKE);
+    BotTrollStrike(handle, botname);
   }
 }
 
@@ -6145,6 +6204,9 @@ void BotDoFrame() {
             LOG_DEBUG.printf("BOT: '%s' powerup chase timeout (%.1fs, disp=%.0f mobile) — blacklist %.0fs, no strike",
                              Bots[i].callsign, Bots[i].chasing_powerup_timer, chase_disp,
                              BOT_POWERUP_BLACKLIST_DURATION);
+            // $nav strike: mobile, but timing out while IN the item's room = circling next to it —
+            // soft evidence at half weight (cross-room mobile timeouts still count for nothing)
+            BotTrollSoftStrike(Bots[i].chasing_powerup_handle, obj, Bots[i].callsign);
           }
         }
         int &pgi = Bots[i].powerup_goal_index;

@@ -247,6 +247,9 @@
                                      // short hops; the cap was executing legitimate threads mid-room)
 #define BOT_TROLL_STRIKES 3     // chase-timeout/seal strikes before a powerup is retired level-wide
 #define BOT_TROLL_TABLE_SIZE 32 // suspect powerups tracked per level (global, shared by all bots)
+#define BOT_TROLL_SOFT_PER_STRIKE 2 // $nav strike (0.9.7 Fix A): same-room soft chase-aborts per full strike —
+                                    // soft evidence at half weight, so 6 in-room give-ups level-wide retire a
+                                    // magnet item the hard-pin fairness rule never touches (room-36 class)
 
 // Homing missile evasion (Phase 3.15)
 // Scans Objects[] for OBJ_WEAPON with PF_HOMING tracking the bot's handle.
@@ -522,6 +525,8 @@ extern bool Bot_grate_clear_enabled; // $nav grate — proactive destroyable-obs
 extern bool Bot_objective_commit_enabled; // $nav commit — objective commitment: opportunistic-only powerups
                                           // (same/adjacent room) while routing to an objective (0.9.6)
 extern bool Bot_stall_replan_enabled;     // $nav replan — Stage 3 progress-monitor replan (0.9.7)
+extern bool Bot_soft_strike_enabled;      // $nav strike — same-room soft chase-aborts count toward troll
+                                          // retirement at BOT_TROLL_SOFT_PER_STRIKE weight (0.9.7 Fix A)
 extern BotGameMode Bot_game_mode;
 
 // Bot name suffix — appended to all bot callsigns for identification.

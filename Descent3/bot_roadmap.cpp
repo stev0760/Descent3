@@ -84,6 +84,7 @@ bool Bot_grid_always = false;
 // other than the designed "paths now wind". VALIDATION PENDING via operator POV flight test. Not a
 // complete room-36 solution. `$nav curve off` disables.
 bool Bot_curve_route_enabled = true;
+bool Bot_tube_densify_enabled = true; // $nav dense: thin-tube ladder rungs (0.9.7 Fix B; rebuild-flush toggle)
 
 // --- Evidence-gated hard-room promotion (0.9.7, the isengard room-36 lock) ---------------------
 // The static complexity gate (orig_comp_count>1) misses rooms that are SINGLE-component yet
@@ -475,6 +476,80 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
       if (bridged) {
         LOG_DEBUG.printf("BOT: roadmap %s %d: corner-bridged %d (%d attempts)", kind, id, bridged, attempts);
       }
+    }
+  }
+
+  // 2c. Tube densification ($nav dense, 0.9.7 Fix B). The lattice cannot populate a room thinner than the
+  // spacing (isengard room 40: 21u-wide grate tunnel, 143u tall -> 2 portal seeds, 0 lattice, 2 components =
+  // DEGENERATE) and its tube-end seeds sit farther apart than BRIDGE_LEN, so neither bridge connects them —
+  // the via layer then has nothing to hand out inside the tube (VIA_SEARCH_FAIL x159, seam churn 40->38).
+  // Ladder: for each portal-seed pair that is still cross-component (or every long pair when the lattice
+  // never populated), walk the seed-to-seed segment at sub-spacing steps and hull-fit a chain of rung nodes,
+  // jittering a rung laterally when the direct point clips a wall. Chain edges + unions as we go, so the
+  // compression below sees the merge. Indoor only — outdoor regions have no tube class and huge seed spans.
+  if (Bot_tube_densify_enabled && !rr->outdoor && n_seed >= 2) {
+    const int lattice0 = rr->lattice_nodes;
+    const float step = std::min(sp * 0.6f, 12.0f);
+    int rungs = 0, pairs = 0;
+    for (int i = 0; i < n_seed && rungs < BOT_ROADMAP_TUBE_RUNG_MAX; i++)
+      for (int j = i + 1; j < n_seed && rungs < BOT_ROADMAP_TUBE_RUNG_MAX; j++) {
+        if (lattice0 > 0 && UFFind(uf, i) == UFFind(uf, j))
+          continue; // room has interior coverage and this pair already connects — nothing to ladder
+        const vector A = rr->node[i], B = rr->node[j];
+        vector dir = B - A;
+        const float d = vm_GetMagnitude(&dir);
+        if (d <= step * 1.5f || vm_NormalizeVector(&dir) < 0.01f)
+          continue;
+        // Jitter axes: perpendicular pair spanning the plane normal to the run (corner-bridge pattern).
+        vector up;
+        up.x() = 0.0f;
+        up.y() = 1.0f;
+        up.z() = 0.0f;
+        vector perp;
+        vm_CrossProduct(&perp, &dir, &up);
+        if (vm_NormalizeVector(&perp) < 0.01f) {
+          perp.x() = 1.0f;
+          perp.y() = 0.0f;
+          perp.z() = 0.0f;
+        }
+        vector perp2;
+        vm_CrossProduct(&perp2, &dir, &perp);
+        vm_NormalizeVector(&perp2);
+        pairs++;
+        int prev = i;
+        vector prev_pos = A;
+        const int nsteps = (int)(d / step);
+        for (int s = 1; s < nsteps && rungs < BOT_ROADMAP_TUBE_RUNG_MAX; s++) {
+          const vector pt = A + dir * (s * step);
+          const float joff = sp * 0.25f;
+          const vector cands[5] = {pt, pt + perp * joff, pt - perp * joff, pt + perp2 * joff, pt - perp2 * joff};
+          for (const vector &cand : cands) {
+            if (!RoadmapLOS(rr, prev_pos, cand))
+              continue;
+            int w = (int)rr->node.size();
+            rr->node.push_back(cand);
+            rr->adj.emplace_back();
+            rr->tweight.push_back(0.0f);
+            uf.push_back(w);
+            rr->adj[prev].push_back(w);
+            rr->adj[w].push_back(prev);
+            UFUnion(uf, prev, w);
+            rr->lattice_nodes++; // rungs are real navigable coverage (clears the degenerate flag)
+            rungs++;
+            prev = w;
+            prev_pos = cand;
+            break;
+          }
+        }
+        // Close the chain onto the far seed (also covers a direct hull-clear A-B the bridges missed).
+        if (RoadmapLOS(rr, prev_pos, B) && !HasEdge(rr->adj[prev], j)) {
+          rr->adj[prev].push_back(j);
+          rr->adj[j].push_back(prev);
+          UFUnion(uf, prev, j);
+        }
+      }
+    if (rungs) {
+      LOG_DEBUG.printf("BOT: roadmap %s %d: tube-densified %d rungs across %d seed pairs", kind, id, rungs, pairs);
     }
   }
 

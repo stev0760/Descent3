@@ -55,6 +55,13 @@ extern bool Bot_gridnav_enabled;
 #define BOT_ROADMAP_SPACING 20.0f     // 3D lattice spacing (control-loop param: matches engine arrival/lookahead)
 #define BOT_ROADMAP_MAX_LATTICE 20000 // per-room candidate-cell cap; spacing auto-coarsens past this
 
+// Tube densification ($nav dense): a room thinner than the lattice spacing gets ZERO interior nodes — the
+// isengard room-40 class (21u-wide grate tunnel, 143u tall -> 2 portal seeds in 2 components = DEGENERATE) —
+// and the straight bridge caps at BRIDGE_LEN, so tube-end seeds farther apart than that never connect. The
+// ladder pass walks each qualifying portal-seed pair at sub-spacing steps, hull-fitting a chain of rung
+// nodes (with small lateral jitter when the direct rung clips a wall). Rung cap bounds per-room insertions.
+#define BOT_ROADMAP_TUBE_RUNG_MAX 96
+
 // Component bridge (NAVIGATION.md section 3.5, construction step 4): connect grow-from-seed components separated by a
 // navigable gap wider than the neighbour-connect radius (sp*1.8 = 36u) but still flyable — e.g. an upper
 // gallery ~45u above a tavern floor through open air. Hull-probe-gated, so solid dividers stay split.
@@ -118,6 +125,7 @@ extern bool Bot_outdoor_lattice_enabled;
 extern bool Bot_hard_room_enabled;
 extern bool Bot_grid_always; // $nav gridall: proactive grid routing everywhere (A/B lever, default OFF)
 extern bool Bot_curve_route_enabled; // $nav curve: fatter-clearance Theta* straightening (Fork-B fix)
+extern bool Bot_tube_densify_enabled; // $nav dense: hull-fit ladder rungs along thin-tube portal pairs
 void BotRoadmapMarkHardRoom(int room_idx);
 bool BotRoadmapRoomIsHard(int room_idx);
 

@@ -19,6 +19,18 @@ about half of all chase timeouts to 5–11%. **Currently shipped default-off** (
 to enable) while an outdoor side effect is investigated — on terrain maps the constant
 re-planning appears to keep bots churning navigation instead of fighting.
 
+- **Bait-powerup retirement** (`$nav strike`, default on). Some rooms hold powerups a bot can see but
+  never reach — no clear approach line exists (the *Tower of Isengard* sewer holds five of them). Bots
+  would detour in, circle the item politely, give up, wander off, and come back forever: the fairness
+  rule that protects slow-but-honest chases from blacklisting also protected these. Now a bot that
+  gives up *while in the item's own room* files soft evidence against it; enough give-ups across the
+  team retire the item for the level. Cross-room chase failures still count for nothing, so
+  legitimately slow pickups stay safe.
+- **Thin-tunnel routing** (`$nav dense`, default on). Rooms narrower than the navigation lattice —
+  vertical shafts, grate tunnels — used to get almost no waypoints inside them, so a bot entering one
+  had no route to follow and wedged (Isengard's sewer shortcut tunnel was literally unnavigable: two
+  disconnected waypoints in the entire tube). The roadmap builder now runs a ladder pass along each
+  such tube, fitting a chain of flight-verified waypoints through it.
 - **Corner-hugging routes** (`$nav curve`, default on). On maps with a spiral ramp or corkscrew shaft
   (the *Tower of Isengard* sewer being the poster child), the bot's route planner used to flatten the
   winding climb into a straight line over the obstacle — which the bot then pressed into instead of
