@@ -19,6 +19,14 @@ about half of all chase timeouts to 5–11%. **Currently shipped default-off** (
 to enable) while an outdoor side effect is investigated — on terrain maps the constant
 re-planning appears to keep bots churning navigation instead of fighting.
 
+- **Corner-hugging routes** (`$nav curve`, default on). On maps with a spiral ramp or corkscrew shaft
+  (the *Tower of Isengard* sewer being the poster child), the bot's route planner used to flatten the
+  winding climb into a straight line over the obstacle — which the bot then pressed into instead of
+  flying. The planner now keeps a wider berth when it decides whether two waypoints can be connected
+  directly, so it won't shortcut across a mound or bend; tight doorways still thread at hull width. In
+  testing on Isengard this coincided with two autonomous flag captures on a map that had only ever seen
+  one — but it's an in-progress improvement, not a solved map, and validation is ongoing. `$nav curve
+  off` restores the old behavior.
 - New `$nav outroute` (**default off since 2026-07-05**): on outdoor terrain, a bot whose straight
   line to its goal is blocked by a hill or building follows the map's outdoor waypoint lattice
   around the obstacle from the start, instead of flying into the hillside and recovering over and

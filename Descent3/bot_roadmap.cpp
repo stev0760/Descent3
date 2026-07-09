@@ -69,6 +69,21 @@ bool Bot_hard_room_enabled = true; // 0.9.7: evidence-gated gridroute promotion 
 // hop-commit/chain-cap-progress/entry live, the 0.9.4-era indirection cost of ungated proactive
 // routing may be gone. Default OFF until the both-pool A/B says otherwise.
 bool Bot_grid_always = false;
+// $nav curve — curve-following at the STRAIGHTENING layer (0.9.7, the isengard room-36 corkscrew).
+// Diagnostic (soak-20260708T181641, hard-room path-shape) confirmed FORK B: Theta* collapses the
+// corkscrew into a straight over-the-mound chord (room-36 len/chord 1.04, 100% chord) using bare-hull
+// (6.7) LOS — so a hand-out tweak had no off-chord node to follow. Fix: the Theta* SetVertex
+// straightening now requires a FATTER clearance (BOT_ROADMAP_STRAIGHTEN_CLEARANCE) before it shortcuts
+// two nodes together, so a chord that only clears bare hull over a mound/bend is rejected and the
+// winding node-by-node path is preserved for delivery to follow. Adjacency/edges stay at 6.7 (tight
+// doorways thread). **Default ON (2026-07-08, operator call for POV flight-testing).** Metrics signal
+// is positive-but-confounded: 3v3 isengard A/B (soak-20260708T190511, continuous L2 so no clean reset —
+// emergent grate/spawn state uncontrollable without engine mods = out of scope) showed 2 captures BOTH
+// in curve-on blocks (0 in the off block) and room-36 stucks 5(on) vs 37(off, in less time). NOT fully
+// understood — the len/chord path-shape metric did NOT move (~1.05 both), so it helps by a mechanism
+// other than the designed "paths now wind". VALIDATION PENDING via operator POV flight test. Not a
+// complete room-36 solution. `$nav curve off` disables.
+bool Bot_curve_route_enabled = true;
 
 // --- Evidence-gated hard-room promotion (0.9.7, the isengard room-36 lock) ---------------------
 // The static complexity gate (orig_comp_count>1) misses rooms that are SINGLE-component yet
@@ -178,9 +193,11 @@ bool HasEdge(const std::vector<int> &al, int v) {
 // The roadmap's one geometry probe, dispatched by build kind. Indoor hull-sweeps from the room (no ceiling
 // check); outdoor resolves the terrain cell under the start point and ceiling-caps. Used for node growth,
 // edge probing, the component bridge, AND Theta* LOS — one primitive, so the graph and the query agree.
+bool RoadmapLOSr(const RoadmapRoom *rr, const vector &a, const vector &b, float radius) {
+  return rr->outdoor ? BotSegmentClearOutdoor(a, b, radius) : BotSegmentClear(rr->probe_room, a, b, radius);
+}
 bool RoadmapLOS(const RoadmapRoom *rr, const vector &a, const vector &b) {
-  return rr->outdoor ? BotSegmentClearOutdoor(a, b, BOT_ROADMAP_CLEARANCE)
-                     : BotSegmentClear(rr->probe_room, a, b, BOT_ROADMAP_CLEARANCE);
+  return RoadmapLOSr(rr, a, b, BOT_ROADMAP_CLEARANCE);
 }
 
 // Grow the lattice from the already-seeded rr->node[0..n_seed) over [mn,mx] at sp_start spacing: accept a
@@ -639,7 +656,11 @@ bool ThetaStar(RoadmapRoom *rr, int start, int goal, std::vector<int> &path_out)
 
     // SetVertex (lazy): if the assumed straight shot parent[s]->s isn't actually clear, re-parent s to the
     // best already-expanded neighbour. This is what turns grid-granular hops into any-angle straight runs.
-    if (s != start && !RoadmapLOS(rr, rr->node[par[s]], rr->node[s])) {
+    // $nav curve (Fork-B fix): use a FATTER clearance so a straight shortcut that only clears bare hull over
+    // a mound/bend is REJECTED — Theta* then keeps the winding node-by-node path (the corkscrew) instead of
+    // collapsing it into an over-the-mound chord the engine can't fly at cruise. Edges stay at 6.7 below.
+    float straighten_clear = Bot_curve_route_enabled ? BOT_ROADMAP_STRAIGHTEN_CLEARANCE : BOT_ROADMAP_CLEARANCE;
+    if (s != start && !RoadmapLOSr(rr, rr->node[par[s]], rr->node[s], straighten_clear)) {
       float best = FLT_MAX;
       int bp = -1;
       for (int v : rr->adj[s])

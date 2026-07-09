@@ -48,6 +48,10 @@ extern bool Bot_gridnav_enabled;
 // "sealed" powerup abandons in room 60). Dropped to a hair over the hull so a gap the ship physically clears
 // is accepted. NEVER set below the hull (the reverted bnode-gen max_rad 5.0 routed bots into gaps they jam in).
 #define BOT_ROADMAP_CLEARANCE 6.7f    // hull 6.676 + 0.024 sliver — fit radius, not a safety margin
+// Fatter clearance used ONLY by the $nav curve Theta* straightening (SetVertex) so it won't shortcut
+// two nodes across a mound/bend that clears bare hull but not the engine's avoid-walls margin (~2x
+// hull). Graph adjacency/edges still use BOT_ROADMAP_CLEARANCE so tight doorways thread.
+#define BOT_ROADMAP_STRAIGHTEN_CLEARANCE 13.5f
 #define BOT_ROADMAP_SPACING 20.0f     // 3D lattice spacing (control-loop param: matches engine arrival/lookahead)
 #define BOT_ROADMAP_MAX_LATTICE 20000 // per-room candidate-cell cap; spacing auto-coarsens past this
 
@@ -113,6 +117,7 @@ extern bool Bot_outdoor_lattice_enabled;
 // portal line). Mark on each suspension; promoted for the rest of the level at the threshold.
 extern bool Bot_hard_room_enabled;
 extern bool Bot_grid_always; // $nav gridall: proactive grid routing everywhere (A/B lever, default OFF)
+extern bool Bot_curve_route_enabled; // $nav curve: fatter-clearance Theta* straightening (Fork-B fix)
 void BotRoadmapMarkHardRoom(int room_idx);
 bool BotRoadmapRoomIsHard(int room_idx);
 
