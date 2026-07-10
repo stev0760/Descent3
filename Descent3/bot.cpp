@@ -3044,6 +3044,11 @@ static bool BotReachGateAllows(object *bot_obj, object *p) {
       slot = i;
       break;
     }
+    // Evict dead handles: a collected item respawns under a NEW handle, so without eviction the
+    // table saturates with corpses mid-round (first overnight A/B: table full by minute ~40, gate
+    // then ran uncached-but-correct). ObjGet on a stale handle is a cheap failed lookup.
+    if (Reach_handles[i] != OBJECT_HANDLE_NONE && !ObjGet(Reach_handles[i]))
+      Reach_handles[i] = OBJECT_HANDLE_NONE;
     if (free_slot < 0 && Reach_handles[i] == OBJECT_HANDLE_NONE)
       free_slot = i;
   }
