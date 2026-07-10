@@ -450,6 +450,19 @@ struct bot_info {
   float chasing_powerup_timer; // seconds spent chasing current powerup without collecting it
   vector chase_start_pos;      // bot position when this chase began — strike discipline (0.9.6)
 
+  // $nav troute (piece 1, NAVIGATION.md 3.7) — cross-terrain 3-segment plan state
+  int troute_goal_room;      // the plan's real goal room; -1 = no active plan
+  int troute_serial;         // roadmap serial at compose time (stale serial = stale plan)
+  int troute_region;         // terrain region the lattice segment crosses
+  int troute_exit_room;      // E: interior room whose terrain-facing door the bot exits through
+  int troute_exit_portal;    //    that door's portal index in E
+  int troute_entry_room;     // B: goal-side entrance room (forced into the entrance stage)
+  int troute_entry_portal;   //    that door's portal index in B
+  float troute_prev_dist;    // monotone-progress watermark on the terrain segment (rule 2)
+  float troute_reject_until; // negative-cache: composer found no pair; don't retry until then
+  int8_t troute_stalls;      // consecutive non-shrinking goal-issues on the terrain segment
+  int8_t troute_replans;     // rate latch: one replan per plan, then fall back to legacy nav
+
   // 0.9.7 Stage 3 progress-monitor replan state
   vector stall_check_pos;   // position at the start of the current sample window
   float stall_check_time;   // Gametime when the current sample window opened

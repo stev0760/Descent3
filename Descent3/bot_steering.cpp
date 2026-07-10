@@ -1266,6 +1266,22 @@ float BotEstimatePathCost(int from_room, int goal_room) {
 // the terrain-facing doorway leading to its objective, instead of the buried room center the engine
 // can't reach across terrain. The engine then steers the full-3D approach itself (NAVIGATION.md §4.1).
 
+// $nav troute resolve memo: with the lattice approach term ON, a resolve runs one Theta* per
+// candidate door — too hot to recompute on every goal re-issue (1-3s cadence per outdoor bot).
+// The answer only changes when the bot meaningfully moves or the objective changes, so memoize
+// per object handle for a short window. 16 slots round-robin (bots outdoors at once are few).
+#define TROUTE_RESOLVE_MEMO 16
+#define TROUTE_RESOLVE_TTL 5.0f
+#define TROUTE_RESOLVE_MOVE 60.0f
+static struct {
+  int handle = OBJECT_HANDLE_NONE;
+  int goal_room = -1, room = -1, portal = -1;
+  vector pos{};
+  float expires = 0.0f;
+  bool ok = false;
+} Troute_resolve_memo[TROUTE_RESOLVE_MEMO];
+static int Troute_resolve_rr = 0;
+
 bool BotResolveOutdoorEntrance(const object *obj, int objective_room, int *out_room, int *out_portal) {
   if (out_room)
     *out_room = -1;
@@ -1275,6 +1291,23 @@ bool BotResolveOutdoorEntrance(const object *obj, int objective_room, int *out_r
     return false;
   if (objective_room < 0 || objective_room > Highest_room_index || !Rooms[objective_room].used)
     return false;
+
+  if (Bot_troute_enabled) {
+    for (auto &m : Troute_resolve_memo) {
+      if (m.handle != obj->handle || m.goal_room != objective_room || Gametime >= m.expires)
+        continue;
+      vector mv = obj->pos - m.pos;
+      if (vm_GetMagnitude(&mv) > TROUTE_RESOLVE_MOVE)
+        continue;
+      if (!m.ok)
+        return false;
+      if (out_room)
+        *out_room = m.room;
+      if (out_portal)
+        *out_portal = m.portal;
+      return true;
+    }
+  }
 
   // BOA_connect[region][] is the engine's precomputed terrain->structure entrance table for the
   // bot's current terrain region: each entry is a structure room reachable from that region plus
@@ -1308,13 +1341,37 @@ bool BotResolveOutdoorEntrance(const object *obj, int objective_room, int *out_r
       float interior = (er == objective_room) ? 0.0f : BotComputeRouteCost(er, objective_room);
       if (interior >= 1e30f)
         continue; // no finite interior route from this entrance (sealed / wind-gated / grates)
+      // $nav troute: the approach term is the region-LATTICE path cost, not Euclidean — straight
+      // distance is blind to the hill, so it aims bots at the over-the-hill door (the isengard
+      // room-20 re-acquire loop). Lattice can't answer (endpoint in a coverage shadow) ->
+      // pessimistic Euclidean so a lattice-answerable door wins ties.
+      float appr;
       vector diff = Rooms[er].portals[ep].path_pnt - obj->pos;
-      float total = vm_GetMagnitude(&diff) + interior;
+      if (Bot_troute_enabled) {
+        vector door_appr =
+            Rooms[er].portals[ep].path_pnt - Rooms[er].faces[Rooms[er].portals[ep].portal_face].normal * BOT_OUTDOOR_APPROACH_OFFSET;
+        appr = BotRoadmapOutdoorPathCost(region, obj->pos, door_appr);
+        if (appr < 0.0f)
+          appr = vm_GetMagnitude(&diff) * 1.5f;
+      } else {
+        appr = vm_GetMagnitude(&diff);
+      }
+      float total = appr + interior;
       if (total < best_total) {
         best_total = total;
         best_room = er;
         best_door = ep;
       }
+    }
+    if (Bot_troute_enabled) {
+      auto &m = Troute_resolve_memo[Troute_resolve_rr++ % TROUTE_RESOLVE_MEMO];
+      m.handle = obj->handle;
+      m.goal_room = objective_room;
+      m.room = best_room;
+      m.portal = best_door;
+      m.pos = obj->pos;
+      m.expires = Gametime + TROUTE_RESOLVE_TTL;
+      m.ok = (best_room >= 0);
     }
     if (best_room < 0)
       return false; // no connect entrance leads to the objective — caller keeps engine nav
@@ -1374,5 +1431,110 @@ bool BotResolveOutdoorEntrance(const object *obj, int objective_room, int *out_r
     *out_room = ent_room;
   if (out_portal)
     *out_portal = best_portal;
+  return true;
+}
+
+// --- $nav troute (piece 1, NAVIGATION.md 3.7): cross-terrain route composer -------------------
+
+bool Bot_troute_enabled = true; // terrain tier of the single spatial authority (test-build default)
+
+// Door-pair lattice-cost cache: BOA_connect entries are static per level; the region roadmap is
+// static per build. Costs cached by connect INDEX pair, keyed to the roadmap serial. -2 = not yet
+// computed, -1 = computed-no-path, >= 0 = Theta* path length between the two door approach points.
+#define TROUTE_CACHE_DOORS 24
+static float Troute_pair_cost[MAX_BOA_TERRAIN_REGIONS][TROUTE_CACHE_DOORS][TROUTE_CACHE_DOORS];
+static int Troute_cache_serial = -1;
+
+static vector TrouteDoorApproach(int room, int portal) {
+  const struct portal &po = Rooms[room].portals[portal];
+  return po.path_pnt - Rooms[room].faces[po.portal_face].normal * BOT_OUTDOOR_APPROACH_OFFSET;
+}
+
+static float TroutePairCost(int region, int ci, int cj, const vector &a, const vector &b) {
+  if (Troute_cache_serial != BotRoadmapSerial()) {
+    for (int r = 0; r < MAX_BOA_TERRAIN_REGIONS; r++)
+      for (int i = 0; i < TROUTE_CACHE_DOORS; i++)
+        for (int j = 0; j < TROUTE_CACHE_DOORS; j++)
+          Troute_pair_cost[r][i][j] = -2.0f;
+    Troute_cache_serial = BotRoadmapSerial();
+  }
+  if (ci < TROUTE_CACHE_DOORS && cj < TROUTE_CACHE_DOORS) {
+    float &c = Troute_pair_cost[region][ci][cj];
+    if (c > -1.5f)
+      return c;
+    c = BotRoadmapOutdoorPathCost(region, a, b);
+    Troute_pair_cost[region][cj][ci] = c; // symmetric
+    return c;
+  }
+  return BotRoadmapOutdoorPathCost(region, a, b); // beyond cache range — compute uncached
+}
+
+// Compose the cheapest interior->terrain->interior plan for an INDOOR bot whose interior route to
+// goal_room does not exist (the caller establishes both). Scores every valid BOA_connect door pair
+// (E = exit toward terrain, B = entry toward the goal): interiorCost(bot->E.room) + lattice(E->B)
+// + interiorCost(B.room->goal_room). Rule 1 (coverage-verified FOUND) is the lattice term itself:
+// a pair without a finite Theta* path is not a plan. Returns false when no pair qualifies.
+bool BotTrouteCompose(const object *obj, int goal_room, int *out_exit_room, int *out_exit_portal,
+                      int *out_entry_room, int *out_entry_portal, int *out_region, float *out_total) {
+  if (!obj || OBJECT_OUTSIDE(obj))
+    return false;
+  float best_total = 1e30f;
+  int b_er = -1, b_ep = -1, b_br = -1, b_bp = -1, b_reg = -1;
+  for (int r = 0; r < MAX_BOA_TERRAIN_REGIONS; r++) {
+    int nconn = BOA_num_connect[r];
+    if (nconn <= 0)
+      continue;
+    if (nconn > MAX_PATH_PORTALS)
+      nconn = MAX_PATH_PORTALS;
+    // Per-region candidate arrays: interior costs computed once per side (each is a Dijkstra).
+    float in_a[MAX_PATH_PORTALS], in_b[MAX_PATH_PORTALS];
+    for (int c = 0; c < nconn; c++) {
+      in_a[c] = in_b[c] = 1e30f;
+      int er = BOA_connect[r][c].roomnum;
+      int ep = BOA_connect[r][c].portal;
+      if (er < 0 || er > Highest_room_index || !Rooms[er].used || ep < 0 || ep >= Rooms[er].num_portals)
+        continue;
+      in_a[c] = (er == obj->roomnum) ? 0.0f : BotComputeRouteCost(obj->roomnum, er);
+      in_b[c] = (er == goal_room) ? 0.0f : BotComputeRouteCost(er, goal_room);
+    }
+    for (int ci = 0; ci < nconn; ci++) {
+      if (in_a[ci] >= 1e30f)
+        continue;
+      for (int cj = 0; cj < nconn; cj++) {
+        if (cj == ci || in_b[cj] >= 1e30f)
+          continue;
+        if (in_a[ci] + in_b[cj] >= best_total)
+          continue; // can't win even with a zero lattice term — skip the Theta*
+        vector ea = TrouteDoorApproach(BOA_connect[r][ci].roomnum, BOA_connect[r][ci].portal);
+        vector ba = TrouteDoorApproach(BOA_connect[r][cj].roomnum, BOA_connect[r][cj].portal);
+        float lat = TroutePairCost(r, ci, cj, ea, ba);
+        if (lat < 0.0f)
+          continue; // no lattice path — rule 1: not a plan
+        float total = in_a[ci] + lat + in_b[cj];
+        if (total < best_total) {
+          best_total = total;
+          b_er = BOA_connect[r][ci].roomnum;
+          b_ep = BOA_connect[r][ci].portal;
+          b_br = BOA_connect[r][cj].roomnum;
+          b_bp = BOA_connect[r][cj].portal;
+          b_reg = r;
+        }
+      }
+    }
+  }
+  if (b_er < 0)
+    return false;
+  if (out_exit_room)
+    *out_exit_room = b_er;
+  if (out_exit_portal)
+    *out_exit_portal = b_ep;
+  if (out_entry_room)
+    *out_entry_room = b_br;
+  if (out_entry_portal)
+    *out_entry_portal = b_bp;
+  if (out_region)
+    *out_region = b_reg;
+  if (out_total)
+    *out_total = best_total;
   return true;
 }

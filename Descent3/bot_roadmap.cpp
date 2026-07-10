@@ -966,6 +966,31 @@ int BotRoadmapSerial() { return g_build_serial; }
 //            0 = unreachable (item connects to no node at hull clearance, or cross-component)
 //           -1 = unknown (no/degenerate roadmap, bot itself unconnectable) — callers FAIL OPEN to
 //                legacy behavior; the model only overrides when it genuinely has an answer.
+// $nav troute (piece 1, NAVIGATION.md 3.7): honest terrain-crossing cost — the Theta* path length
+// over the region roadmap between two outdoor points (door approach points, or a bot/goal position).
+// This is the around-the-hill number Euclidean lies about on exactly the maps that matter (isengard:
+// over-the-hill chord vs the designed valley route). Returns < 0 when the region has no usable
+// roadmap, an endpoint can't hull-connect to the graph, or the endpoints are cross-component —
+// the composer treats that as "no such leg" (coverage-verified FOUND, staged-block rule 1).
+float BotRoadmapOutdoorPathCost(int region, const vector &a, const vector &b) {
+  RoadmapRoom *rr = GetOutdoor(region);
+  if (!rr || rr->degenerate || (int)rr->node.size() < 2)
+    return -1.0f;
+  int na = NearestVisibleBounded(rr, a, 24, 150.0f);
+  int nb = NearestVisibleBounded(rr, b, 24, 150.0f);
+  if (na < 0 || nb < 0 || rr->comp[na] != rr->comp[nb])
+    return -1.0f;
+  float cost = Dist(a, rr->node[na]) + Dist(b, rr->node[nb]);
+  if (na == nb)
+    return cost;
+  std::vector<int> path;
+  if (!ThetaStar(rr, na, nb, path))
+    return -1.0f;
+  for (size_t i = 1; i < path.size(); i++)
+    cost += Dist(rr->node[path[i - 1]], rr->node[path[i]]);
+  return cost;
+}
+
 int BotRoadmapItemReach(int room, const vector &from_pos, const vector &item_pos) {
   RoadmapRoom *rr = Get(room);
   if (!rr || rr->degenerate || (int)rr->node.size() < 2)

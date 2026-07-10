@@ -311,6 +311,7 @@ static void BotClearActiveGoal(int bot_index) {
   Bots[bot_index].chasing_powerup_timer = 0.0f;
   Bots[bot_index].via_expires = 0.0f; // Phase 12: a via commitment dies with the goal it served
   Bots[bot_index].via_seal_count = 0;
+  Bots[bot_index].troute_goal_room = -1; // $nav troute: a terrain plan dies with the goal it served
 }
 
 // Force a bot into escort mode: clear target + all goals + force EXPLORE + retarget cooldown.
@@ -2044,8 +2045,11 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
 // the caller's hold-check) — no early release, no per-tick recompute (the $softfollow oscillation
 // class). Args by value so callers may pass their dest as both target and out. Returns true when
 // dest/dest_room were redirected to a lattice waypoint.
-static bool BotOutdoorRouteLeg(object *obj, vector target_pos, int target_room, vector *dest, int *dest_room) {
-  if (!Bot_gridnav_enabled || !Bot_outdoor_route_enabled || !OBJECT_OUTSIDE(obj))
+static bool BotOutdoorRouteLeg(object *obj, vector target_pos, int target_room, vector *dest, int *dest_room,
+                               bool force = false) {
+  // force ($nav troute seg1): an active terrain plan engages the lattice follower for its approach
+  // leg even while the legacy $nav outroute lever is off (troute owns its follower outright).
+  if (!Bot_gridnav_enabled || (!Bot_outdoor_route_enabled && !force) || !OBJECT_OUTSIDE(obj))
     return false;
   if (BotSegmentClearOutdoor(obj->pos, target_pos, obj->size))
     return false; // straight leg is flyable — beeline, exactly today's behavior
@@ -2068,7 +2072,8 @@ static bool BotOutdoorRouteLeg(object *obj, vector target_pos, int target_room, 
 // Once the bot's roomnum flips indoors the interior router owns the rest (entrance room need not
 // be the goal room). Returns false when not applicable (indoors, external/unresolvable goal).
 static bool BotOutdoorEntranceStage(object *obj, int goal_room, vector *dest, int *dest_room, int *ent_room_out,
-                                    int *ent_portal_out, bool *entry_out) {
+                                    int *ent_portal_out, bool *entry_out, int forced_room = -1,
+                                    int forced_portal = -1) {
   if (entry_out)
     *entry_out = false;
   if (!Bot_terrain_steering_enabled || !OBJECT_OUTSIDE(obj))
@@ -2076,8 +2081,14 @@ static bool BotOutdoorEntranceStage(object *obj, int goal_room, vector *dest, in
   if (goal_room < 0 || goal_room > Highest_room_index || !Rooms[goal_room].used ||
       (Rooms[goal_room].flags & RF_EXTERNAL))
     return false;
+  // $nav troute: a composed plan forces its entry door — the composer already scored it with the
+  // honest lattice+interior cost, and re-resolving per issue both churns and can disagree.
   int ent_room = -1, ent_portal = -1;
-  if (!BotResolveOutdoorEntrance(obj, goal_room, &ent_room, &ent_portal))
+  if (forced_room >= 0 && forced_room <= Highest_room_index && Rooms[forced_room].used && forced_portal >= 0 &&
+      forced_portal < Rooms[forced_room].num_portals) {
+    ent_room = forced_room;
+    ent_portal = forced_portal;
+  } else if (!BotResolveOutdoorEntrance(obj, goal_room, &ent_room, &ent_portal))
     return false;
   portal &ep = Rooms[ent_room].portals[ent_portal];
   // Stage 1: the 12.6 standoff — the face normal points INTO the room, so subtract to push outward.
@@ -2107,6 +2118,89 @@ static bool BotOutdoorEntranceStage(object *obj, int goal_room, vector *dest, in
   return true;
 }
 
+// --- $nav troute executor (piece 1, NAVIGATION.md 3.7): plan lifecycle + segment redirect ------
+// Runs at the top of BotSetRoutedGoal. For an INDOOR bot with no interior route to an interior
+// goal, composes (or reuses) the 3-segment terrain plan and redirects (goal_room, final_pos) to
+// the current segment's target: seg0 = interior nav toward the exit door E, then the exit-commit
+// (aim at E's outside standoff — the entry stage mirrored); once the bot's roomnum flips outdoors,
+// the caller's outdoor branch owns seg1 (entrance stage with the plan's FORCED entry door + the
+// lattice follower) and this function only keeps the monotone-progress watermark (rule 2). The
+// plan completes when an interior route to the real goal exists again. Returns true when the
+// goal was redirected (seg0). Fail-open everywhere: no plan means exactly today's behavior.
+static bool BotTrouteRedirect(int bot_index, object *obj, int *goal_room, vector *final_pos) {
+  bot_info &bi = Bots[bot_index];
+  if (!Bot_troute_enabled) {
+    bi.troute_goal_room = -1;
+    return false;
+  }
+  const int real_goal = *goal_room;
+  if (real_goal < 0 || real_goal > Highest_room_index || !Rooms[real_goal].used ||
+      (Rooms[real_goal].flags & RF_EXTERNAL))
+    return false; // v1 scope: interior goals only (outdoor goals keep legacy outdoor nav)
+  if (bi.troute_goal_room >= 0 && (bi.troute_goal_room != real_goal || bi.troute_serial != BotRoadmapSerial()))
+    bi.troute_goal_room = -1; // goal changed / roadmaps flushed — stale plan
+  if (OBJECT_OUTSIDE(obj)) {
+    // Seg1 bookkeeping only: the outdoor branch executes; here we watch monotone progress toward
+    // the entry door's standoff. Stalls release the plan ONCE (rate latch) — recompose from the
+    // next indoor position, or fall back to legacy resolve if it happens again.
+    if (bi.troute_goal_room != real_goal)
+      return false;
+    vector bpnt = Rooms[bi.troute_entry_room].portals[bi.troute_entry_portal].path_pnt;
+    float d = vm_VectorDistanceQuick(&obj->pos, &bpnt);
+    if (d < bi.troute_prev_dist - 2.0f) {
+      bi.troute_prev_dist = d;
+      bi.troute_stalls = 0;
+    } else if (++bi.troute_stalls >= 4) {
+      bi.troute_goal_room = -1;
+      if (++bi.troute_replans > 1)
+        bi.troute_reject_until = Gametime + 20.0f; // second stall on one goal: legacy nav owns it
+      LOG_DEBUG.printf("BOT NAV: '%s' troute monotone stall (%.0fu) — plan released%s", bi.callsign, d,
+                       bi.troute_replans > 1 ? " (legacy fallback)" : " (will recompose)");
+    }
+    return false;
+  }
+  // Indoors: plan complete when the interior router can finish the job.
+  if (BotComputeRoute(obj->roomnum, real_goal) >= 0) {
+    if (bi.troute_goal_room == real_goal) {
+      LOG_DEBUG.printf("BOT NAV: '%s' troute complete — interior route resumed (goal rm%d)", bi.callsign, real_goal);
+      bi.troute_goal_room = -1;
+      bi.troute_replans = 0;
+    }
+    return false;
+  }
+  if (bi.troute_goal_room != real_goal) {
+    if (Gametime < bi.troute_reject_until)
+      return false;
+    int er, ep, br, bp, reg;
+    float total;
+    if (!BotTrouteCompose(obj, real_goal, &er, &ep, &br, &bp, &reg, &total)) {
+      bi.troute_reject_until = Gametime + 10.0f; // negative-cache: don't re-Dijkstra every issue
+      LOG_DEBUG.printf("BOT NAV: '%s' troute REJECT — no door pair reaches goal rm%d", bi.callsign, real_goal);
+      return false;
+    }
+    bi.troute_goal_room = real_goal;
+    bi.troute_serial = BotRoadmapSerial();
+    bi.troute_region = reg;
+    bi.troute_exit_room = er;
+    bi.troute_exit_portal = ep;
+    bi.troute_entry_room = br;
+    bi.troute_entry_portal = bp;
+    bi.troute_prev_dist = 1e30f;
+    bi.troute_stalls = 0;
+    LOG_DEBUG.printf("BOT NAV: '%s' troute plan: exit rm%d -> region %d lattice -> entry rm%d (goal rm%d, cost %.0f)",
+                     bi.callsign, er, reg, br, real_goal, total);
+  }
+  // Seg0: interior nav toward the exit door; in the exit room, commit OUT (mirror of entry stage 1).
+  if (obj->roomnum == bi.troute_exit_room) {
+    const portal &xp = Rooms[bi.troute_exit_room].portals[bi.troute_exit_portal];
+    *final_pos = xp.path_pnt - Rooms[bi.troute_exit_room].faces[xp.portal_face].normal * BOT_OUTDOOR_APPROACH_OFFSET;
+  } else {
+    *final_pos = Rooms[bi.troute_exit_room].portals[bi.troute_exit_portal].path_pnt;
+  }
+  *goal_room = bi.troute_exit_room;
+  return true;
+}
+
 // Navigate the bot portal-to-portal through the level when in EXPLORE state with no nearby pickups.
 // Phase 11 waypoint injection — the single mechanism all objective navigation uses to follow the
 // cost-aware router. Computes the next room on the Dijkstra route to goal_room and aims the engine
@@ -2123,6 +2217,14 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   object *obj = &Objects[Players[slot].objnum];
   if (!obj->ai_info)
     return -1; // not AI-controlled (e.g. mid-respawn) — callers guard, but don't assume
+
+  // $nav troute pre-step: a cross-terrain plan may redirect this issue at its current segment
+  // target (seg0: the exit door). Outdoors it only maintains monotone bookkeeping; the outdoor
+  // branch below consumes the plan's entry door. No plan = no change.
+  vector routed_pos = final_pos;
+  BotTrouteRedirect(bot_index, obj, &goal_room, &routed_pos);
+  const bool troute_active =
+      Bot_troute_enabled && Bots[bot_index].troute_goal_room >= 0 && Bots[bot_index].troute_goal_room == goal_room;
 
   int wp_room = BotComputeRoute(obj->roomnum, goal_room);
   if (wp_room < 0)
@@ -2144,7 +2246,7 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   bool seam_redirect = false;
   vector seam_pnt{};
   {
-    vector goal_pos = (wp_room == goal_room) ? final_pos : Rooms[wp_room].path_pnt;
+    vector goal_pos = (wp_room == goal_room) ? routed_pos : Rooms[wp_room].path_pnt;
     int steer_room = -1;
     vector steer_pos = BotGetActiveSteerPoint(obj, goal_pos, wp_room, &steer_room);
     // Two triggers share the push-through: (a) engine steer target detours off-route (the Polaris
@@ -2225,7 +2327,7 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   pgi = -1;
 
   goal_info gi_info{};
-  vector dest = (wp_room == goal_room) ? final_pos : Rooms[wp_room].path_pnt;
+  vector dest = (wp_room == goal_room) ? routed_pos : Rooms[wp_room].path_pnt;
   int dest_room = wp_room;
   // 0.9.4 Stage 2 ($gridroute): plan the in-room leg over the volumetric grid PROACTIVELY. The raw portal
   // path_pnt is a single point the engine path-follower stalls on inside a buried-center / multi-level room;
@@ -2247,21 +2349,28 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
       dest_room = obj->roomnum; // the grid waypoint is reachable from the bot's current room
     }
   } else if (bool entry_commit = false;
-             BotOutdoorEntranceStage(obj, goal_room, &dest, &dest_room, nullptr, nullptr, &entry_commit)) {
+             BotOutdoorEntranceStage(obj, goal_room, &dest, &dest_room, nullptr, nullptr, &entry_commit,
+                                     troute_active ? Bots[bot_index].troute_entry_room : -1,
+                                     troute_active ? Bots[bot_index].troute_entry_portal : -1)) {
     // Phase 8.2: outdoor leg to an INTERIOR goal — carrier home run, escort/order anchor. These
     // used to beeline at the goal room's nearest portal point with no entrance resolution at all
     // (the Plutonium red carrier 24x-reissue trace: stuck outdoors aiming at an unreachable-by-
     // beeline door). Now they get the same two-stage door approach as outbound objective nav.
-    if (!entry_commit && BotOutdoorRouteLeg(obj, dest, dest_room, &dest, &dest_room))
-      LOG_DEBUG.printf("BOT NAV: '%s' outdoor-route wp (entrance leg, goal %d)", Bots[bot_index].callsign, goal_room);
+    // $nav troute: a composed plan FORCES its entry door (skipping re-resolve churn), and troute
+    // owns the lattice follower for ALL entrance approach legs — plan or not (the piece-1-proper
+    // prescription: outroute's delivery skeleton becomes the tier's follower; its beeline
+    // pre-check keeps open terrain untouched, and the bedlam gate verdicts the default).
+    if (!entry_commit && BotOutdoorRouteLeg(obj, dest, dest_room, &dest, &dest_room, Bot_troute_enabled))
+      LOG_DEBUG.printf("BOT NAV: '%s' %s wp (entrance leg, goal %d)", Bots[bot_index].callsign,
+                       troute_active ? "troute seg1" : "outdoor-route", goal_room);
     else
       LOG_DEBUG.printf("BOT NAV: '%s' outdoor entrance %s -> room %d (goal %d)", Bots[bot_index].callsign,
                        entry_commit ? "ENTRY" : "approach", dest_room, goal_room);
-  } else if (BotOutdoorRouteLeg(obj, dest, dest_room, &dest, &dest_room)) {
+  } else if (BotOutdoorRouteLeg(obj, dest, dest_room, &dest, &dest_room, Bot_troute_enabled)) {
     // Terrain track piece 2: the outdoor analog of the branch above — the leg to the goal is
     // terrain-blocked, so aim at the region lattice's next waypoint instead of the beeline.
     LOG_DEBUG.printf("BOT NAV: '%s' outdoor-route wp (goal room %d, %.0fu leg)", Bots[bot_index].callsign, goal_room,
-                     vm_VectorDistanceQuick(&obj->pos, &final_pos));
+                     vm_VectorDistanceQuick(&obj->pos, &routed_pos));
   }
   gi_info.pos = dest;
   gi_info.roomnum = dest_room;
@@ -2418,11 +2527,13 @@ static void BotDoExploreRoaming(int bot_index) {
           goal_info gi_info{};
           gi_info.pos = ent_pos;
           gi_info.roomnum = ent_room;
-          // Terrain track piece 2 ($nav outroute): the leg to the door approach point is THE
-          // isengard entrance-miss beeline — when it's terrain-blocked, follow the region lattice
-          // toward it (waypoint advances on goal completion, en_route holds between waypoints).
-          // Skipped on the entry commit — that leg is a ~25u push through the door.
-          bool routed = !entry_commit && BotOutdoorRouteLeg(obj, ent_pos, ent_room, &gi_info.pos, &gi_info.roomnum);
+          // Terrain track piece 2 ($nav outroute) / piece 1 ($nav troute): the leg to the door
+          // approach point is THE isengard entrance-miss beeline — when it's terrain-blocked,
+          // follow the region lattice toward it (waypoint advances on goal completion, en_route
+          // holds between waypoints). troute owns this follower for all entrance legs (the
+          // piece-1-proper prescription). Skipped on the entry commit — that's a ~25u door push.
+          bool routed = !entry_commit &&
+                        BotOutdoorRouteLeg(obj, ent_pos, ent_room, &gi_info.pos, &gi_info.roomnum, Bot_troute_enabled);
           pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
           Bots[bot_index].explore_dest_room = ent_room;
           Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
@@ -5508,6 +5619,8 @@ static void BotRespawn(int bot_index) {
   Bots[bot_index].powerup_goal_index = -1;
   Bots[bot_index].chasing_powerup_handle = OBJECT_HANDLE_NONE;
   Bots[bot_index].chasing_powerup_timer = 0.0f;
+  Bots[bot_index].troute_goal_room = -1; // $nav troute: respawn position invalidates any terrain plan
+  Bots[bot_index].troute_reject_until = 0.0f;
   Bots[bot_index].state = BOT_STATE_EXPLORE;
   Bots[bot_index].afterburner_fuel = BOT_AFTERBURNER_FUEL_MAX;
   Bots[bot_index].afterburner_burst_timer = 0.0f;

@@ -243,4 +243,15 @@ float BotEstimatePathCost(int from_room, int goal_room);
 // caller aims the engine goal at that portal's path_pnt. False when none is resolvable.
 bool BotResolveOutdoorEntrance(const object *obj, int objective_room, int *out_room, int *out_portal);
 
+// $nav troute (piece 1, NAVIGATION.md 3.7): the terrain tier of the single spatial authority.
+// Cross-terrain routes become 3-segment plans (interior -> exit door E, region lattice E -> entry
+// door B, interior B -> goal). The composer scores (E,B) door pairs from BOA_connect by
+// interiorCost(bot->E) + latticeCost(E->B) + interiorCost(B->goal) — the lattice term is the
+// Theta* path length over the region roadmap (the honest around-the-hill number), cached per
+// door pair per roadmap build. Also upgrades BotResolveOutdoorEntrance's bot->door term from
+// Euclidean to lattice cost (the Euclidean term is what aims bots at the over-the-hill door).
+extern bool Bot_troute_enabled;
+bool BotTrouteCompose(const object *obj, int goal_room, int *out_exit_room, int *out_exit_portal,
+                      int *out_entry_room, int *out_entry_portal, int *out_region, float *out_total);
+
 #endif // BOT_STEERING_H

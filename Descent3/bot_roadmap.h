@@ -132,6 +132,9 @@ bool BotRoadmapRoomIsHard(int room_idx);
 // $nav reach — single-authority in-room reachability (see bot_roadmap.cpp header comment).
 // 1 = reachable, 0 = unreachable, -1 = unknown (caller falls back to legacy behavior).
 int BotRoadmapItemReach(int room, const vector &from_pos, const vector &item_pos);
+// $nav troute — Theta* path length over the region roadmap between two outdoor points; < 0 = no
+// path (no roadmap / endpoint unconnectable / cross-component). The composer's lattice cost term.
+float BotRoadmapOutdoorPathCost(int region, const vector &a, const vector &b);
 // Bumped on every roadmap flush — key any cache of roadmap-derived answers to this.
 int BotRoadmapSerial();
 

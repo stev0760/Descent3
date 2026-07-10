@@ -1,0 +1,15 @@
+{
+  "_comment": "Piece-1 thesis test: $nav troute OFF vs ON, 4v4 continuous isengard, DEFAULTS env (reach/strike/dense at defaults both arms — they're validated and orthogonal). Metrics, split at '$nav troute on|off' echoes: (1) OUTDOOR: entrance-miss share of outdoor stucks (overnight baseline 718/731) + 'outdoor-route wp (entrance' follower engagements + 'stuck escalation room -1' rate; (2) door choice diversity in 'entrance-seek -> room N' lines (lattice scoring should stop the all-room-20 fixation when 20 is over-the-hill); (3) 'troute plan/seg1/REJECT/monotone' lines (composer paths); (4) end-to-end: picks/caps (any pick = news). Resolve memo caps lattice Theta* cost; watch frame health via log cadence.",
+  "server_dir": "/home/steve/Projects/Descent3-bot-testing-client/Descent3_testing",
+  "launch": ["./Descent3", "-dedicated", "./soak-dedicated-isengard-ab8.cfg"],
+  "telnet_port": 2092,
+  "telnet_password": "test",
+  "phases": [
+    {"name": "TOFF1", "toggles": {"troute": false, "gridall": false, "outroute": false}, "minutes": 30},
+    {"name": "TON1",  "toggles": {"troute": true,  "gridall": false, "outroute": false}, "minutes": 30},
+    {"name": "TOFF2", "toggles": {"troute": false, "gridall": false, "outroute": false}, "minutes": 30},
+    {"name": "TON2",  "toggles": {"troute": true,  "gridall": false, "outroute": false}, "minutes": 30}
+  ],
+  "navdump": {},
+  "max_minutes": 140
+}
