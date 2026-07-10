@@ -527,6 +527,8 @@ extern bool Bot_objective_commit_enabled; // $nav commit — objective commitmen
 extern bool Bot_stall_replan_enabled;     // $nav replan — Stage 3 progress-monitor replan (0.9.7)
 extern bool Bot_soft_strike_enabled;      // $nav strike — same-room soft chase-aborts count toward troll
                                           // retirement at BOT_TROLL_SOFT_PER_STRIKE weight (0.9.7 Fix A)
+extern bool Bot_reach_gate_enabled;       // $nav reach — single-authority reachability gate on same-room
+                                          // powerup selection (architecture north star, increment 1)
 extern BotGameMode Bot_game_mode;
 
 // Bot name suffix — appended to all bot callsigns for identification.

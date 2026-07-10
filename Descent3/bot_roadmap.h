@@ -129,6 +129,12 @@ extern bool Bot_tube_densify_enabled; // $nav dense: hull-fit ladder rungs along
 void BotRoadmapMarkHardRoom(int room_idx);
 bool BotRoadmapRoomIsHard(int room_idx);
 
+// $nav reach — single-authority in-room reachability (see bot_roadmap.cpp header comment).
+// 1 = reachable, 0 = unreachable, -1 = unknown (caller falls back to legacy behavior).
+int BotRoadmapItemReach(int room, const vector &from_pos, const vector &item_pos);
+// Bumped on every roadmap flush — key any cache of roadmap-derived answers to this.
+int BotRoadmapSerial();
+
 // Stage 3 (outdoor): the SAME roadmap grown over a terrain REGION's airspace, so the local search threads
 // laterally around outdoor structures (the Bree-wall class) instead of beelining into them. Seeds = the
 // region's BOA_connect door approach points; the lattice extent = the region's structure bboxes expanded

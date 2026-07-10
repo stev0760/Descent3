@@ -19,6 +19,14 @@ about half of all chase timeouts to 5–11%. **Currently shipped default-off** (
 to enable) while an outdoor side effect is investigated — on terrain maps the constant
 re-planning appears to keep bots churning navigation instead of fighting.
 
+- **Reachability-aware powerup selection** (`$nav reach`, default on). Bots now ask their own
+  navigation model — not just their eyes — before chasing a powerup in the room they're in. An item
+  that is visible but has no flyable approach (tucked behind a curve, recessed in a pocket) is
+  skipped outright instead of circled forever; an item that's reachable via a winding route stays
+  fair game and gets collected the way a human would take it. This replaces guess-and-give-up with
+  a geometric answer that's correct from the moment the level loads, and it is the first piece of a
+  larger unification: one spatial model answering "can I get there and what does it cost" for
+  everything a bot decides.
 - **Bait-powerup retirement** (`$nav strike`, default on). Some rooms hold powerups a bot can see but
   never reach — no clear approach line exists (the *Tower of Isengard* sewer holds five of them). Bots
   would detour in, circle the item politely, give up, wander off, and come back forever: the fairness

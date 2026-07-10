@@ -784,6 +784,8 @@ static const NavToggle Nav_toggles[] = {
     {"dense", "tubedense", nullptr, &Bot_tube_densify_enabled,
      "thin-tube roadmap densification: hull-fit ladder rungs along portal pairs (degenerate shaft/tunnel fix)",
      false, true},
+    {"reach", "reachgate", nullptr, &Bot_reach_gate_enabled,
+     "single-authority reachability: roadmap-gated same-room powerup selection (north star inc. 1)", false, false},
     {"terrain", "terrainsteer", nullptr, &Bot_terrain_steering_enabled, "outdoor terrain steering / entrance redirect",
      true, false},
     {"bnodes", "pseudobnodes", nullptr, &Bot_pseudo_bnodes_enabled, "pseudo-BNode skeleton interior waypoints", true,

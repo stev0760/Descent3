@@ -41,6 +41,50 @@ The routing layer talks to the steering layer through **one channel only**: the 
 
 ---
 
+## 1.5 North star — the single spatial authority (2026-07-09, operator-approved)
+
+**The disease behind every workaround this project has stacked: the system that *chooses* goals and
+the system that *reaches* goals answer "can I get there?" differently.** Goal selection asks
+line-of-sight ("can I see it?"); navigation asks the roadmap ("can I route there?"); steering asks
+the engine ("can I fly the next 30 units?"). Every disagreement between those answers has bred a
+compensating mechanism: troll strikes, per-bot blacklists, chase timeouts, the hard-pin fairness
+rule, soft-strikes, via-dance caps. A magnet powerup (visible across a concave room's inner wall,
+approachable by nothing — the isengard room-36 class) is precisely a point where selection says yes
+and navigation was never asked. **The strike table is a mechanism for learning behaviorally what
+the roadmap already knows geometrically.**
+
+**The north star: one hierarchical spatial model — coarse room graph, in-room volumetric roadmap,
+terrain tier (§7 piece 1, not yet built) — is the *single authority* every subsystem queries for
+reachability, cost, and next waypoint.** Objectives, powerups, carriers, escorts, entrances: all
+select by path cost and execute by roadmap-following. This does not replace the two-layer principle
+above (§1) — the engine still owns steering — it unifies everything *above* steering into one
+world-model. End state per case:
+
+- Sealed glass-pocket bait: *graph says disconnected* → skipped rationally, forever, zero strikes.
+- Reachable-but-curved item (room-36 Vauss): *graph says reachable at cost X* → grabbed mid-route
+  when X fits the detour budget, ignored while carrying — human-like on both counts.
+- The behavioral-evidence machinery (strikes, blacklists, LOS grab-gates) is not deleted — it
+  becomes a safety net that stops firing, and *that* is how workarounds retire safely.
+
+**Migration sequence** (each staged behind a `$nav` toggle, A/B'd on defaults, gates in §7):
+1. **`$nav reach` (SHIPPED 2026-07-09)** — same-room powerup selection gated by roadmap
+   connectivity (`BotRoadmapItemReach`: both endpoints hull-connect to the graph + same component;
+   fail-open when the model has no answer). First live smoke reproduced the navdump approach
+   analysis from pure geometry (Blackshark rm34 / Superlaser+Vauss rm32 → UNREACHABLE).
+2. **Path-cost detour budget** — score same-room/adjacent candidates by roadmap path length vs a
+   route-detour budget, replacing straight-distance where the graph disagrees.
+3. **Terrain tier (piece 1)** — extend the same authority outdoors; `outroute` becomes its
+   follower rather than a bolt-on.
+4. **Workaround retirement audit** — after 1–3 validate: measure strike/blacklist/dance firing
+   rates; mechanisms at ~zero become documented dead code, then get removed.
+
+**Expected to shrink toward dead code as the model takes authority:** `$nav strike` (Fix A),
+per-bot blacklists, LOS grab-gate (`require_los`), portions of the via-dance caps. **Expected to
+remain (legitimately execution-layer):** seam/hop-commit portal mechanics, stuck escalation — they
+compensate for the engine path-follower we deliberately keep (§1), scoped to portal crossing.
+
+---
+
 ## 2. Engine reference (what we build on)
 
 Verified against `aipath.cpp`, `BOA.cpp`, `AImain.cpp`, `aistruct.h`.
@@ -694,8 +738,9 @@ the pre-0.9.5 flat names remain hidden aliases. Defaults in `bot_steering.cpp`/`
 | `hardroom` | `$hardroom` | **ON** | 0.9.7 | **VALIDATED (2026-07-06)** — evidence-gated gridroute promotion: 3 via-suspensions convict a room for the level; proactive grid routing engages regardless of the static complexity gate (isengard rm36: 2000+ nodes, comp_count 1, concave — invisible to `orig_comp_count>1`). 12 rooms self-convicted in pain-order in the validation hour. Companion fix (no toggle): the 12.3.2 chain cap now YIELDS TO MEASURED PROGRESS (`BOT_VIA_CHAIN_PROGRESS` 12u — an arrival closer to the target resets the chain; rm36 suspensions 158/hr→2; QueryVia diag was 48:1 FOUND proving the cap was executing legitimate threads). |
 | `curve` | `$curveroute` | **ON** | 0.9.7 | **NEW 2026-07-08, default-on for operator POV testing; VALIDATION PENDING (POV flight test).** The isengard room-36 corkscrew fix, at the STRAIGHTENING layer (diagnostic-confirmed Fork B: soak-20260708T181641 showed room-36 paths 100% straight chords, len/chord 1.04). `ThetaStar` `SetVertex` now requires `BOT_ROADMAP_STRAIGHTEN_CLEARANCE` (13.5, ~2× hull) via `RoadmapLOSr` before shortcutting two nodes — a chord that only clears bare hull over a mound/bend is rejected, keeping the winding node-by-node path. Adjacency/edges stay at 6.7 (tight doorways thread). **Metrics positive-but-confounded** (soak-20260708T190511, continuous 3v3 L2, no clean reset — emergent grate/spawn state uncontrollable w/o engine mods): **2 captures BOTH in curve-on blocks, 0 off; room-36 stucks 5(on) vs 37(off, less time)**. Caveat: the len/chord path-shape metric did NOT move (~1.05 both) → helps by a mechanism other than the designed "winding path", not yet understood; NOT a complete room-36 solution. History: v1 hand-out fix (fatter-clearance via pick) was REVERTED — net-negative because path[] was already a chord (no off-chord node to walk back to). |
 | *(hop-commit)* | — (rides `$nav seam`) | **ON** | 0.9.7 | **BUILT 2026-07-06 eve (capture hour in flight)** — the seam push-through gains a second trigger: `BOT_HOP_PRESS_TRIGGER` (4) consecutive re-issues of the SAME adjacent hop without steer divergence (the 36→38 doorway-lip press: 174 re-issues/hr, path direct and correct, lip never threads — §7.0 0b fine-approach class). Log: `hop commit:`. |
-| `strike` | `$softstrike` | **ON** | 0.9.7 | **NEW 2026-07-09 (Fix A of the overnight-fellowship decode; isengard-fixab A/B in flight).** Closes the magnet-powerup loophole: the 0.9.6 hard-pin fairness rule ("a slow chase never strikes the item") protects exactly the items with NO clear approach that bots circle politely — isengard room 36 holds FIVE 0/8-approach items (Vauss/Homing/2×QuadLaser/NapalmRocket) that drew 5640 same-room via dances in one 13.7h soak with ZERO retirements (every abort took a soft "no strike" path: circle-window, stall-replan, mobile chase-timeout). Now a soft chase-abort **while the bot stands in the item's room** accrues `Troll_soft[]` evidence; every `BOT_TROLL_SOFT_PER_STRIKE` (2) converts to one real strike (3 strikes retire, exemptions shared via `BotTrollExempt`). Same-room gate preserves the fairness intent — cross-map aborts still count for nothing. Log: `soft-strike on powerup`. Metric: room-36 dance count + `chasing powerup in room 36` re-entries collapse; retire events appear. |
-| `dense` | `$tubedense` | **ON** (rebuild-flush) | 0.9.7 | **NEW 2026-07-09 (Fix B of the overnight-fellowship decode; isengard-fixab A/B in flight).** Thin-tube densification: a room thinner than `BOT_ROADMAP_SPACING` (20u) gets ZERO interior lattice — isengard room 40 (21×143×31 grate tunnel 20→36, the sewer shortcut) built as 2 portal seeds / 2 components / DEGENERATE, and its tube-end seeds sit past `BRIDGE_LEN` (55) so no bridge connects them → `VIA_SEARCH_FAIL` ×159 + seam churn 40→38 ×203 in the overnight log. `GrowFromSeeds` step 2c now ladders each still-cross-component portal-seed pair (or every long pair when the lattice never populated) at sub-spacing steps (≤12u), hull-fitting rung nodes with small lateral jitter, chaining edges+unions as it goes; `BOT_ROADMAP_TUBE_RUNG_MAX` (96) caps insertions. Indoor-only. Build log: `tube-densified N rungs`. Gate rooms: isengard 40 (degenerate→connected), shafts 35/38 (9/8 nodes), khazaddum room 13 (514 via-search-fails, same class). |
+| `strike` | `$softstrike` | **ON** | 0.9.7 | **VALIDATED (isengard 4v4 defaults A/B, soak-20260709T150856): rm36 chase re-entries 51(OFF)→7(first ON block)→0 for the rest of the run; 7 retirements incl the rm36 magnets (Fusioncannon, Frag) + rm32; over-striking audit vs pre-fix bside baseline CLEAN (8.8 ret/rnd before vs lower now, batteries conv UP to 83%). North-star note (§1.5): demoted to interim safety net — `$nav reach` answers the same question geometrically; expect firing rate →0.** Closes the magnet-powerup loophole: the 0.9.6 hard-pin fairness rule ("a slow chase never strikes the item") protects exactly the items with NO clear approach that bots circle politely — isengard room 36 holds FIVE 0/8-approach items (Vauss/Homing/2×QuadLaser/NapalmRocket) that drew 5640 same-room via dances in one 13.7h soak with ZERO retirements (every abort took a soft "no strike" path: circle-window, stall-replan, mobile chase-timeout). Now a soft chase-abort **while the bot stands in the item's room** accrues `Troll_soft[]` evidence; every `BOT_TROLL_SOFT_PER_STRIKE` (2) converts to one real strike (3 strikes retire, exemptions shared via `BotTrollExempt`). Same-room gate preserves the fairness intent — cross-map aborts still count for nothing. Log: `soft-strike on powerup`. Metric: room-36 dance count + `chasing powerup in room 36` re-entries collapse; retire events appear. |
+| `dense` | `$tubedense` | **ON** (rebuild-flush) | 0.9.7 | **v2 MECHANICALLY VALIDATED, payoff half-proven. v1 falsified on the gate room by the first A/B (rm40 rebuilt with ZERO rungs — walk anchored on the grate-blocked seed; chord clipped walls); v2 (`a14ea2a9`) walks BOTH ends + offers bbox-centerline rung candidates + logs `tube-densify FAILED` (never silent again). Post-v2: rm40 4 rungs, rm41 3, rm29 90; khazaddum rm13 laddered and its via-search-fails went 514/rnd (overnight baseline) → 0 (gate round) = first payoff evidence; isengard nv40 symptom didn't reproduce in either A/B arm (inconclusive there). FAILED lines on d≈20 door-scale rooms are expected noise.** Thin-tube densification: a room thinner than `BOT_ROADMAP_SPACING` (20u) gets ZERO interior lattice — isengard room 40 (21×143×31 grate tunnel 20→36, the sewer shortcut) built as 2 portal seeds / 2 components / DEGENERATE, and its tube-end seeds sit past `BRIDGE_LEN` (55) so no bridge connects them → `VIA_SEARCH_FAIL` ×159 + seam churn 40→38 ×203 in the overnight log. `GrowFromSeeds` step 2c now ladders each still-cross-component portal-seed pair (or every long pair when the lattice never populated) at sub-spacing steps (≤12u), hull-fitting rung nodes with small lateral jitter, chaining edges+unions as it goes; `BOT_ROADMAP_TUBE_RUNG_MAX` (96) caps insertions. Indoor-only. Build log: `tube-densified N rungs`. Gate rooms: isengard 40 (degenerate→connected), shafts 35/38 (9/8 nodes), khazaddum room 13 (514 via-search-fails, same class). |
+| `reach` | `$reachgate` | **ON** | 0.9.7 | **NEW 2026-07-09 night (north star §1.5, increment 1; overnight A/B in flight).** Single-authority reachability: same-room powerup selection is gated by `BotRoadmapItemReach` — the item must hull-connect to the room roadmap in the bot's own component, i.e. the system that will DELIVER the bot gets the final word, not line-of-sight. Verdicts are geometric (correct from frame one, no learning period), cached per item per roadmap build (`BotRoadmapSerial`), fail-OPEN when the model has no answer (degenerate/no roadmap, outdoor, bot unconnectable). Flags/orbs exempt (`BotTrollExempt`, mirroring strike policy). First smoke reproduced the navdump approach analysis from pure geometry. Log: `item-reach '<name>' (room N): REACHABLE\|UNREACHABLE`. A/B note: run with `strike` OFF in both arms or Fix A's retirement masks the comparison. |
 | `glass` | `$glassroute` | **ON** | 0.9.6 | **VALIDATED** (bsidectf L3: 55 proactive clears, first bot captures; 0 false fires on glass-free maps) — Stage 2b: `TF_BREAKABLE` glass portals get finite `BOT_PORTAL_GLASS_PENALTY` (120) instead of IMPASSABLE, re-aligning the router with BOA (which already routes through glass). Glass-sealed rooms stop reading "sealed" → their powerups become selectable. Toggling flushes the geocost/passability caches (`BotGeoCostInvalidate` — the $gridbridge lesson). Gate map: **bsidectf L3** (207 glass portals, 69 "sealed" powerups). Expect via-fail noise at glass lines (via can't see through the pane; the breaker opens it on press/approach). |
 
 Watch out for the near-collision: **`$nav bridge` = the 0.9.4 corner bridge; the OLD `$navbridge` = the

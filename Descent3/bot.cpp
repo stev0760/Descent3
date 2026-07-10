@@ -66,6 +66,7 @@ bool Bot_debug_movement = false; // Toggle with "$botmov on/off" console command
 bool Bot_grate_clear_enabled = true;      // $nav grate — proactive destroyable-obstacle clearing (0.9.6 Stage 2)
 bool Bot_objective_commit_enabled = true; // $nav commit — opportunistic-only powerups while on an objective route
 bool Bot_soft_strike_enabled = true;      // $nav strike — same-room soft chase-aborts accrue troll strikes (0.9.7)
+bool Bot_reach_gate_enabled = true;       // $nav reach — roadmap-gated same-room powerup selection (north star inc. 1)
 // $nav replan — Stage 3 progress-monitor replan (0.9.7). DEFAULT OFF pending the outdoor A/B
 // (2026-07-04): operator observed replan-era isengard bots nav-churning (hill re-entry loop, tunnel
 // turn-arounds) where pre-replan builds fought outside more — suspicion is the fast-window
@@ -3014,6 +3015,52 @@ static void BotTrollSoftStrike(int handle, const object *bot_obj, const char *bo
   }
 }
 
+// --- $nav reach: single-authority reachability gate (architecture north star, increment 1) ---
+// Selection asks the ROADMAP whether a same-room item is deliverable instead of asking line-of-
+// sight (see-through != passable — the magnet class Fix A retires behaviorally, this answers
+// geometrically, and reachable-but-curved items stay selectable so bots grab them like humans).
+// The item-side verdict is bot-independent, so it is cached per handle per roadmap build; the
+// bot-side connect is re-checked per query (positions move). Fail-open on -1: legacy behavior.
+#define BOT_REACH_TABLE_SIZE 128
+static int Reach_handles[BOT_REACH_TABLE_SIZE];
+static int8_t Reach_verdicts[BOT_REACH_TABLE_SIZE];
+static int Reach_serial = 0;
+
+static bool BotReachGateAllows(object *bot_obj, object *p) {
+  if (!Bot_reach_gate_enabled || OBJECT_OUTSIDE(bot_obj) || OBJECT_OUTSIDE(p))
+    return true;
+  if (p->roomnum != bot_obj->roomnum)
+    return true; // v1 scope: same-room selection only (where the LOS gate misleads)
+  if (BotTrollExempt(p->handle))
+    return true; // objective items (flags/orbs) are never gated, mirroring strike policy
+  if (Reach_serial != BotRoadmapSerial()) {
+    for (int i = 0; i < BOT_REACH_TABLE_SIZE; i++)
+      Reach_handles[i] = OBJECT_HANDLE_NONE;
+    Reach_serial = BotRoadmapSerial();
+  }
+  int slot = -1, free_slot = -1;
+  for (int i = 0; i < BOT_REACH_TABLE_SIZE; i++) {
+    if (Reach_handles[i] == p->handle) {
+      slot = i;
+      break;
+    }
+    if (free_slot < 0 && Reach_handles[i] == OBJECT_HANDLE_NONE)
+      free_slot = i;
+  }
+  if (slot >= 0)
+    return Reach_verdicts[slot] != 0; // cached geometric verdict (item-side; bot-independent)
+  int verdict = BotRoadmapItemReach(bot_obj->roomnum, bot_obj->pos, p->pos);
+  if (verdict < 0)
+    return true; // unknown — the model has no answer here; keep legacy behavior, don't cache
+  if (free_slot >= 0) {
+    Reach_handles[free_slot] = p->handle;
+    Reach_verdicts[free_slot] = (int8_t)verdict;
+    LOG_DEBUG.printf("BOT NAV: item-reach '%s' (room %d): %s", Object_info[p->id].name, (int)p->roomnum,
+                     verdict ? "REACHABLE (graph-connected)" : "UNREACHABLE (no hull-clear graph link)");
+  }
+  return verdict != 0;
+}
+
 static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy, int min_priority = 0,
                               float max_dist_override = -1.0f, bool require_los = false) {
   int slot = Bots[bot_index].player_slot;
@@ -3104,6 +3151,14 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
       if (!BotHasLOS(obj, p))
         continue;
     }
+
+    // $nav reach (north star, increment 1): the roadmap — the system that will actually deliver the
+    // bot — gets the final word on same-room candidates. An item with no hull-clear link to the room
+    // graph is undeliverable no matter how visible it is (the magnet class): skip it rationally, no
+    // chase, no dance, no strike needed. Reachable-but-curved items PASS and get grabbed like a
+    // human would — via the winding route, not the sight-line.
+    if (!BotReachGateAllows(obj, p))
+      continue;
 
     // Name-based prioritization (case-insensitive substring match)
     const char *raw = Object_info[p->id].name;

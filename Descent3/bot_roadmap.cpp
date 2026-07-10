@@ -147,6 +147,8 @@ RoadmapRoom *g_room[MAX_ROOMS] = {nullptr};
 RoadmapRoom *g_region[MAX_BOA_TERRAIN_REGIONS] = {nullptr};
 int g_checksum = 0;
 
+int g_build_serial = 1; // bumped on every flush — callers key caches of roadmap-derived answers to this
+
 void FreeAll() {
   for (int i = 0; i < MAX_ROOMS; i++) {
     delete g_room[i];
@@ -156,6 +158,7 @@ void FreeAll() {
     delete g_region[i];
     g_region[i] = nullptr;
   }
+  g_build_serial++;
 }
 
 void ResetIfStale() {
@@ -821,6 +824,35 @@ int NearestVisible(RoadmapRoom *rr, const vector &pos) {
   return best;
 }
 
+// Bounded graph-connect probe: nearest node to pos with a hull-clear line, testing only the
+// max_cand closest nodes within max_radius. NearestVisible probes every closer node until one
+// clears — fine when a connection EXISTS (a few probes), but a genuinely disconnected point in a
+// 9000-node room would sweep-probe the entire graph. The reach gate needs the disconnected answer
+// cheaply: no clear link among the nearest two dozen nodes IS the verdict (a ship our navigation
+// could deliver would have lattice neighbours within a spacing or two).
+int NearestVisibleBounded(RoadmapRoom *rr, const vector &pos, int max_cand, float max_radius) {
+  const int N = (int)rr->node.size();
+  std::vector<std::pair<float, int>> cand;
+  cand.reserve(64);
+  for (int i = 0; i < N; i++) {
+    float d = Dist(pos, rr->node[i]);
+    if (d <= max_radius)
+      cand.emplace_back(d, i);
+  }
+  if (cand.empty())
+    return -1;
+  if ((int)cand.size() > max_cand) {
+    std::partial_sort(cand.begin(), cand.begin() + max_cand, cand.end());
+    cand.resize(max_cand);
+  } else {
+    std::sort(cand.begin(), cand.end());
+  }
+  for (auto &c : cand)
+    if (RoadmapLOS(rr, pos, rr->node[c.second]))
+      return c.second;
+  return -1;
+}
+
 // Nearest roadmap node to pos (no LOS requirement — used for the goal anchor).
 int Nearest(RoadmapRoom *rr, const vector &pos) {
   int best = -1;
@@ -920,6 +952,32 @@ BotViaResult QueryVia(RoadmapRoom *rr, object *obj, int goal, vector *via_out) {
 } // namespace
 
 void BotRoadmapInvalidate() { FreeAll(); }
+
+int BotRoadmapSerial() { return g_build_serial; }
+
+// $nav reach (architecture north star, increment 1): SINGLE-AUTHORITY reachability. "Can our
+// navigation actually deliver a ship from from_pos to item_pos inside this room?" answered by the
+// same model that does the delivering: both endpoints must connect to the room roadmap (a
+// hull-clear line to a nearby node) and land in the same component. Selection previously asked
+// line-of-sight — but see-through != passable (the magnet-powerup class: visible across a concave
+// room's inner wall, approachable by nothing). Verdicts are geometric, not behavioral: no strikes,
+// no learning period, correct from the first frame.
+//   returns  1 = reachable (graph path exists)
+//            0 = unreachable (item connects to no node at hull clearance, or cross-component)
+//           -1 = unknown (no/degenerate roadmap, bot itself unconnectable) — callers FAIL OPEN to
+//                legacy behavior; the model only overrides when it genuinely has an answer.
+int BotRoadmapItemReach(int room, const vector &from_pos, const vector &item_pos) {
+  RoadmapRoom *rr = Get(room);
+  if (!rr || rr->degenerate || (int)rr->node.size() < 2)
+    return -1;
+  int a = NearestVisibleBounded(rr, from_pos, 24, 120.0f);
+  if (a < 0)
+    return -1; // the BOT can't connect where it stands — the answer says nothing about the item
+  int b = NearestVisibleBounded(rr, item_pos, 24, 120.0f);
+  if (b < 0)
+    return 0; // no hull-clear link from the item to the graph — undeliverable by our navigation
+  return (rr->comp[a] == rr->comp[b]) ? 1 : 0;
+}
 
 BotViaResult BotRoadmapFindVia(object *obj, const vector &target_pos, int target_room, vector *via_out,
                                bool proactive) {
