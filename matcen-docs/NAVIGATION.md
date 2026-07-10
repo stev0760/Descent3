@@ -336,6 +336,80 @@ the substrate is flanking-specific — the hook exists so the behavior layer can
 function without a re-architecture. Sequenced after the substrate is the stable default (§7.0
 roadmap, Stage 5).
 
+### 3.7 Terrain tier — piece 1 DESIGN (2026-07-10, north star §1.5 step 3; NOT YET BUILT)
+
+**Goal.** Cross-terrain objective legs (interior→terrain→interior: isengard flag runs, bree
+carrier returns, bedlam entrance approaches) get PLANNED routes instead of beelines. This is the
+last missing tier of the single spatial authority and the sole blocker on the zero-capture terrain
+maps (isengard 718/731 outdoor stucks = entrance-seek beeline miss; isle conversion 6% chronic =
+carriers lost flying home).
+
+**Substrate verified ready (2026-07-10):** isengard region 1 lattice = 4096+ nodes, **1
+component**, bbox spans the valley conflict cells (~x2144,z1920 inside x[1789,2623]×z[1442,2672]);
+bree = 1893 nodes, 1 component. No lattice-extent work needed first — the around-routes exist in
+the graph today; nothing consults them at plan time.
+
+**Engine alignment.** BOA itself already models terrain regions as extra rooms
+(`BOA_cost_array[MAX_ROOMS+MAX_BOA_TERRAIN_REGIONS][]`, `BOA_INDEX(x) = Highest_room_index+1+r`,
+`BOA_connect[region][] = {roomnum, portal}` door table, region from a cell via
+`TERRAIN_REGION(CELLNUM(roomnum))`). Our `BotRouteDijkstra` (bot_steering.cpp:1115) searches
+interior portals only. Piece 1 does NOT rewrite that Dijkstra.
+
+**Design: hierarchical composition (HPA\*-style), not node-space surgery.** A cross-terrain route
+is a 3-segment plan composed from parts that already exist and are individually validated:
+
+```
+[interior: bot room → exit door E]  [terrain: E → entry door B over region lattice]  [interior: B → goal]
+        BotComputeRoute                GetOutdoor(r) ThetaStar path length              BotComputeRoute
+```
+
+- **Trigger:** goal-issue when bot and goal rooms have no finite interior route
+  (`BotComputeRoute == -1`) OR one endpoint is outdoors — today's beeline-fallback branch in
+  `BotSetRoutedGoal` (bot.cpp:~2128) becomes the composer's hook. No change on maps where interior
+  routes exist (indoor pool untouched — the regression guard).
+- **Door-pair selection:** enumerate candidate (E, B) pairs from `BOA_connect[region][]`
+  (per-region door count is small). Score = interiorCost(bot→E.room) + latticeCost(E→B) +
+  interiorCost(B.room→goal). Interior terms = `BotComputeRouteCost` (wind/glass/geo/penalty-aware
+  — the `outtier` cost model, already validated for entrance choice). Lattice term = **Theta\*
+  path length over the region roadmap between the two door approach points** — the honest
+  around-the-hill cost (Euclidean lies in exactly the isengard case: over-the-hill chord vs
+  valley route). Door-pair lattice costs cached per region per roadmap serial (lazy).
+- **Bot/goal outdoors:** the outdoor endpoint replaces its door with the position itself
+  (lattice cost from bot pos / to dropped-flag pos); degenerate cases (both outdoors same region)
+  collapse to a single lattice segment.
+- **Execution, per segment:** interior segments = existing wp/seam/hop machinery unchanged.
+  Terrain segment = region-lattice following (the `outroute` delivery skeleton — string-pull the
+  Theta\* path, waypoints advance at goal-completion cadence) under the two §7.0 staged-block
+  correctness rules: **(1) coverage-verified FOUND** — the string-pull must reach within R of the
+  target approach point at PLAN time or the plan is rejected (never "best-effort toward": the
+  orbit class); **(2) monotone progress** — every handed-out waypoint strictly shrinks distance
+  to the segment target, else release and replan the segment ONCE (rate-latched). Beeline
+  pre-check retained: a hull-clear straight line to the segment target skips lattice-following
+  entirely (mysterious_isle/open-terrain guard — the bedlam-collapse lesson: never
+  lattice-follow when the beeline is fine).
+- **Arrival at B:** existing entrance stage (`entry` standoff + commit, validated) unchanged.
+  Carriers and escorts ride automatically (both route through `BotSetRoutedGoal` — closes the
+  known `!follow`-dead-outdoors gap).
+
+**Staging.** New toggle **`$nav troute`** (terrain-route tier), default ON for test builds, owning
+the composer + its follower path outright (`outroute` stays a retired legacy lever, default OFF —
+its reactive-redirect design is superseded; its delivery skeleton is reused as code). Plan state
+per bot: {exit door, entry door, segment index, region path handle}; invalidated on goal change,
+death, or roadmap serial bump.
+
+**Not in v1 (sequenced):** grate-route awareness (operator-confirmed natural isengard entry
+through the blastable grate tunnels: finite grate cost at the door-pair layer, analogous to 0.9.6
+glass — increment 2); region↔region terrain edges (multi-region maps; none in the current gate
+pool); replacing `BotResolveOutdoorEntrance` (the composer subsumes it when troute is ON, but the
+resolver remains the fallback path).
+
+**Validation gates (defaults env, instrument-first):** (a) isengard 4v4 A/B troute off/on —
+entrance-miss share of outdoor stucks (baseline 718/731) collapses, leg distances shrink
+monotonically, first picks/caps; (b) bree carrier returns (ground-pin count); (c) **bedlam
+Polaris/Plutonium no-regression soak is MANDATORY before any default-on ships** (outroute v1 died
+here: 0.9.3 gold = Polaris 15.6 caps/rnd, conv 56–69%); (d) mysterious_isle conversion (6%
+chronic baseline) as the open-terrain guard; (e) fellowship gate unchanged.
+
 ---
 
 ## 4. Steering layer — the engine plus thin overrides
