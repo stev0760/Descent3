@@ -138,6 +138,12 @@
 #define BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT 12.0f // stuck if no room change for this long (Phase 4.01: 8→12)
 #define BOT_OUTDOOR_PROGRESS_DIST 50.0f         // outdoors (no room transitions) progress = moving at least this far
 #define BOT_OUTDOOR_APPROACH_OFFSET 12.0f       // 12.6: aim this far OUT of a structure door (clear of facade/open-door)
+// $nav troute2 (v2 cost-comparison route choice, NAVIGATION.md 3.7): a terrain plan is ADOPTED over
+// an existing interior route only when meaningfully cheaper (factor = hysteresis + exposure tax),
+// and comparison composes are only attempted at all when the interior route is long enough to
+// plausibly lose (floor) — short indoor hops never pay the composer's Dijkstras.
+#define BOT_TROUTE_ADOPT_FACTOR 0.85f
+#define BOT_TROUTE_ADOPT_MIN_INTERIOR 500.0f
 #define BOT_ENTRY_COMMIT_DIST 30.0f  // 8.2 ($nav entry): within this of the standoff point -> commit THROUGH the door
 #define BOT_ENTRY_PUSH_DIST 25.0f    // 8.2: aim this far INSIDE the door room (> engine arrive radius: arrival = entry)
 #define BOT_SEAM_RETRY_TIME 5.0f     // $nav seam: one redirect per waypoint room per this window (anti-churn latch)
@@ -459,9 +465,11 @@ struct bot_info {
   int troute_entry_room;     // B: goal-side entrance room (forced into the entrance stage)
   int troute_entry_portal;   //    that door's portal index in B
   float troute_prev_dist;    // monotone-progress watermark on the terrain segment (rule 2)
-  float troute_reject_until; // negative-cache: composer found no pair; don't retry until then
+  float troute_reject_until; // negative-cache: composer found no pair (or lost the v2 comparison)
   int8_t troute_stalls;      // consecutive non-shrinking goal-issues on the terrain segment
   int8_t troute_replans;     // rate latch: one replan per plan, then fall back to legacy nav
+  int8_t troute_crossed;     // v2: bot has flown the terrain segment — completion requires this
+                             // when the plan was ADOPTED by cost choice (an interior route existed)
 
   // 0.9.7 Stage 3 progress-monitor replan state
   vector stall_check_pos;   // position at the start of the current sample window

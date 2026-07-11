@@ -2145,6 +2145,7 @@ static bool BotTrouteRedirect(int bot_index, object *obj, int *goal_room, vector
     // next indoor position, or fall back to legacy resolve if it happens again.
     if (bi.troute_goal_room != real_goal)
       return false;
+    bi.troute_crossed = 1; // v2: flying the terrain segment — plan may complete on re-entry
     vector bpnt = Rooms[bi.troute_entry_room].portals[bi.troute_entry_portal].path_pnt;
     float d = vm_VectorDistanceQuick(&obj->pos, &bpnt);
     if (d < bi.troute_prev_dist - 2.0f) {
@@ -2159,23 +2160,39 @@ static bool BotTrouteRedirect(int bot_index, object *obj, int *goal_room, vector
     }
     return false;
   }
-  // Indoors: plan complete when the interior router can finish the job.
-  if (BotComputeRoute(obj->roomnum, real_goal) >= 0) {
-    if (bi.troute_goal_room == real_goal) {
-      LOG_DEBUG.printf("BOT NAV: '%s' troute complete — interior route resumed (goal rm%d)", bi.callsign, real_goal);
-      bi.troute_goal_room = -1;
-      bi.troute_replans = 0;
-    }
+  // Indoors: does the interior router have a finite route? Under v1 that always completed/blocked
+  // the plan; under v2 ($nav troute2) an existing interior route is a candidate to BEAT, and a
+  // cost-adopted plan only completes once the bot has actually flown the terrain segment
+  // (troute_crossed) — otherwise seg0 would self-cancel the moment it was adopted.
+  const float interior_cost = BotComputeRouteCost(obj->roomnum, real_goal);
+  if (interior_cost < 1e30f && bi.troute_goal_room == real_goal && bi.troute_crossed) {
+    LOG_DEBUG.printf("BOT NAV: '%s' troute complete — interior route resumed (goal rm%d)", bi.callsign, real_goal);
+    bi.troute_goal_room = -1;
+    bi.troute_replans = 0;
     return false;
   }
   if (bi.troute_goal_room != real_goal) {
     if (Gametime < bi.troute_reject_until)
       return false;
+    // v2 adoption gate: with an interior route in hand, only pay the composer's Dijkstras when
+    // that route is long enough to plausibly lose the comparison.
+    if (interior_cost < 1e30f &&
+        (!Bot_troute_compare_enabled || interior_cost < BOT_TROUTE_ADOPT_MIN_INTERIOR))
+      return false;
     int er, ep, br, bp, reg;
     float total;
     if (!BotTrouteCompose(obj, real_goal, &er, &ep, &br, &bp, &reg, &total)) {
       bi.troute_reject_until = Gametime + 10.0f; // negative-cache: don't re-Dijkstra every issue
-      LOG_DEBUG.printf("BOT NAV: '%s' troute REJECT — no door pair reaches goal rm%d", bi.callsign, real_goal);
+      if (interior_cost >= 1e30f)
+        LOG_DEBUG.printf("BOT NAV: '%s' troute REJECT — no door pair reaches goal rm%d", bi.callsign, real_goal);
+      return false;
+    }
+    if (interior_cost < 1e30f && total >= interior_cost * BOT_TROUTE_ADOPT_FACTOR) {
+      bi.troute_reject_until = Gametime + 10.0f; // comparison lost — interior route stands
+      // Losses must be visible (the silent-filter lesson): this line is what distinguishes
+      // "v2 never fires" from "v2 fires and the interior route is genuinely cheaper".
+      LOG_DEBUG.printf("BOT NAV: '%s' troute v2 keep-interior: terrain %.0f vs interior %.0f (goal rm%d)",
+                       bi.callsign, total, interior_cost, real_goal);
       return false;
     }
     bi.troute_goal_room = real_goal;
@@ -2187,8 +2204,15 @@ static bool BotTrouteRedirect(int bot_index, object *obj, int *goal_room, vector
     bi.troute_entry_portal = bp;
     bi.troute_prev_dist = 1e30f;
     bi.troute_stalls = 0;
-    LOG_DEBUG.printf("BOT NAV: '%s' troute plan: exit rm%d -> region %d lattice -> entry rm%d (goal rm%d, cost %.0f)",
-                     bi.callsign, er, reg, br, real_goal, total);
+    bi.troute_crossed = 0;
+    if (interior_cost < 1e30f)
+      LOG_DEBUG.printf(
+          "BOT NAV: '%s' troute v2 ADOPT: terrain %.0f beats interior %.0f — exit rm%d -> region %d -> entry rm%d "
+          "(goal rm%d)",
+          bi.callsign, total, interior_cost, er, reg, br, real_goal);
+    else
+      LOG_DEBUG.printf("BOT NAV: '%s' troute plan: exit rm%d -> region %d lattice -> entry rm%d (goal rm%d, cost %.0f)",
+                       bi.callsign, er, reg, br, real_goal, total);
   }
   // Seg0: interior nav toward the exit door; in the exit room, commit OUT (mirror of entry stage 1).
   if (obj->roomnum == bi.troute_exit_room) {

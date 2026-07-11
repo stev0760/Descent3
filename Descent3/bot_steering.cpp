@@ -1189,6 +1189,14 @@ static float BotRouteDijkstra(int from_room, int goal_room, int *first_hop_out) 
           base += rev;
       }
       float edge = base + geo + BotPortalDynPenalty(r, p);
+      // $nav hardcost: price MEASURED traversal pain into the route. Hard-room promotion
+      // ($nav hardroom, validated) marks rooms that accumulate via-suspensions; without this term
+      // the router prices such rooms by geometry alone and keeps sending everyone through them —
+      // the isengard corkscrew read 1171-1702 while the (flyable) valley read 1822-2784, so
+      // troute2's honest comparison could never choose the route the map was designed around.
+      // Evidence-based, per-room, resets each level with the promotion table.
+      if (Bot_hard_cost_enabled && BotRoadmapRoomIsHard(nr))
+        edge += BOT_HARD_ROOM_ROUTE_PENALTY;
       if (wdir > 0) {
         // Downwind hop: the tunnel's push makes the crossing near-free — bias the route toward
         // the intake when the goal is on the far side. Floor keeps Dijkstra weights positive.
@@ -1437,6 +1445,11 @@ bool BotResolveOutdoorEntrance(const object *obj, int objective_room, int *out_r
 // --- $nav troute (piece 1, NAVIGATION.md 3.7): cross-terrain route composer -------------------
 
 bool Bot_troute_enabled = true; // terrain tier of the single spatial authority (test-build default)
+// $nav troute2 (v2): compose the terrain plan even when an interior route EXISTS and take the
+// cheaper (v1 composed only on interior-route failure — a carrier never chose the valley while
+// the corkscrew existed). Also the seam the 3.6 flanking hook plugs into (tactical cost term).
+bool Bot_troute_compare_enabled = true;
+bool Bot_hard_cost_enabled = true; // $nav hardcost: price hard-room evidence into route edges
 
 // Door-pair lattice-cost cache: BOA_connect entries are static per level; the region roadmap is
 // static per build. Costs cached by connect INDEX pair, keyed to the roadmap serial. -2 = not yet

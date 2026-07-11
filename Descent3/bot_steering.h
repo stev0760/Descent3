@@ -251,6 +251,11 @@ bool BotResolveOutdoorEntrance(const object *obj, int objective_room, int *out_r
 // door pair per roadmap build. Also upgrades BotResolveOutdoorEntrance's bot->door term from
 // Euclidean to lattice cost (the Euclidean term is what aims bots at the over-the-hill door).
 extern bool Bot_troute_enabled;
+extern bool Bot_troute_compare_enabled; // $nav troute2: v2 cost-comparison route choice (see .cpp)
+// $nav hardcost: hard-room-promoted rooms ($nav hardroom evidence) add this to route edges INTO
+// them, so measured traversal pain is priced into every route/comparison (single cost language).
+extern bool Bot_hard_cost_enabled;
+#define BOT_HARD_ROOM_ROUTE_PENALTY 800.0f
 bool BotTrouteCompose(const object *obj, int goal_room, int *out_exit_room, int *out_exit_portal,
                       int *out_entry_room, int *out_entry_portal, int *out_region, float *out_total);
 
