@@ -19,6 +19,13 @@ about half of all chase timeouts to 5–11%. **Currently shipped default-off** (
 to enable) while an outdoor side effect is investigated — on terrain maps the constant
 re-planning appears to keep bots churning navigation instead of fighting.
 
+- **Terrain-aware routing** (`$nav troute`, default on). On maps where bases and objectives are
+  separated by outdoor terrain, bots now *plan* the outdoor crossing — exit door, a route around
+  hills and buildings over the outdoor waypoint lattice, entry door on the far side — instead of
+  flying straight at the goal and pressing into the hillside. Door choice also stopped being
+  fooled by straight-line distance: the classic *Tower of Isengard* failure where every bot aimed
+  at the main door "through the hill" is gone (87% of entrance attempts → 4% in A/B). Validated
+  across four map pools with the stock Bedlam outdoor maps held as a hard no-regression gate.
 - **Reachability-aware powerup selection** (`$nav reach`, default on). Bots now ask their own
   navigation model — not just their eyes — before chasing a powerup in the room they're in. An item
   that is visible but has no flyable approach (tucked behind a curve, recessed in a pocket) is
