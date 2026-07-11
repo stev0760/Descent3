@@ -40,6 +40,9 @@
 #include "vecmat.h"
 #include "BOA.h"
 #include "log.h"
+#include "game.h"        // Gametime ($nav heal recheck throttle)
+#include "gametexture.h" // TF_BREAKABLE ($nav heal: glass-blocked portal watch list)
+#include "object.h"      // per-room object chain ($nav heal: live grate/door-object signature)
 
 #include <algorithm>
 #include <cfloat>
@@ -85,6 +88,7 @@ bool Bot_grid_always = false;
 // complete room-36 solution. `$nav curve off` disables.
 bool Bot_curve_route_enabled = true;
 bool Bot_tube_densify_enabled = true; // $nav dense: thin-tube ladder rungs (0.9.7 Fix B; rebuild-flush toggle)
+bool Bot_roadmap_heal_enabled = true; // $nav heal: rebuild a room's roadmap when its glass/grates open (0.9.7)
 
 // --- Evidence-gated hard-room promotion (0.9.7, the isengard room-36 lock) ---------------------
 // The static complexity gate (orig_comp_count>1) misses rooms that are SINGLE-component yet
@@ -141,6 +145,16 @@ struct RoadmapRoom {
   bool degenerate = false; // no usable interior roadmap -> caller falls back to the skeleton
   bool outdoor = false;    // false: indoor room (probe from probe_room); true: terrain region
   int probe_room = -1;     // indoor fvi start room for the segment probe (unused when outdoor)
+
+  // $nav heal (0.9.7, the stale-glass fix): roadmaps build while panes/grates are intact — their
+  // doorway seeds orphan and their legs read blocked — and nothing ever told the model when the
+  // world opened up ($nav glass smashing works at the ROUTER layer; this layer stayed frozen —
+  // batteries lobby rm3: 16 orphan seeds against the conference-room glass; isengard grate tubes).
+  // At build we record WHICH portals were glass-blocked and how many door-class objects live
+  // nearby; Get() rechecks on a throttle and rebuilds the room when the world has opened.
+  std::vector<int> heal_watch; // portal indices that were breakable-glass-blocked at build time
+  int heal_door_sig = -1;      // live OBJ_DOOR count in room + portal neighbors at build time
+  float heal_next_check = 0.0f;
 };
 
 RoadmapRoom *g_room[MAX_ROOMS] = {nullptr};
@@ -613,6 +627,57 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
                    rr->complex ? " [COMPLEX]" : "");
 }
 
+// --- $nav heal helpers -------------------------------------------------------------------------
+
+// Hull-sweep straight through a portal's doorway: fails while an intact pane/grate fills it,
+// passes once the world has opened. The runtime freshness test for the heal watch list.
+bool PortalSweepOpen(int room_idx, int portal_idx) {
+  room &rm = Rooms[room_idx];
+  const portal &po = rm.portals[portal_idx];
+  const vector n = rm.faces[po.portal_face].normal; // points INTO the room
+  vector a = po.path_pnt + n * 8.0f;
+  vector b = po.path_pnt - n * 8.0f;
+  return BotSegmentClear(room_idx, a, b, BOT_ROADMAP_CLEARANCE);
+}
+
+// Is either face of this portal a breakable pane? (Texture flag lives on either room's face.)
+bool PortalHasBreakable(int room_idx, int portal_idx) {
+  room &rm = Rooms[room_idx];
+  const portal &po = rm.portals[portal_idx];
+  int f = po.portal_face;
+  if (f >= 0 && f < rm.num_faces && rm.faces[f].tmap >= 0 && (GameTextures[rm.faces[f].tmap].flags & TF_BREAKABLE))
+    return true;
+  int cr = po.croom;
+  if (cr >= 0 && cr <= Highest_room_index && Rooms[cr].used && po.cportal >= 0 &&
+      po.cportal < Rooms[cr].num_portals) {
+    const portal &cp = Rooms[cr].portals[po.cportal];
+    int cf = cp.portal_face;
+    if (cf >= 0 && cf < Rooms[cr].num_faces && Rooms[cr].faces[cf].tmap >= 0 &&
+        (GameTextures[Rooms[cr].faces[cf].tmap].flags & TF_BREAKABLE))
+      return true;
+  }
+  return false;
+}
+
+// Live door-class objects in a room + its portal neighbors (grates are OBJ_DOOR that DIE when
+// shot out — the count dropping is the grate-destruction signal; normal doors animate but never
+// leave the chain, so they hold the signature steady).
+int NearbyDoorObjectCount(int room_idx) {
+  int count = 0;
+  auto count_room = [&](int r) {
+    if (r < 0 || r > Highest_room_index || !Rooms[r].used)
+      return;
+    for (int objnum = Rooms[r].objects; objnum != -1; objnum = Objects[objnum].next)
+      if (Objects[objnum].type == OBJ_DOOR)
+        count++;
+  };
+  count_room(room_idx);
+  room &rm = Rooms[room_idx];
+  for (int p = 0; p < rm.num_portals; p++)
+    count_room(rm.portals[p].croom);
+  return count;
+}
+
 // Build the per-room volumetric roadmap (indoor). room_idx must be a valid interior room.
 RoadmapRoom *Build(int room_idx) {
   RoadmapRoom *rr = new RoadmapRoom();
@@ -620,6 +685,16 @@ RoadmapRoom *Build(int room_idx) {
   rr->probe_room = room_idx;
   room &rm = Rooms[room_idx];
   const int npc = rm.num_portals;
+
+  // $nav heal watch list: portals that are breakable-glass AND currently sweep-blocked — the
+  // panes whose later shattering must trigger a rebuild of this room's model.
+  if (Bot_roadmap_heal_enabled) {
+    for (int p = 0; p < npc; p++)
+      if (PortalHasBreakable(room_idx, p) && !PortalSweepOpen(room_idx, p))
+        rr->heal_watch.push_back(p);
+    rr->heal_door_sig = NearbyDoorObjectCount(room_idx);
+    rr->heal_next_check = Gametime + 3.0f;
+  }
 
   // Portal seeds — guaranteed-playable points (a ship entered through each). Each starts its own component;
   // growth/seam edges union them where open air actually connects.
@@ -722,6 +797,28 @@ RoadmapRoom *Get(int room_idx) {
     return nullptr;
   if (Rooms[room_idx].flags & RF_EXTERNAL)
     return nullptr; // outdoor uses the per-region roadmap (GetOutdoor)
+  // $nav heal: the world opens up mid-round (panes shattered, grates shot out) and a frozen model
+  // strands the router's plans in reality-contradiction. Recheck this room's watch list on a
+  // throttle; rebuild when a watched pane now sweeps clear or a nearby door-object died.
+  if (Bot_roadmap_heal_enabled && g_room[room_idx] && !g_room[room_idx]->outdoor &&
+      Gametime >= g_room[room_idx]->heal_next_check) {
+    RoadmapRoom *rr = g_room[room_idx];
+    rr->heal_next_check = Gametime + 3.0f;
+    bool opened = false;
+    for (int p : rr->heal_watch)
+      if (PortalSweepOpen(room_idx, p)) {
+        opened = true;
+        break;
+      }
+    if (!opened && rr->heal_door_sig >= 0 && NearbyDoorObjectCount(room_idx) != rr->heal_door_sig)
+      opened = true;
+    if (opened) {
+      LOG_DEBUG.printf("BOT: roadmap room %d HEAL — glass/grate opened, rebuilding", room_idx);
+      delete g_room[room_idx];
+      g_room[room_idx] = nullptr;
+      g_build_serial++; // roadmap-derived caches (reach verdicts, troute door pairs) must refresh
+    }
+  }
   if (!g_room[room_idx])
     g_room[room_idx] = Build(room_idx);
   return g_room[room_idx];

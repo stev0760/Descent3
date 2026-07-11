@@ -793,6 +793,8 @@ static const NavToggle Nav_toggles[] = {
      "v2 route choice: compose terrain plan even when an interior route exists, take the cheaper", false, false},
     {"hardcost", "hardroomcost", nullptr, &Bot_hard_cost_enabled,
      "price hard-room suspension evidence into route edges (router learns measured traversal pain)", false, false},
+    {"heal", "roadmapheal", nullptr, &Bot_roadmap_heal_enabled,
+     "stale-glass fix: rebuild a room's roadmap when its watched panes/grates open mid-round", false, false},
     {"terrain", "terrainsteer", nullptr, &Bot_terrain_steering_enabled, "outdoor terrain steering / entrance redirect",
      true, false},
     {"bnodes", "pseudobnodes", nullptr, &Bot_pseudo_bnodes_enabled, "pseudo-BNode skeleton interior waypoints", true,

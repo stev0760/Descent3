@@ -142,7 +142,9 @@
 // an existing interior route only when meaningfully cheaper (factor = hysteresis + exposure tax),
 // and comparison composes are only attempted at all when the interior route is long enough to
 // plausibly lose (floor) — short indoor hops never pay the composer's Dijkstras.
-#define BOT_TROUTE_ADOPT_FACTOR 0.85f
+// TUNED 0.85 -> 1.0 (2026-07-11 isengard A/B: 587 comparisons, 0 adopts, tie-class losses e.g.
+// 3716 vs 3720 — the extra 15% hysteresis double-taxed on top of hardcost's pain pricing).
+#define BOT_TROUTE_ADOPT_FACTOR 1.0f
 #define BOT_TROUTE_ADOPT_MIN_INTERIOR 500.0f
 #define BOT_ENTRY_COMMIT_DIST 30.0f  // 8.2 ($nav entry): within this of the standoff point -> commit THROUGH the door
 #define BOT_ENTRY_PUSH_DIST 25.0f    // 8.2: aim this far INSIDE the door room (> engine arrive radius: arrival = entry)

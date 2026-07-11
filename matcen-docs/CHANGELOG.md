@@ -19,6 +19,13 @@ about half of all chase timeouts to 5–11%. **Currently shipped default-off** (
 to enable) while an outdoor side effect is investigated — on terrain maps the constant
 re-planning appears to keep bots churning navigation instead of fighting.
 
+- **Navigation learns when the world opens up** (`$nav heal`, default on). Bots smash breakable
+  glass and shoot out grates — but until now their inner navigation model was built once per
+  level, while everything was still intact, and never updated. Routes that physically opened
+  mid-round stayed closed in the model forever, which is why office-style glass maps could starve
+  one team all round (*Batteries Included*: the lobby's conference-room glass wall) and why the
+  Isengard grate tunnels stayed awkward after the grates were gone. Each room now watches its own
+  breakable panes and grates and rebuilds its waypoint model within seconds of them opening.
 - **Terrain-aware routing** (`$nav troute`, default on). On maps where bases and objectives are
   separated by outdoor terrain, bots now *plan* the outdoor crossing — exit door, a route around
   hills and buildings over the outdoor waypoint lattice, entry door on the far side — instead of

@@ -126,6 +126,7 @@ extern bool Bot_hard_room_enabled;
 extern bool Bot_grid_always; // $nav gridall: proactive grid routing everywhere (A/B lever, default OFF)
 extern bool Bot_curve_route_enabled; // $nav curve: fatter-clearance Theta* straightening (Fork-B fix)
 extern bool Bot_tube_densify_enabled; // $nav dense: hull-fit ladder rungs along thin-tube portal pairs
+extern bool Bot_roadmap_heal_enabled; // $nav heal: stale-glass fix — rebuild room roadmaps when panes/grates open
 void BotRoadmapMarkHardRoom(int room_idx);
 bool BotRoadmapRoomIsHard(int room_idx);
 
