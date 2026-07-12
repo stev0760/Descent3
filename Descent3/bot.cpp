@@ -710,7 +710,7 @@ static void BotDoSecondaryFiring(int bot_index) {
 
   // Monsterball M1: while ordered onto the ball, secondaries hold — a missile's whole payload
   // clamps to the same [10,20] u/s nudge as one Vauss round (MONSTERBALL_MODE.md §1.2).
-  if (Bots[bot_index].mball_fire_handle != OBJECT_HANDLE_NONE)
+  if (Bots[bot_index].mball_fire_handle != OBJECT_HANDLE_NONE && Bots[bot_index].state == BOT_STATE_EXPLORE)
     return;
 
   object *target = ObjGet(obj->ai_info->target_handle);
@@ -2927,6 +2927,114 @@ static bool BotDoEntropyInvadeNav(int bot_index) {
   return false;
 }
 
+// Monsterball M2: the point the ball should be pushed toward — the portal path_pnt from the
+// ball's room to the next room on the route to `goal_room` (the goal room's own path_pnt when
+// the ball is already there). False = no route (disconnected; caller falls back to chasing).
+static bool BotMballAimPoint(int ball_room, int goal_room, vector *out) {
+  if (ball_room < 0 || goal_room < 0 || ROOMNUM_OUTSIDE(ball_room) || ROOMNUM_OUTSIDE(goal_room) ||
+      !Rooms[ball_room].used || !Rooms[goal_room].used)
+    return false;
+  if (ball_room == goal_room) {
+    *out = Rooms[goal_room].path_pnt;
+    return true;
+  }
+  int next = BOA_GetNextRoom(ball_room, goal_room);
+  if (next < 0 || next == BOA_NO_PATH)
+    return false;
+  room &br = Rooms[ball_room];
+  for (int p = 0; p < br.num_portals; p++) {
+    if (br.portals[p].croom == next) {
+      *out = br.portals[p].path_pnt;
+      return true;
+    }
+  }
+  if (next <= Highest_room_index && Rooms[next].used) {
+    *out = Rooms[next].path_pnt; // odd topology fallback (portal list didn't name the BOA next room)
+    return true;
+  }
+  return false;
+}
+
+// Monsterball M2 striker nav (MONSTERBALL_MODE.md §4.2): position at the approach point BEHIND
+// the predicted ball (opposite the push line toward OUR goal — Monsterball scores into your own
+// goal), then fire only when both gates pass. Because the ball moves exactly away from the
+// shooter, future ball direction = dir(bot->ball), so both gates are exact geometry:
+//   alignment: dot(dir(bot->ball), push_dir) >= ALIGN_DOT  — the shot advances the ball our way
+//   blunder:   dot(dir(bot->ball), enemy_dir) > BLUNDER_DOT — the shot helps THEM: hold + reposition
+// One own-goal erases a round of good play; the blunder gate is the single highest-value rule
+// in the mode. Dry bots (no energy, no vauss ammo) ram instead: approach point first (keeps the
+// push direction honest), then through the ball once the approach point is reached.
+static void BotDoMonsterballStrikerNav(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  if (!obj->ai_info)
+    return;
+
+  Bots[bot_index].mball_fire_handle = OBJECT_HANDLE_NONE; // fire order recomputes every tick
+
+  int ball_objnum = Bot_objective.monsterball_objnum;
+  int ball_room = Bot_objective.monsterball_room;
+  int my_team = Players[slot].team;
+  if (ball_objnum < 0 || my_team < 0 || my_team > 1) {
+    BotDoExploreRoaming(bot_index);
+    return;
+  }
+  object *ball = &Objects[ball_objnum];
+  int my_goal = Bot_objective.monsterball_goal_rooms[my_team];
+  int enemy_goal = Bot_objective.monsterball_goal_rooms[1 - my_team];
+
+  vector aim_pt;
+  if (!BotMballAimPoint(ball_room, my_goal, &aim_pt)) {
+    // No route from the ball to our goal (goal rooms unset / disconnected): legacy chase.
+    if (ball_room >= 0 && !ROOMNUM_OUTSIDE(ball_room) && Rooms[ball_room].used) {
+      bool reissued = false;
+      BotSetRoutedGoal(bot_index, ball_room, BotGetNearestPortalPoint(obj, ball_room), &reissued);
+    } else {
+      BotDoExploreRoaming(bot_index);
+    }
+    return;
+  }
+
+  // Approach point behind the predicted ball, opposite the push line.
+  vector bpos = ball->pos + ball->mtype.phys_info.velocity * BOT_MBALL_PREDICT_T;
+  vector push_dir = aim_pt - bpos;
+  if (vm_GetMagnitude(&push_dir) < 1.0f)
+    return; // ball effectively AT the aim point — momentum finishes the job
+  vm_NormalizeVector(&push_dir);
+  vector approach = bpos - push_dir * (ball->size + BOT_MBALL_STANDOFF);
+
+  // Dry bot: ram. Approach point first so the bump still pushes the right way, then the ball.
+  bool dry = Players[slot].energy <= 0.0f && !((Players[slot].weapon_flags & (1u << VAUSS_INDEX)) &&
+                                               Players[slot].weapon_ammo[VAUSS_INDEX] > 0);
+  vector nav_target = approach;
+  if (dry && vm_VectorDistanceQuick(&obj->pos, &approach) < BOT_MBALL_RAM_SWITCH)
+    nav_target = ball->pos;
+
+  bool reissued = false;
+  BotSetRoutedGoal(bot_index, ball_room, nav_target, &reissued);
+
+  // Fire gates (skipped when dry — the ram IS the shot).
+  if (!dry) {
+    vector to_ball = ball->pos - obj->pos;
+    float d = vm_GetMagnitude(&to_ball);
+    if (d > 1.0f) {
+      to_ball = to_ball * (1.0f / d);
+      bool aligned = vm_DotProduct(&to_ball, &push_dir) >= BOT_MBALL_ALIGN_DOT;
+      bool blunder = false;
+      vector enemy_aim;
+      if (BotMballAimPoint(ball_room, enemy_goal, &enemy_aim)) {
+        vector enemy_dir = enemy_aim - ball->pos;
+        if (vm_GetMagnitude(&enemy_dir) > 1.0f) {
+          vm_NormalizeVector(&enemy_dir);
+          blunder = vm_DotProduct(&to_ball, &enemy_dir) > BOT_MBALL_BLUNDER_DOT;
+        }
+      }
+      if (aligned && !blunder)
+        Bots[bot_index].mball_fire_handle = ball->handle;
+    }
+  }
+}
+
 // Returns true if the bot has no primary weapon beyond the default Laser (battery 0).
 // Used to boost weapon pickup priority when the bot just spawned with bare equipment.
 static bool BotHasOnlyDefaultPrimary(int bot_index) {
@@ -3720,6 +3828,15 @@ static void BotUpdateState(int bot_index) {
         new_state = BOT_STATE_HUNT;
       break;
     }
+    // Monsterball M2 striker: position behind the ball on the push line and shoot it toward
+    // our goal (BotDoMonsterballStrikerNav owns nav + the fire order). Engage players only
+    // point-blank — the ball is the job. M3 adds roles so not everyone strikes at once.
+    if (BotGetGameMode() == BGM_MONSTERBALL && Bot_mball_striker_enabled) {
+      BotDoMonsterballStrikerNav(bot_index);
+      if (has_target && has_los && dist < 40.0f)
+        new_state = BOT_STATE_HUNT;
+      break;
+    }
     // Stage 6: position-anchored orders (!hold / !defend) own EXPLORE navigation — the bot
     // moves to its post and stays, instead of roaming the map with a tweaked flee threshold.
     // Threat engagement still fires (gated below by the anchor-distance leash) and the bot
@@ -4309,7 +4426,9 @@ static void BotUpdateAimDirection(int bot_index) {
   // Monsterball M1 fire-at-object: when the striker loop has ordered fire at the ball, face
   // its predicted position — the ball is the target, whatever the combat AI thinks. Uses the
   // same lead math as combat aim (the ball is slow but massive; leading still helps at range).
-  if (Bots[bot_index].mball_fire_handle != OBJECT_HANDLE_NONE) {
+  // EXPLORE-gated: the striker re-issues the order every EXPLORE tick, so outside EXPLORE
+  // (bot flipped to HUNT/COMBAT) the order is stale and combat aim must win.
+  if (Bots[bot_index].mball_fire_handle != OBJECT_HANDLE_NONE && Bots[bot_index].state == BOT_STATE_EXPLORE) {
     object *ball = ObjGet(Bots[bot_index].mball_fire_handle);
     if (ball) {
       vector aim = ball->pos;
@@ -5702,7 +5821,7 @@ static void BotDoFiring(int bot_index) {
   // exactly how lower-difficulty bots should be worse at this mode.
   bool ball_target = false;
   object *target = nullptr;
-  if (Bots[bot_index].mball_fire_handle != OBJECT_HANDLE_NONE) {
+  if (Bots[bot_index].mball_fire_handle != OBJECT_HANDLE_NONE && Bots[bot_index].state == BOT_STATE_EXPLORE) {
     target = ObjGet(Bots[bot_index].mball_fire_handle);
     if (target && !(target->flags & (OF_DEAD | OF_DESTROYED)))
       ball_target = true;

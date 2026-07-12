@@ -66,6 +66,14 @@
 #define BOT_ENTROPY_TAKEOVER_THREAT_BIAS -400.0f // extra when that intruder carries >= 5 (kill NOW)
 #define BOT_ENTROPY_LOADED_BIAS -200.0f          // loaded enemy anywhere (kill = -5 enemy tempo)
 
+// Monsterball M2 striker (MONSTERBALL_MODE.md §4.2). The ball moves EXACTLY away from the
+// shooter (§1.2, cross-confirmed), so both gates are precise geometric tests, not heuristics.
+#define BOT_MBALL_ALIGN_DOT 0.80f   // fire only when dir(bot->ball) aligns with the push line
+#define BOT_MBALL_BLUNDER_DOT 0.35f // NEVER fire when the shot advances the ball toward THEIR goal
+#define BOT_MBALL_STANDOFF 25.0f    // approach-point distance behind the ball (added to ball radius)
+#define BOT_MBALL_PREDICT_T 0.7f    // seconds of linear ball prediction for the approach point
+#define BOT_MBALL_RAM_SWITCH 12.0f  // dry-bot ram: within this of the approach point, target the ball
+
 #define BOT_HOARD_CLUSTER_RADIUS 80.0f
 #define BOT_HOARD_MAX_WORLD_ORBS 96
 #define BOT_HOARD_ORB_SEEK_RADIUS 500.0f
@@ -203,5 +211,9 @@ bool BotEntropyIsLoaded(int bot_index);
 // $nav entropy — E3 takeover execution (invade/hold/retreat + defense bias). OFF leaves the
 // E2 economy running but bots never invade: the A/B lever for "does takeover play help".
 extern bool Bot_entropy_takeover_enabled;
+
+// $nav mball — M2 striker skill (approach-point positioning + gated ball shooting). OFF =
+// the legacy pure ball-chaser (converge on the ball's room, never shoot it).
+extern bool Bot_mball_striker_enabled;
 
 #endif // BOT_OBJECTIVE_H

@@ -803,6 +803,8 @@ static const NavToggle Nav_toggles[] = {
      false},
     {"entropy", "entropytakeover", nullptr, &Bot_entropy_takeover_enabled,
      "Entropy E3 takeover execution (loaded bots invade/hold/retreat; off = E2 economy only)", false, false},
+    {"mball", "mballstriker", nullptr, &Bot_mball_striker_enabled,
+     "Monsterball M2 striker (approach-point + gated ball shooting; off = legacy ball-chaser)", false, false},
     {"terrain", "terrainsteer", nullptr, &Bot_terrain_steering_enabled, "outdoor terrain steering / entrance redirect",
      true, false},
     {"bnodes", "pseudobnodes", nullptr, &Bot_pseudo_bnodes_enabled, "pseudo-BNode skeleton interior waypoints", true,

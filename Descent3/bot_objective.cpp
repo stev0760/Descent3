@@ -656,6 +656,9 @@ bool BotEntropyIsLoaded(int bot_index) {
 // the A/B lever for the invade/hold/retreat layer. See ENTROPY_MODE.md §3.3.
 bool Bot_entropy_takeover_enabled = true;
 
+// $nav mball — M2 striker skill. OFF = legacy pure ball-chaser. See MONSTERBALL_MODE.md §4.2.
+bool Bot_mball_striker_enabled = true;
+
 // Nearest room owned by `owner` (1=red 2=blue), optionally filtered to a kind
 // (1=lab 2=energy 3=repair; 0=any), by path cost from the bot.
 static int BotGetNearestEntropyRoom(int bot_index, int owner, int kind_filter) {
