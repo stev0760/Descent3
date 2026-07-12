@@ -33,6 +33,7 @@
 #include "vecmat.h"
 #include "dedicated_server.h"
 #include "game.h"
+#include "BOA.h"
 #include "log.h"
 
 BotObjectiveState Bot_objective;
@@ -832,9 +833,23 @@ static int BotGetObjectiveRoom_Entropy(int bot_index) {
     }
   }
 
-  // DEFEND lean anchors at own lab — the spawn source is the chokepoint that matters.
-  if (role == SQUAD_FREELANCE && Bots[bot_index].objective_lean == BOT_LEAN_DEFEND)
-    return Bot_objective.entropy_lab_rooms[my_team][0];
+  // DEFEND lean guards the lab's DOOR, not the lab itself (first-POV finding: a zero-capacity
+  // defender parked at the lab center bathes in viruses it can't pick up — endless refused-
+  // pickup collisions and "can't carry" HUD spam). Anchor one room out along the likely
+  // invasion corridor: the BOA next hop from our lab toward the enemy's lab.
+  if (role == SQUAD_FREELANCE && Bots[bot_index].objective_lean == BOT_LEAN_DEFEND) {
+    int lab = Bot_objective.entropy_lab_rooms[my_team][0];
+    if (lab < 0)
+      return -1;
+    int enemy_lab = Bot_objective.entropy_lab_rooms[1 - my_team][0];
+    if (enemy_lab >= 0) {
+      int guard = BOA_GetNextRoom(lab, enemy_lab);
+      if (guard >= 0 && guard != BOA_NO_PATH && guard <= Highest_room_index && Rooms[guard].used &&
+          Bot_objective.entropy_room_kind[guard] != 1) // never anchor in a lab (theirs or a drifted flip)
+        return guard;
+    }
+    return lab; // fallback: adjacent-room lookup failed — the lab beats no anchor at all
+  }
 
   // Unloaded attackers: no room override — E2 powerup selection pulls them to lab viruses,
   // normal anarchy otherwise (the streak IS the resource; kills buy carry slots).
