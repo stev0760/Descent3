@@ -19,6 +19,8 @@
 #ifndef BOT_OBJECTIVE_H
 #define BOT_OBJECTIVE_H
 
+#include <cstdint>
+
 #define BOT_OBJECTIVE_POLL_INTERVAL 0.5f
 #define BOT_MAX_TEAMS 4
 #define BOT_MAX_PLAYERS 32
@@ -44,6 +46,15 @@
 #define BOT_HYPER_CHASER_MAX 3            // hard cap on simultaneous chasers
 #define BOT_HYPER_CHASER_INTERVAL 2.0f    // seconds between reassignments (orb state change forces one)
 #define BOT_HYPER_INCUMBENT_DISCOUNT 0.7f // incumbent cost multiplier (challenger must beat by ~30%)
+
+// Entropy (0.9.8, ENTROPY_MODE.md — read it before touching this). DLL facts mirrored here:
+// carry capacity = 2 x kills-since-death (VIRUS_PER_KILL), takeover needs 5 carried viruses
+// (MINIMUM_VIRUS_COUNT), viruses cap at 16 tracked per team (MAX_VIRII).
+#define BOT_ENTROPY_MAX_WORLD_VIRUS 32 // 2 teams x MAX_VIRII(16)
+#define BOT_ENTROPY_MAX_ROOMS 400      // == MAX_ROOMS (room.h); static_assert'd in bot_objective.cpp
+#define BOT_ENTROPY_VIRUS_PER_KILL 2   // carry capacity multiplier (DLL EntropyAux.h)
+#define BOT_ENTROPY_TAKEOVER_LOAD 5    // viruses consumed/required per takeover
+#define BOT_ENTROPY_MAX_LABS 4         // labs tracked per team
 
 #define BOT_HOARD_CLUSTER_RADIUS 80.0f
 #define BOT_HOARD_MAX_WORLD_ORBS 96
@@ -88,6 +99,20 @@ struct BotObjectiveState {
   // --- Monsterball ---
   int monsterball_objnum; // Objects[] index of the ball, or -1
   int monsterball_room;   // roomnum of the ball, or -1
+
+  // --- Entropy --- (all rebuilt every poll — room flags FLIP at runtime on takeover, never cache)
+  int entropy_owned_rooms[2];                        // live owned-special-room counts: [0]=red [1]=blue
+  uint8_t entropy_room_owner[BOT_ENTROPY_MAX_ROOMS]; // 0=none, 1=red, 2=blue (from RF_SPECIAL1..6 scan)
+  uint8_t entropy_room_kind[BOT_ENTROPY_MAX_ROOMS];  // 0=none, 1=lab, 2=energy, 3=repair
+  int entropy_lab_rooms[2][BOT_ENTROPY_MAX_LABS];    // lab roomnums per team, -1 terminated
+  int entropy_virus_count[BOT_MAX_PLAYERS];          // carried viruses per player (inventory poll, authoritative)
+  int entropy_kill_streak[BOT_MAX_PLAYERS];          // mirrored kills-since-death (DLL doesn't export it; see
+                                                     // BotEntropyMirrorStreaks — capacity = 2 x this)
+  int16_t entropy_prev_kills[BOT_MAX_PLAYERS];       // streak-mirror bookkeeping: last polled num_kills_level
+  int16_t entropy_prev_deaths[BOT_MAX_PLAYERS];      // streak-mirror bookkeeping: last polled num_deaths_level
+  int entropy_world_virus[BOT_ENTROPY_MAX_WORLD_VIRUS];      // free virus objnums
+  int8_t entropy_world_virus_team[BOT_ENTROPY_MAX_WORLD_VIRUS]; // inferred owner: 0=red 1=blue -1=unknown
+  int entropy_world_virus_count;
 };
 
 extern BotObjectiveState Bot_objective;
@@ -144,5 +169,13 @@ int BotGetNearestHoardGoalRoom(int bot_index);
 
 // Returns the cached Object_info ID for Hoard orbs, or -1 if not in Hoard mode.
 int BotGetHoardOrbId();
+
+// Returns the cached Object_info ID for the Entropy virus, or -1 if not in Entropy mode.
+int BotGetEntropyVirusId();
+
+// Mirrored Entropy carry capacity for any player slot (2 x kills-since-death). The DLL's real
+// counter is not exported; ours is a poll-based mirror that under-counts in rare same-poll
+// kill+death races and self-corrects on the next death. See ENTROPY_MODE.md §2.2.
+int BotEntropyCarryCapacity(int slot);
 
 #endif // BOT_OBJECTIVE_H

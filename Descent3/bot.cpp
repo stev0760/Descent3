@@ -3069,7 +3069,10 @@ static bool BotTrollExempt(int handle) {
       lower[k] = (char)tolower((unsigned char)lower[k]);
     // "flag" is name-broad on purpose: the CTF DLL also spawns ATTACHED flag powerups
     // (ShipBlueFlag etc.) with ids outside Obj_flag_id — navmapping14 retired those 7 times.
-    if (strstr(lower, "flag") || strstr(lower, "hoardorb") || strstr(lower, "hyperorb"))
+    // "entropyvirus" is E1 day-one (ENTROPY_MODE.md gotcha #1): a capacity-refused pickup
+    // churns chase timeouts exactly like a sealed powerup — never strike the mode's objective.
+    if (strstr(lower, "flag") || strstr(lower, "hoardorb") || strstr(lower, "hyperorb") ||
+        strstr(lower, "entropyvirus"))
       return true;
   }
   return false;
@@ -3346,6 +3349,12 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
       }
     } else if (strstr(lower, "hyperorb"))
       priority = 25; // Hyper-Anarchy objective — the entire scoring mechanic revolves around this
+    else if (strstr(lower, "entropyvirus")) {
+      // E1 (ENTROPY_MODE.md gotcha #1): never a generic pickup — the server refuses pickups
+      // beyond 2x kill-streak capacity and a refused chase churns forever. E2 adds the
+      // capacity-gated chase; until then bots collect viruses only by incidental touch.
+      continue;
+    }
 
     // --- Instant-activation power-ups (activate on pickup; no inventory storage) ---
     else if (strstr(lower, "invulner"))

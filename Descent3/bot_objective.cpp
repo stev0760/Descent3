@@ -45,6 +45,9 @@ static BotFlagState Prev_flag_state[BOT_MAX_TEAMS] = {FLAG_UNKNOWN, FLAG_UNKNOWN
 static int Obj_hyper_id = -1;
 static int Obj_hoard_id = -1;
 static int Obj_monsterball_id = -1;
+static int Obj_entropy_virus_id = -1;
+
+static_assert(BOT_ENTROPY_MAX_ROOMS == MAX_ROOMS, "entropy room maps must match engine MAX_ROOMS");
 
 static void BotResetObjectiveState() {
   for (int i = 0; i < BOT_MAX_TEAMS; i++) {
@@ -71,6 +74,19 @@ static void BotResetObjectiveState() {
   Bot_objective.hoard_world_orb_count = 0;
   Bot_objective.monsterball_objnum = -1;
   Bot_objective.monsterball_room = -1;
+  Bot_objective.entropy_owned_rooms[0] = Bot_objective.entropy_owned_rooms[1] = 0;
+  memset(Bot_objective.entropy_room_owner, 0, sizeof(Bot_objective.entropy_room_owner));
+  memset(Bot_objective.entropy_room_kind, 0, sizeof(Bot_objective.entropy_room_kind));
+  for (int t = 0; t < 2; t++)
+    for (int i = 0; i < BOT_ENTROPY_MAX_LABS; i++)
+      Bot_objective.entropy_lab_rooms[t][i] = -1;
+  for (int i = 0; i < BOT_MAX_PLAYERS; i++) {
+    Bot_objective.entropy_virus_count[i] = 0;
+    Bot_objective.entropy_kill_streak[i] = 0;
+    Bot_objective.entropy_prev_kills[i] = 0;
+    Bot_objective.entropy_prev_deaths[i] = 0;
+  }
+  Bot_objective.entropy_world_virus_count = 0;
 }
 
 void BotInitObjectiveState() {
@@ -85,6 +101,7 @@ void BotInitObjectiveState() {
   Obj_hyper_id = -1;
   Obj_hoard_id = -1;
   Obj_monsterball_id = -1;
+  Obj_entropy_virus_id = -1;
 
   BotGameMode mode = BotGetGameMode();
 
@@ -127,6 +144,16 @@ void BotInitObjectiveState() {
   case BGM_MONSTERBALL:
     Obj_monsterball_id = FindObjectIDName("Monsterball");
     LOG_DEBUG.printf("BOT OBJ: Monsterball ID: %d", Obj_monsterball_id);
+    break;
+
+  case BGM_ENTROPY:
+    // Open question E1-#2 (ENTROPY_MODE.md §5): does this resolve at init time on a dedicated
+    // server? CTF flag IDs do; if this ever logs -1 the poll no-ops safely and E1 testing
+    // starts with this line.
+    Obj_entropy_virus_id = FindObjectIDName("EntropyVirus");
+    LOG_DEBUG.printf("BOT OBJ: Entropy virus ID: %d", Obj_entropy_virus_id);
+    if (Obj_entropy_virus_id < 0)
+      PrintDedicatedMessage("WARNING: Entropy mode but EntropyVirus object type not found\n");
     break;
 
   default:
@@ -460,6 +487,122 @@ static void BotPollMonsterball() {
 }
 
 // ---------------------------------------------------------------------------
+// Entropy polling (0.9.8, ENTROPY_MODE.md §3.1 — Phase E1)
+// ---------------------------------------------------------------------------
+
+// Mirror kills-since-death per slot from the engine's per-level counters. The DLL's real
+// counter (NumberOfKillsSinceLastDeath) is not exported; deltas of num_kills_level /
+// num_deaths_level reconstruct it. Rules: death wins a same-poll race (a kill+death inside
+// one 0.5s window under-counts by the kill — safer than over-counting, which would make the
+// bot chase pickups the server refuses; self-corrects on the next death). Counters running
+// backwards (rejoin, level restart) resync to zero. Capacity = 2 x streak (VIRUS_PER_KILL).
+static void BotEntropyMirrorStreaks() {
+  for (int s = 0; s < MAX_NET_PLAYERS && s < BOT_MAX_PLAYERS; s++) {
+    if (!(NetPlayers[s].flags & NPF_CONNECTED)) {
+      Bot_objective.entropy_kill_streak[s] = 0;
+      Bot_objective.entropy_prev_kills[s] = 0;
+      Bot_objective.entropy_prev_deaths[s] = 0;
+      continue;
+    }
+    int16_t kills = Players[s].num_kills_level;
+    int16_t deaths = Players[s].num_deaths_level;
+    if (kills < Bot_objective.entropy_prev_kills[s] || deaths < Bot_objective.entropy_prev_deaths[s])
+      Bot_objective.entropy_kill_streak[s] = 0; // counters went backwards — resync
+    else if (deaths > Bot_objective.entropy_prev_deaths[s])
+      Bot_objective.entropy_kill_streak[s] = 0; // death wipes the streak (and any same-poll kills)
+    else if (kills > Bot_objective.entropy_prev_kills[s])
+      Bot_objective.entropy_kill_streak[s] += kills - Bot_objective.entropy_prev_kills[s];
+    Bot_objective.entropy_prev_kills[s] = kills;
+    Bot_objective.entropy_prev_deaths[s] = deaths;
+  }
+}
+
+static void BotPollEntropy() {
+  // 1. Room-ownership scan. RF_SPECIAL1..3 = Red lab/energy/repair, RF_SPECIAL4..6 = Blue
+  //    lab/energy/repair. The DLL flips these bits IN PLACE on takeover (TakeOverRoom), so
+  //    the maps are rebuilt from scratch every poll — never cache room->team anywhere else.
+  Bot_objective.entropy_owned_rooms[0] = Bot_objective.entropy_owned_rooms[1] = 0;
+  int lab_n[2] = {0, 0};
+  for (int t = 0; t < 2; t++)
+    for (int i = 0; i < BOT_ENTROPY_MAX_LABS; i++)
+      Bot_objective.entropy_lab_rooms[t][i] = -1;
+  for (int r = 0; r <= Highest_room_index && r < BOT_ENTROPY_MAX_ROOMS; r++) {
+    uint8_t owner = 0, kind = 0;
+    if (Rooms[r].used) {
+      int fl = Rooms[r].flags;
+      if (fl & RF_SPECIAL1) {
+        owner = 1;
+        kind = 1;
+      } else if (fl & RF_SPECIAL2) {
+        owner = 1;
+        kind = 2;
+      } else if (fl & RF_SPECIAL3) {
+        owner = 1;
+        kind = 3;
+      } else if (fl & RF_SPECIAL4) {
+        owner = 2;
+        kind = 1;
+      } else if (fl & RF_SPECIAL5) {
+        owner = 2;
+        kind = 2;
+      } else if (fl & RF_SPECIAL6) {
+        owner = 2;
+        kind = 3;
+      }
+    }
+    Bot_objective.entropy_room_owner[r] = owner;
+    Bot_objective.entropy_room_kind[r] = kind;
+    if (owner) {
+      Bot_objective.entropy_owned_rooms[owner - 1]++;
+      if (kind == 1 && lab_n[owner - 1] < BOT_ENTROPY_MAX_LABS)
+        Bot_objective.entropy_lab_rooms[owner - 1][lab_n[owner - 1]++] = r;
+    }
+  }
+
+  // 2. Free-virus scan with team inference: a virus in a team-owned special room belongs to
+  //    that team (true at spawn — labs spew at room center); anywhere else = unknown (-1).
+  //    Ownership is NOT stored on the object (DLL tracks it by objnum internally).
+  Bot_objective.entropy_world_virus_count = 0;
+  if (Obj_entropy_virus_id >= 0) {
+    for (int i = 0; i <= Highest_object_index; i++) {
+      if (Bot_objective.entropy_world_virus_count >= BOT_ENTROPY_MAX_WORLD_VIRUS)
+        break;
+      object *obj = &Objects[i];
+      if (obj->type != OBJ_POWERUP || obj->id != Obj_entropy_virus_id)
+        continue;
+      int8_t team = -1;
+      if (!OBJECT_OUTSIDE(obj) && obj->roomnum >= 0 && obj->roomnum < BOT_ENTROPY_MAX_ROOMS) {
+        uint8_t owner = Bot_objective.entropy_room_owner[obj->roomnum];
+        if (owner)
+          team = (int8_t)(owner - 1);
+      }
+      int n = Bot_objective.entropy_world_virus_count++;
+      Bot_objective.entropy_world_virus[n] = i;
+      Bot_objective.entropy_world_virus_team[n] = team;
+    }
+  }
+
+  // 3. Carried-virus counts (server-authoritative inventory poll).
+  for (int s = 0; s < MAX_NET_PLAYERS && s < BOT_MAX_PLAYERS; s++) {
+    Bot_objective.entropy_virus_count[s] =
+        (Obj_entropy_virus_id >= 0 && (NetPlayers[s].flags & NPF_CONNECTED))
+            ? Players[s].inventory.GetTypeIDCount(OBJ_POWERUP, Obj_entropy_virus_id)
+            : 0;
+  }
+
+  // 4. Kill-streak mirror.
+  BotEntropyMirrorStreaks();
+}
+
+int BotGetEntropyVirusId() { return Obj_entropy_virus_id; }
+
+int BotEntropyCarryCapacity(int slot) {
+  if (slot < 0 || slot >= BOT_MAX_PLAYERS)
+    return 0;
+  return BOT_ENTROPY_VIRUS_PER_KILL * Bot_objective.entropy_kill_streak[slot];
+}
+
+// ---------------------------------------------------------------------------
 // Main poll dispatcher
 // ---------------------------------------------------------------------------
 
@@ -476,6 +619,9 @@ void BotPollObjectiveState() {
     break;
   case BGM_MONSTERBALL:
     BotPollMonsterball();
+    break;
+  case BGM_ENTROPY:
+    BotPollEntropy();
     break;
   default:
     break;
@@ -568,6 +714,29 @@ void BotPrintObjectiveState() {
     else
       PrintDedicatedMessage("  Monsterball: not found (ID=%d)\n", Obj_monsterball_id);
     break;
+
+  case BGM_ENTROPY: {
+    PrintDedicatedMessage("  Rooms owned: Red %d, Blue %d; free viruses: %d (virus ID=%d)\n",
+                          Bot_objective.entropy_owned_rooms[0], Bot_objective.entropy_owned_rooms[1],
+                          Bot_objective.entropy_world_virus_count, Obj_entropy_virus_id);
+    for (int t = 0; t < 2; t++) {
+      PrintDedicatedMessage("  %s labs:", t == 0 ? "Red" : "Blue");
+      bool any = false;
+      for (int i = 0; i < BOT_ENTROPY_MAX_LABS && Bot_objective.entropy_lab_rooms[t][i] >= 0; i++) {
+        PrintDedicatedMessage(" room %d", Bot_objective.entropy_lab_rooms[t][i]);
+        any = true;
+      }
+      PrintDedicatedMessage(any ? "\n" : " (none)\n");
+    }
+    for (int s = 0; s < MAX_NET_PLAYERS && s < BOT_MAX_PLAYERS; s++) {
+      if (!(NetPlayers[s].flags & NPF_CONNECTED))
+        continue;
+      PrintDedicatedMessage("  %s: carrying %d [cap %d, streak %d]\n", Players[s].callsign,
+                            Bot_objective.entropy_virus_count[s], BotEntropyCarryCapacity(s),
+                            Bot_objective.entropy_kill_streak[s]);
+    }
+    break;
+  }
 
   default:
     PrintDedicatedMessage("  No objective state for this mode.\n");
