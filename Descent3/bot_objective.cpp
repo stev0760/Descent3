@@ -218,29 +218,38 @@ static void BotPollCTF() {
                                Bot_objective.flag_state[t] == FLAG_AT_HOME);
 
     if (flag_just_stolen) {
-      // Flip the FREELANCE/ATTACK-lean bot nearest to home base to DEFEND for retrieval
-      int best_bot = -1;
-      float best_dist = 1e30f;
+      // Convert the reactive bot nearest to home base to DEFEND for retrieval. Prefer the FLEX slot
+      // (that is its job); fall back to a support ATTACKer only if there is no flex. The dedicated
+      // RUNNER is NEVER pulled — it keeps counter-pressure on the enemy flag while the flex recovers.
+      int best_flex = -1, best_atk = -1;
+      float best_flex_d = 1e30f, best_atk_d = 1e30f;
       int home_room = Bot_objective.goal_room[t];
       for (int b = 0; b < MAX_BOTS; b++) {
         if (!Bots[b].active || Bots[b].squad_role != SQUAD_FREELANCE)
           continue;
-        if (Players[Bots[b].player_slot].team != t || Bots[b].objective_lean != BOT_LEAN_ATTACK)
+        if (Players[Bots[b].player_slot].team != t)
           continue;
+        BotObjectiveLean bl = Bots[b].objective_lean;
+        if (bl != BOT_LEAN_FLEX && bl != BOT_LEAN_ATTACK)
+          continue; // leave RUNNER on offense; DEFEND already home
+        float d = 0.0f;
         if (home_room >= 0 && Rooms[home_room].used) {
           object *bobj = &Objects[Players[Bots[b].player_slot].objnum];
-          float d = vm_VectorDistanceQuick(&bobj->pos, &Rooms[home_room].path_pnt);
-          if (d < best_dist) {
-            best_dist = d;
-            best_bot = b;
-          }
-        } else if (best_bot < 0) {
-          best_bot = b;
+          d = vm_VectorDistanceQuick(&bobj->pos, &Rooms[home_room].path_pnt);
+        }
+        if (bl == BOT_LEAN_FLEX && d < best_flex_d) {
+          best_flex_d = d;
+          best_flex = b;
+        } else if (bl == BOT_LEAN_ATTACK && d < best_atk_d) {
+          best_atk_d = d;
+          best_atk = b;
         }
       }
+      int best_bot = (best_flex >= 0) ? best_flex : best_atk;
       if (best_bot >= 0) {
+        const char *was = (Bots[best_bot].objective_lean == BOT_LEAN_FLEX) ? "FLEX" : "ATTACK";
         Bots[best_bot].objective_lean = BOT_LEAN_DEFEND;
-        LOG_DEBUG.printf("BOT OBJ: '%s' ATTACK->DEFEND (team %d flag stolen)", Bots[best_bot].callsign, t);
+        LOG_DEBUG.printf("BOT OBJ: '%s' %s->DEFEND (team %d flag stolen)", Bots[best_bot].callsign, was, t);
       }
     }
 
@@ -449,7 +458,7 @@ void BotPrintObjectiveState() {
   }
 
   // Show bot objective leans
-  static const char *lean_names[] = {"balanced", "attack", "defend"};
+  static const char *lean_names[] = {"balanced", "attack", "defend", "runner", "flex"};
   bool any_lean = false;
   for (int i = 0; i < MAX_BOTS; i++) {
     if (!Bots[i].active)
@@ -833,6 +842,53 @@ int BotGetNearestHoardGoalRoom(int bot_index) {
 
 int BotGetHoardOrbId() { return Obj_hoard_id; }
 
+// $nav runner — dedicated CTF flag-runner role (0.9.8). ON = 1 committed runner (best-equipped) +
+// defender(s) + a reactive flex + support attackers per team; OFF = the legacy binary attack/defend
+// split (the pre-runner A/B baseline). The theory under test: soft attack-LEAN bots get distracted
+// (powerups/combat) and never punch through a harder route to the enemy flag, so a team with no
+// dedicated, discipline-bound flag-getter under-converts on maps where the grab is contested.
+bool Bot_dedicated_runner_enabled = true;
+
+// Count connected HUMAN players on a team (a connected slot with no Bots[] entry). Feeds the
+// size-aware role split so bots add more defensive structure as a team fills with humans.
+static int BotCountTeamHumans(int team) {
+  int humans = 0;
+  for (int s = 0; s < MAX_NET_PLAYERS; s++) {
+    if (!(NetPlayers[s].flags & NPF_CONNECTED))
+      continue;
+    if (Players[s].team != team)
+      continue;
+    if (BotFindBySlot(s) >= 0)
+      continue; // it's a bot
+    humans++;
+  }
+  return humans;
+}
+
+static const char *BotObjectiveLeanName(BotObjectiveLean lean) {
+  switch (lean) {
+  case BOT_LEAN_ATTACK: return "attack";
+  case BOT_LEAN_DEFEND: return "defend";
+  case BOT_LEAN_RUNNER: return "runner";
+  case BOT_LEAN_FLEX: return "flex";
+  default: return "balanced";
+  }
+}
+
+// Defenders wanted for a total team size (bots + humans). Q3A-derived, applied to the effective
+// team size so a team stacked with humans keeps a proportional guard even as bots fill other roles.
+static int BotDefenderCount(int eff_size) {
+  switch (eff_size) {
+  case 0:
+  case 1: return 0;
+  case 2:
+  case 3:
+  case 4: return 1;
+  case 5: return 2;
+  default: return eff_size / 3;
+  }
+}
+
 void BotAssignObjectiveLeans() {
   BotGameMode mode = BotGetGameMode();
   bool needs_lean = (mode == BGM_CTF);
@@ -848,8 +904,8 @@ void BotAssignObjectiveLeans() {
   if (!needs_lean)
     return;
 
-  // Team-size-aware ratio table (Q3A-derived). Only FREELANCE bots are assigned;
-  // ATTACK/DEFEND/FOLLOW/COVER squad roles set via chat commands are never overridden.
+  // Team-size-aware role split. Only FREELANCE bots are assigned; ATTACK/DEFEND/FOLLOW/COVER squad
+  // roles set via chat commands are never overridden.
   int num_teams = Num_teams > BOT_MAX_TEAMS ? BOT_MAX_TEAMS : Num_teams;
   for (int t = 0; t < num_teams; t++) {
     // Collect FREELANCE bot indices on this team
@@ -865,18 +921,8 @@ void BotAssignObjectiveLeans() {
     if (n == 0)
       continue;
 
-    // Determine defender count
-    int num_def;
-    switch (n) {
-    case 1: num_def = 0; break;
-    case 2: num_def = 1; break;
-    case 3: num_def = 1; break;
-    case 4: num_def = 1; break;
-    case 5: num_def = 2; break;
-    default: num_def = n / 3; break;
-    }
-
-    // Sort by equipment tier descending so best-equipped bots get DEFEND
+    // Sort by equipment tier DESCENDING (best first). The dedicated runner and defender(s) are
+    // filled from the top of this list — best-equipped runs the flag, next-best guard home.
     for (int i = 1; i < n; i++) {
       int key = team_bots[i];
       int key_eq = BotGetEquipmentRating(key);
@@ -888,14 +934,55 @@ void BotAssignObjectiveLeans() {
       team_bots[j + 1] = key;
     }
 
-    LOG_DEBUG.printf("BOT OBJ: team %d — %d FREELANCE bots, %d defender(s), %d attacker(s)", t, n, num_def,
-                     n - num_def);
+    if (!Bot_dedicated_runner_enabled) {
+      // Legacy binary split (A/B baseline): best-equipped DEFEND, rest ATTACK.
+      int num_def = BotDefenderCount(n);
+      LOG_DEBUG.printf("BOT OBJ: team %d — %d FREELANCE bots, %d defender(s), %d attacker(s) [legacy]", t, n, num_def,
+                       n - num_def);
+      for (int i = 0; i < n; i++) {
+        Bots[team_bots[i]].objective_lean = (i < num_def) ? BOT_LEAN_DEFEND : BOT_LEAN_ATTACK;
+      }
+      continue;
+    }
+
+    // Dedicated-runner model. Slot order over the best-first list:
+    //   [0]              RUNNER  — the committed flag-getter (best-equipped)
+    //   [1 .. num_def]   DEFEND  — next-best guard the base (size + human aware)
+    //   [next]           FLEX    — one reactive slot (converts to defense on a steal)
+    //   [rest]           ATTACK  — support attackers push the enemy flag
+    int humans = BotCountTeamHumans(t);
+    int num_def = BotDefenderCount(n + humans);
+    if (num_def > n - 1) // always leave the runner slot
+      num_def = n - 1;
+    if (num_def < 0)
+      num_def = 0;
+
+    int idx = 0;
+    int n_def = 0, n_flex = 0, n_atk = 0;
+    for (int i = 0; i < n; i++) {
+      int bi = team_bots[idx = i];
+      BotObjectiveLean lean;
+      if (i == 0) {
+        lean = BOT_LEAN_RUNNER; // exactly one runner per team
+      } else if (i <= num_def) {
+        lean = BOT_LEAN_DEFEND;
+        n_def++;
+      } else if (n_flex == 0) {
+        lean = BOT_LEAN_FLEX; // exactly one reactive flex, if there is room
+        n_flex++;
+      } else {
+        lean = BOT_LEAN_ATTACK;
+        n_atk++;
+      }
+      Bots[bi].objective_lean = lean;
+    }
+    (void)idx;
+    LOG_DEBUG.printf("BOT OBJ: team %d — %d bots +%d human: 1 runner, %d defend, %d flex, %d attack", t, n, humans,
+                     n_def, n_flex, n_atk);
     for (int i = 0; i < n; i++) {
       int bi = team_bots[i];
-      Bots[bi].objective_lean = (i < num_def) ? BOT_LEAN_DEFEND : BOT_LEAN_ATTACK;
       LOG_DEBUG.printf("BOT OBJ: '%s' lean=%s (equip=%d)", Bots[bi].callsign,
-                       Bots[bi].objective_lean == BOT_LEAN_DEFEND ? "defend" : "attack",
-                       BotGetEquipmentRating(bi));
+                       BotObjectiveLeanName(Bots[bi].objective_lean), BotGetEquipmentRating(bi));
     }
   }
 }

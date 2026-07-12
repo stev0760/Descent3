@@ -7,6 +7,20 @@ live navigation status is in [NAVIGATION.md](NAVIGATION.md) §7.0.
 Versioning: `0.8.x` = feature releases; `0.9.x` = the navigation-milestone series.
 A `-dev` suffix marks an in-test build that has not yet passed its validation gate.
 
+## [0.9.8-dev] — in test
+
+**Team role structure for objective play.** In CTF, each team of bots now organizes into distinct
+jobs instead of a flat attack/defend split: one dedicated **flag runner** (the team's best-equipped
+bot, committed to the enemy flag — it does not stop for powerups once armed), base **defenders**
+(scaling with team size, including human teammates), one **flex** bot that plays offense but is the
+first pulled back when the team's own flag is stolen, and support **attackers**. The runner is never
+pulled off the enemy flag — counter-pressure is maintained even during a recovery scramble.
+`$nav runner off` restores the previous flat split. This role structure was first trialed in early
+July and shelved because the navigation of the time couldn't execute a committed route; with the
+0.9.7 navigation under it, it is being re-validated now. It is also the shared foundation for the
+upcoming Entropy and Monsterball modes, which assign the same kind of jobs around their own
+objectives.
+
 ## [0.9.7] — 2026-07-12
 
 **The navigation-intelligence release: one spatial model, kept honest.** Bots now decide where to
