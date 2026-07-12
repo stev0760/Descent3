@@ -486,6 +486,15 @@ struct bot_info {
   // flags flip on takeover). Cleared on hold exit, load loss, and respawn.
   bool entropy_holding;
 
+  // Monsterball M1 fire-at-object primitive (0.9.8, MONSTERBALL_MODE.md §4.1): when set, the
+  // aim/fire pipeline targets this object (the ball) instead of the AI combat target —
+  // BotUpdateAimDirection orients at its predicted position, BotDoFiring shoots it with the
+  // normal gunpoint/drain/lead machinery, and secondaries hold (wasted on the DLL's [10,20]
+  // hit clamp). The M2 striker loop is the setter (alignment + blunder gates live THERE, not
+  // here — this is a dumb trigger). Cleared with the active goal and on respawn.
+  int mball_fire_handle;
+  float mball_shot_log_t; // throttle for the shots-at-ball analyzer log line
+
   // 0.9.7 Stage 3 progress-monitor replan state
   vector stall_check_pos;   // position at the start of the current sample window
   float stall_check_time;   // Gametime when the current sample window opened

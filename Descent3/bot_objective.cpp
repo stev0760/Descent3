@@ -74,6 +74,9 @@ static void BotResetObjectiveState() {
   Bot_objective.hoard_world_orb_count = 0;
   Bot_objective.monsterball_objnum = -1;
   Bot_objective.monsterball_room = -1;
+  Bot_objective.monsterball_goal_rooms[0] = Bot_objective.monsterball_goal_rooms[1] = -1;
+  Bot_objective.monsterball_progress[0] = Bot_objective.monsterball_progress[1] = -1.0f;
+  Bot_objective.monsterball_prev_room = -1;
   Bot_objective.entropy_owned_rooms[0] = Bot_objective.entropy_owned_rooms[1] = 0;
   memset(Bot_objective.entropy_room_owner, 0, sizeof(Bot_objective.entropy_room_owner));
   memset(Bot_objective.entropy_room_kind, 0, sizeof(Bot_objective.entropy_room_kind));
@@ -143,7 +146,10 @@ void BotInitObjectiveState() {
 
   case BGM_MONSTERBALL:
     Obj_monsterball_id = FindObjectIDName("Monsterball");
-    LOG_DEBUG.printf("BOT OBJ: Monsterball ID: %d", Obj_monsterball_id);
+    Bot_objective.monsterball_goal_rooms[0] = GetGoalRoomForTeam(0);
+    Bot_objective.monsterball_goal_rooms[1] = GetGoalRoomForTeam(1);
+    LOG_DEBUG.printf("BOT OBJ: Monsterball ID: %d, goals: red=room%d blue=room%d", Obj_monsterball_id,
+                     Bot_objective.monsterball_goal_rooms[0], Bot_objective.monsterball_goal_rooms[1]);
     break;
 
   case BGM_ENTROPY:
@@ -481,7 +487,26 @@ static void BotPollMonsterball() {
     if ((obj->type == OBJ_BUILDING || obj->type == OBJ_ROBOT) && obj->id == Obj_monsterball_id) {
       Bot_objective.monsterball_objnum = i;
       Bot_objective.monsterball_room = obj->roomnum;
-      return;
+      break;
+    }
+  }
+
+  // M1 observability: per-team ball progress (route cost ball->goal; smaller = closer to
+  // scoring INTO that team's goal room) + room-transition log with the direction sign, the
+  // analyzer's play-by-play. A room transition also covers goal-reset teleports (kickoffs).
+  int ball_room = Bot_objective.monsterball_room;
+  if (ball_room >= 0 && !ROOMNUM_OUTSIDE(ball_room) && Rooms[ball_room].used) {
+    for (int t = 0; t < 2; t++) {
+      int goal = Bot_objective.monsterball_goal_rooms[t];
+      Bot_objective.monsterball_progress[t] =
+          (goal >= 0 && Rooms[goal].used) ? BotEstimatePathCost(ball_room, goal) : -1.0f;
+    }
+    if (ball_room != Bot_objective.monsterball_prev_room) {
+      if (Bot_objective.monsterball_prev_room >= 0)
+        LOG_DEBUG.printf("BOT MBALL: ball room %d -> %d (cost to red-goal %.0f, blue-goal %.0f)",
+                         Bot_objective.monsterball_prev_room, ball_room, Bot_objective.monsterball_progress[0],
+                         Bot_objective.monsterball_progress[1]);
+      Bot_objective.monsterball_prev_room = ball_room;
     }
   }
 }
@@ -804,13 +829,19 @@ void BotPrintObjectiveState() {
     break;
   }
 
-  case BGM_MONSTERBALL:
-    if (Bot_objective.monsterball_objnum >= 0)
-      PrintDedicatedMessage("  Monsterball: room %d (obj %d)\n", Bot_objective.monsterball_room,
-                            Bot_objective.monsterball_objnum);
-    else
+  case BGM_MONSTERBALL: {
+    if (Bot_objective.monsterball_objnum >= 0) {
+      object *ball = &Objects[Bot_objective.monsterball_objnum];
+      PrintDedicatedMessage("  Monsterball: room %d (obj %d, size %.1f, speed %.0f)\n",
+                            Bot_objective.monsterball_room, Bot_objective.monsterball_objnum, ball->size,
+                            vm_GetMagnitude(&ball->mtype.phys_info.velocity));
+      PrintDedicatedMessage("  Goals: red room %d (ball cost %.0f), blue room %d (ball cost %.0f)\n",
+                            Bot_objective.monsterball_goal_rooms[0], Bot_objective.monsterball_progress[0],
+                            Bot_objective.monsterball_goal_rooms[1], Bot_objective.monsterball_progress[1]);
+    } else
       PrintDedicatedMessage("  Monsterball: not found (ID=%d)\n", Obj_monsterball_id);
     break;
+  }
 
   case BGM_ENTROPY: {
     PrintDedicatedMessage("  Rooms owned: Red %d, Blue %d; free viruses: %d (virus ID=%d)\n",

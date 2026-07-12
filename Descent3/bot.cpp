@@ -313,6 +313,7 @@ static void BotClearActiveGoal(int bot_index) {
   Bots[bot_index].via_seal_count = 0;
   Bots[bot_index].troute_goal_room = -1;      // $nav troute: a terrain plan dies with the goal it served
   Bots[bot_index].entropy_holding = false;    // E3: a takeover hold dies with the goal too
+  Bots[bot_index].mball_fire_handle = OBJECT_HANDLE_NONE; // M1: ball-fire order dies with the goal too
 }
 
 // Force a bot into escort mode: clear target + all goals + force EXPLORE + retarget cooldown.
@@ -705,6 +706,11 @@ static void BotDoSecondaryFiring(int bot_index) {
   int bot_slot = Bots[bot_index].player_slot;
   object *obj = &Objects[Players[bot_slot].objnum];
   if (!obj->ai_info)
+    return;
+
+  // Monsterball M1: while ordered onto the ball, secondaries hold — a missile's whole payload
+  // clamps to the same [10,20] u/s nudge as one Vauss round (MONSTERBALL_MODE.md §1.2).
+  if (Bots[bot_index].mball_fire_handle != OBJECT_HANDLE_NONE)
     return;
 
   object *target = ObjGet(obj->ai_info->target_handle);
@@ -4300,6 +4306,29 @@ static void BotUpdateAimDirection(int bot_index) {
   object *target = ObjGet(obj->ai_info->target_handle);
   bool has_valid_target = target && target->type != OBJ_GHOST;
 
+  // Monsterball M1 fire-at-object: when the striker loop has ordered fire at the ball, face
+  // its predicted position — the ball is the target, whatever the combat AI thinks. Uses the
+  // same lead math as combat aim (the ball is slow but massive; leading still helps at range).
+  if (Bots[bot_index].mball_fire_handle != OBJECT_HANDLE_NONE) {
+    object *ball = ObjGet(Bots[bot_index].mball_fire_handle);
+    if (ball) {
+      vector aim = ball->pos;
+      float bspeed = vm_GetMagnitude(&ball->mtype.phys_info.velocity);
+      if (bspeed > 2.0f) {
+        int wb_index = Players[slot].weapon[PW_PRIMARY].index;
+        int weapon_id = BotGetWbWeaponId(slot, wb_index);
+        if (weapon_id > 0 && weapon_id < MAX_WEAPONS) {
+          float proj_speed = vm_GetMagnitude(&Weapons[weapon_id].phys_info.velocity);
+          float d = vm_VectorDistanceQuick(&obj->pos, &ball->pos);
+          if (proj_speed > 1.0f)
+            aim = ball->pos + ball->mtype.phys_info.velocity * (d / proj_speed);
+        }
+      }
+      obj->ai_info->last_see_target_pos = aim;
+      return;
+    }
+  }
+
   // Flag carrier in the home room: always face the home flag so afterburner thrust (which
   // pushes along +fvec) drives the score run — even with an enemy in view. In a single-room
   // arena the flow field is inactive (current==goal), so without this the bot faces the enemy
@@ -5645,6 +5674,18 @@ static void BotSelectTarget(int bot_index) {
 }
 
 // Fire the bot's primary weapon at its current AI target if in range and aimed.
+// Monsterball ball-shooting weapon preference (M1): every hit clamps to the DLL's [10,20] u/s
+// nudge, so damage-per-shot is worthless and fire RATE is everything — Vauss if owned with
+// ammo, else the infinite laser. Never secondaries (one clamped nudge for a whole missile).
+static void BotSelectBallWeapon(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  int want = LASER_INDEX;
+  if ((Players[slot].weapon_flags & (1u << VAUSS_INDEX)) && Players[slot].weapon_ammo[VAUSS_INDEX] > 0)
+    want = VAUSS_INDEX;
+  if (Players[slot].weapon[PW_PRIMARY].index != want)
+    Players[slot].weapon[PW_PRIMARY].index = want;
+}
+
 // Bypasses ai_fire() (which is OBJ_PLAYER-unsafe) by calling WBFireBattery() directly.
 // AIF_DISABLE_FIRING remains set so the AI pipeline never calls ai_fire() on bots.
 // Resource drain mirrors WeaponFire.cpp:2996-3009 — WBFireBattery() alone does NOT drain
@@ -5655,23 +5696,41 @@ static void BotDoFiring(int bot_index) {
   if (!obj->ai_info)
     return;
 
-  object *target = ObjGet(obj->ai_info->target_handle);
-  if (!target || target->type == OBJ_NONE || target->type == OBJ_GHOST)
-    return;
-  if (target->type == OBJ_PLAYER) {
-    if (Players[target->id].flags & (PLAYER_FLAGS_DEAD | PLAYER_FLAGS_DYING))
-      return;
-  } else if (target->flags & (OF_DEAD | OF_DESTROYED)) {
-    return;
+  // Monsterball M1 fire-at-object: the ball order overrides the combat target. No cloak
+  // check (the ball can't cloak); LOS and everything downstream (range, aim gate, drain,
+  // difficulty jitter) apply unchanged — aim scatter on a ball = blunder risk, which is
+  // exactly how lower-difficulty bots should be worse at this mode.
+  bool ball_target = false;
+  object *target = nullptr;
+  if (Bots[bot_index].mball_fire_handle != OBJECT_HANDLE_NONE) {
+    target = ObjGet(Bots[bot_index].mball_fire_handle);
+    if (target && !(target->flags & (OF_DEAD | OF_DESTROYED)))
+      ball_target = true;
+    else
+      target = nullptr;
   }
+  if (!target) {
+    target = ObjGet(obj->ai_info->target_handle);
+    if (!target || target->type == OBJ_NONE || target->type == OBJ_GHOST)
+      return;
+    if (target->type == OBJ_PLAYER) {
+      if (Players[target->id].flags & (PLAYER_FLAGS_DEAD | PLAYER_FLAGS_DYING))
+        return;
+    } else if (target->flags & (OF_DEAD | OF_DESTROYED)) {
+      return;
+    }
 
-  // Don't fire at cloaked targets
-  if (!BotCanSeeTarget(obj, target))
-    return;
+    // Don't fire at cloaked targets
+    if (!BotCanSeeTarget(obj, target))
+      return;
+  }
 
   // Don't fire through walls
   if (!BotHasLOS(obj, target))
     return;
+
+  if (ball_target)
+    BotSelectBallWeapon(bot_index);
 
   // Fire reaction delay (Phase 5.2): lower difficulties have a delay before first shot on a new target.
   // Timer only resets on target change, NOT on LOS loss — prevents exploits.
@@ -5735,6 +5794,12 @@ static void BotDoFiring(int bot_index) {
 
   if (WBIsBatteryReady(obj, wb, wb_index)) {
     WBFireBattery(obj, wb, 0, wb_index);
+
+    // Analyzer event (throttled per bot): shots-at-ball is the M1 activity metric.
+    if (ball_target && Gametime - Bots[bot_index].mball_shot_log_t > 2.0f) {
+      Bots[bot_index].mball_shot_log_t = Gametime;
+      LOG_DEBUG.printf("BOT MBALL: '%s' firing at ball (wb %d, dist %.0f)", Bots[bot_index].callsign, wb_index, dist);
+    }
 
     // Drain energy and ammo per shot — mirrors WeaponFire.cpp:2996-3009.
     // WBFireBattery creates the projectile only; resource accounting is the caller's job.
@@ -6269,6 +6334,9 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   Bots[bot_index].chasing_powerup_timer = 0.0f;
   Bots[bot_index].blacklisted_powerup_handle = OBJECT_HANDLE_NONE;
   Bots[bot_index].blacklisted_powerup_expires = 0.0f;
+  Bots[bot_index].entropy_holding = false;
+  Bots[bot_index].mball_fire_handle = OBJECT_HANDLE_NONE; // -1 sentinel: a zeroed struct would alias handle 0
+  Bots[bot_index].mball_shot_log_t = 0.0f;
   vm_MakeZero(&Bots[bot_index].via_point);
   Bots[bot_index].via_expires = 0.0f;
   Bots[bot_index].via_seal_count = 0;

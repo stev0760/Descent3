@@ -106,9 +106,13 @@ struct BotObjectiveState {
   int hoard_world_orbs[BOT_HOARD_MAX_WORLD_ORBS]; // Objects[] indices of free orbs in the world
   int hoard_world_orb_count;                       // number of valid entries in hoard_world_orbs
 
-  // --- Monsterball ---
-  int monsterball_objnum; // Objects[] index of the ball, or -1
-  int monsterball_room;   // roomnum of the ball, or -1
+  // --- Monsterball --- (M1, MONSTERBALL_MODE.md §4.1; ball velocity/size read live from
+  // Objects[monsterball_objnum] at use sites — caching them would only add 0.5s staleness)
+  int monsterball_objnum;        // Objects[] index of the ball, or -1
+  int monsterball_room;          // roomnum of the ball, or -1
+  int monsterball_goal_rooms[2]; // GetGoalRoomForTeam(0/1), cached at init (goals don't move)
+  float monsterball_progress[2]; // per poll: route cost ball->goal[t] (logging + striker utility)
+  int monsterball_prev_room;     // last polled ball room, for transition logging
 
   // --- Entropy --- (all rebuilt every poll — room flags FLIP at runtime on takeover, never cache)
   int entropy_owned_rooms[2];                        // live owned-special-room counts: [0]=red [1]=blue
