@@ -3,6 +3,11 @@
 **Status: SPEC ONLY (2026-06-12) — no bot code written beyond the existing position poll.**
 Sources of truth: `netgames/monsterball/monsterball.cpp` (read in full for this document),
 the sports-game AI research in §2 (RLBot botmaking wiki, Rocket League shadow-defense
+> **Status update (2026-07-12, 0.9.8-dev):** M1–M3 IMPLEMENTED (`c0db0728`/`9cbf16c1`/`8bf0b4fe`)
+> — UNTESTED; awaiting the first Monsterball smoke (empty-net drill, then a bot match). `$nav
+> mball` gates the striker, `$nav mroles` the role split. M4 polish not started. The analyzer's
+> goal/blunder patterns need the DLL's actual HUD message wording — capture it in the first smoke.
+
 literature, RoboCup dynamic role assignment), and the **D3 community/competitive-play research
 in §8** (DescentBB match archives + D2X-XL back-port docs — which independently corroborate
 the two DLL "surprises" and the Vauss/rate-of-fire meta). Companion doc: `ENTROPY_MODE.md`

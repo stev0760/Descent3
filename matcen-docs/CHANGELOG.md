@@ -41,6 +41,17 @@ anchors its defense at the lab. `$nav entropy off` disables the invasion layer f
 Requires an Entropy-flagged mission (e.g. *dementia.mn3*); the log analyzer gained a full Entropy
 section (takeovers per round, hold attempts vs aborts, virus economy).
 
+**Monsterball: bots that play the ball, not chase it.** The other bot-less mode gets the full
+sports-AI treatment. Bots now position *behind* the ball on the line toward their goal (you score
+into your own goal in Monsterball), and only shoot it when the shot actually advances it their way
+— with a hard "never help the other team" gate, because in this mode the ball flies exactly away
+from whoever shot it, so an own-goal is a pure geometry mistake the bot can simply refuse to make.
+Teams organize like a futsal side: exactly one striker on the ball (the job migrates to whoever is
+best placed when a missed touch overshoots), a supporter positioned to inherit the play, a keeper
+shadowing the goal mouth that clears with safe sideways shots, and everyone else fighting for
+field control — killing the enemy's ball-handler is treated as a turnover. Out-of-ammo bots ram
+the ball instead. `$nav mball` / `$nav mroles` gate the striker skill and the role split.
+
 ## [0.9.7] — 2026-07-12
 
 **The navigation-intelligence release: one spatial model, kept honest.** Bots now decide where to
