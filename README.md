@@ -14,7 +14,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 **No client modifications required.** Retail D3 v1.5 clients and compatible engines (PiccuEngine) connect and play against bots as-is. A server with no bot configuration behaves exactly like vanilla D3.
 
-**Current release: 0.9.6** — destructible-obstacle handling and objective focus: bots shoot out breakable glass and grates on their route instead of treating them as walls, stay committed to the objective instead of wandering off after every powerup, and no longer splash-damage themselves fighting through obstacles. Validated by an 8.8-hour, 9-map soak at the project's best-ever capture rate — including the **first fully autonomous bot flag captures** on a 324-room glass-maze map that bots previously could not navigate at all.
+**Current release: 0.9.7** — the navigation-intelligence release. Bots now reason about the world through a single runtime spatial model that stays honest as the level changes: powerup selection asks the navigation model what's actually reachable instead of chasing anything visible (no more circling bait items across a wall), routes across outdoor terrain are planned around hills over the waypoint lattice instead of beelined into them (door choice by flight distance, not crow-flies distance), routes through known-painful rooms are re-priced from the bots' own experience, and when glass gets smashed or grates shot out mid-match, the affected rooms rebuild their waypoint model within seconds. Validated across five map pools — including 4-team stock Bedlam at the project's historical benchmark rates — with zero crashes over ~30 hours of soak testing.
 
 ### Features
 

@@ -7,7 +7,14 @@ live navigation status is in [NAVIGATION.md](NAVIGATION.md) §7.0.
 Versioning: `0.8.x` = feature releases; `0.9.x` = the navigation-milestone series.
 A `-dev` suffix marks an in-test build that has not yet passed its validation gate.
 
-## [0.9.7-dev] — in test (2026-07-04)
+## [0.9.7] — 2026-07-12
+
+**The navigation-intelligence release: one spatial model, kept honest.** Bots now decide where to
+go, whether an item is worth chasing, which door to enter, and whether to cross open terrain — all
+against a single runtime world-model that updates itself when the world changes (glass smashed,
+grates destroyed). Validated across five map pools including a 4-team stock-Bedlam run at the
+project's historical benchmark levels, with zero crashes across roughly thirty hours of soak
+testing.
 
 **Dynamic re-routing and outdoor route-following.** Bots notice within about a second that they
 are not making progress and re-plan from where they actually are — releasing a stale waypoint,
