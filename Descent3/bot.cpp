@@ -2918,7 +2918,15 @@ static bool BotDoEntropyInvadeNav(int bot_index) {
                      Bots[bot_index].callsign, cur_room, target_room, obj->shields);
   }
 
-  // En route (invade or retreat leg): carrier-grade routed goal.
+  // En route (invade or retreat leg): carrier-grade routed goal. Like the CTF/Hoard carrier
+  // navs, clear powerup goals — a loaded bot doesn't detour (dual live goals also risk
+  // fighting each other). Viruses on the direct path still bump-collect on touch for free.
+  int &pugi = Bots[bot_index].powerup_goal_index;
+  if (pugi >= 0 && pugi < MAX_GOALS && obj->ai_info->goals[pugi].used)
+    GoalClearGoal(obj, &obj->ai_info->goals[pugi]);
+  pugi = -1;
+  Bots[bot_index].chasing_powerup_handle = OBJECT_HANDLE_NONE;
+  Bots[bot_index].chasing_powerup_timer = 0.0f;
   bool reissued = false;
   BotSetRoutedGoal(bot_index, target_room, BotGetNearestPortalPoint(obj, target_room), &reissued);
   if (reissued)

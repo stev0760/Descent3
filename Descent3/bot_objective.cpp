@@ -48,6 +48,10 @@ static int Obj_monsterball_id = -1;
 static int Obj_entropy_virus_id = -1;
 
 static_assert(BOT_ENTROPY_MAX_ROOMS == MAX_ROOMS, "entropy room maps must match engine MAX_ROOMS");
+static_assert(sizeof(Bot_objective.hyper_chaser) / sizeof(bool) == MAX_BOTS,
+              "hyper_chaser is sized with a literal 16 in bot_objective.h (bot.h not visible there)");
+static_assert(sizeof(Bot_objective.mball_role) == MAX_BOTS,
+              "mball_role is sized with a literal 16 in bot_objective.h (bot.h not visible there)");
 
 static void BotAssignMonsterballRoles(); // defined below (needs BotEstimatePathCost's section)
 
