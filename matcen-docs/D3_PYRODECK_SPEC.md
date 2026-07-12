@@ -846,4 +846,83 @@ These existing open-source projects serve as reference for parser logic and serv
 
 ---
 
+## Addendum A — Mission (.mn3) game-mode compatibility scanning (2026-07-12)
+
+**Goal:** Pyrodeck reads the server's `missions/` directory and shows, per mission, which game
+modes it supports and at how many teams — ending launch-and-pray mission selection. All data is
+author-declared text metadata inside the `.mn3`; the scan is a faithful port of the engine's own
+mission filter (`Descent3/Mission.cpp: MissionGetKeywords()`), so Pyrodeck's answer is exactly as
+trustworthy as the game's own mission list. **Reference implementation: `tools/mn3info.py`** in
+the engine fork (validated 2026-07-12 against a 102-mission library).
+
+### A.1 Container: .mn3 is a HOG2 archive
+
+Little-endian throughout (`cfile/hogfile.h`):
+
+| Offset | Size | Field |
+|---|---|---|
+| 0 | 4 | magic `"HOG2"` |
+| 4 | 4 | `u32 nfiles` |
+| 8 | 4 | `u32 file_data_offset` |
+| 12 | 56 | padding (header is 68 bytes total) |
+| 68 | 48 × nfiles | file entries: `char name[36]` (NUL-terminated), `u32 flags`, `u32 len`, `u32 timestamp` |
+
+File payloads follow **sequentially in entry order** starting at `file_data_offset` (entry N's
+offset = `file_data_offset` + sum of `len` of entries 0..N-1).
+
+### A.2 Mission metadata: the `.msn` text file
+
+Extract the entry whose name ends in `.msn` (case-insensitive). It is line-oriented text; parse
+the first token of each line (whitespace-delimited, case-insensitive), remainder = operand:
+
+| Token | Meaning |
+|---|---|
+| `NAME` | display name |
+| `NUMLEVELS` | level count |
+| `MULTI` / `SINGLE` | playability flags |
+| `AUTHOR`, `DESCRIPTION`, `URL` | display metadata |
+| `KEYWORDS` | **comma-separated compatibility tags — the payload** |
+
+### A.3 Mode requirements (from `netgames/*/` `options->requirements`, verified in source)
+
+| Mode (.d3m) | Requirements |
+|---|---|
+| Anarchy, Team Anarchy, Hyper-Anarchy | *(none — every mission qualifies)* |
+| CTF | `MINGOALS2,GOALPERTEAM` |
+| Hoard | `MINGOALS1` |
+| Entropy | `ENTROPY` |
+| Monsterball | `MINGOALS2,GOALPERTEAM,SPEC1` |
+| Co-op, Robo-Anarchy | `COOP` |
+
+### A.4 Matching semantics (port of `MissionGetKeywords`, returns max teams or INCOMPATIBLE)
+
+1. Parse mission `KEYWORDS` into tags (comma-separated, trim, case-insensitive). A tag
+   `GOALS<n>` sets `goals = n` (last one wins).
+2. For each mode-requirement token: `MINGOALS<n>` → set `goalsneeded = n`; `GOALPERTEAM` → set
+   `goal_per_team = true`; **any other token → INCOMPATIBLE unless it appears literally in the
+   mission tags** (this is how `ENTROPY`, `SPEC1`, `COOP` work).
+3. `teams = goal_per_team ? goals : MAX_NET_PLAYERS`; if `teams < goalsneeded` or
+   `goals < goalsneeded` → INCOMPATIBLE; else compatible at up to `teams` teams.
+
+### A.5 Real-world tolerances (all observed in the 102-mission validation)
+
+- Keywords may be lowercase (`goals2,goalperteam,inferno`) — compare case-insensitively.
+- Author typos exist (`GOALSPERTEAM` on pumphouse) and duplicate tokens occur — unknown mission
+  tags are harmless and must be ignored, exactly as the engine ignores them.
+- Custom tags (`inferno`, `ASSAULT`) are common — ignore.
+- Missions with no `KEYWORDS` line are anarchy-class only (goals = 0).
+- **Caveat:** tags are author-declared. A mislabeled mission lies to the game and to Pyrodeck
+  equally; this scan reproduces the game's fidelity, not more.
+
+### A.6 UI suggestion
+
+Mission picker rows: name, level count, and mode badges with team capacity — e.g.
+`Bedlam (4 Team) — CTF·4T | Monsterball·4T | Hoard | Anarchy`. Filter the picker by the
+currently-selected `.d3m` so incompatible missions are unselectable (the launch-crash class this
+feature eliminates). Validation payoff from the reference library: 4 Entropy missions
+(dementia, ctfarena2, RAGE, sigmabase) and 8 Monsterball missions (bedlam, frenzy, dodgeball ×2,
+burnout, fury, pumphouse, blst99) discovered by scan alone.
+
+---
+
 *This spec is the handoff artifact for implementation via Claude Code agents. All design decisions are locked unless explicitly revisited. Extend with addenda rather than in-place edits to preserve decision history.*
