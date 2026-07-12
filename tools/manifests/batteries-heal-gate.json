@@ -1,12 +1,22 @@
 {
-  "_comment": "$nav heal ACCEPTANCE GATE (the stale-glass fix, operator: rides in 0.9.7). Batteries, two 30-min rounds, defaults (heal ON). PASS = Red team flag picks appear (all prior gates: Red = 0 picks; diagnosis = Red's approach runs through the lobby rm3 whose 16 doorway seeds orphaned against unbroken conference-room glass, and the model never learned the panes broke). Metrics: (1) 'roadmap room N HEAL' lines — expect rm3/rm22/rm12-class rebuilds within seconds of pane-smashing; (2) Red picks > 0 (THE gate); (3) troute REJECT storm on rm84/rm6-class goals should shrink as routes materialize; (4) no rebuild churn (HEAL lines should be bounded ~once per pane, not repeating).",
+  "_comment": "$nav heal ACCEPTANCE GATE (the stale-glass fix, operator: rides in 0.9.7). Batteries, two 30-min rounds, defaults (heal ON). PASS = Red team flag picks appear (all prior gates: Red = 0 picks; diagnosis = Red's approach runs through the lobby rm3 whose 16 doorway seeds orphaned against unbroken conference-room glass, and the model never learned the panes broke). Metrics: (1) 'roadmap room N HEAL' lines \u2014 expect rm3/rm22/rm12-class rebuilds within seconds of pane-smashing; (2) Red picks > 0 (THE gate); (3) troute REJECT storm on rm84/rm6-class goals should shrink as routes materialize; (4) no rebuild churn (HEAL lines should be bounded ~once per pane, not repeating).",
   "server_dir": "/home/steve/Projects/Descent3-bot-testing-client/Descent3_testing",
-  "launch": ["./Descent3", "-dedicated", "./soak-dedicated-batteries-diag.cfg"],
+  "launch": [
+    "./Descent3",
+    "-dedicated",
+    "./soak-dedicated-batteries-diag.cfg"
+  ],
   "telnet_port": 2092,
   "telnet_password": "test",
   "phases": [
-    {"name": "healgate", "toggles": {}, "rounds": 2}
+    {
+      "name": "healgate",
+      "toggles": {},
+      "minutes": 60
+    }
   ],
-  "navdump": {"batteriesincluded": 1500},
+  "navdump": {
+    "batteriesincluded": 2700
+  },
   "max_minutes": 75
 }
