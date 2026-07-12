@@ -2160,20 +2160,23 @@ static bool BotTrouteRedirect(int bot_index, object *obj, int *goal_room, vector
     }
     return false;
   }
-  // Indoors: does the interior router have a finite route? Under v1 that always completed/blocked
-  // the plan; under v2 ($nav troute2) an existing interior route is a candidate to BEAT, and a
-  // cost-adopted plan only completes once the bot has actually flown the terrain segment
-  // (troute_crossed) — otherwise seg0 would self-cancel the moment it was adopted.
-  const float interior_cost = BotComputeRouteCost(obj->roomnum, real_goal);
-  if (interior_cost < 1e30f && bi.troute_goal_room == real_goal && bi.troute_crossed) {
-    LOG_DEBUG.printf("BOT NAV: '%s' troute complete — interior route resumed (goal rm%d)", bi.callsign, real_goal);
-    bi.troute_goal_room = -1;
-    bi.troute_replans = 0;
-    return false;
-  }
-  if (bi.troute_goal_room != real_goal) {
+  // Indoors. Dijkstra discipline (review finding): the route cost is computed ONLY on the two
+  // paths that consume it — plan completion (plan active AND crossed) and plan adoption (no plan
+  // AND the reject-cache expired). The common idle cases (active seg0, cached rejection) pay
+  // nothing, so this pre-step no longer doubles the router cost of every goal-issue.
+  if (bi.troute_goal_room == real_goal) {
+    // Completion needs the terrain segment flown (troute_crossed) — a cost-adopted plan would
+    // otherwise self-cancel the moment it was adopted (an interior route exists by definition).
+    if (bi.troute_crossed && BotComputeRoute(obj->roomnum, real_goal) >= 0) {
+      LOG_DEBUG.printf("BOT NAV: '%s' troute complete — interior route resumed (goal rm%d)", bi.callsign, real_goal);
+      bi.troute_goal_room = -1;
+      bi.troute_replans = 0;
+      return false;
+    }
+  } else {
     if (Gametime < bi.troute_reject_until)
       return false;
+    const float interior_cost = BotComputeRouteCost(obj->roomnum, real_goal);
     // v2 adoption gate: with an interior route in hand, only pay the composer's Dijkstras when
     // that route is long enough to plausibly lose the comparison.
     if (interior_cost < 1e30f &&
@@ -3187,12 +3190,16 @@ static bool BotReachGateAllows(object *bot_obj, object *p) {
     if (free_slot < 0 && Reach_handles[i] == OBJECT_HANDLE_NONE)
       free_slot = i;
   }
-  if (slot >= 0)
+  // Review fix: the verdict is only bot-independent in a SINGLE-component roadmap. In a
+  // multi-comp room the answer depends on which component the asking bot stands in — never
+  // serve or store a global cache entry there (compute fresh per query instead).
+  const bool cacheable = BotRoadmapRoomComps(bot_obj->roomnum) == 1;
+  if (slot >= 0 && cacheable)
     return Reach_verdicts[slot] != 0; // cached geometric verdict (item-side; bot-independent)
   int verdict = BotRoadmapItemReach(bot_obj->roomnum, bot_obj->pos, p->pos);
   if (verdict < 0)
     return true; // unknown — the model has no answer here; keep legacy behavior, don't cache
-  if (free_slot >= 0) {
+  if (free_slot >= 0 && cacheable && slot < 0) {
     Reach_handles[free_slot] = p->handle;
     Reach_verdicts[free_slot] = (int8_t)verdict;
     LOG_DEBUG.printf("BOT NAV: item-reach '%s' (room %d): %s", Object_info[p->id].name, (int)p->roomnum,

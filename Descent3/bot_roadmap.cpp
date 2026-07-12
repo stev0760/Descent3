@@ -1052,6 +1052,14 @@ void BotRoadmapInvalidate() { FreeAll(); }
 
 int BotRoadmapSerial() { return g_build_serial; }
 
+// Component count of a room's roadmap (0 = no roadmap). Callers that cache roadmap-derived
+// verdicts must not cache in multi-component rooms — the answer is perspective-dependent there
+// (review finding: the reach gate stamped one bot's minority-component view as global truth).
+int BotRoadmapRoomComps(int room_idx) {
+  RoadmapRoom *rr = Get(room_idx);
+  return rr ? rr->comp_count : 0;
+}
+
 // $nav reach (architecture north star, increment 1): SINGLE-AUTHORITY reachability. "Can our
 // navigation actually deliver a ship from from_pos to item_pos inside this room?" answered by the
 // same model that does the delivering: both endpoints must connect to the room roadmap (a

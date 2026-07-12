@@ -138,6 +138,8 @@ int BotRoadmapItemReach(int room, const vector &from_pos, const vector &item_pos
 float BotRoadmapOutdoorPathCost(int region, const vector &a, const vector &b);
 // Bumped on every roadmap flush — key any cache of roadmap-derived answers to this.
 int BotRoadmapSerial();
+// Roadmap component count for a room (0 = none). Do NOT cache reach-style verdicts when > 1.
+int BotRoadmapRoomComps(int room_idx);
 
 // Stage 3 (outdoor): the SAME roadmap grown over a terrain REGION's airspace, so the local search threads
 // laterally around outdoor structures (the Bree-wall class) instead of beelining into them. Seeds = the

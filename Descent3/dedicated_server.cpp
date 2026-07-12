@@ -794,7 +794,7 @@ static const NavToggle Nav_toggles[] = {
     {"hardcost", "hardroomcost", nullptr, &Bot_hard_cost_enabled,
      "price hard-room suspension evidence into route edges (router learns measured traversal pain)", false, false},
     {"heal", "roadmapheal", nullptr, &Bot_roadmap_heal_enabled,
-     "stale-glass fix: rebuild a room's roadmap when its watched panes/grates open mid-round", false, false},
+     "stale-glass fix: rebuild a room's roadmap when its watched panes/grates open mid-round", false, true},
     {"terrain", "terrainsteer", nullptr, &Bot_terrain_steering_enabled, "outdoor terrain steering / entrance redirect",
      true, false},
     {"bnodes", "pseudobnodes", nullptr, &Bot_pseudo_bnodes_enabled, "pseudo-BNode skeleton interior waypoints", true,
