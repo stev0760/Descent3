@@ -582,15 +582,26 @@ static void BotPollEntropy() {
     }
   }
 
-  // 3. Carried-virus counts (server-authoritative inventory poll).
+  // 3. Carried-virus counts (server-authoritative inventory poll). Deltas are the analyzer's
+  //    economy events: pickups, death losses, takeover spends (5 consumed while alive — E3).
   for (int s = 0; s < MAX_NET_PLAYERS && s < BOT_MAX_PLAYERS; s++) {
-    Bot_objective.entropy_virus_count[s] =
-        (Obj_entropy_virus_id >= 0 && (NetPlayers[s].flags & NPF_CONNECTED))
-            ? Players[s].inventory.GetTypeIDCount(OBJ_POWERUP, Obj_entropy_virus_id)
-            : 0;
+    int now = (Obj_entropy_virus_id >= 0 && (NetPlayers[s].flags & NPF_CONNECTED))
+                  ? Players[s].inventory.GetTypeIDCount(OBJ_POWERUP, Obj_entropy_virus_id)
+                  : 0;
+    int was = Bot_objective.entropy_virus_count[s];
+    if (now > was)
+      LOG_DEBUG.printf("BOT ENTROPY: '%s' virus pickup -> %d [cap %d]", Players[s].callsign, now,
+                       BotEntropyCarryCapacity(s));
+    else if (now < was && Players[s].num_deaths_level > Bot_objective.entropy_prev_deaths[s])
+      LOG_DEBUG.printf("BOT ENTROPY: '%s' lost %d virus(es) on death", Players[s].callsign, was - now);
+    else if (now == was - BOT_ENTROPY_TAKEOVER_LOAD)
+      LOG_DEBUG.printf("BOT ENTROPY: '%s' spent %d viruses (takeover) -> %d", Players[s].callsign,
+                       BOT_ENTROPY_TAKEOVER_LOAD, now);
+    Bot_objective.entropy_virus_count[s] = now;
   }
 
-  // 4. Kill-streak mirror.
+  // 4. Kill-streak mirror. (Runs AFTER step 3 so the death-loss log above can compare the
+  //    pre-mirror prev_deaths value against the live counter.)
   BotEntropyMirrorStreaks();
 }
 
@@ -600,6 +611,13 @@ int BotEntropyCarryCapacity(int slot) {
   if (slot < 0 || slot >= BOT_MAX_PLAYERS)
     return 0;
   return BOT_ENTROPY_VIRUS_PER_KILL * Bot_objective.entropy_kill_streak[slot];
+}
+
+int BotEntropyVirusTeam(int objnum) {
+  for (int k = 0; k < Bot_objective.entropy_world_virus_count; k++)
+    if (Bot_objective.entropy_world_virus[k] == objnum)
+      return Bot_objective.entropy_world_virus_team[k];
+  return -1;
 }
 
 // ---------------------------------------------------------------------------

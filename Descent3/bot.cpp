@@ -3350,10 +3350,21 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
     } else if (strstr(lower, "hyperorb"))
       priority = 25; // Hyper-Anarchy objective — the entire scoring mechanic revolves around this
     else if (strstr(lower, "entropyvirus")) {
-      // E1 (ENTROPY_MODE.md gotcha #1): never a generic pickup — the server refuses pickups
-      // beyond 2x kill-streak capacity and a refused chase churns forever. E2 adds the
-      // capacity-gated chase; until then bots collect viruses only by incidental touch.
-      continue;
+      // E2 virus economy (ENTROPY_MODE.md §3.2). Own-team virus: objective-grade chase, but
+      // ONLY with mirrored capacity to carry — the server refuses over-capacity pickups and a
+      // refused chase churns forever (gotcha #1). A 0-streak bot has capacity 0 and simply
+      // fights instead: kills ARE the currency, the gate itself is the FSM bias. Enemy virus:
+      // destroyed by touch (denial) — worth a low-priority same-room touch in passing, never a
+      // cross-map run (enemy special rooms deal 5/s). Unknown team (drifted stray): skip — the
+      // misread cost (bumping our own virus at capacity) exceeds the denial value.
+      int vteam = BotEntropyVirusTeam(i);
+      int my_team = Players[slot].team;
+      if (vteam == my_team && Bot_objective.entropy_virus_count[slot] < BotEntropyCarryCapacity(slot))
+        priority = 25; // objective-grade, like the flag/orbs
+      else if (vteam >= 0 && vteam != my_team && !OBJECT_OUTSIDE(obj) && p->roomnum == obj->roomnum)
+        priority = 4; // opportunistic denial: erase enemy stock we're already next to
+      else
+        continue;
     }
 
     // --- Instant-activation power-ups (activate on pickup; no inventory storage) ---

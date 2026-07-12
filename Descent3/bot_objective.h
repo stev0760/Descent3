@@ -178,4 +178,9 @@ int BotGetEntropyVirusId();
 // kill+death races and self-corrects on the next death. See ENTROPY_MODE.md §2.2.
 int BotEntropyCarryCapacity(int slot);
 
+// Inferred team of a free virus object: 0=red, 1=blue, -1=unknown (drifted out of any special
+// room) or not a tracked virus. Inference = current owner of the room it sits in (true at
+// spawn — labs spew at room center). From the last poll's world scan.
+int BotEntropyVirusTeam(int objnum);
+
 #endif // BOT_OBJECTIVE_H
