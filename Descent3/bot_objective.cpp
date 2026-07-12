@@ -620,6 +620,85 @@ int BotEntropyVirusTeam(int objnum) {
   return -1;
 }
 
+bool BotEntropyIsLoaded(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  if (slot < 0 || slot >= BOT_MAX_PLAYERS)
+    return false;
+  return Bot_objective.entropy_virus_count[slot] >= BOT_ENTROPY_TAKEOVER_LOAD;
+}
+
+// $nav entropy — E3 takeover execution. OFF = economy-only bots (E2 still collects/denies);
+// the A/B lever for the invade/hold/retreat layer. See ENTROPY_MODE.md §3.3.
+bool Bot_entropy_takeover_enabled = true;
+
+// Nearest room owned by `owner` (1=red 2=blue), optionally filtered to a kind
+// (1=lab 2=energy 3=repair; 0=any), by path cost from the bot.
+static int BotGetNearestEntropyRoom(int bot_index, int owner, int kind_filter) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  int bot_room = OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum;
+  int best = -1;
+  float best_cost = 1e30f;
+  for (int r = 0; r <= Highest_room_index && r < BOT_ENTROPY_MAX_ROOMS; r++) {
+    if (Bot_objective.entropy_room_owner[r] != owner)
+      continue;
+    if (kind_filter && Bot_objective.entropy_room_kind[r] != kind_filter)
+      continue;
+    if (!Rooms[r].used)
+      continue;
+    float cost = (bot_room >= 0) ? BotEstimatePathCost(bot_room, r)
+                                 : vm_VectorDistanceQuick(&obj->pos, &Rooms[r].path_pnt);
+    if (cost < best_cost) {
+      best_cost = cost;
+      best = r;
+    }
+  }
+  return best;
+}
+
+static int BotGetObjectiveRoom_Entropy(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  int my_team = Players[slot].team;
+  if (my_team != 0 && my_team != 1)
+    return -1; // Entropy is hard-capped at 2 teams
+
+  BotSquadRole role = Bots[bot_index].squad_role;
+  if (role == SQUAD_FOLLOW || role == SQUAD_COVER)
+    return -1; // escort logic owns navigation
+
+  int my_owner = my_team + 1;
+  int enemy_owner = 2 - my_team;
+
+  // Loaded bot (>= 5): the carrier analog — invade, or repair first. Shield policy is an
+  // emergent hysteresis with no per-bot state (constants in bot_objective.h): a hold in
+  // progress runs down to the hard floor; a fresh approach needs REENGAGE shields.
+  if (Bot_entropy_takeover_enabled && Bot_objective.entropy_virus_count[slot] >= BOT_ENTROPY_TAKEOVER_LOAD) {
+    object *obj = &Objects[Players[slot].objnum];
+    int cur_room = OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum;
+    bool in_enemy_special = cur_room >= 0 && cur_room < BOT_ENTROPY_MAX_ROOMS &&
+                            Bot_objective.entropy_room_owner[cur_room] == enemy_owner;
+    bool retreat = obj->shields < BOT_ENTROPY_RETREAT_SHIELDS ||
+                   (!in_enemy_special && obj->shields < BOT_ENTROPY_REENGAGE_SHIELDS);
+    if (retreat) {
+      int rep = BotGetNearestEntropyRoom(bot_index, my_owner, 3); // repair room (+5 shields/s)
+      if (rep < 0)
+        rep = BotGetNearestEntropyRoom(bot_index, my_owner, 2); // energy room fallback
+      return rep;
+    }
+    if (in_enemy_special)
+      return cur_room; // already on the objective — the hold branch owns behavior from here
+    return BotGetNearestEntropyRoom(bot_index, enemy_owner, 0);
+  }
+
+  // DEFEND lean anchors at own lab — the spawn source is the chokepoint that matters.
+  if (role == SQUAD_FREELANCE && Bots[bot_index].objective_lean == BOT_LEAN_DEFEND)
+    return Bot_objective.entropy_lab_rooms[my_team][0];
+
+  // Unloaded attackers: no room override — E2 powerup selection pulls them to lab viruses,
+  // normal anarchy otherwise (the streak IS the resource; kills buy carry slots).
+  return -1;
+}
+
 // ---------------------------------------------------------------------------
 // Main poll dispatcher
 // ---------------------------------------------------------------------------
@@ -987,6 +1066,8 @@ int BotGetObjectiveRoom(int bot_index) {
     return BotGetObjectiveRoom_Hoard(bot_index);
   case BGM_MONSTERBALL:
     return BotGetObjectiveRoom_Monsterball(bot_index);
+  case BGM_ENTROPY:
+    return BotGetObjectiveRoom_Entropy(bot_index);
   default:
     return -1;
   }
@@ -1018,6 +1099,31 @@ float BotGetObjectiveTargetBias(int bot_index, int target_slot) {
     float bias = BOT_HOARD_TARGET_BIAS_PER_ORB * count;
     if (bias < BOT_HOARD_TARGET_BIAS_CAP)
       bias = BOT_HOARD_TARGET_BIAS_CAP;
+    return bias;
+  }
+
+  if (mode == BGM_ENTROPY) {
+    // Defense reaction (E3): an enemy inside one of our special rooms is eating 5/s room
+    // damage on purpose — a takeover attempt or denial harvest; both die well. Scaled hugely
+    // when they carry a takeover load (a holding carrier is the easiest kill in Descent).
+    // A loaded enemy anywhere is -5+ viruses of enemy tempo on death.
+    int my_team = Players[Bots[bot_index].player_slot].team;
+    if (my_team != 0 && my_team != 1)
+      return 0.0f;
+    if (Players[target_slot].team == my_team)
+      return 0.0f;
+    float bias = 0.0f;
+    bool loaded = Bot_objective.entropy_virus_count[target_slot] >= BOT_ENTROPY_TAKEOVER_LOAD;
+    object *tobj = &Objects[Players[target_slot].objnum];
+    int troom = OBJECT_OUTSIDE(tobj) ? -1 : (int)tobj->roomnum;
+    if (troom >= 0 && troom < BOT_ENTROPY_MAX_ROOMS &&
+        Bot_objective.entropy_room_owner[troom] == (uint8_t)(my_team + 1)) {
+      bias += BOT_ENTROPY_INTRUDER_BIAS;
+      if (loaded)
+        bias += BOT_ENTROPY_TAKEOVER_THREAT_BIAS;
+    } else if (loaded) {
+      bias += BOT_ENTROPY_LOADED_BIAS;
+    }
     return bias;
   }
 
@@ -1212,7 +1318,10 @@ static int BotDefenderCount(int eff_size) {
 
 void BotAssignObjectiveLeans() {
   BotGameMode mode = BotGetGameMode();
-  bool needs_lean = (mode == BGM_CTF);
+  // Entropy uses the legacy binary attack/defend split (DEFEND anchors at own lab via
+  // BotGetObjectiveRoom_Entropy); the dedicated-runner model stays CTF-only — there is no
+  // single "flag" to run in Entropy, the loaded-carrier branch is per-bot and emergent.
+  bool needs_lean = (mode == BGM_CTF || mode == BGM_ENTROPY);
 
   // Clear all leans first
   for (int i = 0; i < MAX_BOTS; i++) {
@@ -1255,7 +1364,7 @@ void BotAssignObjectiveLeans() {
       team_bots[j + 1] = key;
     }
 
-    if (!Bot_dedicated_runner_enabled) {
+    if (!Bot_dedicated_runner_enabled || mode != BGM_CTF) {
       // Legacy binary split (A/B baseline): best-equipped DEFEND, rest ATTACK.
       int num_def = BotDefenderCount(n);
       LOG_DEBUG.printf("BOT OBJ: team %d — %d FREELANCE bots, %d defender(s), %d attacker(s) [legacy]", t, n, num_def,

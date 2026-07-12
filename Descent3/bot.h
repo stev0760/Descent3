@@ -480,6 +480,12 @@ struct bot_info {
   int8_t troute_crossed;     // v2: bot has flown the terrain segment — completion requires this
                              // when the plan was ADOPTED by cost choice (an interior route existed)
 
+  // Entropy E3 takeover state (0.9.8): true while parked dead-still in an enemy special room
+  // waiting out the DLL's 3s takeover clock. Log-transition flag only — the authoritative
+  // "am I holding" recomputes every frame from room ownership + load (never cached: room
+  // flags flip on takeover). Cleared on hold exit, load loss, and respawn.
+  bool entropy_holding;
+
   // 0.9.7 Stage 3 progress-monitor replan state
   vector stall_check_pos;   // position at the start of the current sample window
   float stall_check_time;   // Gametime when the current sample window opened

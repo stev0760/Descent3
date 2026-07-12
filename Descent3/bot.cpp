@@ -311,7 +311,8 @@ static void BotClearActiveGoal(int bot_index) {
   Bots[bot_index].chasing_powerup_timer = 0.0f;
   Bots[bot_index].via_expires = 0.0f; // Phase 12: a via commitment dies with the goal it served
   Bots[bot_index].via_seal_count = 0;
-  Bots[bot_index].troute_goal_room = -1; // $nav troute: a terrain plan dies with the goal it served
+  Bots[bot_index].troute_goal_room = -1;      // $nav troute: a terrain plan dies with the goal it served
+  Bots[bot_index].entropy_holding = false;    // E3: a takeover hold dies with the goal too
 }
 
 // Force a bot into escort mode: clear target + all goals + force EXPLORE + retarget cooldown.
@@ -2855,6 +2856,71 @@ static void BotDoHoardCarrierNav(int bot_index) {
   }
 }
 
+// Entropy E3 invade/hold nav (ENTROPY_MODE.md §3.3). Returns true while HOLDING: parked in an
+// enemy special room waiting out the DLL's takeover clock (3.0s, resets if the ship moves >~5u
+// or leaves the room). The park works by clearing all movement goals: with no live goal the
+// engine blends no movement_dir, juke never fires in EXPLORE, and drag stops the ship — the
+// same mechanism Stage 6 hold-station uses on arrival. We deliberately hold at the ENTRY
+// position, not the room's path_pnt: any in-room repositioning risks the >5u reset, and
+// buried-center rooms (12.3 class) would make a path_pnt approach strictly worse.
+// Room choice, shield-floor retreat, and re-engage hysteresis all live in
+// BotGetObjectiveRoom_Entropy — this function only executes what it returns.
+static bool BotDoEntropyInvadeNav(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  if (!obj->ai_info)
+    return false;
+
+  int target_room = BotGetObjectiveRoom(bot_index);
+  if (target_room < 0) {
+    // Enemy owns nothing (game ending) or no repair room to retreat to — roam.
+    BotDoExploreRoaming(bot_index);
+    return false;
+  }
+
+  int cur_room = OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum;
+  int my_team = Players[slot].team;
+  int enemy_owner = 2 - my_team;
+  bool holding = cur_room >= 0 && cur_room == target_room && cur_room < BOT_ENTROPY_MAX_ROOMS &&
+                 Bot_objective.entropy_room_owner[cur_room] == (uint8_t)enemy_owner;
+
+  if (holding) {
+    // Park dead-still: clear both movement goal classes and stop chasing anything.
+    int &pgi = Bots[bot_index].pursuit_goal_index;
+    if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+      GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+    pgi = -1;
+    int &pugi = Bots[bot_index].powerup_goal_index;
+    if (pugi >= 0 && pugi < MAX_GOALS && obj->ai_info->goals[pugi].used)
+      GoalClearGoal(obj, &obj->ai_info->goals[pugi]);
+    pugi = -1;
+    Bots[bot_index].chasing_powerup_handle = OBJECT_HANDLE_NONE;
+    Bots[bot_index].chasing_powerup_timer = 0.0f;
+    if (!Bots[bot_index].entropy_holding) {
+      Bots[bot_index].entropy_holding = true;
+      LOG_DEBUG.printf("BOT ENTROPY: '%s' takeover hold START (room %d, carrying %d, shields %.0f)",
+                       Bots[bot_index].callsign, cur_room, Bot_objective.entropy_virus_count[slot], obj->shields);
+    }
+    return true;
+  }
+
+  if (Bots[bot_index].entropy_holding) {
+    // Left the room (chased off / retreat floor flipped the target to a repair room).
+    // Success/spend is logged separately by the poll's inventory-delta line.
+    Bots[bot_index].entropy_holding = false;
+    LOG_DEBUG.printf("BOT ENTROPY: '%s' takeover hold ABORT (room %d -> target %d, shields %.0f)",
+                     Bots[bot_index].callsign, cur_room, target_room, obj->shields);
+  }
+
+  // En route (invade or retreat leg): carrier-grade routed goal.
+  bool reissued = false;
+  BotSetRoutedGoal(bot_index, target_room, BotGetNearestPortalPoint(obj, target_room), &reissued);
+  if (reissued)
+    LOG_DEBUG.printf("BOT ENTROPY: '%s' invade nav (carrying %d) room %d -> goal %d", Bots[bot_index].callsign,
+                     Bot_objective.entropy_virus_count[slot], cur_room, target_room);
+  return false;
+}
+
 // Returns true if the bot has no primary weapon beyond the default Laser (battery 0).
 // Used to boost weapon pickup priority when the bot just spawned with bare equipment.
 static bool BotHasOnlyDefaultPrimary(int bot_index) {
@@ -3594,6 +3660,23 @@ static void BotUpdateState(int bot_index) {
     if (orbs >= 5)
       flee_pct = std::max(flee_pct, BOT_WEAK_FLEE_PCT);
   }
+  if (BotGetGameMode() == BGM_ENTROPY) {
+    // Stale hold-flag clear: the load can vanish outside the invade branch (takeover fired,
+    // death, denial of our stock) while the bot is in COMBAT/FLEE — recompute-from-state
+    // everywhere else, but the log-transition flag must drop here.
+    if (Bots[bot_index].entropy_holding && !BotEntropyIsLoaded(bot_index))
+      Bots[bot_index].entropy_holding = false;
+    if (BotEntropyIsLoaded(bot_index)) {
+      if (Bots[bot_index].entropy_holding) {
+        // Mid-takeover: fleeing IS the abort. Only below the hard floor (mirrors the retreat
+        // policy in BotGetObjectiveRoom_Entropy) — the 15-shield room-damage cost is planned.
+        flee_pct = std::min(flee_pct, BOT_ENTROPY_RETREAT_SHIELDS / (max_shields > 1.0f ? max_shields : 100.0f));
+      } else {
+        // Loaded en route: the whole load dies with the ship — retreat sooner, like DEFEND.
+        flee_pct = std::min(flee_pct * 1.5f, 0.60f);
+      }
+    }
+  }
   bool low_shields = (shields < max_shields * flee_pct);
 
   switch (old_state) {
@@ -3617,6 +3700,17 @@ static void BotUpdateState(int bot_index) {
       int orb_count = Bot_objective.hoard_count[Bots[bot_index].player_slot];
       float engage_dist = (orb_count >= BOT_HOARD_MAX_ORBS) ? 40.0f : BOT_CLOSERANGE_DIST;
       if (has_target && has_los && dist < engage_dist)
+        new_state = BOT_STATE_HUNT;
+      break;
+    }
+    // Entropy takeover (E3): a loaded bot (>= 5 viruses) invades the nearest enemy special
+    // room, or retreats to a repair room below the shield floor — BotGetObjectiveRoom_Entropy
+    // owns that policy. While HOLDING it never enters HUNT (moving resets the DLL's takeover
+    // clock; state-independent firing still shoots from the parked position). En route it
+    // engages only path-blocking threats, hoard-carrier style.
+    if (BotGetGameMode() == BGM_ENTROPY && Bot_entropy_takeover_enabled && BotEntropyIsLoaded(bot_index)) {
+      bool holding = BotDoEntropyInvadeNav(bot_index);
+      if (!holding && has_target && has_los && dist < 40.0f)
         new_state = BOT_STATE_HUNT;
       break;
     }
@@ -4020,6 +4114,9 @@ static void BotUpdateState(int bot_index) {
         new_state = BOT_STATE_EXPLORE;
     } else if (BotGetGameMode() == BGM_HOARD && Bots[bot_index].combat_idle_timer > BOT_HOARD_COMBAT_TIMEOUT)
       new_state = BOT_STATE_EXPLORE;
+    else if (BotGetGameMode() == BGM_ENTROPY && BotEntropyIsLoaded(bot_index) &&
+             Bots[bot_index].combat_idle_timer > BOT_CTF_CARRIER_COMBAT_TIMEOUT)
+      new_state = BOT_STATE_EXPLORE; // loaded carrier snapback: disengage idle fights, resume the invade
     else if (BotGetGameMode() == BGM_CTF && Bots[bot_index].combat_idle_timer > BOT_CTF_ATTACK_COMBAT_TIMEOUT) {
       BotSquadRole role = Bots[bot_index].squad_role;
       bool is_attacker =

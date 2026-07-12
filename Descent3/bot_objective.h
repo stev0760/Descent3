@@ -55,6 +55,16 @@
 #define BOT_ENTROPY_VIRUS_PER_KILL 2   // carry capacity multiplier (DLL EntropyAux.h)
 #define BOT_ENTROPY_TAKEOVER_LOAD 5    // viruses consumed/required per takeover
 #define BOT_ENTROPY_MAX_LABS 4         // labs tracked per team
+// E3 takeover execution. The hold costs 3s x 5/s room damage = 15 shields planned spend;
+// the floors give an emergent hysteresis without carrier state: a loaded bot below RETREAT
+// always runs for a repair room; one outside enemy ground below REENGAGE keeps repairing
+// instead of starting a fresh approach; an in-progress hold runs down to the hard floor.
+#define BOT_ENTROPY_RETREAT_SHIELDS 25.0f  // hard abort floor (spec ~25, tunable at E4)
+#define BOT_ENTROPY_REENGAGE_SHIELDS 45.0f // don't START an approach below this
+// Defense target bias (BotGetObjectiveTargetBias): negative = prefer killing.
+#define BOT_ENTROPY_INTRUDER_BIAS -300.0f        // any enemy inside one of our special rooms
+#define BOT_ENTROPY_TAKEOVER_THREAT_BIAS -400.0f // extra when that intruder carries >= 5 (kill NOW)
+#define BOT_ENTROPY_LOADED_BIAS -200.0f          // loaded enemy anywhere (kill = -5 enemy tempo)
 
 #define BOT_HOARD_CLUSTER_RADIUS 80.0f
 #define BOT_HOARD_MAX_WORLD_ORBS 96
@@ -182,5 +192,12 @@ int BotEntropyCarryCapacity(int slot);
 // room) or not a tracked virus. Inference = current owner of the room it sits in (true at
 // spawn — labs spew at room center). From the last poll's world scan.
 int BotEntropyVirusTeam(int objnum);
+
+// True when the bot carries enough viruses to convert a room (>= BOT_ENTROPY_TAKEOVER_LOAD).
+bool BotEntropyIsLoaded(int bot_index);
+
+// $nav entropy — E3 takeover execution (invade/hold/retreat + defense bias). OFF leaves the
+// E2 economy running but bots never invade: the A/B lever for "does takeover play help".
+extern bool Bot_entropy_takeover_enabled;
 
 #endif // BOT_OBJECTIVE_H

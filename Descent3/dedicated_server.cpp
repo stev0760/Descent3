@@ -801,6 +801,8 @@ static const NavToggle Nav_toggles[] = {
     {"hyper", "hyperroles", nullptr, &Bot_hyper_roles_enabled,
      "Hyper-Anarchy loose orb roles (nearest-K chase orb / hunt carrier; off = everyone races, nobody hunts)", false,
      false},
+    {"entropy", "entropytakeover", nullptr, &Bot_entropy_takeover_enabled,
+     "Entropy E3 takeover execution (loaded bots invade/hold/retreat; off = E2 economy only)", false, false},
     {"terrain", "terrainsteer", nullptr, &Bot_terrain_steering_enabled, "outdoor terrain steering / entrance redirect",
      true, false},
     {"bnodes", "pseudobnodes", nullptr, &Bot_pseudo_bnodes_enabled, "pseudo-BNode skeleton interior waypoints", true,
