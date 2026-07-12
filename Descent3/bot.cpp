@@ -3875,6 +3875,11 @@ static void BotUpdateState(int bot_index) {
         // Loaded en route: the whole load dies with the ship — retreat sooner, like DEFEND.
         flee_pct = std::min(flee_pct * 1.5f, 0.60f);
       }
+    } else if (Bot_objective.entropy_kill_streak[Bots[bot_index].player_slot] >= 2) {
+      // Streak in hand, no load yet: dying zeroes the carry capacity the streak just bought —
+      // bank it (the objective-room heal branch sends the retreat to our repair room). Fresh
+      // spawns keep normal thresholds: they have nothing to lose and kills to earn.
+      flee_pct = std::min(flee_pct * 1.4f, 0.50f);
     }
   }
   bool low_shields = (shields < max_shields * flee_pct);

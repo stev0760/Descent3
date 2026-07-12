@@ -816,6 +816,22 @@ static int BotGetObjectiveRoom_Entropy(int bot_index) {
     return BotGetNearestEntropyRoom(bot_index, enemy_owner, 0);
   }
 
+  // Streak banking (below the loaded branch — a full load spends better than it heals): a
+  // wounded bot with kills-in-hand retreats to its own repair room and stays until healed.
+  // Stateless hysteresis: enter below HEAL_START, or keep the pad while on it below HEAL_DONE.
+  if (Bot_entropy_takeover_enabled && Bot_objective.entropy_kill_streak[slot] >= 1) {
+    object *obj = &Objects[Players[slot].objnum];
+    int cur_room = OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum;
+    bool on_pad = cur_room >= 0 && cur_room < BOT_ENTROPY_MAX_ROOMS &&
+                  Bot_objective.entropy_room_owner[cur_room] == my_owner &&
+                  Bot_objective.entropy_room_kind[cur_room] == 3;
+    if (obj->shields < BOT_ENTROPY_HEAL_START || (on_pad && obj->shields < BOT_ENTROPY_HEAL_DONE)) {
+      int rep = BotGetNearestEntropyRoom(bot_index, my_owner, 3);
+      if (rep >= 0)
+        return rep;
+    }
+  }
+
   // DEFEND lean anchors at own lab — the spawn source is the chokepoint that matters.
   if (role == SQUAD_FREELANCE && Bots[bot_index].objective_lean == BOT_LEAN_DEFEND)
     return Bot_objective.entropy_lab_rooms[my_team][0];

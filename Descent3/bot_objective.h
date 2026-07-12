@@ -61,6 +61,14 @@
 // instead of starting a fresh approach; an in-progress hold runs down to the hard floor.
 #define BOT_ENTROPY_RETREAT_SHIELDS 25.0f  // hard abort floor (spec ~25, tunable at E4)
 #define BOT_ENTROPY_REENGAGE_SHIELDS 45.0f // don't START an approach below this
+// Streak-preservation healing (operator insight, first POV session): the kill streak gates
+// the whole economy, and dying zeroes it — so a wounded bot WITH a streak banks it at its
+// own repair room (+5/s to the mode's 100 cap; these rooms exist only in Entropy) instead of
+// coin-flipping the next fight. Fresh spawns (streak 0) have nothing to lose and keep
+// fighting. Hysteresis: go heal below START, stay on the pad until DONE. All four Entropy
+// shield knobs are the mode's economy tuning surface — expect iteration.
+#define BOT_ENTROPY_HEAL_START 40.0f // streak >= 1: break off and heal below this
+#define BOT_ENTROPY_HEAL_DONE 80.0f  // leave the repair room at this (cap is 100 in-mode)
 // Defense target bias (BotGetObjectiveTargetBias): negative = prefer killing.
 #define BOT_ENTROPY_INTRUDER_BIAS -300.0f        // any enemy inside one of our special rooms
 #define BOT_ENTROPY_TAKEOVER_THREAT_BIAS -400.0f // extra when that intruder carries >= 5 (kill NOW)
