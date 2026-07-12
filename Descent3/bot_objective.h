@@ -73,6 +73,11 @@
 #define BOT_MBALL_STANDOFF 25.0f    // approach-point distance behind the ball (added to ball radius)
 #define BOT_MBALL_PREDICT_T 0.7f    // seconds of linear ball prediction for the approach point
 #define BOT_MBALL_RAM_SWITCH 12.0f  // dry-bot ram: within this of the approach point, target the ball
+// M3 roles (utility + hysteresis, the $nav hyper pattern at team scale):
+#define BOT_MBALL_ROLE_INCUMBENT 0.7f    // striker keeps the role unless beaten by ~30% (RoboCup margin)
+#define BOT_MBALL_SUPPORT_STANDOFF 60.0f // supporter's distance from the ball along the push line
+#define BOT_MBALL_TB_NEAR_BALL 150.0f    // "enemy striker" proxy: enemy within this of the ball
+#define BOT_MBALL_STRIKER_BIAS -250.0f   // target bias: prefer killing the enemy striker (turnover)
 
 #define BOT_HOARD_CLUSTER_RADIUS 80.0f
 #define BOT_HOARD_MAX_WORLD_ORBS 96
@@ -121,6 +126,10 @@ struct BotObjectiveState {
   int monsterball_goal_rooms[2]; // GetGoalRoomForTeam(0/1), cached at init (goals don't move)
   float monsterball_progress[2]; // per poll: route cost ball->goal[t] (logging + striker utility)
   int monsterball_prev_room;     // last polled ball room, for transition logging
+  // M3 roles, indexed by BOT index (16 = MAX_BOTS): 0=none (anarchy + bias), 1=STRIKER
+  // (exactly one — the M2 loop), 2=SUPPORT (standoff on the push line, inherits overshoots),
+  // 3=KEEPER (3+ bot teams: shadow defense at the enemy goal mouth, safe clears only).
+  uint8_t mball_role[16];
 
   // --- Entropy --- (all rebuilt every poll — room flags FLIP at runtime on takeover, never cache)
   int entropy_owned_rooms[2];                        // live owned-special-room counts: [0]=red [1]=blue
@@ -215,5 +224,9 @@ extern bool Bot_entropy_takeover_enabled;
 // $nav mball — M2 striker skill (approach-point positioning + gated ball shooting). OFF =
 // the legacy pure ball-chaser (converge on the ball's room, never shoot it).
 extern bool Bot_mball_striker_enabled;
+
+// $nav mroles — M3 role split (exactly-one STRIKER + SUPPORT + KEEPER, utility-assigned with
+// incumbent hysteresis). OFF with mball ON = every bot runs the striker loop (the M2 A/B arm).
+extern bool Bot_mball_roles_enabled;
 
 #endif // BOT_OBJECTIVE_H

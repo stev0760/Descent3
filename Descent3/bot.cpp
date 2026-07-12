@@ -3035,6 +3035,84 @@ static void BotDoMonsterballStrikerNav(int bot_index) {
   }
 }
 
+// M3 SUPPORT nav: standoff on the push line AHEAD of the ball (toward our goal) — when the
+// striker's missed touch flythrough-overshoots (the normal 6DOF outcome), the ball drifts
+// toward this bot, it re-slots behind with a small lateral move, and role assignment promotes
+// it (its path cost to the ball is now lowest). Never fires at the ball — exclusive contest,
+// one toucher at a time (the RoboCup rule every working sports-AI architecture lands on).
+static void BotDoMonsterballSupportNav(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  if (!obj->ai_info)
+    return;
+  Bots[bot_index].mball_fire_handle = OBJECT_HANDLE_NONE;
+  int ball_objnum = Bot_objective.monsterball_objnum;
+  int ball_room = Bot_objective.monsterball_room;
+  int my_team = Players[slot].team;
+  if (ball_objnum < 0 || my_team < 0 || my_team > 1) {
+    BotDoExploreRoaming(bot_index);
+    return;
+  }
+  object *ball = &Objects[ball_objnum];
+  vector aim_pt;
+  vector support = ball->pos;
+  if (BotMballAimPoint(ball_room, Bot_objective.monsterball_goal_rooms[my_team], &aim_pt)) {
+    vector push_dir = aim_pt - ball->pos;
+    if (vm_GetMagnitude(&push_dir) > 1.0f) {
+      vm_NormalizeVector(&push_dir);
+      support = ball->pos + push_dir * BOT_MBALL_SUPPORT_STANDOFF;
+    }
+  }
+  bool reissued = false;
+  BotSetRoutedGoal(bot_index, ball_room, support, &reissued);
+}
+
+// M3 KEEPER nav: shadow defense — hold the portal approach to the ENEMY goal room (where they
+// score), between the ball and the mouth. Clears with any shot the blunder gate allows: the
+// future ball direction is exactly dir(bot->ball), so "does not point into their route" is the
+// same precise test the striker uses — a sideways clear is always safe.
+static void BotDoMonsterballKeeperNav(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  if (!obj->ai_info)
+    return;
+  Bots[bot_index].mball_fire_handle = OBJECT_HANDLE_NONE;
+  int ball_objnum = Bot_objective.monsterball_objnum;
+  int ball_room = Bot_objective.monsterball_room;
+  int my_team = Players[slot].team;
+  int enemy_goal = (my_team == 0 || my_team == 1) ? Bot_objective.monsterball_goal_rooms[1 - my_team] : -1;
+  if (ball_objnum < 0 || enemy_goal < 0) {
+    BotDoExploreRoaming(bot_index);
+    return;
+  }
+  object *ball = &Objects[ball_objnum];
+
+  // Station = the mouth-side portal point on the route from their goal room back to the ball.
+  vector station;
+  if (!BotMballAimPoint(enemy_goal, ball_room, &station))
+    station = Rooms[enemy_goal].path_pnt;
+  bool reissued = false;
+  BotSetRoutedGoal(bot_index, enemy_goal, station, &reissued);
+
+  // Safe clear: fire whenever the shot does NOT advance the ball along their route.
+  vector to_ball = ball->pos - obj->pos;
+  float d = vm_GetMagnitude(&to_ball);
+  if (d > 1.0f && d < BOT_FIRE_RANGE) {
+    to_ball = to_ball * (1.0f / d);
+    bool blunder = false;
+    vector enemy_aim;
+    if (BotMballAimPoint(ball_room, enemy_goal, &enemy_aim)) {
+      vector enemy_dir = enemy_aim - ball->pos;
+      if (vm_GetMagnitude(&enemy_dir) > 1.0f) {
+        vm_NormalizeVector(&enemy_dir);
+        blunder = vm_DotProduct(&to_ball, &enemy_dir) > BOT_MBALL_BLUNDER_DOT;
+      }
+    }
+    if (!blunder)
+      Bots[bot_index].mball_fire_handle = ball->handle;
+  }
+}
+
 // Returns true if the bot has no primary weapon beyond the default Laser (battery 0).
 // Used to boost weapon pickup priority when the bot just spawned with bare equipment.
 static bool BotHasOnlyDefaultPrimary(int bot_index) {
@@ -3828,14 +3906,33 @@ static void BotUpdateState(int bot_index) {
         new_state = BOT_STATE_HUNT;
       break;
     }
-    // Monsterball M2 striker: position behind the ball on the push line and shoot it toward
-    // our goal (BotDoMonsterballStrikerNav owns nav + the fire order). Engage players only
-    // point-blank — the ball is the job. M3 adds roles so not everyone strikes at once.
+    // Monsterball M2/M3: role-dispatched ball play. STRIKER runs the M2 loop (engages only
+    // point-blank — the ball is the job); SUPPORT holds the inherit point with normal
+    // engagement; KEEPER shadows the enemy goal mouth (engages close threats). Role 0 bots
+    // fall through to normal anarchy (field presence + the striker-turnover target bias).
+    // With $nav mroles off, everyone strikes (the M2 arm).
     if (BotGetGameMode() == BGM_MONSTERBALL && Bot_mball_striker_enabled) {
-      BotDoMonsterballStrikerNav(bot_index);
-      if (has_target && has_los && dist < 40.0f)
-        new_state = BOT_STATE_HUNT;
-      break;
+      uint8_t mrole = Bot_mball_roles_enabled ? Bot_objective.mball_role[bot_index] : 1;
+      if (mrole == 1) {
+        BotDoMonsterballStrikerNav(bot_index);
+        if (has_target && has_los && dist < 40.0f)
+          new_state = BOT_STATE_HUNT;
+        break;
+      }
+      if (mrole == 2) {
+        BotDoMonsterballSupportNav(bot_index);
+        if (has_target && (has_los || dist < BOT_HUNT_BLIND_MAX_DIST))
+          new_state = BOT_STATE_HUNT;
+        break;
+      }
+      if (mrole == 3) {
+        BotDoMonsterballKeeperNav(bot_index);
+        if (has_target && has_los && dist < BOT_COMBAT_CIRCLE_DIST)
+          new_state = BOT_STATE_HUNT;
+        break;
+      }
+      // Demoted this poll: drop any stale ball-fire order before normal explore continues.
+      Bots[bot_index].mball_fire_handle = OBJECT_HANDLE_NONE;
     }
     // Stage 6: position-anchored orders (!hold / !defend) own EXPLORE navigation — the bot
     // moves to its post and stays, instead of roaming the map with a tweaked flee threshold.

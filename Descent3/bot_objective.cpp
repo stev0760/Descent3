@@ -49,6 +49,8 @@ static int Obj_entropy_virus_id = -1;
 
 static_assert(BOT_ENTROPY_MAX_ROOMS == MAX_ROOMS, "entropy room maps must match engine MAX_ROOMS");
 
+static void BotAssignMonsterballRoles(); // defined below (needs BotEstimatePathCost's section)
+
 static void BotResetObjectiveState() {
   for (int i = 0; i < BOT_MAX_TEAMS; i++) {
     Bot_objective.flag_state[i] = FLAG_UNKNOWN;
@@ -77,6 +79,8 @@ static void BotResetObjectiveState() {
   Bot_objective.monsterball_goal_rooms[0] = Bot_objective.monsterball_goal_rooms[1] = -1;
   Bot_objective.monsterball_progress[0] = Bot_objective.monsterball_progress[1] = -1.0f;
   Bot_objective.monsterball_prev_room = -1;
+  for (int i = 0; i < MAX_BOTS; i++)
+    Bot_objective.mball_role[i] = 0;
   Bot_objective.entropy_owned_rooms[0] = Bot_objective.entropy_owned_rooms[1] = 0;
   memset(Bot_objective.entropy_room_owner, 0, sizeof(Bot_objective.entropy_room_owner));
   memset(Bot_objective.entropy_room_kind, 0, sizeof(Bot_objective.entropy_room_kind));
@@ -509,6 +513,13 @@ static void BotPollMonsterball() {
       Bot_objective.monsterball_prev_room = ball_room;
     }
   }
+
+  // M3 role assignment — every poll (0.5s); the incumbent discount is the anti-thrash.
+  if (Bot_mball_roles_enabled && Bot_mball_striker_enabled)
+    BotAssignMonsterballRoles();
+  else
+    for (int i = 0; i < MAX_BOTS; i++)
+      Bot_objective.mball_role[i] = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -658,6 +669,67 @@ bool Bot_entropy_takeover_enabled = true;
 
 // $nav mball — M2 striker skill. OFF = legacy pure ball-chaser. See MONSTERBALL_MODE.md §4.2.
 bool Bot_mball_striker_enabled = true;
+
+// $nav mroles — M3 role split. OFF (with mball ON) = every bot strikes. See §4.3.
+bool Bot_mball_roles_enabled = true;
+
+// M3 role assignment (MONSTERBALL_MODE.md §4.3): per team, utility-ranked by path cost to the
+// ball with an incumbent-striker discount (the $nav hyper hysteresis pattern) — exactly one
+// STRIKER, one SUPPORT (next-best; inherits the play on flythrough overshoot, which in 6DOF is
+// the NORMAL outcome of a missed touch), one KEEPER on 3+-bot teams (shadow defense at the
+// enemy goal mouth). Everyone else: anarchy + the positional target bias.
+static void BotAssignMonsterballRoles() {
+  for (int t = 0; t < 2; t++) {
+    int cand[MAX_BOTS], n = 0;
+    float cost[MAX_BOTS];
+    int ball_room = Bot_objective.monsterball_room;
+    for (int i = 0; i < MAX_BOTS; i++) {
+      if (!Bots[i].active || Bots[i].squad_role != SQUAD_FREELANCE)
+        continue;
+      if (Players[Bots[i].player_slot].team != t)
+        continue;
+      object *bobj = &Objects[Players[Bots[i].player_slot].objnum];
+      int bot_room = OBJECT_OUTSIDE(bobj) ? -1 : (int)bobj->roomnum;
+      float c = (bot_room >= 0 && ball_room >= 0 && Rooms[ball_room].used)
+                    ? BotEstimatePathCost(bot_room, ball_room)
+                    : 1e6f;
+      if (Bot_objective.mball_role[i] == 1)
+        c *= BOT_MBALL_ROLE_INCUMBENT; // striker hysteresis
+      cand[n] = i;
+      cost[n] = c;
+      n++;
+    }
+    // Cheapest-first selection sort (n <= 16)
+    for (int i = 0; i < n; i++) {
+      int best = i;
+      for (int j = i + 1; j < n; j++)
+        if (cost[j] < cost[best])
+          best = j;
+      int tc = cand[i];
+      cand[i] = cand[best];
+      cand[best] = tc;
+      float tf = cost[i];
+      cost[i] = cost[best];
+      cost[best] = tf;
+    }
+    for (int i = 0; i < n; i++) {
+      uint8_t role = 0;
+      if (i == 0)
+        role = 1; // STRIKER
+      else if (i == 1)
+        role = 2; // SUPPORT
+      else if (i == 2 && n >= 3)
+        role = 3; // KEEPER
+      if (Bot_objective.mball_role[cand[i]] != role)
+        LOG_DEBUG.printf("BOT MBALL: '%s' role -> %s", Bots[cand[i]].callsign,
+                         role == 1   ? "STRIKER"
+                         : role == 2 ? "SUPPORT"
+                         : role == 3 ? "KEEPER"
+                                     : "field");
+      Bot_objective.mball_role[cand[i]] = role;
+    }
+  }
+}
 
 // Nearest room owned by `owner` (1=red 2=blue), optionally filtered to a kind
 // (1=lab 2=energy 3=repair; 0=any), by path cost from the bot.
@@ -841,6 +913,12 @@ void BotPrintObjectiveState() {
       PrintDedicatedMessage("  Goals: red room %d (ball cost %.0f), blue room %d (ball cost %.0f)\n",
                             Bot_objective.monsterball_goal_rooms[0], Bot_objective.monsterball_progress[0],
                             Bot_objective.monsterball_goal_rooms[1], Bot_objective.monsterball_progress[1]);
+      if (Bot_mball_roles_enabled) {
+        static const char *role_names[] = {"field", "STRIKER", "SUPPORT", "KEEPER"};
+        for (int i = 0; i < MAX_BOTS; i++)
+          if (Bots[i].active)
+            PrintDedicatedMessage("  %s: %s\n", Bots[i].callsign, role_names[Bot_objective.mball_role[i] & 3]);
+      }
     } else
       PrintDedicatedMessage("  Monsterball: not found (ID=%d)\n", Obj_monsterball_id);
     break;
@@ -1134,6 +1212,19 @@ float BotGetObjectiveTargetBias(int bot_index, int target_slot) {
     if (bias < BOT_HOARD_TARGET_BIAS_CAP)
       bias = BOT_HOARD_TARGET_BIAS_CAP;
     return bias;
+  }
+
+  if (mode == BGM_MONSTERBALL) {
+    // Positional combat (M3): killing the enemy striker is a turnover. Proxy for "their
+    // striker" = any enemy near the ball (they're contesting it or about to).
+    int my_team = Players[Bots[bot_index].player_slot].team;
+    if (my_team < 0 || my_team > 1 || Players[target_slot].team == my_team)
+      return 0.0f;
+    if (Bot_objective.monsterball_objnum < 0)
+      return 0.0f;
+    object *tobj = &Objects[Players[target_slot].objnum];
+    float d = vm_VectorDistanceQuick(&tobj->pos, &Objects[Bot_objective.monsterball_objnum].pos);
+    return (d < BOT_MBALL_TB_NEAR_BALL) ? BOT_MBALL_STRIKER_BIAS : 0.0f;
   }
 
   if (mode == BGM_ENTROPY) {
