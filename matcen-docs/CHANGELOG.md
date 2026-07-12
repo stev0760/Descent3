@@ -21,6 +21,14 @@ July and shelved because the navigation of the time couldn't execute a committed
 upcoming Entropy and Monsterball modes, which assign the same kind of jobs around their own
 objectives.
 
+**Hyper-Anarchy orb play gets the same treatment** (`$nav hyper`). Previously a free orb sent
+*every* bot racing to the same room, and once someone grabbed it no bot ever went looking for the
+carrier — they'd only shoot it on sight. Now the two or three best-positioned bots contest the orb
+(free or held — hunting a fat carrier is the biggest bounty in the mode) while everyone else keeps
+dogfighting normally. Assignments are sticky: a chasing bot keeps the job unless a teammate is
+clearly better positioned, so the pack doesn't reshuffle mid-pursuit. The orb carrier's existing
+rampage behavior is unchanged, as is Hoard (a pure collection race needs no role structure).
+
 ## [0.9.7] — 2026-07-12
 
 **The navigation-intelligence release: one spatial model, kept honest.** Bots now decide where to

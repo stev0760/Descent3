@@ -37,6 +37,14 @@
 #define BOT_HOARD_CASHIN_LOW_SHIELDS 0.30f
 #define BOT_HOARD_CASHIN_MED_SHIELDS 0.50f
 
+// Hyper-Anarchy loose orb roles ($nav hyper, 0.9.8): only the nearest K bots chase the orb
+// (free) or hunt its carrier (held) — the rest play pure anarchy. Utility-assigned per poll
+// with incumbent hysteresis (the RoboCup pattern Monsterball M3 reuses): a sitting chaser
+// keeps its slot unless a challenger beats its path cost by the discount margin.
+#define BOT_HYPER_CHASER_MAX 3            // hard cap on simultaneous chasers
+#define BOT_HYPER_CHASER_INTERVAL 2.0f    // seconds between reassignments (orb state change forces one)
+#define BOT_HYPER_INCUMBENT_DISCOUNT 0.7f // incumbent cost multiplier (challenger must beat by ~30%)
+
 #define BOT_HOARD_CLUSTER_RADIUS 80.0f
 #define BOT_HOARD_MAX_WORLD_ORBS 96
 #define BOT_HOARD_ORB_SEEK_RADIUS 500.0f
@@ -64,6 +72,11 @@ struct BotObjectiveState {
   int hyper_carrier_slot; // player slot holding the orb, or -1
   int hyper_objnum;       // Objects[] index of free orb, or -1
   int hyper_room;         // roomnum of free orb, or -1
+  // Loose orb roles ($nav hyper): chaser flags indexed by BOT index (not player slot).
+  bool hyper_chaser[16];     // 16 = MAX_BOTS (bot.h is not visible from this header)
+  float hyper_chaser_last_t; // Gametime of last chaser assignment (resets on level transition)
+  int hyper_prev_carrier;    // carrier slot at last assignment — a change forces reassign
+  int hyper_prev_objnum;     // free-orb objnum at last assignment — a change forces reassign
 
   // --- Hoard ---
   int hoard_count[BOT_MAX_PLAYERS];    // per-player orb count in inventory
@@ -117,6 +130,11 @@ int BotGetCarrierTouchObjnum(int bot_index);
 
 // Returns true if the bot is currently carrying the Hyper-Anarchy orb.
 bool BotIsCarryingHyperOrb(int bot_index);
+
+// $nav hyper — Hyper-Anarchy loose orb roles (0.9.8). ON = nearest-K chaser set contests the
+// free orb / hunts its carrier while the rest play pure anarchy; OFF = legacy (every bot races
+// a free orb, nobody navigates to a carrier). Target bias is unchanged in both arms.
+extern bool Bot_hyper_roles_enabled;
 
 // Returns true if the bot's Hoard orb count meets the cash-in threshold.
 bool BotIsHoardCarrier(int bot_index);

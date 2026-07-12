@@ -32,6 +32,7 @@
 #include "room.h"
 #include "vecmat.h"
 #include "dedicated_server.h"
+#include "game.h"
 #include "log.h"
 
 BotObjectiveState Bot_objective;
@@ -56,6 +57,11 @@ static void BotResetObjectiveState() {
   Bot_objective.hyper_carrier_slot = -1;
   Bot_objective.hyper_objnum = -1;
   Bot_objective.hyper_room = -1;
+  for (int i = 0; i < MAX_BOTS; i++)
+    Bot_objective.hyper_chaser[i] = false;
+  Bot_objective.hyper_chaser_last_t = -1.0f;
+  Bot_objective.hyper_prev_carrier = -1;
+  Bot_objective.hyper_prev_objnum = -1;
   for (int i = 0; i < BOT_MAX_PLAYERS; i++) {
     Bot_objective.hoard_count[i] = 0;
     Bot_objective.hoard_is_carrier[i] = false;
@@ -265,6 +271,70 @@ static void BotPollCTF() {
 // Hyper-Anarchy polling
 // ---------------------------------------------------------------------------
 
+// $nav hyper — Hyper-Anarchy loose orb roles (0.9.8). ON = nearest-K chaser set contests the
+// free orb / hunts its carrier while the rest play pure anarchy; OFF = legacy (every bot races
+// a free orb, nobody navigates to a carrier). The opportunistic carrier target bias is the same
+// in both arms. First live use of utility-assigned roles with incumbent hysteresis — the
+// assignment pattern the Monsterball striker/supporter split (M3) builds on.
+bool Bot_hyper_roles_enabled = true;
+
+// Reassign the chaser set: the K bots with the cheapest path to the orb focus room chase; the
+// rest play anarchy. Incumbents' costs are discounted so near-ties don't thrash the set.
+static void BotAssignHyperChasers(int focus_room, const vector *focus_pos) {
+  // Candidates: active FREELANCE bots that aren't the carrier. Chat-ordered bots keep their orders.
+  int cand[MAX_BOTS], n = 0;
+  float cost[MAX_BOTS];
+  for (int i = 0; i < MAX_BOTS; i++) {
+    if (!Bots[i].active || Bots[i].squad_role != SQUAD_FREELANCE || BotIsCarryingHyperOrb(i))
+      continue;
+    object *bobj = &Objects[Players[Bots[i].player_slot].objnum];
+    int bot_room = OBJECT_OUTSIDE(bobj) ? -1 : bobj->roomnum;
+    float c = (bot_room >= 0 && focus_room >= 0) ? BotEstimatePathCost(bot_room, focus_room)
+                                                 : vm_VectorDistanceQuick(&bobj->pos, focus_pos);
+    if (Bot_objective.hyper_chaser[i])
+      c *= BOT_HYPER_INCUMBENT_DISCOUNT;
+    cand[n] = i;
+    cost[n] = c;
+    n++;
+  }
+
+  int k = n < 1 ? 0 : (1 + n / 3);
+  if (k > BOT_HYPER_CHASER_MAX)
+    k = BOT_HYPER_CHASER_MAX;
+
+  // Selection sort the cheapest k to the front (n <= 16)
+  for (int i = 0; i < k && i < n; i++) {
+    int best = i;
+    for (int j = i + 1; j < n; j++)
+      if (cost[j] < cost[best])
+        best = j;
+    int tc = cand[i];
+    cand[i] = cand[best];
+    cand[best] = tc;
+    float tf = cost[i];
+    cost[i] = cost[best];
+    cost[best] = tf;
+  }
+
+  bool changed = false;
+  bool next_chaser[MAX_BOTS] = {};
+  for (int i = 0; i < k && i < n; i++)
+    next_chaser[cand[i]] = true;
+  for (int i = 0; i < MAX_BOTS; i++) {
+    if (Bots[i].active && Bot_objective.hyper_chaser[i] != next_chaser[i])
+      changed = true;
+    Bot_objective.hyper_chaser[i] = next_chaser[i];
+  }
+  if (changed) {
+    char names[160] = "";
+    int w = 0;
+    for (int i = 0; i < MAX_BOTS && w < (int)sizeof(names) - 1; i++)
+      if (Bot_objective.hyper_chaser[i])
+        w += snprintf(names + w, sizeof(names) - w, "%s'%s'", w ? " " : "", Bots[i].callsign);
+    LOG_DEBUG.printf("BOT OBJ: hyper chasers (%d of %d) -> %s", k < n ? k : n, n, names);
+  }
+}
+
 static void BotPollHyperAnarchy() {
   Bot_objective.hyper_carrier_slot = -1;
   Bot_objective.hyper_objnum = -1;
@@ -279,19 +349,54 @@ static void BotPollHyperAnarchy() {
     if (obj->type == OBJ_POWERUP && obj->id == Obj_hyper_id) {
       Bot_objective.hyper_objnum = i;
       Bot_objective.hyper_room = obj->roomnum;
-      return;
+      break;
     }
   }
 
   // No free orb — someone has it. Check inventories.
-  for (int s = 0; s < MAX_NET_PLAYERS; s++) {
-    if (!(NetPlayers[s].flags & NPF_CONNECTED))
-      continue;
-    if (Players[s].inventory.CheckItem(OBJ_POWERUP, Obj_hyper_id)) {
-      Bot_objective.hyper_carrier_slot = s;
-      return;
+  if (Bot_objective.hyper_objnum < 0) {
+    for (int s = 0; s < MAX_NET_PLAYERS; s++) {
+      if (!(NetPlayers[s].flags & NPF_CONNECTED))
+        continue;
+      if (Players[s].inventory.CheckItem(OBJ_POWERUP, Obj_hyper_id)) {
+        Bot_objective.hyper_carrier_slot = s;
+        break;
+      }
     }
   }
+
+  if (!Bot_hyper_roles_enabled)
+    return;
+
+  // Chaser reassignment: throttled, but an orb state change (grabbed, dropped, relocated,
+  // carrier killed) forces one immediately so the set re-aims at the new focus.
+  bool state_changed = (Bot_objective.hyper_carrier_slot != Bot_objective.hyper_prev_carrier) ||
+                       (Bot_objective.hyper_objnum != Bot_objective.hyper_prev_objnum);
+  bool timer_due = (Gametime < Bot_objective.hyper_chaser_last_t) ||
+                   (Gametime - Bot_objective.hyper_chaser_last_t > BOT_HYPER_CHASER_INTERVAL);
+  if (!state_changed && !timer_due)
+    return;
+
+  int focus_room = -1;
+  const vector *focus_pos = nullptr;
+  if (Bot_objective.hyper_objnum >= 0) {
+    focus_room = Bot_objective.hyper_room;
+    focus_pos = &Objects[Bot_objective.hyper_objnum].pos;
+  } else if (Bot_objective.hyper_carrier_slot >= 0) {
+    object *cobj = &Objects[Players[Bot_objective.hyper_carrier_slot].objnum];
+    focus_room = OBJECT_OUTSIDE(cobj) ? -1 : cobj->roomnum;
+    focus_pos = &cobj->pos;
+  }
+  if (focus_pos) {
+    BotAssignHyperChasers(focus_room, focus_pos);
+  } else {
+    // Orb missing entirely (relocation in flight): nobody chases
+    for (int i = 0; i < MAX_BOTS; i++)
+      Bot_objective.hyper_chaser[i] = false;
+  }
+  Bot_objective.hyper_chaser_last_t = Gametime;
+  Bot_objective.hyper_prev_carrier = Bot_objective.hyper_carrier_slot;
+  Bot_objective.hyper_prev_objnum = Bot_objective.hyper_objnum;
 }
 
 // ---------------------------------------------------------------------------
@@ -415,7 +520,7 @@ void BotPrintObjectiveState() {
     break;
   }
 
-  case BGM_HYPERANARCHY:
+  case BGM_HYPERANARCHY: {
     if (Bot_objective.hyper_carrier_slot >= 0)
       PrintDedicatedMessage("  Hyper orb: carried by %s [slot %d]\n",
                             Players[Bot_objective.hyper_carrier_slot].callsign,
@@ -425,7 +530,19 @@ void BotPrintObjectiveState() {
                             Bot_objective.hyper_objnum);
     else
       PrintDedicatedMessage("  Hyper orb: not found (ID=%d)\n", Obj_hyper_id);
+    if (Bot_hyper_roles_enabled) {
+      bool any = false;
+      PrintDedicatedMessage("  Chasers:");
+      for (int i = 0; i < MAX_BOTS; i++) {
+        if (Bots[i].active && Bot_objective.hyper_chaser[i]) {
+          PrintDedicatedMessage(" %s", Bots[i].callsign);
+          any = true;
+        }
+      }
+      PrintDedicatedMessage(any ? "\n" : " (none)\n");
+    }
     break;
+  }
 
   case BGM_HOARD: {
     PrintDedicatedMessage("  Goal rooms: %d %d %d %d\n", Bot_objective.hoard_goal_rooms[0],
@@ -598,6 +715,23 @@ static int BotGetObjectiveRoom_CTF(int bot_index) {
 }
 
 static int BotGetObjectiveRoom_HyperAnarchy(int bot_index) {
+  // The carrier itself never navigates to the orb — its rampage behavior owns it.
+  if (BotIsCarryingHyperOrb(bot_index))
+    return -1;
+
+  if (Bot_hyper_roles_enabled) {
+    // Loose roles: only the assigned chaser set pursues the orb; everyone else plays anarchy.
+    if (!Bot_objective.hyper_chaser[bot_index])
+      return -1;
+    // Held orb: hunt the carrier at its live position (the biggest bounty in the mode).
+    if (Bot_objective.hyper_carrier_slot >= 0) {
+      object *cobj = &Objects[Players[Bot_objective.hyper_carrier_slot].objnum];
+      if (!OBJECT_OUTSIDE(cobj) && cobj->roomnum >= 0 && Rooms[cobj->roomnum].used)
+        return cobj->roomnum;
+      return -1;
+    }
+  }
+
   if (Bot_objective.hyper_objnum >= 0 && Bot_objective.hyper_room >= 0) {
     if (Rooms[Bot_objective.hyper_room].used)
       return Bot_objective.hyper_room;
