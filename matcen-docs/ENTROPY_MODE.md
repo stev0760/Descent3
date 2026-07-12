@@ -1,6 +1,8 @@
 # Entropy Mode — Mechanics Reference + Bot Implementation Spec
 
-**Status: SPEC ONLY (2026-06-12) — no bot code written yet.**
+**Status: E1–E3 IMPLEMENTED (2026-07-12, 0.9.8-dev commits `d18cebb0`/`bed6db43`/`19266727`) —
+UNTESTED; awaiting first dementia.mn3 smoke (which must also answer the §5 open questions).
+`$nav entropy` gates the E3 invasion layer. E4 polish not started.**
 Source of truth: `netgames/entropy/` (EntropyBase.cpp, EntropyAux.h, EntropyPackets.cpp,
 EntropyRoom.cpp), read in full for this document. Line references are to those files.
 Read this before writing any Entropy bot code; read `BOT_DEV_REFERENCE.md` and

@@ -102,6 +102,16 @@ RE_TERRAIN_DIAG = re.compile(
 # Pairs with terrain_entrance (the stuck-miss count): seeks issued should rise as misses fall.
 RE_OA_SEEK = re.compile(r"outdoor entrance-seek -> room (\d+) portal (\d+) \(obj (\d+)\)")
 
+# 0.9.8 Entropy (E1-E3, ENTROPY_MODE.md §4): economy + takeover events. Takeovers/round is
+# the outcome metric (the captures analog); hold starts vs aborts vs completions reads how
+# often the 3s still-hold survives; pickups/losses read the virus economy. Sources:
+# bot_objective.cpp poll deltas + bot.cpp invade nav.
+RE_ENT_PICKUP = re.compile(r"BOT ENTROPY: '([^']+)' virus pickup -> (\d+) \[cap (\d+)\]")
+RE_ENT_DEATH_LOSS = re.compile(r"BOT ENTROPY: '([^']+)' lost (\d+) virus\(es\) on death")
+RE_ENT_TAKEOVER = re.compile(r"BOT ENTROPY: '([^']+)' spent (\d+) viruses \(takeover\)")
+RE_ENT_HOLD_START = re.compile(r"BOT ENTROPY: '([^']+)' takeover hold START \(room (-?\d+)")
+RE_ENT_HOLD_ABORT = re.compile(r"BOT ENTROPY: '([^']+)' takeover hold ABORT")
+
 DIST_CLOSE = 200
 DIST_MID = 500
 
@@ -126,6 +136,15 @@ def new_map_stats():
         "rounds": 0,
         "game_mode": "Unknown",
         "captures": 0,               # ALL captures (bot + human)
+        "ent_pickups": 0,            # Entropy: virus pickups (all players)
+        "ent_pickups_bot": 0,
+        "ent_death_losses": 0,       # Entropy: death events that erased carried viruses
+        "ent_viruses_lost": 0,       # Entropy: total viruses erased by those deaths
+        "ent_takeovers": 0,          # Entropy: rooms converted (the outcome metric)
+        "ent_takeovers_bot": 0,
+        "ent_takeover_players": Counter(),
+        "ent_hold_starts": 0,        # Entropy: takeover holds begun
+        "ent_hold_aborts": 0,        # Entropy: holds broken (left room / shield floor / chased off)
         "human_caps": 0,             # captures by players without the [BOT] suffix
         "human_cappers": Counter(),
         "team_caps": Counter(),
@@ -306,6 +325,34 @@ def parse_log(path):
                 s["skel_vias"] += 1
                 s["skel_via_rooms"][int(m.group(1))] += 1
                 continue
+
+            if "BOT ENTROPY" in line:
+                m = RE_ENT_PICKUP.search(line)
+                if m:
+                    s["ent_pickups"] += 1
+                    if "[BOT]" in m.group(1):
+                        s["ent_pickups_bot"] += 1
+                    continue
+                m = RE_ENT_TAKEOVER.search(line)
+                if m:
+                    s["ent_takeovers"] += 1
+                    s["ent_takeover_players"][m.group(1)] += 1
+                    if "[BOT]" in m.group(1):
+                        s["ent_takeovers_bot"] += 1
+                    continue
+                m = RE_ENT_DEATH_LOSS.search(line)
+                if m:
+                    s["ent_death_losses"] += 1
+                    s["ent_viruses_lost"] += int(m.group(2))
+                    continue
+                m = RE_ENT_HOLD_START.search(line)
+                if m:
+                    s["ent_hold_starts"] += 1
+                    continue
+                m = RE_ENT_HOLD_ABORT.search(line)
+                if m:
+                    s["ent_hold_aborts"] += 1
+                    continue
 
             m = RE_ORDER_STATION.search(line)
             if m:
@@ -614,12 +661,39 @@ def detect_anomalies(stats):
         # engine-side exemption (BotTrollStrike) should make this impossible; if it fires, the
         # exemption regressed or a new objective item name slipped the filter.
         ret_objective = [n for n, _ in s["trolls_retired"]
-                         if "flag" in n.lower() or "orb" in n.lower()]
+                         if "flag" in n.lower() or "orb" in n.lower() or "virus" in n.lower()]
         if ret_objective:
             anomalies.append((name, "TROLL_RETIRED_OBJECTIVE",
                               f"objective item(s) retired as trolls: {', '.join(ret_objective)} — "
                               f"bots will stop pursuing the objective for the rest of the level. "
-                              f"BotTrollStrike's flag/orb exemption is not working"))
+                              f"BotTrollStrike's flag/orb/virus exemption is not working"))
+
+        # Entropy (0.9.8, ENTROPY_MODE.md §4). Zero takeovers = the mode's CHASE_PIN analog:
+        # economy runs but no room ever converts (hold breaking? loads never reach 5? invade
+        # nav failing?). Judged only with enough rounds to matter.
+        if mode == "Entropy" and s["rounds"] >= 2 and s["ent_takeovers"] == 0:
+            anomalies.append((name, "ENTROPY_ZERO_TAKEOVERS",
+                              f"{s['rounds']} Entropy rounds with {s['ent_pickups']} virus pickups and "
+                              f"{s['ent_hold_starts']} hold attempts but ZERO takeovers — "
+                              f"holds breaking (see aborts: {s['ent_hold_aborts']}) or loads never reach 5"))
+
+        # Holds start but nearly all break before the 3s clock fires: drift >5u (steering leak
+        # into the park), defenders, or the shield floor set too high for contested rooms.
+        if s["ent_hold_starts"] >= 10 and s["ent_takeovers"] * 5 < s["ent_hold_starts"]:
+            anomalies.append((name, "ENTROPY_HOLD_CHURN",
+                              f"{s['ent_hold_starts']} takeover holds -> only {s['ent_takeovers']} conversions "
+                              f"({s['ent_hold_aborts']} aborts) — the still-hold is breaking; check for "
+                              f"movement drift during the park vs defender pressure"))
+
+        # Capacity-gate regression proxy (ENTROPY_REFUSED_PICKUP_SPAM): the server silently
+        # refuses over-capacity pickups, so a broken gate/mirror shows up as chase-timeout pins
+        # against the virus item, not as an explicit log line.
+        virus_pins = sum(c for item, c in s["powerup_pin_items"].items() if "virus" in item.lower())
+        if virus_pins >= 5:
+            anomalies.append((name, "ENTROPY_REFUSED_PICKUP_SPAM",
+                              f"{virus_pins} chase-timeout pins against EntropyVirus — bots are chasing "
+                              f"viruses the server refuses (capacity gate broken or streak mirror "
+                              f"over-estimating; see BotEntropyMirrorStreaks)"))
 
         # Phase 12 via-point funnel, stage 1: bots are HARD-pinned indoors but the via mechanism
         # never fired — the occlusion probe (bot → engine's current path node) isn't seeing the
@@ -901,6 +975,31 @@ def print_report(stats, total_lines, log_path):
                 blk += " (" + ", ".join(f"{r}x{c}" for r, c in s["order_blocked_rooms"].most_common(3)) + ")"
             print(f"| {name} | {s['order_stations']} | {blk} |")
         print()
+
+    # Entropy (only if any map saw entropy activity)
+    has_entropy = any(s["ent_pickups"] or s["ent_hold_starts"] or s["ent_takeovers"] for s in stats.values())
+    if has_entropy:
+        print(f"## Entropy (0.9.8)")
+        print()
+        print(f"| Map | Takeovers (bot) | /round | Holds (aborted) | Pickups (bot) | Viruses Lost on Death |")
+        print(f"|---|---|---|---|---|---|")
+        for name in maps:
+            s = stats[name]
+            if not (s["ent_pickups"] or s["ent_hold_starts"] or s["ent_takeovers"]):
+                continue
+            per_round = s["ent_takeovers"] / s["rounds"] if s["rounds"] else 0.0
+            print(f"| {name} | {s['ent_takeovers']} ({s['ent_takeovers_bot']}) | {per_round:.1f} "
+                  f"| {s['ent_hold_starts']} ({s['ent_hold_aborts']}) "
+                  f"| {s['ent_pickups']} ({s['ent_pickups_bot']}) "
+                  f"| {s['ent_viruses_lost']} in {s['ent_death_losses']} deaths |")
+        print()
+        top = Counter()
+        for s in stats.values():
+            top.update(s["ent_takeover_players"])
+        if top:
+            who = ", ".join(f"{n} x{c}" for n, c in top.most_common(6))
+            print(f"Top converters: {who}")
+            print()
 
     # Outdoor breakdown (only if any map has carrier data)
     has_carrier = any(s["carrier_nav_ticks"] > 0 for s in stats.values())

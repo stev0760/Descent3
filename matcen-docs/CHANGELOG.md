@@ -29,6 +29,18 @@ dogfighting normally. Assignments are sticky: a chasing bot keeps the job unless
 clearly better positioned, so the pack doesn't reshuffle mid-pursuit. The orb carrier's existing
 rampage behavior is unchanged, as is Hoard (a pure collection race needs no role structure).
 
+**Entropy: bots play it — for the first time.** D3's territory-control mode (labs grow viruses,
+carry five into an enemy room and hold still to convert it) has been unplayable against bots since
+the game shipped. Bots now understand the whole loop: they earn carry capacity by getting kills
+(two slots per kill in a streak — dying resets it), collect viruses from their own labs only when
+they can actually carry them, destroy enemy virus stock they pass, and once loaded with five they
+fly to the nearest enemy special room, park dead-still through the room's damage to convert it,
+and retreat to their own repair room when shields run low. Defenders prioritize intruders in team
+rooms — especially loaded ones sitting still mid-takeover — and a team's attack/defend split
+anchors its defense at the lab. `$nav entropy off` disables the invasion layer for comparison.
+Requires an Entropy-flagged mission (e.g. *dementia.mn3*); the log analyzer gained a full Entropy
+section (takeovers per round, hold attempts vs aborts, virus economy).
+
 ## [0.9.7] — 2026-07-12
 
 **The navigation-intelligence release: one spatial model, kept honest.** Bots now decide where to
