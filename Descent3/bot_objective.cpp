@@ -55,6 +55,14 @@ static_assert(sizeof(Bot_objective.mball_role) == MAX_BOTS,
 
 static void BotAssignMonsterballRoles(); // defined below (needs BotEstimatePathCost's section)
 
+// Server-side MP kill/death tallies (multi.cpp:MultiSendPlayerDead — the death chokepoint,
+// killer-attributed, suicides count deaths only). These are the ONLY per-slot kill counters
+// that increment on a dedicated server: Players[].num_kills_level is fed by PlayerScoreAdd,
+// which never runs in MP (DMFC owns scoring DLL-side) — the first Entropy smoke proved it
+// (41 kills, every mirrored streak stuck at 0 while the DLL happily granted carry capacity).
+extern int16_t Multi_kills[MAX_NET_PLAYERS];
+extern int16_t Multi_deaths[MAX_NET_PLAYERS];
+
 static void BotResetObjectiveState() {
   for (int i = 0; i < BOT_MAX_TEAMS; i++) {
     Bot_objective.flag_state[i] = FLAG_UNKNOWN;
@@ -544,8 +552,8 @@ static void BotEntropyMirrorStreaks() {
       Bot_objective.entropy_prev_deaths[s] = 0;
       continue;
     }
-    int16_t kills = Players[s].num_kills_level;
-    int16_t deaths = Players[s].num_deaths_level;
+    int16_t kills = Multi_kills[s];
+    int16_t deaths = Multi_deaths[s];
     if (kills < Bot_objective.entropy_prev_kills[s] || deaths < Bot_objective.entropy_prev_deaths[s])
       Bot_objective.entropy_kill_streak[s] = 0; // counters went backwards — resync
     else if (deaths > Bot_objective.entropy_prev_deaths[s])
@@ -632,7 +640,7 @@ static void BotPollEntropy() {
     if (now > was)
       LOG_DEBUG.printf("BOT ENTROPY: '%s' virus pickup -> %d [cap %d]", Players[s].callsign, now,
                        BotEntropyCarryCapacity(s));
-    else if (now < was && Players[s].num_deaths_level > Bot_objective.entropy_prev_deaths[s])
+    else if (now < was && Multi_deaths[s] > Bot_objective.entropy_prev_deaths[s])
       LOG_DEBUG.printf("BOT ENTROPY: '%s' lost %d virus(es) on death", Players[s].callsign, was - now);
     else if (now == was - BOT_ENTROPY_TAKEOVER_LOAD)
       LOG_DEBUG.printf("BOT ENTROPY: '%s' spent %d viruses (takeover) -> %d", Players[s].callsign,
@@ -643,6 +651,20 @@ static void BotPollEntropy() {
   // 4. Kill-streak mirror. (Runs AFTER step 3 so the death-loss log above can compare the
   //    pre-mirror prev_deaths value against the live counter.)
   BotEntropyMirrorStreaks();
+
+  // 5. Lean self-heal: assignment historically fires on level transitions + CTF flag events —
+  //    Entropy has neither, so round-1 bots sat BALANCED forever (first-smoke finding). Any
+  //    FREELANCE bot at BALANCED with a valid team re-fires assignment; after one successful
+  //    pass nobody is BALANCED, so this goes quiet (and it self-arms for mid-game joins).
+  for (int i = 0; i < MAX_BOTS; i++) {
+    if (!Bots[i].active || Bots[i].squad_role != SQUAD_FREELANCE)
+      continue;
+    int team = Players[Bots[i].player_slot].team;
+    if (Bots[i].objective_lean == BOT_LEAN_BALANCED && (team == 0 || team == 1)) {
+      BotAssignObjectiveLeans();
+      break;
+    }
+  }
 }
 
 int BotGetEntropyVirusId() { return Obj_entropy_virus_id; }
