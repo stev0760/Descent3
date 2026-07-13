@@ -723,11 +723,26 @@ static void BotAssignMonsterballRoles() {
         continue;
       object *bobj = &Objects[Players[Bots[i].player_slot].objnum];
       int bot_room = OBJECT_OUTSIDE(bobj) ? -1 : (int)bobj->roomnum;
+      // Utility = room-graph cost + EUCLIDEAN distance. The euclidean term is load-bearing:
+      // on arena maps (frenzy: 5 rooms, everyone within a room of the ball) the graph cost is
+      // ~0 for half the team — a degenerate ranking that no hysteresis can stabilize (second
+      // live session churned at exactly the throttle rate). Euclidean varies smoothly, so the
+      // incumbent discount has something real to hold against.
       float c = (bot_room >= 0 && ball_room >= 0 && Rooms[ball_room].used)
                     ? BotEstimatePathCost(bot_room, ball_room)
                     : 1e6f;
-      if (Bot_objective.mball_role[i] != 0)
-        c *= BOT_MBALL_ROLE_INCUMBENT; // ANY roled incumbent resists displacement by a field bot
+      if (Bot_objective.monsterball_objnum >= 0)
+        c += vm_VectorDistanceQuick(&bobj->pos, &Objects[Bot_objective.monsterball_objnum].pos);
+      // Two-level incumbency (third live iteration): a flat discount for all roled bots
+      // CANCELS between two incumbents — Reaper/Hawk traded rank #1 (= the striker slot)
+      // every cycle. The current STRIKER holds rank #1 with the deep discount; other roled
+      // bots get set-membership stickiness only, so they resist field bots but not the
+      // striker hierarchy.
+      uint8_t curr = Bot_objective.mball_role[i];
+      if (curr == 1)
+        c *= BOT_MBALL_ROLE_INCUMBENT;
+      else if (curr != 0)
+        c *= BOT_MBALL_SET_INCUMBENT;
       cand[n] = i;
       cost[n] = c;
       n++;

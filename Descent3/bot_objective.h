@@ -88,6 +88,9 @@
                                         // first live session thrashed — room-graph cost JUMPS as the
                                         // ball crosses rooms, a 30% margin evaporates instantly)
 #define BOT_MBALL_ROLE_INTERVAL 2.0f    // seconds between role reassignments (was every 0.5s poll)
+#define BOT_MBALL_SET_INCUMBENT 0.8f    // roled bots resist FIELD bots at this margin; only the
+                                        // striker gets the deep ROLE_INCUMBENT hold on rank #1
+                                        // (equal discounts cancel between incumbents — session 3)
 #define BOT_MBALL_SUPPORT_STANDOFF 60.0f // supporter's distance from the ball along the push line
 #define BOT_MBALL_TB_NEAR_BALL 150.0f    // "enemy striker" proxy: enemy within this of the ball
 #define BOT_MBALL_STRIKER_BIAS -250.0f   // target bias: prefer killing the enemy striker (turnover)
