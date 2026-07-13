@@ -706,6 +706,11 @@ bool Bot_mball_striker_enabled = true;
 // $nav mroles — M3 role split. OFF (with mball ON) = every bot strikes. See §4.3.
 bool Bot_mball_roles_enabled = true;
 
+// $nav mavoid — contact-blunder discipline (2026-07-13): role-nav legs detour around a ball
+// they would otherwise bump toward the enemy goal. OFF = pre-fix straight legs (the A/B
+// baseline for the 21-contact-own-goals soak).
+bool Bot_mball_avoid_enabled = true;
+
 // $nav mtenure <seconds> — the role commitment period, runtime-tunable so the 10/15/20s
 // thrash A/B (2026-07-13 clean soak: 356-773 re-assigns/round, pairwise station swaps at
 // every 10s expiry) runs as soak phases instead of rebuilds. Default = the M3 constant.

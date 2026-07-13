@@ -2991,6 +2991,8 @@ static bool BotMballAimPoint(int ball_room, int goal_room, vector *out) {
 // when their bump is already safe, and the finisher bypasses this entirely.
 static vector BotMballAvoidBallOnRoute(int bot_index, object *obj, object *ball, int ball_room, int enemy_goal,
                                        const vector &nav_target) {
+  if (!Bot_mball_avoid_enabled)
+    return nav_target;
   vector seg = nav_target - obj->pos;
   float seglen = vm_GetMagnitude(&seg);
   if (seglen < 1.0f)

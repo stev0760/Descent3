@@ -263,6 +263,7 @@ extern bool Bot_mball_striker_enabled;
 // $nav mroles — M3 role split (exactly-one STRIKER + SUPPORT + KEEPER, utility-assigned with
 // incumbent hysteresis). OFF with mball ON = every bot runs the striker loop (the M2 A/B arm).
 extern bool Bot_mball_roles_enabled;
+extern bool Bot_mball_avoid_enabled;
 extern float Bot_mball_role_tenure; // $nav mtenure <s> — role commitment period (thrash A/B lever)
 
 #endif // BOT_OBJECTIVE_H
