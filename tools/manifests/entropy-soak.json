@@ -1,11 +1,19 @@
 {
-  "_comment": "Entropy first unattended soak (0.9.8-dev 4a36caff+): dementia 2-level rotation, 4v4, 20-min rounds, ~5h. All mode defaults ON (entropy/runner/hyper inert outside their modes). Prior POV sessions validated: virus ID resolves, room scan, economy end-to-end (bot pickups at correct mirrored capacity, death losses), leans assign round 1, invade nav progresses (Ninja carried 6 across rooms 1->3 toward goal 20 before dying). STILL UNPROVEN: a completed bot takeover hold ('hold START' -> 'spent 5 viruses'). Judge with analyze_bot_log.py '## Entropy': takeovers/round is the outcome metric; ENTROPY_HOLD_CHURN = drift breaking the 3s still-hold (suspect #1); ENTROPY_ZERO_TAKEOVERS with pickups>0 = carriers dying en route (economy tuning) or holds never starting. Nav context: rooms 3/24 are 10-portal non-convex halls (74/90 blocked legs, navdump 'dementia1') — wall-press friction there is the known class, not Entropy's fault; room 4's bunker slits are correctly impassable.",
+  "_comment": "Entropy first unattended soak (0.9.8-dev 4a36caff+): dementia 2-level rotation, 8v8 (operator: 8 players too few, 20min too short for this mode), 60-min rounds. All mode defaults ON (entropy/runner/hyper inert outside their modes). Prior POV sessions validated: virus ID resolves, room scan, economy end-to-end (bot pickups at correct mirrored capacity, death losses), leans assign round 1, invade nav progresses (Ninja carried 6 across rooms 1->3 toward goal 20 before dying). STILL UNPROVEN: a completed bot takeover hold ('hold START' -> 'spent 5 viruses'). Judge with analyze_bot_log.py '## Entropy': takeovers/round is the outcome metric; ENTROPY_HOLD_CHURN = drift breaking the 3s still-hold (suspect #1); ENTROPY_ZERO_TAKEOVERS with pickups>0 = carriers dying en route (economy tuning) or holds never starting. Nav context: rooms 3/24 are 10-portal non-convex halls (74/90 blocked legs, navdump 'dementia1') \u2014 wall-press friction there is the known class, not Entropy's fault; room 4's bunker slits are correctly impassable.",
   "server_dir": "/home/steve/Projects/Descent3-bot-testing-client/Descent3_testing",
-  "launch": ["./Descent3", "-dedicated", "./soak-dedicated-entropy.cfg"],
+  "launch": [
+    "./Descent3",
+    "-dedicated",
+    "./soak-dedicated-entropy.cfg"
+  ],
   "telnet_port": 2092,
   "telnet_password": "test",
   "phases": [
-    {"name": "entropy-defaults", "toggles": {}, "rounds": 14}
+    {
+      "name": "entropy-defaults",
+      "toggles": {},
+      "rounds": 5
+    }
   ],
   "navdump": {},
   "max_minutes": 320
