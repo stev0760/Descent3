@@ -168,14 +168,20 @@ def main():
         for phase in mf["phases"]:
             for name, on in phase.get("toggles", {}).items():
                 con.send("$nav %s %s" % (name, "on" if on else "off"), settle=0.5)
+            # Raw console lines for non-boolean knobs (e.g. "$nav mtenure 15")
+            for cmd in phase.get("commands", []):
+                con.send(cmd, settle=0.5)
             emit(
-                "PHASE_START name=%s toggles=%s"
+                "PHASE_START name=%s toggles=%s%s"
                 % (
                     phase["name"],
                     ",".join(
                         "%s=%s" % (k, "on" if v else "off")
                         for k, v in phase.get("toggles", {}).items()
                     ),
+                    " commands=[%s]" % "; ".join(phase.get("commands", []))
+                    if phase.get("commands")
+                    else "",
                 )
             )
             phase_rounds = 0
