@@ -59,6 +59,9 @@
 // the floors give an emergent hysteresis without carrier state: a loaded bot below RETREAT
 // always runs for a repair room; one outside enemy ground below REENGAGE keeps repairing
 // instead of starting a fresh approach; an in-progress hold runs down to the hard floor.
+#define BOT_ENTROPY_HOLD_DEPTH 12.0f // invade/retreat nav point pushed this far off the entry portal INTO the
+                                     // room: a park on the portal plane flaps roomnum between the two rooms
+                                     // (2026-07-13 soak: 32/32 holds churned <=1s, 0 takeovers in 12 rounds)
 #define BOT_ENTROPY_RETREAT_SHIELDS 25.0f  // hard abort floor (spec ~25, tunable at E4)
 #define BOT_ENTROPY_REENGAGE_SHIELDS 45.0f // don't START an approach below this
 // Streak-preservation healing (operator insight, first POV session): the kill streak gates
@@ -103,6 +106,10 @@
                                         // distance margin every few seconds. A team's role table
                                         // FREEZES for this long after each change, released early
                                         // only by the striker's death. RoboCup commitment pattern.
+#define BOT_MBALL_AVOID_MARGIN 8.0f // contact-blunder discipline: extra clearance (beyond ball+ship
+                                    // radii) when detouring around a ball a straight nav leg would
+                                    // bump toward THEIR goal (2026-07-13 soak: all 21 own-goals were
+                                    // body bumps — 10 keeper station legs, 10 striker approach legs)
 #define BOT_MBALL_SUPPORT_STANDOFF 60.0f // supporter's distance from the ball along the push line
 #define BOT_MBALL_TB_NEAR_BALL 150.0f    // "enemy striker" proxy: enemy within this of the ball
 #define BOT_MBALL_STRIKER_BIAS -250.0f   // target bias: prefer killing the enemy striker (turnover)
@@ -256,5 +263,6 @@ extern bool Bot_mball_striker_enabled;
 // $nav mroles — M3 role split (exactly-one STRIKER + SUPPORT + KEEPER, utility-assigned with
 // incumbent hysteresis). OFF with mball ON = every bot runs the striker loop (the M2 A/B arm).
 extern bool Bot_mball_roles_enabled;
+extern float Bot_mball_role_tenure; // $nav mtenure <s> — role commitment period (thrash A/B lever)
 
 #endif // BOT_OBJECTIVE_H

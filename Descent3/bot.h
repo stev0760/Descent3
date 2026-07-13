@@ -494,6 +494,12 @@ struct bot_info {
   // here — this is a dumb trigger). Cleared with the active goal and on respawn.
   int mball_fire_handle;
   float mball_shot_log_t; // throttle for the shots-at-ball analyzer log line
+  // M2.5 finisher observability (2026-07-13 soak lesson: the old reissue-gated log line
+  // undercounted arms and the vauss-finish branch was fully silent — arming was unmeasurable).
+  // 0 = off, 1 = slam run, 2 = vauss finish. Log-transition state only; recomputed every tick.
+  uint8_t mball_finish_mode;
+  float mball_finish_log_t; // transition-log throttle (align jitters across the arm threshold)
+  float mball_avoid_log_t;  // ball-avoid detour log throttle (contact-blunder discipline)
 
   // 0.9.7 Stage 3 progress-monitor replan state
   vector stall_check_pos;   // position at the start of the current sample window

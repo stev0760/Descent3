@@ -314,6 +314,7 @@ static void BotClearActiveGoal(int bot_index) {
   Bots[bot_index].troute_goal_room = -1;      // $nav troute: a terrain plan dies with the goal it served
   Bots[bot_index].entropy_holding = false;    // E3: a takeover hold dies with the goal too
   Bots[bot_index].mball_fire_handle = OBJECT_HANDLE_NONE; // M1: ball-fire order dies with the goal too
+  Bots[bot_index].mball_finish_mode = 0;                  // M2.5: finisher state dies with it
 }
 
 // Force a bot into escort mode: clear target + all goals + force EXPLORE + retarget cooldown.
@@ -2758,9 +2759,14 @@ static void BotDoExploreRoaming(int bot_index) {
                    BotHasVisitedRoom(bot_index, dest_room) ? " revisit" : " new");
 }
 
-static vector BotGetNearestPortalPoint(object *obj, int target_room) {
+// `inward` > 0 pushes the returned point off the portal face into the room along the face
+// normal (which points INTO the room) — for callers that need the ship to END UP inside the
+// room, not on its boundary plane. At 0 (default) this is the raw portal path_pnt, which is
+// the right AIM for final-hop carrier navs that have their own in-room logic on arrival.
+static vector BotGetNearestPortalPoint(object *obj, int target_room, float inward = 0.0f) {
   vector best = Rooms[target_room].path_pnt;
   float best_dist = 1e30f;
+  int best_portal = -1;
   for (int p = 0; p < Rooms[target_room].num_portals; p++) {
     portal *pt = &Rooms[target_room].portals[p];
     if (pt->flags & (PF_BLOCK | PF_TOO_SMALL_FOR_ROBOT))
@@ -2769,8 +2775,11 @@ static vector BotGetNearestPortalPoint(object *obj, int target_room) {
     if (d < best_dist) {
       best_dist = d;
       best = pt->path_pnt;
+      best_portal = p;
     }
   }
+  if (best_portal >= 0 && inward > 0.0f)
+    best += Rooms[target_room].faces[Rooms[target_room].portals[best_portal].portal_face].normal * inward;
   return best;
 }
 
@@ -2866,9 +2875,12 @@ static void BotDoHoardCarrierNav(int bot_index) {
 // enemy special room waiting out the DLL's takeover clock (3.0s, resets if the ship moves >~5u
 // or leaves the room). The park works by clearing all movement goals: with no live goal the
 // engine blends no movement_dir, juke never fires in EXPLORE, and drag stops the ship — the
-// same mechanism Stage 6 hold-station uses on arrival. We deliberately hold at the ENTRY
-// position, not the room's path_pnt: any in-room repositioning risks the >5u reset, and
-// buried-center rooms (12.3 class) would make a path_pnt approach strictly worse.
+// same mechanism Stage 6 hold-station uses on arrival. We deliberately hold near the ENTRY
+// side of the room, not the room's path_pnt: any in-room repositioning risks the >5u reset,
+// and buried-center rooms (12.3 class) would make a path_pnt approach strictly worse. The
+// nav point is the entry portal pushed BOT_ENTROPY_HOLD_DEPTH into the room — parking on the
+// portal plane itself makes roomnum flap between the two rooms (the 2026-07-13 zero-takeover
+// soak).
 // Room choice, shield-floor retreat, and re-engage hysteresis all live in
 // BotGetObjectiveRoom_Entropy — this function only executes what it returns.
 static bool BotDoEntropyInvadeNav(int bot_index) {
@@ -2927,8 +2939,13 @@ static bool BotDoEntropyInvadeNav(int bot_index) {
   pugi = -1;
   Bots[bot_index].chasing_powerup_handle = OBJECT_HANDLE_NONE;
   Bots[bot_index].chasing_powerup_timer = 0.0f;
+  // Final position is pushed INSIDE the target room (2026-07-13 soak root cause: the raw
+  // portal path_pnt sits ON the boundary plane — the ship parked there, roomnum flapped
+  // between the two rooms every frame, and all 32 holds churned START/ABORT in <=1s while
+  // the DLL's 3.0s still-clock never survived; 12 rounds, zero takeovers).
   bool reissued = false;
-  BotSetRoutedGoal(bot_index, target_room, BotGetNearestPortalPoint(obj, target_room), &reissued);
+  BotSetRoutedGoal(bot_index, target_room, BotGetNearestPortalPoint(obj, target_room, BOT_ENTROPY_HOLD_DEPTH),
+                   &reissued);
   if (reissued)
     LOG_DEBUG.printf("BOT ENTROPY: '%s' invade nav (carrying %d) room %d -> goal %d", Bots[bot_index].callsign,
                      Bot_objective.entropy_virus_count[slot], cur_room, target_room);
@@ -2961,6 +2978,64 @@ static bool BotMballAimPoint(int ball_room, int goal_room, vector *out) {
     return true;
   }
   return false;
+}
+
+// Contact-blunder discipline (2026-07-13 soak: ALL 21 own-goals across 22 rounds were body
+// bumps — none had a fire within 4s; 10 keeper-role, 10 striker-role. Mechanism: the role navs
+// place points on the FAR side of the ball — the striker approach point sits enemy-goal-side by
+// design, the keeper station is the enemy mouth — so the straight leg there passes THROUGH the
+// ball, and a bump moves the ball exactly away from the ship = toward THEIR goal.) When the leg
+// to `nav_target` grazes the ball AND that bump would advance the ball along their route (the
+// same geometric test as the fire blunder gate), detour laterally around the ball instead.
+// Helpful/sideways bumps pass untouched — the dry-bot ram and slam run route through here only
+// when their bump is already safe, and the finisher bypasses this entirely.
+static vector BotMballAvoidBallOnRoute(int bot_index, object *obj, object *ball, int ball_room, int enemy_goal,
+                                       const vector &nav_target) {
+  vector seg = nav_target - obj->pos;
+  float seglen = vm_GetMagnitude(&seg);
+  if (seglen < 1.0f)
+    return nav_target;
+  vector dir = seg * (1.0f / seglen);
+  vector to_ball = ball->pos - obj->pos;
+  float t = vm_DotProduct(&to_ball, &dir);
+  if (t < 0.0f || t > seglen)
+    return nav_target; // ball is not between us and the target
+  float clearance = ball->size + obj->size + BOT_MBALL_AVOID_MARGIN;
+  vector closest = obj->pos + dir * t;
+  vector miss = closest - ball->pos;
+  float missd = vm_GetMagnitude(&miss);
+  if (missd >= clearance)
+    return nav_target; // the leg already clears the ball
+  float bd = vm_GetMagnitude(&to_ball);
+  if (bd < 1.0f)
+    return nav_target; // effectively inside the ball — nothing sensible to steer
+  vector bump = to_ball * (1.0f / bd);
+  vector enemy_aim;
+  if (!BotMballAimPoint(ball_room, enemy_goal, &enemy_aim))
+    return nav_target;
+  vector enemy_dir = enemy_aim - ball->pos;
+  if (vm_GetMagnitude(&enemy_dir) < 1.0f)
+    return nav_target;
+  vm_NormalizeVector(&enemy_dir);
+  float bump_dot = vm_DotProduct(&bump, &enemy_dir);
+  if (bump_dot <= BOT_MBALL_BLUNDER_DOT)
+    return nav_target; // bump is sideways or toward our goal — ram on through
+  // Detour point: pass the ball on the side the leg is already offset toward (minimal
+  // deviation); when dead-on, any perpendicular to the leg works.
+  if (missd > 0.5f) {
+    miss = miss * (1.0f / missd);
+  } else {
+    vm_CrossProduct(&miss, &dir, &enemy_dir);
+    if (vm_GetMagnitude(&miss) < 0.1f)
+      miss = obj->orient.uvec;
+    vm_NormalizeVector(&miss);
+  }
+  if (Gametime - Bots[bot_index].mball_avoid_log_t > 2.0f) {
+    LOG_DEBUG.printf("BOT MBALL: '%s' ball-avoid detour (bump dot %.2f, miss %.0f)", Bots[bot_index].callsign,
+                     bump_dot, missd);
+    Bots[bot_index].mball_avoid_log_t = Gametime;
+  }
+  return ball->pos + miss * clearance;
 }
 
 // Monsterball M2 striker nav (MONSTERBALL_MODE.md §4.2): position at the approach point BEHIND
@@ -3034,17 +3109,39 @@ static void BotDoMonsterballStrikerNav(int bot_index) {
   // and position finishes from the standoff without risking the body. Slam only without it.
   bool vauss_finish = (Players[slot].weapon_flags & (1u << VAUSS_INDEX)) &&
                       Players[slot].weapon_ammo[VAUSS_INDEX] > 25 && d < BOT_FIRE_RANGE * 0.8f;
+  bool slam_run = finishing && !vauss_finish;
   vector nav_target = approach;
-  if (finishing && !vauss_finish)
+  if (slam_run)
     nav_target = bpos + push_dir * (ball->size + BOT_MBALL_SLAM_THROUGH);
   else if (dry && vm_VectorDistanceQuick(&obj->pos, &approach) < BOT_MBALL_RAM_SWITCH)
     nav_target = ball->pos;
 
+  // Contact-blunder discipline: the leg to the approach point crosses the ball by design
+  // (the point is enemy-goal-side); detour when the crossing bump would score for THEM.
+  // A slam run intends the contact — its bump is toward our goal by the arming geometry.
+  if (!slam_run)
+    nav_target = BotMballAvoidBallOnRoute(bot_index, obj, ball, ball_room, enemy_goal, nav_target);
+
   bool reissued = false;
   BotSetRoutedGoal(bot_index, ball_room, nav_target, &reissued);
-  if (finishing && reissued)
-    LOG_DEBUG.printf("BOT MBALL: '%s' FINISH slam run (ball cost %.0f, align %.2f)", Bots[bot_index].callsign,
-                     Bot_objective.monsterball_progress[my_team], align);
+
+  // Finisher observability: log ARM/DISARM transitions, not goal reissues (2026-07-13 soak:
+  // the reissue-gated line undercounted arms — single-room maps rarely reissue — and the
+  // vauss-finish branch was fully silent, so arming was unmeasurable from a soak log).
+  uint8_t fmode = finishing ? (vauss_finish ? 2 : 1) : 0;
+  if (fmode != Bots[bot_index].mball_finish_mode) {
+    if (Gametime - Bots[bot_index].mball_finish_log_t > 0.5f) {
+      if (fmode)
+        LOG_DEBUG.printf("BOT MBALL: '%s' FINISH %s ARM (ball cost %.0f, align %.2f, dist %.0f)",
+                         Bots[bot_index].callsign, fmode == 2 ? "vauss" : "slam",
+                         Bot_objective.monsterball_progress[my_team], align, d);
+      else
+        LOG_DEBUG.printf("BOT MBALL: '%s' FINISH DISARM (ball cost %.0f, align %.2f)", Bots[bot_index].callsign,
+                         Bot_objective.monsterball_progress[my_team], align);
+      Bots[bot_index].mball_finish_log_t = Gametime;
+    }
+    Bots[bot_index].mball_finish_mode = fmode;
+  }
 
   // Fire gates (skipped when dry — the ram IS the shot). During a slam run the fire order
   // doubles as the facing order; the blunder gate still guards the trigger.
@@ -3094,6 +3191,9 @@ static void BotDoMonsterballSupportNav(int bot_index) {
       support = ball->pos + push_dir * BOT_MBALL_SUPPORT_STANDOFF;
     }
   }
+  // Contact-blunder discipline (a supporter re-slotting can cross the ball too)
+  support = BotMballAvoidBallOnRoute(bot_index, obj, ball, ball_room,
+                                     Bot_objective.monsterball_goal_rooms[1 - my_team], support);
   bool reissued = false;
   BotSetRoutedGoal(bot_index, ball_room, support, &reissued);
 }
@@ -3122,6 +3222,9 @@ static void BotDoMonsterballKeeperNav(int bot_index) {
   vector station;
   if (!BotMballAimPoint(enemy_goal, ball_room, &station))
     station = Rooms[enemy_goal].path_pnt;
+  // Contact-blunder discipline (2026-07-13 soak: 10 of 21 own-goals were keeper-role bumps —
+  // the leg back to the mouth station passes through a ball sitting AT the mouth)
+  station = BotMballAvoidBallOnRoute(bot_index, obj, ball, ball_room, enemy_goal, station);
   bool reissued = false;
   BotSetRoutedGoal(bot_index, enemy_goal, station, &reissued);
 
@@ -6594,6 +6697,9 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   Bots[bot_index].entropy_holding = false;
   Bots[bot_index].mball_fire_handle = OBJECT_HANDLE_NONE; // -1 sentinel: a zeroed struct would alias handle 0
   Bots[bot_index].mball_shot_log_t = 0.0f;
+  Bots[bot_index].mball_finish_mode = 0;
+  Bots[bot_index].mball_finish_log_t = 0.0f;
+  Bots[bot_index].mball_avoid_log_t = 0.0f;
   vm_MakeZero(&Bots[bot_index].via_point);
   Bots[bot_index].via_expires = 0.0f;
   Bots[bot_index].via_seal_count = 0;

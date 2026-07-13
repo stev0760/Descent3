@@ -210,6 +210,13 @@ they describe is reconstructable:
   the 12.3 skeleton machinery applies unchanged): suppress dodge/juke/friend-avoid, hold
   3.5s, watch shields. Abort + retreat to own repair room when shields < ~25 (tunable) —
   15 shields of room damage is the planned cost of one takeover (3s × 5/s).
+  **As-built correction (2026-07-13):** E3 shipped "hold at entry position" instead of the
+  path_pnt (buried-center risk), but the routed goal's final position was the raw portal
+  `path_pnt` — a point ON the room boundary plane. The parked ship's `roomnum` flapped
+  between the two rooms and every hold aborted in ≤1s (first clean soak: 32/32 aborts, 0
+  takeovers in 12 rounds). The hold point is now the entry portal pushed
+  `BOT_ENTROPY_HOLD_DEPTH` (12u) INTO the room along the portal-face normal — entry-side
+  hold preserved, boundary flap eliminated.
 - **Carrier survival:** loaded bots get the CTF-carrier treatments — flee bias, combat
   timeout, thrust override toward the objective, and the existing carrier aim/sprint logic
   where applicable.

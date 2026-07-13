@@ -706,6 +706,11 @@ bool Bot_mball_striker_enabled = true;
 // $nav mroles — M3 role split. OFF (with mball ON) = every bot strikes. See §4.3.
 bool Bot_mball_roles_enabled = true;
 
+// $nav mtenure <seconds> — the role commitment period, runtime-tunable so the 10/15/20s
+// thrash A/B (2026-07-13 clean soak: 356-773 re-assigns/round, pairwise station swaps at
+// every 10s expiry) runs as soak phases instead of rebuilds. Default = the M3 constant.
+float Bot_mball_role_tenure = BOT_MBALL_ROLE_TENURE;
+
 // M3 role assignment (MONSTERBALL_MODE.md §4.3): per team, utility-ranked by path cost to the
 // ball with an incumbent-striker discount (the $nav hyper hysteresis pattern) — exactly one
 // STRIKER, one SUPPORT (next-best; inherits the play on flythrough overshoot, which in 6DOF is
@@ -718,7 +723,7 @@ static void BotAssignMonsterballRoles() {
   static float Team_role_lock[2] = {-1.0f, -1.0f};
 
   for (int t = 0; t < 2; t++) {
-    if (Team_role_lock[t] > Gametime + BOT_MBALL_ROLE_TENURE)
+    if (Team_role_lock[t] > Gametime + Bot_mball_role_tenure)
       Team_role_lock[t] = -1.0f; // Gametime reset (level transition)
     if (Gametime < Team_role_lock[t]) {
       int striker = -1;
@@ -823,7 +828,7 @@ static void BotAssignMonsterballRoles() {
       Bot_objective.mball_role[cand[i]] = role;
     }
     if (changed)
-      Team_role_lock[t] = Gametime + BOT_MBALL_ROLE_TENURE; // arm the commitment period
+      Team_role_lock[t] = Gametime + Bot_mball_role_tenure; // arm the commitment period
   }
 }
 

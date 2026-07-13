@@ -211,6 +211,18 @@ Utility-assigned per poll with hysteresis (CTF-roles pattern), team-size aware:
 - **Kickoff:** on ball respawn (poll detects teleport to spawn room), assigned striker
   races; everyone else takes role stations. First touch matters (RL doctrine).
 
+**As-built addition — contact-blunder discipline (2026-07-13, from the first clean 27-round
+soak):** the fire blunder gate held perfectly, but ~22% of bot goals were own-goals by BODY
+CONTACT — the straight flight leg to a role point on the far side of the ball (striker
+approach point, keeper mouth station) passes through the ball, and a bump moves the ball
+exactly away from the ship = toward their goal. All three role navs now route their nav
+point through `BotMballAvoidBallOnRoute()`: if the leg passes within contact clearance of
+the ball AND the bump direction fails the same geometric blunder test the fire gate uses,
+the bot detours laterally around the ball (`BOT_MBALL_AVOID_MARGIN`). Slam runs bypass it
+(contact intended and already safe by arming geometry); helpful/sideways bumps pass. FLEE-
+state bumps (4/21 in the soak) are accepted residual. Role tenure is runtime-tunable via
+`$nav mtenure <seconds>` for the thrash A/B ladder (see manifests/monsterball-tenure-ab.json).
+
 ### 4.4 Phase M4 — polish (soak-driven only)
 
 - Difficulty: alignment threshold, prediction quality, blunder-gate cone width, reaction to

@@ -41,6 +41,24 @@ anchors its defense at the lab. `$nav entropy off` disables the invasion layer f
 Requires an Entropy-flagged mission (e.g. *dementia.mn3*); the log analyzer gained a full Entropy
 section (takeovers per round, hold attempts vs aborts, virus economy).
 
+**Entropy takeovers actually complete now.** The first unattended overnight test (12 rounds,
+three maps) produced 32 takeover attempts and zero conversions: bots flew their five viruses to
+the enemy room, then parked *exactly on the doorway plane*, where the game couldn't decide which
+room they were in — the takeover clock (which demands 3 seconds dead-still inside the room) never
+survived a second, and the bot burned shields cycling in and out of the doorway. Loaded bots now
+park a ship-length *inside* the room. The same test confirmed enemy special rooms do damage bots
+correctly on standard maps (the earlier no-damage report appears specific to one map's geometry).
+
+**Monsterball bots stop scoring for the other team.** In the first clean overnight Monsterball
+test (27 rounds), roughly one goal in five was a bot accidentally shoving the ball into the wrong
+net — and every single one was a *collision*, not a shot (the firing safeguards held perfectly).
+The cause was geometric: a bot flying to its assigned spot on the far side of the ball would plow
+straight through the ball on the way. Bots now notice when their flight path would bump the ball
+toward the enemy's net and swing around it instead — while deliberate helpful ramming (and the
+afterburner slam finisher) still goes right through. The finisher also now announces itself in
+the server log when it arms, so its conversion rate is finally measurable, and the role
+commitment period is tunable live with `$nav mtenure <seconds>` for stability testing.
+
 **Monsterball: bots that play the ball, not chase it.** The other bot-less mode gets the full
 sports-AI treatment. Bots now position *behind* the ball on the line toward their goal (you score
 into your own goal in Monsterball), and only shoot it when the shot actually advances it their way

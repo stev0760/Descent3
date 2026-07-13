@@ -997,11 +997,23 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
       for (const NavToggle &t : Nav_toggles)
         PrintDedicatedMessage("  %-13s %-3s  %s%s\n", t.sub, *t.flag ? "ON" : "off", t.desc,
                               t.legacy ? " [legacy 0.9.3]" : "");
+      PrintDedicatedMessage("  %-13s %.0fs  Monsterball role commitment period: $nav mtenure <seconds>\n", "mtenure",
+                            Bot_mball_role_tenure);
       PrintDedicatedMessage("  %-13s      dump nav geometry to JSON: $nav dump [file]\n", "dump");
       return true;
     }
     if (stricmp(sub, "dump") == 0)
       return DedicatedNavDump(value);
+    if (stricmp(sub, "mtenure") == 0) { // numeric knob, not a toggle (the M3 thrash A/B lever)
+      float sec = (float)atof(value);
+      if (!value[0] || sec < 2.0f || sec > 120.0f) {
+        PrintDedicatedMessage("Usage: $nav mtenure <seconds 2-120>  (current: %.0f)\n", Bot_mball_role_tenure);
+        return true;
+      }
+      Bot_mball_role_tenure = sec;
+      PrintDedicatedMessage("nav mtenure %.0fs - Monsterball role commitment period\n", sec);
+      return true;
+    }
     const NavToggle *t = NavToggleFind(sub, true);
     if (!t) {
       PrintDedicatedMessage("Unknown nav toggle '%s' - type $nav for the list\n", sub);
