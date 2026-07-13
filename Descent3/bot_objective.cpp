@@ -712,7 +712,26 @@ bool Bot_mball_roles_enabled = true;
 // the NORMAL outcome of a missed touch), one KEEPER on 3+-bot teams (shadow defense at the
 // enemy goal mouth). Everyone else: anarchy + the positional target bias.
 static void BotAssignMonsterballRoles() {
+  // Commitment periods (session 4): per-team role-table freeze. Gametime resets on level
+  // transitions; the `> Gametime` check re-arms. Early release only when the striker dies
+  // (its job can't wait 10s for a corpse).
+  static float Team_role_lock[2] = {-1.0f, -1.0f};
+
   for (int t = 0; t < 2; t++) {
+    if (Team_role_lock[t] > Gametime + BOT_MBALL_ROLE_TENURE)
+      Team_role_lock[t] = -1.0f; // Gametime reset (level transition)
+    if (Gametime < Team_role_lock[t]) {
+      int striker = -1;
+      for (int i = 0; i < MAX_BOTS; i++)
+        if (Bots[i].active && Bot_objective.mball_role[i] == 1 && Players[Bots[i].player_slot].team == t)
+          striker = i;
+      bool striker_dead =
+          striker < 0 ||
+          (Players[Bots[striker].player_slot].flags & (PLAYER_FLAGS_DYING | PLAYER_FLAGS_DEAD)) != 0;
+      if (!striker_dead)
+        continue; // table frozen — the committed lineup plays out
+    }
+
     int cand[MAX_BOTS], n = 0;
     float cost[MAX_BOTS];
     int ball_room = Bot_objective.monsterball_room;
@@ -790,16 +809,21 @@ static void BotAssignMonsterballRoles() {
       next_role[i] = !slot_taken[2] ? 2 : 3;
       slot_taken[next_role[i]] = true;
     }
+    bool changed = false;
     for (int i = 0; i < n; i++) {
       uint8_t role = next_role[i];
-      if (Bot_objective.mball_role[cand[i]] != role)
+      if (Bot_objective.mball_role[cand[i]] != role) {
+        changed = true;
         LOG_DEBUG.printf("BOT MBALL: '%s' role -> %s", Bots[cand[i]].callsign,
                          role == 1   ? "STRIKER"
                          : role == 2 ? "SUPPORT"
                          : role == 3 ? "KEEPER"
                                      : "field");
+      }
       Bot_objective.mball_role[cand[i]] = role;
     }
+    if (changed)
+      Team_role_lock[t] = Gametime + BOT_MBALL_ROLE_TENURE; // arm the commitment period
   }
 }
 

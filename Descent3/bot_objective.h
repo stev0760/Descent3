@@ -91,6 +91,11 @@
 #define BOT_MBALL_SET_INCUMBENT 0.8f    // roled bots resist FIELD bots at this margin; only the
                                         // striker gets the deep ROLE_INCUMBENT hold on rank #1
                                         // (equal discounts cancel between incumbents — session 3)
+#define BOT_MBALL_ROLE_TENURE 10.0f     // commitment period (session 4): margin hysteresis cannot
+                                        // hold in an arena — a moving ball + combat crosses any
+                                        // distance margin every few seconds. A team's role table
+                                        // FREEZES for this long after each change, released early
+                                        // only by the striker's death. RoboCup commitment pattern.
 #define BOT_MBALL_SUPPORT_STANDOFF 60.0f // supporter's distance from the ball along the push line
 #define BOT_MBALL_TB_NEAR_BALL 150.0f    // "enemy striker" proxy: enemy within this of the ball
 #define BOT_MBALL_STRIKER_BIAS -250.0f   // target bias: prefer killing the enemy striker (turnover)
