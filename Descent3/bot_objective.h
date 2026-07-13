@@ -84,7 +84,10 @@
 #define BOT_MBALL_PREDICT_T 0.7f    // seconds of linear ball prediction for the approach point
 #define BOT_MBALL_RAM_SWITCH 12.0f  // dry-bot ram: within this of the approach point, target the ball
 // M3 roles (utility + hysteresis, the $nav hyper pattern at team scale):
-#define BOT_MBALL_ROLE_INCUMBENT 0.7f    // striker keeps the role unless beaten by ~30% (RoboCup margin)
+#define BOT_MBALL_ROLE_INCUMBENT 0.55f  // incumbent keeps its role unless beaten ~2x (0.7 -> 0.55:
+                                        // first live session thrashed — room-graph cost JUMPS as the
+                                        // ball crosses rooms, a 30% margin evaporates instantly)
+#define BOT_MBALL_ROLE_INTERVAL 2.0f    // seconds between role reassignments (was every 0.5s poll)
 #define BOT_MBALL_SUPPORT_STANDOFF 60.0f // supporter's distance from the ball along the push line
 #define BOT_MBALL_TB_NEAR_BALL 150.0f    // "enemy striker" proxy: enemy within this of the ball
 #define BOT_MBALL_STRIKER_BIAS -250.0f   // target bias: prefer killing the enemy striker (turnover)

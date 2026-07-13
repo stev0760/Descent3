@@ -527,10 +527,16 @@ static void BotPollMonsterball() {
     }
   }
 
-  // M3 role assignment — every poll (0.5s); the incumbent discount is the anti-thrash.
-  if (Bot_mball_roles_enabled && Bot_mball_striker_enabled)
-    BotAssignMonsterballRoles();
-  else
+  // M3 role assignment — throttled (first live session thrashed at per-poll cadence even with
+  // the incumbent discount); the throttle + discount + slot preservation are the anti-thrash
+  // stack. Gametime resets at level transitions (the < check re-arms).
+  if (Bot_mball_roles_enabled && Bot_mball_striker_enabled) {
+    static float Mball_last_assign = -1.0f;
+    if (Gametime < Mball_last_assign || Gametime - Mball_last_assign > BOT_MBALL_ROLE_INTERVAL) {
+      Mball_last_assign = Gametime;
+      BotAssignMonsterballRoles();
+    }
+  } else
     for (int i = 0; i < MAX_BOTS; i++)
       Bot_objective.mball_role[i] = 0;
 }
@@ -720,8 +726,8 @@ static void BotAssignMonsterballRoles() {
       float c = (bot_room >= 0 && ball_room >= 0 && Rooms[ball_room].used)
                     ? BotEstimatePathCost(bot_room, ball_room)
                     : 1e6f;
-      if (Bot_objective.mball_role[i] == 1)
-        c *= BOT_MBALL_ROLE_INCUMBENT; // striker hysteresis
+      if (Bot_objective.mball_role[i] != 0)
+        c *= BOT_MBALL_ROLE_INCUMBENT; // ANY roled incumbent resists displacement by a field bot
       cand[n] = i;
       cost[n] = c;
       n++;
@@ -739,14 +745,38 @@ static void BotAssignMonsterballRoles() {
       cost[i] = cost[best];
       cost[best] = tf;
     }
+    // Slot assignment with role preservation (first live session: SUPPORT/KEEPER thrashed
+    // between bots every few seconds because only the striker had hysteresis — slots 2/3
+    // re-ranked freely, so bots ping-ponged between stations). Rules: rank #1 is ALWAYS the
+    // striker (contest-the-ball is rank-sensitive); among the rest of the selected set, a bot
+    // KEEPS its current role if that slot is available; leftovers fill leftover slots in rank
+    // order. Selected-set membership is already sticky via the incumbency discount above.
+    int k = n < 3 ? n : 3;
+    uint8_t next_role[MAX_BOTS];
+    for (int i = 0; i < n; i++)
+      next_role[i] = 0;
+    bool slot_taken[4] = {false, false, false, false};
+    if (k >= 1) {
+      next_role[0] = 1; // rank #1 strikes, always
+      slot_taken[1] = true;
+    }
+    if (k < 3)
+      slot_taken[3] = true; // no keeper on 2-bot teams
+    for (int i = 1; i < k; i++) {
+      uint8_t cur = Bot_objective.mball_role[cand[i]];
+      if ((cur == 2 || cur == 3) && !slot_taken[cur]) {
+        next_role[i] = cur; // keep the station this bot already mans
+        slot_taken[cur] = true;
+      }
+    }
+    for (int i = 1; i < k; i++) {
+      if (next_role[i])
+        continue;
+      next_role[i] = !slot_taken[2] ? 2 : 3;
+      slot_taken[next_role[i]] = true;
+    }
     for (int i = 0; i < n; i++) {
-      uint8_t role = 0;
-      if (i == 0)
-        role = 1; // STRIKER
-      else if (i == 1)
-        role = 2; // SUPPORT
-      else if (i == 2 && n >= 3)
-        role = 3; // KEEPER
+      uint8_t role = next_role[i];
       if (Bot_objective.mball_role[cand[i]] != role)
         LOG_DEBUG.printf("BOT MBALL: '%s' role -> %s", Bots[cand[i]].callsign,
                          role == 1   ? "STRIKER"
