@@ -112,6 +112,21 @@ RE_ENT_TAKEOVER = re.compile(r"BOT ENTROPY: '([^']+)' spent (\d+) viruses \(take
 RE_ENT_HOLD_START = re.compile(r"BOT ENTROPY: '([^']+)' takeover hold START \(room (-?\d+)")
 RE_ENT_HOLD_ABORT = re.compile(r"BOT ENTROPY: '([^']+)' takeover hold ABORT")
 
+# 0.9.8 Monsterball (M1-M3, MONSTERBALL_MODE.md): goals + roles + ball nav. Goals/round is the
+# outcome metric (the captures analog). Three goal classes from the DLL (monsterstr.h), all
+# emitted as HUD messages with a leading `*` in the dedicated log:
+#   TEAM   = "<Team> Team Scores 1 point!"        (ball drifted/rolled into a goal — no scorer)
+#   PLAYER = "<name> (<team>) knocks the ball in for a point!"  (player put it in their OWN goal)
+#   BLUNDER= "<name> accidently scores a point for the <team> team!" (own-goal — wrong goal)
+# Roles: STRIKER/SUPPORT/KEEPER + "field" (overflow beyond the 3 stations on >3-bot teams).
+# Sources: bot_objective.cpp BotAssignMonsterballRoles/BotPollMonsterball + bot.cpp BotDoFiring.
+RE_MB_TEAM_SCORE = re.compile(r"\*?(\w+) Team Scores (?:1 point|\d+ points)!")
+RE_MB_PLAYER_SCORE = re.compile(r"\*?\s*(.+?) \((\w+)\) knocks the ball in for (?:a point|\d+ points)!")
+RE_MB_BLUNDER = re.compile(r"\*?\s*(.+?) accidently scores (?:a point|\d+ points) for the (\w+) team!")
+RE_MB_ROLE = re.compile(r"BOT MBALL: '([^']+)' role -> (STRIKER|SUPPORT|KEEPER|field)")
+RE_MB_FIRE = re.compile(r"BOT MBALL: '([^']+)' firing at ball \(wb (\d+), dist (\d+)\)")
+RE_MB_BALL_ROOM = re.compile(r"BOT MBALL: ball room (-?\d+) -> (-?\d+) \(cost to red-goal (\S+), blue-goal (\S+)\)")
+
 DIST_CLOSE = 200
 DIST_MID = 500
 
@@ -145,6 +160,19 @@ def new_map_stats():
         "ent_takeover_players": Counter(),
         "ent_hold_starts": 0,        # Entropy: takeover holds begun
         "ent_hold_aborts": 0,        # Entropy: holds broken (left room / shield floor / chased off)
+        # 0.9.8 Monsterball (MONSTERBALL_MODE.md). Goals/round = the outcome metric.
+        "mball_goals": 0,            # ALL goals (team + player + blunder)
+        "mball_goals_bot": 0,        # goals where the scorer was a bot
+        "mball_team_scores": 0,      # drift-in team scores (no individual scorer)
+        "mball_player_scores": 0,    # player knocks ball into their OWN goal (the good score)
+        "mball_player_scores_bot": 0,
+        "mball_blunders": 0,         # own-goals (ball put in the WRONG goal)
+        "mball_blunders_bot": 0,
+        "mball_blunder_players": Counter(),
+        "mball_role_assigns": 0,     # role->X transitions (role-thrash proxy)
+        "mball_role_counts": Counter(),  # role -> total assignments
+        "mball_fires": 0,             # shots at the ball (M1 gate)
+        "mball_ball_transitions": 0,  # ball room->room transitions (M2 progress)
         "human_caps": 0,             # captures by players without the [BOT] suffix
         "human_cappers": Counter(),
         "team_caps": Counter(),
@@ -353,6 +381,45 @@ def parse_log(path):
                 if m:
                     s["ent_hold_aborts"] += 1
                     continue
+
+            if "BOT MBALL" in line:
+                m = RE_MB_ROLE.search(line)
+                if m:
+                    s["mball_role_assigns"] += 1
+                    s["mball_role_counts"][m.group(2)] += 1
+                    continue
+                m = RE_MB_FIRE.search(line)
+                if m:
+                    s["mball_fires"] += 1
+                    continue
+                m = RE_MB_BALL_ROOM.search(line)
+                if m:
+                    s["mball_ball_transitions"] += 1
+                    continue
+
+            # Monsterball goal HUD messages (DLL monsterstr.h). Team-score has no individual
+            # scorer; player-score is the good goal (own goal); blunder is the own-goal.
+            m = RE_MB_TEAM_SCORE.search(line)
+            if m:
+                s["mball_goals"] += 1
+                s["mball_team_scores"] += 1
+                continue
+            m = RE_MB_PLAYER_SCORE.search(line)
+            if m:
+                s["mball_goals"] += 1
+                s["mball_player_scores"] += 1
+                if "[BOT]" in m.group(1):
+                    s["mball_goals_bot"] += 1
+                    s["mball_player_scores_bot"] += 1
+                continue
+            m = RE_MB_BLUNDER.search(line)
+            if m:
+                s["mball_goals"] += 1
+                s["mball_blunders"] += 1
+                s["mball_blunder_players"][m.group(1)] += 1
+                if "[BOT]" in m.group(1):
+                    s["mball_blunders_bot"] += 1
+                continue
 
             m = RE_ORDER_STATION.search(line)
             if m:
@@ -695,6 +762,33 @@ def detect_anomalies(stats):
                               f"viruses the server refuses (capacity gate broken or streak mirror "
                               f"over-estimating; see BotEntropyMirrorStreaks)"))
 
+        # Monsterball (0.9.8, MONSTERBALL_MODE.md). Zero goals with bots firing at the ball =
+        # M1/M2 nav-to-ball works but the finisher never converts (alignment/blunder gates too
+        # strict, or the slam never arms). Blunders >= goals is the own-goal regression — bots
+        # are putting the ball in their own net (blunder gate failure or chaos bounce).
+        if mode == "Monsterball" and s["rounds"] >= 2 and s["mball_goals"] == 0 and s["mball_fires"] > 0:
+            anomalies.append((name, "MBALL_ZERO_GOALS",
+                              f"{s['rounds']} Monsterball round(s) with {s['mball_fires']} shots at the ball "
+                              f"and {s['mball_ball_transitions']} ball transitions but ZERO goals — "
+                              f"finisher not converting (slam alignment gate too strict, or never arms)"))
+        if s["mball_blunders"] > 0 and s["mball_blunders"] >= s["mball_player_scores"] + s["mball_team_scores"]:
+            anomalies.append((name, "MBALL_OWN_GOAL_EXCESS",
+                              f"{s['mball_blunders']} own-goals (blunders) vs "
+                              f"{s['mball_player_scores'] + s['mball_team_scores']} good goals — bots are "
+                              f"putting the ball in their own net more than the enemy's (blunder gate "
+                              f"failure or chaos bounce off the keeper)"))
+        if s["mball_role_assigns"] > 0 and s["rounds"] >= 1:
+            # Role thrash proxy. The commitment period locks roles for ~10s, so a stable arena
+            # re-arms at the 10s cadence (≈6 changes/min/team). >120 changes/round means roles
+            # are swapping nearly every cycle — the M3 saga class (re-arming faster than the
+            # situation warrants). Per-ROUND, not per-goal (goals can be 0).
+            per_round = s["mball_role_assigns"] / s["rounds"]
+            if per_round > 120:
+                anomalies.append((name, "MBALL_ROLE_THRASH",
+                                  f"{s['mball_role_assigns']} role re-assignments ({per_round:.0f}/round) — "
+                                  f"swapping near the 10s commitment cadence every cycle (M3 saga class; "
+                                  f"review whether the tenure is appropriate for this arena)"))
+
         # Phase 12 via-point funnel, stage 1: bots are HARD-pinned indoors but the via mechanism
         # never fired — the occlusion probe (bot → engine's current path node) isn't seeing the
         # press geometry on this map. THE validation signal for the los_from_pathpnt_clear=0 maps
@@ -999,6 +1093,36 @@ def print_report(stats, total_lines, log_path):
         if top:
             who = ", ".join(f"{n} x{c}" for n, c in top.most_common(6))
             print(f"Top converters: {who}")
+            print()
+
+    # Monsterball (only if any map saw MBALL activity)
+    has_mball = any(s["mball_goals"] or s["mball_fires"] or s["mball_ball_transitions"]
+                    or s["mball_role_assigns"] for s in stats.values())
+    if has_mball:
+        print(f"## Monsterball (0.9.8)")
+        print()
+        print(f"| Map | Goals (bot) | /round | Team | Player (bot) | Blunders (bot) | Fires | Ball trans | Roles (STRIKER/SUP/KEEP/field) |")
+        print(f"|---|---|---|---|---|---|---|---|---|")
+        for name in maps:
+            s = stats[name]
+            if not (s["mball_goals"] or s["mball_fires"] or s["mball_ball_transitions"] or s["mball_role_assigns"]):
+                continue
+            per_round = s["mball_goals"] / s["rounds"] if s["rounds"] else 0.0
+            rc = s["mball_role_counts"]
+            roles_str = f"{rc.get('STRIKER',0)}/{rc.get('SUPPORT',0)}/{rc.get('KEEPER',0)}/{rc.get('field',0)}"
+            print(f"| {name} | {s['mball_goals']} ({s['mball_goals_bot']}) | {per_round:.1f} "
+                  f"| {s['mball_team_scores']} "
+                  f"| {s['mball_player_scores']} ({s['mball_player_scores_bot']}) "
+                  f"| {s['mball_blunders']} ({s['mball_blunders_bot']}) "
+                  f"| {s['mball_fires']} | {s['mball_ball_transitions']} "
+                  f"| {s['mball_role_assigns']} ({roles_str}) |")
+        print()
+        top_blunders = Counter()
+        for s in stats.values():
+            top_blunders.update(s["mball_blunder_players"])
+        if top_blunders:
+            who = ", ".join(f"{n} x{c}" for n, c in top_blunders.most_common(6))
+            print(f"Top blunderers (own-goal): {who}")
             print()
 
     # Outdoor breakdown (only if any map has carrier data)
