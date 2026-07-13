@@ -83,6 +83,13 @@
 #define BOT_MBALL_STANDOFF 25.0f    // approach-point distance behind the ball (added to ball radius)
 #define BOT_MBALL_PREDICT_T 0.7f    // seconds of linear ball prediction for the approach point
 #define BOT_MBALL_RAM_SWITCH 12.0f  // dry-bot ram: within this of the approach point, target the ball
+// The FINISHER (operator insight, first frenzy session): DLL weapon hits clamp to [10,20] u/s
+// but a physical ram is UNCLAMPED momentum — guns move the ball around the field, the body puts
+// it in the net. Near the goal the striker stops sniping and afterburner-slams through the ball.
+#define BOT_MBALL_FINISH_COST 160.0f // ball->our-goal route cost below which we're "in position"
+#define BOT_MBALL_SLAM_ALIGN 0.5f    // rough behind-the-ball gate to START a slam run (fvec converges
+                                     // en route — the AB facing gate holds the burn until nose-on)
+#define BOT_MBALL_SLAM_THROUGH 30.0f // aim point distance THROUGH the ball along the push line
 // M3 roles (utility + hysteresis, the $nav hyper pattern at team scale):
 #define BOT_MBALL_ROLE_INCUMBENT 0.55f  // incumbent keeps its role unless beaten ~2x (0.7 -> 0.55:
                                         // first live session thrashed — room-graph cost JUMPS as the

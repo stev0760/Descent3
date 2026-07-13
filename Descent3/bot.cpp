@@ -3011,23 +3011,46 @@ static void BotDoMonsterballStrikerNav(int bot_index) {
   vm_NormalizeVector(&push_dir);
   vector approach = bpos - push_dir * (ball->size + BOT_MBALL_STANDOFF);
 
+  // Alignment geometry (shared by fire gates and the finisher).
+  vector to_ball = ball->pos - obj->pos;
+  float d = vm_GetMagnitude(&to_ball);
+  if (d > 1.0f)
+    to_ball = to_ball * (1.0f / d);
+  float align = (d > 1.0f) ? vm_DotProduct(&to_ball, &push_dir) : 0.0f;
+
+  // THE FINISHER (operator insight): weapon hits clamp to [10,20] u/s; a ram is unclamped
+  // momentum. Ball in position (route cost to OUR goal below FINISH_COST) + striker roughly
+  // behind it -> stop sniping, fly THROUGH the predicted ball along the push line. The fire
+  // order below keeps the nose on the ball, and the AB facing gate releases the burn exactly
+  // when fvec is on the push line — the "afterburner slam at the right angle" for free.
+  bool finishing = Bot_objective.monsterball_progress[my_team] >= 0.0f &&
+                   Bot_objective.monsterball_progress[my_team] < BOT_MBALL_FINISH_COST &&
+                   align >= BOT_MBALL_SLAM_ALIGN;
+
   // Dry bot: ram. Approach point first so the bump still pushes the right way, then the ball.
   bool dry = Players[slot].energy <= 0.0f && !((Players[slot].weapon_flags & (1u << VAUSS_INDEX)) &&
                                                Players[slot].weapon_ammo[VAUSS_INDEX] > 0);
+  // Vauss finish (operator): sustained vauss fire drives the ball fast — a striker with rounds
+  // and position finishes from the standoff without risking the body. Slam only without it.
+  bool vauss_finish = (Players[slot].weapon_flags & (1u << VAUSS_INDEX)) &&
+                      Players[slot].weapon_ammo[VAUSS_INDEX] > 25 && d < BOT_FIRE_RANGE * 0.8f;
   vector nav_target = approach;
-  if (dry && vm_VectorDistanceQuick(&obj->pos, &approach) < BOT_MBALL_RAM_SWITCH)
+  if (finishing && !vauss_finish)
+    nav_target = bpos + push_dir * (ball->size + BOT_MBALL_SLAM_THROUGH);
+  else if (dry && vm_VectorDistanceQuick(&obj->pos, &approach) < BOT_MBALL_RAM_SWITCH)
     nav_target = ball->pos;
 
   bool reissued = false;
   BotSetRoutedGoal(bot_index, ball_room, nav_target, &reissued);
+  if (finishing && reissued)
+    LOG_DEBUG.printf("BOT MBALL: '%s' FINISH slam run (ball cost %.0f, align %.2f)", Bots[bot_index].callsign,
+                     Bot_objective.monsterball_progress[my_team], align);
 
-  // Fire gates (skipped when dry — the ram IS the shot).
-  if (!dry) {
-    vector to_ball = ball->pos - obj->pos;
-    float d = vm_GetMagnitude(&to_ball);
+  // Fire gates (skipped when dry — the ram IS the shot). During a slam run the fire order
+  // doubles as the facing order; the blunder gate still guards the trigger.
+  if (!dry || finishing) {
     if (d > 1.0f) {
-      to_ball = to_ball * (1.0f / d);
-      bool aligned = vm_DotProduct(&to_ball, &push_dir) >= BOT_MBALL_ALIGN_DOT;
+      bool aligned = align >= BOT_MBALL_ALIGN_DOT || (finishing && align >= BOT_MBALL_SLAM_ALIGN);
       bool blunder = false;
       vector enemy_aim;
       if (BotMballAimPoint(ball_room, enemy_goal, &enemy_aim)) {
