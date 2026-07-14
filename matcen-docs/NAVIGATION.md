@@ -685,7 +685,36 @@ BOA — a bug (the router would be silently overriding BOA everywhere), not a fe
 
 ## 7. Open problems (roadmap)
 
-### 7.0 Current status snapshot — 2026-07-06 (0.9.7-dev: entrance stack validated by overnight battery; seam latch; PIECE-1-PROPER staged)
+### 7.0 Current status snapshot — 2026-07-14 (gridall validation battery: NEGATIVE on both gate maps; toroidal-traversal problem registered)
+
+> **THE DEFERRED `$nav gridall` VALIDATION BATTERY RAN OVERNIGHT 2026-07-13→14** (operator-ordered after
+> discovering Rim; the lever was created 2026-07-06 as the Stage-4 A/B skeleton and its battery was never
+> run). Two chained A/B soaks, both on build `9198c6e6` (0.9.8-dev), driver `soakctl.py`, clean SOAK_DONE:
+>
+> 1. **Rim (CHAOS.MN3 CTF rotation, 6+6 rounds): NEGATIVE.** Rim conversion 0% in BOTH arms (grabs 2→1);
+>    gridall made it *worse* — stucks 1.0→4.5/rnd (room 36 = 78%), HARD chase-timeouts 3→23, Mega
+>    troll-retired. Control regression: Wishbone 0.3 caps/rnd→0, grabs halved (the 0.9.4-era easy-pool
+>    class); Inversion held (2.0→2.5). The lever engaged (Rim detours 132→184, DIVERGE 9→33) but does not
+>    produce flyable routes. **The pre-staged blocked-leg-ratio complexity gate is REJECTED** — auto-promoting
+>    toroidal rooms into proactive grid routing would bake the regression in for zero benefit.
+> 2. **abend2 (4+4 rounds): NEGATIVE.** Flag-tray grabs 0 in both arms; the false-arrival loop is unchanged
+>    (~317 vs ~270 objective-nav issues/rnd, 0 picks). The tray's fix class remains **indoor floor-hatch
+>    entry commit** (the abend2-slot ledger item), not routing density.
+>
+> **What Rim actually taught us (navdump rim.json + soak decode):** the map is 4 giant single-component
+> TOROIDAL quadrant rooms (676u, 16–18 portals, 94% of portal-to-portal legs LOS-blocked). Room-to-room
+> routing is trivially correct on a ring — the failure is **intra-room traversal**: bots orbit the quadrant
+> lattice (skeleton hops 1683/rm25, 1150–1444/rm36, 943/rm46 *per two rounds*; via-reach 66–68%, worst in
+> pool) because path straightening keeps pulling legs into the inner wall. This is the **steering/straightening
+> layer** (`$nav curve` territory, the isengard-corkscrew class), now filed as §7.2 "toroidal-room orbit."
+> Denser routing (gridall) cannot fix it, which is exactly what the battery showed.
+>
+> **Disposition:** `gridall` stays **OFF** — a diagnostic lever only, now validated-negative as a default.
+> No code change ships from this battery. Next nav work on the toroidal class = instrument-first at the
+> straightening layer (POV + navdump on Rim quadrants; candidate: annulus-aware straightening clearance or
+> arc-following), **sequenced AFTER the Monsterball/Entropy 0.9.8 validation era** per operator priority.
+
+### (superseded) 7.0 snapshot — 2026-07-06 (0.9.7-dev: entrance stack validated by overnight battery; seam latch; PIECE-1-PROPER staged)
 
 > **STAGED NEXT BLOCK (written 2026-07-06 morning — piece-1-proper: routed approach legs):**
 >
@@ -819,6 +848,7 @@ the pre-0.9.5 flat names remain hidden aliases. Defaults in `bot_steering.cpp`/`
 | `grid` | `$gridnav`/`$navgrid` | **ON** | 0.9.4 | **VALIDATED** — volumetric grid roadmap + Lazy Theta\* (replaces the skeleton via-pass indoors; degenerate rooms fall back to the skeleton). `off` = 0.9.3. See §3.5. |
 | `bridge` | `$gridbridge` | **ON** | 0.9.4 | **VALIDATED** — corner-rounding component bridge (one swept midpoint to connect components split by a wall; hull-gated, spatial-hashed). Collapsed townofbree/khazaddum dividers. **Build-time param: toggling it flushes the roadmap cache (0.9.5 `BotRoadmapInvalidate`) — before 0.9.5 a mid-level toggle was silently inert on already-built rooms.** |
 | `route` | `$gridroute` | **ON** | 0.9.4 | **VALIDATED** — proactive in-room grid routing, gated to genuinely complex rooms (`orig_comp_count>1` AND ≥24 lattice nodes). Fellowship soak: overall captures +58% vs 0.9.3, khazaddum 0.2→1.0. Also drives carrier + `!follow`/`!cover`/`!hold` escort nav. |
+| `gridall` | — | **OFF** | 0.9.7 | **VALIDATED-NEGATIVE AS A DEFAULT (2026-07-13→14 battery — see the 07-14 snapshot).** Bypasses the `route` complexity gate so proactive grid routing runs in EVERY room (`Bot_grid_always`, bot_roadmap.cpp) — created 2026-07-06 as the Stage-4 skeleton-retirement A/B lever; battery deferred, then run against Rim (toroidal quadrants) + abend2 (flag tray). Rim: conversion 0% both arms, stucks 1.0→4.5/rnd under gridall; Wishbone control regressed (caps 0.3→0). abend2: tray grabs 0 both arms. Verdict: ungated proactive routing adds indirection exactly as the 0.9.4 soaks measured, and the failure classes it was hoped to cover are steering-layer (toroidal orbit) or approach-commit (floor tray), not routing density. Keep as a diagnostic lever; do NOT default on; the staged blocked-leg-ratio gate promotion is rejected. |
 | `grate` | `$grateclear` | **ON** | 0.9.6 | **DORMANT-SAFE VALIDATED** (0 false fires across all 0.9.6 soaks; clear path itself still awaits a bot actually flying at a grate) — proactive destroyable-obstacle clearing (§7.1 Stage 2): forward ray hits an `OF_DESTROYABLE` clutter/building object → laser it out *before* the stuck pin; forward ray hits a `TF_BREAKABLE` pane → shatter it on approach (matter weapons only). Gates only the proactive pass; the safe-weapon selection in reactive stuck-clear is unconditional. Gate map: splusv1 (grates; first session: dormant-as-designed, bots never approached). |
 | `commit` | `$objcommit` | **ON** | 0.9.6 | **VALIDATED** (L3: Router Nav 46→962; release soak best-ever 2.67 capt/rnd) — objective commitment: while routing to an objective, powerup candidates must be within `BOT_POWERUP_ONPATH_RADIUS` (120u), **same-or-adjacent room**, AND **visible** (`BotHasLOS` — unseen-item beelines through maze walls were the L3 wall-slamming; occluded/vent/behind-glass items never start a chase). Gear-up (default-laser) bots keep the wide 500u reach but are LOS-gated too — nothing visible → explore-roam's visited-room curiosity moves them to fresh sightlines (emergent room-sweep). Anarchy selection unchanged. |
 | `replan` | `$stallreplan` | **OFF** | 0.9.7 | **DEFAULTED OFF 2026-07-04 (outdoor suspicion — the A/B lever for the next session).** Operator observation on isengard: replan-era bots nav-churn (Zed's hill re-entry loop: beeline → stuck-escape → beeline back; Shadow's tunnel turn-arounds) where pre-replan builds *fought outside more* — suspicion: fast-window release/abort/re-pick churn starves combat + commitment. Machinery kept; `$nav replan on` re-enables live. **v3 — INDOOR-VALIDATED (BsideCTF full run 2026-07-04)**: zero circle-suspension false positives across 3 indoor/enclosed maps, HARD chase-timeout share collapsed to 5–11% (was ~50% on L3) — the release gate passed on that pool. History: **v1 REGRESSED** (48 via releases/2 rnds — a TURNING ship reads as stalled; door-waits too); v2 = fvec·movement_dir ≥0.6 qualification + no-door-ahead + streak thresholds (via 2 / chase 3 / re-pick 4, re-pick free-roam-only); v3 adds the **slow window** (8s/35u) for circling that lives an octave below wall-press — displacement at 1s scale, none at 8s scale (the skeleton-via dance) → suspend via + abort chase/re-pick. Outdoor verdict rides on the terrain track (`outroute`). |
@@ -1116,6 +1146,20 @@ above both, corrected the frontier framing, and fixed two citations — frontier
 Yamaguchi 1998 (formation control); Lazy Theta\* = Nash/Koenig/Tovey 2010, not Incremental Phi\* 2009.)*
 
 ### 7.2 Long-standing open problems (narrative)
+
+- **Toroidal-room orbit (Rim class) — OPEN, registered 2026-07-14 (steering/straightening layer).**
+  A giant single-component annulus room (Rim's 4 quadrants: 676u, 16–18 portals, 94% of portal-to-portal
+  legs LOS-blocked around the central core) defeats intra-room traversal even though routing is trivially
+  correct: bots orbit the lattice without progressing (skeleton hops in the thousands per round, via-reach
+  66–68%, CTF conversion 0%). **Refuted fixes (2026-07-13→14 battery):** `$nav gridall` (denser proactive
+  routing — made it worse, stucks ×4.5) and by extension the staged blocked-leg-ratio complexity-gate
+  promotion. The mechanism is that Lazy Theta\* straightening + via steering keep pulling the flown leg
+  toward the inner wall chord; the `$nav curve` clearance-gated straightening (isengard-corkscrew fix)
+  is the nearest relative but did not save Rim at its current clearance. Candidate fix classes, all
+  instrument-first at POV/navdump level: annulus-aware straightening (reject chords whose midpoint is
+  hull-blocked *radially*, not just along the sweep), or arc-following (walk the winding node path
+  without shortcutting in rooms flagged annular). Affects: Rim CTF + Entropy (same starvation geometry).
+  Sequenced after the 0.9.8 modes-validation era.
 
 - **Intra-room interior-obstacle press — KNOWN ENGINE LIMITATION (Phase 12, ongoing mitigation).**
   *This was the original headline nav problem; the via-point / pseudo-bnode / soft-hop stack (§4.2, §7.0 #1)

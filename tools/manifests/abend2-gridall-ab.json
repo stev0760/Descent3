@@ -1,0 +1,13 @@
+{
+  "_comment": "abend2 gridall A/B (2026-07-13, chained after rim-gridall-ab). abend2 = the stacked-room / floor-embedded-flag-tray map (memory project-abend2-slot: ring FIXED by curve, flag tray = false-arrival loop, 1157 issues/0 picks — fix class 'indoor floor-hatch entry commit' was deferred post-0.9.7). Operator hypothesis: proactive grid routing everywhere may thread the tray approach the selective gate never engages on. Single-mission rotation, 4 rounds/phase @ 15 min. Judge: flag_conversion.py per phase segment — grabs going 0->nonzero on the tray flag is the headline; also stucks/rnd and via suspends. Reuses soak-dedicated-abend2.cfg (8 bots 4v4 hotshot).",
+  "server_dir": "/home/steve/Projects/Descent3-bot-testing-client/Descent3_testing",
+  "launch": ["./Descent3", "-dedicated", "./soak-dedicated-abend2.cfg"],
+  "telnet_port": 2092,
+  "telnet_password": "test",
+  "phases": [
+    {"name": "A-defaults", "toggles": {"gridall": false}, "rounds": 4},
+    {"name": "B-gridall-on", "toggles": {"gridall": true}, "rounds": 4}
+  ],
+  "navdump": {},
+  "max_minutes": 180
+}
