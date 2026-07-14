@@ -53,6 +53,16 @@ parking spot well past the door, and once parked only leaving the room ends the 
 tests confirmed enemy special rooms do damage bots correctly on standard maps (the earlier
 no-damage report appears specific to one map's geometry).
 
+**Some bot behaviors silently switched off after the first round of a session — fixed.** The game
+clock restarts at zero on every level change, but a handful of per-bot timers kept their old values
+across the transition, so anything they gated stayed quiet until the clock "caught up" — usually
+the entire next round. Affected: terrain route planning and the doorway push-through guard could
+stop engaging after round one on multi-round servers (both features from the 0.9.7 navigation
+work), and most Monsterball diagnostic logging went dark after round one (which had made overnight
+Monsterball tests look far quieter than the bots actually were). All such timers now reset on level
+change. If a long-running server felt like bot navigation "degraded after the first map," this was
+why.
+
 **Monsterball bots stop scoring for the other team.** In the first clean overnight Monsterball
 test (27 rounds), roughly one goal in five was a bot accidentally shoving the ball into the wrong
 net — and every single one was a *collision*, not a shot (the firing safeguards held perfectly).

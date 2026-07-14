@@ -6512,6 +6512,22 @@ void BotReinitAll() {
     Bots[i].fire_delay_target = OBJECT_HANDLE_NONE;
     Bots[i].last_chat_reply_time =
         0.0f; // Gametime resets on level transition — must clear or throttle fires permanently
+    // Same trap, full sweep (2026-07-14: mball log throttles carried the previous level's
+    // timestamps and silenced every throttled Monsterball log for the whole next round; audit
+    // then found the class): every absolute-Gametime latch must reset here or the feature it
+    // gates goes quiet for up to a full round after a level transition. stall/circle window
+    // opens self-heal (`Gametime < check_time` guard) and don't need entries.
+    Bots[i].seam_wp_room = -1; // repeated-map rotations reuse room numbers — a stale latch matches
+    Bots[i].seam_next_time = 0.0f;
+    Bots[i].stall_action_until = 0.0f;
+    Bots[i].troute_reject_until = 0.0f;
+    Bots[i].troute_goal_room = -1;
+    Bots[i].entropy_holding = false;
+    Bots[i].mball_fire_handle = OBJECT_HANDLE_NONE;
+    Bots[i].mball_finish_mode = 0;
+    Bots[i].mball_shot_log_t = 0.0f;
+    Bots[i].mball_finish_log_t = 0.0f;
+    Bots[i].mball_avoid_log_t = 0.0f;
     Bots[i].squad_role = SQUAD_FREELANCE;
     Bots[i].squad_target_slot = -1;
     Bots[i].objective_lean = BOT_LEAN_BALANCED;
