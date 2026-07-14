@@ -59,9 +59,19 @@
 // the floors give an emergent hysteresis without carrier state: a loaded bot below RETREAT
 // always runs for a repair room; one outside enemy ground below REENGAGE keeps repairing
 // instead of starting a fresh approach; an in-progress hold runs down to the hard floor.
-#define BOT_ENTROPY_HOLD_DEPTH 12.0f // invade/retreat nav point pushed this far off the entry portal INTO the
-                                     // room: a park on the portal plane flaps roomnum between the two rooms
-                                     // (2026-07-13 soak: 32/32 holds churned <=1s, 0 takeovers in 12 rounds)
+#define BOT_ENTROPY_HOLD_DEPTH 24.0f // invade nav point pushed this far off the entry portal INTO the room:
+                                     // a park on the portal plane flaps roomnum between the two rooms
+                                     // (2026-07-13 soak: 32/32 holds churned <=1s, 0 takeovers in 12 rounds).
+                                     // Must comfortably exceed the engine goal-arrive radius (~10u,
+                                     // AIGoal circle_distance) or the ship stops on the near side of the
+                                     // arrive sphere ~= back on the plane (2026-07-14 re-soak at 12u:
+                                     // 24/24 holds still flapped — the seam-push lesson, 25u > arrive)
+#define BOT_ENTROPY_HOLD_MIN_DEPTH 8.0f // hold START gate: ship must be this deep past the nearest portal
+                                        // plane (> hull 6.68) before movement goals are cleared — the
+                                        // 2026-07-14 re-soak root cause was starting the hold (and killing
+                                        // the goal) the instant roomnum flipped, i.e. AT the plane, so the
+                                        // 12u-inward goal was never flown. Abort keeps plain roomnum
+                                        // (leave-room) semantics — no flap-out at this threshold
 #define BOT_ENTROPY_RETREAT_SHIELDS 25.0f  // hard abort floor (spec ~25, tunable at E4)
 #define BOT_ENTROPY_REENGAGE_SHIELDS 45.0f // don't START an approach below this
 // Streak-preservation healing (operator insight, first POV session): the kill streak gates

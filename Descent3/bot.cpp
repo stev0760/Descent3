@@ -2783,6 +2783,29 @@ static vector BotGetNearestPortalPoint(object *obj, int target_room, float inwar
   return best;
 }
 
+// Ship's penetration depth past the plane of `room`'s nearest passable portal (face normals
+// point INTO the room, so positive = inside). Portal-less rooms return a large depth — no
+// boundary plane to flap across. Same portal scan as BotGetNearestPortalPoint: after entering,
+// the nearest portal is the entry portal, which is exactly the plane roomnum flaps across.
+static float BotPortalPenetration(object *obj, int room) {
+  float best_dist = 1e30f;
+  int best_portal = -1;
+  for (int p = 0; p < Rooms[room].num_portals; p++) {
+    portal *pt = &Rooms[room].portals[p];
+    if (pt->flags & (PF_BLOCK | PF_TOO_SMALL_FOR_ROBOT))
+      continue;
+    float d = vm_VectorDistanceQuick(&obj->pos, &pt->path_pnt);
+    if (d < best_dist) {
+      best_dist = d;
+      best_portal = p;
+    }
+  }
+  if (best_portal < 0)
+    return 1e30f;
+  vector off = obj->pos - Rooms[room].portals[best_portal].path_pnt;
+  return vm_DotProduct(&Rooms[room].faces[Rooms[room].portals[best_portal].portal_face].normal, &off);
+}
+
 // Dedicated carrier navigation — called every EXPLORE tick when carrying an enemy flag.
 // Bypasses BotDoExploreRoaming entirely to avoid the early-return guard and last_target_room redirect.
 // Modeled after BotDoHoardCarrierNav: navigate to portal, let engine pathfind.
@@ -2880,7 +2903,9 @@ static void BotDoHoardCarrierNav(int bot_index) {
 // and buried-center rooms (12.3 class) would make a path_pnt approach strictly worse. The
 // nav point is the entry portal pushed BOT_ENTROPY_HOLD_DEPTH into the room — parking on the
 // portal plane itself makes roomnum flap between the two rooms (the 2026-07-13 zero-takeover
-// soak).
+// soak) — and the hold only STARTS at BOT_ENTROPY_HOLD_MIN_DEPTH past the plane, because
+// roomnum flips at the plane itself and parking there re-creates the flap regardless of where
+// the goal points (the 2026-07-14 zero-takeover re-soak).
 // Room choice, shield-floor retreat, and re-engage hysteresis all live in
 // BotGetObjectiveRoom_Entropy — this function only executes what it returns.
 static bool BotDoEntropyInvadeNav(int bot_index) {
@@ -2899,8 +2924,17 @@ static bool BotDoEntropyInvadeNav(int bot_index) {
   int cur_room = OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum;
   int my_team = Players[slot].team;
   int enemy_owner = 2 - my_team;
-  bool holding = cur_room >= 0 && cur_room == target_room && cur_room < BOT_ENTROPY_MAX_ROOMS &&
+  bool in_room = cur_room >= 0 && cur_room == target_room && cur_room < BOT_ENTROPY_MAX_ROOMS &&
                  Bot_objective.entropy_room_owner[cur_room] == (uint8_t)enemy_owner;
+  // Hold-start gate (2026-07-14 re-soak root cause): roomnum flips to the target the instant the
+  // nose crosses the portal plane; starting the hold THERE clears the movement goals and parks the
+  // ship ON the plane — the 12u-inward goal point was never flown and roomnum flapped exactly as
+  // before (24/24 holds aborted <=1s). Require real penetration depth before parking; until then
+  // fall through to the en-route branch so the routed goal keeps carrying the ship inward. Once
+  // holding, only leaving the room aborts (no flap-out at the depth threshold — momentum at
+  // hold-start points inward, and the DLL's >5u move reset governs drift anyway).
+  bool holding =
+      in_room && (Bots[bot_index].entropy_holding || BotPortalPenetration(obj, cur_room) >= BOT_ENTROPY_HOLD_MIN_DEPTH);
 
   if (holding) {
     // Park dead-still: clear both movement goal classes and stop chasing anything.

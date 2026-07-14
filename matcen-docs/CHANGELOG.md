@@ -45,9 +45,13 @@ section (takeovers per round, hold attempts vs aborts, virus economy).
 three maps) produced 32 takeover attempts and zero conversions: bots flew their five viruses to
 the enemy room, then parked *exactly on the doorway plane*, where the game couldn't decide which
 room they were in — the takeover clock (which demands 3 seconds dead-still inside the room) never
-survived a second, and the bot burned shields cycling in and out of the doorway. Loaded bots now
-park a ship-length *inside* the room. The same test confirmed enemy special rooms do damage bots
-correctly on standard maps (the earlier no-damage report appears specific to one map's geometry).
+survived a second, and the bot burned shields cycling in and out of the doorway. The first repair
+(aim the parking spot a ship-length inside the room) tested clean but didn't cure it: the bot
+declared "arrived" the moment its nose crossed the doorway and stopped right there anyway. Bots
+now refuse to start the hold until the ship is measurably *deep* inside the room, keep flying to a
+parking spot well past the door, and once parked only leaving the room ends the hold. The same
+tests confirmed enemy special rooms do damage bots correctly on standard maps (the earlier
+no-damage report appears specific to one map's geometry).
 
 **Monsterball bots stop scoring for the other team.** In the first clean overnight Monsterball
 test (27 rounds), roughly one goal in five was a bot accidentally shoving the ball into the wrong
