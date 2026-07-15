@@ -106,6 +106,19 @@
 // but a physical ram is UNCLAMPED momentum — guns move the ball around the field, the body puts
 // it in the net. Near the goal the striker stops sniping and afterburner-slams through the ball.
 #define BOT_MBALL_FINISH_COST 160.0f // ball->our-goal route cost below which we're "in position"
+#define BOT_MBALL_FINISH_MAX_DIST 150.0f // don't arm a slam beyond this range — the 07-15 unblinded soak
+                                         // showed 429-500u corridor arms that ARM/DISARM-churned every
+                                         // 0.5s and never completed (all Veins; the arm gate had no
+                                         // range term at all)
+#define BOT_MBALL_SLAM_CONTACT_R 60.0f   // inside this range the slam needs FIRE-grade alignment
+                                         // (BOT_MBALL_ALIGN_DOT): the bump direction at contact IS
+                                         // dir(bot->ball), and the one observed contact at align 0.56
+                                         // sent the ball 93->1360 cost (56 degrees off the goal line,
+                                         // unclamped momentum). Misaligned close-in -> disarm ->
+                                         // approach point repositions behind the ball
+#define BOT_MBALL_SLAM_HYST 0.15f        // disarm hysteresis: an armed run holds until align drops
+                                         // below SLAM_ALIGN - this (threshold jitter was flipping
+                                         // the mode every tick at long range)
 #define BOT_MBALL_SLAM_ALIGN 0.5f    // rough behind-the-ball gate to START a slam run (fvec converges
                                      // en route — the AB facing gate holds the burn until nose-on)
 #define BOT_MBALL_SLAM_THROUGH 30.0f // aim point distance THROUGH the ball along the push line

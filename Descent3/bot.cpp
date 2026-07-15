@@ -3139,9 +3139,18 @@ static void BotDoMonsterballStrikerNav(int bot_index) {
   // behind it -> stop sniping, fly THROUGH the predicted ball along the push line. The fire
   // order below keeps the nose on the ball, and the AB facing gate releases the burn exactly
   // when fvec is on the push line — the "afterburner slam at the right angle" for free.
+  // Arming envelope (07-15 unblinded Veins decode): range-capped (no more 500u corridor runs
+  // that churn and never finish), fire-grade alignment inside contact range (a bump at align
+  // 0.56 sent the ball cost 93->1360 — the contact direction IS dir(bot->ball)), and disarm
+  // hysteresis so an armed run survives threshold jitter. Misaligned close-in falls through
+  // to the approach point, which repositions BEHIND the ball for a clean line.
+  bool was_finishing = Bots[bot_index].mball_finish_mode != 0;
+  float slam_gate = (d < BOT_MBALL_SLAM_CONTACT_R)
+                        ? BOT_MBALL_ALIGN_DOT
+                        : (was_finishing ? BOT_MBALL_SLAM_ALIGN - BOT_MBALL_SLAM_HYST : BOT_MBALL_SLAM_ALIGN);
   bool finishing = Bot_objective.monsterball_progress[my_team] >= 0.0f &&
                    Bot_objective.monsterball_progress[my_team] < BOT_MBALL_FINISH_COST &&
-                   align >= BOT_MBALL_SLAM_ALIGN;
+                   d < BOT_MBALL_FINISH_MAX_DIST && align >= slam_gate;
 
   // Dry bot: ram. Approach point first so the bump still pushes the right way, then the ball.
   bool dry = Players[slot].energy <= 0.0f && !((Players[slot].weapon_flags & (1u << VAUSS_INDEX)) &&
