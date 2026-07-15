@@ -72,6 +72,12 @@
                                         // the goal) the instant roomnum flipped, i.e. AT the plane, so the
                                         // 12u-inward goal was never flown. Abort keeps plain roomnum
                                         // (leave-room) semantics — no flap-out at this threshold
+#define BOT_ENTROPY_HOLD_MAX_SPEED 5.0f // hold START gate #2 (v2 evening soak): a bot TRANSITING an enemy
+                                        // room trips depth alone — target re-picks to the room it's flying
+                                        // through, hold starts at full speed, goal-clear lets momentum coast
+                                        // it out the far side within 1s (START rm14 -> ABORT rm12). Require
+                                        // near-rest before parking; 5 u/s mirrors the DLL's >5u movement
+                                        // reset, so a faster "hold" could never bank clock time anyway
 #define BOT_ENTROPY_RETREAT_SHIELDS 25.0f  // hard abort floor (spec ~25, tunable at E4)
 #define BOT_ENTROPY_REENGAGE_SHIELDS 45.0f // don't START an approach below this
 // Streak-preservation healing (operator insight, first POV session): the kill streak gates

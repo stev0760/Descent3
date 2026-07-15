@@ -48,10 +48,11 @@ room they were in — the takeover clock (which demands 3 seconds dead-still ins
 survived a second, and the bot burned shields cycling in and out of the doorway. The first repair
 (aim the parking spot a ship-length inside the room) tested clean but didn't cure it: the bot
 declared "arrived" the moment its nose crossed the doorway and stopped right there anyway. Bots
-now refuse to start the hold until the ship is measurably *deep* inside the room, keep flying to a
-parking spot well past the door, and once parked only leaving the room ends the hold. The same
-tests confirmed enemy special rooms do damage bots correctly on standard maps (the earlier
-no-damage report appears specific to one map's geometry).
+now refuse to start the hold until the ship is measurably *deep* inside the room AND nearly at
+rest (a bot merely flying through an enemy room used to slam on the parking brake mid-transit and
+coast out the far side), keep flying to a parking spot well past the door, and once parked only
+leaving the room ends the hold. The same tests confirmed enemy special rooms do damage bots
+correctly on standard maps (the earlier no-damage report appears specific to one map's geometry).
 
 **Some bot behaviors silently switched off after the first round of a session — fixed.** The game
 clock restarts at zero on every level change, but a handful of per-bot timers kept their old values

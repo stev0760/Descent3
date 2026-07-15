@@ -2926,15 +2926,20 @@ static bool BotDoEntropyInvadeNav(int bot_index) {
   int enemy_owner = 2 - my_team;
   bool in_room = cur_room >= 0 && cur_room == target_room && cur_room < BOT_ENTROPY_MAX_ROOMS &&
                  Bot_objective.entropy_room_owner[cur_room] == (uint8_t)enemy_owner;
-  // Hold-start gate (2026-07-14 re-soak root cause): roomnum flips to the target the instant the
-  // nose crosses the portal plane; starting the hold THERE clears the movement goals and parks the
-  // ship ON the plane — the 12u-inward goal point was never flown and roomnum flapped exactly as
-  // before (24/24 holds aborted <=1s). Require real penetration depth before parking; until then
-  // fall through to the en-route branch so the routed goal keeps carrying the ship inward. Once
-  // holding, only leaving the room aborts (no flap-out at the depth threshold — momentum at
-  // hold-start points inward, and the DLL's >5u move reset governs drift anyway).
-  bool holding =
-      in_room && (Bots[bot_index].entropy_holding || BotPortalPenetration(obj, cur_room) >= BOT_ENTROPY_HOLD_MIN_DEPTH);
+  // Hold-start gates (two 2026-07-14 soak root causes). DEPTH: roomnum flips to the target the
+  // instant the nose crosses the portal plane; starting the hold THERE clears the movement goals
+  // and parks the ship ON the plane — the 12u-inward goal point was never flown and roomnum
+  // flapped exactly as before (morning soak: 24/24 holds aborted <=1s). SPEED: depth alone still
+  // trips on a bot TRANSITING an enemy room toward a farther target — the nearest-enemy target
+  // re-picks to the room it's flying through, the hold starts at full speed mid-room, and the
+  // goal-clear lets momentum coast it out the far side within a second (evening soak: START rm14
+  // -> ABORT rm12, 4/4). Until deep AND near-rest, fall through to the en-route branch: the
+  // routed goal re-aims at THIS room's hold point (a valid conversion target) and the engine
+  // decelerates onto it. Once holding, only leaving the room aborts (no flap-out at either
+  // threshold; the DLL's >5u move reset governs drift).
+  bool holding = in_room && (Bots[bot_index].entropy_holding ||
+                             (BotPortalPenetration(obj, cur_room) >= BOT_ENTROPY_HOLD_MIN_DEPTH &&
+                              vm_GetMagnitude(&obj->mtype.phys_info.velocity) <= BOT_ENTROPY_HOLD_MAX_SPEED));
 
   if (holding) {
     // Park dead-still: clear both movement goal classes and stop chasing anything.
