@@ -7,6 +7,6 @@
   "phases": [
     {"name": "mball-defaults", "toggles": {}, "rounds": 6}
   ],
-  "navdump": {},
+  "navdump": {"Veins": 300},
   "max_minutes": 150
 }
