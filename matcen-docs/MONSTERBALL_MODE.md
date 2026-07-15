@@ -231,6 +231,18 @@ state bumps (4/21 in the soak) are accepted residual. Role tenure is runtime-tun
   shots prove out), supporter pass-backs, multi-touch dribbling: explicitly out of scope
   until soaks demand them.
 - Chat verbs: `!attack ball`, `!defend goal` mappings (Tier 2 pattern).
+- **Junction-aware pushing (deferred 2026-07-15, operator call — revisit for vanilla maps).**
+  Veins navdump (33 rooms, nav-clean: 1 component, 0 DISAGREE, 38/38 powerups reachable)
+  confirmed the map is a branched winding-tube network: six 3-portal junction rooms
+  (3/7/15/19/24/28) linked by 2-portal tube segments, and the observed ball stalemate
+  circuit runs through junctions 15/19/24. Scoring failure there is **ball-steering at
+  forks**, not navigation: every clamped 10–20 u/s nudge at a junction gambles on which
+  branch the ball takes, and the loop topology lets it circulate indefinitely. Candidate
+  fix class: when the ball is in/near a junction room, bias the push contact point so the
+  exit vector selects the on-route portal (the goal route is already computed — the aim
+  logic just doesn't know a fork is in play). Veins ships with vanilla D3, so this class
+  of map WILL come up in the wild; deferred, not dismissed. Evidence: soakdump-veins.json
+  + .svg, 2026-07-15 validation soak (arms clean, ~0 conversions on Veins only).
 
 ---
 

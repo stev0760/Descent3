@@ -2896,9 +2896,12 @@ static void BotDoHoardCarrierNav(int bot_index) {
 
 // Entropy E3 invade/hold nav (ENTROPY_MODE.md §3.3). Returns true while HOLDING: parked in an
 // enemy special room waiting out the DLL's takeover clock (3.0s, resets if the ship moves >~5u
-// or leaves the room). The park works by clearing all movement goals: with no live goal the
-// engine blends no movement_dir, juke never fires in EXPLORE, and drag stops the ship — the
-// same mechanism Stage 6 hold-station uses on arrival. We deliberately hold near the ENTRY
+// or leaves the room). The park is two-part: this function clears all movement goals (no live
+// goal = no engine movement_dir), and BotApplyThrust's entropy_holding block (hold v6) takes
+// over thrust — active brake against residual velocity, then dead-still. Goal-clear ALONE is
+// not a park: with movement_dir empty, BotApplyThrust's fallback drives forward=1.0 and the
+// ship throttles itself out of the room (the 07-15 soak's 39-52 u/s aborts from a <5 u/s
+// start). We deliberately hold near the ENTRY
 // side of the room, not the room's path_pnt: any in-room repositioning risks the >5u reset,
 // and buried-center rooms (12.3 class) would make a path_pnt approach strictly worse. The
 // nav point is the entry portal pushed BOT_ENTROPY_HOLD_DEPTH into the room — parking on the
@@ -4828,6 +4831,29 @@ static void BotApplyThrust(int bot_index) {
   object *obj = &Objects[Players[slot].objnum];
   if (!obj->ai_info)
     return;
+
+  // Entropy E3 hold v6: a takeover hold must be an ACTIVE park. The v3 goal-clear park empties
+  // movement_dir, and the no-nav-dir fallback below then drives forward = 1.0f — the "parked"
+  // ship throttles itself out of the room (07-15 12-round soak, both holds: START at <5 u/s,
+  // ABORT at 39-52 u/s within 1.5s, one with zero combat damage). While holding, bypass the
+  // FSM thrust path entirely: thrust straight against residual velocity (weapon knockback
+  // included) until near-still, then hold zero thrust. Turning and firing are untouched — the
+  // bot still shoots from the pad; position drift is what resets the DLL's 3.0s takeover clock
+  // (>5u), so velocity is the only thing this block manages. EXPLORE-gated: if the FSM leaves
+  // EXPLORE while the flag is still set (FLEE below the hard floor — fleeing IS the abort),
+  // the park must release or it pins a dying ship inside a 5/s damage room.
+  if (Bots[bot_index].entropy_holding && Bots[bot_index].state == BOT_STATE_EXPLORE) {
+    vector vel = obj->mtype.phys_info.velocity;
+    float spd = vm_GetMagnitude(&vel);
+    vector park_thrust = {0.0f, 0.0f, 0.0f};
+    if (spd > BOT_ENTROPY_PARK_BRAKE_SPEED)
+      park_thrust = vel * (-Bots[bot_index].ship_full_thrust / spd);
+    obj->mtype.phys_info.thrust = park_thrust;
+    obj->mtype.phys_info.flags |= PF_USES_THRUST;
+    Players[slot].flags &= ~(PLAYER_FLAGS_AFTERBURN_ON | PLAYER_FLAGS_THRUSTED);
+    Bots[bot_index].stuck_timer = 0.0f; // parked, not stuck — keep the escape system quiet
+    return;
+  }
 
   // Read movement_dir from previous frame's AIDoFrame() — world-space normalized direction
   vector &mdir = obj->ai_info->movement_dir;

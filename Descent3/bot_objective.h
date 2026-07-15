@@ -78,6 +78,10 @@
                                         // it out the far side within 1s (START rm14 -> ABORT rm12). Require
                                         // near-rest before parking; 5 u/s mirrors the DLL's >5u movement
                                         // reset, so a faster "hold" could never bank clock time anyway
+#define BOT_ENTROPY_PARK_BRAKE_SPEED 2.0f // hold v6: while parked, counter-thrust against residual velocity
+                                          // above this (weapon knockback etc.), zero thrust below it — drag
+                                          // finishes the stop. Well under the DLL's 5u budget; full-thrust
+                                          // braking sheds ~1 u/s per frame so there's no overshoot flutter
 #define BOT_ENTROPY_RETREAT_SHIELDS 25.0f  // hard abort floor (spec ~25, tunable at E4)
 #define BOT_ENTROPY_REENGAGE_SHIELDS 45.0f // don't START an approach below this
 #define BOT_ENTROPY_DEPART_SHIELDS 80.0f   // loaded bot on its own repair/energy pad stays until THIS
