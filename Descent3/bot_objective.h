@@ -80,6 +80,12 @@
                                         // reset, so a faster "hold" could never bank clock time anyway
 #define BOT_ENTROPY_RETREAT_SHIELDS 25.0f  // hard abort floor (spec ~25, tunable at E4)
 #define BOT_ENTROPY_REENGAGE_SHIELDS 45.0f // don't START an approach below this
+#define BOT_ENTROPY_DEPART_SHIELDS 80.0f   // loaded bot on its own repair/energy pad stays until THIS
+                                           // (mirrors HEAL_START/HEAL_DONE): departing at exactly 45
+                                           // (the moment the retreat condition cleared) minus ~20-40
+                                           // approach cost = arriving at the floor = the 07-15 ping-pong
+                                           // (877 invade legs, 559 by one bot, 1 hold in 12 rounds);
+                                           // 80 - transit ≈ 45-60 at arrival = a real hold budget
 // Streak-preservation healing (operator insight, first POV session): the kill streak gates
 // the whole economy, and dying zeroes it — so a wounded bot WITH a streak banks it at its
 // own repair room (+5/s to the mode's 100 cap; these rooms exist only in Entropy) instead of

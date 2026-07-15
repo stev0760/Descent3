@@ -2955,18 +2955,24 @@ static bool BotDoEntropyInvadeNav(int bot_index) {
     Bots[bot_index].chasing_powerup_timer = 0.0f;
     if (!Bots[bot_index].entropy_holding) {
       Bots[bot_index].entropy_holding = true;
-      LOG_DEBUG.printf("BOT ENTROPY: '%s' takeover hold START (room %d, carrying %d, shields %.0f)",
-                       Bots[bot_index].callsign, cur_room, Bot_objective.entropy_virus_count[slot], obj->shields);
+      LOG_DEBUG.printf("BOT ENTROPY: '%s' takeover hold START (room %d, carrying %d, shields %.0f, depth %.1f, spd %.1f)",
+                       Bots[bot_index].callsign, cur_room, Bot_objective.entropy_virus_count[slot], obj->shields,
+                       BotPortalPenetration(obj, cur_room), vm_GetMagnitude(&obj->mtype.phys_info.velocity));
     }
     return true;
   }
 
   if (Bots[bot_index].entropy_holding) {
     // Left the room (chased off / retreat floor flipped the target to a repair room).
-    // Success/spend is logged separately by the poll's inventory-delta line.
+    // Success/spend is logged separately by the poll's inventory-delta line. depth/spd are
+    // measured against the CURRENT room — an abort with positive depth and near-zero speed
+    // means roomnum flipped while the ship was physically parked (multi-portal boundary
+    // noise), not that the ship flew out.
     Bots[bot_index].entropy_holding = false;
-    LOG_DEBUG.printf("BOT ENTROPY: '%s' takeover hold ABORT (room %d -> target %d, shields %.0f)",
-                     Bots[bot_index].callsign, cur_room, target_room, obj->shields);
+    LOG_DEBUG.printf("BOT ENTROPY: '%s' takeover hold ABORT (room %d -> target %d, shields %.0f, depth %.1f, spd %.1f)",
+                     Bots[bot_index].callsign, cur_room, target_room, obj->shields,
+                     cur_room >= 0 ? BotPortalPenetration(obj, cur_room) : -1.0f,
+                     vm_GetMagnitude(&obj->mtype.phys_info.velocity));
   }
 
   // En route (invade or retreat leg): carrier-grade routed goal. Like the CTF/Hoard carrier

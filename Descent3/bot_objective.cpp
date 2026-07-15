@@ -888,8 +888,15 @@ static int BotGetObjectiveRoom_Entropy(int bot_index) {
     int cur_room = OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum;
     bool in_enemy_special = cur_room >= 0 && cur_room < BOT_ENTROPY_MAX_ROOMS &&
                             Bot_objective.entropy_room_owner[cur_room] == enemy_owner;
+    // Depart hysteresis (v5): once retreated to an own heal pad, stay until DEPART shields —
+    // leaving at exactly REENGAGE meant arriving at the floor after transit cost (the 07-15
+    // ping-pong: 877 invade legs, 1 hold). Same stateless on-pad pattern as streak banking.
+    bool on_heal_pad = cur_room >= 0 && cur_room < BOT_ENTROPY_MAX_ROOMS &&
+                       Bot_objective.entropy_room_owner[cur_room] == my_owner &&
+                       (Bot_objective.entropy_room_kind[cur_room] == 3 || Bot_objective.entropy_room_kind[cur_room] == 2);
     bool retreat = obj->shields < BOT_ENTROPY_RETREAT_SHIELDS ||
-                   (!Bots[bot_index].entropy_holding && obj->shields < BOT_ENTROPY_REENGAGE_SHIELDS);
+                   (!Bots[bot_index].entropy_holding && obj->shields < BOT_ENTROPY_REENGAGE_SHIELDS) ||
+                   (on_heal_pad && !Bots[bot_index].entropy_holding && obj->shields < BOT_ENTROPY_DEPART_SHIELDS);
     if (retreat) {
       int rep = BotGetNearestEntropyRoom(bot_index, my_owner, 3); // repair room (+5 shields/s)
       if (rep < 0)
