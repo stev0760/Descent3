@@ -876,15 +876,20 @@ static int BotGetObjectiveRoom_Entropy(int bot_index) {
   int enemy_owner = 2 - my_team;
 
   // Loaded bot (>= 5): the carrier analog — invade, or repair first. Shield policy is an
-  // emergent hysteresis with no per-bot state (constants in bot_objective.h): a hold in
-  // progress runs down to the hard floor; a fresh approach needs REENGAGE shields.
+  // emergent hysteresis keyed on the live hold flag (constants in bot_objective.h): an
+  // ESTABLISHED hold runs down to the hard floor, but anyone else — approaching OR standing
+  // un-held in the room — needs REENGAGE (= floor 25 + 3s hold cost 15 + margin). The v3
+  // smoke's doomed-hold trace (2026-07-14: hold START at 26 shields, room damage crossed the
+  // floor in 0.5s, target flipped to repair, ABORT) came from keying this on "in an enemy
+  // special room" instead: arriving wounded granted the run-to-floor concession before any
+  // clock time was banked.
   if (Bot_entropy_takeover_enabled && Bot_objective.entropy_virus_count[slot] >= BOT_ENTROPY_TAKEOVER_LOAD) {
     object *obj = &Objects[Players[slot].objnum];
     int cur_room = OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum;
     bool in_enemy_special = cur_room >= 0 && cur_room < BOT_ENTROPY_MAX_ROOMS &&
                             Bot_objective.entropy_room_owner[cur_room] == enemy_owner;
     bool retreat = obj->shields < BOT_ENTROPY_RETREAT_SHIELDS ||
-                   (!in_enemy_special && obj->shields < BOT_ENTROPY_REENGAGE_SHIELDS);
+                   (!Bots[bot_index].entropy_holding && obj->shields < BOT_ENTROPY_REENGAGE_SHIELDS);
     if (retreat) {
       int rep = BotGetNearestEntropyRoom(bot_index, my_owner, 3); // repair room (+5 shields/s)
       if (rep < 0)
