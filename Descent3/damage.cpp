@@ -824,22 +824,6 @@ bool ApplyDamageToPlayer(object *playerobj, object *killer, int damage_type, flo
       weapon_id = weapon_obj->id;
   }
 
-  // TEMP DIAG (0.9.8-dev, Entropy room-damage investigation): NULL-killer server-side damage
-  // is the DLL room-effect path — trace whether it arrives for bots and which gate eats it.
-  // Throttled; remove once the GeoDomes "bots not damaged by enemy special rooms" report is
-  // resolved. See project_entropy_mode.md OPEN BUG.
-  if ((Game_mode & GM_MULTI) && Netgame.local_role == LR_SERVER && killer == NULL && weapon_id == 255) {
-    static float Dmg_diag_last = 0.0f;
-    if (Gametime - Dmg_diag_last > 2.0f) {
-      Dmg_diag_last = Gametime;
-      LOG_DEBUG.printf("DMG DIAG: null-killer dmg %.1f -> slot %d (dying=%d invul=%d po_destroyable=%d)",
-                       damage_amount, playerobj->id,
-                       (Players[playerobj->id].flags & (PLAYER_FLAGS_DYING | PLAYER_FLAGS_DEAD)) ? 1 : 0,
-                       (Players[playerobj->id].flags & PLAYER_FLAGS_INVULNERABLE) ? 1 : 0,
-                       (Player_object->flags & OF_DESTROYABLE) ? 1 : 0);
-    }
-  }
-
   if ((Players[playerobj->id].flags & PLAYER_FLAGS_DYING) || (Players[playerobj->id].flags & PLAYER_FLAGS_DEAD)) {
     PlayPlayerDamageSound(playerobj, damage_type);
     return false;
