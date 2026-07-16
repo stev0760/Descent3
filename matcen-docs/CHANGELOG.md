@@ -50,9 +50,16 @@ survived a second, and the bot burned shields cycling in and out of the doorway.
 declared "arrived" the moment its nose crossed the doorway and stopped right there anyway. Bots
 now refuse to start the hold until the ship is measurably *deep* inside the room AND nearly at
 rest (a bot merely flying through an enemy room used to slam on the parking brake mid-transit and
-coast out the far side), keep flying to a parking spot well past the door, and once parked only
-leaving the room ends the hold. The same tests confirmed enemy special rooms do damage bots
-correctly on standard maps (the earlier no-damage report appears specific to one map's geometry).
+coast out the far side). The final and subtlest problem was the park itself: a "parked" bot whose
+destination had been cleared was still being told to fly forward, so it quietly throttled *itself*
+back out of the room. Bots now actively brake to a full stop while holding — and with that fix, a
+loaded bot held dead-still for the full three seconds under the room's damage and flipped the room
+to its team: **Entropy captures work.** They are rare by design — carrying the five viruses a
+capture needs takes a three-kill streak, and a loaded bot is the highest-value target on the map,
+so landing one all the way into an enemy lab and holding it is a hard-won, deliberate play, exactly
+the tense economy the mode was built around. (Enemy special rooms damage bots correctly; an earlier
+"enemy bots seemed unhurt" report was a misread — they were taking the damage, just surviving long
+enough to shoot back.)
 
 **Some bot behaviors silently switched off after the first round of a session — fixed.** The game
 clock restarts at zero on every level change, but a handful of per-bot timers kept their old values
