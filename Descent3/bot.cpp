@@ -3143,6 +3143,47 @@ static void BotDoMonsterballStrikerNav(int bot_index) {
     to_ball = to_ball * (1.0f / d);
   float align = (d > 1.0f) ? vm_DotProduct(&to_ball, &push_dir) : 0.0f;
 
+  // M2.6 junction steering (operator-directed 2026-07-16): a hit sends the ball directly away
+  // from the shooter, so in a fork room the align gate alone still gambles the fork — a shot
+  // can pass 0.80 against the push line yet be BETTER aligned with a wrong portal (Veins: six
+  // 3-portal junctions on a loop; one bad nudge = a whole tube segment the wrong way and the
+  // ball circulates forever). Veto the shot/slam unless the induced ball line points more at
+  // the on-route portal than at ANY other passable portal; the approach point (already on the
+  // far side of the ball) repositions the striker until the fork is won. Skipped when the ball
+  // is already in our goal room (no fork to lose) or outside (no portals).
+  bool junction_ok = true;
+  if (Bot_mball_junction_enabled && d > 1.0f && ball_room != my_goal && ball_room >= 0 &&
+      !ROOMNUM_OUTSIDE(ball_room) && Rooms[ball_room].used) {
+    room &br = Rooms[ball_room];
+    int on_route = BOA_GetNextRoom(ball_room, my_goal);
+    int passable = 0, best_croom = -1;
+    float best_dot = -2.0f, route_dot = -2.0f;
+    for (int p = 0; p < br.num_portals; p++) {
+      if (!BotCheckPortalPassable(ball_room, p))
+        continue;
+      passable++;
+      vector pdir = br.portals[p].path_pnt - ball->pos;
+      if (vm_GetMagnitude(&pdir) < 1.0f)
+        continue;
+      vm_NormalizeVector(&pdir);
+      float fork_dot = vm_DotProduct(&to_ball, &pdir);
+      if (br.portals[p].croom == on_route)
+        route_dot = std::max(route_dot, fork_dot); // multi-portal pairs: best face to the next room
+      else if (fork_dot > best_dot) {
+        best_dot = fork_dot;
+        best_croom = br.portals[p].croom;
+      }
+    }
+    if (passable >= BOT_MBALL_JUNCTION_PORTALS && route_dot > -2.0f && best_dot > route_dot) {
+      junction_ok = false;
+      if (Gametime - Bots[bot_index].mball_junction_log_t > 2.0f) {
+        Bots[bot_index].mball_junction_log_t = Gametime;
+        LOG_DEBUG.printf("BOT MBALL: '%s' JUNCTION hold (rm%d fork -> rm%d wins %.2f vs route rm%d %.2f)",
+                         Bots[bot_index].callsign, ball_room, best_croom, best_dot, on_route, route_dot);
+      }
+    }
+  }
+
   // THE FINISHER (operator insight): weapon hits clamp to [10,20] u/s; a ram is unclamped
   // momentum. Ball in position (route cost to OUR goal below FINISH_COST) + striker roughly
   // behind it -> stop sniping, fly THROUGH the predicted ball along the push line. The fire
@@ -3159,7 +3200,8 @@ static void BotDoMonsterballStrikerNav(int bot_index) {
                         : (was_finishing ? BOT_MBALL_SLAM_ALIGN - BOT_MBALL_SLAM_HYST : BOT_MBALL_SLAM_ALIGN);
   bool finishing = Bot_objective.monsterball_progress[my_team] >= 0.0f &&
                    Bot_objective.monsterball_progress[my_team] < BOT_MBALL_FINISH_COST &&
-                   d < BOT_MBALL_FINISH_MAX_DIST && align >= slam_gate;
+                   d < BOT_MBALL_FINISH_MAX_DIST && align >= slam_gate &&
+                   junction_ok; // a slam's contact push is dir(bot->ball) too — same fork physics
 
   // Dry bot: ram. Approach point first so the bump still pushes the right way, then the ball.
   bool dry = Players[slot].energy <= 0.0f && !((Players[slot].weapon_flags & (1u << VAUSS_INDEX)) &&
@@ -3216,7 +3258,7 @@ static void BotDoMonsterballStrikerNav(int bot_index) {
           blunder = vm_DotProduct(&to_ball, &enemy_dir) > BOT_MBALL_BLUNDER_DOT;
         }
       }
-      if (aligned && !blunder)
+      if (aligned && !blunder && junction_ok)
         Bots[bot_index].mball_fire_handle = ball->handle;
     }
   }
@@ -6574,6 +6616,7 @@ void BotReinitAll() {
     Bots[i].mball_shot_log_t = 0.0f;
     Bots[i].mball_finish_log_t = 0.0f;
     Bots[i].mball_avoid_log_t = 0.0f;
+    Bots[i].mball_junction_log_t = 0.0f;
     Bots[i].squad_role = SQUAD_FREELANCE;
     Bots[i].squad_target_slot = -1;
     Bots[i].objective_lean = BOT_LEAN_BALANCED;
@@ -6798,6 +6841,7 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   Bots[bot_index].mball_finish_mode = 0;
   Bots[bot_index].mball_finish_log_t = 0.0f;
   Bots[bot_index].mball_avoid_log_t = 0.0f;
+  Bots[bot_index].mball_junction_log_t = 0.0f;
   vm_MakeZero(&Bots[bot_index].via_point);
   Bots[bot_index].via_expires = 0.0f;
   Bots[bot_index].via_seal_count = 0;

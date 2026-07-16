@@ -500,6 +500,7 @@ struct bot_info {
   uint8_t mball_finish_mode;
   float mball_finish_log_t; // transition-log throttle (align jitters across the arm threshold)
   float mball_avoid_log_t;  // ball-avoid detour log throttle (contact-blunder discipline)
+  float mball_junction_log_t; // junction fork-veto log throttle (M2.6; absolute Gametime — reinit sweep)
 
   // 0.9.7 Stage 3 progress-monitor replan state
   vector stall_check_pos;   // position at the start of the current sample window

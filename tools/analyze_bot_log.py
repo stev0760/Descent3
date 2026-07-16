@@ -131,6 +131,9 @@ RE_MB_BALL_ROOM = re.compile(r"BOT MBALL: ball room (-?\d+) -> (-?\d+) \(cost to
 RE_MB_FINISH_ARM = re.compile(r"BOT MBALL: '([^']+)' FINISH (slam|vauss) ARM \(ball cost (\S+), align (\S+), dist (\S+)\)")
 # Contact-blunder discipline: nav leg would bump the ball toward THEIR goal -> lateral detour
 RE_MB_AVOID = re.compile(r"BOT MBALL: '([^']+)' ball-avoid detour \(bump dot (\S+), miss (\S+)\)")
+# M2.6 junction steering: fork-argmax veto held a shot in a 3+-portal ball room. High counts on
+# corridor maps (Veins) are the feature WORKING, not an anomaly — no detect_anomalies tag.
+RE_MB_JUNCTION = re.compile(r"BOT MBALL: '([^']+)' JUNCTION hold \(rm(-?\d+) fork -> rm(-?\d+)")
 
 DIST_CLOSE = 200
 DIST_MID = 500
@@ -181,6 +184,7 @@ def new_map_stats():
         "mball_slam_arms": 0,         # M2.5 finisher: slam-run ARM transitions
         "mball_vauss_arms": 0,        # M2.5 finisher: vauss-finish ARM transitions
         "mball_avoids": 0,            # contact-blunder discipline: ball-avoid detours (throttled 2s/bot)
+        "mball_junction_holds": 0,    # M2.6 junction steering: fork-argmax shot vetoes (throttled 2s/bot)
         "human_caps": 0,             # captures by players without the [BOT] suffix
         "human_cappers": Counter(),
         "team_caps": Counter(),
@@ -411,6 +415,10 @@ def parse_log(path):
                 m = RE_MB_AVOID.search(line)
                 if m:
                     s["mball_avoids"] += 1
+                    continue
+                m = RE_MB_JUNCTION.search(line)
+                if m:
+                    s["mball_junction_holds"] += 1
                     continue
 
             # Monsterball goal HUD messages (DLL monsterstr.h). Team-score has no individual
@@ -1117,8 +1125,8 @@ def print_report(stats, total_lines, log_path):
     if has_mball:
         print(f"## Monsterball (0.9.8)")
         print()
-        print(f"| Map | Goals (bot) | /round | Team | Player (bot) | Blunders (bot) | Fires | Finisher (slam/vauss) | Ball-avoids | Ball trans | Roles (STRIKER/SUP/KEEP/field) |")
-        print(f"|---|---|---|---|---|---|---|---|---|---|---|")
+        print(f"| Map | Goals (bot) | /round | Team | Player (bot) | Blunders (bot) | Fires | Finisher (slam/vauss) | Ball-avoids | Junction holds | Ball trans | Roles (STRIKER/SUP/KEEP/field) |")
+        print(f"|---|---|---|---|---|---|---|---|---|---|---|---|")
         for name in maps:
             s = stats[name]
             if not (s["mball_goals"] or s["mball_fires"] or s["mball_ball_transitions"] or s["mball_role_assigns"]):
@@ -1131,6 +1139,7 @@ def print_report(stats, total_lines, log_path):
                   f"| {s['mball_player_scores']} ({s['mball_player_scores_bot']}) "
                   f"| {s['mball_blunders']} ({s['mball_blunders_bot']}) "
                   f"| {s['mball_fires']} | {s['mball_slam_arms']}/{s['mball_vauss_arms']} | {s['mball_avoids']} "
+                  f"| {s['mball_junction_holds']} "
                   f"| {s['mball_ball_transitions']} "
                   f"| {s['mball_role_assigns']} ({roles_str}) |")
         print()

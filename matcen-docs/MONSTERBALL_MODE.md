@@ -231,7 +231,17 @@ state bumps (4/21 in the soak) are accepted residual. Role tenure is runtime-tun
   shots prove out), supporter pass-backs, multi-touch dribbling: explicitly out of scope
   until soaks demand them.
 - Chat verbs: `!attack ball`, `!defend goal` mappings (Tier 2 pattern).
-- **Junction-aware pushing — PLANNED (operator decision 2026-07-15, reversed from deferred).**
+- **Junction-aware pushing — BUILT 2026-07-16 (`$nav mjunction`, M2.6), awaiting Veins re-soak.**
+  Implementation: fork-argmax shot veto in `BotDoMonsterballStrikerNav` — in a ball room with
+  ≥`BOT_MBALL_JUNCTION_PORTALS` (3) passable portals, the shot/slam is held unless the induced
+  ball line (`dir(bot→ball)`, exactly where a hit sends the ball) is better aligned with the
+  on-route portal (`BOA_GetNextRoom` toward our goal) than with ANY other passable portal; the
+  existing approach point (already goal-side of the ball) then repositions the striker until the
+  fork is won. Applied to both the fire gate and the finisher arm (a slam's contact push is the
+  same physics). Fallback-safe: no route / ball in our goal room / <3 portals → no veto (open
+  maps keep pre-junction behavior bit-for-bit). Observability: throttled `JUNCTION hold` log +
+  analyzer "Junction holds" column (high counts on corridor maps = the feature working). A/B:
+  `$nav mjunction off` = the Veins ~0-conversion baseline. Original decision rationale below.
   Rationale: Veins ships with vanilla D3 and "we want Monsterball to generally work," so branched
   tube maps are a first-class case, not an edge one. Veins navdump (33 rooms, nav-clean: 1
   component, 0 DISAGREE, 38/38 powerups reachable) is a branched winding-tube network: six 3-portal

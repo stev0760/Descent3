@@ -132,6 +132,13 @@
 #define BOT_MBALL_SLAM_ALIGN 0.5f    // rough behind-the-ball gate to START a slam run (fvec converges
                                      // en route — the AB facing gate holds the burn until nose-on)
 #define BOT_MBALL_SLAM_THROUGH 30.0f // aim point distance THROUGH the ball along the push line
+// M2.6 junction steering (operator-directed 2026-07-16: "make bots steer the ball through
+// junctions — Veins is vanilla D3 and Monsterball must generally work"). In a fork room a
+// merely align-gated shot can still be BETTER aligned with a wrong portal than the on-route
+// one — one bad nudge sends the ball down a whole wrong tube (Veins: six 3-portal junctions,
+// loop topology lets it circulate forever; soakdump-veins.json). The veto below refuses the
+// shot until the induced ball line wins the fork; the approach point repositions the striker.
+#define BOT_MBALL_JUNCTION_PORTALS 3 // a ball room with >= this many passable portals is a fork
 // M3 roles (utility + hysteresis, the $nav hyper pattern at team scale):
 #define BOT_MBALL_ROLE_INCUMBENT 0.55f  // incumbent keeps its role unless beaten ~2x (0.7 -> 0.55:
                                         // first live session thrashed — room-graph cost JUMPS as the
@@ -303,6 +310,10 @@ extern bool Bot_mball_striker_enabled;
 // incumbent hysteresis). OFF with mball ON = every bot runs the striker loop (the M2 A/B arm).
 extern bool Bot_mball_roles_enabled;
 extern bool Bot_mball_avoid_enabled;
+
+// $nav mjunction — M2.6 junction steering (fork-argmax shot veto in 3+-portal ball rooms).
+// OFF = pre-junction behavior: the align gate alone decides, forks are gambled.
+extern bool Bot_mball_junction_enabled;
 extern float Bot_mball_role_tenure; // $nav mtenure <s> — role commitment period (thrash A/B lever)
 
 #endif // BOT_OBJECTIVE_H

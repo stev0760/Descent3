@@ -711,6 +711,11 @@ bool Bot_mball_roles_enabled = true;
 // baseline for the 21-contact-own-goals soak).
 bool Bot_mball_avoid_enabled = true;
 
+// $nav mjunction — M2.6 junction steering (2026-07-16, operator-directed): in a fork room
+// (3+ passable portals) the striker holds fire until the induced ball line wins the fork.
+// OFF = align gate alone (the pre-junction A/B baseline: Veins ~0 conversions).
+bool Bot_mball_junction_enabled = true;
+
 // $nav mtenure <seconds> — the role commitment period, runtime-tunable so the 10/15/20s
 // thrash A/B (2026-07-13 clean soak: 356-773 re-assigns/round, pairwise station swaps at
 // every 10s expiry) runs as soak phases instead of rebuilds. Default = the M3 constant.
