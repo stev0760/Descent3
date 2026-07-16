@@ -3174,7 +3174,8 @@ static void BotDoMonsterballStrikerNav(int bot_index) {
         best_croom = br.portals[p].croom;
       }
     }
-    if (passable >= BOT_MBALL_JUNCTION_PORTALS && route_dot > -2.0f && best_dot > route_dot) {
+    if (passable >= BOT_MBALL_JUNCTION_PORTALS && route_dot > -2.0f &&
+        best_dot > route_dot + BOT_MBALL_JUNCTION_MARGIN) {
       junction_ok = false;
       if (Gametime - Bots[bot_index].mball_junction_log_t > 2.0f) {
         Bots[bot_index].mball_junction_log_t = Gametime;

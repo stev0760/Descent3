@@ -139,6 +139,13 @@
 // loop topology lets it circulate forever; soakdump-veins.json). The veto below refuses the
 // shot until the induced ball line wins the fork; the approach point repositions the striker.
 #define BOT_MBALL_JUNCTION_PORTALS 3 // a ball room with >= this many passable portals is a fork
+#define BOT_MBALL_JUNCTION_MARGIN 0.25f // veto only when a wrong fork beats the route portal by
+                                        // THIS much. The first live firing (09:00 soak, PowerHouse
+                                        // rm1) showed the strict argmax vetoing 0.88-vs-0.87 ties
+                                        // and pinning BOTH strikers 40+ continuous seconds in a
+                                        // multi-portal open room — a near-tie isn't a lost fork
+                                        // (the ball still crosses big portals it's roughly aimed
+                                        // at); genuine Veins-class wrong-fork shots lose by 0.6+
 // M3 roles (utility + hysteresis, the $nav hyper pattern at team scale):
 #define BOT_MBALL_ROLE_INCUMBENT 0.55f  // incumbent keeps its role unless beaten ~2x (0.7 -> 0.55:
                                         // first live session thrashed — room-graph cost JUMPS as the
