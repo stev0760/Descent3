@@ -231,7 +231,15 @@ state bumps (4/21 in the soak) are accepted residual. Role tenure is runtime-tun
   shots prove out), supporter pass-backs, multi-touch dribbling: explicitly out of scope
   until soaks demand them.
 - Chat verbs: `!attack ball`, `!defend goal` mappings (Tier 2 pattern).
-- **Junction-aware pushing — BUILT 2026-07-16 (`$nav mjunction`, M2.6), awaiting Veins re-soak.**
+- **Junction-aware pushing — VALIDATED-NEGATIVE 2026-07-16, ships default OFF.** Same-day A/B
+  (frenzy 6+6 rnds): goals fell on ALL maps under the fork veto — PowerHouse 3.7→3.0, Monster
+  Arena 3.5→2.0, **Veins 1.0→0.0 (the map it was built for)** — because goal-adjacent rooms are
+  themselves multi-portal hubs, so the veto suppresses exactly the finishing-band pushes (410 of
+  2892 holds were live-fire candidates; fire volume elsewhere unchanged). Context that reframed
+  the feature: the 07-15 finisher arming envelope had ALREADY lifted Veins from ~0 to 1.0
+  goals/rnd — the target problem was mostly solved before this landed. Kept as a `$nav mjunction`
+  experiment lever (v1 strict argmax also refuted live: it vetoed 0.88-vs-0.87 ties and pinned
+  both strikers in open-map hub rooms; v2 added the 0.25 margin). Original design notes below.
   Implementation: fork-argmax shot veto in `BotDoMonsterballStrikerNav` — in a ball room with
   ≥`BOT_MBALL_JUNCTION_PORTALS` (3) passable portals, the shot/slam is held unless the induced
   ball line (`dir(bot→ball)`, exactly where a hit sends the ball) is better aligned with the

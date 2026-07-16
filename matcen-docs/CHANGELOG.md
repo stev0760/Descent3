@@ -71,14 +71,14 @@ Monsterball tests look far quieter than the bots actually were). All such timers
 change. If a long-running server felt like bot navigation "degraded after the first map," this was
 why.
 
-**Monsterball bots learn to steer the ball through forked tunnels.** On winding multi-room maps
-(Veins, a map that ships with the game, is the archetype) bots could push the ball for a whole
-match without scoring: at every three-way junction the shot direction only had to be *roughly*
-right, so the ball kept taking wrong branches and looping the circuit forever. Since the ball
-always flies exactly away from whoever shot it, the striker now refuses the shot at a junction
-unless its own position makes the ball favor the correct branch over every other exit — and flies
-around behind the ball until it does. Open arena maps play exactly as before; `$nav mjunction off`
-restores the old behavior for comparison.
+**Monsterball scores on winding tunnel maps now.** On corridor maps (Veins, which ships with the
+game, is the archetype) bots used to push the ball around the loop for a whole match without ever
+scoring. The finisher rework (range-capped arming with contact-grade alignment) turned that
+around: corridor maps now produce goals, and open arenas score at a steady clip. A stricter
+experiment — refusing any shot at a tunnel junction until the bot's position guaranteed the
+correct branch — was A/B tested the same day and *lowered* scoring everywhere (the rooms next to
+the goals are themselves junctions, so it suppressed exactly the shots that finish), and ships
+disabled; `$nav mjunction on` re-enables it for experiments.
 
 **Monsterball bots stop scoring for the other team.** In the first clean overnight Monsterball
 test (27 rounds), roughly one goal in five was a bot accidentally shoving the ball into the wrong

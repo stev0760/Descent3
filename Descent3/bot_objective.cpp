@@ -711,10 +711,14 @@ bool Bot_mball_roles_enabled = true;
 // baseline for the 21-contact-own-goals soak).
 bool Bot_mball_avoid_enabled = true;
 
-// $nav mjunction — M2.6 junction steering (2026-07-16, operator-directed): in a fork room
-// (3+ passable portals) the striker holds fire until the induced ball line wins the fork.
-// OFF = align gate alone (the pre-junction A/B baseline: Veins ~0 conversions).
-bool Bot_mball_junction_enabled = true;
+// $nav mjunction — M2.6 junction steering: in a fork room (3+ passable portals) the striker
+// holds fire until the induced ball line wins the fork. VALIDATED-NEGATIVE 2026-07-16 (same-day
+// A/B, frenzy 6+6 rnds): goals fell on ALL maps under the veto — PowerHouse 3.7→3.0, Monster
+// Arena 3.5→2.0, and Veins (the map it was built for) 1.0→0.0 — because goal-adjacent rooms ARE
+// the multi-portal hubs, so the veto suppresses exactly the finishing-band pushes (410 of 2892
+// holds were live-fire candidates). The 07-15 finisher envelope had already lifted Veins ~0→1.0
+// on its own. Default OFF; kept as an experiment lever (the gridall disposition).
+bool Bot_mball_junction_enabled = false;
 
 // $nav mtenure <seconds> — the role commitment period, runtime-tunable so the 10/15/20s
 // thrash A/B (2026-07-13 clean soak: 356-773 re-assigns/round, pairwise station swaps at
