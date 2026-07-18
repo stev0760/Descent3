@@ -655,6 +655,12 @@ BOA — a bug (the router would be silently overriding BOA everywhere), not a fe
 - **`tools/analyze_bot_log.py`** — hard-pin / via-arrival / BLOCKED-order metrics are the A/B
   scorecard across substrate versions.
 
+**Footprint discipline (2026-07-18):** per-tick code paths must never emit unconditionally — log
+on **state change** (dedupe against the last-emitted value) or through a self-healing `Gametime`
+throttle. The carrier-objective line violated this and single-handedly wrote ~90% of a 237 MB
+overnight log. A full verbosity-tier + event-vocabulary consolidation is registered in §7.2
+(post-0.9.8).
+
 ---
 
 ## 6. Invariants (don't regress these)
@@ -1146,6 +1152,25 @@ above both, corrected the frontier framing, and fixed two citations — frontier
 Yamaguchi 1998 (formation control); Lazy Theta\* = Nash/Koenig/Tovey 2010, not Incremental Phi\* 2009.)*
 
 ### 7.2 Long-standing open problems (narrative)
+
+- **`$nav` diagnostic footprint / telemetry consolidation — REGISTERED 2026-07-18 (post-0.9.8 track).**
+  The nav stack's debug surface grew a line at a time across the 0.9.x campaigns and is now the
+  server's dominant log producer: the 2026-07-18 overnight metropolis_gt soak wrote a **237 MB**
+  log, ~90% of it a single unthrottled carrier-objective line (1.53M repeats — deduped to
+  change-only that same day). What remains is organic, not designed: per-event `LOG_DEBUG` lines
+  with hand-rolled throttles (`Gametime` latches, change-dedupe, per-bot arrays) added
+  investigation-by-investigation, with no shared cadence policy, no verbosity tiering, and
+  analyzer greps (`soak_report.py` / `analyze_bot_log.py` `RE_*` patterns) coupled to exact
+  wording. Deferred deliberately while the modes era validated — nav was too fluid to freeze a
+  telemetry contract. **Consolidation sketch (when taken up):** (1) a `$nav verbosity 0..2` tier
+  (0 = transitions + anomalies only, 1 = today's investigative lines, 2 = firehose) with every
+  emit site classified; (2) one shared throttled-emit helper replacing the hand-rolled latches
+  (self-healing across `Gametime` resets); (3) a stable machine-readable event vocabulary the
+  analyzers parse instead of prose greps — co-versioned with `D3_PYRODECK_SPEC.md`; (4) the
+  Windows/Release telemetry gap closed or explicitly documented per-line (today Release builds
+  log **nothing**, which reads as false health). Sequencing: after the 0.9.8 modes era, alongside
+  Stage 4 skeleton retirement — both are "delete accumulated scaffolding" jobs and touch the same
+  files.
 
 - **Toroidal-room orbit (Rim class) — OPEN, registered 2026-07-14 (steering/straightening layer).**
   A giant single-component annulus room (Rim's 4 quadrants: 676u, 16–18 portals, 94% of portal-to-portal
