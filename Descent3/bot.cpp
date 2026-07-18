@@ -2262,8 +2262,23 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
       Bot_troute_enabled && Bots[bot_index].troute_goal_room >= 0 && Bots[bot_index].troute_goal_room == goal_room;
 
   int wp_room = BotComputeRoute(obj->roomnum, goal_room);
-  if (wp_room < 0)
+  if (wp_room < 0) {
+    // No finite route under OUR cost model (wind one-way gate / geometry verdicts) between two
+    // interior rooms — the engine's wind-blind BOA path takes over, which on a wind-tunnel map
+    // means flying at the exhaust mouth (the RAGE Entropy report). Deliberately NOT rerouted
+    // here (the fallback's never-strand contract stands); logged throttled so a soak shows
+    // which goals are reaching this cliff. Same-room legs return -1 by contract — not logged.
+    if (obj->roomnum != goal_room && !OBJECT_OUTSIDE(obj) && !ROOMNUM_OUTSIDE(goal_room)) {
+      static float No_route_log_t[MAX_BOTS];
+      float &last = No_route_log_t[bot_index];
+      if (Gametime < last || Gametime - last > 10.0f) {
+        last = Gametime;
+        LOG_DEBUG.printf("BOT NAV: '%s' NO-ROUTE fallback rm%d -> rm%d (wind/geometry-gated) — engine path takes over",
+                         Bots[bot_index].callsign, (int)obj->roomnum, goal_room);
+      }
+    }
     wp_room = goal_room;
+  }
 
   // Phase 12: interior-obstacle go-around. Probe the line to the point the engine is actually
   // steering at; when a free-standing interior face blocks it, divert through a committed

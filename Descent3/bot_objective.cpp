@@ -848,12 +848,21 @@ static void BotAssignMonsterballRoles() {
 
 // Nearest room owned by `owner` (1=red 2=blue), optionally filtered to a kind
 // (1=lab 2=energy 3=repair; 0=any), by path cost from the bot.
+//
+// Cost model: the wind/glass/penalty-aware routed cost (BotComputeRouteCost), not the BOA-chain
+// estimate — on a wind-tunnel map (RAGE Entropy, 2026-07-18 operator report) the blind estimate
+// prices a route through a one-way tunnel's exhaust as cheap, the router then correctly refuses
+// it, and BotSetRoutedGoal's no-route fallback hands the engine's wind-blind path straight into
+// the upwind mouth: the bot visibly fights the tunnel forever. Candidate counts are tiny (a
+// team's special rooms) and this runs at state-tick cadence, so per-candidate Dijkstra is
+// negligible. If NO candidate is routable, fall back to the blind-best room — a gate false
+// positive may lengthen a trip but must never strand the bot with no objective.
 static int BotGetNearestEntropyRoom(int bot_index, int owner, int kind_filter) {
   int slot = Bots[bot_index].player_slot;
   object *obj = &Objects[Players[slot].objnum];
   int bot_room = OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum;
-  int best = -1;
-  float best_cost = 1e30f;
+  int best = -1, blind_best = -1;
+  float best_cost = 1e30f, blind_cost = 1e30f;
   for (int r = 0; r <= Highest_room_index && r < BOT_ENTROPY_MAX_ROOMS; r++) {
     if (Bot_objective.entropy_room_owner[r] != owner)
       continue;
@@ -861,11 +870,34 @@ static int BotGetNearestEntropyRoom(int bot_index, int owner, int kind_filter) {
       continue;
     if (!Rooms[r].used)
       continue;
-    float cost = (bot_room >= 0) ? BotEstimatePathCost(bot_room, r)
+    float est = (bot_room >= 0) ? BotEstimatePathCost(bot_room, r)
                                  : vm_VectorDistanceQuick(&obj->pos, &Rooms[r].path_pnt);
-    if (cost < best_cost) {
-      best_cost = cost;
+    if (est < blind_cost) {
+      blind_cost = est;
+      blind_best = r;
+    }
+    if (bot_room >= 0 && Bot_wind_route_enabled) {
+      float routed = BotComputeRouteCost(bot_room, r);
+      if (routed < 1e29f && routed < best_cost) {
+        best_cost = routed;
+        best = r;
+      }
+    } else if (est < best_cost) {
+      best_cost = est;
       best = r;
+    }
+  }
+  if (best < 0) {
+    best = blind_best;
+  } else if (best != blind_best) {
+    // The honest cost overruled the blind estimate — the RAGE wind-tunnel signature. Throttled
+    // per bot; `Gametime < last` re-arms across level transitions (Gametime resets).
+    static float Entropy_pick_log_t[MAX_BOTS];
+    float &last = Entropy_pick_log_t[bot_index];
+    if (Gametime < last || Gametime - last > 10.0f) {
+      last = Gametime;
+      LOG_DEBUG.printf("BOT ENTROPY: '%s' room pick rm%d over blind-nearest rm%d (unroutable/wind-gated)",
+                       Bots[bot_index].callsign, best, blind_best);
     }
   }
   return best;
@@ -1154,15 +1186,26 @@ static int BotGetObjectiveRoom_CTF(int bot_index) {
     if (t == my_team)
       continue;
     if (Bot_objective.flag_carrier_slot[t] == slot) {
-      if (Bot_objective.flag_state[my_team] == FLAG_DROPPED && Bot_objective.flag_objnum[my_team] >= 0 &&
-          Bot_objective.flag_room[my_team] >= 0 && Rooms[Bot_objective.flag_room[my_team]].used) {
-        LOG_DEBUG.printf("BOT OBJ: '%s' carrying team %d flag, own flag DROPPED -> returning it (room %d)",
-                         Bots[bot_index].callsign, t, Bot_objective.flag_room[my_team]);
-        return Bot_objective.flag_room[my_team];
+      // Log on DESTINATION CHANGE only. This runs on every BotGetObjectiveRoom call — for a
+      // carrier that's every nav tick, and the unconditional print was 1.53M of the 2026-07-18
+      // overnight log's lines (~90% of the whole file). The transition is the information; the
+      // repeats were pure footprint.
+      static int Carrier_log_dest[MAX_BOTS]; // stores dest+1; 0 = nothing logged yet (room 0 is valid)
+      int dest = Bot_objective.goal_room[my_team];
+      bool divert = Bot_objective.flag_state[my_team] == FLAG_DROPPED && Bot_objective.flag_objnum[my_team] >= 0 &&
+                    Bot_objective.flag_room[my_team] >= 0 && Rooms[Bot_objective.flag_room[my_team]].used;
+      if (divert)
+        dest = Bot_objective.flag_room[my_team];
+      if (Carrier_log_dest[bot_index] != dest + 1) {
+        Carrier_log_dest[bot_index] = dest + 1;
+        if (divert)
+          LOG_DEBUG.printf("BOT OBJ: '%s' carrying team %d flag, own flag DROPPED -> returning it (room %d)",
+                           Bots[bot_index].callsign, t, dest);
+        else
+          LOG_DEBUG.printf("BOT OBJ: '%s' carrying team %d flag -> heading home (room %d)", Bots[bot_index].callsign,
+                           t, dest);
       }
-      LOG_DEBUG.printf("BOT OBJ: '%s' carrying team %d flag -> heading home (room %d)", Bots[bot_index].callsign, t,
-                       Bot_objective.goal_room[my_team]);
-      return Bot_objective.goal_room[my_team];
+      return dest;
     }
   }
 
