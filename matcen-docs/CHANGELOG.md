@@ -7,7 +7,28 @@ live navigation status is in [NAVIGATION.md](NAVIGATION.md) §7.0.
 Versioning: `0.8.x` = feature releases; `0.9.x` = the navigation-milestone series.
 A `-dev` suffix marks an in-test build that has not yet passed its validation gate.
 
-## [0.9.8-dev] — in test
+## [0.9.8] — 2026-07-18
+
+*The game-modes release: Entropy and Monsterball are playable against bots for the first time
+since 1999, and CTF teams organize into real jobs. Validated over a multi-day hosted-server
+campaign (overnight soaks + live play from an unmodified PiccuEngine client).*
+
+**A crash in the `$botstat` console command — fixed.** Asking for bot status while a team was
+running the new CTF role structure could kill the server on the spot (the status printer predated
+the new *runner*/*flex* roles and read past its name table). This is what ended the 2026-07-18
+overnight test — the 11 hours of play before it were crash-free.
+
+**Bots no longer fly into the business end of a wind tunnel.** Route *planning* already knew a
+strong wind tunnel is one-way; objective *selection* in Entropy did not, so a bot could commit to
+a room whose only "short" approach was against the wind — then fight the gale at the exhaust
+mouth indefinitely (watched live on Earthrage). Entropy targets are now chosen with the same
+wind-aware costing the router uses, and any nav goal that falls off the routable map now
+identifies itself in the server log instead of failing silently.
+
+**Server logs are ~90% smaller.** One unthrottled status line (a flag carrier re-announcing its
+destination every tick) was writing the overwhelming majority of a long session's log — 237 MB in
+one overnight run. It now prints only when the destination actually changes. Long soaks stay
+greppable, and disk stops being the limiting factor on multi-day servers.
 
 **Team role structure for objective play.** In CTF, each team of bots now organizes into distinct
 jobs instead of a flat attack/defend split: one dedicated **flag runner** (the team's best-equipped

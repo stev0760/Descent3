@@ -691,7 +691,34 @@ overnight log. A full verbosity-tier + event-vocabulary consolidation is registe
 
 ## 7. Open problems (roadmap)
 
-### 7.0 Current status snapshot — 2026-07-14 (gridall validation battery: NEGATIVE on both gate maps; toroidal-traversal problem registered)
+### 7.0 Current status snapshot — 2026-07-18 (0.9.8 RELEASED; hosted-campaign reading; $botstat crash + wind-blind Entropy targeting fixed)
+
+> **0.9.8 stamped 2026-07-18** (tag v0.9.8) off the 07-13→18 hosted-server validation campaign:
+> operator ran overnight soaks + live PiccuEngine play on a remote Linux host (metropol_gt 11h CTF,
+> Monsterball dodgeball/PowerHouse, CTF townofbree, plus Entropy on RAGE). Nav-relevant outcomes:
+>
+> 1. **Overnight metropol_gt (15 rnds, 5 bots forced 3v2):** Red conversion 30% (in-band); Blue 0%
+>    over 24 picks — confounded by the 3v2 roster, but the seam-guard concentration at rooms 55/56
+>    (Blue home approach, 4.5K firings) and via-suspension cluster rooms 50/36 (2.2K/1.3K — the
+>    wall-press class) say metropolis deserves a navdump pass before it's judged. Run ended at 11h by
+>    the `$botstat` SIGSEGV (below), not a nav failure — zero nav crashes.
+> 2. **`$botstat all` SIGSEGV FIXED** — dedicated handler's stale 3-entry lean table indexed with
+>    RUNNER/FLEX (3/4); bounds-guarded `BotLeanName()` is now the only lean print path.
+> 3. **Wind-blind Entropy targeting FIXED (RAGE operator report):** `BotGetNearestEntropyRoom` ranked
+>    by the wind-blind BOA-chain estimate → router refused → `BotSetRoutedGoal` no-route fallback fed
+>    the engine's wind-blind path into the tunnel exhaust. Selection now ranks by `BotComputeRouteCost`
+>    under `$nav wind` (blind-best = never-strand fallback); NEW throttled `NO-ROUTE fallback` line
+>    instruments the cliff for the RAGE re-test (pending).
+> 4. **Log footprint cut ~90%:** the unthrottled carrier-objective line (1.53M of the 237MB overnight
+>    log) deduped to destination-change. Footprint discipline added to §5; full `$nav` telemetry
+>    consolidation registered in §7.2 (post-0.9.8 track, sequenced with Stage 4).
+> 5. **townofbree (1 rnd, human present):** 12/15 outdoor stucks = entrance-miss into a structure —
+>    the known approach-leg class (piece-1-proper owner); no new class.
+>
+> Open (non-gating, carried): Veins finisher conversion, Inversion refused-pickup spam, Rim toroidal
+> orbit (§7.2), Polaris approach-leg cluster, interior-pane heal coverage, abend2 stacked-room arrival.
+
+### (superseded) 7.0 snapshot — 2026-07-14 (gridall validation battery: NEGATIVE on both gate maps; toroidal-traversal problem registered)
 
 > **THE DEFERRED `$nav gridall` VALIDATION BATTERY RAN OVERNIGHT 2026-07-13→14** (operator-ordered after
 > discovering Rim; the lever was created 2026-07-06 as the Stage-4 A/B skeleton and its battery was never
