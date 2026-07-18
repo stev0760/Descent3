@@ -966,6 +966,10 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
         continue;
       any = true;
       int slot = Bots[i].player_slot;
+      if (slot < 0 || slot >= MAX_PLAYERS || Players[slot].objnum < 0) {
+        PrintDedicatedMessage("  Bot %d '%s' slot=%d (no object — respawning?)\n", i, Bots[i].callsign, slot);
+        continue;
+      }
       object *obj = &Objects[Players[slot].objnum];
       vector &vel = obj->mtype.phys_info.velocity;
       float speed = vm_GetMagnitude(&vel);
@@ -977,10 +981,9 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
         else if (tgt)
           tgt_name = "(robot)";
       }
-      static const char *lean_names[] = {"balanced", "attack", "defend"};
       PrintDedicatedMessage("  Bot %d '%s' slot=%d state=%s role=%s lean=%s speed=%.1f shields=%.0f target=%s\n", i,
                             Bots[i].callsign, slot, state_names[Bots[i].state], BotSquadRoleName(Bots[i].squad_role),
-                            lean_names[Bots[i].objective_lean], speed, obj->shields, tgt_name);
+                            BotLeanName(Bots[i].objective_lean), speed, obj->shields, tgt_name);
       char nav_diag[192];
       BotFormatNavDiag(i, nav_diag, sizeof(nav_diag));
       if (nav_diag[0])

@@ -1142,7 +1142,6 @@ void BotPrintObjectiveState() {
   }
 
   // Show bot objective leans
-  static const char *lean_names[] = {"balanced", "attack", "defend", "runner", "flex"};
   bool any_lean = false;
   for (int i = 0; i < MAX_BOTS; i++) {
     if (!Bots[i].active)
@@ -1152,7 +1151,7 @@ void BotPrintObjectiveState() {
       any_lean = true;
     }
     int obj_room = BotGetObjectiveRoom(i);
-    PrintDedicatedMessage("  %s: lean=%s nav_room=%d\n", Bots[i].callsign, lean_names[Bots[i].objective_lean],
+    PrintDedicatedMessage("  %s: lean=%s nav_room=%d\n", Bots[i].callsign, BotLeanName(Bots[i].objective_lean),
                           obj_room);
   }
 }

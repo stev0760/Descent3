@@ -676,6 +676,11 @@ void BotSetDifficulty(int bot_index, BotDifficulty diff);
 // Returns the display name for a squad role (e.g., "Freelance", "Attack", "Defend").
 const char *BotSquadRoleName(BotSquadRole r);
 
+// Returns the display name for an objective lean — the ONLY way lean values may be printed.
+// The $botstat handler kept a private 3-entry name table after BOT_LEAN_RUNNER/FLEX landed and
+// indexed it with lean 3/4: garbage-pointer %s, SIGSEGV, end of the 2026-07-18 overnight soak.
+const char *BotLeanName(int lean);
+
 // Diagnostic: write a one-line navigation summary for $botstat into buf. Exposes why a bot
 // may be pressing a wall: engine path state (num_paths>0 = following a BOA path, 0 = direct-
 // seeking the goal position) and an FVI probe along the bot's intended movement direction

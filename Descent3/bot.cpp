@@ -7634,6 +7634,23 @@ const char *BotSquadRoleName(BotSquadRole r) {
   }
 }
 
+const char *BotLeanName(int lean) {
+  switch (lean) {
+  case BOT_LEAN_ATTACK:
+    return "attack";
+  case BOT_LEAN_DEFEND:
+    return "defend";
+  case BOT_LEAN_RUNNER:
+    return "runner";
+  case BOT_LEAN_FLEX:
+    return "flex";
+  case BOT_LEAN_BALANCED:
+    return "balanced";
+  default:
+    return "?"; // out-of-range must PRINT, never index (the $botstat SIGSEGV, 2026-07-18)
+  }
+}
+
 void BotSetDifficulty(int bot_index, BotDifficulty diff) {
   if (bot_index < 0 || bot_index >= MAX_BOTS || !Bots[bot_index].active)
     return;

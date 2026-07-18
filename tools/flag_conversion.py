@@ -19,7 +19,11 @@ import re
 import sys
 
 LEVEL_RE = re.compile(r"Opening level '([^'.]+)\.d3l'", re.IGNORECASE)
-PICK_RE = re.compile(r"\*?(\S+?)( \[BOT\])? \((\w+)\) picks up the (\w+) Flag")
+# Two pickup wordings from the CTF DLL: the home-stand steal ("picks up the X Flag") and the
+# dropped/in-field grab ("finds the X Flag among some debris"). Some maps (metropol_gt,
+# 2026-07-18 overnight) emit ONLY the debris variant for the whole session — counting just
+# "picks up" read as picks=0 with caps=14 there. Both are grabs for conversion purposes.
+PICK_RE = re.compile(r"\*?(\S+?)( \[BOT\])? \((\w+)\) (?:picks up the|finds the) (\w+) Flag")
 CAP_RE = re.compile(r"\*?(\S+?)( \[BOT\])? \((\w+)\) captures the (\w+) Flag")
 RET_RE = re.compile(r"\*?(\S+?)( \[BOT\])? \((\w+)\) returns the (\w+) Flag")
 
