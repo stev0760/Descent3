@@ -8,45 +8,45 @@ To build the game, follow build instructions in the [BUILD.md](BUILD.md) file.
 
 Build or runtime issues should be reported on our [GitHub tracker](https://github.com/DescentDevelopers/Descent3/issues).
 
-## Matcen — Multiplayer Bots
+## Matcen: multiplayer bots
 
-**Matcen** adds a server-side multiplayer bot system to Descent 3 — the bots the game never shipped with. Bots occupy real player slots on dedicated and listen servers and appear to every client as ordinary players, tagged with a ` [BOT]` callsign suffix.
+**Matcen** adds a server-side multiplayer bot system to Descent 3, which never shipped with one. Bots occupy real player slots on dedicated and listen servers and appear to every client as ordinary players, tagged with a ` [BOT]` suffix on their callsign.
 
-**No client modifications required.** Retail D3 v1.5 clients and compatible engines (PiccuEngine) connect and play against bots as-is. A server with no bot configuration behaves exactly like vanilla D3.
+**No client modifications are required.** Retail D3 v1.5 clients and compatible engines (PiccuEngine) connect and play against bots as-is. A server with no bot configuration behaves exactly like vanilla D3.
 
-**Current release: 0.9.8** — the game-modes release. **Entropy and Monsterball are playable against bots for the first time since the game shipped.** Entropy bots run the whole territory loop: earn carry capacity through kill streaks, collect viruses from their own labs, invade the nearest routable enemy room and hold dead-still through the takeover clock, then retreat to repair. Monsterball bots play like a futsal side — one striker on the ball, a supporter, a keeper shadowing the goal mouth — with a hard own-goal refusal gate and an afterburner slam finisher. CTF teams organize into real jobs (a committed flag runner, scaling defenders, a flex bot), and Hyper-Anarchy sends the best-positioned few after the orb instead of the whole server. Built on the 0.9.7 navigation-intelligence stack (single runtime spatial model: reachability-honest powerup selection, terrain-aware outdoor routing, experience-priced rooms, live rebuild when glass or grates are destroyed). Validated over a week-long hosted-server campaign of overnight soaks and live play from unmodified PiccuEngine clients.
+**Current release: 0.9.8**, the game-modes release. Entropy and Monsterball are playable against bots for the first time since the game shipped. Entropy bots run the whole territory loop: they earn carry capacity through kill streaks, collect viruses from their own labs, invade the nearest routable enemy room, hold dead-still through the takeover clock, then retreat to repair. Monsterball bots play positions like a futsal side (one striker on the ball, a supporter, a keeper shadowing the goal mouth) with a hard own-goal refusal gate and an afterburner slam finisher. CTF teams organize into real jobs: a committed flag runner, scaling defenders, and a flex bot. Hyper-Anarchy sends the best-positioned few after the orb instead of the whole server. All of it runs on the 0.9.7 navigation stack, a single runtime spatial model that answers reachability for powerup selection, plans terrain-aware outdoor routes, prices rooms by experience, and rebuilds itself when glass or grates are destroyed. Validated over a week-long hosted-server campaign of overnight soaks and live play from unmodified PiccuEngine clients.
 
 ### Features
 
-*   **Combat AI** — a five-state model (explore, hunt, combat, flee, evade) with predictive lead aiming. Bots circle-strafe, use afterburners to chase and escape, and drop chaff against homing missiles.
-*   **Perception** — bots honor cloaking (a cloaked player is invisible unless revealed by afterburner, headlight, napalm, or weapon fire) and hear weapons and afterburners within a 60-unit radius.
-*   **Physics parity** — bots fly under the same inertia, momentum, and tri-chord rules as human players.
-*   **Weapons and loadout** — range- and resource-aware weapon switching, splash-damage self-guards, and smart powerup collection. Bots rate their own equipment and pick fights accordingly — a poorly-armed bot hunts upgrades before engaging.
-*   **Navigation** — a runtime-built volumetric roadmap over arbitrary map geometry, hierarchical routing, and engine-native steering. See [Navigation](#navigation) below.
-*   **Game modes** — Anarchy, Team Anarchy, Robo-Anarchy, CTF (role auto-assignment, carrier play, flag recovery), Hyper-Anarchy, Hoard, **Entropy** (virus economy, room takeovers, repair retreats), and **Monsterball** (striker/support/keeper roles, own-goal refusal, slam finisher). Bots persist across level transitions.
-*   **Squad orders** — bots respond to `!` chat commands with real navigation and spoken feedback: `!attack`, `!target`, `!defend`, `!hold`, `!follow`, `!cover`, `!hunt`, `!freelance`, `!status`, `!ping`. Orders work from all-chat, team-chat, or direct message; an ordered bot reports "In position." on arrival and "Can't reach you!" when blocked.
-*   **Ships and difficulty** — Pyro-GL, Phoenix, Magnum-AHT, or Black Pyro (requires Mercenary). Five difficulty levels (Trainee → Insane) scale aim, reaction time, evasion, and turn rate — globally or per-bot.
-*   **Team assignment** — pre-assign bots to teams in the config or at the console; anything else auto-balances.
-*   **In-game setup** — a Bot Settings screen in the listen-server flow: scrollable roster for up to 16 bots with per-bot name, ship, and difficulty, saved with `.mps` presets.
+*   **Combat AI**: a five-state model (explore, hunt, combat, flee, evade) with predictive lead aiming. Bots circle-strafe, use afterburners to chase and escape, and drop chaff against homing missiles.
+*   **Perception**: bots honor cloaking (a cloaked player is invisible unless revealed by afterburner, headlight, napalm, or weapon fire) and hear weapons and afterburners within a 60-unit radius.
+*   **Physics parity**: bots fly under the same inertia, momentum, and tri-chord rules as human players.
+*   **Weapons and loadout**: range- and resource-aware weapon switching, splash-damage self-guards, and smart powerup collection. Bots rate their own equipment and pick fights accordingly; a poorly armed bot hunts upgrades before engaging.
+*   **Navigation**: a runtime-built volumetric roadmap over arbitrary map geometry, hierarchical routing, and engine-native steering. See [Navigation](#navigation) below.
+*   **Game modes**: Anarchy, Team Anarchy, Robo-Anarchy, CTF (role auto-assignment, carrier play, flag recovery), Hyper-Anarchy, Hoard, Entropy (virus economy, room takeovers, repair retreats), and Monsterball (striker/support/keeper roles, own-goal refusal, slam finisher). Bots persist across level transitions.
+*   **Squad orders**: bots respond to `!` chat commands with real navigation and spoken feedback: `!attack`, `!target`, `!defend`, `!hold`, `!follow`, `!cover`, `!hunt`, `!freelance`, `!status`, `!ping`. Orders work from all-chat, team-chat, or direct message. An ordered bot reports "In position." on arrival and "Can't reach you!" when blocked.
+*   **Ships and difficulty**: Pyro-GL, Phoenix, Magnum-AHT, or Black Pyro (requires Mercenary). Five difficulty levels (Trainee through Insane) scale aim, reaction time, evasion, and turn rate, globally or per-bot.
+*   **Team assignment**: pre-assign bots to teams in the config or at the console; anything else auto-balances.
+*   **In-game setup**: a Bot Settings screen in the listen-server flow, with a scrollable roster for up to 16 bots with per-bot name, ship, and difficulty, saved with `.mps` presets.
 
 ### Navigation
 
-Multiplayer maps ship with no AI waypoint data — Descent 3 multiplayer never had bots, so the level editor's waypoint pass was never run on any of them. Matcen builds what's missing at runtime: on level load, the server grows a **volumetric roadmap** — a lattice of flight-verified waypoints, in the tradition of robotics probabilistic roadmaps — through every room and terrain region, tested against the real ship hull so bots are never routed through gaps they can't fly.
+Multiplayer maps ship with no AI waypoint data. Descent 3 multiplayer never had bots, so the level editor's waypoint pass was never run on any of them. Matcen builds what's missing at runtime: on level load, the server grows a volumetric roadmap (a lattice of flight-verified waypoints, in the tradition of robotics probabilistic roadmaps) through every room and terrain region, tested against the real ship hull so bots are never routed through gaps they can't fly.
 
-Routing is hierarchical. A cost-aware router picks the room sequence, preferring roomier doors, pricing tight and breakable openings, and rerouting around obstructions discovered at runtime; an any-angle planner (Lazy Theta\*) threads complex room interiors. Steering stays with the engine's native path-follower and avoidance code, so bot movement inherits the game's own flight feel rather than fighting it. Breakable glass and destructible grates are treated as doors that need opening: bots shoot them out en route with an appropriate weapon.
+Routing is hierarchical. A cost-aware router picks the room sequence: it prefers roomier doors, prices tight and breakable openings, and reroutes around obstructions discovered at runtime. An any-angle planner (Lazy Theta\*) threads complex room interiors. Steering stays with the engine's native path-follower and avoidance code, so bot movement inherits the game's own flight feel rather than fighting it. Breakable glass and destructible grates are treated as doors that need opening: bots shoot them out en route with an appropriate weapon.
 
-The full design — including the engine reference, live tuning status, and the ledger of approaches tried and reverted — is in [`matcen-docs/NAVIGATION.md`](matcen-docs/NAVIGATION.md).
+The full design, including the engine reference, live tuning status, and the ledger of approaches tried and reverted, is in [`matcen-docs/NAVIGATION.md`](matcen-docs/NAVIGATION.md).
 
-### Server Configuration
+### Server configuration
 
 Bots are configured via a separate config file referenced from `dedicated.cfg`, and can be managed live from the console or telnet. For listen servers (hosting from the client), use the in-game Bot Settings screen instead.
 
 ```ini
-; In dedicated.cfg — add this line to enable bots
+; In dedicated.cfg: add this line to enable bots
 BotConfig=bots.cfg
 ```
 ```ini
-; bots.cfg — bot roster config (Key=Value syntax)
+; bots.cfg: bot roster config (Key=Value syntax)
 BotCount=4
 BotDifficulty=HOTSHOT
 BotName1=Reaper
@@ -63,7 +63,7 @@ BotTeam3=2
 BotTeam4=2
 ```
 
-A server with no `BotConfig` line runs without bots — fully backwards compatible with vanilla D3 server configs.
+A server with no `BotConfig` line runs without bots and behaves exactly like a vanilla D3 server config.
 
 **Ship aliases:** `pyro`, `phoenix`, `magnum`, `blackpyro` (full names like `Pyro-GL` also accepted).
 
@@ -71,7 +71,7 @@ A server with no `BotConfig` line runs without bots — fully backwards compatib
 
 **Team assignment:** `BotTeam<n>=1..4` (1-indexed). Omit for auto-balance. Values that exceed the game's active team count warn and auto-balance; values outside `1`–`4` silently auto-balance. No effect in non-team modes.
 
-### Console Commands
+### Console commands
 
 Available in the dedicated server console or via remote telnet:
 
@@ -89,32 +89,30 @@ Available in the dedicated server console or via remote telnet:
 
 ### Roadmap
 
-*   **Progress-monitor replanning (0.9.7)** — replan from the bot's current position on loss of progress, before it visibly gets stuck.
-*   **Outdoor terrain refinement** — fine-threading of urban outdoor maps and rough-terrain line-of-flight (the remaining hard maps: Town of Bree, Tower of Isengard).
-*   **Entropy** — virus transport and room capture. A unique D3 mode with no FPS analogue; bots will make it playable again for the first time in years.
-*   **Monsterball** — ball-push physics and positional play.
-*   **Co-op** — squad behavior for mission play. Deferred until after the versus modes are polished.
+*   **Outdoor terrain refinement**: fine-threading of urban outdoor maps and rough-terrain line-of-flight. The remaining hard maps are Town of Bree and Tower of Isengard.
+*   **Progress-monitor replanning on by default**: the 0.9.7 replanner (`$nav replan`) catches a stuck bot within about a second, but ships default-off while an outdoor side effect is investigated.
+*   **Dynamic team rebalancing**: rebalance bot teams as humans join and leave. Pre-assignment works today.
+*   **Co-op**: squad behavior for mission play. Deferred until the versus modes are polished.
 
-### Known Limitations
+### Known limitations
 
-*   **Thin divider rooms** — a few rooms with paper-thin disconnected sections remain hard to route across; a densification pass is planned.
-*   **Tight-doorway precision** — doorways barely wider than the ship are routable, but the engine path-follower can be clumsy threading them.
-*   **Outdoor edges** — bots can ground-pin against steep hillsides on rough terrain, and a decorative concave alcove (a doorway-shaped recess with no real door) can trap a flag carrier.
-*   **Decoration powerups** — items sealed inside non-enterable scenery are occasionally chased briefly, then retired level-wide by an evidence-based backstop; self-correcting.
-*   **Multi-flag CTF** — in 4-team CTF, bots don't deliberately hoard multiple flags for the bonus cash-in; they only do it opportunistically.
-*   **Map fit** — most maps play well, but extreme verticality or deliberately obtuse geometry won't suit bots. The goal is a great experience on the majority of maps, not all of them.
-*   **Team rebalancing** — dynamic rebalancing as humans join and leave is planned; pre-assignment works today.
+*   **Thin divider rooms**: a few rooms with paper-thin disconnected sections remain hard to route across; a densification pass is planned.
+*   **Tight-doorway precision**: doorways barely wider than the ship are routable, but the engine path-follower can be clumsy threading them.
+*   **Outdoor edges**: bots can ground-pin against steep hillsides on rough terrain, and a decorative concave alcove (a doorway-shaped recess with no real door) can trap a flag carrier.
+*   **Decoration powerups**: items sealed inside non-enterable scenery are occasionally chased briefly, then retired level-wide by an evidence-based backstop, so the behavior corrects itself without operator action.
+*   **Multi-flag CTF**: in 4-team CTF, bots don't deliberately hoard multiple flags for the bonus cash-in; they only do it opportunistically.
+*   **Map fit**: most maps play well, but extreme verticality or deliberately obtuse geometry won't suit bots. The goal is a great experience on the majority of maps, not all of them.
 
-### For Developers
+### For developers
 
 Architecture deep-dives, implementation history, and specifications live in [`matcen-docs/`](matcen-docs/):
 
-*   [CHANGELOG.md](matcen-docs/CHANGELOG.md) — release notes, newest first
-*   [NAVIGATION.md](matcen-docs/NAVIGATION.md) — **canonical navigation design**: hierarchical routing, the volumetric roadmap, engine reference, live status, history
-*   [BOT_DEV_REFERENCE.md](matcen-docs/BOT_DEV_REFERENCE.md) — architecture, state machine, constants, engine API patterns
-*   [BOTS_DEVEL.md](matcen-docs/BOTS_DEVEL.md) — dated build history, newest first
-*   [BOT_MANAGEMENT.md](matcen-docs/BOT_MANAGEMENT.md) — configuration, ships, difficulty, remote administration
-*   [CHAT_COMMANDS.md](matcen-docs/CHAT_COMMANDS.md) — the chat command system: research, verb taxonomy, rollout
+*   [CHANGELOG.md](matcen-docs/CHANGELOG.md): release notes, newest first
+*   [NAVIGATION.md](matcen-docs/NAVIGATION.md): canonical navigation design covering hierarchical routing, the volumetric roadmap, the engine reference, live status, and history
+*   [BOT_DEV_REFERENCE.md](matcen-docs/BOT_DEV_REFERENCE.md): architecture, state machine, constants, engine API patterns
+*   [BOTS_DEVEL.md](matcen-docs/BOTS_DEVEL.md): dated build history, newest first
+*   [BOT_MANAGEMENT.md](matcen-docs/BOT_MANAGEMENT.md): configuration, ships, difficulty, remote administration
+*   [CHAT_COMMANDS.md](matcen-docs/CHAT_COMMANDS.md): the chat command system, from research and verb taxonomy through rollout
 
 ## Contributing
 Anyone can contribute! We have an active Discord presence at [Descent Developer Network](https://discord.gg/GNy5CUQ). Patches should be submitted on GitHub.

@@ -1,12 +1,12 @@
 # Phase 5: Bot Management & Server Administration
 
-**Status:** Phase 5.5 complete
+**Status:** Phase 5.5 complete (shipped; this document is the Phase 5 design and implementation record)
 **Prerequisite reading:** `BOT_DEV_REFERENCE.md`, `BOTS_DEVEL.md`
 **Key files:** `Descent3/bot.h`, `Descent3/bot.cpp`, `Descent3/dedicated_server.cpp`
 
 ---
 
-## Problem Statement
+## Problem Statement (as it stood before Phase 5)
 
 Bot setup is entirely manual. Server admins must type `$addbot <name>` for each bot after every server start and level change (bots persist across levels, but not across server restarts). There is no way to configure bot count, names, difficulty, or team assignment without live console interaction. This makes unattended server operation impractical.
 
@@ -328,7 +328,7 @@ $servercaps
 
 **Response on this fork (bot-enabled):**
 ```
-SERVERCAPS version=1 fork=Matcen fork_version=0.9.6 features=bots,roster,ships,difficulty,rebalance,botstats
+SERVERCAPS version=1 fork=Matcen fork_version=0.9.8 features=bots,roster,ships,difficulty
 ```
 
 **Response on vanilla D3:**

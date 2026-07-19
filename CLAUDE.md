@@ -133,7 +133,7 @@ Enforced by `.clang-format` (LLVM-based):
 
 ## Versioning
 
-Matcen uses a `0.8.xx` scheme (patch increments per release). `0.9` is reserved for a near-full-compatibility milestone. Version is set in `CMakeLists.txt` (`MATCEN_VERSION_MAJOR/MINOR/PATCH`) and propagated through `cmake/CheckGit.cmake` → `lib/d3_version.h.in` → the binary.
+Matcen versions as `0.x.y` with the patch incrementing per release: the `0.8.x` line was the feature releases, `0.9.x` is the navigation-milestone series (current). Version is set in `CMakeLists.txt` (`MATCEN_VERSION_MAJOR/MINOR/PATCH`) and propagated through `cmake/CheckGit.cmake` → `lib/d3_version.h.in` → the binary.
 
 ### `-dev` Suffix Convention
 

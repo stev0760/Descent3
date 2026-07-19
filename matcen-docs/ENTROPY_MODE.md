@@ -1,8 +1,11 @@
 # Entropy Mode — Mechanics Reference + Bot Implementation Spec
 
-**Status: E1–E3 IMPLEMENTED (2026-07-12, 0.9.8-dev commits `d18cebb0`/`bed6db43`/`19266727`) —
-UNTESTED; awaiting first dementia.mn3 smoke (which must also answer the §5 open questions).
-`$nav entropy` gates the E3 invasion layer. E4 polish not started.**
+**Status: E1–E3 IMPLEMENTED AND VALIDATED (0.9.8, released 2026-07-18; built 2026-07-12 as
+commits `d18cebb0`/`bed6db43`/`19266727`).** Working takeovers were confirmed during the
+2026-07-13→18 hosted-server campaign after the hold-behavior ladder landed (doorway-plane park →
+depth + near-rest gate → active braking; see BOTS_DEVEL.md and the 0.9.8 changelog entry).
+`$nav entropy` gates the E3 invasion layer. E4 polish not started. Known-open: Rim is
+nav-hostile for this mode; Inversion produces refused-pickup spam.
 Source of truth: `netgames/entropy/` (EntropyBase.cpp, EntropyAux.h, EntropyPackets.cpp,
 EntropyRoom.cpp), read in full for this document. Line references are to those files.
 Read this before writing any Entropy bot code; read `BOT_DEV_REFERENCE.md` and
@@ -266,7 +269,11 @@ they describe is reconstructable:
   sessions double as "is this mode actually fun against bots," which is the project's whole
   point. HUD virus-load counter and room textures make bot behavior unusually legible.
 
-## 5. Open questions (verify in E1 before building on them)
+## 5. Open questions (historical: written before E1; kept as the verification checklist)
+
+> E1–E3 have since shipped and been validated in live play (0.9.8), so nothing below blocked
+> the virus economy or takeovers in practice. The questions are preserved because they document
+> engine behavior worth knowing when extending the mode.
 
 1. **Does the engine's generic powerup pickup also fire for the virus?** The DLL handles the
    collision and kills/keeps the object itself, then chains to `DMFCBase->OnServerCollide`.

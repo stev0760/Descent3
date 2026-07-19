@@ -7,7 +7,7 @@ Current implementation status is in `BOTS_DEVEL.md`. Physics model reference is 
 
 ## Current Status
 
-**0.9.6-dev (in test)** — dynamic-obstacle response: splash-suicide fixes, `$nav grate` proactive clearing, `$nav glass` break-cost routing. Last stable: **0.9.5**.
+**0.9.8** (stable, released 2026-07-18): the game-modes release (Entropy E1–E3, Monsterball M1–M3, CTF runner/flex roles, Hyper-Anarchy orb roles), on top of the 0.9.7 navigation-intelligence stack (reach/troute/heal/curve/strike/dense and the rest of the `$nav` family).
 
 The nav substrate is the **volumetric grid-seeded roadmap** (`NAVIGATION.md` §3.5, `bot_roadmap.cpp`), shipped and validated in 0.9.4. The 0.9.3 portal-skeleton stack (Phase 11 router → via-points → pseudo-bnodes → outdoor graph → soft-hop) stays live as the `$gridnav off` fallback until Stage 4 retires it. The bot only ever sets the engine's *goal*; the engine does all steering. Objective-mode routing is inert in anarchy/team/robo/coop. **Live toggle table, open issues, and the tried-&-reverted ledger: `NAVIGATION.md` §7.0.**
 
@@ -25,13 +25,15 @@ For the full phase history and roadmap, see `BOTS_DEVEL.md`.
 | `Descent3/bot.cpp` | Full bot implementation — lifecycle, FSM, firing, movement |
 | `Descent3/bot_objective.h` | `BotObjectiveState` struct, `BotFlagState` enum, `BotObjectiveLean`, polling + FSM bias API |
 | `Descent3/bot_objective.cpp` | Objective-state polling + mode-aware FSM: `BotGetObjectiveRoom()`, `BotGetObjectiveTargetBias()`, `BotAssignObjectiveLeans()` |
-| `Descent3/bot_steering.h` | Phase 7 steering header: potential field constants (`BOT_PF_*`), flow field API, `Bot_potential_field_enabled`/`Bot_flow_field_enabled` toggles |
-| `Descent3/bot_steering.cpp` | `BotApplyPotentialField()` (5-ray repulsion + portal attraction + passage damping + opposition brake), `BotFlowFieldGetDirection()` (BOA-based portal-directed navigation) |
+| `Descent3/bot_steering.h` | Routing-layer constants and API: portal passability probe (`BOT_PF_PASSABILITY_*`), Phase 11 router costs (`BOT_PORTAL_*`), pseudo-bnode synthesis, outdoor connecting graph. (The Phase 7 potential-field/flow-field code that originally named this file was removed in Phase 10.) |
+| `Descent3/bot_steering.cpp` | The cost-aware Dijkstra room router (`BotComputeRoute`, `BotPortalGeoCost`, dynamic penalties, `BotSetRoutedGoal` waypoint injection) and portal/obstacle geometry probes |
+| `Descent3/bot_roadmap.h/.cpp` | The 0.9.4 volumetric grid-seeded roadmap: per-room/per-region waypoint lattice, Lazy Theta\* in-room planning, heal/dense/curve passes (`NAVIGATION.md` §3.5) |
+| `Descent3/bot_chat.h/.cpp` | Chat command system: `!` verb parsing, squad orders, addressing (all/team/DM), bot replies |
 | `Descent3/multi_server.cpp` | `BotDoFrame()` hook in `MultiDoServerFrame()`; NPF_BOT send guards |
 | `Descent3/multi.cpp` | `BotReinitAll()` in `MultiStartNewLevel()`; `MakeBOA()` call; send guards |
 | `Descent3/AImain.cpp` | OBJ_PLAYER guards in `AIDoFrame()`; bot thrust-zeroing skip; gunboy fix |
 | `Descent3/AIGoal.cpp` | OBJ_PLAYER guards in `AIG_FIRE_AT_OBJ`, `AIG_SET_ANIM`; stub cases; OBJ goal path failure retry throttle (0.5s) |
-| `Descent3/dedicated_server.cpp` | Console commands: `$addbot`, `$removebot`, `$removebots`, `$botlist`, `$botstat`, `$botmov`, `$potentialfield`, `$flowfield`, `$botmode`, `$botobj`, `$servercaps`, `$bothelp` |
+| `Descent3/dedicated_server.cpp` | Console commands: `$addbot`, `$removebot`, `$removebots`, `$botlist`, `$botstat`, `$botmov`, `$botmode`, `$botobj`, `$botdifficulty`, `$nav` (namespace; legacy flat names like `$gridnav` remain as hidden aliases), `$servercaps`, `$bothelp` |
 | `Descent3/aistruct.h` | `MAX_DYNAMIC_PATHS` raised 50→100→200 |
 | `Descent3/aipath.cpp` | Path pool exhaustion: `ASSERT(0)` → graceful `return false`; rate-limited log warning (once/sec) |
 | `physics/physics.cpp` | "Too many collisions" warnings rate-limited to 1/sec at both sim-loop sites |
@@ -131,12 +133,10 @@ for each active bot:
        BotSelectBestWeapon()  — tactical primary weapon selection
        BotSelectBestSecondary()
   7. BotUpdateAimDirection()  — per-frame lead aim: predict intercept pos, write to last_see_target_pos.
-                                Phase 7.2: orient override — if flow field active AND no LOS to target,
-                                face portal direction instead of enemy (enables correct AB thrust).
+                                Indoors with no LOS to target, faces along movement_dir (travel
+                                direction) so afterburner thrust points down the path.
   8. BotApplyThrust()         — compute thrust from movement_dir + FSM; advance stuck_timer.
-                                Phase 7.2: flow field overrides movement_dir via BotGetNavGoalRoom() +
-                                BotFlowFieldGetDirection(). Potential field (Phase 7.1) corrects thrust
-                                after FSM/juke. AB facing gate suppresses AB when fvec misaligned >45°.
+                                AB facing gate suppresses AB when fvec misaligned >45°.
   9. if stuck_timer > BOT_STUCK_FIGHT_TIMER → BotDoStuckClear()
  10. BotDoFiring() + BotDoSecondaryFiring()  — every frame, all states (internal guards)
 ```
@@ -313,12 +313,11 @@ Without this, `BOA_GetNextRoom` returns `BOA_NO_PATH` and bots cannot pathfind.
 Goals still handle **orientation** (rotthrust); thrust is written by `BotApplyThrust()` each frame.
 
 ```
-movement_dir (from AIDoFrame) OR flow_dir (from BotFlowFieldGetDirection, Phase 7.2)
+movement_dir (from AIDoFrame — the engine's blended path/avoid/dodge direction)
 → decompose into fvec/rvec/uvec dot products (forward/sideways/vertical)
 → scale by FSM speed_scale and state-specific overrides
 → additive juke oscillation (COMBAT/FLEE/EVADE only)
-→ BotApplyPotentialField() — 5-ray repulsion + portal attraction + opposition brake (Phase 7.1)
-→ AB facing gate — suppress want_afterburner if dot(fvec, desired_dir) < 0.7 (Phase 7.2)
+→ AB facing gate — suppress want_afterburner if dot(fvec, desired_dir) < 0.7
 → afterburner thrust multiplier if want_afterburner && burst ready && fuel/energy sufficient
 → write to obj->mtype.phys_info.thrust
 → PF_USES_THRUST set: PhysicsDoFrame integrates thrust → velocity with real drag/mass
@@ -537,7 +536,7 @@ BOT_FLEE_DISTANCE           300.0f   // flee goal distance
 BOT_CLOSERANGE_DIST          70.0f   // tight turn + holding_for_weapon override
 BOT_MIDRANGE_DIST           140.0f   // mid turn rate threshold
 BOT_POWERUP_SEEK_RADIUS     350.0f
-BOT_POWERUP_INTERRUPT_RADIUS 120.0f  // break combat for Mega/BlackShark
+BOT_POWERUP_INTERRUPT_RADIUS 150.0f  // combat-interrupt scan radius (WEAK bots: 200u)
 
 // Turn rates (set on ai_info->max_turn_rate per frame)
 BOT_CLOSERANGE_TURNRATE    65535   // near-instant at point blank

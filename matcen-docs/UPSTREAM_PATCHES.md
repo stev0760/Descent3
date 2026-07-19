@@ -10,7 +10,7 @@ that any downstream maintainer can apply without pulling in the rest of the
 Matcen fork.
 
 If you maintain a D3 engine fork and want to fix these bugs in your own tree,
-the patch text in this document is sufficient — no need to merge from Matcen.
+the patch text in this document is sufficient; there is no need to merge from Matcen.
 
 ---
 
@@ -66,8 +66,8 @@ Original Outrage 1999 code. Unchanged in all known forks.
 
 ### Affected files
 
-**Matcen / DescentDevelopers/Descent3 / PiccuEngine** — all 7 files identical
-across forks:
+**Matcen / DescentDevelopers/Descent3 / PiccuEngine**: all 7 files identical
+across forks.
 
 | File | Function location | Format |
 | :--- | :--- | :--- |
@@ -80,14 +80,14 @@ across forks:
 | `netgames/hoard/hoard.cpp` | `OnPrintScores` | long-header, `%d[%d]` data |
 
 `netgames/coop/coop.cpp` has `OnPrintScores` but the entire function body is
-commented out (by design — co-op has no kill-based scoring). Not affected.
+commented out (by design; co-op has no kill-based scoring). Not affected.
 
 ### Fix
 
 Introduce a minimum numeric-column-width floor at the `len[i] = strlen(header)`
 step. Two variants based on the data format used in the game mode:
 
-**Pattern A — short-header netgames** (anarchy, tanarchy, roboanarchy, ctf,
+**Pattern A, short-header netgames** (anarchy, tanarchy, roboanarchy, ctf,
 entropy). Headers `K`/`D`/`S` are 1 char, data is `%d` up to ~4 digits.
 Floor = **4**.
 
@@ -111,7 +111,7 @@ t = len[4] = strlen(TXT_SUICIDES_SHORT);
 if (len[4] < NUM_COL_MIN_WIDTH) len[4] = t = NUM_COL_MIN_WIDTH;
 ```
 
-**Pattern B — long-header netgames** (hyperanarchy, hoard). Headers
+**Pattern B, long-header netgames** (hyperanarchy, hoard). Headers
 `Kills`/`Deaths`/`Suicides` are 5–8 chars, but data is `%d[%d]` (level +
 overall score) which can exceed the header width (e.g. `123[4567]` = 9 chars
 exceeds `Kills` = 5). Floor = **8**.
@@ -124,13 +124,13 @@ Same pattern, different constant:
 
 Applied to `len[2]`/`len[3]`/`len[4]` (Kills/Deaths/Suicides). The `Points`
 and `Score` columns in pattern-A files are 6 chars wide and fit `%d` output
-fine — not touched. In pattern-B files the Score column uses `%d[%d]` too, so
+fine, so they are not touched. In pattern-B files the Score column uses `%d[%d]` too, so
 also floor `len[1]` at 8.
 
 **Header memcpy bounds (required).** The original `memcpy(&buffer[pos[i]],
 TXT_HEADER, len[i])` copies `len[i]` bytes from the header string. Once
 `len[i]` is floored above `strlen(header)`, that memcpy reads past the string's
-null terminator — writing a `\0` (or adjacent rodata garbage) into the header
+null terminator, writing a `\0` (or adjacent rodata garbage) into the header
 row and truncating it before the trailing `\n`. The next `DPrintf` row then
 appears on the same physical line as the header. Fix by changing each floored
 column's header memcpy to use the literal string length instead:
@@ -203,7 +203,7 @@ early-returns at its `if (Dedicated_server)` guard **before** reaching
 
 That alone is harmless only if nothing queues text. But the DMFC console-info
 display (`DMFCBase::DisplayNetGameInfo`, invoked by `$netgameinfo`) emits ~17
-`grtext_Printf` lines **unconditionally** — it is dual-purpose (on-screen
+`grtext_Printf` lines **unconditionally**: it is dual-purpose (on-screen
 overlay + console echo) and the on-screen half still runs on a dedicated
 server. Those ~500 bytes per call accumulate in the never-reset buffer until it
 overflows `GRTEXT_BUFLEN` and the assert aborts the process.
@@ -295,7 +295,7 @@ Self-contained per-function guards in one engine file, no API change. Safe to
 apply to any D3 engine fork; bot-independent, benefits vanilla robustness on its
 own. (A sibling hardening of the deeper `ASSERT(f_ok)` in `aipath.cpp`'s
 `AIGenerateBNodePath` was tried during the reverted runtime-BNode-generation
-experiment and is **not** in the current tree — those asserts only fire when
+experiment and is **not** in the current tree; those asserts only fire when
 `BNode_allocated` is true, which on MP maps it is not, so they are dormant here.)
 
 ### Status

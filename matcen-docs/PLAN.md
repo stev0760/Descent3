@@ -4,9 +4,10 @@
 
 > **Historical roadmap — not live status.** This is the original full phase plan (Phase 0 → release). For
 > what's true *right now* (current version, nav toggles, open issues, tried-&-reverted ledger) read
-> `NAVIGATION.md` §7.0 and the header of `BOTS_DEVEL.md`. Current build: **0.9.5**; the **0.9.4**
-> navigation rewrite shipped (`NAVIGATION.md` §3.5 — the `GRID_NAV_DESIGN.md` spec is retired into it).
-> The table below is preserved as the project's phase history.
+> `NAVIGATION.md` §7.0 and the header of `BOTS_DEVEL.md`; for the release history read
+> `CHANGELOG.md`. The 0.9.4 navigation rewrite shipped (`NAVIGATION.md` §3.5 — the
+> `GRID_NAV_DESIGN.md` spec is retired into it). The table below is preserved as the project's
+> phase history.
 
 | Phase | Scope | Status |
 |-------|-------|--------|

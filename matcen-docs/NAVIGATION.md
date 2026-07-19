@@ -6,17 +6,19 @@
 > validated, and folded in as §3.5–§3.6 + §8 History; original in git history). Deep engine research
 > lives in `PATHFINDING_CODEBASE_EXPLORE.md`; per-frame field/constant detail in `BOT_DEV_REFERENCE.md`.
 
-**Status:** Matcen 0.9.6 (current — dynamic-obstacle response + objective arbitration, released
-2026-07-04: glass/grate clearing, `$nav commit`, strike discipline; best-ever 2.67 capt/rnd soak,
-first autonomous captures on bsidectf L3 — see §7.1). The ground-up 0.9.4 nav rewrite shipped and validated: a
-per-room/per-region grid-seeded volumetric roadmap routed with any-angle Lazy Theta\*, hull-aware (6.7u fit
-clearance + corner-bridging across wall-split components), with **selective** proactive in-room routing
-(gated to genuinely complex rooms) driving objective, carrier, and escort nav — see **§3.5**. A 9-map
-Fellowship soak measured **captures +58% vs 0.9.3** (best build to date). The Phase 10–12 stack below
-(two-layer architecture + cost-aware Dijkstra router + portal skeleton / pseudo-bnodes / outdoor connecting
-graph) remains live as the `$gridnav off` fallback (§4.2–§4.3) until Stage 4 retires it. **For the
-live current-status snapshot — toggle states, open issues, and the tried-&-reverted ledger — see §7.0** (kept
-current per soak). The narrative sections below are the design rationale; §7.0 is "what's true right now."
+**Status:** Matcen 0.9.8 (released 2026-07-18, the game-modes release). The navigation milestone is
+**0.9.7** (2026-07-12): the single-spatial-authority stack (curve / strike / dense / reach / troute /
+hardcost / heal), validated across five map pools with roughly thirty hours of crash-free soak testing;
+0.9.8 layers the game-mode role structures on top of it. Under both sits the ground-up 0.9.4 rewrite:
+a per-room/per-region grid-seeded volumetric roadmap routed with any-angle Lazy Theta\*, hull-aware
+(6.7u fit clearance + corner-bridging across wall-split components), with **selective** proactive
+in-room routing (gated to genuinely complex rooms) driving objective, carrier, and escort nav (see
+**§3.5**; a 9-map Fellowship soak measured captures +58% vs 0.9.3). The Phase 10–12 stack below
+(two-layer architecture + cost-aware Dijkstra router + portal skeleton / pseudo-bnodes / outdoor
+connecting graph) remains live as the `$gridnav off` fallback (§4.2–§4.3) until Stage 4 retires it.
+**For the live current-status snapshot (toggle states, open issues, the tried-and-reverted ledger) see
+§7.0**, kept current per soak. The narrative sections below are the design rationale; §7.0 is "what's
+true right now."
 
 ---
 

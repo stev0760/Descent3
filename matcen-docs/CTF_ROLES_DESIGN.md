@@ -1,5 +1,10 @@
 # CTF Role Auto-Assignment — Design (0.8.12)
 
+**Status:** shipped in 0.8.12. Extended in 0.9.8 by the runner/flex role structure
+(`$nav runner`: a committed flag runner, scaling defenders, one flex bot) — see the 0.9.8
+entry in `CHANGELOG.md` and BOTS_DEVEL.md for that layer; this document is the original
+attacker/defender ratio design it builds on.
+
 ## Problem
 
 Bots all lean offense, leaving the flag unguarded. `BotAssignObjectiveLeans()` alternates ATTACK/DEFEND blindly by bot index — no awareness of team size, game state, or human teammates. On larger maps, attackers get locked into combat far from base while a human walks in and grabs the undefended flag.
