@@ -21,6 +21,7 @@ the patch text in this document is sufficient; there is no need to merge from Ma
 | 1 | `$scores` numeric column truncation | 7 netgame DLLs | Fixed (Matcen 0.8.7, header-overlap regression fixed 0.8.8) | Not submitted |
 | 2 | Dedicated server never resets the grtext buffer → overflow crash | `Descent3/GameLoop.cpp` | Fixed (Matcen 0.9.2-dev) | Not submitted |
 | 3 | BNode lookup asserts (crashes) on a room with no BNode data | `Descent3/bnode.cpp` | Hardened (Matcen 0.9.2-dev) | Not submitted |
+| 4 | SDL mouse regression vs retail: wheel-down unbindable, mouse-4 aliases wheel-down, mouse-5 dead | `ddio/lnxmouse.cpp` | Fixed (post-0.9.8) | Not submitted (fixed independently in PiccuEngine) |
 
 ---
 
@@ -304,3 +305,77 @@ experiment and is **not** in the current tree; those asserts only fire when
 - **DescentDevelopers/Descent3:** Not submitted. Candidate for PR (latent retail
   crash on BNode-less rooms).
 - **PiccuEngine:** Not submitted. Same engine lineage; same fix expected to apply.
+
+---
+
+## 4. SDL Mouse Regression vs Retail: Wheel-Down, Mouse-4, Mouse-5
+
+### Bug
+
+Three related input regressions versus the retail v1.4/1.5 Windows build, all in
+the SDL mouse layer (`ddio/lnxmouse.cpp`, used by every platform in the SDL3
+port). Reported from live play with a 5-button mouse; PiccuEngine fixed the same
+class of problem independently, which is where the correct mapping was taken from.
+
+1. **Mouse-wheel scroll-down cannot be bound.** `ddio_MouseGetCaps()` returned
+   `MOUSE_LB | MOUSE_CB | MOUSE_RB` (bits 0-2 only). The config screen's
+   binding-assignment path (`ctMouseButton` in the controller layer) tests the
+   candidate button's bit against that mask, so any binding above the first
+   three buttons was silently rejected. Wheel-up appears to work only because
+   retail default pilot configs ship with it already bound; try to (re)bind
+   either wheel direction and the assignment fails.
+2. **Mouse-4 (X1 thumb button) aliases wheel-down.** The button-event filter
+   mapped SDL button 4 to engine slot 5, which is the slot reserved for the
+   wheel-down pulse. Pressing the thumb button triggered whatever "msew-d" was
+   bound to, and the real `mse-4` slot (3) was never emitted by anything.
+3. **Mouse-5 (X2) is dead.** It landed on engine slot 6, but the caps call
+   reported only 6 buttons (slots 0-5), so the controller layer discarded it,
+   and its binding-text entry was an empty string so the config UI could not
+   display it.
+
+Additionally, SDL numbers middle (2) before right (3), and the filter mapped
+them positionally, so SDL-middle landed on the retail *right* slot and
+SDL-right on the retail *center* slot. And the wheel handler ignored
+`SDL_MOUSEWHEEL_FLIPPED` (natural-scrolling systems got inverted wheel
+directions) and emitted a zero-width press/release pair, so
+`ddio_MouseBtnDownTime()` read a ~0s hold.
+
+### Fix
+
+Match retail slot semantics (the same mapping PiccuEngine ships):
+
+| Physical | SDL button | Engine slot | Binding text |
+| :--- | :--- | :--- | :--- |
+| Left | 1 | 0 | `mse-1` |
+| Right | 3 | 1 | `mse-2` |
+| Middle | 2 | 2 | `mse-3` |
+| Mouse-4 (X1) | 4 | 3 | `mse-4` |
+| Wheel up | (wheel event) | 4 | `msew-u` |
+| Wheel down | (wheel event) | 5 | `msew-d` |
+| Mouse-5 (X2) | 5 | 6 | `mse-5` |
+
+- `ddio_MouseGetCaps()` now reports 7 buttons and a mask covering all 7 slots.
+- The wheel handler accumulates `wheel.y` (one pulse per detent, correct for
+  high-resolution wheels), honors `SDL_MOUSEWHEEL_FLIPPED`, and emits a click
+  pulse with a 0.1 s width so hold-time reads are nonzero.
+- Slot 6 gets its `mse-5` binding text.
+
+### Caveats
+
+- Pilots created under the broken mapping who bound actions to SDL-middle or
+  SDL-right re-bind once (the slots those clicks land on now follow retail
+  order). Bind-by-press in the config screen works as always.
+- Support for a hypothetical 8th slot (SDL button 6) was dropped; SDL itself
+  defines buttons only through X2, and PiccuEngine does the same.
+
+### Portability
+
+Self-contained in the SDL mouse translation unit; no API changes, no engine
+changes. Safe to apply to any SDL3-based D3 fork.
+
+### Status
+
+- **Matcen:** Fixed post-0.9.8 (branch `fix/sdl-mouse-controls`).
+- **DescentDevelopers/Descent3:** Not submitted. Candidate for PR.
+- **PiccuEngine:** Already fixed independently (`ddio_sdl/sdlmouse.cpp`); their
+  mapping is the reference this fix was ported against.
