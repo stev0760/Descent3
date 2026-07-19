@@ -22,7 +22,7 @@ the patch text in this document is sufficient; there is no need to merge from Ma
 | 2 | Dedicated server never resets the grtext buffer → overflow crash | `Descent3/GameLoop.cpp` | Fixed (Matcen 0.9.2-dev) | Not submitted |
 | 3 | BNode lookup asserts (crashes) on a room with no BNode data | `Descent3/bnode.cpp` | Hardened (Matcen 0.9.2-dev) | Not submitted |
 | 4 | SDL mouse regression vs retail: wheel-down unbindable, mouse-4 aliases wheel-down, mouse-5 dead | `ddio/lnxmouse.cpp` | Fixed (post-0.9.8) | Not submitted (fixed independently in PiccuEngine) |
-| 5 | Spurious "missing mission" prompt at join (case-sensitivity) + garbage mission-name/URL-count in the download reply | `Descent3/mission_download.cpp` | Fixed (post-0.9.8) | Not submitted |
+| 5 | Mission-download system: spurious "missing mission" prompt at join, garbage in the URL reply, dead retail copy-protection gate | `Descent3/mission_download.cpp` | Fixed (post-0.9.8) | Not submitted |
 
 ---
 
@@ -403,6 +403,18 @@ and offered the mission file's authored download links, which are usually decade
 stale. Windows builds mask the bug via filesystem case-insensitivity, which is
 also why PiccuEngine (same code) appears unaffected.
 
+**(c) Server side: the retail copy-protection gate is dead code, twice.** The
+"don't offer downloads for retail content" check was
+`cf_IsFileInHog(Netgame.mission, "clang.wav")` — but the signature is
+`(filename, hogname)`, so it asked whether the mission file was inside a hog
+*named* clang.wav (never true). And even with the arguments un-swapped it could
+not fire: the retail campaign mn3s contain no `clang.wav` (verified against
+retail data), and the port stores library names as full paths that a bare-name
+compare can't match. Net effect: servers running retail missions have been
+advertising the campaign's 1999 outrage.com download URLs all along — observed
+in the wild on this fork's test server. Same dead code in
+DescentDevelopers/Descent3 and PiccuEngine.
+
 **(b) Server side: the URL reply packet is built wrong.** In `msn_DoAskForURL()`:
 the URL-counting loop tested `url->URL[0]` (an array address, always true) instead
 of `url->URL[i][0]`, so every reply claimed `MAX_MISSION_URL_COUNT` (5) URLs
@@ -423,6 +435,11 @@ reports are diagnosable.
 
 **(b)** Count URLs with `url->URL[i][0]` and copy the mission name from
 `Netgame.mission`.
+
+**(c)** Replace the broken clang.wav heuristic with an explicit denylist of the
+retail mission files (`d3.mn3`, `d3_2.mn3`, `training.mn3`, `merc.mn3`): the
+server sends no URL reply for these, and the client reports the mission as
+undownloadable, which is the behavior the original gate intended.
 
 ### Portability
 

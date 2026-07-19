@@ -538,11 +538,17 @@ void msn_DoAskForURL(uint8_t *indata, network_address *net_addr) {
     memcpy(data + count, Netgame.mission, msnlen);
     count += msnlen;
 
-    // Silly copy  protection. Don't download the mn3 if
-    //"clang.wav" is in it.
-    if (cf_IsFileInHog(Netgame.mission, "clang.wav")) {
-      num_urls = 0;
-      return;
+    // Never advertise download links for retail mission content. The original
+    // "clang.wav in the hog" copy-protection check was doubly dead code: its
+    // arguments were swapped (it asked whether the mission file was inside a hog
+    // named clang.wav), and the retail mn3s don't contain clang.wav anyway — so
+    // servers have been offering the campaign missions' 1999 download URLs all
+    // along. Check the known retail mission files explicitly instead.
+    static const char *retail_missions[] = {"d3.mn3", "d3_2.mn3", "training.mn3", "merc.mn3"};
+    for (auto retail_mission : retail_missions) {
+      if (stricmp(Netgame.mission, retail_mission) == 0) {
+        return; // no URL reply at all; the client reports the mission as undownloadable
+      }
     }
 
     // Number of URLs
