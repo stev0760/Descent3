@@ -526,7 +526,7 @@ void msn_DoAskForURL(uint8_t *indata, network_address *net_addr) {
     url = msn_GetURL(Netgame.mission);
     if (url) {
       for (i = 0; i < MAX_MISSION_URL_COUNT; i++) {
-        if (url->URL[0]) {
+        if (url->URL[i][0]) { // original code tested the array address (always true): every reply claimed 5 URLs
           num_urls++;
         }
       }
@@ -534,15 +534,21 @@ void msn_DoAskForURL(uint8_t *indata, network_address *net_addr) {
     // length of the msn
     int msnlen = strlen(Netgame.mission) + 1;
     MultiAddByte(msnlen, data, &count);
-    // Copy the mission name
-    memcpy(data + count, url->URL[i], msnlen);
+    // Copy the mission name (original code read url->URL[i] with i one past the array: garbage on the wire)
+    memcpy(data + count, Netgame.mission, msnlen);
     count += msnlen;
 
-    // Silly copy  protection. Don't download the mn3 if
-    //"clang.wav" is in it.
-    if (cf_IsFileInHog(Netgame.mission, "clang.wav")) {
-      num_urls = 0;
-      return;
+    // Never advertise download links for retail mission content. The original
+    // "clang.wav in the hog" copy-protection check was doubly dead code: its
+    // arguments were swapped (it asked whether the mission file was inside a hog
+    // named clang.wav), and the retail mn3s don't contain clang.wav anyway — so
+    // servers have been offering the campaign missions' 1999 download URLs all
+    // along. Check the known retail mission files explicitly instead.
+    static const char *retail_missions[] = {"d3.mn3", "d3_2.mn3", "training.mn3", "merc.mn3"};
+    for (auto retail_mission : retail_missions) {
+      if (stricmp(Netgame.mission, retail_mission) == 0) {
+        return; // no URL reply at all; the client reports the mission as undownloadable
+      }
     }
 
     // Number of URLs
@@ -597,12 +603,20 @@ int msn_CheckGetMission(network_address *net_addr, char *filename) {
 #ifdef OEM
   return 1;
 #else
-  // Don't download local missions
-  std::filesystem::path pathname;
-  pathname = D3MissionsDir / filename;
-  if (cfexist(filename) || cfexist(pathname)) {
+  // Don't download local missions. Resolve the mission the same way LoadMission /
+  // mn3_Open will: a relative "missions/<file>" located case-insensitively across the
+  // base directories (cf_LocatePath). The old check paired a case-sensitive
+  // absolute-path probe with a bare-name cfexist that never searches the missions
+  // directory, so an installed mission whose on-disk case differed from the server's
+  // advertised name prompted for download even though the game could load it fine.
+  std::filesystem::path located = cf_LocatePath(std::filesystem::path("missions") / filename);
+  if (!located.empty()) {
     return 1;
   }
+  if (cfexist(filename)) { // game root or packed in a HOG
+    return 1;
+  }
+  LOG_DEBUG.printf("Mission '%s' not found locally (missions dir + search paths); offering download", filename);
 
   msn_urls *murls;
 

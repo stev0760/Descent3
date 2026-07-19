@@ -22,6 +22,7 @@ the patch text in this document is sufficient; there is no need to merge from Ma
 | 2 | Dedicated server never resets the grtext buffer → overflow crash | `Descent3/GameLoop.cpp` | Fixed (Matcen 0.9.2-dev) | Not submitted |
 | 3 | BNode lookup asserts (crashes) on a room with no BNode data | `Descent3/bnode.cpp` | Hardened (Matcen 0.9.2-dev) | Not submitted |
 | 4 | SDL mouse regression vs retail: wheel-down unbindable, mouse-4 aliases wheel-down, mouse-5 dead | `ddio/lnxmouse.cpp` | Fixed (post-0.9.8) | Not submitted (fixed independently in PiccuEngine) |
+| 5 | Mission-download system: spurious "missing mission" prompt at join, garbage in the URL reply, dead retail copy-protection gate | `Descent3/mission_download.cpp` | Fixed (post-0.9.8) | Not submitted |
 
 ---
 
@@ -379,3 +380,78 @@ changes. Safe to apply to any SDL3-based D3 fork.
 - **DescentDevelopers/Descent3:** Not submitted. Candidate for PR.
 - **PiccuEngine:** Already fixed independently (`ddio_sdl/sdlmouse.cpp`); their
   mapping is the reference this fix was ported against.
+
+---
+
+## 5. Spurious "You Don't Have This Mission" Prompt + Garbage in the URL Reply
+
+### Bug
+
+Two related defects in the auto mission-download system (`Descent3/mission_download.cpp`).
+
+**(a) Client side: the join-time "do I have this mission?" check is stricter than
+the mission loader.** `msn_CheckGetMission()` tested
+`cfexist(filename) || cfexist(D3MissionsDir / filename)`. The bare-name `cfexist`
+searches registered base directories and HOGs but never the `missions/`
+subdirectory; the absolute-path variant is a raw case-sensitive `fopen` on Linux
+and macOS. Meanwhile the actual mission *load* path (`mn3_Open` →
+`cf_OpenLibrary` → `cf_LocatePath`) resolves `missions/<file>` case-insensitively.
+Result: a mission that is installed and perfectly loadable (e.g. on-disk
+`rage.mn3` vs server-advertised `RAGE.MN3`, a routine mismatch with community
+maps) fails the join-time check, and the client is told it doesn't have the map
+and offered the mission file's authored download links, which are usually decades
+stale. Windows builds mask the bug via filesystem case-insensitivity, which is
+also why PiccuEngine (same code) appears unaffected.
+
+**(c) Server side: the retail copy-protection gate is dead code, twice.** The
+"don't offer downloads for retail content" check was
+`cf_IsFileInHog(Netgame.mission, "clang.wav")` — but the signature is
+`(filename, hogname)`, so it asked whether the mission file was inside a hog
+*named* clang.wav (never true). And even with the arguments un-swapped it could
+not fire: the retail campaign mn3s contain no `clang.wav` (verified against
+retail data), and the port stores library names as full paths that a bare-name
+compare can't match. Net effect: servers running retail missions have been
+advertising the campaign's 1999 outrage.com download URLs all along — observed
+in the wild on this fork's test server. Same dead code in
+DescentDevelopers/Descent3 and PiccuEngine.
+
+**(b) Server side: the URL reply packet is built wrong.** In `msn_DoAskForURL()`:
+the URL-counting loop tested `url->URL[0]` (an array address, always true) instead
+of `url->URL[i][0]`, so every reply claimed `MAX_MISSION_URL_COUNT` (5) URLs
+regardless of how many the mission actually authored; and the mission-name field
+was filled with `memcpy(data + count, url->URL[i], msnlen)` after `i` had run to
+one past the end of the URL array — an out-of-bounds read that puts adjacent-memory
+garbage on the wire where the mission name belongs. Original Outrage 1.5-patch-era
+code; present in DescentDevelopers/Descent3 and PiccuEngine unmodified.
+
+### Fix
+
+**(a)** Resolve the mission the same way the loader will:
+`cf_LocatePath(std::filesystem::path("missions") / filename)` (case-insensitive
+across all base directories), falling back to the bare-name `cfexist` for
+missions in the game root or packed in a HOG. A debug log line now records the
+lookup result when the download prompt is shown, so future "but I have the map"
+reports are diagnosable.
+
+**(b)** Count URLs with `url->URL[i][0]` and copy the mission name from
+`Netgame.mission`.
+
+**(c)** Replace the broken clang.wav heuristic with an explicit denylist of the
+retail mission files (`d3.mn3`, `d3_2.mn3`, `training.mn3`, `merc.mn3`): the
+server sends no URL reply for these, and the client reports the mission as
+undownloadable, which is the behavior the original gate intended.
+
+### Portability
+
+Both fixes are confined to `Descent3/mission_download.cpp`, no API or protocol
+change (the packet format is unchanged; the fields now just carry correct
+values). Retail clients interoperate unmodified. Fix (a) matters on
+case-sensitive filesystems (Linux/macOS); fix (b) applies everywhere, including
+Windows-only forks.
+
+### Status
+
+- **Matcen:** Fixed post-0.9.8 (branch `fix/mission-exists-check`).
+- **DescentDevelopers/Descent3:** Not submitted. Candidate for PR (both).
+- **PiccuEngine:** Not fixed there — same code; (a) is masked by Windows
+  case-insensitivity, (b) is live but invisible unless the reply is inspected.
