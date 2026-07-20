@@ -27,4 +27,8 @@ void BotOnChatMessage(int from_pnum, int towho, const char *message);
 // who issued the bot's current order (order_issuer_slot). Subject to the per-bot reply throttle.
 void BotOrderReport(int bot_index, const char *text);
 
+// Co-op: broadcast a bot-voiced line to everyone ("<callsign>: <text>", retail clients see a
+// normal HUD chat message). Subject to the per-bot reply throttle.
+void BotBroadcastAnnounce(int bot_index, const char *text);
+
 #endif // BOT_CHAT_H

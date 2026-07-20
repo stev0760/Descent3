@@ -1090,10 +1090,18 @@ bool AIPathAllocPath(object *obj, ai_frame *ai_info, void *goal_ptr, int *start_
                           !(ROOMNUM_OUTSIDE(*start_room) && ROOMNUM_OUTSIDE(*end_room) &&
                             TERRAIN_REGION(*start_room) != TERRAIN_REGION(*end_room));
 
-        if (f_bnode_ok)
+        if (f_bnode_ok) {
+          // One-time diagnostic (PLAN-coop-nav-rethink.md 9.3/9.7): confirms the BNode pipeline is
+          // selected for an OBJ_PLAYER goal — i.e. our $nav bnodesp bots, not the level's robots
+          // (robots alloc BNode paths constantly on SP maps and would consume the latch as noise).
+          static bool Bnode_pipeline_logged = false;
+          if (!Bnode_pipeline_logged && obj->type == OBJ_PLAYER) {
+            Bnode_pipeline_logged = true;
+            LOG_DEBUG.printf("AI: BNode path pipeline active for player-bot goals this level");
+          }
           f_path_exists =
               AIGenerateBNodePath(obj, start_pos, start_room, end_pos, end_room, aip, &slot, &cur_node, handle);
-        else
+        } else
           f_path_exists = AIGenerateBOAPath(start_pos, start_room, end_pos, end_room, aip, &slot, &cur_node, handle);
 
         if (!f_path_exists) {

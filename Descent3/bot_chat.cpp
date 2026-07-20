@@ -29,6 +29,7 @@
 #include "object.h"
 #include "game.h"
 #include "AIMain.h"
+#include "levelgoal.h"
 #include "log.h"
 
 #include <cstring>
@@ -94,10 +95,13 @@ static bool BotFindCommand(const char *msg, char *verb, size_t vsize, char *args
 // ---------------------------------------------------------------------------
 
 // Returns true if the bot should obey an order from from_pnum.
-// Requires a team game (Num_teams > 1) and same team. Non-team modes (Anarchy, etc.)
-// have no team relationships — bots are autonomous and ignore all squad orders.
+// Requires a team game (Num_teams > 1) and same team, OR co-op — where every human is squad
+// leader. Other non-team modes (Anarchy, etc.) have no team relationships — bots are autonomous
+// and ignore all squad orders.
 // NOTE: !ping bypasses this — it always responds (handled at call site).
 static bool BotShouldObey(int bot_index, int from_pnum) {
+  if (Netgame.flags & NF_COOP)
+    return true;
   if (Num_teams <= 1)
     return false;
   int bot_team = Players[Bots[bot_index].player_slot].team;
@@ -401,6 +405,8 @@ static void BotHandleFreelance(int bot_index, int from_pnum, int towho) {
 
   Bots[bot_index].squad_role = SQUAD_FREELANCE;
   Bots[bot_index].squad_target_slot = -1;
+  Bots[bot_index].coop_auto_escort = false;
+  Bots[bot_index].coop_no_escort = true; // co-op: opt out of the default wing until re-ordered
   Bots[bot_index].explore_dest_room = -1;
   Bots[bot_index].explore_room_timer = 0.0f;
   Bots[bot_index].objective_lean = BOT_LEAN_BALANCED;
@@ -501,15 +507,57 @@ static void BotHandleDefendFlag(int bot_index, int from_pnum, int towho) {
   BotSendChatReply(bot_index, reply, (towho >= 0) ? from_pnum : towho);
 }
 
+// Co-op: !goal / !objective — an ORDER: fly to the current mission objective and hold there
+// (vanguard/scout post). Bots never seek objectives on their own (companions, not players —
+// operator ruling 2026-07-19); this verb is how the player sends one ahead deliberately.
+// Outside co-op there are no mission objectives, so reply and do nothing.
+static void BotHandleGoal(int bot_index, int from_pnum, int towho) {
+  char reply[160];
+  if (BotGetGameMode() != BGM_COOP) {
+    snprintf(reply, sizeof(reply), "%s: No mission objectives in this mode.", Bots[bot_index].callsign);
+    BotSendChatReply(bot_index, reply, (towho >= 0) ? from_pnum : towho);
+    return;
+  }
+  if (!BotShouldObey(bot_index, from_pnum)) {
+    snprintf(reply, sizeof(reply), "%s: Not taking orders from you!", Bots[bot_index].callsign);
+    BotSendChatReply(bot_index, reply, (towho >= 0) ? from_pnum : towho);
+    return;
+  }
+
+  if (Bot_objective.coop_goal_index >= 0 && Bot_objective.coop_goal_room >= 0) {
+    // Position-anchored order at the resolved objective (same lifecycle as !hold): the bot
+    // routes there, reports "In position.", and holds the post until re-ordered.
+    Bots[bot_index].squad_role = SQUAD_DEFEND;
+    Bots[bot_index].squad_target_slot = -1;
+    Bots[bot_index].coop_auto_escort = false;
+    Bots[bot_index].coop_no_escort = false;
+    Bots[bot_index].explore_dest_room = -1;
+    Bots[bot_index].explore_room_timer = 0.0f;
+    Bots[bot_index].order_anchor_pos = Bot_objective.coop_goal_pos;
+    Bots[bot_index].order_anchor_room = Bot_objective.coop_goal_room;
+    BotArmOrder(bot_index, from_pnum, ORDER_ANCHOR_POSITION);
+    BotForceEscortMode(bot_index); // comply immediately — drop current hunt/combat and move
+    char iname[64] = "";
+    if (Level_goals.GoalGetItemName(Bot_objective.coop_goal_index, iname, sizeof(iname)) <= 0 || !iname[0])
+      Level_goals.GoalGetName(Bot_objective.coop_goal_index, iname, sizeof(iname));
+    snprintf(reply, sizeof(reply), "%s: Heading to: %s!", Bots[bot_index].callsign,
+             iname[0] ? iname : "the next objective");
+  } else {
+    snprintf(reply, sizeof(reply), "%s: No objective right now. Covering you.", Bots[bot_index].callsign);
+  }
+  BotSendChatReply(bot_index, reply, (towho >= 0) ? from_pnum : towho);
+}
+
 // ---------------------------------------------------------------------------
 // Verb dispatch (single bot)
 // ---------------------------------------------------------------------------
 
 static void BotDispatchVerb(int bot_index, int from_pnum, int towho, const char *verb,
                             const char *args, int force_target_slot) {
-  // Non-team modes (Anarchy, Hyper-Anarchy, Monsterball, Hoard, Co-op) have no squad
-  // relationships — silently drop every verb except team-agnostic ones (ping, hunt).
-  if (Num_teams <= 1 && strcmp(verb, "ping") != 0 && strcmp(verb, "hunt") != 0)
+  // Non-team modes (Anarchy, Hyper-Anarchy, Monsterball, Hoard) have no squad relationships —
+  // silently drop every verb except team-agnostic ones (ping, hunt). Co-op is the exception:
+  // no teams, but every human commands every bot.
+  if (Num_teams <= 1 && !(Netgame.flags & NF_COOP) && strcmp(verb, "ping") != 0 && strcmp(verb, "hunt") != 0)
     return;
 
   if (strcmp(verb, "ping") == 0) {
@@ -534,6 +582,8 @@ static void BotDispatchVerb(int bot_index, int from_pnum, int towho, const char 
     BotHandleAttackFlag(bot_index, from_pnum, towho);
   } else if (strcmp(verb, "defendflag") == 0) {
     BotHandleDefendFlag(bot_index, from_pnum, towho);
+  } else if (strcmp(verb, "goal") == 0) {
+    BotHandleGoal(bot_index, from_pnum, towho);
   }
   (void)args;
 }
@@ -578,8 +628,8 @@ static void BotResolveAndDispatch(int from_pnum, int towho, const char *verb, co
   }
 
   // Broadcast path: in non-team modes there's no squad context, so drop every verb
-  // except team-agnostic ones (ping, hunt).
-  if (Num_teams <= 1 && strcmp(verb, "ping") != 0 && strcmp(verb, "hunt") != 0) {
+  // except team-agnostic ones (ping, hunt). Co-op passes — all humans command all bots.
+  if (Num_teams <= 1 && !(Netgame.flags & NF_COOP) && strcmp(verb, "ping") != 0 && strcmp(verb, "hunt") != 0) {
     LOG_DEBUG.printf("BOT CHAT: Not a team mode, broadcast command ignored");
     return;
   }
@@ -612,8 +662,8 @@ static void BotResolveAndDispatch(int from_pnum, int towho, const char *verb, co
       continue;
     if (named_bot >= 0 && i != named_bot)
       continue; // name-addressed: only this bot
-    if (!target_all && named_bot < 0) {
-      // Default team-scoped broadcast
+    if (!target_all && named_bot < 0 && !(Netgame.flags & NF_COOP)) {
+      // Default team-scoped broadcast (co-op: everyone is one side — no team filter)
       int bot_team = Players[Bots[i].player_slot].team;
       int sender_team = Players[from_pnum].team;
       if (sender_team >= 0 && bot_team >= 0 && bot_team != sender_team)
@@ -658,6 +708,14 @@ void BotOrderReport(int bot_index, const char *text) {
   char reply[160];
   snprintf(reply, sizeof(reply), "%s: %s", Bots[bot_index].callsign, text);
   BotSendChatReply(bot_index, reply, issuer);
+}
+
+// Co-op: broadcast a bot-voiced line to everyone. Objective announcements ("Heading to: ...")
+// go to the whole crew — unlike order reports, there is no single issuer to DM.
+void BotBroadcastAnnounce(int bot_index, const char *text) {
+  char reply[160];
+  snprintf(reply, sizeof(reply), "%s: %s", Bots[bot_index].callsign, text);
+  BotSendChatReply(bot_index, reply, -1);
 }
 
 // ---------------------------------------------------------------------------
@@ -747,6 +805,10 @@ void BotOnChatMessage(int from_pnum, int towho, const char *message) {
     strcpy(verb, "attackflag");
   if (strcmp(verb, "guardflag") == 0)
     strcpy(verb, "defendflag");
+
+  // Co-op: !objective is an alias for !goal (resume autonomous objective-seeking)
+  if (strcmp(verb, "objective") == 0)
+    strcpy(verb, "goal");
 
   BotResolveAndDispatch(from_pnum, towho, verb, args, force_target_slot);
 }

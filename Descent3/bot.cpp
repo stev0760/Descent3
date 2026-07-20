@@ -74,6 +74,14 @@ bool Bot_reach_gate_enabled = true;       // $nav reach — roadmap-gated same-r
 // (BsideCTF: 0 circle false positives, HARD share 50%->5-11%), so the machinery stays and the
 // toggle re-enables it live for A/B; re-default ON only after an outdoor-clean soak.
 bool Bot_stall_replan_enabled = false;
+// $nav bnodesp — defer to the engine's native BNode path pipeline on BNode-rich (SP campaign) maps
+// instead of our routing/via/seam stack (PLAN-coop-nav-rethink.md). Default ON: client-launched co-op
+// has no console, so default-OFF would be untestable (9.5.1); inert by construction on every MP map
+// (BNode_allocated == false there). This bool stores operator intent only — every bypass check reads
+// BotBnodeNativeActive(), which conjoins it with the engine's level-load flags live.
+bool Bot_bnode_native_pathing_enabled = true;
+
+bool BotBnodeNativeActive() { return Bot_bnode_native_pathing_enabled && BNode_allocated && BNode_verified; }
 BotGameMode Bot_game_mode = BGM_UNKNOWN;
 
 // --- Bot roster config (Phase 5.1) ---
@@ -2253,6 +2261,59 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   if (!obj->ai_info)
     return -1; // not AI-controlled (e.g. mid-respawn) — callers guard, but don't assume
 
+  // $nav bnodesp bypass (PLAN-coop-nav-rethink.md): on a BNode-rich map (SP campaign) hand the
+  // engine the FAR goal directly and let AIPathAllocPath -> AIGenerateBNodePath build the full
+  // multi-room path end-to-end — exactly what the guide-bot does for LIT_INTERNAL_ROOM
+  // (scripts/AIGame.cpp:5045). Our routing/via/seam/grid-route stack below exists to compensate
+  // for BNode-less MP maps (BNode_allocated == false there, so this is unreachable); it is
+  // bypassed here for this call, not deleted. Both ends must be interior — mirrors the escort
+  // far-leg check at bot.cpp:1794 — later campaign levels have terrain and the outdoor stack
+  // stays live there. Only WHO plans/flies the route changes: same GF_SPEED_ATTACK, no
+  // GF_USE_BLINE_IF_SEES_GOAL (bot.cpp:360 invariant), no guide-bot goal-recipe mimicry (9.6).
+  if (BotBnodeNativeActive() && !OBJECT_OUTSIDE(obj) && !ROOMNUM_OUTSIDE(goal_room)) {
+    int &pgi = Bots[bot_index].pursuit_goal_index;
+    bool goal_valid = (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used);
+    if (goal_valid && Bots[bot_index].explore_dest_room == goal_room && Bots[bot_index].explore_room_timer > 0.0f)
+      return goal_room; // already en route to the far goal — leave the engine's BNode path alone
+
+    if (goal_valid)
+      GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+    pgi = -1;
+
+    goal_info gi_info{};
+    gi_info.pos = final_pos;
+    gi_info.roomnum = goal_room;
+    pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
+    Bots[bot_index].explore_dest_room = goal_room;
+
+    // Scale the re-issue window by BOA distance, same as random-explore (bot.cpp:2758-2770) — a
+    // flat 20s would re-path a cross-level trek mid-flight (9.4).
+    float est_dist = 0.0f;
+    bool has_dist = BOA_ComputeMinDist(obj->roomnum, goal_room, 2000.0f, &est_dist);
+    if (has_dist && est_dist > 0.0f) {
+      float t = est_dist / 1000.0f;
+      if (t > 1.0f)
+        t = 1.0f;
+      Bots[bot_index].explore_room_timer =
+          BOT_EXPLORE_ROOM_TIME_MIN + t * (BOT_EXPLORE_ROOM_TIME_MAX - BOT_EXPLORE_ROOM_TIME_MIN);
+    } else {
+      Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX; // unknown distance — generous
+    }
+
+    // Self-healing throttle (Gametime resets per level — see BOT_DEV_REFERENCE gotcha): not an
+    // absolute latch, so no BotReinitAll reset entry is needed.
+    static float Bnodesp_log_t[MAX_BOTS];
+    float &last = Bnodesp_log_t[bot_index];
+    if (Gametime < last || Gametime - last > 5.0f) {
+      last = Gametime;
+      LOG_DEBUG.printf("BOT NAV: '%s' bnodesp far goal -> room %d (engine BNode path)", Bots[bot_index].callsign,
+                       goal_room);
+    }
+    if (reissued)
+      *reissued = true;
+    return goal_room;
+  }
+
   // $nav troute pre-step: a cross-terrain plan may redirect this issue at its current segment
   // target (seg0: the exit door). Outdoors it only maintains monotone bookkeeping; the outdoor
   // branch below consumes the plan's entry door. No plan = no change.
@@ -2460,7 +2521,20 @@ static void BotDoExploreRoaming(int bot_index) {
       // Phase 12: en-route via maintenance. The interior-obstacle press happens MID-room while
       // this branch is holding course (93% of pumphouse presses were in EXPLORE), so the
       // occlusion probe has to run here, not just at goal-issue time.
-      if (!OBJECT_OUTSIDE(obj)) {
+      if (!OBJECT_OUTSIDE(obj) && BotBnodeNativeActive()) {
+        // $nav bnodesp: the engine's BNode path owns this leg — skip the via-point re-aim (that
+        // IS the routing/via stack this bypass exists to disable, PLAN-coop-nav-rethink.md 9.5.3).
+        // Only re-issue if the pursuit goal itself lapsed, and at the SAME far goal each time.
+        // BotApplyThrust's stuck-escape stays armed — untouched here (9.5.3 dormant safety net).
+        int dest = Bots[bot_index].explore_dest_room;
+        int &pgi = Bots[bot_index].pursuit_goal_index;
+        if (!(pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)) {
+          goal_info gi_info{};
+          gi_info.pos = Rooms[dest].path_pnt;
+          gi_info.roomnum = dest;
+          pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
+        }
+      } else if (!OBJECT_OUTSIDE(obj)) {
         int dest = Bots[bot_index].explore_dest_room;
         int steer_room = -1;
         vector steer_pos = BotGetActiveSteerPoint(obj, Rooms[dest].path_pnt, dest, &steer_room);
@@ -2525,6 +2599,15 @@ static void BotDoExploreRoaming(int bot_index) {
   int obj_room = BotGetObjectiveRoom(bot_index);
   if (obj_room >= 0 && Rooms[obj_room].used) {
     if (obj_room == obj->roomnum) {
+      // Time-to-objective instrument: stamp the first arrival at each objective room (stored +1
+      // so the zero-initialized static can't swallow a room-0 arrival). Gametime resets per
+      // level, so the printed t is level-relative — exactly the metric wanted.
+      static int Arrived_obj_room[MAX_BOTS];
+      if (Arrived_obj_room[bot_index] != obj_room + 1) {
+        Arrived_obj_room[bot_index] = obj_room + 1;
+        LOG_DEBUG.printf("BOT OBJ: '%s' ARRIVED at objective room %d (t=%.0fs)", Bots[bot_index].callsign, obj_room,
+                         Gametime);
+      }
       // Score beeline: carrier at home base with home flag present — fly through it to score.
       if (BotIsCarryingEnemyFlag(bot_index)) {
         int flag_objnum = BotGetCarrierTouchObjnum(bot_index);
@@ -3461,6 +3544,28 @@ static bool BotCanSeePos(object *obj, vector *target_pos) {
 // Mirrors the game's pickup logic in multisafe.cpp — in multiplayer, primary weapons
 // already owned are NOT picked up (item stays in world), and unique items like
 // Quad Laser, Afterburner, Invulnerability, and Cloak can't be re-collected.
+// Stock combat pickups a bot may freely collect in co-op. Campaign quest items are one-time
+// OBJ_POWERUPs (removed on pickup in MP, unlike keys) — anything not on this list is presumed
+// progression-critical and left for humans. Names mirror multisafe.cpp's pickup handlers.
+static bool BotIsKnownCombatPickup(const char *pname) {
+  static const char *combat_pickups[] = {
+      // Secondaries (powerup_data_secondary)
+      "Frag", "ImpactMortar", "NapalmRocket", "Cyclone", "BlackShark", "Concussion", "Homing", "Smart", "Mega",
+      "Guided", "4PackHoming", "4PackConc", "4PackFrag", "4PackGuided",
+      // Ammo (powerup_data_ammo)
+      "Vauss clip", "MassDriverAmmo", "NapalmTank",
+      // Energy + countermeasures (multisafe.cpp pickup handlers)
+      // NOT "InvisiblePowerup": that is an invisible script-camera anchor (AIGame.cpp Obj_Create),
+      // not a pickup — multisafe.cpp's only mention is the remove-all-powerups EXEMPTION for it.
+      "Energy", "Chaff", "Betty4Pack", "Seeker3Pack", "GunboyPowerup", "ProxMinePowerup",
+  };
+  for (auto *n : combat_pickups) {
+    if (!stricmp(pname, n))
+      return true;
+  }
+  return false;
+}
+
 static bool BotCanCollectPowerup(int bot_index, object *powerup) {
   int slot = Bots[bot_index].player_slot;
   object *obj = &Objects[Players[slot].objnum];
@@ -3525,6 +3630,12 @@ static bool BotCanCollectPowerup(int bot_index, object *powerup) {
   if (!stricmp(pname, "Shield")) {
     return obj->shields < MAX_SHIELDS;
   }
+
+  // Co-op: default-deny unknown powerups — a scripted quest item consumed by a bot could block
+  // level progression (keys are safe, multisafe.cpp key handler never deletes the object in MP,
+  // but generic OBJ_POWERUP pickups ARE removed). A missed whitelist name costs a pickup, never a level.
+  if (BotGetGameMode() == BGM_COOP)
+    return BotIsKnownCombatPickup(pname);
 
   // Everything else (secondaries, ammo, energy, countermeasures): always collectible
   return true;
@@ -3754,6 +3865,12 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
   for (int i = 0; i <= Highest_object_index; i++) {
     object *p = &Objects[i];
     if (p->type != OBJ_POWERUP)
+      continue;
+    // Invisible utility objects (script camera anchors are OBJ_POWERUP with RT_NONE — AIGame.cpp
+    // Obj_Create(..."Invisiblepowerup"...)) are not pickups. Same phantom class as the RT_NONE
+    // robot-targeting filter; without this, campaign bots chase cutscene cameras (agentic test 1:
+    // the level-1 "locked door" press was a bot grinding at an invisible camera marker).
+    if (p->render_type == RT_NONE)
       continue;
     if (p->flags & (OF_DEAD | OF_DESTROYED))
       continue;
@@ -3994,6 +4111,8 @@ static bool BotShouldInterruptForPowerup(int bot_index) {
     object *p = &Objects[i];
     if (p->type != OBJ_POWERUP)
       continue;
+    if (p->render_type == RT_NONE)
+      continue; // invisible script-camera anchors — see BotFindBestPowerup
     if (p->flags & (OF_DEAD | OF_DESTROYED))
       continue;
     float dist = vm_VectorDistanceQuick(&obj->pos, &p->pos);
@@ -5022,7 +5141,7 @@ static void BotApplyThrust(int bot_index) {
     if (Bots[bot_index].powerup_goal_index >= 0) {
       speed_scale = 1.0f;
       if (is_outdoor || equip <= BOT_EQUIP_TIER_WEAK)
-        want_afterburner = true; // WEAK bots burst toward weapons even indoors
+        want_afterburner = true; // WEAK bots burst toward weapons even indoors (MP-arena tuning)
 
       // Phase 4.06: Direct thrust override for close visible powerups.
       // The engine's AIG_GET_TO_OBJ goal reduces thrust near the destination ("close enough"),
@@ -5140,6 +5259,70 @@ static void BotApplyThrust(int bot_index) {
 
   if (Bots[bot_index].stuck_timer >= 0.0f && current_speed < 5.0f && applying_thrust) {
     Bots[bot_index].stuck_timer += Frametime;
+    // Press diagnostic (smoke-4 door-press investigation): while physically pressing (>1s of
+    // near-zero speed under thrust), name the goal source, the engine's live steer target, and
+    // the nearest locked door in the room — so an observed press attributes itself instead of
+    // being theorized about. Log-only; throttled per bot; self-healing Gametime latch.
+    if (Bots[bot_index].stuck_timer > 1.0f) {
+      static float Press_log_t[MAX_BOTS];
+      float &last = Press_log_t[bot_index];
+      if (Gametime < last || Gametime - last > 4.0f) {
+        last = Gametime;
+        char goal_desc[96] = "none";
+        vector fb_pos = obj->pos;
+        int fb_room = OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum;
+        int &pu_gi = Bots[bot_index].powerup_goal_index;
+        int &pgi = Bots[bot_index].pursuit_goal_index;
+        if (pu_gi >= 0 && pu_gi < MAX_GOALS && obj->ai_info->goals[pu_gi].used &&
+            Bots[bot_index].chasing_powerup_handle != OBJECT_HANDLE_NONE) {
+          object *pu = ObjGet(Bots[bot_index].chasing_powerup_handle);
+          if (pu) {
+            snprintf(goal_desc, sizeof(goal_desc), "powerup '%s' rm%d", Object_info[pu->id].name,
+                     OBJECT_OUTSIDE(pu) ? -1 : (int)pu->roomnum);
+            fb_pos = pu->pos;
+            fb_room = OBJECT_OUTSIDE(pu) ? -1 : (int)pu->roomnum;
+          }
+        } else if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used) {
+          int dest = Bots[bot_index].explore_dest_room;
+          snprintf(goal_desc, sizeof(goal_desc), "pursuit rm%d", dest);
+          if (dest >= 0 && dest <= Highest_room_index && Rooms[dest].used) {
+            fb_pos = Rooms[dest].path_pnt;
+            fb_room = dest;
+          }
+        }
+        int steer_room = -1;
+        vector steer = BotGetActiveSteerPoint(obj, fb_pos, fb_room, &steer_room);
+        float steer_d = vm_VectorDistanceQuick(&obj->pos, &steer);
+        // Nearest locked door among this room's portals (doorway may live on either side).
+        int ld_p = -1, ld_croom = -1;
+        float ld_d = 1e30f;
+        if (!OBJECT_OUTSIDE(obj) && obj->roomnum >= 0 && obj->roomnum <= Highest_room_index) {
+          room &crm = Rooms[obj->roomnum];
+          for (int p = 0; p < crm.num_portals; p++) {
+            int cr = crm.portals[p].croom;
+            doorway *dw = crm.doorway_data ? crm.doorway_data
+                          : (cr >= 0 && cr <= Highest_room_index && Rooms[cr].used) ? Rooms[cr].doorway_data
+                                                                                    : nullptr;
+            if (!dw || !(dw->flags & DF_LOCKED) || (dw->flags & DF_GB_IGNORE_LOCKED))
+              continue;
+            float d = vm_VectorDistanceQuick(&obj->pos, &crm.portals[p].path_pnt);
+            if (d < ld_d) {
+              ld_d = d;
+              ld_p = p;
+              ld_croom = cr;
+            }
+          }
+        }
+        if (ld_p >= 0)
+          LOG_DEBUG.printf("BOT PRESS: '%s' rm%d spd=%.1f st=%d goal=%s steer rm%d d=%.0f LOCKED-DOOR p%d->rm%d d=%.0f",
+                           Bots[bot_index].callsign, (int)obj->roomnum, current_speed, (int)Bots[bot_index].state,
+                           goal_desc, steer_room, steer_d, ld_p, ld_croom, ld_d);
+        else
+          LOG_DEBUG.printf("BOT PRESS: '%s' rm%d spd=%.1f st=%d goal=%s steer rm%d d=%.0f (no locked door here)",
+                           Bots[bot_index].callsign, OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum, current_speed,
+                           (int)Bots[bot_index].state, goal_desc, steer_room, steer_d);
+      }
+    }
   } else if (Bots[bot_index].stuck_timer >= 0.0f && Bots[bot_index].stuck_timer <= BOT_STUCK_ABANDON_TIME) {
     Bots[bot_index].stuck_timer = 0.0f;
   }
@@ -5228,6 +5411,13 @@ static void BotApplyThrust(int bot_index) {
     vertical = 0.5f;
     want_afterburner = false;
   }
+
+  // Co-op pacing (operator ruling 2026-07-19): co-op is a chill exploration mode, not arena
+  // combat — bots fly at normal thrust and reserve afterburner for fleeing. Cures the tunnel
+  // afterburner-slams (close-beeline vertical at floor items near doors, WEAK-tier bursts that
+  // never end on campaign economies) without touching any MP-mode tuning.
+  if (BotGetGameMode() == BGM_COOP && Bots[bot_index].state != BOT_STATE_FLEE)
+    want_afterburner = false;
 
   // Afterburner burst management (Phase 3.7)
   // DoFlyingControl() skips on dedicated server, so we manually manage afterburner_fuel and
@@ -6153,9 +6343,32 @@ static void BotSelectTarget(int bot_index) {
         continue;
       if (t->control_type != CT_AI)
         continue;
+      // Invisible scripted robots (levels use non-rendered OBJ_ROBOTs as script actors) pass
+      // every distance/LOS test — bots visibly "fire at nothing" (first co-op smoke, objects
+      // 39-44 on campaign level 1). If it can't be seen, it isn't a target.
+      if (t->render_type == RT_NONE)
+        continue;
+      // Friend/foe: the guide-bot and player-allied robots are AIF_TEAM_REBEL; scripted
+      // non-combatants are AIF_TEAM_NEUTRAL. Only PTMC/HOSTILE robots are targets — without
+      // this, co-op bots hunted the guide-bot on sight.
+      if (t->ai_info) {
+        uint32_t rteam = t->ai_info->flags & AIF_TEAM_MASK;
+        if (rteam == AIF_TEAM_REBEL || rteam == AIF_TEAM_NEUTRAL)
+          continue;
+      }
       float dist = vm_VectorDistanceQuick(&obj->pos, &t->pos);
-      if (dist < best_score) {
-        best_score = dist;
+      // Cheap reject before the fvi ray — campaign levels carry far more robots than a PvP
+      // map carries players, and every LOS check below is a full fvi_FindIntersection.
+      if (dist > BOT_FIRE_RANGE * 2.0f)
+        continue;
+      // LOS penalty, same philosophy as the player loop above: a through-wall robot is still
+      // huntable but never preferred over a visible one. The raw nearest-by-distance pick made
+      // fresh co-op spawns swing their noses into walls at matcen robots a room away.
+      float score = dist;
+      if (!BotHasLOS(obj, t))
+        score += BOT_NO_LOS_TARGET_PENALTY;
+      if (score < best_score) {
+        best_score = score;
         best_player_slot = -1;
         best_obj_num = i;
       }
@@ -6299,6 +6512,21 @@ static void BotDoFiring(int bot_index) {
     if (ball_target && Gametime - Bots[bot_index].mball_shot_log_t > 2.0f) {
       Bots[bot_index].mball_shot_log_t = Gametime;
       LOG_DEBUG.printf("BOT MBALL: '%s' firing at ball (wb %d, dist %.0f)", Bots[bot_index].callsign, wb_index, dist);
+    }
+
+    // Fire-path attribution (throttled 5s/bot): completes the triple with the stuck-clear glass
+    // and obstacle-clear log lines, so "shooting at walls" reports can be pinned to a path.
+    // `Gametime < last` re-arms across level transitions (Gametime resets).
+    if (BotShouldTargetRobots()) {
+      static float Fire_log_t[MAX_BOTS];
+      float &last = Fire_log_t[bot_index];
+      if (Gametime < last || Gametime - last > 5.0f) {
+        last = Gametime;
+        const char *tname = (target->type == OBJ_ROBOT && target->id >= 0) ? Object_info[target->id].name : "?";
+        LOG_DEBUG.printf("BOT FIRE: '%s' main-fire at %s %d '%s' (dist %.0f, los %d, rt %d)",
+                         Bots[bot_index].callsign, (target->type == OBJ_ROBOT) ? "robot" : "obj", OBJNUM(target),
+                         tname ? tname : "?", dist, BotHasLOS(obj, target) ? 1 : 0, target->render_type);
+      }
     }
 
     // Drain energy and ammo per shot — mirrors WeaponFire.cpp:2996-3009.
@@ -6546,6 +6774,29 @@ void BotReinitAll() {
   BotInitObjectiveState();
   BotTrollTableReset(); // 12.2b: new level = new geometry; strikes don't carry over
 
+  // $nav bnodesp level-start telemetry (PLAN-coop-nav-rethink.md): BNode_allocated/verified are set
+  // by ReadBNodeChunk during level load, which has already happened by the time MultiStartNewLevel
+  // calls us. The bypass reads BotBnodeNativeActive() live — this log is just the per-level marker.
+  if (BotBnodeNativeActive()) {
+    LOG_DEBUG.printf("BOT NAV: BNode native pathing ACTIVE (engine plans SP routes)");
+  }
+
+  // Locked-door inventory (smoke-4 door-press investigation): name every locked doorway once per
+  // level so BOT PRESS lines cross-reference to a specific door. Door rooms carry doorway_data;
+  // a permanently locked decorative door (D1-homage spawn doors) shows up here — or its absence
+  // proves the "door" is unflagged scenery and the press is a plain wall-press.
+  for (int r = 0; r <= Highest_room_index; r++) {
+    if (!Rooms[r].used || !Rooms[r].doorway_data)
+      continue;
+    doorway *dw = Rooms[r].doorway_data;
+    if (!(dw->flags & DF_LOCKED))
+      continue;
+    int a = (Rooms[r].num_portals > 0) ? Rooms[r].portals[0].croom : -1;
+    int b = (Rooms[r].num_portals > 1) ? Rooms[r].portals[1].croom : -1;
+    LOG_DEBUG.printf("BOT NAV: locked door room %d links rm%d<->rm%d%s", r, a, b,
+                     (dw->flags & DF_GB_IGNORE_LOCKED) ? " (GB-ignorable)" : "");
+  }
+
   for (int i = 0; i < MAX_BOTS; i++) {
     if (!Bots[i].active)
       continue;
@@ -6635,6 +6886,8 @@ void BotReinitAll() {
     Bots[i].mball_junction_log_t = 0.0f;
     Bots[i].squad_role = SQUAD_FREELANCE;
     Bots[i].squad_target_slot = -1;
+    Bots[i].coop_auto_escort = false;
+    Bots[i].coop_no_escort = false;
     Bots[i].objective_lean = BOT_LEAN_BALANCED;
     // difficulty persists across levels — don't reset
 
@@ -6694,6 +6947,20 @@ void BotReinitAll() {
 }
 
 int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desired_team) {
+  // Refuse when the server is at capacity — a bot must never consume a seat past Netgame.max_players
+  // (matters most in co-op, where missions commonly cap at 3-4 players).
+  int connected = 0;
+  for (int i = 0; i < MAX_NET_PLAYERS; i++) {
+    if (NetPlayers[i].flags & NPF_CONNECTED)
+      connected++;
+  }
+  if (connected >= Netgame.max_players) {
+    PrintDedicatedMessage("BOT: cannot add '%s' — server full (%d/%d players)\n", name, connected,
+                          Netgame.max_players);
+    LOG_WARNING.printf("BOT: BotAdd refused, server at max_players (%d)", Netgame.max_players);
+    return -1;
+  }
+
   // Find a free bot_info slot
   int bot_index = -1;
   for (int i = 0; i < MAX_BOTS; i++) {
@@ -6914,6 +7181,8 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   Bots[bot_index].last_chat_reply_time = 0.0f;
   Bots[bot_index].squad_role = SQUAD_FREELANCE;
   Bots[bot_index].squad_target_slot = -1;
+  Bots[bot_index].coop_auto_escort = false;
+  Bots[bot_index].coop_no_escort = false;
   Bots[bot_index].objective_lean = BOT_LEAN_BALANCED;
   BotCacheShipPhysics(bot_index);
   BotSelectBestSecondary(bot_index); // equip best secondary weapon at spawn

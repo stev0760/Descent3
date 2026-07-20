@@ -7,6 +7,53 @@ live navigation status is in [NAVIGATION.md](NAVIGATION.md) §7.0.
 Versioning: `0.8.x` = feature releases; `0.9.x` = the navigation-milestone series.
 A `-dev` suffix marks an in-test build that has not yet passed its validation gate.
 
+## [0.9.9] - 2026-07-19
+
+*The co-op companion release. Bots fly the campaign WITH you, not for you: join a co-op game and
+they fall in on your wing, keep formation through the mine, and fight what you fight — while the
+mission itself stays yours to play.*
+
+**Bots are wingmates by default.** The moment a human is in the game, every unordered bot escorts
+the nearest player. They keep station at a comfortable pace, engage hostile robots, and return to
+your wing afterward. They deliberately never run the mission on their own — no racing ahead to
+throw your switches. That design is intentional: a bot that plays the game for you isn't fun.
+
+**Orders decide everything else.** `!follow`, `!cover`, and `!hold` work as before, from any human
+(co-op has no teams — everyone is squad leader). `!goal` (or `!objective`) is now a real order:
+it sends that bot ahead to the current mission objective as a vanguard, where it reports
+"In position." and holds until you re-order it. `!freelance` frees a bot to roam and fight on its
+own — and it stays free until you give it another order.
+
+**Campaign navigation now rides the engine's own network.** On single-player missions, bot
+navigation defers to the hand-authored path network built into every campaign level — the same
+data the guide-bot flies. The multiplayer navigation stack (built for maps that ship with no such
+network) steps aside automatically on these maps, and returns just as automatically on MP maps.
+
+**Fixed: bots chased invisible objects.** Campaign levels are full of invisible utility objects
+the level scripts use as camera mounts, and they masquerade as powerups internally. Bots would fly
+to one, find nothing, and grind against the nearest wall or locked door trying to "collect" a
+cutscene camera. Bots now ignore anything invisible, on every map and mode.
+
+**Calm flying in co-op.** Co-op bots no longer use afterburner outside of emergencies — no more
+full-burn dives into a floor item next to a door. Normal thrust everywhere, bursts only when
+fleeing for their lives.
+
+**Bots can't eat mission-critical pickups.** In co-op, bots only collect known combat items
+(ammo, energy, countermeasures); anything unrecognized — scripted quest items are one-time
+pickups — is left for humans. Keys were never at risk: the game grants each player their own.
+
+**Bots can't take the last player slot.** Adding a bot past the server's max-players cap
+(co-op missions commonly allow only 3-4) is now refused with a clear console message, in every
+game mode.
+
+**Fixed bots aiming at walls in co-op.** Target selection treated the nearest robot as fair game
+even through a wall. Robot targets now get the same line-of-sight scoring player targets have had
+for months (this also slightly improves Robo-Anarchy).
+
+**Operator diagnostics.** The server log now names every locked door at level start, attributes
+any low-speed wall-press to the exact goal that caused it, and stamps each bot's first arrival at
+an objective room — so "the bots feel stuck" is always one grep away from a real answer.
+
 ## [0.9.8] - 2026-07-18
 
 *The game-modes release: Entropy and Monsterball are playable against bots for the first time

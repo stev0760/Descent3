@@ -21,6 +21,8 @@
 
 #include <cstdint>
 
+#include "vecmat_external.h" // vector (coop_goal_pos)
+
 #define BOT_OBJECTIVE_POLL_INTERVAL 0.5f
 #define BOT_MAX_TEAMS 4
 #define BOT_MAX_PLAYERS 32
@@ -232,6 +234,22 @@ struct BotObjectiveState {
   int entropy_world_virus[BOT_ENTROPY_MAX_WORLD_VIRUS];      // free virus objnums
   int8_t entropy_world_virus_team[BOT_ENTROPY_MAX_WORLD_VIRUS]; // inferred owner: 0=red 1=blue -1=unknown
   int entropy_world_virus_count;
+
+  // --- Co-op (BGM_COOP) --- shared campaign objective resolved from Level_goals (guide-bot's
+  // data source). One objective for all bots; per-bot behavior differentiates via squad_role.
+  int coop_goal_index;      // Level_goals goal index, -1 = none routable
+  int coop_item_index;      // item within the goal, -1 = none
+  int coop_goal_room;       // routable destination room, -1 = none (escort fallback engaged)
+  vector coop_goal_pos;     // fine position (object pos / trigger face + 5*normal / room path_pnt)
+  bool coop_all_done;       // no active primaries remain — endgame escort
+  // Announce-on-change bookkeeping (announce fires only when (goal,item) changes)
+  int coop_prev_goal_index;
+  int coop_prev_item_index;
+  bool coop_announced_escort;  // one "goal unreachable" line per transition into escort
+  int coop_unroutable_streak;  // consecutive polls with no routable goal (escort hysteresis)
+  int coop_announced_goal;     // last (goal,item) actually announced + when — suppresses
+  int coop_announced_item;     // re-announcing the same objective when routability flaps
+  float coop_announce_t;
 };
 
 extern BotObjectiveState Bot_objective;

@@ -789,6 +789,10 @@ static const NavToggle Nav_toggles[] = {
     {"troute", "terrainroute", nullptr, &Bot_troute_enabled,
      "terrain tier: cross-terrain routes composed over region-lattice door pairs (piece 1, NAVIGATION 3.7)", false,
      false},
+    {"bnodesp", "bnodenative", nullptr, &Bot_bnode_native_pathing_enabled,
+     "defer to the engine's native BNode path pipeline on BNode-rich SP maps (PLAN-coop-nav-rethink.md); "
+     "default ON, inert on every BNode-less MP map",
+     false, false},
     {"troute2", "troutecompare", nullptr, &Bot_troute_compare_enabled,
      "v2 route choice: compose terrain plan even when an interior route exists, take the cheaper", false, false},
     {"hardcost", "hardroomcost", nullptr, &Bot_hard_cost_enabled,

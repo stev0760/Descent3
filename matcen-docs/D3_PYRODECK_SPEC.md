@@ -300,7 +300,7 @@ Phantom [BOT]:       0      0 8 0 0
 *Reaper [BOT]:       0      0 0 0 ---
 ```
 - `*` prefix = observer/disconnected slot — exclude from active count
-- Bot players identified by ` [BOT]` suffix in name
+- Bot players identified by `[BOT]` suffix in name
 - Ping `---` = no network connection (bots always show this)
 - First line is the header; skip for data parsing
 - Column layout varies by game type (anarchy shown above). Team anarchy, CTF, etc. have different columns. Parser should handle variable column counts gracefully.
@@ -452,7 +452,7 @@ Complete end-to-end loop: browser → server and back.
 **Players Panel** (requires `roster` feature flag)
 - Parse `$scores` output into a player table.
 - Show: name, points, kills, deaths, suicides, ping.
-- Bot rows visually distinguished (identified by ` [BOT]` suffix, ping `---`).
+- Bot rows visually distinguished (identified by `[BOT]` suffix, ping `---`).
 - Refresh button; auto-refresh on a configurable interval (default 5s).
 - Action buttons per human player row: Kick, Ban.
 - Ban list viewer: `$banlist` → table with Remove button per entry.

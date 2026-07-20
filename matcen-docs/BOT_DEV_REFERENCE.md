@@ -518,6 +518,12 @@ Both COMBAT interrupt and HUNT divert set `powerup_interrupt_cooldown` to preven
 - DMFC `IsPlayerDedicatedServer()` returns true for PRec entries with team -1 — bots must use team ≥ 0.
 - Bots use unique dummy network addresses `127.<bot_index>.<slot>.1` for PRec disambiguation.
 
+### Co-op / Level Goals (0.9.9)
+- **`Level_goals` item handle semantics vary by LIT type** (levelgoal_external.h): `LIT_OBJECT` handle needs `ObjGet()` + dead/ghost/`OBJECT_OUTSIDE` rejects; `LIT_INTERNAL_ROOM` handle **IS** a roomnum (not an object handle); `LIT_TRIGGER` handle indexes `Triggers[]` (roomnum/facenum). The guide-bot recipe is in OSIRIS `scripts/AIGame.cpp:4977-5074` — the engine data is all we consume.
+- `GetActivePrimaryGoal()` is already filtered (COMPLETED/FAILED/disabled) and priority-sorted by the engine — never re-filter by `LGF_COMPLETED` yourself. Do skip `LGF_NOT_LOC_BASED | LGF_GB_DOESNT_KNOW_LOC`.
+- **Keys cannot be stolen in multiplayer**: `MSAFE_OBJECT_PLAYER_KEY` (multisafe.cpp:1593-1618) deletes the key object only under `!GM_MULTI`; in MP every player collects their own key bit (`Players[].keys`, kept across deaths). But **generic OBJ_POWERUP quest items ARE consumed on pickup** — hence `BotIsKnownCombatPickup()` default-deny in BGM_COOP.
+- Goal *completions* are announced engine-side (`GoalComplete`, levelgoal.cpp:189) — bots only announce departures (`BotBroadcastAnnounce` on (goal,item) change).
+
 ---
 
 ## Key Constants Quick Reference

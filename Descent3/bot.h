@@ -553,6 +553,10 @@ struct bot_info {
   // Squad orders (Phase 6.0 Stage 2) — persist through death and level transitions
   BotSquadRole squad_role; // current squad order
   int squad_target_slot;   // for FOLLOW/COVER: player slot to follow/protect (-1 = sender)
+  bool coop_auto_escort;   // co-op: FOLLOW was self-assigned (the default wing), not a chat order;
+                           // cleared on level init
+  bool coop_no_escort;     // co-op: !freelance opt-out from the default wing — the bot roams until
+                           // any other order consumes it; cleared on level init
 
   // Stage 6 "Orders as Goals" (CHAT_COMMANDS.md §Stage 6) — order anchor + lifecycle.
   // Persist through death (the bot returns to its post after respawn); cleared by !freelance,
@@ -582,13 +586,21 @@ extern bool Bot_soft_strike_enabled;      // $nav strike — same-room soft chas
                                           // retirement at BOT_TROLL_SOFT_PER_STRIKE weight (0.9.7 Fix A)
 extern bool Bot_reach_gate_enabled;       // $nav reach — single-authority reachability gate on same-room
                                           // powerup selection (architecture north star, increment 1)
+extern bool Bot_bnode_native_pathing_enabled; // $nav bnodesp — operator intent: defer to the engine's
+                                              // native BNode path pipeline on BNode-rich (SP campaign)
+                                              // maps instead of our routing/via/seam stack (default ON —
+                                              // PLAN-coop-nav-rethink.md; inert on every BNode-less MP map)
+// Live effective check: Bot_bnode_native_pathing_enabled && BNode_allocated && BNode_verified.
+// A function (not a level-start cached bool) so a mid-level $nav flip takes effect immediately
+// and the verdict never depends on BotReinitAll timing — the engine globals ARE the level state.
+bool BotBnodeNativeActive();
 extern BotGameMode Bot_game_mode;
 
 // Bot name suffix — appended to all bot callsigns for identification.
 // Suffix (not prefix) so D3's prefix-matched DM routing (hudmessage.cpp
 // GetMessageDestination) resolves "<botname>: ..." against the bot's actual name.
-#define BOT_NAME_SUFFIX " [BOT]"
-#define BOT_NAME_SUFFIX_LEN 6 // strlen(" [BOT]")
+#define BOT_NAME_SUFFIX "[BOT]"
+#define BOT_NAME_SUFFIX_LEN 5 // strlen(BOT_NAME_SUFFIX)
 
 // Add a bot to the game. Returns bot index (into Bots[]) or -1 on failure.
 // Ship can be specified by index, or use BotResolveShipAlias() to get index from a name string.
@@ -644,7 +656,7 @@ int BotResolveShipAlias(const char *alias);
 // backwards compatible. Bots can still be added manually via "$addbot" console/telnet.
 //
 // Ship aliases: pyro, phoenix, magnum, blackpyro (full names also accepted).
-// All bot callsigns are automatically suffixed with " [BOT]".
+// All bot callsigns are automatically suffixed with "[BOT]".
 
 // Storage for the BotConfig CVar — set by dedicated.cfg, read after level load.
 // This is extern so the CVar system in dedicated_server.cpp can point to it directly.

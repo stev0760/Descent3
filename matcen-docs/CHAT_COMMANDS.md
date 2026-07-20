@@ -68,17 +68,17 @@ Chosen over `/bot` (5 chars, more typing) and bare natural-language (false posit
 
 ```
 !verb              → all your bots (team-scoped in team modes, all bots otherwise)
-!verb <botname>    → single bot by callsign (minus ` [BOT]` suffix, case-insensitive)
+!verb <botname>    → single bot by callsign (minus `[BOT]` suffix, case-insensitive)
 !verb all          → all bots regardless of team
 <botname>: !verb   → DM shortcut via engine name-parser (auto-routed by index or name prefix)
 ```
 
-Bot callsign matching: exact match against `Bots[].name` (the raw name without ` [BOT]` suffix),
+Bot callsign matching: exact match against `Bots[].name` (the raw name without `[BOT]` suffix),
 case-insensitive. Partial matching deferred — exact only in MVP to avoid ambiguity.
 
 Engine DM routing (`hudmessage.cpp:GetMessageDestination`) prefix-matches the typed text
 against `Players[].callsign`; placing `[BOT]` as a suffix means `reaper:` still matches
-`Reaper [BOT]`. Numeric slot indices (`2:`) also work.
+`Reaper[BOT]`. Numeric slot indices (`2:`) also work.
 
 ### Reply audience policy
 
@@ -99,6 +99,11 @@ feedback that the system is alive.
 
 All other verbs (attack, defend, follow, etc.) enforce team affinity once wired in Stage 2+.
 
+**Co-op exception (0.9.9):** co-op has no teams, but every human is squad leader — `BotShouldObey`
+returns true under `NF_COOP`, both `Num_teams <= 1` verb drops carry an NF_COOP exception, and
+broadcast addressing skips the team filter. All order verbs work; `!attackflag`/`!defendflag`
+degrade to their generic attack/defend replies (no flags in co-op).
+
 ### Anti-recursion
 
 - Messages from bot slots (`NetPlayers[slot].flags & NPF_BOT`) are ignored entirely
@@ -115,14 +120,14 @@ over ~500ms intervals to prevent chat spam. Cooldown is per-bot, not global.
 
 | Verb | Intent | Bot response example | References |
 |---|---|---|---|
-| `ping` | Proof of life (diagnostic, permanent) | `Reaper [BOT]: Pong!` | Scaffold + legacy diagnostic |
-| `status` / `report` | Report current state (military style) | `Reaper [BOT]: Freelance, HP 84, hunting Viper` | Q3, UT, X-Wing |
-| `attack` | Aggression-biased FSM | `Reaper [BOT]: Attacking!` | Universal |
-| `target` | Focus speaker's nearest enemy | `Reaper [BOT]: Targeting Viper!` | X-Wing, WC, FS2 |
-| `defend` | Hold-position / retreat-biased | `Reaper [BOT]: Defending!` | UT, FS2, R6 |
-| `cover` | Protect speaker (or named player) | `Reaper [BOT]: Covering you!` | Universal (6/6 refs) |
-| `follow` | Escort speaker (or named player) | `Reaper [BOT]: Following!` | Q3, FS2, WC |
-| `freelance` | Cancel orders, autonomous FSM | `Reaper [BOT]: Going freelance.` | UT, Q3, FS2 |
+| `ping` | Proof of life (diagnostic, permanent) | `Reaper[BOT]: Pong!` | Scaffold + legacy diagnostic |
+| `status` / `report` | Report current state (military style) | `Reaper[BOT]: Freelance, HP 84, hunting Viper` | Q3, UT, X-Wing |
+| `attack` | Aggression-biased FSM | `Reaper[BOT]: Attacking!` | Universal |
+| `target` | Focus speaker's nearest enemy | `Reaper[BOT]: Targeting Viper!` | X-Wing, WC, FS2 |
+| `defend` | Hold-position / retreat-biased | `Reaper[BOT]: Defending!` | UT, FS2, R6 |
+| `cover` | Protect speaker (or named player) | `Reaper[BOT]: Covering you!` | Universal (6/6 refs) |
+| `follow` | Escort speaker (or named player) | `Reaper[BOT]: Following!` | Q3, FS2, WC |
+| `freelance` | Cancel orders, autonomous FSM | `Reaper[BOT]: Going freelance.` | UT, Q3, FS2 |
 
 `stop` and `dismiss` are aliases for `freelance`. `attack target` is a legacy alias for `target`.
 
@@ -135,6 +140,7 @@ over ~500ms intervals to prevent chat spam. Cooldown is per-bot, not global.
 | `regroup` / `form up` | Converge on speaker | FS2, WC, X-Wing |
 | `attack flag` | CTF: grab enemy flag | UT CTF "take their flag" |
 | `defend flag` | CTF: guard home flag | UT CTF "defend the flag" |
+| `goal` / `objective` | Co-op: resume autonomous objective-seeking (0.9.9) | Releases any order/escort; replies with the current mission objective ("Heading to: <item>!") or "No objective right now — covering you." Outside co-op: "No mission objectives in this mode." |
 
 ### Tier 3 — D3-unique / flight-sim (post-0.9.0)
 
@@ -191,9 +197,9 @@ MultiSendMessageFromServer(...);                // existing: rebroadcast to huma
 
 | Scope | Input | Response | Channel |
 |---|---|---|---|
-| All-chat | F8: `!ping` | Each bot: `Reaper [BOT]: Pong!` | All-chat (visible to everyone) |
-| Team-chat | Ctrl+F8: `!ping` | Team bots: `Reaper [BOT]: Pong!` | Team-chat (private to team) |
-| DM | F8: `reaper: !ping` | `Reaper [BOT]: Pong, Steve!` | DM back to sender only |
+| All-chat | F8: `!ping` | Each bot: `Reaper[BOT]: Pong!` | All-chat (visible to everyone) |
+| Team-chat | Ctrl+F8: `!ping` | Team bots: `Reaper[BOT]: Pong!` | Team-chat (private to team) |
+| DM | F8: `reaper: !ping` | `Reaper[BOT]: Pong, Steve!` | DM back to sender only |
 
 DM ping personalizes the response with the sender's callsign. All-chat and team-chat pings
 use the standard `Pong!` response. `!ping` is the only verb that ignores team restrictions —

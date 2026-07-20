@@ -22,7 +22,10 @@
 
 #include "bot_objective.h"
 #include "bot.h"
+#include "bot_chat.h"
 #include "bot_steering.h"
+#include "levelgoal.h"
+#include "trigger.h"
 #include "multi.h"
 #include "multi_external.h"
 #include "object.h"
@@ -107,6 +110,18 @@ static void BotResetObjectiveState() {
     Bot_objective.entropy_prev_deaths[i] = 0;
   }
   Bot_objective.entropy_world_virus_count = 0;
+  Bot_objective.coop_goal_index = -1;
+  Bot_objective.coop_item_index = -1;
+  Bot_objective.coop_goal_room = -1;
+  vm_MakeZero(&Bot_objective.coop_goal_pos);
+  Bot_objective.coop_all_done = false;
+  Bot_objective.coop_prev_goal_index = -1;
+  Bot_objective.coop_prev_item_index = -1;
+  Bot_objective.coop_announced_escort = false;
+  Bot_objective.coop_unroutable_streak = 0;
+  Bot_objective.coop_announced_goal = -1;
+  Bot_objective.coop_announced_item = -1;
+  Bot_objective.coop_announce_t = 0.0f;
 }
 
 void BotInitObjectiveState() {
@@ -167,6 +182,13 @@ void BotInitObjectiveState() {
     Bot_objective.monsterball_goal_rooms[1] = GetGoalRoomForTeam(1);
     LOG_DEBUG.printf("BOT OBJ: Monsterball ID: %d, goals: red=room%d blue=room%d", Obj_monsterball_id,
                      Bot_objective.monsterball_goal_rooms[0], Bot_objective.monsterball_goal_rooms[1]);
+    break;
+
+  case BGM_COOP:
+    // Campaign objectives come from Level_goals (the guide-bot's data source) — resolved live in
+    // BotPollCoop, nothing to cache. Log the shape so a goal-less level is obvious immediately.
+    LOG_DEBUG.printf("BOT OBJ: Co-op init: %d level goals, %d active primaries", Level_goals.GetNumGoals(),
+                     Level_goals.GetNumActivePrimaryGoals());
     break;
 
   case BGM_ENTROPY:
@@ -989,6 +1011,278 @@ static int BotGetObjectiveRoom_Entropy(int bot_index) {
 }
 
 // ---------------------------------------------------------------------------
+// Co-op polling (campaign objectives from Level_goals — the guide-bot's data source)
+// ---------------------------------------------------------------------------
+
+// Nearest connected human player slot by straight-line distance from `from` (escort target pick).
+// Excludes bots and the dedicated-server pseudo-player (slot 0 has no ship object).
+static int BotFindNearestHumanSlot(object *from) {
+  int best = -1;
+  float best_d = 1e30f;
+  for (int s = 0; s < MAX_NET_PLAYERS; s++) {
+    if (!(NetPlayers[s].flags & NPF_CONNECTED) || (NetPlayers[s].flags & NPF_BOT))
+      continue;
+    if (Dedicated_server && s == 0)
+      continue;
+    if (Players[s].objnum < 0)
+      continue;
+    object *po = &Objects[Players[s].objnum];
+    if (po->type != OBJ_PLAYER) // ghost/observer window — not escortable
+      continue;
+    float d = vm_VectorDistanceQuick(&from->pos, &po->pos);
+    if (d < best_d) {
+      best_d = d;
+      best = s;
+    }
+  }
+  return best;
+}
+
+// Resolve one goal item to a routable (room, pos). Returns false when the item can't anchor
+// navigation (dead/ghost/outdoor object, terrain cell, bad handle). Handle semantics per type
+// follow the guide-bot's GBC_FIND_ACTIVE_GOAL handler (AIGame.cpp:4977-5074): LIT_OBJECT handle
+// is an object handle, LIT_INTERNAL_ROOM handle IS a roomnum, LIT_TRIGGER handle indexes Triggers[].
+static bool BotResolveCoopItem(char type, int handle, int *out_room, vector *out_pos) {
+  switch (type) {
+  case LIT_OBJECT: {
+    object *o = ObjGet(handle);
+    if (!o || o->type == OBJ_NONE || o->type == OBJ_GHOST)
+      return false;
+    if (o->flags & (OF_DEAD | OF_DESTROYED))
+      return false;
+    if (OBJECT_OUTSIDE(o)) // outdoor goal objects: escort fallback covers it (documented limitation)
+      return false;
+    *out_room = o->roomnum;
+    *out_pos = o->pos;
+    return true;
+  }
+  case LIT_INTERNAL_ROOM: {
+    if (handle < 0 || handle > Highest_room_index || !Rooms[handle].used)
+      return false;
+    *out_room = handle;
+    *out_pos = Rooms[handle].path_pnt;
+    return true;
+  }
+  case LIT_TRIGGER: {
+    if (handle < 0 || handle >= Num_triggers)
+      return false;
+    int room = Triggers[handle].roomnum;
+    int face = Triggers[handle].facenum;
+    if (room < 0 || room > Highest_room_index || !Rooms[room].used || face < 0 || face >= Rooms[room].num_faces)
+      return false;
+    vector center;
+    ComputeCenterPointOnFace(&center, &Rooms[room], face);
+    *out_pos = center + Rooms[room].faces[face].normal * 5.0f; // stand-off point, GB-style
+    *out_room = room;
+    return true;
+  }
+  default: // LIT_TERRAIN_CELL / LIT_ANY_MINE: not routable indoors — skip
+    return false;
+  }
+}
+
+// Engage/release the automatic escort. When no routable campaign goal exists (locked door,
+// non-location goal, all done), FREELANCE bots fall in behind the nearest human; when a goal
+// (re)appears, only bots WE auto-escorted release — chat-ordered follows are untouched.
+// Co-op default posture (operator ruling 2026-07-19): bots are COMPANIONS, not players — no
+// autonomous objective pursuit (that steals the player's game). Every unordered bot escorts the
+// nearest human by default; the objective feeds announcements and the !goal order only.
+// !freelance opts a bot out (coop_no_escort) until any other order consumes the opt-out.
+static void BotCoopUpdateEscort() {
+  for (int i = 0; i < MAX_BOTS; i++) {
+    if (!Bots[i].active)
+      continue;
+    if (Bots[i].squad_role != SQUAD_FREELANCE && !Bots[i].coop_auto_escort)
+      Bots[i].coop_no_escort = false; // any real order consumes the !freelance opt-out
+    // Default wing: every unordered bot escorts the nearest human.
+    if (Bots[i].squad_role == SQUAD_FREELANCE && !Bots[i].coop_no_escort) {
+      object *obj = &Objects[Players[Bots[i].player_slot].objnum];
+      int human = BotFindNearestHumanSlot(obj);
+      if (human < 0)
+        continue; // no humans in yet — stay freelance (fight robots, re-poll in 0.5s)
+      Bots[i].squad_role = SQUAD_FOLLOW;
+      Bots[i].squad_target_slot = human;
+      Bots[i].coop_auto_escort = true;
+      // Arm the order lifecycle with no issuer: escort nav uses it, reports stay silent
+      // (BotOrderReport no-ops on issuer -1).
+      Bots[i].order_anchor_type = ORDER_ANCHOR_PLAYER;
+      Bots[i].order_state = ORDER_EN_ROUTE;
+      Bots[i].order_issuer_slot = -1;
+      Bots[i].order_progress_pos = obj->pos;
+      Bots[i].order_progress_time = Gametime;
+      Bots[i].order_report_time = 0.0f;
+      BotForceEscortMode(i);
+      LOG_DEBUG.printf("BOT OBJ: Co-op '%s' auto-escorting '%s' (default wing)", Bots[i].callsign,
+                       Players[human].callsign);
+    } else if (Bots[i].coop_auto_escort && Bots[i].squad_role == SQUAD_FOLLOW) {
+      // Re-validate the escort target (human may have left).
+      int t = Bots[i].squad_target_slot;
+      bool live = t >= 0 && t < MAX_NET_PLAYERS && (NetPlayers[t].flags & NPF_CONNECTED) &&
+                  !(NetPlayers[t].flags & NPF_BOT) && Players[t].objnum >= 0 &&
+                  Objects[Players[t].objnum].type == OBJ_PLAYER;
+      if (!live) {
+        object *obj = &Objects[Players[Bots[i].player_slot].objnum];
+        Bots[i].squad_target_slot = BotFindNearestHumanSlot(obj);
+        if (Bots[i].squad_target_slot < 0) { // nobody left to escort
+          Bots[i].squad_role = SQUAD_FREELANCE;
+          Bots[i].coop_auto_escort = false;
+          Bots[i].order_anchor_type = ORDER_ANCHOR_NONE;
+          Bots[i].order_state = ORDER_NONE;
+        }
+      }
+    }
+  }
+}
+
+// Consecutive unroutable polls before an established goal is dropped for escort. The routability
+// gate is referenced from a moving bot's room, so a single-poll "unroutable" is often transient
+// (stuck-escape hop, outdoor moment) — flapping goal<->escort every 0.5s churns roles and spams
+// announcements (observed on the first co-op smoke, 2026-07-19).
+#define BOT_COOP_UNROUTABLE_POLLS 4
+// Min seconds before re-announcing the SAME (goal,item) after an escort interlude.
+#define BOT_COOP_REANNOUNCE_INTERVAL 30.0f
+
+static void BotPollCoop() {
+  int num_active = Level_goals.GetNumActivePrimaryGoals();
+  bool was_all_done = Bot_objective.coop_all_done;
+  Bot_objective.coop_all_done = (num_active <= 0);
+
+  // Reference room for the routability gate: first live bot. Route cost is bot-independent
+  // enough for a shared objective (all bots travel together in co-op).
+  int ref_room = -1;
+  for (int i = 0; i < MAX_BOTS; i++) {
+    if (!Bots[i].active || Bots[i].awaiting_respawn)
+      continue;
+    object *obj = &Objects[Players[Bots[i].player_slot].objnum];
+    if (obj->type == OBJ_PLAYER && !OBJECT_OUTSIDE(obj)) {
+      ref_room = obj->roomnum;
+      break;
+    }
+  }
+
+  int found_goal = -1, found_item = -1, found_room = -1;
+  vector found_pos;
+  for (int p = 0; p < num_active && found_room < 0; p++) {
+    int g = Level_goals.GetActivePrimaryGoal(p);
+    if (g < 0)
+      continue;
+    int flags = 0;
+    if (!Level_goals.GoalStatus(g, LO_GET_SPECIFIED, &flags, false))
+      continue;
+    if (flags & (LGF_NOT_LOC_BASED | LGF_GB_DOESNT_KNOW_LOC))
+      continue; // designer says this goal can't anchor navigation (same skip as the guide-bot)
+
+    int num_items = Level_goals.GoalGetNumItems(g);
+    for (int j = 0; j < num_items; j++) {
+      char type = 0;
+      int handle = 0;
+      bool done = false;
+      if (!Level_goals.GoalItemInfo(g, j, LO_GET_SPECIFIED, &type, &handle, &done))
+        continue;
+      if (done)
+        continue;
+      int room = -1;
+      vector pos;
+      if (!BotResolveCoopItem(type, handle, &room, &pos))
+        continue;
+      // Routability gate: an item behind a locked door is not actionable — humans unlock,
+      // we re-poll and resume. Same honest-cost model as BotGetNearestEntropyRoom. Under $nav
+      // bnodesp (PLAN-coop-nav-rethink.md 9.2), the engine plans the route, not our router — gate
+      // on the engine's own reachability (BOA_GetNextRoom, what AI_IsDestReachable checks) instead,
+      // so selection can't silently fall back to escort while a BNode path is actually flyable.
+      if (ref_room >= 0 && ref_room != room) {
+        bool actionable = BotBnodeNativeActive() ? (BOA_GetNextRoom(ref_room, room) != BOA_NO_PATH)
+                                                 : (BotComputeRouteCost(ref_room, room) < 1e29f);
+        if (!actionable)
+          continue;
+      }
+      found_goal = g;
+      found_item = j;
+      found_room = room;
+      found_pos = pos;
+      break;
+    }
+  }
+
+  if (found_room >= 0) {
+    Bot_objective.coop_unroutable_streak = 0;
+    Bot_objective.coop_goal_index = found_goal;
+    Bot_objective.coop_item_index = found_item;
+    Bot_objective.coop_goal_room = found_room;
+    Bot_objective.coop_goal_pos = found_pos;
+  } else if (Bot_objective.coop_goal_room >= 0) {
+    // Had a goal, this poll couldn't route it. The gate is referenced from a moving bot, so
+    // hold the established goal through short unroutable windows before conceding to escort.
+    if (++Bot_objective.coop_unroutable_streak >= BOT_COOP_UNROUTABLE_POLLS) {
+      Bot_objective.coop_goal_index = -1;
+      Bot_objective.coop_item_index = -1;
+      Bot_objective.coop_goal_room = -1;
+    }
+  }
+
+  bool goal_available = (Bot_objective.coop_goal_room >= 0);
+
+  // Announcements: fire only on transitions, voiced by the first active bot. A goal is only
+  // re-announced if it's a different (goal,item) than last announced, or enough time has
+  // passed (routability flaps must not turn into chat spam).
+  int spokesman = -1;
+  for (int i = 0; i < MAX_BOTS; i++) {
+    if (Bots[i].active) {
+      spokesman = i;
+      break;
+    }
+  }
+  if (spokesman >= 0) {
+    if (goal_available) {
+      bool is_new = (Bot_objective.coop_goal_index != Bot_objective.coop_announced_goal ||
+                     Bot_objective.coop_item_index != Bot_objective.coop_announced_item);
+      bool stale = (Gametime < Bot_objective.coop_announce_t ||
+                    Gametime - Bot_objective.coop_announce_t > BOT_COOP_REANNOUNCE_INTERVAL);
+      if (is_new || (Bot_objective.coop_announced_escort && stale)) {
+        char iname[64] = "";
+        if (Level_goals.GoalGetItemName(Bot_objective.coop_goal_index, iname, sizeof(iname)) <= 0 || !iname[0])
+          Level_goals.GoalGetName(Bot_objective.coop_goal_index, iname, sizeof(iname));
+        char line[128];
+        snprintf(line, sizeof(line), "Heading to: %s", iname[0] ? iname : "the next objective");
+        BotBroadcastAnnounce(spokesman, line);
+        LOG_DEBUG.printf("BOT OBJ: coop goal -> '%s' (goal %d item %d, room %d)", iname,
+                         Bot_objective.coop_goal_index, Bot_objective.coop_item_index, Bot_objective.coop_goal_room);
+        Bot_objective.coop_announced_goal = Bot_objective.coop_goal_index;
+        Bot_objective.coop_announced_item = Bot_objective.coop_item_index;
+        Bot_objective.coop_announce_t = Gametime;
+      }
+      Bot_objective.coop_announced_escort = false;
+    } else {
+      if (Bot_objective.coop_all_done && !was_all_done) {
+        BotBroadcastAnnounce(spokesman, "All primary objectives complete. On your wing.");
+        Bot_objective.coop_announced_escort = true;
+      } else if (!Bot_objective.coop_all_done && !Bot_objective.coop_announced_escort && num_active > 0) {
+        BotBroadcastAnnounce(spokesman, "Can't reach the goal yet. Covering you.");
+        Bot_objective.coop_announced_escort = true;
+        LOG_DEBUG.printf("BOT OBJ: coop no routable goal (%d active primaries) -> escort", num_active);
+      }
+    }
+  }
+
+  (void)goal_available; // announcements still key off it above; escort no longer does
+  BotCoopUpdateEscort();
+}
+
+static int BotGetObjectiveRoom_Coop(int bot_index) {
+  BotSquadRole role = Bots[bot_index].squad_role;
+  // FOLLOW/COVER escort nav and position-anchored holds own navigation; the shared goal only
+  // steers FREELANCE (and ATTACK/DEFEND-biased) bots.
+  if (role == SQUAD_FOLLOW || role == SQUAD_COVER)
+    return -1;
+  if (Bots[bot_index].order_anchor_type == ORDER_ANCHOR_POSITION)
+    return -1;
+  // Operator ruling 2026-07-19: co-op bots never pursue objectives autonomously — companions,
+  // not players. The resolved goal (coop_goal_room/pos) feeds announcements and the !goal
+  // order anchor only. Kept as a function so a future opt-in ("bot-run co-op") is one line.
+  return -1;
+}
+
+// ---------------------------------------------------------------------------
 // Main poll dispatcher
 // ---------------------------------------------------------------------------
 
@@ -1008,6 +1302,9 @@ void BotPollObjectiveState() {
     break;
   case BGM_ENTROPY:
     BotPollEntropy();
+    break;
+  case BGM_COOP:
+    BotPollCoop();
     break;
   default:
     break;
@@ -1132,6 +1429,29 @@ void BotPrintObjectiveState() {
       PrintDedicatedMessage("  %s: carrying %d [cap %d, streak %d]\n", Players[s].callsign,
                             Bot_objective.entropy_virus_count[s], BotEntropyCarryCapacity(s),
                             Bot_objective.entropy_kill_streak[s]);
+    }
+    break;
+  }
+
+  case BGM_COOP: {
+    int num_active = Level_goals.GetNumActivePrimaryGoals();
+    PrintDedicatedMessage("  Active primary goals: %d%s\n", num_active,
+                          Bot_objective.coop_all_done ? " (ALL DONE — endgame escort)" : "");
+    if (Bot_objective.coop_goal_index >= 0) {
+      char gname[64] = "", iname[64] = "";
+      Level_goals.GoalGetName(Bot_objective.coop_goal_index, gname, sizeof(gname));
+      Level_goals.GoalGetItemName(Bot_objective.coop_goal_index, iname, sizeof(iname));
+      PrintDedicatedMessage("  Current: goal %d '%s' item %d '%s' -> room %d\n", Bot_objective.coop_goal_index, gname,
+                            Bot_objective.coop_item_index, iname, Bot_objective.coop_goal_room);
+    } else {
+      PrintDedicatedMessage("  Current: no routable goal — escort fallback\n");
+    }
+    for (int i = 0; i < MAX_BOTS; i++) {
+      if (!Bots[i].active)
+        continue;
+      PrintDedicatedMessage("  %s: role=%s%s target=%s\n", Bots[i].callsign, BotSquadRoleName(Bots[i].squad_role),
+                            Bots[i].coop_auto_escort ? " (auto)" : "",
+                            (Bots[i].squad_target_slot >= 0) ? Players[Bots[i].squad_target_slot].callsign : "-");
     }
     break;
   }
@@ -1379,6 +1699,8 @@ int BotGetObjectiveRoom(int bot_index) {
     return BotGetObjectiveRoom_Monsterball(bot_index);
   case BGM_ENTROPY:
     return BotGetObjectiveRoom_Entropy(bot_index);
+  case BGM_COOP:
+    return BotGetObjectiveRoom_Coop(bot_index);
   default:
     return -1;
   }
