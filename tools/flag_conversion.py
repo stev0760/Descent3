@@ -9,7 +9,8 @@ has an outbound/reach failure.
 
 Segments the log by engine level loads ("Opening level 'X.d3l'"), so it works on any
 mission, and counts per map+team: picks, captures, returns, conversion %. Bots and
-humans are split (bot names carry the " [BOT]" suffix).
+humans are split (bot names carry the "[BOT]" suffix — no space, callsigns are short;
+the optional whitespace below also matches older logs that used " [BOT]" with a space).
 
 Usage: flag_conversion.py <server.log> [more logs...]
 """
@@ -23,9 +24,12 @@ LEVEL_RE = re.compile(r"Opening level '([^'.]+)\.d3l'", re.IGNORECASE)
 # dropped/in-field grab ("finds the X Flag among some debris"). Some maps (metropol_gt,
 # 2026-07-18 overnight) emit ONLY the debris variant for the whole session — counting just
 # "picks up" read as picks=0 with caps=14 there. Both are grabs for conversion purposes.
-PICK_RE = re.compile(r"\*?(\S+?)( \[BOT\])? \((\w+)\) (?:picks up the|finds the) (\w+) Flag")
-CAP_RE = re.compile(r"\*?(\S+?)( \[BOT\])? \((\w+)\) captures the (\w+) Flag")
-RET_RE = re.compile(r"\*?(\S+?)( \[BOT\])? \((\w+)\) returns the (\w+) Flag")
+# \s? (not a literal space) before [BOT]: the shipped suffix is "Name[BOT]" with no space —
+# a literal-space requirement here silently misclassified every bot event as human (caught
+# 2026-07-20 auditing the 0.9.9 regression battery; bot picks/caps read 0 on every map).
+PICK_RE = re.compile(r"\*?(\S+?)(\s?\[BOT\])? \((\w+)\) (?:picks up the|finds the) (\w+) Flag")
+CAP_RE = re.compile(r"\*?(\S+?)(\s?\[BOT\])? \((\w+)\) captures the (\w+) Flag")
+RET_RE = re.compile(r"\*?(\S+?)(\s?\[BOT\])? \((\w+)\) returns the (\w+) Flag")
 
 
 def analyze(path):
