@@ -379,6 +379,31 @@ enum BotState {
   BOT_STATE_EVADE,   // Prolonged combat stall. Break off, regroup, then re-engage.
 };
 
+// §7 contention instrumentation (NAV_DESIGN_REVIEW.md, 2026-07-21): each value names one member of
+// the nav "committee" (the review's §3 table) that can seize the bot's travel goal or thrust for a
+// tick. Measurement only — no member here changes behavior; BotNavMemberWin() in bot.cpp just counts
+// who wins and how often the winner flips faster than a bot could act on it (the "committee" tell).
+enum BotNavMember : uint8_t {
+  NAV_MEMBER_NONE = 0,        // no routed-goal tick yet this level (idle / combat / not exploring)
+  NAV_MEMBER_BNODESP,         // $nav bnodesp — engine's own BNode path owns the leg (SP maps)
+  NAV_MEMBER_TROUTE,          // $nav troute — cross-terrain plan redirected the issue (seg0 exit door)
+  NAV_MEMBER_NO_ROUTE,        // no finite route under our cost model — engine's wind-blind BOA takes over
+  NAV_MEMBER_SEAM,            // $nav seam — engine steer-target detoured off our waypoint
+  NAV_MEMBER_HOP_COMMIT,      // 0.9.7 hop-commit — same adjacent hop re-issued past the press trigger
+  NAV_MEMBER_VIA,             // Phase 12 via-point — interior obstacle go-around
+  NAV_MEMBER_GRIDROUTE,       // $nav route — proactive in-room grid waypoint (complex rooms)
+  NAV_MEMBER_OUTDOOR_ENTRY,   // outdoor two-stage entrance approach/commit
+  NAV_MEMBER_OUTDOOR_LEG,     // $nav outroute — outdoor lattice leg follow
+  NAV_MEMBER_PATH_PNT,        // default: raw portal path_pnt / final pos, nothing else engaged
+  NAV_MEMBER_STUCK_ESCAPE,    // stuck-recovery escape thrust (can flee backward) — BotApplyThrust
+  NAV_MEMBER_ENGINE,          // raw goal handed to the engine (escort beeline / hold-station / outdoor
+                              // track) — the engine's own routing, the review's §3 top-row counterpart.
+                              // Added 2026-07-22: the first co-op session showed these legs dominate
+                              // SP travel yet were uncounted, so ours-vs-engine flips were invisible.
+  NAV_MEMBER_COUNT
+};
+#define BOT_NAV_CONTEND_WINDOW 3.0f // winner flip inside this many seconds = contention, not a clean handoff
+
 struct bot_info {
   bool active;
   int player_slot; // index into Players[]/NetPlayers[]
@@ -541,6 +566,15 @@ struct bot_info {
   float via_suspend_until;    // Gametime until via search is suspended in via_suspend_room
   int via_suspend_room;       // room the suspension applies to
 
+  // §7 contention instrumentation (NAV_DESIGN_REVIEW.md, 2026-07-21) — measurement only, no
+  // behavior change. Tracks which nav-committee member (BotNavMember) last won this bot's routed
+  // goal/thrust, and counts how often the winner flips to a DIFFERENT member before the previous
+  // one held the wheel for BOT_NAV_CONTEND_WINDOW seconds. See BotNavMemberWin() in bot.cpp.
+  BotNavMember nav_last_member;                 // member that won most recently (NONE = no tick yet)
+  float nav_last_member_time;                   // Gametime the current winning streak started
+  uint32_t nav_member_count[NAV_MEMBER_COUNT];  // lifetime (this level) win counts, by BotNavMember
+  uint32_t nav_contention_count;                // times the winner flipped within the churn window
+
   // Difficulty system (Phase 5.2)
   BotDifficulty difficulty; // this bot's difficulty level
   float fire_delay_timer;   // counts down after target acquired; fires when <= 0
@@ -700,6 +734,16 @@ const char *BotLeanName(int lean);
 // SOLID portal (i.e. glass). Diagnostic-only; no behavior change.
 void BotFormatNavDiag(int bot_index, char *buf, size_t buflen);
 #define BOT_NAV_DIAG_PROBE_DIST 50.0f // forward look distance for the $botstat movement_dir probe
+
+// §7 contention instrumentation ($nav contend): write a one-line per-bot nav-committee win-count
+// histogram + contention total into buf (NAV_DESIGN_REVIEW.md). Diagnostic-only; no behavior change.
+void BotFormatNavContend(int bot_index, char *buf, size_t buflen);
+
+// Dump every active bot's contend histogram to the log, then reset the counters — called at the
+// natural A/B boundaries (any $nav toggle flip, level end) so each experimental arm's numbers land
+// in the soak log standalone. The 07-22 session lost its histograms because nobody typed
+// $nav contend before quitting; boundaries must self-report. `reason` labels the boundary.
+void BotNavContendDumpAll(const char *reason);
 
 // Write the engine's runtime navigation geometry (BOA, room/portal path_pnt,
 // portal passability, portal-LOS matrix) to a JSON file for offline analysis.

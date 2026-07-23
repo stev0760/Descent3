@@ -7,6 +7,27 @@ live navigation status is in [NAVIGATION.md](NAVIGATION.md) §7.0.
 Versioning: `0.8.x` = feature releases; `0.9.x` = the navigation-milestone series.
 A `-dev` suffix marks an in-test build that has not yet passed its validation gate.
 
+## [0.9.10-dev] - 2026-07-22
+
+*In progress: a navigation cleanup pass. The bot fights well but travels a little "off," and the
+cause turned out to be architectural: over a year of adding game modes, navigation grew into ten-odd
+cooperating (and occasionally competing) subsystems instead of one clear decision-maker. This build
+measures that — and makes the first cut.*
+
+**New (operator-only): `$nav contend` telnet command.** Counts how often each part of the navigation
+system takes over a bot's travel decisions, and flags moments where two parts disagree within a few
+seconds of each other. Histograms also print to the server log automatically whenever a `$nav`
+toggle changes and at the end of every level, so test sessions capture them without any typing.
+
+**First measured result, and the first simplification.** A live campaign A/B session showed that on
+single-player maps only one of those ten-odd subsystems ever actually intervenes — the in-room
+detour ("via") layer — and that it kept overriding the engine's own good pathfinding even in the
+mode where the engine is supposed to own navigation. Escorting bots reached their wing position 22
+times with engine navigation versus zero without it. So now, on campaign maps where the engine's
+hand-authored path network is active, the detour layer stands down entirely indoors: one navigator
+per ship. Multiplayer maps are untouched — they have no such network, and the full navigation stack
+still runs there.
+
 ## [0.9.9] - 2026-07-19
 
 *The co-op companion release. Bots fly the campaign WITH you, not for you: join a co-op game and

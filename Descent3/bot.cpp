@@ -120,6 +120,115 @@ extern void MultiSendPlayerEnteredGame(int which);
 extern void MultiSendRenewPlayer(int slot);
 extern void MultiSendPlayerDisconnect(int slot);
 
+// --- §7 contention instrumentation (NAV_DESIGN_REVIEW.md, 2026-07-21) ---
+// Measurement only, no behavior change: names the nav-committee members from the review's §3 table
+// and records which one wins each tick, so the eventual collapse-to-one-router decision is made from
+// counted contention, not from argument. BotNavMember + the per-bot counters live in bot.h; $nav
+// contend (dedicated_server.cpp, via BotFormatNavContend below) dumps the running totals over telnet.
+static const char *BotNavMemberName(BotNavMember m) {
+  switch (m) {
+  case NAV_MEMBER_BNODESP:
+    return "bnodesp";
+  case NAV_MEMBER_TROUTE:
+    return "troute";
+  case NAV_MEMBER_NO_ROUTE:
+    return "no-route";
+  case NAV_MEMBER_SEAM:
+    return "seam";
+  case NAV_MEMBER_HOP_COMMIT:
+    return "hop-commit";
+  case NAV_MEMBER_VIA:
+    return "via";
+  case NAV_MEMBER_GRIDROUTE:
+    return "gridroute";
+  case NAV_MEMBER_OUTDOOR_ENTRY:
+    return "outdoor-entry";
+  case NAV_MEMBER_OUTDOOR_LEG:
+    return "outdoor-leg";
+  case NAV_MEMBER_PATH_PNT:
+    return "path_pnt";
+  case NAV_MEMBER_STUCK_ESCAPE:
+    return "stuck-escape";
+  case NAV_MEMBER_ENGINE:
+    return "engine";
+  default:
+    return "none";
+  }
+}
+
+// Record that `member` set (or held) this bot's travel goal/thrust for the current tick. Counts the
+// member's lifetime (this level) win tally, and — the actual measurement — flags CONTENTION when the
+// winner is DIFFERENT from last time and the previous member had held the wheel for under
+// BOT_NAV_CONTEND_WINDOW seconds. A slow handoff (a bot finishing one leg and starting the next
+// cleanly) is not contention; two members fighting over the same few ticks is — the "committee"
+// signature the review names, since a coherent pilot doesn't reverse its own plan that fast.
+static void BotNavMemberWin(int bot_index, BotNavMember member) {
+  if (bot_index < 0 || bot_index >= MAX_BOTS || member <= NAV_MEMBER_NONE || member >= NAV_MEMBER_COUNT)
+    return;
+  bot_info &bi = Bots[bot_index];
+  bi.nav_member_count[member]++;
+  if (bi.nav_last_member != member) {
+    float held = Gametime - bi.nav_last_member_time;
+    // held < 0 covers the Gametime-resets-per-level gotcha (BOT_DEV_REFERENCE) — never miscounts a
+    // level transition as contention.
+    if (bi.nav_last_member != NAV_MEMBER_NONE && held >= 0.0f && held < BOT_NAV_CONTEND_WINDOW) {
+      bi.nav_contention_count++;
+      static float Contend_log_t[MAX_BOTS];
+      float &last = Contend_log_t[bot_index];
+      if (Gametime < last || Gametime - last > 5.0f) {
+        last = Gametime;
+        LOG_DEBUG.printf("BOT NAVCONTEND: '%s' %s -> %s after %.1fs (contention #%u)", bi.callsign,
+                         BotNavMemberName(bi.nav_last_member), BotNavMemberName(member), held, bi.nav_contention_count);
+      }
+    }
+    bi.nav_last_member = member;
+    bi.nav_last_member_time = Gametime;
+  }
+}
+
+// $nav contend: one-line per-bot win-count histogram + contention total. Skips zero-count members
+// to keep the line short — with 11 members most bots only ever exercise a handful on a given map.
+void BotFormatNavContend(int bot_index, char *buf, size_t buflen) {
+  if (bot_index < 0 || bot_index >= MAX_BOTS || !buf || buflen == 0)
+    return;
+  buf[0] = '\0';
+  bot_info &bi = Bots[bot_index];
+  uint32_t total = 0;
+  for (int m = 1; m < NAV_MEMBER_COUNT; m++)
+    total += bi.nav_member_count[m];
+  size_t used = (size_t)snprintf(buf, buflen, "wins(%u):", total);
+  for (int m = 1; m < NAV_MEMBER_COUNT && used < buflen; m++) {
+    uint32_t c = bi.nav_member_count[m];
+    if (!c)
+      continue;
+    used += (size_t)snprintf(buf + used, buflen - used, " %s=%u", BotNavMemberName((BotNavMember)m), c);
+  }
+  if (used < buflen)
+    snprintf(buf + used, buflen - used, " | contention=%u", bi.nav_contention_count);
+}
+
+// Dump + reset at A/B boundaries (see bot.h). Log-only (LOG_DEBUG) so soak logs capture it without
+// operator action; bots with zero wins are skipped (a fresh arm has nothing to report).
+void BotNavContendDumpAll(const char *reason) {
+  for (int i = 0; i < MAX_BOTS; i++) {
+    if (!Bots[i].active)
+      continue;
+    uint32_t total = 0;
+    for (int m = 1; m < NAV_MEMBER_COUNT; m++)
+      total += Bots[i].nav_member_count[m];
+    if (total > 0) {
+      char line[512];
+      BotFormatNavContend(i, line, sizeof(line));
+      LOG_DEBUG.printf("BOT NAVCONTEND DUMP [%s]: '%s' %s", reason, Bots[i].callsign, line);
+    }
+    Bots[i].nav_last_member = NAV_MEMBER_NONE;
+    Bots[i].nav_last_member_time = 0.0f;
+    for (int m = 0; m < NAV_MEMBER_COUNT; m++)
+      Bots[i].nav_member_count[m] = 0;
+    Bots[i].nav_contention_count = 0;
+  }
+}
+
 // Cached countermeasure weapon IDs (resolved once per level via FindWeaponName)
 static int Bot_chaff_id = -1;
 static int Bot_proxmine_id = -1;
@@ -1798,6 +1907,7 @@ static bool BotNavigateToFollowTarget(int bot_index) {
         int tgt_handle = tgt_obj->handle;
         pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f, GF_SPEED_ATTACK | GF_OBJ_IS_TARGET);
       }
+      BotNavMemberWin(bot_index, NAV_MEMBER_ENGINE); // §7: raw beeline goal — engine flies it
     }
   } else if (!OBJECT_OUTSIDE(obj) && tgt_room >= 0) {
     // Far + both interior: route over our Dijkstra + grid roadmap (carrier-grade). Recomputed each tick from
@@ -1814,6 +1924,7 @@ static bool BotNavigateToFollowTarget(int bot_index) {
         GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
       int tgt_handle = tgt_obj->handle;
       pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&tgt_handle, 2, 1.0f, GF_SPEED_ATTACK | GF_OBJ_IS_TARGET);
+      BotNavMemberWin(bot_index, NAV_MEMBER_ENGINE); // §7: outdoor engine track — engine flies it
     }
   }
 
@@ -1874,6 +1985,7 @@ static void BotDoHoldStationNav(int bot_index) {
       gi_info.pos = Bots[bot_index].order_anchor_pos;
       gi_info.roomnum = Bots[bot_index].order_anchor_room;
       pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
+      BotNavMemberWin(bot_index, NAV_MEMBER_ENGINE); // §7: raw anchor goal — engine flies it
     }
   }
 
@@ -1914,6 +2026,19 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
   object *obj = &Objects[Players[slot].objnum];
   if (!obj->ai_info)
     return 0;
+  // Subtraction #1 (NAV_DESIGN_REVIEW.md, from the 07-22 L1 A/B): when the engine's native BNode
+  // pipeline owns SP travel, the via layer stands down on interior legs — one mind flies the ship.
+  // The 6.20 bypass gated BotSetRoutedGoal and explore-roaming but left this function's OTHER
+  // callers (escort close-beeline, hold-station, outdoor fallback) seizing the wheel: 42 via wins
+  // during the bnodesp-ON arm, and the first NAVCONTEND flip ever logged was via->bnodesp at 1.0s.
+  // Gating HERE covers every call site uniformly. Interior-only to match the bypass (the outdoor
+  // gate is smoke #3). Side effect accepted: *verdict_out stays BOT_VIA_CLEAR, so sealed-powerup
+  // counting is inert under bnodesp — companion escorts don't collect items anyway (6.21).
+  // A/B lever = $nav bnodesp itself (off restores the full via layer); control arm = the 07-22 log.
+  if (BotBnodeNativeActive() && !OBJECT_OUTSIDE(obj)) {
+    Bots[bot_index].via_expires = 0.0f; // drop any live commitment — no stale via resurrection later
+    return 0;
+  }
   if (OBJECT_OUTSIDE(obj) && !Bot_outdoor_via_enabled) {
     Bots[bot_index].via_expires = 0.0f; // outdoor go-around disabled ($outdoorvia off) — drop commitment
     return 0;
@@ -2002,6 +2127,7 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
     }
     if (!(goal_slot >= 0 && goal_slot < MAX_GOALS && obj->ai_info->goals[goal_slot].used))
       issue_via_goal(); // goal slot was flushed elsewhere — re-pin the committed via
+    BotNavMemberWin(bot_index, NAV_MEMBER_VIA); // §7: holding a committed via this tick
     return 1;
   }
 
@@ -2048,6 +2174,7 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
   else
     LOG_DEBUG.printf("BOT NAV: '%s' via-point detour in room %d (target room %d occluded)", Bots[bot_index].callsign,
                      OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum, target_room);
+  BotNavMemberWin(bot_index, NAV_MEMBER_VIA); // §7: fresh via-point detour issued this tick
   return 1;
 }
 
@@ -2074,6 +2201,7 @@ static bool BotOutdoorRouteLeg(object *obj, vector target_pos, int target_room, 
     return false; // no region lattice / disconnected / bot sees no node — beeline + reactive rescue
   *dest = gvia;
   *dest_room = obj->roomnum; // outdoor waypoint: the bot's terrain cell is the valid goal roomnum
+  BotNavMemberWin(BotFindBySlot(obj->id), NAV_MEMBER_OUTDOOR_LEG); // §7: lattice leg follow engaged
   return true;
 }
 
@@ -2131,6 +2259,7 @@ static bool BotOutdoorEntranceStage(object *obj, int goal_room, vector *dest, in
     *ent_portal_out = ent_portal;
   if (entry_out)
     *entry_out = entry;
+  BotNavMemberWin(BotFindBySlot(obj->id), NAV_MEMBER_OUTDOOR_ENTRY); // §7: entrance stage engaged
   return true;
 }
 
@@ -2241,6 +2370,7 @@ static bool BotTrouteRedirect(int bot_index, object *obj, int *goal_room, vector
     *final_pos = Rooms[bi.troute_exit_room].portals[bi.troute_exit_portal].path_pnt;
   }
   *goal_room = bi.troute_exit_room;
+  BotNavMemberWin(bot_index, NAV_MEMBER_TROUTE); // §7: cross-terrain plan redirected this issue
   return true;
 }
 
@@ -2271,6 +2401,7 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   // stays live there. Only WHO plans/flies the route changes: same GF_SPEED_ATTACK, no
   // GF_USE_BLINE_IF_SEES_GOAL (bot.cpp:360 invariant), no guide-bot goal-recipe mimicry (9.6).
   if (BotBnodeNativeActive() && !OBJECT_OUTSIDE(obj) && !ROOMNUM_OUTSIDE(goal_room)) {
+    BotNavMemberWin(bot_index, NAV_MEMBER_BNODESP); // §7: engine's own BNode path owns this leg
     int &pgi = Bots[bot_index].pursuit_goal_index;
     bool goal_valid = (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used);
     if (goal_valid && Bots[bot_index].explore_dest_room == goal_room && Bots[bot_index].explore_room_timer > 0.0f)
@@ -2337,6 +2468,7 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
         LOG_DEBUG.printf("BOT NAV: '%s' NO-ROUTE fallback rm%d -> rm%d (wind/geometry-gated) — engine path takes over",
                          Bots[bot_index].callsign, (int)obj->roomnum, goal_room);
       }
+      BotNavMemberWin(bot_index, NAV_MEMBER_NO_ROUTE); // §7: our router yielded to the engine's BOA
     }
     wp_room = goal_room;
   }
@@ -2413,6 +2545,7 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
         else
           LOG_DEBUG.printf("BOT NAV: '%s' hop commit: %d same-hop presses — aiming through portal to %d",
                            Bots[bot_index].callsign, BOT_HOP_PRESS_TRIGGER, wp_room);
+        BotNavMemberWin(bot_index, steer_divergent ? NAV_MEMBER_SEAM : NAV_MEMBER_HOP_COMMIT); // §7
         // The via probe should cover our bot->door line, not the engine's detour target.
         steer_pos = seam_pnt;
         steer_room = wp_room;
@@ -2447,6 +2580,7 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   // hop, wp_room == obj->roomnum). On FOUND, aim the engine at that in-room waypoint; on NONE/degenerate keep
   // the path_pnt (today's behavior). Indoor only — outdoors the region roadmap already runs via the reactive
   // BotViaPointTick above. Carriers share this function, so this is also the "escape out of the structure" fix.
+  bool nav_dest_overridden = seam_redirect; // §7: seam already counted at assertion time, above
   if (seam_redirect) {
     // 0.9.7 seam guard: aim just past the direct portal, claimed in the CURRENT room — a
     // same-room goal gives the engine nothing to BOA-path (and detour) on; it steers straight
@@ -2458,6 +2592,8 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
     if (BotRoadmapFindVia(obj, dest, wp_room, &gvia, /*proactive=*/true) == BOT_VIA_FOUND) {
       dest = gvia;
       dest_room = obj->roomnum; // the grid waypoint is reachable from the bot's current room
+      nav_dest_overridden = true;
+      BotNavMemberWin(bot_index, NAV_MEMBER_GRIDROUTE); // §7
     }
   } else if (bool entry_commit = false;
              BotOutdoorEntranceStage(obj, goal_room, &dest, &dest_room, nullptr, nullptr, &entry_commit,
@@ -2471,6 +2607,8 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
     // owns the lattice follower for ALL entrance approach legs — plan or not (the piece-1-proper
     // prescription: outroute's delivery skeleton becomes the tier's follower; its beeline
     // pre-check keeps open terrain untouched, and the bedlam gate verdicts the default).
+    // (BotOutdoorEntranceStage/BotOutdoorRouteLeg self-report their own §7 member win.)
+    nav_dest_overridden = true;
     if (!entry_commit && BotOutdoorRouteLeg(obj, dest, dest_room, &dest, &dest_room, Bot_troute_enabled))
       LOG_DEBUG.printf("BOT NAV: '%s' %s wp (entrance leg, goal %d)", Bots[bot_index].callsign,
                        troute_active ? "troute seg1" : "outdoor-route", goal_room);
@@ -2480,9 +2618,13 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   } else if (BotOutdoorRouteLeg(obj, dest, dest_room, &dest, &dest_room, Bot_troute_enabled)) {
     // Terrain track piece 2: the outdoor analog of the branch above — the leg to the goal is
     // terrain-blocked, so aim at the region lattice's next waypoint instead of the beeline.
+    // (BotOutdoorRouteLeg self-reports its own §7 member win.)
+    nav_dest_overridden = true;
     LOG_DEBUG.printf("BOT NAV: '%s' outdoor-route wp (goal room %d, %.0fu leg)", Bots[bot_index].callsign, goal_room,
                      vm_VectorDistanceQuick(&obj->pos, &routed_pos));
   }
+  if (!nav_dest_overridden)
+    BotNavMemberWin(bot_index, NAV_MEMBER_PATH_PNT); // §7: nothing overrode — plain portal path_pnt / final pos
   gi_info.pos = dest;
   gi_info.roomnum = dest_room;
   pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
@@ -5251,6 +5393,7 @@ static void BotApplyThrust(int bot_index) {
     forward = -0.3f;
     sideways = (sinf(Bots[bot_index].juke_phase * 3.0f) > 0) ? 1.0f : -1.0f;
     vertical = 0.3f;
+    BotNavMemberWin(bot_index, NAV_MEMBER_STUCK_ESCAPE); // §7: still holding the wheel this frame
   }
 
   // Stuck detection: escape after 3s at near-zero speed while applying thrust
@@ -5403,11 +5546,13 @@ static void BotApplyThrust(int bot_index) {
     sideways = (rand() % 2) ? 1.0f : -1.0f;
     vertical = (rand() % 3 == 0) ? 0.5f : -0.3f;
     want_afterburner = false;
+    BotNavMemberWin(bot_index, NAV_MEMBER_STUCK_ESCAPE); // §7: new-trigger escape seizes the wheel
   } else if (Bots[bot_index].stuck_timer > 3.0f) {
     // Short stuck: reverse + strafe to clear geometry snag
     forward = -1.0f;
     float strafe_dir = (sinf(Bots[bot_index].juke_phase) > 0) ? 1.0f : -1.0f;
     sideways = strafe_dir * 1.0f;
+    BotNavMemberWin(bot_index, NAV_MEMBER_STUCK_ESCAPE); // §7: short-stuck reverse also seizes it
     vertical = 0.5f;
     want_afterburner = false;
   }
@@ -6770,6 +6915,10 @@ const char *BotGameModeName(BotGameMode mode) {
 }
 
 void BotReinitAll() {
+  // §7 contend: the counters still hold the finished level's data here — dump before anything
+  // resets them, so every level's histogram lands in the log without operator action.
+  BotNavContendDumpAll("level-end");
+
   BotDetectGameMode();
   BotInitObjectiveState();
   BotTrollTableReset(); // 12.2b: new level = new geometry; strikes don't carry over
@@ -6874,6 +7023,14 @@ void BotReinitAll() {
     // opens self-heal (`Gametime < check_time` guard) and don't need entries.
     Bots[i].seam_wp_room = -1; // repeated-map rotations reuse room numbers — a stale latch matches
     Bots[i].seam_next_time = 0.0f;
+    // §7 contention instrumentation (NAV_DESIGN_REVIEW.md): nav_last_member_time is the same
+    // absolute-Gametime latch class — reset per level, same trap. Win/contention counts reset too
+    // so $nav contend attributes to the CURRENT map (matches the project's per-map soak analysis).
+    Bots[i].nav_last_member = NAV_MEMBER_NONE;
+    Bots[i].nav_last_member_time = 0.0f;
+    for (int m = 0; m < NAV_MEMBER_COUNT; m++)
+      Bots[i].nav_member_count[m] = 0;
+    Bots[i].nav_contention_count = 0;
     Bots[i].stall_action_until = 0.0f;
     Bots[i].troute_reject_until = 0.0f;
     Bots[i].troute_goal_room = -1;
@@ -7136,6 +7293,13 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   Bots[bot_index].via_arrivals_same_room = 0;
   Bots[bot_index].via_suspend_until = 0.0f;
   Bots[bot_index].via_suspend_room = -1;
+  // §7 contention instrumentation: a re-added bot in a reused slot must not inherit the previous
+  // occupant's counts/latch (same reasoning as the via_* reset above).
+  Bots[bot_index].nav_last_member = NAV_MEMBER_NONE;
+  Bots[bot_index].nav_last_member_time = 0.0f;
+  for (int m = 0; m < NAV_MEMBER_COUNT; m++)
+    Bots[bot_index].nav_member_count[m] = 0;
+  Bots[bot_index].nav_contention_count = 0;
   Bots[bot_index].order_anchor_type = ORDER_ANCHOR_NONE;
   vm_MakeZero(&Bots[bot_index].order_anchor_pos);
   Bots[bot_index].order_anchor_room = -1;

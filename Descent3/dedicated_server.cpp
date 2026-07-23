@@ -847,6 +847,14 @@ static void NavToggleSet(const NavToggle *t, const char *value) {
   }
   bool want = (stricmp(value, "on") == 0);
   bool changed = (*t->flag != want);
+  if (changed) {
+    // §7 contend: a toggle flip is an A/B arm boundary — dump + reset the contention histograms so
+    // each arm's numbers land in the log standalone (the 07-22 session lost its histograms because
+    // the dump was manual-only).
+    char reason[80];
+    snprintf(reason, sizeof(reason), "toggle %s->%s", t->sub, want ? "on" : "off");
+    BotNavContendDumpAll(reason);
+  }
   *t->flag = want;
   PrintDedicatedMessage("nav %s %s - %s\n", t->sub, want ? "ON" : "OFF", t->desc);
   if (changed && t->rebuild) {
@@ -1013,10 +1021,32 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
       PrintDedicatedMessage("  %-13s %.0fs  Monsterball role commitment period: $nav mtenure <seconds>\n", "mtenure",
                             Bot_mball_role_tenure);
       PrintDedicatedMessage("  %-13s      dump nav geometry to JSON: $nav dump [file]\n", "dump");
+      PrintDedicatedMessage(
+          "  %-13s      §7 committee contention counts (NAV_DESIGN_REVIEW.md): $nav contend [index|all]\n", "contend");
       return true;
     }
     if (stricmp(sub, "dump") == 0)
       return DedicatedNavDump(value);
+    if (stricmp(sub, "contend") == 0) {
+      // §7 contention instrumentation dump: per-bot nav-committee win-count histogram + contention
+      // total (BotNavMemberWin in bot.cpp). Diagnostic-only, same do_all/single_idx shape as $botstat.
+      bool any = false;
+      bool do_all = (value[0] == '\0' || stricmp(value, "all") == 0);
+      int single_idx = do_all ? -1 : atoi(value);
+      for (int i = 0; i < MAX_BOTS; i++) {
+        if (!Bots[i].active)
+          continue;
+        if (!do_all && i != single_idx)
+          continue;
+        any = true;
+        char line[512];
+        BotFormatNavContend(i, line, sizeof(line));
+        PrintDedicatedMessage("  Bot %d '%s' %s\n", i, Bots[i].callsign, line);
+      }
+      if (!any)
+        PrintDedicatedMessage("No bots active (or invalid index)\n");
+      return true;
+    }
     if (stricmp(sub, "mtenure") == 0) { // numeric knob, not a toggle (the M3 thrash A/B lever)
       float sec = (float)atof(value);
       if (!value[0] || sec < 2.0f || sec > 120.0f) {
@@ -1118,6 +1148,8 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     PrintDedicatedMessage("  $botstat [index|all]   - Show bot status details\n");
     PrintDedicatedMessage("  $nav                   - Navigation toggles & status ($nav <name> on|off; bare = list)\n");
     PrintDedicatedMessage("  $nav dump [file]       - Dump current level nav geometry to JSON (alias: $navdump)\n");
+    PrintDedicatedMessage(
+        "  $nav contend [index|all] - §7 nav-committee contention counts (NAV_DESIGN_REVIEW.md)\n");
     PrintDedicatedMessage("  $botmov on|off         - Toggle movement debug logging\n");
     PrintDedicatedMessage("  $botmode               - Show detected game mode\n");
     PrintDedicatedMessage("  $botobj                - Show objective state (CTF flags, orbs, etc.)\n");
