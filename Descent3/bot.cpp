@@ -82,6 +82,40 @@ bool Bot_stall_replan_enabled = false;
 bool Bot_bnode_native_pathing_enabled = true;
 
 bool BotBnodeNativeActive() { return Bot_bnode_native_pathing_enabled && BNode_allocated && BNode_verified; }
+
+// TERRAIN_REGION indexes Terrain_seg[] by the raw cell bits with NO bounds check, and our code
+// passes -1 around as an "outside / no room" sentinel (0x7FFFFFFF after masking = far out of
+// bounds). Resolve the region safely; -1 means "not a real terrain cell".
+static int BotTerrainRegionSafe(int roomnum) {
+  int cell = CELLNUM(roomnum);
+  if (cell < 0 || cell >= (TERRAIN_WIDTH + 1) * (TERRAIN_DEPTH + 1))
+    return -1;
+  return TERRAIN_REGION(roomnum);
+}
+
+// Subtraction #2 (NAV_DESIGN_REVIEW.md §9 finding 4): can the ENGINE's native BNode pipeline fly
+// this leg? This mirrors the engine's own `f_bnode_ok` gate verbatim (aipath.cpp:1087-1092) — which
+// ACCEPTS outdoor endpoints, rejecting only terrain region 0 (open wilderness with no BNode data)
+// and cross-region outdoor->outdoor legs. AIGenerateBNodePath has an explicit BOA_connect branch
+// for external rooms; the guide-bot flies d3 L1's canyon on exactly this path.
+//
+// Our 6.20 bypass demanded both ends INTERIOR, which was strictly stricter than the engine's own
+// contract — so every outdoor leg fell back to the committee (the 07-22 arm C collapse, and 100%
+// of the residual contention in the 07-23 smoke). Matching the engine's gate is a DELETION of an
+// over-restriction, not a new mechanism. Unresolvable cells (the -1 sentinel) stay excluded.
+static bool BotBnodeLegOk(int start_room, int end_room) {
+  const bool s_out = ROOMNUM_OUTSIDE(start_room);
+  const bool e_out = ROOMNUM_OUTSIDE(end_room);
+  const int s_reg = s_out ? BotTerrainRegionSafe(start_room) : -1;
+  const int e_reg = e_out ? BotTerrainRegionSafe(end_room) : -1;
+  if (s_out && s_reg <= 0)
+    return false; // region 0 = no BNode coverage; <0 = not a resolvable cell
+  if (e_out && e_reg <= 0)
+    return false;
+  if (s_out && e_out && s_reg != e_reg)
+    return false; // cross-region outdoor legs: the engine declines these too
+  return true;
+}
 BotGameMode Bot_game_mode = BGM_UNKNOWN;
 
 // --- Bot roster config (Phase 5.1) ---
@@ -2035,7 +2069,11 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
   // gate is smoke #3). Side effect accepted: *verdict_out stays BOT_VIA_CLEAR, so sealed-powerup
   // counting is inert under bnodesp — companion escorts don't collect items anyway (6.21).
   // A/B lever = $nav bnodesp itself (off restores the full via layer); control arm = the 07-22 log.
-  if (BotBnodeNativeActive() && !OBJECT_OUTSIDE(obj)) {
+  // Subtraction #2 extends this to outdoor legs the engine can fly (BotBnodeLegOk = the engine's
+  // own f_bnode_ok). Same principle, wider scope: whoever flies the leg flies it alone. A leg the
+  // engine declines (region 0, cross-region) keeps the full via layer — that is the fallback, and
+  // it is why this is a per-leg test rather than a blanket outdoor exemption.
+  if (BotBnodeNativeActive() && BotBnodeLegOk(obj->roomnum, target_room)) {
     Bots[bot_index].via_expires = 0.0f; // drop any live commitment — no stale via resurrection later
     return 0;
   }
@@ -2400,7 +2438,9 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   // far-leg check at bot.cpp:1794 — later campaign levels have terrain and the outdoor stack
   // stays live there. Only WHO plans/flies the route changes: same GF_SPEED_ATTACK, no
   // GF_USE_BLINE_IF_SEES_GOAL (bot.cpp:360 invariant), no guide-bot goal-recipe mimicry (9.6).
-  if (BotBnodeNativeActive() && !OBJECT_OUTSIDE(obj) && !ROOMNUM_OUTSIDE(goal_room)) {
+  // Subtraction #2: the gate is now the ENGINE's own f_bnode_ok contract (BotBnodeLegOk), not our
+  // stricter both-ends-interior rule — outdoor legs the engine can fly, the engine flies.
+  if (BotBnodeNativeActive() && BotBnodeLegOk(obj->roomnum, goal_room)) {
     BotNavMemberWin(bot_index, NAV_MEMBER_BNODESP); // §7: engine's own BNode path owns this leg
     int &pgi = Bots[bot_index].pursuit_goal_index;
     bool goal_valid = (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used);
@@ -7399,6 +7439,11 @@ void BotRemove(int bot_index) {
 }
 
 void BotRemoveAll() {
+  // §7 contend: the last A/B boundary. Level-end and toggle-flip dumps miss a session that simply
+  // QUITS mid-level — which is exactly how client-launched co-op smokes end (the 07-23 smoke
+  // produced zero dumps for this reason). Dump before the counters go away with the bots.
+  BotNavContendDumpAll("bots-removed");
+
   for (int i = 0; i < MAX_BOTS; i++) {
     if (Bots[i].active)
       BotRemove(i);
