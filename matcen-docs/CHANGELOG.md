@@ -28,6 +28,19 @@ hand-authored path network is active, the detour layer stands down entirely indo
 per ship. Multiplayer maps are untouched — they have no such network, and the full navigation stack
 still runs there.
 
+**Campaign bots now get noticeably further indoors.** The same hand-off was extended to cover any
+leg the engine is willing to fly, rather than only the ones that stay entirely inside a building.
+Indoors the effect is clear: in testing, bots worked deeper into the first campaign level than we
+have previously recorded, and a player flying with them described them as meaningfully more
+coherent than before.
+
+**Outdoors is still the open problem, and this build does not fix it.** Once bots leave a building,
+the engine's path network declines to route them, so the older navigation stack takes back over —
+and out in the open it still wanders, loses track of where it was going, and is unreliable at
+following you. Being honest about the boundary: the improvement above is an indoor one. Whether
+outdoor navigation should be handed to the engine at all, or driven entirely by our own map data,
+is the question the next round of testing is meant to answer.
+
 ## [0.9.9] - 2026-07-19
 
 *The co-op companion release. Bots fly the campaign WITH you, not for you: join a co-op game and
