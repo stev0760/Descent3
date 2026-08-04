@@ -1,6 +1,6 @@
 {
   "_comment": "Monsterball fury.mn3 generality soak (2026-07-16, build c558e1c1). fury verified Monsterball-compat (mn3info: GOALS2,GOALPERTEAM,SPEC1), 6 levels = one full rotation in 6 rounds. Same knobs as monsterball-soak.json (frenzy) so goals/rnd is directly comparable. PURPOSE: finisher-conversion generality — does the 344623a7 arming envelope (arms <=150u, high align) actually SCORE across unfamiliar geometry, and which of fury's 6 levels are corridor-class (Veins-like ~0 conversion) vs open-class. Judge with analyze_bot_log.py '## Monsterball': goals/rnd, player-scores vs blunders per level; MBALL_ZERO_GOALS on a single level = corridor-class candidate for the junction-steering work, NOT an automatic regression.",
-  "server_dir": "/home/steve/Projects/Descent3-bot-testing-client/Descent3_testing",
+  "server_dir": "/home/steve/Projects/mine/Descent3-bot-testing-client/Descent3_testing",
   "launch": ["./Descent3", "-dedicated", "./soak-dedicated-mball-fury.cfg"],
   "telnet_port": 2092,
   "telnet_password": "test",

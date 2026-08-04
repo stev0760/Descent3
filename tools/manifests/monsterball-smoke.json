@@ -1,6 +1,6 @@
 {
   "_comment": "Monsterball M1-M3 first smoke (0.9.8-dev): needs a Monsterball-flagged mission in the server dir — the mn3info.py scan found bedlam, frenzy, dodgeball(+enh), burnout, fury, pumphouse, blst99 in the library; soak-dedicated-mball.cfg currently points at frenzy.mn3 (EDIT IT to the operator's pick; test one single-room AND one multi-room map per spec §5). Scriptname must be the Monsterball module — check `ls netgames/*.d3m` for the exact name before first launch. Judge: M1 gate = $botobj ball/goal block + 'BOT MBALL: ball room' transitions + 'firing at ball' lines; M3 gate = 'role -> STRIKER/SUPPORT/KEEPER' transitions, roles visibly distinct; capture the DLL's goal-scored HUD wording from the log for the analyzer's goal/blunder patterns (they are TODO until then).",
-  "server_dir": "/home/steve/Projects/Descent3-bot-testing-client/Descent3_testing",
+  "server_dir": "/home/steve/Projects/mine/Descent3-bot-testing-client/Descent3_testing",
   "launch": ["./Descent3", "-dedicated", "./soak-dedicated-mball.cfg"],
   "telnet_port": 2092,
   "telnet_password": "test",

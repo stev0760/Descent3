@@ -1,6 +1,6 @@
 {
   "_comment": "Rim toroidal-geometry gridall A/B (2026-07-13, operator-requested — the deferred gridall validation battery gets its first customer). Rim navdump: 4 giant single-component toroidal quadrant rooms with 94% blocked portal-to-portal legs — invisible to the selective proactive-routing gate (orig_comp_count>1), so carriers beeline into the inner curve. Baseline on file (operator CTF session, human present): 5 grabs / 0 caps / 11 stucks on Rim; Wishbone converted 50% same session. CHAOS.MN3 CTF rotation = Wishbone, Inversion, Rim; 6 rounds/phase = 2 full rotations = 2 Rim rounds per arm, with Wishbone/Inversion as the easy-pool regression control (the 0.9.4-era gridall regression class). Judge: flag_conversion.py per phase segment (split at the '$nav gridall on' echo) — Rim conversion 0%->anything = the toroidal verdict; Wishbone/Inversion conversion or stucks degrading under gridall = the regression signal that keeps it off-by-default. Both green -> fix class = blocked-leg-ratio complexity gate (bot_roadmap.cpp:623), not gridall-by-default.",
-  "server_dir": "/home/steve/Projects/Descent3-bot-testing-client/Descent3_testing",
+  "server_dir": "/home/steve/Projects/mine/Descent3-bot-testing-client/Descent3_testing",
   "launch": ["./Descent3", "-dedicated", "./soak-dedicated-rim.cfg"],
   "telnet_port": 2092,
   "telnet_password": "test",

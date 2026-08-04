@@ -23,8 +23,8 @@ quit cleanly → analyze the log → compare against the reference numbers.**
 2. **Never leave a server running.** If a soak errors out, verify the process is gone
    (`pgrep -x Descent3`), `pkill -9 -x Descent3` if needed.
 3. **Deploy before testing.** The test server runs the binary in
-   `~/Projects/Descent3-bot-testing-client/Descent3_testing/`. After any rebuild:
-   `cp builds/linux/build/Debug/Descent3 ~/Projects/Descent3-bot-testing-client/Descent3_testing/Descent3`
+   `~/Projects/mine/Descent3-bot-testing-client/Descent3_testing/`. After any rebuild:
+   `cp builds/linux/build/Debug/Descent3 ~/Projects/mine/Descent3-bot-testing-client/Descent3_testing/Descent3`
    then confirm the git hash is in the binary: `strings <deployed binary> | grep -m1 <commit-hash>`.
    A soak on a stale binary is worthless and has burned whole sessions before.
 4. **Linux Debug builds only for diagnostics.** Windows Release logs contain ZERO nav
@@ -53,7 +53,7 @@ Manifest format (JSON):
 
 ```json
 {
-  "server_dir": "/home/steve/Projects/Descent3-bot-testing-client/Descent3_testing",
+  "server_dir": "/home/steve/Projects/mine/Descent3-bot-testing-client/Descent3_testing",
   "launch": ["./Descent3", "-dedicated", "./dedicated.cfg"],
   "telnet_port": 2092,
   "telnet_password": "test",

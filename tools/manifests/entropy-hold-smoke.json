@@ -1,6 +1,6 @@
 {
   "_comment": "Entropy hold-v3 mechanism smoke (2026-07-14 eve). ONE CHAOS rotation (Wishbone/Inversion/Rim, 3x30min ~95min) on build cdfae08d (hold v3 = depth gate + NEAR-REST gate + 24u hold point; also carries the 80ff51be Gametime-latch sweep). Mechanism verdict only — NOT a statistical run: (a) any 'hold START' whose next event is not an ABORT within ~1s = the flap is dead; (b) first 'spent 5 viruses' / DLL takeover = E3 loop closed end-to-end. v2's transit-park signature to watch AGAINST: START(rm X at speed) -> ABORT(rm Y) <1s pairs. If v3 holds survive: queue the full statistical soak (entropy-hold-resoak.json) for a later slot. Rim metrics excluded per operator (toroidal nav-hostile).",
-  "server_dir": "/home/steve/Projects/Descent3-bot-testing-client/Descent3_testing",
+  "server_dir": "/home/steve/Projects/mine/Descent3-bot-testing-client/Descent3_testing",
   "launch": ["./Descent3", "-dedicated", "./soak-dedicated-entropy-chaos.cfg"],
   "telnet_port": 2092,
   "telnet_password": "test",

@@ -1,6 +1,6 @@
 {
   "_comment": "Abend2 full-stack test (operator question 2026-07-11: is the torus/bulletproof-glass wall-press class finally fixed?). OPERATOR CLASSIFICATION: same geometry class as the isengard rm36 corkscrew — a non-convex annular room around an interior barrier (glass here, the mound there); the old press = chord-vs-ring, LEVEL GEOMETRY not item-sight ('I could just see them on the other side'). So judge primarily by the corkscrew-class mechanisms transferring: curve keeping ring paths (len/chord in the torus room should read WINDING), via delivery threading the ring, hardroom promotion. OPERATOR INTEL: the press targets POWERUPS through the glass (not the flag); flags WERE capturable at one point, inconsistently. Salvaged pre-reach round (a14ea2a9): 0 picks, 2273 dances/20min = NOT fixed pre-reach. This run = full stack (reach+strike+dense+curve+troute+hardcost, 41ecf577+tune). Two 30-min rounds (short-games lesson) + navdump at 10 min for the torus room glass portals. Judge: dance rate vs 2273/20min baseline, item-reach verdicts on the through-glass items (expect UNREACHABLE if cross-glass same-room), soft-strike/retire events, any picks/caps (historical: never converted).",
-  "server_dir": "/home/steve/Projects/Descent3-bot-testing-client/Descent3_testing",
+  "server_dir": "/home/steve/Projects/mine/Descent3-bot-testing-client/Descent3_testing",
   "launch": ["./Descent3", "-dedicated", "./soak-dedicated-abend2-diag.cfg"],
   "telnet_port": 2092,
   "telnet_password": "test",

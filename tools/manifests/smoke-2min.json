@@ -1,6 +1,6 @@
 {
   "_comment": "Driver self-test: launch, apply a no-op toggle recipe, run 2 minutes, quit cleanly. Use whenever soakctl.py or the deploy changes.",
-  "server_dir": "/home/steve/Projects/Descent3-bot-testing-client/Descent3_testing",
+  "server_dir": "/home/steve/Projects/mine/Descent3-bot-testing-client/Descent3_testing",
   "launch": ["./Descent3", "-dedicated", "./dedicated.cfg"],
   "telnet_port": 2092,
   "telnet_password": "test",

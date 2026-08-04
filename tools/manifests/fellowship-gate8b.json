@@ -1,6 +1,6 @@
 {
   "_comment": "Completion of the storm-interrupted 2026-07-09 fellowship gate (6/9 rounds captured in soak-20260709T171142.log). Runs the 3 missing rotation maps via SetLevel=7: dwarrodelf, leapoffaith, khazaddum. Khazaddum is the second Fix-B gate map (room 13 = thin-tube class, 514 via-search-fails in the overnight baseline) — watch 'tube-densified'/'tube-densify FAILED' lines for room 13 and compare via-search-fail counts. Fixes at defaults (strike/dense ON).",
-  "server_dir": "/home/steve/Projects/Descent3-bot-testing-client/Descent3_testing",
+  "server_dir": "/home/steve/Projects/mine/Descent3-bot-testing-client/Descent3_testing",
   "launch": ["./Descent3", "-dedicated", "./soak-dedicated-fellowship8b.cfg"],
   "telnet_port": 2092,
   "telnet_password": "test",
