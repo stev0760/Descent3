@@ -254,6 +254,27 @@ MP" claim above is inference, not measurement.
 > **Reading caveat that survives this run:** trust `episodes` and `contention`; do NOT read the
 > held-seconds column as a time budget — members alternating sub-second each bank the same wall-clock,
 > so held sums exceed elapsed time in exactly this churn regime.
+>
+> **Entropy arm (CHAOS.MN3, 6/6 rounds `rc=0`, 0 crashes; `soak-20260805T041434.log`) — appended
+> 2026-08-05.** Per the operator this arm was movement-and-regression only, not an Entropy-mechanics
+> test, and is read that way here.
+> - **Result 3 REPLICATES on a third mode and a different map pool: 93 of 102 goalless presses (91%)
+>   are `path>0` stale-path** — the identical ratio to bedlam's 60/66. Two independent modes agreeing
+>   to the percentage point is about as strong as this project's evidence gets. (bsidectf remains the
+>   outlier at 46%, worth understanding but not enough to disturb the conclusion.) **Step 2's
+>   path-flush sub-item is now the best-evidenced single change in the plan.**
+> - **Committee shape is mode-dependent, and Entropy is via-monopolised rather than five-handed:**
+>   per round, `via` takes 489-780 episodes against CTF's ~87, while seam/hop-commit/gridroute stay
+>   near zero on most bots. So "how many hands are on the wheel" is not a fixed property of MP — it
+>   varies by map class and mode, which is a further argument for a single dispatch point (Step 3)
+>   over per-member tuning that would have to be re-derived for every mode.
+> - **Contention is wildly bot-dependent within one round** — same map, same minute: Ninja 8 and
+>   Gregg 16 against Viper 574. Whatever drives the churn is per-bot situational, not a global
+>   property, which suggests it is triggered by local geometry rather than by load.
+> - **The single worst bot-round (Viper: 295 stuck-escape episodes, 574 contention) is on Rim**, the
+>   documented nav-hostile map carrying a standing "ignore Rim rounds" directive. **Not a new
+>   regression** — but it does show the escape reflex is where a nav-hostile map's pain surfaces, and
+>   after Step 1 the escape *episode* rate is a real health metric rather than a frame count.
 
 **STEP 1 — give the body an idle.** Delete the `forward = 1.0f` fallback; when there is no live goal,
 apply **zero thrust** and let drag stop the ship (§0, §3). Gate on "no live goal" explicitly rather
