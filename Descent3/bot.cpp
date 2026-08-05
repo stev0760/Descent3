@@ -103,18 +103,72 @@ static int BotTerrainRegionSafe(int roomnum) {
 // contract — so every outdoor leg fell back to the committee (the 07-22 arm C collapse, and 100%
 // of the residual contention in the 07-23 smoke). Matching the engine's gate is a DELETION of an
 // over-restriction, not a new mechanism. Unresolvable cells (the -1 sentinel) stay excluded.
+// Step 0a instrumentation (NAV_CONSOLIDATION_PLAN.md §6): the 08-04 smoke showed this gate declining
+// 100% of outdoor legs (0 of 42 reached the engine) but the gate was SILENT about why, leaving three
+// live hypotheses that fork the whole outdoor half of the plan. These counters name the branch, and
+// the throttled line reports the terrain the decision was made on. Measurement only.
+enum BnodeLegVerdict { BLEG_ACCEPT = 0, BLEG_REJ_START_REGION, BLEG_REJ_END_REGION, BLEG_REJ_CROSS_REGION, BLEG_COUNT };
+static uint32_t Bnode_leg_verdicts[BLEG_COUNT];
+static const char *BnodeLegVerdictName(int v) {
+  switch (v) {
+  case BLEG_ACCEPT:
+    return "accept";
+  case BLEG_REJ_START_REGION:
+    return "rej-start-region";
+  case BLEG_REJ_END_REGION:
+    return "rej-end-region";
+  case BLEG_REJ_CROSS_REGION:
+    return "rej-cross-region";
+  default:
+    return "?";
+  }
+}
+static void BotBnodeLegDumpVerdicts(const char *reason, bool reset) {
+  uint32_t total = 0;
+  for (int v = 0; v < BLEG_COUNT; v++)
+    total += Bnode_leg_verdicts[v];
+  if (total == 0)
+    return;
+  char line[256];
+  size_t used = 0;
+  for (int v = 0; v < BLEG_COUNT && used < sizeof(line); v++)
+    used += (size_t)snprintf(line + used, sizeof(line) - used, " %s=%u", BnodeLegVerdictName(v), Bnode_leg_verdicts[v]);
+  LOG_DEBUG.printf("BOT BNODELEG DUMP [%s]:%s (total=%u)", reason, line, total);
+  if (reset) {
+    for (int v = 0; v < BLEG_COUNT; v++)
+      Bnode_leg_verdicts[v] = 0;
+  }
+}
+
 static bool BotBnodeLegOk(int start_room, int end_room) {
   const bool s_out = ROOMNUM_OUTSIDE(start_room);
   const bool e_out = ROOMNUM_OUTSIDE(end_room);
   const int s_reg = s_out ? BotTerrainRegionSafe(start_room) : -1;
   const int e_reg = e_out ? BotTerrainRegionSafe(end_room) : -1;
+
+  int verdict = BLEG_ACCEPT;
   if (s_out && s_reg <= 0)
-    return false; // region 0 = no BNode coverage; <0 = not a resolvable cell
-  if (e_out && e_reg <= 0)
-    return false;
-  if (s_out && e_out && s_reg != e_reg)
-    return false; // cross-region outdoor legs: the engine declines these too
-  return true;
+    verdict = BLEG_REJ_START_REGION; // region 0 = no BNode coverage; <0 = not a resolvable cell
+  else if (e_out && e_reg <= 0)
+    verdict = BLEG_REJ_END_REGION;
+  else if (s_out && e_out && s_reg != e_reg)
+    verdict = BLEG_REJ_CROSS_REGION; // cross-region outdoor legs: the engine declines these too
+
+  Bnode_leg_verdicts[verdict]++;
+  // Throttled detail on rejects only — accepts are the boring case and would drown the log. Reports
+  // the regions the verdict turned on AND how many BOA connections that region has, which is what
+  // separates "the engine has no data here" from "our gate mis-read resolvable terrain".
+  if (verdict != BLEG_ACCEPT && (s_out || e_out)) {
+    static float Bleg_log_t = 0.0f;
+    if (Gametime < Bleg_log_t || Gametime - Bleg_log_t > 10.0f) {
+      Bleg_log_t = Gametime;
+      const int s_conn = (s_reg > 0 && s_reg < MAX_BOA_TERRAIN_REGIONS) ? BOA_num_connect[s_reg] : -1;
+      const int e_conn = (e_reg > 0 && e_reg < MAX_BOA_TERRAIN_REGIONS) ? BOA_num_connect[e_reg] : -1;
+      LOG_DEBUG.printf("BOT BNODELEG: %s start(out=%d reg=%d conn=%d) end(out=%d reg=%d conn=%d)",
+                       BnodeLegVerdictName(verdict), (int)s_out, s_reg, s_conn, (int)e_out, e_reg, e_conn);
+    }
+  }
+  return verdict == BLEG_ACCEPT;
 }
 BotGameMode Bot_game_mode = BGM_UNKNOWN;
 
@@ -200,9 +254,18 @@ static void BotNavMemberWin(int bot_index, BotNavMember member) {
   if (bot_index < 0 || bot_index >= MAX_BOTS || member <= NAV_MEMBER_NONE || member >= NAV_MEMBER_COUNT)
     return;
   bot_info &bi = Bots[bot_index];
-  bi.nav_member_count[member]++;
+  // EPISODE counting (NAV_CONSOLIDATION_PLAN.md §2a): increment only when the wheel actually changes
+  // hands. Counting per call mixed three units — per-leg (engine/bnodesp), per-0.5s-tick (via) and
+  // per-frame (stuck-escape) — which made the histogram unreadable and overstated the reflex members.
+  // Duration is tracked separately in nav_member_held[], so "held the wheel a long time" and "grabbed
+  // the wheel many times" stay distinguishable instead of being summed into one meaningless number.
   if (bi.nav_last_member != member) {
     float held = Gametime - bi.nav_last_member_time;
+    // Credit the OUTGOING member with the streak it just finished (same negative-held guard as below:
+    // Gametime resets per level, so a level flip must not bank a garbage duration).
+    if (bi.nav_last_member != NAV_MEMBER_NONE && held >= 0.0f)
+      bi.nav_member_held[bi.nav_last_member] += held;
+    bi.nav_member_count[member]++;
     // held < 0 covers the Gametime-resets-per-level gotcha (BOT_DEV_REFERENCE) — never miscounts a
     // level transition as contention.
     if (bi.nav_last_member != NAV_MEMBER_NONE && held >= 0.0f && held < BOT_NAV_CONTEND_WINDOW) {
@@ -230,12 +293,19 @@ void BotFormatNavContend(int bot_index, char *buf, size_t buflen) {
   uint32_t total = 0;
   for (int m = 1; m < NAV_MEMBER_COUNT; m++)
     total += bi.nav_member_count[m];
-  size_t used = (size_t)snprintf(buf, buflen, "wins(%u):", total);
+  // Fold the in-progress streak into the displayed hold time, so a member that has owned the wheel
+  // for the whole session doesn't read as 0s just because it never handed off. Local copy — a
+  // formatter must not mutate the counters it reports.
+  float live = Gametime - bi.nav_last_member_time;
+  size_t used = (size_t)snprintf(buf, buflen, "episodes(%u):", total);
   for (int m = 1; m < NAV_MEMBER_COUNT && used < buflen; m++) {
     uint32_t c = bi.nav_member_count[m];
-    if (!c)
+    float held = bi.nav_member_held[m];
+    if (m == (int)bi.nav_last_member && live >= 0.0f)
+      held += live;
+    if (!c && held <= 0.0f)
       continue;
-    used += (size_t)snprintf(buf + used, buflen - used, " %s=%u", BotNavMemberName((BotNavMember)m), c);
+    used += (size_t)snprintf(buf + used, buflen - used, " %s=%u(%.0fs)", BotNavMemberName((BotNavMember)m), c, held);
   }
   if (used < buflen)
     snprintf(buf + used, buflen - used, " | contention=%u", bi.nav_contention_count);
@@ -243,7 +313,8 @@ void BotFormatNavContend(int bot_index, char *buf, size_t buflen) {
 
 // Dump + reset at A/B boundaries (see bot.h). Log-only (LOG_DEBUG) so soak logs capture it without
 // operator action; bots with zero wins are skipped (a fresh arm has nothing to report).
-void BotNavContendDumpAll(const char *reason) {
+void BotNavContendDumpAll(const char *reason, bool reset) {
+  BotBnodeLegDumpVerdicts(reason, reset); // global (not per-bot) — same boundaries, same reason string
   for (int i = 0; i < MAX_BOTS; i++) {
     if (!Bots[i].active)
       continue;
@@ -257,8 +328,10 @@ void BotNavContendDumpAll(const char *reason) {
     }
     Bots[i].nav_last_member = NAV_MEMBER_NONE;
     Bots[i].nav_last_member_time = 0.0f;
-    for (int m = 0; m < NAV_MEMBER_COUNT; m++)
+    for (int m = 0; m < NAV_MEMBER_COUNT; m++) {
       Bots[i].nav_member_count[m] = 0;
+      Bots[i].nav_member_held[m] = 0.0f;
+    }
     Bots[i].nav_contention_count = 0;
   }
 }
@@ -5238,8 +5311,23 @@ static void BotApplyThrust(int bot_index) {
     sideways = vm_DotProduct(&effective_dir, &obj->orient.rvec);
     vertical = vm_DotProduct(&effective_dir, &obj->orient.uvec);
   } else {
-    // Fallback: first frame after spawn or no active goal — default forward
-    forward = 1.0f;
+    // STEP 1 (NAV_CONSOLIDATION_PLAN.md §3): no nav direction => NO THRUST. Descent 3 has real drag,
+    // so releasing thrust IS the brake — a pilot with nowhere to go coasts to a stop, they do not
+    // reverse-thrust and they do not fly into the wall in front of them.
+    //
+    // This used to be `forward = 1.0f` (full throttle), which made this the nav committee's unlisted
+    // eleventh member: `has_nav_dir` keys only off movement_dir magnitude, NOT off whether a goal
+    // exists, so ANY goalless frame — an escort idling on station, a bot between goals, the frames
+    // after spawn — drove the ship forward at full power. Worse, it manufactured the stuck detector's
+    // own precondition (`speed < 5 && applying_thrust`, where applying_thrust is just |forward|>0.1):
+    // face geometry with no goal and the bot pressed it at full throttle, tripped the 3s reverse, got
+    // displaced, re-approached, and repeated. The 08-04 smoke caught that loop as `BOT PRESS ...
+    // goal=none spd=0.0` and a stuck-escape member that fired on a bot which was never wedged.
+    //
+    // Deliberately NOT the Entropy v6 active park (5204-5215): that thrusts against residual velocity,
+    // which would slam a moving bot to a halt on a transient movement_dir dropout and resists weapon
+    // knockback in a way no human could. Coast, don't brake.
+    forward = 0.0f;
   }
 
   // FSM-based speed scaling and overrides
@@ -7068,8 +7156,10 @@ void BotReinitAll() {
     // so $nav contend attributes to the CURRENT map (matches the project's per-map soak analysis).
     Bots[i].nav_last_member = NAV_MEMBER_NONE;
     Bots[i].nav_last_member_time = 0.0f;
-    for (int m = 0; m < NAV_MEMBER_COUNT; m++)
+    for (int m = 0; m < NAV_MEMBER_COUNT; m++) {
       Bots[i].nav_member_count[m] = 0;
+      Bots[i].nav_member_held[m] = 0.0f;
+    }
     Bots[i].nav_contention_count = 0;
     Bots[i].stall_action_until = 0.0f;
     Bots[i].troute_reject_until = 0.0f;
@@ -7337,8 +7427,10 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   // occupant's counts/latch (same reasoning as the via_* reset above).
   Bots[bot_index].nav_last_member = NAV_MEMBER_NONE;
   Bots[bot_index].nav_last_member_time = 0.0f;
-  for (int m = 0; m < NAV_MEMBER_COUNT; m++)
+  for (int m = 0; m < NAV_MEMBER_COUNT; m++) {
     Bots[bot_index].nav_member_count[m] = 0;
+    Bots[bot_index].nav_member_held[m] = 0.0f;
+  }
   Bots[bot_index].nav_contention_count = 0;
   Bots[bot_index].order_anchor_type = ORDER_ANCHOR_NONE;
   vm_MakeZero(&Bots[bot_index].order_anchor_pos);
@@ -7470,6 +7562,17 @@ void BotDoFrame() {
   if (Gametime < last_objective_poll || Gametime - last_objective_poll > BOT_OBJECTIVE_POLL_INTERVAL) {
     BotPollObjectiveState();
     last_objective_poll = Gametime;
+  }
+
+  // Step 0c (NAV_CONSOLIDATION_PLAN.md §6): periodic contention flush. The dump used to hook only
+  // level-end / toggle-flip / bots-removed, and SIGTERM — the ACTUAL shutdown path, since $quit over
+  // telnet is ignored — runs none of them. The 08-04 session's histograms survived only because they
+  // were scraped over telnet by hand before the kill. Same self-healing Gametime latch as above.
+  static float last_contend_dump = -1.0f;
+  if (Gametime < last_contend_dump || Gametime - last_contend_dump > BOT_NAV_CONTEND_DUMP_INTERVAL) {
+    if (last_contend_dump >= 0.0f)                 // skip the level-start tick: nothing has happened yet
+      BotNavContendDumpAll("periodic", false);     // snapshot only — never reset a live session's totals
+    last_contend_dump = Gametime;
   }
 
   static int mov_log_counter = 0;

@@ -403,6 +403,9 @@ enum BotNavMember : uint8_t {
   NAV_MEMBER_COUNT
 };
 #define BOT_NAV_CONTEND_WINDOW 3.0f // winner flip inside this many seconds = contention, not a clean handoff
+// Periodic snapshot interval. SIGTERM is the real shutdown path ($quit over telnet is ignored) and it
+// runs none of the boundary dumps, so without this a whole session's numbers die with the process.
+#define BOT_NAV_CONTEND_DUMP_INTERVAL 60.0f
 
 struct bot_info {
   bool active;
@@ -570,9 +573,15 @@ struct bot_info {
   // behavior change. Tracks which nav-committee member (BotNavMember) last won this bot's routed
   // goal/thrust, and counts how often the winner flips to a DIFFERENT member before the previous
   // one held the wheel for BOT_NAV_CONTEND_WINDOW seconds. See BotNavMemberWin() in bot.cpp.
+  // UNITS (fixed 2026-08-04, NAV_CONSOLIDATION_PLAN.md §2a): counts are EPISODES — one per
+  // uninterrupted streak of a member holding the wheel — NOT per call. The call sites fire at wildly
+  // different rates (engine/bnodesp per leg issue, via per 0.5s tick, stuck-escape per FRAME), so the
+  // old per-call counter overstated via and stuck-escape against the engine by ~an order of magnitude
+  // and made members non-comparable. Duration lives in nav_member_held[] instead.
   BotNavMember nav_last_member;                 // member that won most recently (NONE = no tick yet)
   float nav_last_member_time;                   // Gametime the current winning streak started
-  uint32_t nav_member_count[NAV_MEMBER_COUNT];  // lifetime (this level) win counts, by BotNavMember
+  uint32_t nav_member_count[NAV_MEMBER_COUNT];  // EPISODES this level, by BotNavMember (see units note)
+  float nav_member_held[NAV_MEMBER_COUNT];      // seconds held this level, by BotNavMember
   uint32_t nav_contention_count;                // times the winner flipped within the churn window
 
   // Difficulty system (Phase 5.2)
@@ -743,7 +752,9 @@ void BotFormatNavContend(int bot_index, char *buf, size_t buflen);
 // natural A/B boundaries (any $nav toggle flip, level end) so each experimental arm's numbers land
 // in the soak log standalone. The 07-22 session lost its histograms because nobody typed
 // $nav contend before quitting; boundaries must self-report. `reason` labels the boundary.
-void BotNavContendDumpAll(const char *reason);
+// reset=true at A/B boundaries (each arm reports its own totals); reset=false for periodic snapshots,
+// which must leave the level-cumulative counters alone so an interactive `$nav contend` still reads true.
+void BotNavContendDumpAll(const char *reason, bool reset = true);
 
 // Write the engine's runtime navigation geometry (BOA, room/portal path_pnt,
 // portal passability, portal-LOS matrix) to a JSON file for offline analysis.
