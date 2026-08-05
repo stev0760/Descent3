@@ -109,6 +109,77 @@ with no floor to anchor recovery to, so the cost of losing the plan is strictly 
 matters *more* here than in the games that solved it, not less. Getting this right in 6DOF is the
 genuinely novel result on offer.
 
+### Amendments from the architecture review (2026-08-05, Fable 5 + operator rulings)
+
+**A. OWNER HIERARCHY — OPERATOR RULING, and it reverses shipped behavior.**
+
+```
+order  >  carry  >  objective  >  opportunism / last-target  >  explore
+```
+
+**Orders outrank everything, including carrying the flag.** Today the opposite ships:
+`BotIsCarryingEnemyFlag` is the FIRST branch of the dispatcher (`bot.cpp:4557`, commented "Must be
+checked first — carriers always prioritize scoring") and breaks out before the `!hold` anchor or
+`!follow`/`!cover` branches are ever evaluated — so a carrier under orders **never even sees them**.
+
+Operator's reasoning, recorded because it is the design rationale and not a preference: a human
+ordering a carrier to follow is making a *tactical* play the bot cannot understand — the bot may be
+routing the wrong way, flying into danger, or the human may have a planned detour that normal routing
+cannot account for, or be clearing a path ahead of the carrier. **"I can't think of any legitimate
+reason why a bot should ignore human orders."** The review had recommended the opposite (carry above
+orders, preserving current behavior) on the grounds that `!follow` shouldn't make a carrier drop the
+flag — **that objection does not apply: flags are not droppable.** There is no drop mechanic, and if
+one were ever added it would be a separate `!dropflag` verb. A carrier under `!follow` simply follows
+*while still carrying*, which is precisely the escort play the order is for.
+
+Reordering the dispatcher is the first piece of Step 2b.
+
+**B. CORRECTION — claim 3 above is overstated; order-following is NOT the same defect.** Order intent
+is *already* persistent, higher-priority and flip-surviving: `order_anchor_type`/`squad_role` are
+touched by no FSM transition site — they clear only on replacement, `!freelance`, level reinit, or slot
+reuse — and `BotOrderProgressCheck` drops the *goal* while retaining the order, which is
+suspend-not-destroy already shipped. `!goal` literally copies a resolved objective into
+`order_anchor_*`. **Step 2 will materially fix "randomly backtracks" and the powerup half of "gets
+distracted"; it will barely move order-following**, whose measured failures are geometric (rm25 tucked
+geometry; `BotGetEscortStation` computes offsets in the player's orientation frame with no geometry
+awareness, so a station can land inside a wall). Stated here so the Step 2 build is not flown against
+an expectation it cannot meet — the Step 1 gate mistake, not repeated.
+
+**C. THE LIFETIME NEEDS A FIFTH CLEAR-CAUSE: failure evidence.** Arrival / timeout / replacement /
+death is incomplete. Stuck escalation today deliberately clears the destination ("clear destination and
+let next explore tick pick a new one") and that is *correct* — the destination was unreachable. Under
+suspend-never-destroy as written, the destination survives the escape, the bot re-approaches the same
+wedge, escapes, re-approaches: **the stubbornness loop this section names as its own counter-risk,
+manufactured by its own fix.** Add: *clear on unreachability evidence* (full stuck escalation, via-seal,
+N× BLOCKED) — demote, don't retry. The two failure poles are vacancy (dest = -1 for minutes) and
+stubbornness; the design must name both.
+
+**D. Expiry during suspension must be specified.** If `explore_room_timer` keeps ticking while
+suspended in COMBAT, a 20s intent dies inside a 25s fight and the re-roll returns through the timer.
+If it never ticks, stale intent is unbounded. Recommendation: **freeze the timer while suspended, plus
+a hard wall-clock cap (~60s)** as the staleness backstop.
+
+**E. This is a GENERALIZATION of four shipped mechanisms, not a new layer** — which is what makes it a
+collapse rather than an addition, and de-risks it, since every semantic being generalized already has
+soak hours behind it:
+- **order anchors** — owner + lifetime + retry, already complete;
+- **the on-objective powerup preserve** (`bot.cpp:4760`) — already implements suspend-not-destroy for
+  exactly one case, with a comment describing it;
+- **`explore_dest_room` + `explore_room_timer`** — has a lifetime, lacks flip-survival;
+- **`last_target_room`** — has flip-survival, lacks rank (and today it outranks the mode objective
+  inside roam, an undocumented inversion: harmless in anarchy, wrong in objective modes).
+
+**F. Per-mode expectations, given the census.** Objective modes derive intent per tick, so Step 2's
+behavioral surface is freelance roam, co-op companion, and post-suspension resumption. Entropy's
+via-monopoly is *execution-layer* churn (in-room detours) that intent persistence does not touch —
+its contention will not move. Judge the `path>0` pass metric **per mode**: bsidectf's 46% stale-path
+share means half its presses are dodge residual and will not zero.
+
+**G. Per-bot intent suffices; no squad slot.** Team coordination already exists as role assignment,
+and explore scoring already reads other bots' destinations as a blackboard (anti-clustering).
+Persistent intent makes that read *more truthful* for free. A squad-level slot is speculative
+machinery with no measured defect behind it.
+
 ### What this means for the plan
 
 The end state is not "the committee, minus most of it". It is **one elegant system**: a persistent
@@ -394,7 +465,19 @@ escort station-keeps ≥ the 07-23 arm's ~30; operator feel on station behavior.
 > residual → combat-layer tuning, out of scope). Widening this gate is off the table unless the
 > census shows a press class that is *neither* — none has been observed.
 
-**STEP 2 — give the mind a memory: persistent travel intent.** One per-bot intent slot
+**STEP 2a — flush the path when its goal dies (SPLIT OUT 2026-08-05; ship independently).**
+`GoalClearGoal` frees the engine path **only when `path.goal_uid == cur_goal->goal_uid`**
+(`AIGoal.cpp:567-570`), so any slot overwrite or uid drift orphans a path that keeps writing
+`movement_dir` — the body flying a plan the mind abandoned. That is the mechanism behind the census's
+91%/91% stale-path finding. Fix: pair `AIPathFreePath` with the goal clears in `BotClearActiveGoal`,
+unconditionally — safe because a bot's goal slots are exclusively ours, so with all tracked slots dead
+no legitimate path can remain. **Deliberately split from 2b: one mechanism, best-evidenced change in
+the plan, pass metric already logging, and NO dependency on the owner-hierarchy ruling or the
+failure-clear design.** Do not let it sit hostage to 2b's design debate.
+*A/B:* build-vs-build; control = the MP census logs. *Decides:* `path>0` goalless presses → ~0 on
+bedlam and Entropy (judge per mode, §F — bside's residual half will not zero).
+
+**STEP 2b — give the mind a memory: persistent travel intent.** One per-bot intent slot
 (destination + owner: order / objective / explore) that **survives state flips**. Remove the EXPLORE
 re-entry wipe (4967) and re-issue stored intent on return instead of re-rolling a random room. Owners
 clear intent only on arrival, timeout, replacement by a higher owner, or death. Subordinate to the

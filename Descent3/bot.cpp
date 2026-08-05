@@ -561,6 +561,24 @@ static bool BotHasVisitedRoom(int bot_index, int roomnum) {
 }
 
 // Clear the bot's current level-2 goal (pursuit, combat, or flee).
+// STEP 2a (NAV_CONSOLIDATION_PLAN.md §6): enforce "no live goal => no live path", once per bot per
+// frame. See the call site in BotDoFrame for why this is an invariant rather than ~20 call-site
+// patches. A bot's goal slots are exclusively ours, so with all three dead no legitimate path can
+// remain — anything still there is an orphan feeding movement_dir toward a dead intent.
+static void BotEnforceNoOrphanPath(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  if (!obj->ai_info || obj->ai_info->path.num_paths == 0)
+    return;
+  auto slot_live = [&](int gi) {
+    return gi >= 0 && gi < MAX_GOALS && obj->ai_info->goals[gi].used;
+  };
+  if (slot_live(Bots[bot_index].pursuit_goal_index) || slot_live(Bots[bot_index].combat_goal_index) ||
+      slot_live(Bots[bot_index].powerup_goal_index))
+    return;
+  AIPathFreePath(&obj->ai_info->path);
+}
+
 static void BotClearActiveGoal(int bot_index) {
   int slot = Bots[bot_index].player_slot;
   object *obj = &Objects[Players[slot].objnum];
@@ -575,6 +593,20 @@ static void BotClearActiveGoal(int bot_index) {
   clear_goal(Bots[bot_index].pursuit_goal_index);
   clear_goal(Bots[bot_index].combat_goal_index);
   clear_goal(Bots[bot_index].powerup_goal_index);
+
+  // STEP 2a (NAV_CONSOLIDATION_PLAN.md §6): the path dies with the goals, unconditionally.
+  //
+  // GoalClearGoal only frees the engine path when `path.goal_uid == cur_goal->goal_uid`
+  // (AIGoal.cpp:567-570), so any slot overwrite or uid drift ORPHANS a live path — and an orphaned
+  // path keeps feeding movement_dir, which means the body goes on flying a plan the mind has already
+  // abandoned. That is not a theory: the 08-04/05 MP census measured it at 91% of goalless wall-
+  // presses on bedlam (60/66) AND Entropy (93/102) — bots pressing geometry en route to somewhere
+  // they no longer intend to go, the `path>0` signature on the BOT PRESS line.
+  //
+  // Unconditional is safe here specifically: a bot's goal slots are exclusively ours (we own all
+  // three tracked indices), so once they are all cleared no legitimate path can remain. Calling it
+  // with no live path is a no-op — AIPathFreePath loops num_paths (zero) then reinits.
+  AIPathFreePath(&obj->ai_info->path);
   Bots[bot_index].chasing_powerup_handle = OBJECT_HANDLE_NONE;
   Bots[bot_index].chasing_powerup_timer = 0.0f;
   Bots[bot_index].via_expires = 0.0f; // Phase 12: a via commitment dies with the goal it served
@@ -7964,6 +7996,19 @@ void BotDoFrame() {
         BotDeployGunboy(i);
       }
     }
+
+    // STEP 2a invariant (NAV_CONSOLIDATION_PLAN.md §6): NO LIVE GOAL => NO LIVE PATH.
+    //
+    // Clearing the path inside BotClearActiveGoal was necessary but nowhere near sufficient: there
+    // are ~25 GoalAddGoal sites and ~20 GoalClearGoal sites outside it, and each re-issue clears its
+    // own slot via GoalClearGoal — which frees the path ONLY when path.goal_uid matches the goal
+    // being cleared (AIGoal.cpp:567). Every mismatch orphans a live path that keeps feeding
+    // movement_dir, and the first 2a smoke still showed 4 of 4 goalless presses carrying path>0.
+    //
+    // Patching twenty call sites is the reflex this phase exists to remove. Enforce the invariant in
+    // ONE place instead: if no tracked goal slot is live, no path may be. Self-healing by
+    // construction — it does not care which site did the orphaning.
+    BotEnforceNoOrphanPath(i);
 
     // Steer AI orient system toward lead aim position (must precede BotApplyThrust)
     BotUpdateAimDirection(i);
