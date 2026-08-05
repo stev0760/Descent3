@@ -1,0 +1,12 @@
+{
+  "_comment": "MP CENSUS 1/3 — bedlam.mn3 CTF 4-team (2026-08-04 overnight). This is the plan's owed STEP 0d: the nav-committee contention histograms have NEVER been run on a multiplayer map — every contend number in existence is co-op d3 L1. MP maps ship without BNodes, so bnodesp/BotBnodeLegOk are inert by construction here; the point is which members actually seize the wheel when the full committee IS the only navigator, plus a movement regression check on the Step 1 idle change (forward=1.0 -> 0.0). Reuses the operator's gold-regime cfg (8 bots, explicit BotTeam=1..4 per soak-bots-4t.cfg — auto-balance fills only 2 teams and leaves unmanned flags). Judge: flag conversion % per map+team (duration-independent) vs the 0.9.3 gold matrix (Polaris 15.6 caps/rnd @56-69% conv, Plutonium 26-56%, Apparition 7.9, QuadSomniac always-poor 4-13% = NOT a regression), plus contend episodes/contention per bot and any hard-fail signature.",
+  "server_dir": "/home/steve/Projects/mine/Descent3-bot-testing-client/Descent3_testing",
+  "launch": ["./Descent3", "-dedicated", "./soak-dedicated-bedlam4t.cfg"],
+  "telnet_port": 2092,
+  "telnet_password": "test",
+  "phases": [
+    {"name": "mpcensus-bedlam4t", "toggles": {}, "rounds": 12}
+  ],
+  "navdump": {},
+  "max_minutes": 210
+}
