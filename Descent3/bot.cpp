@@ -107,16 +107,39 @@ static int BotTerrainRegionSafe(int roomnum) {
 // 100% of outdoor legs (0 of 42 reached the engine) but the gate was SILENT about why, leaving three
 // live hypotheses that fork the whole outdoor half of the plan. These counters name the branch, and
 // the throttled line reports the terrain the decision was made on. Measurement only.
-enum BnodeLegVerdict { BLEG_ACCEPT = 0, BLEG_REJ_START_REGION, BLEG_REJ_END_REGION, BLEG_REJ_CROSS_REGION, BLEG_COUNT };
+// Bucket refinements from the 08-04 A/B review: `accept` used to swallow indoor-indoor evaluations
+// (633 "accepts" that session included every interior leg — unreadable as outdoor coverage), and the
+// reject buckets conflated region 0 (engine has no BNode data) with the -1 unresolvable-cell sentinel,
+// leaving the 10s-throttled detail line (25 samples of 256 rejects that session) as the only
+// disambiguation. Both splits are now in the histogram itself: accept-outdoor alone measures
+// engine-flyable outdoor legs, and reg0-vs-badcell is exact rather than sampled. NOTE for readers:
+// counts are per-EVALUATION at mixed cadence (via tick 0.5s + goal issue), i.e. time-weighted — never
+// read them as leg counts.
+enum BnodeLegVerdict {
+  BLEG_ACCEPT_INTERIOR = 0, // both ends interior — flyable, but says nothing about outdoor coverage
+  BLEG_ACCEPT_OUTDOOR,      // >=1 outdoor end accepted — THE outdoor-coverage bucket
+  BLEG_REJ_START_REG0,      // start cell in terrain region 0: engine genuinely has no BNode data there
+  BLEG_REJ_START_BADCELL,   // start cell unresolvable (-1 sentinel) — a bad cell, not a coverage fact
+  BLEG_REJ_END_REG0,
+  BLEG_REJ_END_BADCELL,
+  BLEG_REJ_CROSS_REGION,
+  BLEG_COUNT
+};
 static uint32_t Bnode_leg_verdicts[BLEG_COUNT];
 static const char *BnodeLegVerdictName(int v) {
   switch (v) {
-  case BLEG_ACCEPT:
-    return "accept";
-  case BLEG_REJ_START_REGION:
-    return "rej-start-region";
-  case BLEG_REJ_END_REGION:
-    return "rej-end-region";
+  case BLEG_ACCEPT_INTERIOR:
+    return "accept-interior";
+  case BLEG_ACCEPT_OUTDOOR:
+    return "accept-outdoor";
+  case BLEG_REJ_START_REG0:
+    return "rej-start-reg0";
+  case BLEG_REJ_START_BADCELL:
+    return "rej-start-badcell";
+  case BLEG_REJ_END_REG0:
+    return "rej-end-reg0";
+  case BLEG_REJ_END_BADCELL:
+    return "rej-end-badcell";
   case BLEG_REJ_CROSS_REGION:
     return "rej-cross-region";
   default:
@@ -128,8 +151,8 @@ static void BotBnodeLegDumpVerdicts(const char *reason, bool reset) {
   for (int v = 0; v < BLEG_COUNT; v++)
     total += Bnode_leg_verdicts[v];
   if (total == 0)
-    return;
-  char line[256];
+    return; // nothing to say — on BNode-less maps (all MP) the gate never runs and this stays silent
+  char line[320]; // 7 buckets now — 256 was sized for 4
   size_t used = 0;
   for (int v = 0; v < BLEG_COUNT && used < sizeof(line); v++)
     used += (size_t)snprintf(line + used, sizeof(line) - used, " %s=%u", BnodeLegVerdictName(v), Bnode_leg_verdicts[v]);
@@ -146,29 +169,34 @@ static bool BotBnodeLegOk(int start_room, int end_room) {
   const int s_reg = s_out ? BotTerrainRegionSafe(start_room) : -1;
   const int e_reg = e_out ? BotTerrainRegionSafe(end_room) : -1;
 
-  int verdict = BLEG_ACCEPT;
+  int verdict = (s_out || e_out) ? BLEG_ACCEPT_OUTDOOR : BLEG_ACCEPT_INTERIOR;
   if (s_out && s_reg <= 0)
-    verdict = BLEG_REJ_START_REGION; // region 0 = no BNode coverage; <0 = not a resolvable cell
+    verdict = (s_reg == 0) ? BLEG_REJ_START_REG0 : BLEG_REJ_START_BADCELL;
   else if (e_out && e_reg <= 0)
-    verdict = BLEG_REJ_END_REGION;
+    verdict = (e_reg == 0) ? BLEG_REJ_END_REG0 : BLEG_REJ_END_BADCELL;
   else if (s_out && e_out && s_reg != e_reg)
     verdict = BLEG_REJ_CROSS_REGION; // cross-region outdoor legs: the engine declines these too
 
   Bnode_leg_verdicts[verdict]++;
+  const bool accepted = (verdict == BLEG_ACCEPT_INTERIOR || verdict == BLEG_ACCEPT_OUTDOOR);
   // Throttled detail on rejects only — accepts are the boring case and would drown the log. Reports
   // the regions the verdict turned on AND how many BOA connections that region has, which is what
   // separates "the engine has no data here" from "our gate mis-read resolvable terrain".
-  if (verdict != BLEG_ACCEPT && (s_out || e_out)) {
+  if (!accepted) {
     static float Bleg_log_t = 0.0f;
     if (Gametime < Bleg_log_t || Gametime - Bleg_log_t > 10.0f) {
       Bleg_log_t = Gametime;
-      const int s_conn = (s_reg > 0 && s_reg < MAX_BOA_TERRAIN_REGIONS) ? BOA_num_connect[s_reg] : -1;
-      const int e_conn = (e_reg > 0 && e_reg < MAX_BOA_TERRAIN_REGIONS) ? BOA_num_connect[e_reg] : -1;
+      // reg >= 0 (not > 0): BOA_num_connect is indexed by region DIRECTLY (BOA_INDEX maps region r to
+      // Highest_room_index+1+r; BOA.cpp:362 subtracts it back), so [0] is a valid, meaningful entry —
+      // and region 0's BOA connectivity is the seeding datum Step 4's lattice extension needs. The old
+      // `> 0` guard made it permanently unreportable; conn=-1 now means ONLY "interior end / bad cell".
+      const int s_conn = (s_reg >= 0 && s_reg < MAX_BOA_TERRAIN_REGIONS) ? BOA_num_connect[s_reg] : -1;
+      const int e_conn = (e_reg >= 0 && e_reg < MAX_BOA_TERRAIN_REGIONS) ? BOA_num_connect[e_reg] : -1;
       LOG_DEBUG.printf("BOT BNODELEG: %s start(out=%d reg=%d conn=%d) end(out=%d reg=%d conn=%d)",
                        BnodeLegVerdictName(verdict), (int)s_out, s_reg, s_conn, (int)e_out, e_reg, e_conn);
     }
   }
-  return verdict == BLEG_ACCEPT;
+  return accepted;
 }
 BotGameMode Bot_game_mode = BGM_UNKNOWN;
 
@@ -274,8 +302,14 @@ static void BotNavMemberWin(int bot_index, BotNavMember member) {
     bi.nav_member_held[member] += since_same;
   bi.nav_member_last_win[member] = Gametime;
 
-  if (bi.nav_last_member == member && dormant)
+  if (bi.nav_last_member == member && dormant) {
     bi.nav_member_count[member]++; // same member, new episode after a quiet gap
+    // The new episode's streak starts NOW. Without this, a rival winning moments after a dormant
+    // re-fire measures `held` from the ORIGINAL streak's start (possibly minutes ago) and the flip
+    // escapes the contention window — undercounting exactly the grab-after-reflex churn it exists
+    // to catch. Keeps nav_last_member_time true to its contract: "when the CURRENT streak started".
+    bi.nav_last_member_time = Gametime;
+  }
   if (bi.nav_last_member != member) {
     float held = Gametime - bi.nav_last_member_time;
     bi.nav_member_count[member]++;
@@ -5544,6 +5578,12 @@ static void BotApplyThrust(int bot_index) {
     // near-zero speed under thrust), name the goal source, the engine's live steer target, and
     // the nearest locked door in the room — so an observed press attributes itself instead of
     // being theorized about. Log-only; throttled per bot; self-healing Gametime latch.
+    // mdir/path (08-04 A/B review): on goal=none presses the steer d= comes from a PATH NODE the
+    // engine still holds after the goal died (BotGetActiveSteerPoint checks the path first), so a
+    // big d with no goal was ambiguous. mdir + path split the two mechanisms the review couldn't:
+    // mdir live + path>0 = following a STALE engine path from a dead goal (a goal-lifetime bug);
+    // mdir~0 + path=0 = dodge/juke residual thrust (FLEE adds sideways with no goal at all). That
+    // split is exactly the unexplained 64-press outdoor class from step1-ab-2026-08-04.
     if (Bots[bot_index].stuck_timer > 1.0f) {
       static float Press_log_t[MAX_BOTS];
       float &last = Press_log_t[bot_index];
@@ -5595,13 +5635,17 @@ static void BotApplyThrust(int bot_index) {
           }
         }
         if (ld_p >= 0)
-          LOG_DEBUG.printf("BOT PRESS: '%s' rm%d spd=%.1f st=%d goal=%s steer rm%d d=%.0f LOCKED-DOOR p%d->rm%d d=%.0f",
+          LOG_DEBUG.printf("BOT PRESS: '%s' rm%d spd=%.1f st=%d goal=%s mdir=%.2f path=%d steer rm%d d=%.0f "
+                           "LOCKED-DOOR p%d->rm%d d=%.0f",
                            Bots[bot_index].callsign, (int)obj->roomnum, current_speed, (int)Bots[bot_index].state,
-                           goal_desc, steer_room, steer_d, ld_p, ld_croom, ld_d);
+                           goal_desc, mdir_mag, (int)obj->ai_info->path.num_paths, steer_room, steer_d, ld_p, ld_croom,
+                           ld_d);
         else
-          LOG_DEBUG.printf("BOT PRESS: '%s' rm%d spd=%.1f st=%d goal=%s steer rm%d d=%.0f (no locked door here)",
+          LOG_DEBUG.printf("BOT PRESS: '%s' rm%d spd=%.1f st=%d goal=%s mdir=%.2f path=%d steer rm%d d=%.0f "
+                           "(no locked door here)",
                            Bots[bot_index].callsign, OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum, current_speed,
-                           (int)Bots[bot_index].state, goal_desc, steer_room, steer_d);
+                           (int)Bots[bot_index].state, goal_desc, mdir_mag, (int)obj->ai_info->path.num_paths,
+                           steer_room, steer_d);
       }
     }
   } else if (Bots[bot_index].stuck_timer >= 0.0f && Bots[bot_index].stuck_timer <= BOT_STUCK_ABANDON_TIME) {

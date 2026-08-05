@@ -193,6 +193,25 @@ histograms live — **the committee has never been censused on an MP map**, so e
 MP" claim above is inference, not measurement.
 *Proves:* settles the §2e three-way branch; de-skews every number later steps are judged by.
 
+> **As built (2026-08-04, post-review):** (a) grew to a **7-bucket** histogram after the first A/B
+> exposed two conflations — `accept` is split interior/outdoor (633 "accepts" that session included
+> every indoor-indoor evaluation, so the raw bucket could not be read as outdoor coverage), and each
+> reject is split `reg0` (engine genuinely has no BNode data) vs `badcell` (the -1 unresolvable
+> sentinel), which previously only the 10s-throttled detail line could separate (25 samples of 256
+> rejects). `BOA_num_connect` is now reported for region 0 too — it is indexed by region directly
+> (`BOA_INDEX` maps region r → `Highest_room_index+1+r`; BOA.cpp:362 subtracts it back), so `[0]` is
+> a valid entry and region 0's connectivity is a Step 4 seeding input the old `reg > 0` guard made
+> permanently unreportable. Histogram counts are per-EVALUATION at mixed cadence (via tick 0.5s +
+> goal issue) — time-weighted, never leg counts. On BNode-less maps (all MP) the gate never runs and
+> the dump stays silent by design; the (d) census reads through the NAVCONTEND histograms there.
+> (b)/(c) shipped with three successive metric defects, each caught by verification or review and
+> fixed in place: per-call units → episodes (`f4d20540`), held-until-someone-else → active hold
+> (`3d927a75`), decorative snapshot-reset flag + missing episode dormancy boundary (`1f99dc6b`). The
+> `BOT PRESS` line now also carries `mdir=`/`path=` — the discriminator that splits "following a
+> stale engine path from a dead goal" from "dodge/juke residual", the two mechanisms behind the
+> outdoor `goal=none` press class the first A/B could not attribute. (d) is still owed and is the
+> next action: the overnight bedlam/bsidectf/Entropy soaks are the first MP census.
+
 **STEP 1 — give the body an idle.** Delete the `forward = 1.0f` fallback; when there is no live goal,
 apply **zero thrust** and let drag stop the ship (§0, §3). Gate on "no live goal" explicitly rather
 than on `has_nav_dir`, so a transient `movement_dir` dropout coasts instead of stalling.
@@ -201,6 +220,21 @@ than on `has_nav_dir`, so a transient `movement_dir` dropout coasts instead of s
 escort station-keeps ≥ the 07-23 arm's ~30; operator feel on station behavior.
 *MP regression watch:* anything that relied on idle-forward drift — CTF carrier staged at base
 (5293–5305), Monsterball keeper idle, spawn frames. Gate on bedlam flag conversion.
+
+> **As-built deviation (2026-08-04, recorded post-review — the deviation stays):** the shipped cut
+> changes the fallback **value** only (`forward = 0.0f`); the idle gate is still `has_nav_dir`
+> (`mdir_mag > 0.01f`), **not** the "no live goal" gate specified above. The narrow gate is correct
+> and the spec sentence was wrong: "no live goal" is underspecified against the FSM — FLEE/EVADE
+> carry no GET_TO goal yet must thrust (the flee vector and juke are goal-less movement by design),
+> and dodge micro-movement on an idle escort rides `movement_dir` with no goal present. A blanket
+> goal-gated zero-thrust would fight both, i.e. a combat regression smuggled in through a nav step.
+> Measured cost of the narrow gate (step1-ab 08-04): the indoor idle-press class went 4 → 0 as
+> intended, but 64 outdoor `goal=none` presses remained, all with live steer distances (d=289–2030)
+> — goal-less bots still being *steered into terrain* by something. Closing that class is **not a
+> thrust-layer fix**: the PRESS line's new `mdir=`/`path=` fields attribute each press (stale engine
+> path surviving its dead goal → flush the path at goal death, a Step 2 goal-lifetime item; dodge/juke
+> residual → combat-layer tuning, out of scope). Widening this gate is off the table unless the
+> census shows a press class that is *neither* — none has been observed.
 
 **STEP 2 — give the mind a memory: persistent travel intent.** One per-bot intent slot
 (destination + owner: order / objective / explore) that **survives state flips**. Remove the EXPLORE
