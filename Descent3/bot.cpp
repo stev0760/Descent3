@@ -263,12 +263,19 @@ static void BotNavMemberWin(int bot_index, BotNavMember member) {
   // continuous hold. A member that wins once and then falls silent banks ~0s, instead of appearing to
   // own the wheel until some unrelated member happens to take it — the first verification run showed
   // a single stuck-escape frame reading as "1(94s)", the same overstatement the episode fix removed.
-  {
-    float since = Gametime - bi.nav_member_last_win[member];
-    if (since >= 0.0f && since <= BOT_NAV_ACTIVE_GAP)
-      bi.nav_member_held[member] += since;
-    bi.nav_member_last_win[member] = Gametime;
-  }
+  const float since_same = Gametime - bi.nav_member_last_win[member];
+  // Dormant = this member has not fired recently enough to be the SAME continuous hold. Used twice:
+  // to decide whether to accrue hold time, and (below) so a member that re-fires after a gap starts a
+  // NEW episode even when nothing else won in between. Without that second use, a bot wedged alone
+  // reads as "1 episode" no matter how many times the reflex re-triggers — which is precisely the
+  // health signal Step 5 wants from stuck-escape.
+  const bool dormant = (since_same < 0.0f || since_same > BOT_NAV_ACTIVE_GAP);
+  if (!dormant)
+    bi.nav_member_held[member] += since_same;
+  bi.nav_member_last_win[member] = Gametime;
+
+  if (bi.nav_last_member == member && dormant)
+    bi.nav_member_count[member]++; // same member, new episode after a quiet gap
   if (bi.nav_last_member != member) {
     float held = Gametime - bi.nav_last_member_time;
     bi.nav_member_count[member]++;
@@ -326,6 +333,8 @@ void BotNavContendDumpAll(const char *reason, bool reset) {
       BotFormatNavContend(i, line, sizeof(line));
       LOG_DEBUG.printf("BOT NAVCONTEND DUMP [%s]: '%s' %s", reason, Bots[i].callsign, line);
     }
+    if (!reset)
+      continue; // snapshot: leave the level-cumulative counters alone (see the header note)
     Bots[i].nav_last_member = NAV_MEMBER_NONE;
     Bots[i].nav_last_member_time = 0.0f;
     for (int m = 0; m < NAV_MEMBER_COUNT; m++) {
