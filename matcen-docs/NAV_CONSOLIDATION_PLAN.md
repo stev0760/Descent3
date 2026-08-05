@@ -8,6 +8,13 @@ against source by Opus 5; physics rulings and scope decisions by the operator.
 > and travels like a committee") and the standing direction. This document is the *execution plan*
 > that follows from it, grounded in a full code census rather than argument.
 
+> **⚠ THE PLAN IS SUBTRACTION *AND* CONSTRUCTION — see §0.5 (added 2026-08-05).** Collapsing the
+> scaffolding is necessary but not sufficient. There is exactly one thing to build: a persistent
+> **intent** layer with owner priority and a lifetime, which the reactive layer may suspend but never
+> erase. The scaffolding collapses *into* that structure. Reading this document as deletion-only —
+> which everything before §0.5 implies — will produce a smaller committee rather than one elegant
+> system.
+
 ---
 
 ## 0. The design north star (operator, 2026-08-04)
@@ -26,6 +33,93 @@ Two physics rulings that constrain every step below:
 
 These reinforce the existing constraint that bots use only legal thrust — no velocity-zeroing,
 position-snapping, or knockback immunity, even to fix a park.
+
+---
+
+## 0.5 The missing half: two timescales, not one committee (operator, 2026-08-05)
+
+> **This section changes the plan's thesis.** Everything before it framed the work as *subtraction* —
+> collapse the committee, let the referees lose their reason to exist, watch the toggles dissolve.
+> That is necessary and still stands. It is **not sufficient**, and the MP census is what made the
+> gap visible: there is one thing we must *build*, and the scaffolding should be collapsed **into**
+> it rather than merely deleted.
+
+**What the bots are actually for.** They play the role of humans flying ships: coordinating with
+other bots and with humans, and pursuing objectives that change from moment to moment — game-mode
+goals and sub-goals, orders a human gives, or a decision the bot reaches itself as play emerges.
+The game is chaotic by nature and should stay that way. A bot must stay focused on the main
+objective *through* the chaos, the way a human does.
+
+**Why this was hard to see until now.** Every prior phase built in narrow scope — one mode, one map
+class, one failure. With all game modes implemented and bots actually playing them, there is finally
+a **base layer for evaluation**: the same architecture can be judged across CTF, Entropy, Monsterball,
+co-op and anarchy at once. The census proved the value immediately by showing the committee's shape is
+*mode-dependent* (CTF five-handed, Entropy via-monopolised) — a fact no single-mode investigation
+could have produced, and one that rules out per-member tuning as a strategy.
+
+### The defect, stated precisely
+
+**Chaos and calm are not a dial to balance. They are two timescales that have been wrongly coupled.**
+
+- The **reactive** layer should be fast, local, and interruptible — dodge, strafe, break off,
+  re-engage. This is what makes a bot feel alive, and ours is sound. Do not slow it down.
+- **Intent** should be the opposite: slow, sticky, and largely indifferent to stimulus. A human
+  heading for the enemy flag takes a fight on the way, loses the room for four seconds, and then
+  *resumes the same errand*. The errand survives the excursion.
+
+Today they are coupled at the wrong end: a two-second HUNT blip calls `BotClearActiveGoal`, EXPLORE
+re-entry zeroes `explore_dest_room` (bot.cpp:4967), and the bot re-rolls a **random** room on return.
+The reactive layer does not interrupt the plan — **it destroys it**. That is all chaos and no calm, and
+it cannot be tuned away without damaging combat, because the reactivity itself is correct.
+
+Measured corroboration: 91% of goalless wall-presses on both bedlam and Entropy are bots flying an
+engine path that outlived its goal (§ Step 0(d)) — the body still executing a plan the mind already
+abandoned.
+
+### The shape of the thing to build
+
+Not a governor, and not an arbiter — the review was right to reject those. **A goal with a lifetime
+and a scope**, which is the piece the architecture never had:
+
+1. **Owner priority** — order > objective > explore. Coordination falls out of this nearly free: a
+   human order is simply a higher-priority owner writing the intent slot. This unifies three
+   complaints that were being chased separately — "won't follow orders", "randomly backtracks",
+   "gets distracted" are one defect.
+2. **A lifetime** — intent clears on arrival, timeout, replacement by a higher owner, or death.
+   Nothing else clears it.
+3. **Reactive layers may SUSPEND execution; they may never DESTROY intent.** Today HUNT clears the
+   goal; it should pause travel and leave the errand standing. **This single inversion is most of the
+   behavior being asked for.**
+
+**The counter-risk, which is the mirror of today's failure:** over-commitment is also wrong. A bot
+that ignores an enemy carrier crossing its nose because it is loyal to a route reads as *dumber* than
+one that dithers. Persistence without preemption is stubbornness — so the owner hierarchy must land
+alongside the lifetime, not after it.
+
+### Prior art, and why 6DOF is the harder case
+
+Quake 3's bots split long-term goal from nearest-term goal — the LTG persists across combat, the NTG
+is reactive and disposable; UT damps goal re-evaluation similarly. Two timescales, not one balanced
+quantity. That is the canonical answer and it is well-trodden **in 2.5D**.
+
+It does not transplant, and the reason is the project's whole novelty claim: on a navmesh the reactive
+layer is constrained to a surface, so an excursion is bounded — a bot ends up a few units along a mesh
+it is still standing on. **In 6DOF a reactive excursion displaces the ship arbitrarily in three axes
+with no floor to anchor recovery to, so the cost of losing the plan is strictly higher.** Commitment
+matters *more* here than in the games that solved it, not less. Getting this right in 6DOF is the
+genuinely novel result on offer.
+
+### What this means for the plan
+
+The end state is not "the committee, minus most of it". It is **one elegant system**: a persistent
+intent layer that owns *what the bot is doing*, a single dispatch that owns *who plans the route*
+(§4), and the engine's own coherent movement owning *how the ship flies* — with the reactive layer
+riding on top, free to interrupt and forbidden to erase. The scaffolding collapses **into** that
+structure; the toggles dissolve because the structure answers what they were compensating for.
+
+Sequencing consequence: **Step 2 is no longer "a prerequisite for Step 3" — it is the layer Step 3 is
+cleaning up after**, and the census's 91% stale-path finding says it is also the best-evidenced change
+available.
 
 ---
 
