@@ -259,12 +259,18 @@ static void BotNavMemberWin(int bot_index, BotNavMember member) {
   // per-frame (stuck-escape) — which made the histogram unreadable and overstated the reflex members.
   // Duration is tracked separately in nav_member_held[], so "held the wheel a long time" and "grabbed
   // the wheel many times" stay distinguishable instead of being summed into one meaningless number.
+  // ACTIVE hold time: accrue only across wins by this member that are close enough together to be one
+  // continuous hold. A member that wins once and then falls silent banks ~0s, instead of appearing to
+  // own the wheel until some unrelated member happens to take it — the first verification run showed
+  // a single stuck-escape frame reading as "1(94s)", the same overstatement the episode fix removed.
+  {
+    float since = Gametime - bi.nav_member_last_win[member];
+    if (since >= 0.0f && since <= BOT_NAV_ACTIVE_GAP)
+      bi.nav_member_held[member] += since;
+    bi.nav_member_last_win[member] = Gametime;
+  }
   if (bi.nav_last_member != member) {
     float held = Gametime - bi.nav_last_member_time;
-    // Credit the OUTGOING member with the streak it just finished (same negative-held guard as below:
-    // Gametime resets per level, so a level flip must not bank a garbage duration).
-    if (bi.nav_last_member != NAV_MEMBER_NONE && held >= 0.0f)
-      bi.nav_member_held[bi.nav_last_member] += held;
     bi.nav_member_count[member]++;
     // held < 0 covers the Gametime-resets-per-level gotcha (BOT_DEV_REFERENCE) — never miscounts a
     // level transition as contention.
@@ -293,16 +299,10 @@ void BotFormatNavContend(int bot_index, char *buf, size_t buflen) {
   uint32_t total = 0;
   for (int m = 1; m < NAV_MEMBER_COUNT; m++)
     total += bi.nav_member_count[m];
-  // Fold the in-progress streak into the displayed hold time, so a member that has owned the wheel
-  // for the whole session doesn't read as 0s just because it never handed off. Local copy — a
-  // formatter must not mutate the counters it reports.
-  float live = Gametime - bi.nav_last_member_time;
   size_t used = (size_t)snprintf(buf, buflen, "episodes(%u):", total);
   for (int m = 1; m < NAV_MEMBER_COUNT && used < buflen; m++) {
     uint32_t c = bi.nav_member_count[m];
-    float held = bi.nav_member_held[m];
-    if (m == (int)bi.nav_last_member && live >= 0.0f)
-      held += live;
+    float held = bi.nav_member_held[m]; // already ACTIVE-only; no in-progress streak to fold in
     if (!c && held <= 0.0f)
       continue;
     used += (size_t)snprintf(buf + used, buflen - used, " %s=%u(%.0fs)", BotNavMemberName((BotNavMember)m), c, held);
@@ -331,6 +331,7 @@ void BotNavContendDumpAll(const char *reason, bool reset) {
     for (int m = 0; m < NAV_MEMBER_COUNT; m++) {
       Bots[i].nav_member_count[m] = 0;
       Bots[i].nav_member_held[m] = 0.0f;
+      Bots[i].nav_member_last_win[m] = 0.0f;
     }
     Bots[i].nav_contention_count = 0;
   }
@@ -7159,6 +7160,7 @@ void BotReinitAll() {
     for (int m = 0; m < NAV_MEMBER_COUNT; m++) {
       Bots[i].nav_member_count[m] = 0;
       Bots[i].nav_member_held[m] = 0.0f;
+      Bots[i].nav_member_last_win[m] = 0.0f;
     }
     Bots[i].nav_contention_count = 0;
     Bots[i].stall_action_until = 0.0f;
@@ -7430,6 +7432,7 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   for (int m = 0; m < NAV_MEMBER_COUNT; m++) {
     Bots[bot_index].nav_member_count[m] = 0;
     Bots[bot_index].nav_member_held[m] = 0.0f;
+    Bots[bot_index].nav_member_last_win[m] = 0.0f;
   }
   Bots[bot_index].nav_contention_count = 0;
   Bots[bot_index].order_anchor_type = ORDER_ANCHOR_NONE;

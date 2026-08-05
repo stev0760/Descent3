@@ -406,6 +406,11 @@ enum BotNavMember : uint8_t {
 // Periodic snapshot interval. SIGTERM is the real shutdown path ($quit over telnet is ignored) and it
 // runs none of the boundary dumps, so without this a whole session's numbers die with the process.
 #define BOT_NAV_CONTEND_DUMP_INTERVAL 60.0f
+// Max gap between two wins by the same member that still counts as one continuous hold. Members
+// re-win at very different rates (per frame, per 0.5s tick, per leg), so "held" accrues only across
+// wins closer together than this — otherwise a reflex that fired once would appear to own the wheel
+// until something else happened to take it, which is the same overstatement the episode fix removed.
+#define BOT_NAV_ACTIVE_GAP 1.0f
 
 struct bot_info {
   bool active;
@@ -581,7 +586,8 @@ struct bot_info {
   BotNavMember nav_last_member;                 // member that won most recently (NONE = no tick yet)
   float nav_last_member_time;                   // Gametime the current winning streak started
   uint32_t nav_member_count[NAV_MEMBER_COUNT];  // EPISODES this level, by BotNavMember (see units note)
-  float nav_member_held[NAV_MEMBER_COUNT];      // seconds held this level, by BotNavMember
+  float nav_member_held[NAV_MEMBER_COUNT];      // seconds ACTIVELY held (see BOT_NAV_ACTIVE_GAP)
+  float nav_member_last_win[NAV_MEMBER_COUNT];  // Gametime of that member's most recent win
   uint32_t nav_contention_count;                // times the winner flipped within the churn window
 
   // Difficulty system (Phase 5.2)
