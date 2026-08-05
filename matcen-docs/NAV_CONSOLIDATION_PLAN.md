@@ -212,6 +212,49 @@ MP" claim above is inference, not measurement.
 > outdoor `goal=none` press class the first A/B could not attribute. (d) is still owed and is the
 > next action: the overnight bedlam/bsidectf/Entropy soaks are the first MP census.
 
+> **(d) THE MP CENSUS — RAN 2026-08-04/05, build `c66b909f`.** Three sequential arms, ~8.5 h,
+> **zero crashes** (the `SIGNAL 15` lines in each log are the driver's own SIGTERM between arms, not
+> faults). bedlam.mn3 CTF 4-team 12/12 rounds and bsidectf.mn3 CTF 2-team 12/12 rounds both completed
+> `rc=0`; CHAOS.MN3 Entropy was on its final round at write-up (results appended when it lands).
+> Manifests `tools/manifests/mpcensus-*.json`; logs `soak-20260804T221315.log` (bedlam),
+> `soak-20260805T011352.log` (bside).
+>
+> **Result 1 — §1's inferred "load-bearing on MP" column is now MEASURED, and it holds.** On MP the
+> committee really is deep: **five members active per bot per round** — seam, hop-commit, via,
+> gridroute, path_pnt — consistently across all 8 bots, e.g. `episodes(215): seam=32 hop-commit=3
+> via=87 gridroute=29 path_pnt=64 | contention=91`. In co-op, seam/hop-commit/gridroute fired **zero**
+> times across an entire session. **The co-op census (one member: via vs engine) badly understated the
+> problem, and the "pick one of two" framing was a single-map artifact.** Step 3's single dispatch is
+> worth far more than the co-op data implied — it is the step that addresses this directly, and it
+> does so without spending any new substrate.
+>
+> **Result 2 — NO SCORING REGRESSION; several maps beat their most recent references.** Polaris (the
+> operator's named real test) **11.0 caps/rnd vs 8.0 in the last comparable 4-team run** (0.9.3 peak
+> was 15.6 @ 56-69% conv; Blue's 59% here lands inside that band). Apparition 7.0 vs 7.9 gold = par.
+> Plutonium 6.3 vs 4.0. QuadSomniac 4.7 vs a historic norm of ~0, conversion 2-10% inside the
+> documented always-poor 4-13% band. Known-open items reproduced unchanged and are NOT new: Plutonium
+> Red 4% conversion (the red-side elevated-entrance failure, room 17 topping via-search-fails at 29,
+> exactly the recorded signature) and bside `mysterious_isle` Red **16 picks → 0 caps** (return-nav
+> failure, deserves its own investigation).
+>
+> **Result 3 — the PRESS discriminator worked on its first outing, and it indicts GOAL LIFETIME.**
+> Of bedlam's 66 goalless presses, **60 (91%) are `path>0` = following an engine path that outlived
+> its goal**; only 6 are dodge/juke residual. (bside is mixed: 74 stale vs 86 residual.) A bot pressing
+> geometry while flying a route to a place it no longer intends to go is the cleanest statement of the
+> §2d defect there is. **This is direct evidence for STEP 2, not merely an argument for it** — and it
+> implies a concrete sub-item: flush the engine path when the goal that created it dies.
+>
+> **Result 4 — outdoor stucks are overwhelmingly an entrance-approach failure**, not open-terrain
+> wandering: Polaris 19/20 and Apparition 18/20 outdoor stucks are "routed into a structure /
+> entrance-seek miss". That is the same coverage-boundary problem the region-0 finding (§2e) names,
+> seen from the indoor side — a bot aimed at a structure it cannot resolve an entrance into. Step 4's
+> seeding design should treat structure-entrance stitching as a first-class requirement, not a
+> follow-up.
+>
+> **Reading caveat that survives this run:** trust `episodes` and `contention`; do NOT read the
+> held-seconds column as a time budget — members alternating sub-second each bank the same wall-clock,
+> so held sums exceed elapsed time in exactly this churn regime.
+
 **STEP 1 — give the body an idle.** Delete the `forward = 1.0f` fallback; when there is no live goal,
 apply **zero thrust** and let drag stop the ship (§0, §3). Gate on "no live goal" explicitly rather
 than on `has_nav_dir`, so a transient `movement_dir` dropout coasts instead of stalling.
@@ -245,6 +288,13 @@ per-tick objective recompute, so objective modes are unchanged in practice.
 `analyze_bot_log.py` the counter), order ARRIVED/station-keep rates, operator feel on "moves with
 purpose."
 *Watch:* stale intent (heading somewhere whose reason evaporated); bounded by the explore timer.
+> **Sub-item added from the MP census (2026-08-05): flush the engine path when its goal dies.**
+> 91% of bedlam's goalless presses (60 of 66) were `path>0` — bots still flying an `ai_info->path`
+> that outlived the goal which created it, pressing geometry en route to somewhere they no longer
+> intend to go. Clearing intent without clearing the path leaves the body executing a plan the mind
+> has already abandoned, which is the same mind/body split this phase exists to close. Pair every
+> intent-clear with a path-clear, and treat the residual `path>0` goalless press count as this step's
+> pass metric — it is directly measurable now via the PRESS line's `path=` field.
 
 **STEP 3 — one dispatch point.** Route the raw-issue stragglers (escort-close, escort-outdoor, random
 explore, powerup chase, stuck-escape portal pick, last-known-target) through the same entry that
