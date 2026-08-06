@@ -497,6 +497,48 @@ bedlam and Entropy (judge per mode, §F — bside's residual half will not zero)
 > 51 → 22/rnd, a bonus.) Scoring showed no alarm but **1 round per map is below verdict threshold** —
 > the 12-round census remains the scoring baseline.
 >
+> **NIGHT-2 FULL CENSUS 2026-08-05/06 (build `c0f04978` = 2a + 2b-1) — identical rerun of the night-1
+> manifests, only the build differs. THE FIX HOLDS AT VERDICT LENGTH, AND IT EXPOSED A LATENT DEFECT.**
+>
+> | mode | stale-path share N1 → N2 | stuck escalations/rnd N1 → N2 |
+> |---|---|---|
+> | bedlam (12 rnd) | 91% → **9%** | 2.0 → **9.4** |
+> | bsidectf (12 rnd) | 46% → **6%** | 21.1 → **19.8** |
+> | Entropy (6 rnd) | 91% → **3%** | 5.2 → **32.7** |
+>
+> Zero crashes on all three. bsidectf — the 46% outlier never tested in the short A/B — fell hardest
+> in relative terms. **The goal-lifetime defect is closed across three modes and two map classes.**
+>
+> **Scoring went UP on bedlam: 94 → 114 captures (+21%)**, carrier deaths down on every map
+> (Apparition 7.0→10.0, Plutonium 6.3→8.0, QuadSomniac 4.7→7.3 caps/rnd). **Polaris is the lone
+> exception at 11.0 → 9.3.** bsidectf drifted slightly down on tiny absolute numbers (0.8→0.4,
+> 1.2→0.8); Nightmarecastle stays 0, which is design-hard, not a regression.
+>
+> **⚠ THE REGRESSION — hard stucks (`net_disp<10`, the column to trust) went 4 → 52 on bedlam:**
+> Plutonium 2→31, Polaris 2→18, Apparition 0→2, QuadSomniac 0→1.
+>
+> **Mechanism: the orphaned path was ACCIDENTALLY LOAD-BEARING.** It kept goalless bots moving —
+> badly, toward dead destinations, but moving. Remove it and a bot that loses its goal has only
+> reactive steering left: all 96 of bedlam's goalless presses log `mdir=1.00` with `path=0`, i.e.
+> dodge/wall-avoid pushing the ship around with **no destination to pull it out**, until it presses
+> geometry and trips the escape reflex. This is Fable's **vacancy pole** made concrete, and it is the
+> "chaos provides accidental robustness" risk landing exactly where §0.5 predicted.
+>
+> **The regression is NOT universal, and the exception is the tell: bsidectf (tight indoor) shows no
+> increase at all (21.1 → 19.8), while outdoor-heavy bedlam and Entropy show 4.7× and 6.3×.** A
+> goalless bot in a corridor is steered along it by wall-avoid and re-acquires a goal quickly; a
+> goalless bot in open space has nothing to work with — the same vacancy the region-0 finding (§2e)
+> and the entrance-approach stucks describe from other angles. Within bedlam the worst maps are
+> Plutonium and Polaris (the most open), the mildest is Apparition — suggestive rather than clean,
+> so treat the indoor/outdoor split as the established fact and the within-bedlam ordering as a hint.
+>
+> **CONSEQUENCE FOR SEQUENCING — this strengthens Step 2b from "next" to "required".** 2a removed the
+> bad motion; nothing yet supplies good motion, so we have shipped the subtractive half of one change.
+> Persistent intent means the bot is never goalless in the first place and the vacancy never opens.
+> **Do not ship further subtraction before 2b supplies the replacement** — and note that this is
+> precisely the counter-risk §0.5 names, arriving from the opposite direction to the one expected:
+> not stubbornness from too much persistence, but vacancy from too little.
+>
 > **Implementation note worth carrying forward: the first attempt did nothing, and only a 7-minute
 > smoke caught it.** Clearing the path inside `BotClearActiveGoal` left 4 of 4 goalless presses still
 > carrying `path>0`, because ~25 `GoalAddGoal` / ~20 `GoalClearGoal` sites live outside that function
