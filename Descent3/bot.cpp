@@ -4584,8 +4584,49 @@ static void BotUpdateState(int bot_index) {
 
   switch (old_state) {
   case BOT_STATE_EXPLORE: {
-    // Flag carrier override: rush home, skip powerups and escort duties.
-    // Must be checked first — carriers always prioritize scoring.
+    // STEP 2b OWNER HIERARCHY (NAV_CONSOLIDATION_PLAN.md §0.5 A — operator ruling 2026-08-05):
+    //
+    //     order  >  carry  >  objective  >  opportunism  >  explore
+    //
+    // HUMAN ORDERS OUTRANK EVERYTHING, including carrying the flag. This reverses the previous
+    // arrangement, where the carrier branch was checked first and a carrier under !follow or !hold
+    // therefore never even evaluated the order it had been given.
+    //
+    // Rationale (operator): a human ordering a carrier is making a tactical play the bot cannot
+    // understand — the bot may be routing the wrong way, flying into danger, or the human may have a
+    // detour that normal routing cannot account for, or be clearing a path ahead of the carrier.
+    // "I can't think of any legitimate reason why a bot should ignore human orders." The obvious
+    // counter-argument — that !follow would make a carrier drop the flag — does not apply: flags are
+    // NOT droppable in this engine. A carrier under !follow simply follows WHILE STILL CARRYING,
+    // which is precisely the escorted-carrier play the order exists for.
+    //
+    // Safe by construction in MP: squad_role/order_anchor_type are set only by explicit chat orders
+    // there. The one automatic assigner (BotCoopUpdateEscort) is reachable only under BGM_COOP,
+    // which has no flags, orbs or virus loads to outrank.
+    //
+    // Position-anchored orders (!hold / !defend / !goal) own EXPLORE navigation — the bot moves to
+    // its post and stays. Threat engagement still fires (gated below by the anchor-distance leash)
+    // and the bot returns to station after combat; powerup chasing is suspended while held.
+    if (Bots[bot_index].order_anchor_type == ORDER_ANCHOR_POSITION) {
+      BotDoHoldStationNav(bot_index);
+      if (has_target && (has_los || dist < BOT_HUNT_BLIND_MAX_DIST))
+        new_state = BOT_STATE_HUNT;
+      break;
+    }
+    // Escort orders (!follow / !cover). FOLLOW only fights back when attacked; COVER engages freely
+    // so it can kill threats near the protected player.
+    if (Bots[bot_index].squad_role == SQUAD_FOLLOW || Bots[bot_index].squad_role == SQUAD_COVER) {
+      BotNavigateToFollowTarget(bot_index);
+      if (Bots[bot_index].squad_role == SQUAD_FOLLOW) {
+        if (has_target && has_los && dist < BOT_CLOSERANGE_DIST * 2.0f)
+          new_state = BOT_STATE_HUNT;
+      } else {
+        if (has_target && (has_los || dist < BOT_HUNT_BLIND_MAX_DIST))
+          new_state = BOT_STATE_HUNT;
+      }
+      break;
+    }
+    // CARRY tier — below orders, above objective. Rush home, skip powerups and roaming.
     if (BotIsCarryingEnemyFlag(bot_index)) {
       BotDoCarrierNav(bot_index);
       // In home room: never fight — beeline to flag and score
@@ -4645,30 +4686,8 @@ static void BotUpdateState(int bot_index) {
       // Demoted this poll: drop any stale ball-fire order before normal explore continues.
       Bots[bot_index].mball_fire_handle = OBJECT_HANDLE_NONE;
     }
-    // Stage 6: position-anchored orders (!hold / !defend) own EXPLORE navigation — the bot
-    // moves to its post and stays, instead of roaming the map with a tweaked flee threshold.
-    // Threat engagement still fires (gated below by the anchor-distance leash) and the bot
-    // returns to station after combat. Powerup chasing is suspended while under a hold order.
-    if (Bots[bot_index].order_anchor_type == ORDER_ANCHOR_POSITION) {
-      BotDoHoldStationNav(bot_index);
-      if (has_target && (has_los || dist < BOT_HUNT_BLIND_MAX_DIST))
-        new_state = BOT_STATE_HUNT;
-      break;
-    }
-    // Escort roles take priority over powerup collection and roaming.
-    // Navigate to the followed/covered player; FOLLOW only fights back when attacked,
-    // COVER engages freely so it can kill threats near the protected player.
-    if (Bots[bot_index].squad_role == SQUAD_FOLLOW || Bots[bot_index].squad_role == SQUAD_COVER) {
-      BotNavigateToFollowTarget(bot_index);
-      if (Bots[bot_index].squad_role == SQUAD_FOLLOW) {
-        if (has_target && has_los && dist < BOT_CLOSERANGE_DIST * 2.0f)
-          new_state = BOT_STATE_HUNT;
-      } else {
-        if (has_target && (has_los || dist < BOT_HUNT_BLIND_MAX_DIST))
-          new_state = BOT_STATE_HUNT;
-      }
-      break;
-    }
+    // (Order branches moved ABOVE the carry tier — see the owner-hierarchy note at the top of
+    // this case. Opportunism tier begins here.)
     // Always seek powerups — even when transitioning to HUNT (fix: was skipped when has_target)
     bool need_sh = (shields < max_shields * BOT_LOW_SHIELDS_PCT);
     // During objective nav, shrink seek radius so bots grab items on their path but don't detour.
