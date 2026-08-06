@@ -5132,10 +5132,31 @@ static void BotUpdateState(int bot_index) {
     switch (new_state) {
     case BOT_STATE_EXPLORE:
       AISetTarget(obj, OBJECT_HANDLE_NONE);
-      Bots[bot_index].explore_dest_room = -1;
-      Bots[bot_index].explore_stuck_room = -1; // start fresh room search
-      Bots[bot_index].explore_room_timer = 0.0f;
-      Bots[bot_index].room_progress_timer = 0.0f; // reset room progress tracking
+      // STEP 2b-2 (NAV_CONSOLIDATION_PLAN.md §0.5): TRAVEL INTENT SURVIVES THE FLIP.
+      //
+      // This used to wipe explore_dest_room and explore_room_timer, so a two-second HUNT blip
+      // DESTROYED the errand: on return the bot re-rolled a RANDOM room (the "random backtrack"
+      // tell). The reactive layer is supposed to interrupt travel, not erase it — a human pilot
+      // heading for the enemy flag takes a fight on the way and then resumes the same errand.
+      //
+      // It is a deletion rather than an addition because the surrounding machinery already had
+      // every other property intent needs:
+      //   - the timer ALREADY freezes while suspended (it decrements only in BOT_STATE_EXPLORE),
+      //     so a fight cannot expire an errand it interrupted;
+      //   - re-arm on lapse already exists (BotDoExploreRoaming), as does clear-on-arrival;
+      //   - clear-on-unreachability already exists in the stuck escalation, which is the failure
+      //     lifetime cause — deliberately LEFT IN PLACE, since without it persistence becomes the
+      //     stubbornness loop (re-approach the same wedge forever).
+      //
+      // Also the fix for the vacancy regression the night-2 census measured: 2a removed the
+      // orphaned path that had been accidentally keeping goalless bots moving, and hard stucks went
+      // 4 -> 52 on bedlam because nothing replaced it. A bot that keeps its errand is never goalless
+      // in the first place, so the vacancy never opens.
+      //
+      // explore_stuck_room and room_progress_timer still reset: those are per-leg bookkeeping for
+      // the resumed approach, not the errand itself.
+      Bots[bot_index].explore_stuck_room = -1;    // start fresh room search
+      Bots[bot_index].room_progress_timer = 0.0f; // progress restarts for the resumed leg
       break;
     case BOT_STATE_HUNT:
       Bots[bot_index].hunt_no_los_timer = 0.0f; // fresh hunt

@@ -1,0 +1,20 @@
+{
+  "_comment": "STEP 2b-2 A/B (intent survives state flips). CONTROL = soak-20260805T221252.log (night 2, same cfg, 2a+2b-1, 12 rnd): hard stucks 52 on bedlam (Plutonium 31, Polaris 18), escalations 9.4/rnd, 96 goalless presses, 114 captures. PASS = hard stucks and escalations fall back toward night-1 levels (4 hard, 2.0/rnd) WITHOUT giving back 2a's capture gain or its 9% stale-path share. Watch for the opposite failure pole: stubbornness (a bot re-approaching the same wedge forever) would show as escalations flat-but-clustered on few rooms.",
+  "server_dir": "/home/steve/Projects/mine/Descent3-bot-testing-client/Descent3_testing",
+  "launch": [
+    "./Descent3",
+    "-dedicated",
+    "./soak-dedicated-bedlam4t.cfg"
+  ],
+  "telnet_port": 2092,
+  "telnet_password": "test",
+  "phases": [
+    {
+      "name": "ab2b2-bedlam",
+      "toggles": {},
+      "rounds": 4
+    }
+  ],
+  "navdump": {},
+  "max_minutes": 80
+}
