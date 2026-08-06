@@ -477,6 +477,34 @@ failure-clear design.** Do not let it sit hostage to 2b's design debate.
 *A/B:* build-vs-build; control = the MP census logs. *Decides:* `path>0` goalless presses → ~0 on
 bedlam and Entropy (judge per mode, §F — bside's residual half will not zero).
 
+> **AS RUN 2026-08-05 — PASSED on both modes, build `d9ba49d6`** (`ab2a-*` manifests; logs
+> `soak-20260805T184709.log` bedlam 4 rnd, `soak-20260805T194737.log` Entropy 2 rnd; configs
+> byte-identical to the census, only round counts cut).
+>
+> | arm | stale-path share | stale/round |
+> |---|---|---|
+> | bedlam control | 91% (60/66) | 5.0 |
+> | **bedlam 2a** | **8% (2/24)** | **0.5** |
+> | Entropy control | 91% (93/102) | 15.5 |
+> | **Entropy 2a** | **12% (3/24)** | **1.5** |
+>
+> **A 90% per-round reduction in the stale-path class, independently on both modes.** Zero crashes.
+>
+> Two details confirm this is the right mechanism rather than blunt suppression: **total goalless
+> presses barely moved on bedlam** (5.5 → 6.0/rnd) — the fix converted presses from stale-path into
+> the residual dodge class rather than suppressing presses generally, which is exactly the predicted
+> behavior since dodge residual is combat-layer and out of scope. (Entropy's total presses fell
+> 51 → 22/rnd, a bonus.) Scoring showed no alarm but **1 round per map is below verdict threshold** —
+> the 12-round census remains the scoring baseline.
+>
+> **Implementation note worth carrying forward: the first attempt did nothing, and only a 7-minute
+> smoke caught it.** Clearing the path inside `BotClearActiveGoal` left 4 of 4 goalless presses still
+> carrying `path>0`, because ~25 `GoalAddGoal` / ~20 `GoalClearGoal` sites live outside that function
+> and each re-issue clears its own slot through the same uid-gated free. The fix that worked was an
+> **invariant enforced once per bot per frame** (`BotEnforceNoOrphanPath`: no live tracked goal ⇒ no
+> live path), not twenty call-site patches — the same shape this whole phase is aiming at, and a
+> reminder that "necessary" and "sufficient" are different claims that a smoke can separate cheaply.
+
 **STEP 2b — give the mind a memory: persistent travel intent.** One per-bot intent slot
 (destination + owner: order / objective / explore) that **survives state flips**. Remove the EXPLORE
 re-entry wipe (4967) and re-issue stored intent on return instead of re-rolling a random room. Owners
