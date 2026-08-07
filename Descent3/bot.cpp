@@ -4823,15 +4823,25 @@ static void BotUpdateState(int bot_index) {
       if (rgi >= 0 && rgi < MAX_GOALS && obj->ai_info->goals[rgi].used)
         GoalClearGoal(obj, &obj->ai_info->goals[rgi]);
       rgi = -1;
-      if (on_objective) {
-        // On-path pickup: preserve objective state so the bot resumes its route after collecting.
-        // The pursuit_goal_index was cleared above — BotDoExploreRoaming will re-issue it next tick
-        // using the preserved explore_dest_room.
-      } else {
-        Bots[bot_index].explore_dest_room = -1;
-        Bots[bot_index].explore_stuck_room = -1;
-        Bots[bot_index].explore_room_timer = 0.0f;
-      }
+      // STEP 2b-3 (NAV_CONSOLIDATION_PLAN.md §0.5): a powerup detour SUSPENDS the errand, it does not
+      // cancel it — for every bot, not just the one that happened to be on-objective.
+      //
+      // The on-objective half of this was already correct and its comment already described the
+      // doctrine: "preserve objective state so the bot resumes its route after collecting."
+      // The off-objective half wiped explore_dest_room, so a freelance/roaming bot that detoured two
+      // rooms for a shield forgot where it had been going and re-rolled a random destination on
+      // return. That is the "gets distracted" half of the operator's complaint, and it is the same
+      // defect 2b-2 fixed for combat blips — a reactive excursion erasing travel intent instead of
+      // interrupting it.
+      //
+      // Generalizing the branch that was already right is what makes this a collapse rather than an
+      // addition: one rule for both cases instead of two behaviors chosen by a flag. The
+      // pursuit_goal_index was cleared just above, so BotDoExploreRoaming re-issues the goal next
+      // tick from the preserved explore_dest_room.
+      //
+      // Lifetime is unaffected: arrival, timeout, replacement and the stuck-escalation
+      // unreachability clear all still fire. `on_objective` still governs SEEK RADIUS above (a bot on
+      // an errand takes only what is on its path), which is the distinction that actually matters.
     } else {
       // No powerup nearby — clear any stale goal index (powerup may have just been collected)
       // and navigate: follow target (FOLLOW/COVER) or roam room-to-room (FREELANCE/ATTACK/DEFEND).
