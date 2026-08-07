@@ -572,6 +572,54 @@ records it; `BotNavMemberWin` moves to that one place. Intended behavior-neutral
 exactly where this project has been burned (the 05-30 batch went in safe and came out reverted).
 **One call site per commit, mandatory.**
 
+> **⚠ OPERATOR GUARDRAIL (2026-08-06): THE VOLUMETRIC GRID AND OUTDOOR SCAFFOLDING STAY.** The
+> Fellowship terrain work (Isengard, Bree), the bedlam outdoor set, and Polaris — hard-won and working
+> relatively well — are not on the table. "The answer may be simpler in some cases" is accepted;
+> deleting the substrate is not.
+>
+> **Structurally satisfied already, and measured:** the leg gate runs only where
+> `BotBnodeNativeActive()` is true, i.e. BNode-rich SP/campaign maps. On the night-2 census it fired
+> **zero times on all three MP arms** (bedlam, bsidectf, CHAOS: `BNODELEG lines = 0`,
+> `BNode native pathing ACTIVE = 0`) while bedlam alone ran 3,787 skeleton-via and 5,354
+> troute/outdoor events. **Any change to the `f_bnode_ok` gate is inert on MP by construction.**
+>
+> That makes §4's "one router, two substrates" concrete, with the substrate chosen by what data the
+> map actually has: **SP/campaign** — the engine owns travel across its three tiers, and our job is to
+> stop withholding legs; **MP** — our scaffolding is the only navigator and keeps the job it earned
+> (grid roadmap, outdoor graph, troute composer, wind cost model all untouched). The probe licenses
+> deleting an **over-restriction on SP maps**, not deleting a substrate anywhere.
+
+> **PROBE RESULT 2026-08-06 — it is arm (a), and the fix is a DELETION.** `f_bnode_ok` returning false
+> does NOT mean the engine cannot fly a leg: `AIPathAllocPath` (aipath.cpp:1017-1090) has three tiers —
+> a VALIDATED beeline (fvi raycast at ship radius), then `AIGenerateBNodePath`, then
+> `AIGenerateBOAPath` — all gated on `BOA_GetNextRoom(start,end) != BOA_NO_PATH`. **That is why the
+> guide-bot handles outdoors with no outdoor BNodes: the raycast usually passes and it flies straight.**
+> We mirrored `f_bnode_ok` as though it answered "can the engine fly this?" when it answers "should the
+> BNode generator be used?" — so on every region-0 leg we withheld the goal and handed it to the
+> via/skeleton committee: indoor machinery on open terrain.
+>
+> Probe run: robo-anarchy on d3.mn3 — BNodes present AND bots roam outdoors autonomously, which
+> headless co-op does not (companion bots only go outside when a human leads them; a 16-min headless
+> co-op produced 146 evaluations, all `accept-interior`, zero outdoor).
+> ```
+> rej-end-reg0    start(out=1 reg=1 conn=3) end(out=1 reg=0 conn=0) boa_next=102 boa=ROUTABLE
+> rej-end-badcell start(out=0 reg=-1)       end(out=1 reg=-1)       boa_next=110 boa=NO_PATH
+> ```
+> **Region-0 legs are BOA-ROUTABLE; only unresolvable cells are not.** The arithmetic corroborates the
+> label rather than trusting it: `BOA_NO_PATH = Highest_room_index + 9` = 110 on this map, and
+> `BOA_INDEX` maps region *r* → `Highest_room_index + 1 + r`, so `boa_next=102` is the region-0
+> pseudo-room (a real hop) while 110 is the sentinel exactly, appearing only on badcell legs.
+>
+> **So Step 4 is NOT the region-0 lattice build (arm c) the census implied.** It is: stop gating SP
+> outdoor legs on `f_bnode_ok`, and **test `BOA_GetNextRoom` directly instead of assuming** —
+> routability is per-map, and genuinely disconnected terrain will return NO_PATH, which is the honest
+> gate.
+>
+> Carry forward: the engine's beeline is *validated*; our escort beeline
+> (`BotNavigateToFollowTarget` — 94 lines, **zero** raycast/segment-clear calls) is not, it aims and
+> thrusts. That is why escort-dominated co-op still produced 130 outdoor presses. "Beeline more
+> outdoors" must mean *use the engine's validated one*, not aim harder.
+
 **STEP 4 — resolve outdoors on Step 0's data.** (a) gate mis-evaluation → fix inputs, re-run the smoke
 #3 pattern; (b) region-0 with our lattice covering → make the troute composer the outdoor owner for
 *all* leg types, demote the via ring/graph/soft-hop to fallback; (c) region-0 with nothing covering →

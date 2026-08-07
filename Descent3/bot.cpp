@@ -192,8 +192,23 @@ static bool BotBnodeLegOk(int start_room, int end_room) {
       // `> 0` guard made it permanently unreportable; conn=-1 now means ONLY "interior end / bad cell".
       const int s_conn = (s_reg >= 0 && s_reg < MAX_BOA_TERRAIN_REGIONS) ? BOA_num_connect[s_reg] : -1;
       const int e_conn = (e_reg >= 0 && e_reg < MAX_BOA_TERRAIN_REGIONS) ? BOA_num_connect[e_reg] : -1;
-      LOG_DEBUG.printf("BOT BNODELEG: %s start(out=%d reg=%d conn=%d) end(out=%d reg=%d conn=%d)",
-                       BnodeLegVerdictName(verdict), (int)s_out, s_reg, s_conn, (int)e_out, e_reg, e_conn);
+      // BOA PROBE (2026-08-06): THE decisive measurement for Step 4. `f_bnode_ok` failing does NOT
+      // mean the engine cannot fly this leg — AIPathAllocPath has three tiers (aipath.cpp:1017-1090):
+      // a VALIDATED beeline (fvi raycast at ship radius), then AIGenerateBNodePath, then
+      // AIGenerateBOAPath as fallback. That is why the guide-bot handles outdoors without any outdoor
+      // BNodes: outdoors the raycast usually passes and it simply flies straight.
+      //
+      // BUT all three tiers sit inside `if (BOA_GetNextRoom(start,end) != BOA_NO_PATH)`, and region 0
+      // reports conn=0. So the open question is whether BOA has ANY route into region 0:
+      //   boa_next >= 0 (not NO_PATH) => the engine COULD fly these legs and we are withholding them.
+      //                                  Step 4 becomes a DELETION: stop gating, let the engine tier.
+      //   boa_next == NO_PATH         => the engine genuinely cannot route there either.
+      //                                  Step 4 is a real region-0 lattice build.
+      const int boa_next = BOA_GetNextRoom(start_room, end_room);
+      const bool boa_ok = (boa_next != BOA_NO_PATH);
+      LOG_DEBUG.printf("BOT BNODELEG: %s start(out=%d reg=%d conn=%d) end(out=%d reg=%d conn=%d) boa_next=%d boa=%s",
+                       BnodeLegVerdictName(verdict), (int)s_out, s_reg, s_conn, (int)e_out, e_reg, e_conn, boa_next,
+                       boa_ok ? "ROUTABLE" : "NO_PATH");
     }
   }
   return accepted;
