@@ -81,6 +81,12 @@
 // blacklist timer expires. This breaks infinite loops where bots repeatedly lock onto the same
 // enemy they can't reach due to walls/geometry on complex maps like Fellowship.
 #define BOT_TARGET_BLACKLIST_DURATION 10.0f // seconds a target remains blacklisted after HUNT timeout
+// Failed-destination demotion (the "fifth lifetime cause", 2026-08-07). Travel intent must clear on
+// UNREACHABILITY EVIDENCE as well as arrival/timeout/replacement/death — otherwise persistence
+// becomes a stubbornness loop: the bot escapes a wedge, re-picks the same room, and grinds it again.
+// ~2-4 room-progress cycles; long enough to break the loop, short enough that a temporarily blocked
+// room (a closed door, a firefight) comes back into play.
+#define BOT_FAILED_DEST_DURATION 45.0f
 
 // Powerup collection (Phase 3.8)
 #define BOT_POWERUP_SEEK_RADIUS 350.0f   // scan radius for powerup objects
@@ -463,6 +469,11 @@ struct bot_info {
   vector oa_steer_pos;      // 12.6: outdoor entrance approach point (carried from entrance-seek to the
   int oa_steer_room;        //       en-route via maintenance so the lateral go-around runs mid-flight); room=-1 none
   int explore_stuck_room;   // last room abandoned due to stuck — blacklisted for next pick
+  // Fifth lifetime cause: a destination that forced a stuck escape is demoted for a while, so
+  // persistent intent cannot re-pick it immediately and grind the same wedge. Errand-scope only —
+  // never filters the objective recompute or order anchors (those retry and report by design).
+  int failed_dest_room;      // destination demoted on unreachability evidence, or -1
+  float failed_dest_expires; // Gametime after which it is eligible again
 
   // Room-change progress tracking (Phase 4.0) — detects stuck earlier than speed-based detection
   int last_progress_room;                    // roomnum at last progress check

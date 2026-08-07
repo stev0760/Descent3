@@ -585,13 +585,34 @@ static void BotEnforceNoOrphanPath(int bot_index) {
   object *obj = &Objects[Players[slot].objnum];
   if (!obj->ai_info || obj->ai_info->path.num_paths == 0)
     return;
-  auto slot_live = [&](int gi) {
-    return gi >= 0 && gi < MAX_GOALS && obj->ai_info->goals[gi].used;
-  };
-  if (slot_live(Bots[bot_index].pursuit_goal_index) || slot_live(Bots[bot_index].combat_goal_index) ||
-      slot_live(Bots[bot_index].powerup_goal_index))
-    return;
+
+  // CORRECTED 2026-08-07 — the original premise was FALSE and it cost three soak nights.
+  //
+  // This used to free the path whenever none of OUR THREE tracked goal slots were live, on the
+  // reasoning that "a bot's goal slots are exclusively ours". They are not: BotConfigureAI installs a
+  // permanent engine goal — AIG_WANDER_AROUND at priority 1, GF_NONFLUSHABLE | GF_KEEP_AT_COMPLETION
+  // (see BotConfigureAI, "provides orientation when no target"). That goal legitimately allocates
+  // paths whenever no level-2 goal is live, and we were freeing them EVERY FRAME. The engine simply
+  // re-rolled and re-pathed, forever: `AIFindRandomRoom` "Wander is generating the same room" fired
+  // 64k times on the pre-2a night, 123k after 2a, 191k after 2b — a fight nobody had censused,
+  // because wander never passes through BotNavMemberWin and PRESS reported it as `goal=none`.
+  //
+  // The correct invariant is the engine's own ownership contract (GoalClearGoal frees on uid match,
+  // AIGoal.cpp:567): a path is an orphan only if NO used goal claims it. Check every slot, not ours.
+  //
+  // NOTE the tempting simpler form — "any used goal => keep the path" — is WRONG: the NONFLUSHABLE
+  // wander goal is always used, so that variant silently turns this whole invariant into a no-op.
+  for (int g = 0; g < MAX_GOALS; g++) {
+    if (obj->ai_info->goals[g].used && obj->ai_info->goals[g].goal_uid == obj->ai_info->path.goal_uid)
+      return; // a live goal owns this path — not an orphan
+  }
   AIPathFreePath(&obj->ai_info->path);
+  // Zero the steering vector with it. Freeing the path does NOT clear movement_dir, so the ship kept
+  // creeping along a dead vector at 3-5 u/s — below the stuck threshold, above Step 1's
+  // has_nav_dir gate (mdir > 0.01) — which is exactly the `goal=none path=0 mdir=1.00` ghost class
+  // the PRESS discriminator caught (6 presses pre-2a, 87 after). Step 1's coast fallback was built
+  // for this frame and could never engage while the stale vector survived.
+  vm_MakeZero(&obj->ai_info->movement_dir);
 }
 
 static void BotClearActiveGoal(int bot_index) {
@@ -3081,6 +3102,11 @@ static void BotDoExploreRoaming(int bot_index) {
       if (r == obj->roomnum)
         continue;
       if (r == Bots[bot_index].explore_stuck_room)
+        continue;
+      // Fifth lifetime cause: a destination that forced a stuck escape is demoted for a while, so
+      // persistent intent cannot immediately re-pick the room that just beat this bot. Gametime
+      // self-heal (`<` test) covers the per-level reset gotcha.
+      if (r == Bots[bot_index].failed_dest_room && Gametime < Bots[bot_index].failed_dest_expires)
         continue;
 
       // Validate BOA reachability (O(1) array lookup)
@@ -5813,6 +5839,29 @@ static void BotApplyThrust(int bot_index) {
                        BotTerrainDiag(obj, esc_dest, tdiag, sizeof(tdiag)));
     }
 
+    // FIFTH LIFETIME CAUSE (2026-08-07): demote the errand that forced this escape.
+    //
+    // Intent must clear on UNREACHABILITY EVIDENCE, not only on arrival/timeout/replacement/death.
+    // Before persistence this was handled by accident: the destination got wiped on the next state
+    // flip, which scattered the bot elsewhere. 2b-2/2b-3 removed that accidental dispersal, and the
+    // night-3 census measured the consequence — escapes 110 -> 164 while rooms-per-escape fell
+    // 0.245 -> 0.171, i.e. the same sites revisited to failure. That is the stubbornness pole.
+    //
+    // Two parts, because the demotion alone is not enough:
+    //   1. blacklist the failed destination for BOT_FAILED_DEST_DURATION;
+    //   2. mark it VISITED — the explore scorer gives unvisited rooms +100, and a room the bot never
+    //      reached is never marked visited, so the scorer actively prefers the room that just beat
+    //      it. Without this the blacklist merely delays the same loop until expiry.
+    //
+    // Errand scope only. The objective recompute and order anchors are deliberately NOT filtered:
+    // an unreachable objective is a route-class problem (hardroom promotion already fires on these
+    // rooms) and orders retry-and-report by design.
+    if (esc_dest >= 0) {
+      Bots[bot_index].failed_dest_room = esc_dest;
+      Bots[bot_index].failed_dest_expires = Gametime + BOT_FAILED_DEST_DURATION;
+      BotRecordVisitedRoom(bot_index, esc_dest);
+    }
+
     // Record current room as stuck to avoid it in future explore picks
     if (!OBJECT_OUTSIDE(obj))
       BotRecordVisitedRoom(bot_index, obj->roomnum);
@@ -7095,6 +7144,8 @@ void BotInitAll() {
     Bots[i].order_report_time = 0.0f;
     Bots[i].explore_dest_room = -1;
     Bots[i].explore_stuck_room = -1;
+    Bots[i].failed_dest_room = -1;      // fifth-cause blacklist: absolute Gametime latch,
+    Bots[i].failed_dest_expires = 0.0f; // so it MUST join the per-level sweep (6.10 gotcha)
     Bots[i].explore_room_timer = 0.0f;
     Bots[i].last_progress_room = -1;
     vm_MakeZero(&Bots[i].last_progress_pos);
@@ -7277,6 +7328,8 @@ void BotReinitAll() {
     vm_MakeZero(&Bots[i].last_target_pos);
     Bots[i].explore_dest_room = -1;
     Bots[i].explore_stuck_room = -1;
+    Bots[i].failed_dest_room = -1;      // fifth-cause blacklist: absolute Gametime latch,
+    Bots[i].failed_dest_expires = 0.0f; // so it MUST join the per-level sweep (6.10 gotcha)
     Bots[i].explore_room_timer = 0.0f;
     Bots[i].last_progress_room = -1;
     vm_MakeZero(&Bots[i].last_progress_pos);
@@ -7610,6 +7663,8 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   vm_MakeZero(&Bots[bot_index].last_target_pos);
   Bots[bot_index].explore_dest_room = -1;
   Bots[bot_index].explore_stuck_room = -1;
+  Bots[bot_index].failed_dest_room = -1;      // fifth-cause blacklist: absolute Gametime latch,
+  Bots[bot_index].failed_dest_expires = 0.0f; // so it MUST join the per-level sweep (6.10 gotcha)
   Bots[bot_index].explore_room_timer = 0.0f;
   Bots[bot_index].last_progress_room = -1;
   vm_MakeZero(&Bots[bot_index].last_progress_pos);
