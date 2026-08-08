@@ -7,39 +7,58 @@ live navigation status is in [NAVIGATION.md](NAVIGATION.md) §7.0.
 Versioning: `0.8.x` = feature releases; `0.9.x` = the navigation-milestone series.
 A `-dev` suffix marks an in-test build that has not yet passed its validation gate.
 
-## [0.9.10-dev] - 2026-07-22
+## [0.9.10] - 2026-08-08
 
-*In progress: a navigation cleanup pass. The bot fights well but travels a little "off," and the
-cause turned out to be architectural: over a year of adding game modes, navigation grew into ten-odd
-cooperating (and occasionally competing) subsystems instead of one clear decision-maker. This build
-measures that — and makes the first cut.*
+*The navigation cleanup release. Bots have fought well for a long time but travelled a little "off,"
+and the cause turned out to be architectural rather than a tuning problem: over a year of adding game
+modes, navigation had grown into ten-odd cooperating (and occasionally competing) subsystems instead
+of one clear decision-maker. This release measures that, makes the first cuts, and fixes two bugs the
+measurements turned up — one of which had been quietly costing performance for a very long time.*
+
+**Bots remember what they were doing.** A bot heading for the enemy flag used to lose that errand the
+moment anything happened to it. Take a fight on the way, grab a shield in passing, get chased for four
+seconds — and on the way out it would pick a fresh destination at random, having forgotten the
+original. Travel intent now survives those interruptions. Combat and powerup detours *suspend* the
+errand and hand it back afterwards; nothing short of arriving, timing out, dying, or being given
+something better to do will clear it. Bots read as though they are going somewhere on purpose.
+
+**Bots stop grinding a room that already beat them.** The flip side of remembering: a bot that got
+wedged trying to reach somewhere unreachable used to be scattered elsewhere by accident, and once it
+remembered its destination it would fly straight back and wedge again. A spot that defeats a bot is
+now set aside for a while, and no longer gets the "somewhere new" bonus that was actively steering
+bots back into it.
+
+**Your orders outrank the flag.** Previously a bot carrying the enemy flag never even looked at
+`!follow`, `!cover`, or `!hold` — scoring won unconditionally. That was wrong: a human ordering a
+carrier around is making a tactical call the bot can't see, like clearing a path ahead of it or
+routing it away from trouble. Carriers now take orders and keep carrying while they do.
+
+**Two long-standing bugs, both found by measurement.** Bots were fighting the engine's own idle
+"look around" behaviour thousands of times a minute, and separately could drift along a stale steering
+direction at walking pace after their destination was gone — slow enough to never trip the stuck
+detector, fast enough to keep pressing into walls. Both are fixed.
+
+**What it adds up to, measured.** On a fixed twelve-round four-map CTF test run against the same
+server config: captures 94 → 121, and flag-to-capture conversion improved on three of four maps
+(Apparition 24% → 45%). Bots got stuck less often than the pre-release baseline on every map. One
+map, Polaris, went the other way and is being investigated rather than averaged away.
 
 **New (operator-only): `$nav contend` telnet command.** Counts how often each part of the navigation
 system takes over a bot's travel decisions, and flags moments where two parts disagree within a few
-seconds of each other. Histograms also print to the server log automatically whenever a `$nav`
-toggle changes and at the end of every level, so test sessions capture them without any typing.
+seconds of each other. Histograms also print to the server log whenever a `$nav` toggle changes and
+at the end of every level, so test sessions capture them without any typing.
 
-**First measured result, and the first simplification.** A live campaign A/B session showed that on
-single-player maps only one of those ten-odd subsystems ever actually intervenes — the in-room
-detour ("via") layer — and that it kept overriding the engine's own good pathfinding even in the
-mode where the engine is supposed to own navigation. Escorting bots reached their wing position 22
-times with engine navigation versus zero without it. So now, on campaign maps where the engine's
-hand-authored path network is active, the detour layer stands down entirely indoors: one navigator
-per ship. Multiplayer maps are untouched — they have no such network, and the full navigation stack
-still runs there.
+**Campaign bots get noticeably further indoors.** On maps that ship with the engine's hand-authored
+path network — the campaign, and anything built like it — our in-room detour layer now stands down
+indoors entirely and lets the engine navigate: one navigator per ship. In testing, bots worked deeper
+into the first campaign level than we have previously recorded. Multiplayer maps are untouched; they
+have no such network, and the full navigation stack still runs there.
 
-**Campaign bots now get noticeably further indoors.** The same hand-off was extended to cover any
-leg the engine is willing to fly, rather than only the ones that stay entirely inside a building.
-Indoors the effect is clear: in testing, bots worked deeper into the first campaign level than we
-have previously recorded, and a player flying with them described them as meaningfully more
-coherent than before.
-
-**Outdoors is still the open problem, and this build does not fix it.** Once bots leave a building,
-the engine's path network declines to route them, so the older navigation stack takes back over —
-and out in the open it still wanders, loses track of where it was going, and is unreliable at
-following you. Being honest about the boundary: the improvement above is an indoor one. Whether
-outdoor navigation should be handed to the engine at all, or driven entirely by our own map data,
-is the question the next round of testing is meant to answer.
+**Outdoors is still the open problem, and this release does not fix it.** Once bots leave a building
+on a campaign map the engine's path network declines to route them, so the older navigation stack
+takes back over, and out in the open it is still unreliable at following you. The improvement above is
+an indoor one. We now know why the hand-off stops at the door — the test we were using asks the wrong
+question of the engine — and correcting it is the next piece of work.
 
 ## [0.9.9] - 2026-07-19
 

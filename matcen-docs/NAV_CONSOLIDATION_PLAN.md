@@ -388,6 +388,26 @@ Method: one variable per step; each individually revertable; **no new toggles** 
 existing toggles or build-vs-build with identical cfg); feel is the pass gate; bedlam/fellowship
 conversion gates protect the modes.
 
+> **PHASE SPLIT AT THE RELEASE BOUNDARY (2026-08-08).** Steps 0, 1, 2a (+ the §0.7 wander correction)
+> and 2b-1/2/3 are **CLOSED and shipped as `v0.9.10`**. The stamp is deliberate rather than
+> bookkeeping: Step 3 is a behavior-neutral refactor of the highest-traffic path in a 396 KB file —
+> the shape that produced the reverted 05-30 batch — and this phase had just spent three soak nights
+> compounding untested changes. A tagged known-good anchor goes in *before* that work, not after.
+>
+> **The back half runs under `0.9.11-dev`, in this order:**
+>
+> | # | work | why here |
+> |---|---|---|
+> | 1 | **Polaris return-leg forensics** (existing logs, no soak) | the one map below baseline, and Step 3 moves the very delivery paths a carrier flies — diagnose before the attribution window closes |
+> | 2 | **The destination-churn instrument** | Step 2b's owed pass metric, never built; the newest layer is the one layer judged only on feel. Built as a **typed setter** (`BotSetTravelDest(bot, room, owner, why)`) rather than scattered log calls, because that choke point *is* the intent-side half of Step 3's dispatch — the same lesson as `BotEnforceNoOrphanPath` |
+> | 3 | **Step 3** — one dispatch point | one call site per commit, mandatory |
+> | 4 | **Step 4** — SP outdoor gate deletion | inert on MP by construction; unblocks the legacy five |
+> | 5 | **Step 5** — the retirement audit | RETURN TO ORIGIN |
+>
+> Standing discipline for the back half, earned on nights 1-3: **12 rounds minimum** for anything
+> gated on escalations or captures (the 4-round A/B that blessed 2b-2 read 5.2/rnd where 12 rounds
+> read 12.0), and **bundle only when each change has a pre-registered metric the other cannot move.**
+
 **STEP 0 — repair the instruments (measurement-only, risk ≈ 0). FIRST.**
 (a) 3-way reject counter in `BotBnodeLegOk` *plus* region values and `BOA_num_connect[region]` per
 reject; (b) normalize `BotNavMemberWin` to **episodes** (state entries), not frames/ticks held;
