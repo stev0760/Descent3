@@ -251,14 +251,35 @@ Issuing `!stop` released it and it scored immediately from the same position —
 arm: only the escort layer changed, so geometry and engine steering are exonerated.
 
 **Why it was invisible rather than merely wrong** — the part that makes this an arrival fix and not a
-threshold tweak. The arrival branch returns *early*, before `BotOrderProgressCheck`, so the
-"Can't reach you!" silent-failure detector built for exactly this class could never fire from the
-false state; and that same branch republishes `order_progress_pos`/`order_progress_time` every frame,
-holding the no-progress clock at zero, so it could not have fired even if reached. **Measured over the
-session: 18 "escort on station" reports, ZERO "Can't reach you".** The review also found the
-second-order symptom in the same log — rapid ON_STATION↔EN_ROUTE oscillation interleaved with genuine
-occlusion detours (Shadow, 16:08:34.419 / 34.934 / 35.447) — which is the operator's "broader
-confusion with following", same root cause, not a separate bug.
+threshold tweak. The arrival branch returns *early*, before `BotOrderProgressCheck`, so the BLOCKED
+silent-failure detector built for exactly this class **cannot fire from the false-arrival state**; and
+that same branch republishes `order_progress_pos`/`order_progress_time` every frame, holding the
+no-progress clock at zero, so it could not fire even if reached. **Measured on the 08-08 MP session:
+18 "escort on station" reports, ZERO BLOCKED** — a bot parked against a wall reported itself content,
+not stuck. The review also found the second-order symptom in the same log — rapid ON_STATION↔EN_ROUTE
+oscillation interleaved with genuine occlusion detours (Shadow, 16:08:34.419 / 34.934 / 35.447) —
+which is the operator's "broader confusion with following", same root cause, not a separate bug.
+
+> **Precision, because the first write-up of this overstated it:** the detector is NOT globally dead.
+> It fires whenever a bot is genuinely en route and not progressing — archived co-op sessions log 54
+> BLOCKED in one case, 1-3 in others. What is structurally unreachable is BLOCKED *from the
+> false-arrival state specifically*. The 08-08 MP session's 0 BLOCKED against 18 arrivals is the
+> signature of bots sitting in that state, not evidence the detector never works.
+
+**⚠ SCOPE IS FAR WIDER THAN ORDER-FOLLOWING — `!follow` is not the main caller (operator, 2026-08-08).**
+`BotCoopUpdateEscort` (`bot_objective.cpp:1090`) assigns `SQUAD_FOLLOW` to **every unordered bot
+whenever a human is present** — the 0.9.9 companion-mode ruling, *"every unordered bot escorts the
+nearest human by default"*. So this arrival test is **the default navigation posture of co-op**, running
+continuously with no order issued, and has been since 0.9.9 shipped. Explicit `!follow`/`!cover` in MP
+is the *minority* caller. This also names a backlog item that was already registered but not connected:
+co-op's "geometry-blind escort station points".
+>
+> Corroboration is suggestive rather than conclusive, and is worth stating as such: one archived co-op
+> session (`coop-2b2-2026-08-06`) logged **444 arrivals from 2 escorting bots over 53 minutes** —
+> median 3.6 s between "arrivals", 19% under 2 s. A escort that genuinely reaches your wing should log
+> one arrival and sit. But a *moving* player legitimately causes repeated EN_ROUTE→ON_STATION cycles,
+> so the count alone is not proof; the code proof above is the load-bearing part, and the gap
+> distribution is consistent with it.
 
 **The fix** (`BotStationReached`, bot.cpp): distance first as a cheap reject, then same-room as a
 ray-free fast path, else a geometry-only `fvi` clear-line test. One helper, three call sites, no new
