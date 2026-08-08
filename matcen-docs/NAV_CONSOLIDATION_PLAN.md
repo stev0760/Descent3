@@ -194,6 +194,44 @@ available.
 
 ---
 
+## 0.7 The twelfth member: a permanent engine wander goal (2026-08-07)
+
+> **The base defect behind three nights of regression, and the correction that fixed it.** Recorded
+> here rather than in a step because it revises §1's census and §2a's validation number.
+
+**`BotConfigureAI` installs a permanent engine goal** — `AIG_WANDER_AROUND`, priority 1,
+`GF_NONFLUSHABLE | GF_KEEP_AT_COMPLETION`, commented *"provides orientation when no target"*. It
+legitimately allocates paths whenever no level-2 goal is live. Step 2a's invariant rested on the
+premise that *"a bot's goal slots are exclusively ours, so with all three dead no legitimate path can
+remain"* — **that premise is false**, and 2a was freeing wander's live path every frame. The engine
+re-rolled and re-pathed forever: `AIFindRandomRoom`'s "Wander is generating the same room" fired
+**64,129 / 122,982 / 191,131** times across nights 1-3.
+
+**It was invisible to every instrument we had.** Wander never passes through `BotNavMemberWin`, so the
+committee census never saw it — a *twelfth* member, unlisted alongside the eleventh (§3). And the
+PRESS line reported it as `goal=none`, because "goal" there means *our* tracked slots.
+
+**The product was a ghost class** the PRESS discriminator caught once `mdir=`/`path=` existed:
+`goal=none path=0 mdir=1.00` at 3-5 u/s — no goal, no path, but a **frozen `movement_dir`**, because
+freeing a path does not clear the steering vector. Below the stuck threshold, above Step 1's
+`has_nav_dir` gate, so Step 1's coast fallback — built for exactly that frame — could never engage.
+Ghost presses: **6 → 87 → 81** across nights 1-3.
+
+**The correction** (`31873fd1`): free a path only when **no used goal in `goals[]`** claims its
+`goal_uid` — the engine's own ownership contract (`GoalClearGoal`, AIGoal.cpp:567) applied as an
+invariant, checking all ten slots rather than our three; and zero `movement_dir` when it does.
+*(Trap worth stating: the simpler "any used goal ⇒ keep the path" is wrong — the NONFLUSHABLE wander
+goal is always used, so that form silently makes the invariant a no-op.)*
+
+**Consequences for numbers already published:** 2a's headline (91% → 9% stale-path) was **inflated by
+friendly fire** — much of N1's "stale" population was wander's legitimate path, not orphans of our
+goals. And **the stale-path share is retired as a metric**: with wander correctly holding its path, a
+goalless press with `path>0` is usually wander's, so the share reads 94% post-fix while the absolute
+count is *lower* than N1's (46/288 vs 60/312). Judge orphan health by absolute press counts and the
+structural gates below, not by that ratio.
+
+---
+
 ## 1. The committee census (who can seize the wheel during travel)
 
 **Goal-writers** — all deliver through one legitimate channel (`GoalAddGoal(AIG_GET_TO_POS/OBJ)`).
@@ -546,6 +584,32 @@ bedlam and Entropy (judge per mode, §F — bside's residual half will not zero)
 > **invariant enforced once per bot per frame** (`BotEnforceNoOrphanPath`: no live tracked goal ⇒ no
 > live path), not twenty call-site patches — the same shape this whole phase is aiming at, and a
 > reminder that "necessary" and "sufficient" are different claims that a smoke can separate cheaply.
+
+> **VALIDATION 2026-08-07 (`31873fd1`, 12 rounds bedlam) — ALL FIVE PRE-REGISTERED GATES PASSED, and
+> the fix build is the best of the series.** Log `soak-20260807T075523.log`.
+>
+> | gate | target | N1 (0+1) | N2 (+2a+2b1) | N3 (+2b2+2b3) | **FIX** |
+> |---|---|---|---|---|---|
+> | wander re-rolls | ~64k | 64,129 | 122,982 | 191,131 | **64,959** ✅ |
+> | ghost presses | ~6 | 6 | 87 | 81 | **3** ✅ |
+> | rooms per escape | ≥0.30 | 0.294 | 0.245 | 0.171 | **0.667** ✅ |
+> | escalations/rnd | 2-4 | 2.0 | 9.4 | 12.0 | **1.0** ✅ |
+> | captures (total) | ≥94 | 94 | 114 | 86 | **121** ✅ |
+>
+> Stucks/rnd collapsed below the N1 baseline on every map (Apparition 0.2, Plutonium 2.7,
+> QuadSomniac 0.0, Polaris 1.0 — against N3's 8.0/16.3/10.7/10.3). Goalless presses 49, the lowest of
+> the four nights. **Both defects are confirmed fixed and the intent layer (2b-2/2b-3) is vindicated:
+> its measured harm ran entirely through the two defects, exactly as the review argued.**
+>
+> **Conversion (the duration-independent metric, run on all four nights at last):** team-averaged,
+> Apparition **24% → 45%**, Plutonium 16% → 23%, QuadSomniac 6% → 9% (N1 → FIX). Three of four maps
+> improved on the metric that does not depend on round length.
+>
+> **⚠ POLARIS IS THE EXCEPTION AND IT IS REAL.** Conversion 35% → **30%**, captures 11.0 → 8.7/rnd —
+> the one map below its N1 mark. The signature is diagnostic: Blue took **39 picks for 11 caps (28%)**
+> against N1's 22 picks for 13 caps (59%) — *more grabs, fewer scores*, which is a **return-leg**
+> failure, not a reach failure. Polaris is the wind-tunnel map and the one where N1 was strongest.
+> Open item; do not average it away.
 
 **STEP 2b — give the mind a memory: persistent travel intent.** One per-bot intent slot
 (destination + owner: order / objective / explore) that **survives state flips**. Remove the EXPLORE
