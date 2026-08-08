@@ -630,6 +630,45 @@ bedlam and Entropy (judge per mode, §F — bside's residual half will not zero)
 > against N1's 22 picks for 13 caps (59%) — *more grabs, fewer scores*, which is a **return-leg**
 > failure, not a reach failure. Polaris is the wind-tunnel map and the one where N1 was strongest.
 > Open item; do not average it away.
+>
+> > **RESOLVED 2026-08-08 — IT IS NOT A NAVIGATION REGRESSION, AND THE "RETURN-LEG FAILURE" READING
+> > ABOVE IS WITHDRAWN.** Carry-episode forensics over all four nights' Polaris rounds
+> > (`polaris_forensics.py`, scratchpad; parse validated against the published figures — it reproduces
+> > 11.0 and 8.7 caps/rnd exactly). Every episode reconstructed pickup → terminal event from the
+> > `BOT CTF carrier nav` / `DIED carrying flag` / flag-chat lines.
+> >
+> > **The route mechanics improved on Polaris — they did not degrade.** A return-leg failure predicts
+> > more nav legs, more room revisits, and deaths clustered at a chokepoint. Every one of those moved
+> > the *other* way:
+> >
+> > | Polaris, 3 rnd/arm | N1 | N2 | N3 | **FIX** |
+> > |---|---|---|---|---|
+> > | room revisits / episode | 0.74 | 0.47 | 0.25 | **0.35** |
+> > | nav legs / episode | 11.6 | 13.0 | 11.6 | **10.5** |
+> > | top death-room concentration | 10/56 (room 1) | 5/42 | 8/41 | **5/54 (dispersed)** |
+> >
+> > **The headline is not statistically significant.** All-bot cap rate N1 33/89 (37%) → FIX 26/80
+> > (32%): **−4.6pp against a 7.3pp standard error, z = −0.63.** Three rounds cannot resolve a 5-point
+> > capture difference. The alarm was a sample-size artifact, and per-round captures on a 3-round map
+> > are exactly the "short-run gate" the project already rules must never carry a hard map verdict.
+> >
+> > **What actually moved was team composition, not navigation.** The Blue-specific signature is a
+> > redistribution: Blue's picks 19 → **34** while Red's fell 25 → **14** (totals near-flat, 89 → 80).
+> > Blue's median death distance is unchanged across all four nights (741/679/719/**708**) — Blue dies
+> > far from its own base by map geography, and simply attacked nearly twice as often. More runners
+> > converting at their usual rate against a defense killing them at their usual distance. The pooled
+> > ">600u from home" shift (25% → 43%, z = +1.98) is that volume change showing up in a pooled
+> > statistic, not a per-episode change.
+> >
+> > **Ruling: not a nav defect; no nav engineering spent on it.** If it is ever revisited, it needs a
+> > 12-round Polaris-weighted run, not more forensics on three rounds.
+> >
+> > **Bonus finding, and it matters for Steps 3 and 5: `DIVERGE` does not predict failure anywhere —
+> > it predicts SUCCESS.** Episodes where our cost-aware router chose a different door than BOA capture
+> > *more* often, on every arm and every map (Polaris FIX: **41% with DIVERGE vs 9% without**; N1 41%
+> > vs 28%). The standing worry that our door choice fights BOA to the bots' cost is refuted on
+> > measured data — this is evidence *for* the router, and it raises the bar for retiring the cost
+> > model in Step 5.
 
 **STEP 2b — give the mind a memory: persistent travel intent.** One per-bot intent slot
 (destination + owner: order / objective / explore) that **survives state flips**. Remove the EXPLORE
