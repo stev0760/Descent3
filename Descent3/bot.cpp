@@ -513,6 +513,58 @@ static bool BotHasLOS(object *obj, object *target) {
   return (hit_type == HIT_OBJECT && hit.hit_object[0] == OBJNUM(target));
 }
 
+// Geometry-only clear line to a POINT (no target object to make an exception for, so objects are
+// not checked at all — a teammate or a powerup floating between the bot and its post does not mean
+// the post is unreached; only walls and terrain do).
+static bool BotHasClearLineToPos(object *obj, const vector &dest) {
+  vector p1 = dest;
+  fvi_query fq{};
+  fvi_info hit{};
+  fq.p0 = &obj->pos;
+  fq.p1 = &p1;
+  fq.startroom = obj->roomnum;
+  fq.rad = 0.0f;
+  fq.thisobjnum = OBJNUM(obj);
+  fq.ignore_obj_list = nullptr;
+  fq.flags = FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS | FQ_IGNORE_MOVING_OBJECTS;
+  return fvi_FindIntersection(&fq, &hit) == HIT_NONE;
+}
+
+// ORDER ARRIVAL — "have I got there?" answered by REACHABILITY, not by a distance number.
+//
+// FOUND IN A COCKPIT TEST 2026-08-08, and it had been silently costing order-following for as long
+// as orders have existed. Both order-nav arrival tests were bare straight-line distances:
+// escort at `station_dist < 25 || dist < 25` and hold at `dist <= 60`, with no line-of-sight, no
+// same-room qualifier and no path check. Twenty-five units THROUGH A WALL read as "arrived".
+//
+// The operator led a bot carrying the enemy flag to within ~25u of himself across the wall of the
+// home flag room. The bot declared ON_STATION, cleared its goal, and parked one room short of a
+// capture it would have scored on contact just by continuing to follow. It looked from the cockpit
+// like a bot refusing to cross a threshold. It was a bot that believed it had already arrived.
+//
+// Two things made it invisible rather than merely wrong, and both are why this is an arrival fix
+// and not a threshold tweak:
+//   * the arrival branch returns EARLY, before `BotOrderProgressCheck` — so the "Can't reach you!"
+//     silent-failure detector built for exactly this class could never fire from the false state;
+//   * that branch also republishes `order_progress_pos`/`order_progress_time` every frame, holding
+//     the no-progress clock at zero, so the detector could not have fired even if reached.
+//   Measured over the test session: 18 "escort on station" reports, ZERO "Can't reach you".
+//
+// One helper, both call sites (escort + hold), rather than two patched thresholds — the 2a lesson
+// that an invariant enforced once beats N call-site edits. Distance is checked FIRST so the raycast
+// only runs for a bot already inside the arrival radius.
+static bool BotStationReached(object *obj, const vector &station, int station_room, float arrive_dist) {
+  vector s = station;
+  if (vm_VectorDistanceQuick(&obj->pos, &s) > arrive_dist)
+    return false;
+  // Same room is arrival without paying for a ray. Only meaningful for interior anchors — outdoor
+  // "rooms" are terrain cells that change constantly, so those fall through to the ray.
+  if (station_room >= 0 && !ROOMNUM_OUTSIDE(station_room) && !OBJECT_OUTSIDE(obj) &&
+      (int)obj->roomnum == station_room)
+    return true;
+  return BotHasClearLineToPos(obj, station);
+}
+
 // Window for "recently fired" cloak reveal — audible muzzle flash/report window.
 // Short enough that a player who stops firing can still evade; long enough to span
 // typical burst cadence (e.g., Vauss ~0.1s between shots).
@@ -2083,8 +2135,13 @@ static bool BotNavigateToFollowTarget(int bot_index) {
   // Stage 6: on station when close to OUR offset slot (not a shared 40u bubble). Report arrival
   // once per EN_ROUTE→ON_STATION transition; idle there (no goal churn) until the player moves.
   vector station = BotGetEscortStation(bot_index, tgt_obj);
-  float station_dist = vm_VectorDistanceQuick(&obj->pos, &station);
-  if (station_dist < BOT_ESCORT_STATION_ARRIVE || dist < BOT_ESCORT_STATION_ARRIVE) {
+  // Both arrival terms are reachability-qualified (BotStationReached) — a bare distance let a bot
+  // "arrive" through a wall. The station passes room = -1 because BotGetEscortStation is pure vector
+  // arithmetic in the player's orientation frame and genuinely does not know what room it landed in
+  // (it can land inside geometry); the player term can use his room for the cheap same-room path.
+  int tgt_room_arrive = OBJECT_OUTSIDE(tgt_obj) ? -1 : (int)tgt_obj->roomnum;
+  if (BotStationReached(obj, station, -1, BOT_ESCORT_STATION_ARRIVE) ||
+      BotStationReached(obj, tgt_obj->pos, tgt_room_arrive, BOT_ESCORT_STATION_ARRIVE)) {
     if (Bots[bot_index].order_state != ORDER_ON_STATION) {
       Bots[bot_index].order_state = ORDER_ON_STATION;
       BotOrderReport(bot_index, "Right behind you.");
@@ -2169,8 +2226,11 @@ static void BotDoHoldStationNav(int bot_index) {
     return;
   int &pgi = Bots[bot_index].pursuit_goal_index;
 
-  float dist = vm_VectorDistanceQuick(&obj->pos, &Bots[bot_index].order_anchor_pos);
-  if (dist <= BOT_ORDER_STATION_RADIUS) {
+  // Same reachability qualifier as escort arrival, and it matters MORE here: the hold radius is 60u,
+  // so the blind sphere reached through walls more than twice as far. Unexercised in the 08-08 test
+  // (no !hold was issued), fixed alongside because it is the identical defect, not a related one.
+  if (BotStationReached(obj, Bots[bot_index].order_anchor_pos, Bots[bot_index].order_anchor_room,
+                        BOT_ORDER_STATION_RADIUS)) {
     if (Bots[bot_index].order_state != ORDER_ON_STATION) {
       Bots[bot_index].order_state = ORDER_ON_STATION;
       BotOrderReport(bot_index, "In position.");

@@ -232,6 +232,64 @@ structural gates below, not by that ratio.
 
 ---
 
+## 0.8 Order arrival was answered by distance, not reachability (2026-08-08)
+
+> **Found in the first cockpit test of 2b-1, verified by a commissioned Fable 5 review.** Recorded
+> here rather than in a step because it revises §0.5 amendment B and falsifies a Step 3 premise.
+
+**2b-1 PASSES.** Bots do follow while carrying the flag — the dispatcher reorder works, and only a
+human could ever have shown it (it is provably a no-op in an unmanned soak). What the test exposed
+was a *different*, older defect, which 2b-1 merely made reachable for carriers.
+
+**The defect.** Both order-nav arrival tests were bare straight-line distances with no line-of-sight,
+no same-room qualifier and no path check: escort at `station_dist < 25 || dist < 25`
+(`BotNavigateToFollowTarget`) and hold at `dist <= 60` (`BotDoHoldStationNav`). **Twenty-five units
+through a wall read as "arrived".** The operator led a bot carrying the enemy flag to within ~25u of
+himself across the wall of the home flag room; the bot declared ON_STATION, cleared its goal, and
+parked one room short of a capture it would have scored **on contact** just by continuing to follow.
+Issuing `!stop` released it and it scored immediately from the same position — which is the control
+arm: only the escort layer changed, so geometry and engine steering are exonerated.
+
+**Why it was invisible rather than merely wrong** — the part that makes this an arrival fix and not a
+threshold tweak. The arrival branch returns *early*, before `BotOrderProgressCheck`, so the
+"Can't reach you!" silent-failure detector built for exactly this class could never fire from the
+false state; and that same branch republishes `order_progress_pos`/`order_progress_time` every frame,
+holding the no-progress clock at zero, so it could not have fired even if reached. **Measured over the
+session: 18 "escort on station" reports, ZERO "Can't reach you".** The review also found the
+second-order symptom in the same log — rapid ON_STATION↔EN_ROUTE oscillation interleaved with genuine
+occlusion detours (Shadow, 16:08:34.419 / 34.934 / 35.447) — which is the operator's "broader
+confusion with following", same root cause, not a separate bug.
+
+**The fix** (`BotStationReached`, bot.cpp): distance first as a cheap reject, then same-room as a
+ray-free fast path, else a geometry-only `fvi` clear-line test. One helper, three call sites, no new
+toggle — the 2a lesson that an invariant enforced once beats N call-site edits. `BotDoHoldStationNav`
+carried the identical defect with a **60u** blind sphere and was never exercised on 08-08 (no `!hold`
+was issued); it is fixed alongside because it is the same defect, not a related one.
+
+**No carrier special case, and that is the point.** Capture is **contact-based** — `BotDoCarrierNav`'s
+home-room branch is commented *"Touching it scores"*, and `ctf.cpp`'s `OnServerCollide`/
+`OnClientCollide` score on collision. The bot never elects to capture, so it needed no scoring logic
+under `!follow`; it needed to *move*. The correct general arrival rule makes the flag-room stall
+disappear as a consequence, which is the shape this phase wants. **Deferred, evidence-gated:** a
+following carrier never runs `BotDoCarrierNav`, so it only scores if the follow path happens to cross
+the flag — luck of geometry in a larger flag room. If a session ever shows a carrying bot under order
+standing in its own objective room without contacting the flag, the fix belongs *outside* the owner
+hierarchy as a fact-about-the-world rule, precedent at `BotUpdateAimDirection` (bot.cpp ~5350: an
+unconditional "carrier in home room ⇒ face the home flag" that already ignores order state).
+
+> **⚠ THIS FALSIFIES A STEP 3 PREMISE — see §6.** Step 3's call-site order puts escort-close and
+> escort-outdoor first *because they were believed inert on MP*. That is now false: on any MP server
+> where a human issues `!follow`/`!cover`, a flag carrier runs the escort path. The ordering need not
+> change, but those commits require the same MP-live scrutiny as any other, and the arrival fix
+> shipping first removes a known confound from their regression attribution.
+>
+> **Validation note:** this path is unreachable by unmanned soak, so the 12-round capture gate does
+> not transfer. The test is a live cockpit rerun read by log signature — "escort on station" only on
+> genuine same-room/LOS arrivals, the sub-second oscillation pattern gone, and "Can't reach you!"
+> now *able* to appear (its reachability is the fix working, not a regression).
+
+---
+
 ## 1. The committee census (who can seize the wheel during travel)
 
 **Goal-writers** — all deliver through one legitimate channel (`GoalAddGoal(AIG_GET_TO_POS/OBJ)`).
@@ -398,9 +456,10 @@ conversion gates protect the modes.
 >
 > | # | work | why here |
 > |---|---|---|
-> | 1 | **Polaris return-leg forensics** (existing logs, no soak) | the one map below baseline, and Step 3 moves the very delivery paths a carrier flies — diagnose before the attribution window closes |
+> | 0 | **Order arrival = reachability, not distance** (§0.8) | DONE 08-08. Live defect blocking the feature 2b-1 just shipped; contaminates every later cockpit test until fixed |
+> | 1 | ~~**Polaris return-leg forensics**~~ | DONE 08-08 — **not a nav defect**; route metrics improved, captures z=-0.63, team redistribution. See the RESOLVED block in §6 |
 > | 2 | **The destination-churn instrument** | Step 2b's owed pass metric, never built; the newest layer is the one layer judged only on feel. Built as a **typed setter** (`BotSetTravelDest(bot, room, owner, why)`) rather than scattered log calls, because that choke point *is* the intent-side half of Step 3's dispatch — the same lesson as `BotEnforceNoOrphanPath` |
-> | 3 | **Step 3** — one dispatch point | one call site per commit, mandatory |
+> | 3 | **Step 3** — one dispatch point | one call site per commit, mandatory. **§0.8 falsified the "escort commits are MP-inert" premise** — an ordered carrier runs the escort path on MP |
 > | 4 | **Step 4** — SP outdoor gate deletion | inert on MP by construction; unblocks the legacy five |
 > | 5 | **Step 5** — the retirement audit | RETURN TO ORIGIN |
 >
