@@ -7,6 +7,19 @@ live navigation status is in [NAVIGATION.md](NAVIGATION.md) §7.0.
 Versioning: `0.8.x` = feature releases; `0.9.x` = the navigation-milestone series.
 A `-dev` suffix marks an in-test build that has not yet passed its validation gate.
 
+## [0.9.11-dev] - unreleased
+
+*In progress: the second half of the navigation cleanup. 0.9.10 gave bots a travel intent that
+survives interruption; this build collapses the ten-odd subsystems that decide **how** a bot gets
+where it is going into a single decision point, lets the engine fly outdoor legs on campaign maps it
+is perfectly capable of flying, and retires the tuning switches that only ever existed to paper over
+the overlap. No operator-visible feature work is planned — the goal is that bots travel the same way
+they do today, for reasons that fit in one place instead of thirteen.*
+
+**Under investigation:** on Polaris specifically, bots grab the enemy flag more often than before but
+score it less often — a problem on the way home rather than on the way out. Every other map on the
+test set improved.
+
 ## [0.9.10] - 2026-08-08
 
 *The navigation cleanup release. Bots have fought well for a long time but travelled a little "off,"
