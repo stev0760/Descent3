@@ -234,7 +234,8 @@ structural gates below, not by that ratio.
 
 ## 0.8 Order arrival was answered by distance, not reachability (2026-08-08)
 
-> **Found in the first cockpit test of 2b-1, verified by a commissioned Fable 5 review.** Recorded
+> **Found in the first cockpit test of 2b-1, verified by a commissioned subagent review (Sonnet 5 —
+> see the attribution note in §0.85).** Recorded
 > here rather than in a step because it revises §0.5 amendment B and falsifies a Step 3 premise.
 
 **2b-1 PASSES.** Bots do follow while carrying the flag — the dispatcher reorder works, and only a
@@ -390,6 +391,26 @@ outdoor failure is steering *quality* on legs the committee should never have be
 `BotNavigateToFollowTarget` contains no `fvi` validation of its own (§6 Step 3 probe note: *"it aims
 and thrusts"*). Step 4 removes the reason that branch gets hard legs; it does not make the branch
 validated. Judge whether that still matters *after* Step 4, not before.
+
+---
+
+## 0.85 Attribution correction — the 08-08/09 reviews were Sonnet 5, not Fable 5
+
+The 08-04 plan census and the 08-05 amendments (§0.5) were genuinely commissioned from Fable 5 and
+their attribution stands. **The two reviews run on 2026-08-08/09 — the escort-arrival review behind
+§0.8 and the Step 4 methodology review behind the correction in §6 — were NOT.** They were requested
+with a Fable model override that silently fell back rather than erroring; the agent transcripts record
+`claude-sonnet-5` throughout. The operator caught it by noticing zero Fable spend.
+
+Recorded because this document's header carries a **Provenance** field, so mislabelled review
+authorship is a defect in the document's own terms.
+
+**It does not change any finding.** Both reviews were verified against source and raw logs before being
+acted on — the escort false-arrival mechanism against `bot.cpp`, and all three Step 4 methodology
+failures (the broken level pin, the by-design counter reset, the single-bot outlier) recomputed
+independently from the logs. The conclusions rest on that verification, not on which model produced
+them. Two commit messages (`afb64b99`, `e084b806`) carry the wrong attribution and are already pushed;
+they are left as-is rather than rewriting published history, and this note is the correction of record.
 
 ---
 
@@ -905,7 +926,7 @@ exactly where this project has been burned (the 05-30 batch went in safe and cam
 > thrusts. That is why escort-dominated co-op still produced 130 outdoor presses. "Beeline more
 > outdoors" must mean *use the engine's validated one*, not aim harder.
 
-> # ⚠⚠ THE STEP 4 REVERT BELOW RESTS ON A BROKEN ANALYSIS — CORRECTED 2026-08-09 (Fable 5 review)
+> # ⚠⚠ THE STEP 4 REVERT BELOW RESTS ON A BROKEN ANALYSIS — CORRECTED 2026-08-09 (subagent review)
 >
 > **Everything in the revert block that follows is retracted except the revert itself. Read this first;
 > the block below is kept only as the record of how the error was made.**
