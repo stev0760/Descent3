@@ -319,6 +319,23 @@ standing in its own objective room without contacting the flag, the fix belongs 
 hierarchy as a fact-about-the-world rule, precedent at `BotUpdateAimDirection` (bot.cpp ~5350: an
 unconditional "carrier in home room ⇒ face the home flag" that already ignores order state).
 
+> **VALIDATED 2026-08-08 — co-op cockpit session, build `52328294`, log `coop-arrivalfix-20260808.log`.**
+> A/B against `coop-2b2-2026-08-06` (`0c9e4a6c`), byte-identical cfg (`soak-dedicated-coop.cfg` +
+> `soak-bots-coop.cfg`, d3.mn3 Level1, Reaper + Phantom, hotshot); only the build differs.
+>
+> | | baseline (pre-fix) | **FIX** |
+> |---|---|---|
+> | arrivals | 444 / 55 min = **8.0/min** | 8 / 12 min = **0.7/min** |
+> | BLOCKED | 54 = 0.98/min | 2 = **0.17/min** |
+>
+> **An 11× drop in arrival churn**, and operator verdict *"it seems to work"*. BLOCKED fell rather
+> than rose — the prediction that it might increase (detector becoming reachable) did not
+> materialise, because bots now mostly *do* arrive rather than needing to report failure. Caveat kept
+> attached: 12 min vs 55 min, different flying, and 2b-3 + the wander fix also sit between the arms —
+> so read the arrival metrics (nothing else touches that code) and not general nav differences.
+>
+> **The escort-outdoor complaint is NOT fixed and is a different mechanism — see §0.9.**
+
 > **⚠ THIS FALSIFIES A STEP 3 PREMISE — see §6.** Step 3's call-site order puts escort-close and
 > escort-outdoor first *because they were believed inert on MP*. That is now false: on any MP server
 > where a human issues `!follow`/`!cover`, a flag carrier runs the escort path. The ordering need not
@@ -329,6 +346,50 @@ unconditional "carrier in home room ⇒ face the home flag" that already ignores
 > not transfer. The test is a live cockpit rerun read by log signature — "escort on station" only on
 > genuine same-room/LOS arrivals, the sub-second oscillation pattern gone, and "Can't reach you!"
 > now *able* to appear (its reachability is the fix working, not a regression).
+
+---
+
+## 0.9 "`!follow` falls apart outside" is Step 4, measured — not co-op jank (2026-08-08)
+
+> The operator's open question after the arrival fix: *"I can't tell if it's just general jank in co-op
+> or more specifically outdoors issues where bots don't escort as well."* It is the latter, it is
+> mechanical, and the instrument to answer it was already in the log.
+
+**The escort outdoor branch DOES reach the leg gate** — this was worth tracing rather than assuming,
+because the escort branch never calls `BotSetRoutedGoal` on an outdoor leg. It reaches
+`BotBnodeLegOk` through the *other* call site: `BotGetActiveSteerPoint` (bot.cpp:2321), which the
+outdoor branch calls to pick its steer point. So the gate governs escort-outdoor as much as routed nav.
+
+**Fresh numbers from the co-op session (890 leg evaluations, 12 min):**
+
+```
+accept-interior=426  accept-outdoor=308  rej-end-reg0=155  rej-start-reg0=1
+rej-start-badcell=0  rej-end-badcell=0   rej-cross-region=0
+```
+
+- **`accept-outdoor=308` — subtraction #2 is working.** Two-thirds of outdoor legs already go to the
+  engine, which the 07-24 change was built to do and which had never been confirmed on a live session.
+- **`rej-end-reg0=155` (17% of all legs) is the whole remaining outdoor problem.** The destination is
+  terrain region 0; the engine is denied the leg; our indoor-derived via/skeleton machinery takes an
+  open-terrain leg instead. In an escort-dominated co-op session most legs *are* escort legs, so this
+  is the mechanism behind the operator's report (inference from session composition, not per-leg
+  attribution).
+- **`badcell=0` and `cross-region=0`** — cleaner than the 08-04 smoke (which had badcell rejects), so
+  the failure is now purely the region-0 class, not unresolvable cells.
+
+**This is exactly the deletion the BOA probe licensed** (§6 Step 4): region-0 legs measured
+BOA-ROUTABLE, `f_bnode_ok` answers *"should the BNode generator be used?"* not *"can the engine fly
+this?"*. Step 4 hands those 155 legs back. **The outdoor escort complaint and Step 4 are the same item**
+— which is the useful result, because it means no separate escort-outdoor workstream is needed.
+
+**Not wall-pressing.** Zero of the session's 45 presses were outdoor (all `rm<positive>`), against 309
+BOT NAV lines referencing terrain rooms. So bots did go outside and did not grind geometry there — the
+outdoor failure is steering *quality* on legs the committee should never have been handed, not stuck.
+
+*Separately registered and still open:* the escort outdoor branch issues a raw `GET_TO_OBJ` and
+`BotNavigateToFollowTarget` contains no `fvi` validation of its own (§6 Step 3 probe note: *"it aims
+and thrusts"*). Step 4 removes the reason that branch gets hard legs; it does not make the branch
+validated. Judge whether that still matters *after* Step 4, not before.
 
 ---
 
