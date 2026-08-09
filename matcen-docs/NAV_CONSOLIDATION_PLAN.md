@@ -414,6 +414,76 @@ they are left as-is rather than rewriting published history, and this note is th
 
 ---
 
+## 0.86 Fable 5 review of record (2026-08-09) — the audit the mislabelled reviews were meant to be
+
+Commissioned by the operator after §0.85 surfaced; run **in the main session on Fable 5 directly** —
+no subagent, no model override to silently mis-take. Scope: audit both Sonnet-run reviews and the
+corrections built on them, re-verify the load-bearing facts independently, and rule on the judgment
+questions that had been queued for a strong model. (The "Opus 5 nav phase review" agent spawned at the
+end of the 08-09 session never completed — its session ended mid-review with no report; nothing from
+it entered the record.)
+
+**Audit verdict: every conclusion of record STANDS.** Re-derived from the raw logs blind to both prior
+derivations: both A/B arms opened `Level2.d3l` (the pin was broken); discrete stuck escalations
+control 94 / Ninja 7 / hard 33 vs Step 4 233 / Ninja 163 / hard 10; Ninja's signature 159/163
+`dest=-1(none)`, 158 `rgn=1` — goalless-vacancy, not region-0 beeline. The §6 correction, Step 4's
+UNPROVEN status, and the §0.8 arrival-fix code reading all check out against source. The two Sonnet
+reviews were competent and the session's re-verification was real; the failure was provenance, not
+content.
+
+**New findings (caught by neither prior review):**
+
+1. **`BotHasClearLineToPos` rays at `rad = 0` — see-through ≠ passable, reintroduced at the arrival
+   test.** The engine's own validated-beeline tier rays at ship radius (`fq.rad = obj->size - .1f`,
+   aipath.cpp:1025). A rad-0 ray threads slit portals (impassable-to-ship, open-to-ray —
+   OBSTACLE_GEOMETRY.md), and grate OBJECTS are invisible to it entirely (`FQ_CHECK_OBJS` is
+   deliberately unset so a teammate between bot and post doesn't block arrival — correct — but grates
+   ride the same exemption; `BotHasLOS`'s own comment records this exact lesson for shooting).
+   Exposure: escort 25u, hold 60u — a `!hold` anchor across a grated portal reads "In position."
+   **Queued one-liner** (`fq.rad = obj->size - .1f`, clamped ≥0.1f, in `BotHasClearLineToPos`),
+   **gated on the next cockpit session** — the shipped helper is cockpit-validated and this phase does
+   not hot-patch validated code outside its own validation slot. Residual after that fix: grate
+   objects (would need `FQ_CHECK_OBJS` + a target-player exemption; registered, not built).
+2. Minor, registered: the same-room fast path accepts through interior geometry in non-convex rooms
+   (same room + inside the radius through a pillar = arrived). Acceptable idle behavior; revisit only
+   if a cockpit session shows it.
+3. **Step 3's per-commit "contend shape unchanged" gate must compare per-member across arms only.**
+   Member win-counts mix three units (per-leg / per-tick / per-frame — the §0.5-era caveat);
+   cross-member comparisons are not evidence of dispatch neutrality.
+4. `tools/ab_guard.py` nits fixed this pass: `--pin` given before the log paths crashed the arg
+   parse; the outlier FAIL now has a minimum-delta floor (20 events) so a 3-vs-1 delta cannot fail an
+   arm on noise.
+
+**Rulings on the queued judgment questions:**
+
+- **Thesis intact, boundary clarified.** Step 4's revert does not wound the phase thesis, because
+  Step 4 was never a committee-collapse step — it was a substrate-capability bet. The measured
+  via/contention stand-down (≈5×, survives correction) shows the committee *can* stand down
+  structurally; what is unproven is engine flight quality on the reclaimed leg class. Step 3 vs
+  Step 4 is a principled distinction — who-dispatches is mechanically diffable per commit;
+  which-substrate-flies is behavioral capability — but it stays principled only while the invariance
+  is *measured* per commit (churn counter + per-member contend on a fixed manifest), not asserted.
+- **Order: Task 2 → cockpit batch → Step 3 → Step 4 re-run.** Task 2 first (instrument, unaffected by
+  all of this, and it cuts Step 3's seam). One cockpit session batches: `!hold` validation (still
+  unexercised), the 2b-2/2b-3 resume-visibility verdicts, and finding 1's rad fix under the same
+  log-signature read. Step 3 proceeds under full MP-live scrutiny (§0.8 falsified its inert premise).
+  Step 4 re-runs LAST, and only after building the §6 correction's probe — split `accept-reclaimed`
+  by an fvi ray **at ship radius** into `-clear`/`-blocked` (rad-0 would overcount `-clear`; finding
+  1's lesson applied where it was born). The 16-bot short-arm design is internally valid but NOT
+  comparable to the 8-bot history — say so in the writeup — and goalless-vacancy exposure (per-bot
+  goalless time in open terrain) must be pre-registered as a secondary metric in BOTH arms, since the
+  trap that dominated the broken A/B is a known, live, unfixed defect and can dominate either arm
+  again.
+- **The process rule is necessary, insufficient, and should now be half-instrumented.** "Structural
+  reads true short / behavioral needs hours" survives — none of the three failures were duration
+  failures. The binding form: a verdict is reportable only after its premises pass a guard
+  (`ab_guard.py` for this A/B shape; wire it into the soak teardown so it runs by default, not by
+  memory). The level-pin failure and the model-override failure are the same failure — an assertion
+  that was checkable and went unchecked. Same countermeasure: verify from the artifact (the log, the
+  agent transcript), never from the parameter.
+
+---
+
 ## 1. The committee census (who can seize the wheel during travel)
 
 **Goal-writers** — all deliver through one legitimate channel (`GoalAddGoal(AIG_GET_TO_POS/OBJ)`).

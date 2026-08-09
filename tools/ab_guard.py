@@ -30,6 +30,7 @@ RESET = re.compile(r"(?:NAVCONTEND|BNODELEG) DUMP \[level-end\]")
 ESCAL = re.compile(r"BOT: '([^']+)' stuck escalation \(room (-?\d+), (\d+) consecutive timeouts, net_disp=(\d+)\)")
 TS = re.compile(r"^\d{4}-\d\d-\d\d (\d\d):(\d\d):(\d\d)")
 OUTLIER_SHARE = 0.30  # one unit above this share of a delta = a unit story, not a population story
+MIN_DELTA_EVENTS = 20  # below this the delta is noise; the share test would fail a 3-vs-1 split
 
 
 def scan(path):
@@ -61,14 +62,19 @@ def scan(path):
 
 
 def main():
-    if len(sys.argv) < 3:
+    pin = None
+    argv = sys.argv[1:]
+    if "--pin" in argv:
+        i = argv.index("--pin")
+        if i + 1 >= len(argv):
+            print(__doc__)
+            return 2
+        pin = argv[i + 1]
+        del argv[i:i + 2]
+    if len(argv) < 2:
         print(__doc__)
         return 2
-    pin = None
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    if "--pin" in sys.argv:
-        pin = sys.argv[sys.argv.index("--pin") + 1]
-    ctrl, test = scan(args[0]), scan(args[1])
+    ctrl, test = scan(argv[0]), scan(argv[1])
     ok = True
 
     print("=" * 74)
@@ -111,13 +117,17 @@ def main():
             if delta and d / delta > share:
                 worst, share = bot, d / delta
         if worst and share >= OUTLIER_SHARE:
-            print(f"  FAIL: '{worst}' alone is {share:.0%} of the delta — this is a UNIT story, "
-                  f"not a population one")
-            ex_c = ctot - cc.get(worst, 0)
-            ex_t = ttot - tc.get(worst, 0)
-            print(f"        excluding it: control {ex_c} ({ex_c/cm:.2f}/min) vs "
-                  f"test {ex_t} ({ex_t/tm:.2f}/min)")
-            ok = False
+            if abs(delta) >= MIN_DELTA_EVENTS:
+                print(f"  FAIL: '{worst}' alone is {share:.0%} of the delta — this is a UNIT story, "
+                      f"not a population one")
+                ex_c = ctot - cc.get(worst, 0)
+                ex_t = ttot - tc.get(worst, 0)
+                print(f"        excluding it: control {ex_c} ({ex_c/cm:.2f}/min) vs "
+                      f"test {ex_t} ({ex_t/tm:.2f}/min)")
+                ok = False
+            else:
+                print(f"  INFO: '{worst}' is {share:.0%} of a {delta:+d}-event delta — below the "
+                      f"{MIN_DELTA_EVENTS}-event floor, not gated")
     print(f"  per-bot control: {dict(cc.most_common(4))}")
     print(f"  per-bot test   : {dict(tc.most_common(4))}")
 
