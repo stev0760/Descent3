@@ -16,6 +16,13 @@ is perfectly capable of flying, and retires the tuning switches that only ever e
 the overlap. No operator-visible feature work is planned — the goal is that bots travel the same way
 they do today, for reasons that fit in one place instead of thirteen.*
 
+**Bots no longer "arrive" through walls.** Found live: a bot ordered to follow or hold position
+decided it had arrived by straight-line distance alone — twenty-five units away *through a wall*
+counted as "right behind you," so the bot parked, stopped navigating, and couldn't even report itself
+stuck. Arrival is now a real reachability test (same room, or a clear line the ship's hull could
+actually fly — the same width check the engine uses), so an ordered bot keeps coming until it is
+genuinely with you, and "Can't reach you!" works again when it truly can't.
+
 **Under investigation:** on Polaris specifically, bots grab the enemy flag more often than before but
 score it less often — a problem on the way home rather than on the way out. Every other map on the
 test set improved.

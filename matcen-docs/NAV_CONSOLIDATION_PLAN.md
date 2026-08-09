@@ -440,10 +440,12 @@ content.
    deliberately unset so a teammate between bot and post doesn't block arrival — correct — but grates
    ride the same exemption; `BotHasLOS`'s own comment records this exact lesson for shooting).
    Exposure: escort 25u, hold 60u — a `!hold` anchor across a grated portal reads "In position."
-   **Queued one-liner** (`fq.rad = obj->size - .1f`, clamped ≥0.1f, in `BotHasClearLineToPos`),
-   **gated on the next cockpit session** — the shipped helper is cockpit-validated and this phase does
-   not hot-patch validated code outside its own validation slot. Residual after that fix: grate
-   objects (would need `FQ_CHECK_OBJS` + a target-player exemption; registered, not built).
+   **APPLIED 2026-08-09 in the cockpit-batch build** (`fq.rad = obj->size - .1f`, clamped ≥0.1f, in
+   `BotHasClearLineToPos`) — riding the same session that validates `!hold`, per this section's own
+   ruling. Watch for the rad change's one regression class: a fat ray clipping floor/wall geometry
+   near a legitimately-reachable post = false NON-arrival (bot hovers at the post without "In
+   position", or spurious "Can't reach you!"). Residual after this fix: grate objects (would need
+   `FQ_CHECK_OBJS` + a target-player exemption; registered, not built).
 2. Minor, registered: the same-room fast path accepts through interior geometry in non-convex rooms
    (same room + inside the radius through a pillar = arrived). Acceptable idle behavior; revisit only
    if a cockpit session shows it.

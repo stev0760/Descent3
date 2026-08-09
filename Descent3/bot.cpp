@@ -516,6 +516,10 @@ static bool BotHasLOS(object *obj, object *target) {
 // Geometry-only clear line to a POINT (no target object to make an exception for, so objects are
 // not checked at all — a teammate or a powerup floating between the bot and its post does not mean
 // the post is unreached; only walls and terrain do).
+// Rays at SHIP RADIUS, not zero — the engine's validated-beeline tier does the same
+// (aipath.cpp:1025). A rad-0 ray threads slit portals the ship cannot fit through, so "clear line"
+// must mean "the hull could fly it", or see-through≠passable comes back at the arrival test.
+// Known residual: grate OBJECTS are invisible to this ray (objects unchecked, see above).
 static bool BotHasClearLineToPos(object *obj, const vector &dest) {
   vector p1 = dest;
   fvi_query fq{};
@@ -523,7 +527,9 @@ static bool BotHasClearLineToPos(object *obj, const vector &dest) {
   fq.p0 = &obj->pos;
   fq.p1 = &p1;
   fq.startroom = obj->roomnum;
-  fq.rad = 0.0f;
+  fq.rad = obj->size - 0.1f;
+  if (fq.rad <= 0.0f)
+    fq.rad = 0.1f;
   fq.thisobjnum = OBJNUM(obj);
   fq.ignore_obj_list = nullptr;
   fq.flags = FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS | FQ_IGNORE_MOVING_OBJECTS;
