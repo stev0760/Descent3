@@ -126,6 +126,17 @@ enum BnodeLegVerdict {
   BLEG_COUNT
 };
 static uint32_t Bnode_leg_verdicts[BLEG_COUNT];
+// §0.86 pre-registered probe (NAV_CONSOLIDATION_PLAN.md): of the REJECTED legs BOA can route —
+// Step 4's would-be-reclaimed class — how many would the engine's tier-1 VALIDATED beeline actually
+// fly? Ray at ship radius, mirroring aipath.cpp:1019-1037; rad-0 would overcount clear
+// (see-through ≠ passable). This turns "routable vs flyable" from an 8-hour behavioural A/B into a
+// structural fraction readable in an 11-minute smoke:
+//   reclaim-clear   => tier-1 flies it straight — re-landing Step 4 is a DELETION and covers it;
+//   reclaim-blocked => routable but no straight hull line — the coarse BOA portal-hop must carry it,
+//                      and this residue is what any region-0 lattice extension would be scoped to.
+// Parallel counters, NOT new verdict buckets: a probed leg still lands in its reject bucket, so
+// bucket semantics stay comparable with every session since 08-04.
+static uint32_t Bnode_reclaim_clear, Bnode_reclaim_blocked;
 static const char *BnodeLegVerdictName(int v) {
   switch (v) {
   case BLEG_ACCEPT_INTERIOR:
@@ -152,18 +163,22 @@ static void BotBnodeLegDumpVerdicts(const char *reason, bool reset) {
     total += Bnode_leg_verdicts[v];
   if (total == 0)
     return; // nothing to say — on BNode-less maps (all MP) the gate never runs and this stays silent
-  char line[320]; // 7 buckets now — 256 was sized for 4
+  char line[384]; // 7 buckets + the reclaim split
   size_t used = 0;
   for (int v = 0; v < BLEG_COUNT && used < sizeof(line); v++)
     used += (size_t)snprintf(line + used, sizeof(line) - used, " %s=%u", BnodeLegVerdictName(v), Bnode_leg_verdicts[v]);
+  if (used < sizeof(line))
+    used += (size_t)snprintf(line + used, sizeof(line) - used, " reclaim-clear=%u reclaim-blocked=%u",
+                             Bnode_reclaim_clear, Bnode_reclaim_blocked);
   LOG_DEBUG.printf("BOT BNODELEG DUMP [%s]:%s (total=%u)", reason, line, total);
   if (reset) {
     for (int v = 0; v < BLEG_COUNT; v++)
       Bnode_leg_verdicts[v] = 0;
+    Bnode_reclaim_clear = Bnode_reclaim_blocked = 0;
   }
 }
 
-static bool BotBnodeLegOk(int start_room, int end_room) {
+static bool BotBnodeLegOk(object *obj, int start_room, int end_room, const vector *end_pos) {
   const bool s_out = ROOMNUM_OUTSIDE(start_room);
   const bool e_out = ROOMNUM_OUTSIDE(end_room);
   const int s_reg = s_out ? BotTerrainRegionSafe(start_room) : -1;
@@ -183,6 +198,32 @@ static bool BotBnodeLegOk(int start_room, int end_room) {
   // the regions the verdict turned on AND how many BOA connections that region has, which is what
   // separates "the engine has no data here" from "our gate mis-read resolvable terrain".
   if (!accepted) {
+    // §0.86 reclaim probe: every rejected-but-BOA-routable leg gets a tier-1-style hull-width ray
+    // (per-evaluation, not throttled — the fractions are the measurement; via-tick cadence keeps the
+    // cost to a few rays/sec/bot only while a bot is actually standing at the coverage boundary).
+    // Deviation from aipath.cpp:1030, documented: FQ_IGNORE_MOVING_OBJECTS added — a ship crossing
+    // the line is not a coverage fact, and a coverage instrument must not count it as one.
+    const int probe_next = BOA_GetNextRoom(start_room, end_room);
+    int ray = -1; // -1 = not probed (BOA can't route it, or no geometry supplied)
+    if (probe_next != BOA_NO_PATH && obj && end_pos) {
+      vector p1 = *end_pos;
+      fvi_query fq{};
+      fvi_info hit{};
+      fq.p0 = &obj->pos;
+      fq.p1 = &p1;
+      fq.startroom = obj->roomnum;
+      fq.rad = obj->size - 0.1f;
+      if (fq.rad <= 0.0f)
+        fq.rad = 0.1f;
+      fq.thisobjnum = OBJNUM(obj);
+      fq.ignore_obj_list = nullptr;
+      fq.flags = FQ_CHECK_OBJS | FQ_NO_RELINK | FQ_IGNORE_WEAPONS | FQ_IGNORE_POWERUPS | FQ_IGNORE_MOVING_OBJECTS;
+      ray = (fvi_FindIntersection(&fq, &hit) == HIT_NONE) ? 1 : 0;
+      if (ray)
+        Bnode_reclaim_clear++;
+      else
+        Bnode_reclaim_blocked++;
+    }
     static float Bleg_log_t = 0.0f;
     if (Gametime < Bleg_log_t || Gametime - Bleg_log_t > 10.0f) {
       Bleg_log_t = Gametime;
@@ -204,11 +245,10 @@ static bool BotBnodeLegOk(int start_room, int end_room) {
       //                                  Step 4 becomes a DELETION: stop gating, let the engine tier.
       //   boa_next == NO_PATH         => the engine genuinely cannot route there either.
       //                                  Step 4 is a real region-0 lattice build.
-      const int boa_next = BOA_GetNextRoom(start_room, end_room);
-      const bool boa_ok = (boa_next != BOA_NO_PATH);
-      LOG_DEBUG.printf("BOT BNODELEG: %s start(out=%d reg=%d conn=%d) end(out=%d reg=%d conn=%d) boa_next=%d boa=%s",
-                       BnodeLegVerdictName(verdict), (int)s_out, s_reg, s_conn, (int)e_out, e_reg, e_conn, boa_next,
-                       boa_ok ? "ROUTABLE" : "NO_PATH");
+      const bool boa_ok = (probe_next != BOA_NO_PATH);
+      LOG_DEBUG.printf("BOT BNODELEG: %s start(out=%d reg=%d conn=%d) end(out=%d reg=%d conn=%d) boa_next=%d boa=%s ray=%s",
+                       BnodeLegVerdictName(verdict), (int)s_out, s_reg, s_conn, (int)e_out, e_reg, e_conn, probe_next,
+                       boa_ok ? "ROUTABLE" : "NO_PATH", ray < 0 ? "n/a" : (ray ? "CLEAR" : "BLOCKED"));
     }
   }
   return accepted;
@@ -2324,7 +2364,7 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
   // own f_bnode_ok). Same principle, wider scope: whoever flies the leg flies it alone. A leg the
   // engine declines (region 0, cross-region) keeps the full via layer — that is the fallback, and
   // it is why this is a per-leg test rather than a blanket outdoor exemption.
-  if (BotBnodeNativeActive() && BotBnodeLegOk(obj->roomnum, target_room)) {
+  if (BotBnodeNativeActive() && BotBnodeLegOk(obj, obj->roomnum, target_room, &target_pos)) {
     Bots[bot_index].via_expires = 0.0f; // drop any live commitment — no stale via resurrection later
     return 0;
   }
@@ -2691,7 +2731,7 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   // GF_USE_BLINE_IF_SEES_GOAL (bot.cpp:360 invariant), no guide-bot goal-recipe mimicry (9.6).
   // Subtraction #2: the gate is now the ENGINE's own f_bnode_ok contract (BotBnodeLegOk), not our
   // stricter both-ends-interior rule — outdoor legs the engine can fly, the engine flies.
-  if (BotBnodeNativeActive() && BotBnodeLegOk(obj->roomnum, goal_room)) {
+  if (BotBnodeNativeActive() && BotBnodeLegOk(obj, obj->roomnum, goal_room, &final_pos)) {
     BotNavMemberWin(bot_index, NAV_MEMBER_BNODESP); // §7: engine's own BNode path owns this leg
     int &pgi = Bots[bot_index].pursuit_goal_index;
     bool goal_valid = (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used);
