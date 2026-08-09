@@ -580,6 +580,27 @@ section (owners / ends / median held per map), and a `DEST_CHURN` anomaly (timeo
 **Pre-registered gate (a wiring test, not a scoring test):** 4-round bedlam smoke — churn counter
 non-zero and attributable by owner; captures within noise of 121/12rnd (~10/rnd); zero crashes.
 
+**SMOKE PASSED 2026-08-09, all three conditions (`task2-smoke-20260809.log`, census cfg, 4 rounds,
+`SOAK_DONE` clean).** First attempt was killed mid-round-3 by a session restart (SIGTERM, not a
+crash — partial kept as `task2-smoke-partial-20260809.log`, wiring already confirmed there); the
+full 4-round rerun is the gate of record.
+
+1. **Attributable churn:** 328–584 intent events/map, and the owner mix is map-shaped exactly as
+   the hierarchy predicts — QuadSomniac (arena control) and Polaris run objective-dominant (230/211
+   objective), the open maps run explore-dominant (148/132). CARRY appears on every map (39–97).
+2. **Behavior unchanged:** 38 bot captures / 4 rounds = **9.5/rnd vs the census 10.1/rnd** — within
+   noise. Conversions in family per map (QuadSomniac low as always; Polaris 23–50% healthy). Stucks
+   19 total, **1 hard**, across all four rounds. (Apparition's per-round rate reads diluted — the
+   driver's quit landed during a round-5 sliver that counts as a second Apparition round.)
+3. **Zero crashes.** `DEST_CHURN` correctly silent (timeout+replacement vs arrival ratios 1.7–3.4,
+   threshold 4).
+
+**The baseline the instrument was built to give us, first reading:** a travel intention's dominant
+end is **DEATH** (~30–35% of finished intents on every map), median intent lifetime 10–17s, arrivals
+only ~12–20%. Bot lifetime under 4-team crossfire — not navigation — bounds errand completion on
+these maps. This is the yardstick Step 3's behavior-neutral gates are judged against: same owner
+mix, same end-cause shape, same arrival share, per commit. **Task 2 is CLOSED; Step 3 is next.**
+
 **Goal-writers** — all deliver through one legitimate channel (`GoalAddGoal(AIG_GET_TO_POS/OBJ)`).
 The channel is not the problem; the number of hands on it is.
 

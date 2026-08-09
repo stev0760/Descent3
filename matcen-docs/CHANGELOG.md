@@ -16,6 +16,13 @@ is perfectly capable of flying, and retires the tuning switches that only ever e
 the overlap. No operator-visible feature work is planned — the goal is that bots travel the same way
 they do today, for reasons that fit in one place instead of thirteen.*
 
+**The server log now explains where bots are trying to go.** Every change of a bot's travel
+destination is logged with who decided it (a human order, flag carrying, the game objective, an
+opportunistic chase, or plain exploring) and why the previous errand ended (arrived, timed out,
+superseded, died, or gave up on an unreachable spot). The log analyzer summarizes it per map. First
+finding from the new numbers: on chaotic four-team maps the most common way an errand ends is the
+bot getting shot, not the bot getting lost — useful truth to have in writing before tuning anything.
+
 **Bots no longer "arrive" through walls.** Found live: a bot ordered to follow or hold position
 decided it had arrived by straight-line distance alone — twenty-five units away *through a wall*
 counted as "right behind you," so the bot parked, stopped navigating, and couldn't even report itself
