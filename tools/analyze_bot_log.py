@@ -51,6 +51,15 @@ RE_VIA_REACHED = re.compile(r"via-point reached \(room (-?\d+)\)")  # committed 
 RE_PU_SEALED = re.compile(r"powerup sealed in room (-?\d+)")      # same-room powerup abandoned as sealed (troll)
 RE_VIA_FAIL = re.compile(r"via search failed in room (-?\d+)")   # line blocked, NO via found (throttled ~5s/bot)
 
+# Task 2 destination-churn instrument (0.9.11): BOT DEST lines from BotSetTravelDest/BotClearTravelDest.
+# Three shapes: "'B' none -> 47 owner=explore" (first intent), "'B' 12 -> 47 owner=X (prev=Y end=Z held=N.Ns)"
+# (replacement), "'B' 47 -> none (owner=X end=Z held=N.Ns)" (clear). owner= on a clear line is the OLD
+# owner, so new-intent owners are counted only when the arrow target is a room.
+RE_DEST = re.compile(r"BOT DEST: '([^']+)' (none|-?\d+) -> (none|-?\d+)")
+RE_DEST_OWNER = re.compile(r"owner=(\w+)")
+RE_DEST_END = re.compile(r"end=(\w+)")
+RE_DEST_HELD = re.compile(r"held=([\d.]+)s")
+
 # Phase 12.2 — wrong-side rescue, via cycle cap, global troll memory.
 RE_VIA_RESCUE = re.compile(r"wrong-side rescue in room (-?\d+) — rerouting via room (-?\d+)")
 RE_RESCUE_ARRIVED = re.compile(r"rescue arrived in room (-?\d+)")
@@ -185,6 +194,13 @@ def new_map_stats():
         "mball_vauss_arms": 0,        # M2.5 finisher: vauss-finish ARM transitions
         "mball_avoids": 0,            # contact-blunder discipline: ball-avoid detours (throttled 2s/bot)
         "mball_junction_holds": 0,    # M2.6 junction steering: fork-argmax shot vetoes (throttled 2s/bot)
+        # Task 2 (0.9.11): travel-intent churn. Events = BOT DEST transitions; owners count NEW
+        # intents by deciding authority; ends count FINISHED intents by lifetime cause (the five:
+        # arrival/timeout/replacement/death/unreach); held = seconds each finished intent lived.
+        "dest_events": 0,
+        "dest_owners": Counter(),
+        "dest_ends": Counter(),
+        "dest_held": [],
         "human_caps": 0,             # captures by players without the [BOT] suffix
         "human_cappers": Counter(),
         "team_caps": Counter(),
@@ -336,6 +352,21 @@ def parse_log(path):
             if m:
                 s["via_fails"] += 1
                 s["via_fail_rooms"][int(m.group(1))] += 1
+                continue
+
+            m = RE_DEST.search(line)
+            if m:
+                s["dest_events"] += 1
+                if m.group(3) != "none":
+                    mo = RE_DEST_OWNER.search(line)
+                    if mo:
+                        s["dest_owners"][mo.group(1)] += 1
+                me = RE_DEST_END.search(line)
+                if me:
+                    s["dest_ends"][me.group(1)] += 1
+                mh = RE_DEST_HELD.search(line)
+                if mh:
+                    s["dest_held"].append(float(mh.group(1)))
                 continue
 
             m = RE_VIA_RESCUE.search(line)
@@ -626,6 +657,20 @@ def detect_anomalies(stats):
         bot_caps = s["captures"] - s["human_caps"]
         cap_rate = bot_caps / rounds
         mode = s["game_mode"]
+
+        # Task 2: destination churn — finished intents dying by timeout/replacement far more often
+        # than arriving is the re-roll mill, the subjective "bots wander" made countable. Gated on a
+        # sample floor so a short smoke can't trip it on noise. Replacement includes legitimate
+        # supersession (orders, combat intel), hence the conservative 4:1 threshold.
+        de = s["dest_ends"]
+        finished = sum(de.values())
+        if finished >= 50:
+            arrivals = de.get("arrival", 0)
+            churn = de.get("timeout", 0) + de.get("replacement", 0)
+            if churn > 4 * max(arrivals, 1):
+                anomalies.append((name, "DEST_CHURN",
+                                  f"{churn} timeout/replacement vs {arrivals} arrival over {finished} finished "
+                                  f"intents — destinations are being re-rolled, not reached"))
 
         # Flag pickup failure: CTF mode, bots navigate to flag rooms but never capture
         # (judged on BOT captures only — a human capping doesn't exonerate the bots)
@@ -1020,6 +1065,30 @@ def print_report(stats, total_lines, log_path):
                   f"| {fails_str} "
                   f"| {sealed_str} "
                   f"| {skel_str} |")
+        print()
+
+    # Task 2 (0.9.11) — travel-intent churn. The Step 2b layer's owed metric: who decides where bots
+    # go, and how each intention ends. Arrival-heavy ends = errands run to completion; a
+    # timeout/replacement mill = the re-roll behavior the intent layer exists to prevent.
+    if any(s["dest_events"] for s in stats.values()):
+        print(f"## Travel Intent (Task 2)")
+        print()
+        print(f"Owners = who set each new intent (§0.5 hierarchy). Ends = why each finished intent "
+              f"stopped. Churn = intents finished per round; judge by the arrival share, not the rate.")
+        print()
+        print(f"| Map | Events (/rnd) | Owners | Ends | Median held |")
+        print(f"|---|---|---|---|---|")
+        for name in maps:
+            s = stats[name]
+            if not s["dest_events"]:
+                continue
+            rounds = max(s["rounds"], 1)
+            owners_str = ", ".join(f"{o}={c}" for o, c in s["dest_owners"].most_common()) or "-"
+            ends_str = ", ".join(f"{e}={c}" for e, c in s["dest_ends"].most_common()) or "-"
+            held = sorted(s["dest_held"])
+            held_str = f"{held[len(held)//2]:.1f}s" if held else "-"
+            print(f"| {name} | {s['dest_events']} ({s['dest_events']/rounds:.1f}) "
+                  f"| {owners_str} | {ends_str} | {held_str} |")
         print()
 
     # 0.9.6 — objective arbitration ($nav commit) + proactive obstacle clearing ($nav grate/glass).

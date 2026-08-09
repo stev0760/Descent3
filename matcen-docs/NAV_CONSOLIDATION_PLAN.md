@@ -544,7 +544,41 @@ Consequences, per the §0.86 pre-registered decision rule:
 
 ---
 
-## 1. The committee census (who can seize the wheel during travel)
+## 0.87 Task 2 as-built (2026-08-09) — the intent census, and the shadow-field deviation
+
+**The census (the task's first deliverable) found the field doing two jobs, which changes the
+build's shape.** All 19 direct writes to `Bots[].explore_dest_room` classified:
+
+| Class | Sites | Disposition |
+|---|---|---|
+| **INTENT** (5) | explore pick; entrance-approach ×2; last-known-target (OPPORTUNISM); escape retarget | `BotSetTravelDest` recorded beside the untouched legacy write |
+| **BOOKKEEPING** (3) | routed-nav wp writes ×2 (`wp_room` — the *next waypoint*, not the destination); bnodesp `goal_room` (en-route guard) | untouched, invisible to the counter |
+| **RESET** (8) | order-issue (replacement); stall ×2 (timeout); escort direct-steer (replacement); dead-end (unreach); failed-dest demotion (unreach); respawn + death-sweep (death) | `BotClearTravelDest(cause)` beside the untouched write |
+| **LIFECYCLE** (3) | BotInitAll / BotReinitAll / BotAdd | raw field init, no log — boundary resets are not churn events |
+
+**Deviation from the plan's "convert the INTENT writes," recorded as as-built:** inside
+`BotSetRoutedGoal` the field holds the *current waypoint* mid-route (bot.cpp `wp_room` writes), so an
+in-place conversion would have intent and waypoint bookkeeping overwriting each other in one
+function. Instead intent lives in **shadow state** (`travel_dest_room`/`travel_owner`/
+`travel_set_time`, bot.h) written ONLY by the typed setter; **every legacy write stays
+byte-identical, so the change is behavior-neutral by construction** (the 05-30 requirement). Nothing
+at runtime reads the shadow state back.
+
+**The seam is cut:** `BotSetRoutedGoal` now takes `BotTravelOwner` from its 10 callers — escort/hold
+= ORDER, CTF/hoard carrier = CARRY, objective/entropy/monsterball ×6 = OBJECTIVE — and records
+intent at entry, where `goal_room` is still the *final* destination. This parameter is Step 3's
+dispatch seam, cut ahead of time as planned. Same-intention re-affirmations dedup inside the setter
+(per-tick callers tracking a moving player don't spam).
+
+**The metric:** `BOT DEST: '<bot>' OLD -> NEW owner=X (prev=Y end=<cause> held=N.Ns)` — five
+lifetime causes (arrival / timeout / replacement / death / unreach). ARRIVAL is *inferred at the
+seam*, once: a soft end (timeout/replacement) while the bot stands in the old destination room was
+an arrival; hard ends never upgrade. `analyze_bot_log.py` gains `RE_DEST`, a **Travel Intent**
+section (owners / ends / median held per map), and a `DEST_CHURN` anomaly (timeout+replacement >
+4× arrivals over ≥50 finished intents = the re-roll mill).
+
+**Pre-registered gate (a wiring test, not a scoring test):** 4-round bedlam smoke — churn counter
+non-zero and attributable by owner; captures within noise of 121/12rnd (~10/rnd); zero crashes.
 
 **Goal-writers** — all deliver through one legitimate channel (`GoalAddGoal(AIG_GET_TO_POS/OBJ)`).
 The channel is not the problem; the number of hands on it is.

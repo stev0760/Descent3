@@ -62,7 +62,7 @@
 
 bot_info Bots[MAX_BOTS];
 int Num_bots = 0;
-bool Bot_debug_movement = false; // Toggle with "$botmov on/off" console command
+bool Bot_debug_movement = false;          // Toggle with "$botmov on/off" console command
 bool Bot_grate_clear_enabled = true;      // $nav grate — proactive destroyable-obstacle clearing (0.9.6 Stage 2)
 bool Bot_objective_commit_enabled = true; // $nav commit — opportunistic-only powerups while on an objective route
 bool Bot_soft_strike_enabled = true;      // $nav strike — same-room soft chase-aborts accrue troll strikes (0.9.7)
@@ -162,7 +162,7 @@ static void BotBnodeLegDumpVerdicts(const char *reason, bool reset) {
   for (int v = 0; v < BLEG_COUNT; v++)
     total += Bnode_leg_verdicts[v];
   if (total == 0)
-    return; // nothing to say — on BNode-less maps (all MP) the gate never runs and this stays silent
+    return;       // nothing to say — on BNode-less maps (all MP) the gate never runs and this stays silent
   char line[384]; // 7 buckets + the reclaim split
   size_t used = 0;
   for (int v = 0; v < BLEG_COUNT && used < sizeof(line); v++)
@@ -246,13 +246,120 @@ static bool BotBnodeLegOk(object *obj, int start_room, int end_room, const vecto
       //   boa_next == NO_PATH         => the engine genuinely cannot route there either.
       //                                  Step 4 is a real region-0 lattice build.
       const bool boa_ok = (probe_next != BOA_NO_PATH);
-      LOG_DEBUG.printf("BOT BNODELEG: %s start(out=%d reg=%d conn=%d) end(out=%d reg=%d conn=%d) boa_next=%d boa=%s ray=%s",
-                       BnodeLegVerdictName(verdict), (int)s_out, s_reg, s_conn, (int)e_out, e_reg, e_conn, probe_next,
-                       boa_ok ? "ROUTABLE" : "NO_PATH", ray < 0 ? "n/a" : (ray ? "CLEAR" : "BLOCKED"));
+      LOG_DEBUG.printf(
+          "BOT BNODELEG: %s start(out=%d reg=%d conn=%d) end(out=%d reg=%d conn=%d) boa_next=%d boa=%s ray=%s",
+          BnodeLegVerdictName(verdict), (int)s_out, s_reg, s_conn, (int)e_out, e_reg, e_conn, probe_next,
+          boa_ok ? "ROUTABLE" : "NO_PATH", ray < 0 ? "n/a" : (ray ? "CLEAR" : "BLOCKED"));
     }
   }
   return accepted;
 }
+// --- Task 2: the destination-churn instrument (NAV_CONSOLIDATION_PLAN §6) ---
+// Step 2b shipped a persistent-intent layer with no metric; this is the owed one, built as the
+// dispatch seam Step 3 reuses. The census (2026-08-09) found explore_dest_room doing TWO jobs —
+// explore intent AND routed-nav waypoint bookkeeping (it holds wp_room mid-route, not the final
+// destination) — so intent gets shadow state rather than an in-place conversion: every legacy
+// write stays byte-identical and behavior cannot change. The typed setter is the ONE place a
+// travel intention is recorded — owner names who decided (the §0.5 hierarchy), the end cause
+// names why the previous intention stopped (the five lifetime causes; fifth added 31873fd1).
+enum BotTravelOwner : int8_t {
+  TRAVEL_OWNER_NONE = -1,
+  TRAVEL_OWNER_ORDER = 0,
+  TRAVEL_OWNER_CARRY,
+  TRAVEL_OWNER_OBJECTIVE,
+  TRAVEL_OWNER_OPPORTUNISM,
+  TRAVEL_OWNER_EXPLORE,
+};
+enum BotTravelEnd : int8_t {
+  TRAVEL_END_ARRIVAL = 0,
+  TRAVEL_END_TIMEOUT,
+  TRAVEL_END_REPLACEMENT,
+  TRAVEL_END_DEATH,
+  TRAVEL_END_UNREACH,
+};
+static const char *BotTravelOwnerName(int o) {
+  switch (o) {
+  case TRAVEL_OWNER_ORDER:
+    return "order";
+  case TRAVEL_OWNER_CARRY:
+    return "carry";
+  case TRAVEL_OWNER_OBJECTIVE:
+    return "objective";
+  case TRAVEL_OWNER_OPPORTUNISM:
+    return "opportunism";
+  case TRAVEL_OWNER_EXPLORE:
+    return "explore";
+  default:
+    return "none";
+  }
+}
+static const char *BotTravelEndName(int e) {
+  switch (e) {
+  case TRAVEL_END_ARRIVAL:
+    return "arrival";
+  case TRAVEL_END_TIMEOUT:
+    return "timeout";
+  case TRAVEL_END_REPLACEMENT:
+    return "replacement";
+  case TRAVEL_END_DEATH:
+    return "death";
+  case TRAVEL_END_UNREACH:
+    return "unreach";
+  default:
+    return "?";
+  }
+}
+static void BotClearTravelDest(int bot_index, BotTravelEnd cause);
+// Record a travel intention. Same room + same owner = the intention re-affirmed, not churn — the
+// per-tick routed callers (escort tracks a moving player) rely on that dedup. ARRIVAL is inferred
+// here once rather than plumbed through every caller: a soft end (replacement/timeout) while the
+// bot is standing in the old destination room WAS an arrival; hard ends (death/unreach) never are.
+static void BotSetTravelDest(int bot_index, int room, BotTravelOwner owner, BotTravelEnd prev_end) {
+  if (room < 0) {
+    BotClearTravelDest(bot_index, prev_end);
+    return;
+  }
+  const int old = Bots[bot_index].travel_dest_room;
+  const int8_t old_owner = Bots[bot_index].travel_owner;
+  if (room == old && (int8_t)owner == old_owner)
+    return;
+  if (old >= 0) {
+    if (prev_end == TRAVEL_END_REPLACEMENT || prev_end == TRAVEL_END_TIMEOUT) {
+      object *obj = &Objects[Players[Bots[bot_index].player_slot].objnum];
+      if (!OBJECT_OUTSIDE(obj) && (int)obj->roomnum == old)
+        prev_end = TRAVEL_END_ARRIVAL;
+    }
+    const float held =
+        (Gametime >= Bots[bot_index].travel_set_time) ? Gametime - Bots[bot_index].travel_set_time : 0.0f;
+    LOG_DEBUG.printf("BOT DEST: '%s' %d -> %d owner=%s (prev=%s end=%s held=%.1fs)", Bots[bot_index].callsign, old,
+                     room, BotTravelOwnerName(owner), BotTravelOwnerName(old_owner), BotTravelEndName(prev_end), held);
+  } else {
+    LOG_DEBUG.printf("BOT DEST: '%s' none -> %d owner=%s", Bots[bot_index].callsign, room, BotTravelOwnerName(owner));
+  }
+  Bots[bot_index].travel_dest_room = room;
+  Bots[bot_index].travel_owner = (int8_t)owner;
+  Bots[bot_index].travel_set_time = Gametime;
+}
+// End the live intention without a successor. Idempotent — the reset sweeps call it freely.
+static void BotClearTravelDest(int bot_index, BotTravelEnd cause) {
+  const int old = Bots[bot_index].travel_dest_room;
+  if (old < 0) {
+    Bots[bot_index].travel_owner = TRAVEL_OWNER_NONE; // heals a memset-fresh slot too
+    return;
+  }
+  if (cause == TRAVEL_END_REPLACEMENT || cause == TRAVEL_END_TIMEOUT) {
+    object *obj = &Objects[Players[Bots[bot_index].player_slot].objnum];
+    if (!OBJECT_OUTSIDE(obj) && (int)obj->roomnum == old)
+      cause = TRAVEL_END_ARRIVAL;
+  }
+  const float held = (Gametime >= Bots[bot_index].travel_set_time) ? Gametime - Bots[bot_index].travel_set_time : 0.0f;
+  LOG_DEBUG.printf("BOT DEST: '%s' %d -> none (owner=%s end=%s held=%.1fs)", Bots[bot_index].callsign, old,
+                   BotTravelOwnerName(Bots[bot_index].travel_owner), BotTravelEndName(cause), held);
+  Bots[bot_index].travel_dest_room = -1;
+  Bots[bot_index].travel_owner = TRAVEL_OWNER_NONE;
+  Bots[bot_index].travel_set_time = 0.0f;
+}
+
 BotGameMode Bot_game_mode = BGM_UNKNOWN;
 
 // --- Bot roster config (Phase 5.1) ---
@@ -605,8 +712,7 @@ static bool BotStationReached(object *obj, const vector &station, int station_ro
     return false;
   // Same room is arrival without paying for a ray. Only meaningful for interior anchors — outdoor
   // "rooms" are terrain cells that change constantly, so those fall through to the ray.
-  if (station_room >= 0 && !ROOMNUM_OUTSIDE(station_room) && !OBJECT_OUTSIDE(obj) &&
-      (int)obj->roomnum == station_room)
+  if (station_room >= 0 && !ROOMNUM_OUTSIDE(station_room) && !OBJECT_OUTSIDE(obj) && (int)obj->roomnum == station_room)
     return true;
   return BotHasClearLineToPos(obj, station);
 }
@@ -745,8 +851,8 @@ static void BotClearActiveGoal(int bot_index) {
   Bots[bot_index].chasing_powerup_timer = 0.0f;
   Bots[bot_index].via_expires = 0.0f; // Phase 12: a via commitment dies with the goal it served
   Bots[bot_index].via_seal_count = 0;
-  Bots[bot_index].troute_goal_room = -1;      // $nav troute: a terrain plan dies with the goal it served
-  Bots[bot_index].entropy_holding = false;    // E3: a takeover hold dies with the goal too
+  Bots[bot_index].troute_goal_room = -1;                  // $nav troute: a terrain plan dies with the goal it served
+  Bots[bot_index].entropy_holding = false;                // E3: a takeover hold dies with the goal too
   Bots[bot_index].mball_fire_handle = OBJECT_HANDLE_NONE; // M1: ball-fire order dies with the goal too
   Bots[bot_index].mball_finish_mode = 0;                  // M2.5: finisher state dies with it
 }
@@ -767,6 +873,7 @@ void BotForceEscortMode(int bot_index) {
   Bots[bot_index].evade_timer = 0.0f;
   Bots[bot_index].explore_dest_room = -1;
   Bots[bot_index].explore_room_timer = 0.0f;
+  BotClearTravelDest(bot_index, TRAVEL_END_REPLACEMENT);
   Bots[bot_index].oa_steer_room = -1;
 }
 
@@ -1759,8 +1866,8 @@ static void BotProactiveObstacleClear(int bot_index) {
                                   (Players[slot].weapon_flags & HAS_FLAG(MASSDRIVER_INDEX));
         float dist = vm_VectorDistanceQuick(&obj->pos, &hit.hit_face_pnt[0]);
         int sec_wb = Players[slot].weapon[PW_SECONDARY].index;
-        bool has_safe_missile = (dist >= BOT_SPLASH_SELF_GUARD && sec_wb >= 10 && sec_wb < 20 &&
-                                 Players[slot].weapon_ammo[sec_wb] > 0);
+        bool has_safe_missile =
+            (dist >= BOT_SPLASH_SELF_GUARD && sec_wb >= 10 && sec_wb < 20 && Players[slot].weapon_ammo[sec_wb] > 0);
         if (has_matter_primary || has_safe_missile) {
           BotClearObstacleSafely(bot_index, nullptr, &hit.hit_face_pnt[0], true);
           static float glass_log_time[MAX_BOTS];
@@ -1816,8 +1923,8 @@ static void BotProactiveObstacleClear(int bot_index) {
   // ultimately needs is the portal to explore_dest_room (adjacent by route construction).
   if (!OBJECT_OUTSIDE(obj)) {
     int dr = Bots[bot_index].explore_dest_room;
-    if (dr >= 0 && dr <= Highest_room_index && Rooms[dr].used && dr != obj->roomnum &&
-        obj->roomnum >= 0 && obj->roomnum <= Highest_room_index) {
+    if (dr >= 0 && dr <= Highest_room_index && Rooms[dr].used && dr != obj->roomnum && obj->roomnum >= 0 &&
+        obj->roomnum <= Highest_room_index) {
       room &crm = Rooms[obj->roomnum];
       for (int p = 0; p < crm.num_portals; p++) {
         if (crm.portals[p].croom == dr) {
@@ -1976,6 +2083,7 @@ static void BotStallMonitor(int bot_index) {
       } else if (Bots[bot_index].explore_dest_room >= 0 && BotGetObjectiveRoom(bot_index) < 0) {
         Bots[bot_index].explore_dest_room = -1;
         Bots[bot_index].explore_room_timer = 0.0f;
+        BotClearTravelDest(bot_index, TRAVEL_END_TIMEOUT);
       }
       Bots[bot_index].stall_action_until = Gametime + BOT_STALL_COOLDOWN;
       LOG_DEBUG.printf("BOT NAV: '%s' stall-replan: circling (disp=%.0f/%.0fs) — via suspended in room %d",
@@ -2081,6 +2189,7 @@ static void BotStallMonitor(int bot_index) {
   if (Bots[bot_index].explore_dest_room >= 0 && BotGetObjectiveRoom(bot_index) < 0) {
     Bots[bot_index].explore_dest_room = -1;
     Bots[bot_index].explore_room_timer = 0.0f;
+    BotClearTravelDest(bot_index, TRAVEL_END_TIMEOUT);
     Bots[bot_index].stall_action_until = Gametime + BOT_STALL_COOLDOWN;
     Bots[bot_index].stall_streak = 0;
     LOG_DEBUG.printf("BOT NAV: '%s' stall-replan: route re-pick (disp=%.0f, room %d)", Bots[bot_index].callsign, disp,
@@ -2095,7 +2204,8 @@ static void BotStallMonitor(int bot_index) {
 static vector BotGetActiveSteerPoint(object *obj, const vector &goal_pos, int goal_room, int *steer_room);
 static int BotViaPointTick(int bot_index, const vector &target_pos, int target_room, int &goal_slot,
                            BotViaResult *verdict_out);
-static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_pos, bool *reissued);
+static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_pos, bool *reissued,
+                            BotTravelOwner owner);
 
 // Stage 6: shared BLOCKED detection for anchored orders. Marks progress whenever the bot has
 // moved BOT_ORDER_PROGRESS_EPS since the last mark (any direction — via dance legs count); after
@@ -2235,7 +2345,7 @@ static bool BotNavigateToFollowTarget(int bot_index) {
     // Far + both interior: route over our Dijkstra + grid roadmap (carrier-grade). Recomputed each tick from
     // the bot's current room, so it tracks the moving player; goal = the player's room + position.
     bool reissued = false;
-    BotSetRoutedGoal(bot_index, tgt_room, tgt_obj->pos, &reissued);
+    BotSetRoutedGoal(bot_index, tgt_room, tgt_obj->pos, &reissued, TRAVEL_OWNER_ORDER);
     routed = true;
   } else {
     // Outdoor leg: engine tracks the moving player; terrain steering + via handle the local geometry.
@@ -2258,6 +2368,7 @@ static bool BotNavigateToFollowTarget(int bot_index) {
     // steered directly (beeline / outdoor) so a later return to roaming starts clean.
     Bots[bot_index].explore_dest_room = -1;
     Bots[bot_index].explore_room_timer = 0.0f;
+    BotClearTravelDest(bot_index, TRAVEL_END_REPLACEMENT);
   }
   return true;
 }
@@ -2299,7 +2410,8 @@ static void BotDoHoldStationNav(int bot_index) {
   if (!OBJECT_OUTSIDE(obj) && Bots[bot_index].order_anchor_room >= 0 &&
       !ROOMNUM_OUTSIDE(Bots[bot_index].order_anchor_room)) {
     bool reissued = false;
-    BotSetRoutedGoal(bot_index, Bots[bot_index].order_anchor_room, Bots[bot_index].order_anchor_pos, &reissued);
+    BotSetRoutedGoal(bot_index, Bots[bot_index].order_anchor_room, Bots[bot_index].order_anchor_pos, &reissued,
+                     TRAVEL_OWNER_ORDER);
   } else {
     int steer_room = -1;
     vector steer_pos =
@@ -2434,8 +2546,7 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
           if (!OBJECT_OUTSIDE(obj))
             BotRoadmapMarkHardRoom(obj->roomnum); // evidence toward hard-room gridroute promotion
           LOG_DEBUG.printf("BOT NAV: '%s' via suspended in room %d (%d arrivals without crossing)",
-                           Bots[bot_index].callsign, OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum,
-                           BOT_VIA_CYCLE_CAP);
+                           Bots[bot_index].callsign, OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum, BOT_VIA_CYCLE_CAP);
         }
       } else {
         Bots[bot_index].via_arrival_room = obj->roomnum;
@@ -2451,11 +2562,12 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
         Bots[bot_index].room_progress_timer = 0.0f;
         Bots[bot_index].room_progress_stuck_count = 0;
       }
-      LOG_DEBUG.printf("BOT NAV: '%s' via-point reached (room %d)", Bots[bot_index].callsign, OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum);
+      LOG_DEBUG.printf("BOT NAV: '%s' via-point reached (room %d)", Bots[bot_index].callsign,
+                       OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum);
       return 0;
     }
     if (!(goal_slot >= 0 && goal_slot < MAX_GOALS && obj->ai_info->goals[goal_slot].used))
-      issue_via_goal(); // goal slot was flushed elsewhere — re-pin the committed via
+      issue_via_goal();                         // goal slot was flushed elsewhere — re-pin the committed via
     BotNavMemberWin(bot_index, NAV_MEMBER_VIA); // §7: holding a committed via this tick
     return 1;
   }
@@ -2653,8 +2765,7 @@ static bool BotTrouteRedirect(int bot_index, object *obj, int *goal_room, vector
     const float interior_cost = BotComputeRouteCost(obj->roomnum, real_goal);
     // v2 adoption gate: with an interior route in hand, only pay the composer's Dijkstras when
     // that route is long enough to plausibly lose the comparison.
-    if (interior_cost < 1e30f &&
-        (!Bot_troute_compare_enabled || interior_cost < BOT_TROUTE_ADOPT_MIN_INTERIOR))
+    if (interior_cost < 1e30f && (!Bot_troute_compare_enabled || interior_cost < BOT_TROUTE_ADOPT_MIN_INTERIOR))
       return false;
     int er, ep, br, bp, reg;
     float total;
@@ -2668,8 +2779,8 @@ static bool BotTrouteRedirect(int bot_index, object *obj, int *goal_room, vector
       bi.troute_reject_until = Gametime + 10.0f; // comparison lost — interior route stands
       // Losses must be visible (the silent-filter lesson): this line is what distinguishes
       // "v2 never fires" from "v2 fires and the interior route is genuinely cheaper".
-      LOG_DEBUG.printf("BOT NAV: '%s' troute v2 keep-interior: terrain %.0f vs interior %.0f (goal rm%d)",
-                       bi.callsign, total, interior_cost, real_goal);
+      LOG_DEBUG.printf("BOT NAV: '%s' troute v2 keep-interior: terrain %.0f vs interior %.0f (goal rm%d)", bi.callsign,
+                       total, interior_cost, real_goal);
       return false;
     }
     bi.troute_goal_room = real_goal;
@@ -2712,13 +2823,19 @@ static bool BotTrouteRedirect(int bot_index, object *obj, int *goal_room, vector
 // verdict can lengthen a route but never strand a bot. Skips re-issuing while already heading to the
 // same waypoint (the route is recomputed each tick from the current room, so the waypoint advances
 // naturally on room-entry without churning the engine path). Sets *reissued when a new goal was set.
-static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_pos, bool *reissued) {
+static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_pos, bool *reissued,
+                            BotTravelOwner owner) {
   if (reissued)
     *reissued = false;
   int slot = Bots[bot_index].player_slot;
   object *obj = &Objects[Players[slot].objnum];
   if (!obj->ai_info)
     return -1; // not AI-controlled (e.g. mid-respawn) — callers guard, but don't assume
+  // Task 2: the routed entry is where intent is knowable — goal_room is the FINAL destination here,
+  // while the explore_dest_room writes below are per-waypoint bookkeeping the churn metric ignores.
+  // Owner comes from the caller (this parameter IS Step 3's dispatch seam, cut early). Same-room
+  // re-issues dedup inside the setter, so per-tick callers tracking a moving target don't spam.
+  BotSetTravelDest(bot_index, goal_room, owner, TRAVEL_END_REPLACEMENT);
 
   // $nav bnodesp bypass (PLAN-coop-nav-rethink.md): on a BNode-rich map (SP campaign) hand the
   // engine the FAR goal directly and let AIPathAllocPath -> AIGenerateBNodePath build the full
@@ -3059,6 +3176,7 @@ static void BotDoExploreRoaming(int bot_index) {
     pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
     Bots[bot_index].explore_dest_room =
         ROOMNUM_OUTSIDE(Bots[bot_index].last_target_room) ? -1 : BOA_INDEX(Bots[bot_index].last_target_room);
+    BotSetTravelDest(bot_index, Bots[bot_index].explore_dest_room, TRAVEL_OWNER_OPPORTUNISM, TRAVEL_END_REPLACEMENT);
     Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
 
     LOG_DEBUG.printf("BOT: '%s' explore -> last-known target pos (room %d)", Bots[bot_index].callsign,
@@ -3120,6 +3238,7 @@ static void BotDoExploreRoaming(int bot_index) {
         if (BotViaPointTick(bot_index, ent_pos, ent_room, pgi, nullptr)) {
           Bots[bot_index].explore_dest_room = ent_room;
           Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
+          BotSetTravelDest(bot_index, ent_room, TRAVEL_OWNER_EXPLORE, TRAVEL_END_REPLACEMENT);
           return;
         }
         // Line clear (or via reached this tick): head to the current stage's point. Re-issue only when
@@ -3143,6 +3262,7 @@ static void BotDoExploreRoaming(int bot_index) {
           pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
           Bots[bot_index].explore_dest_room = ent_room;
           Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
+          BotSetTravelDest(bot_index, ent_room, TRAVEL_OWNER_EXPLORE, TRAVEL_END_REPLACEMENT);
           if (entry_commit)
             LOG_DEBUG.printf("BOT NAV: '%s' entrance ENTRY commit -> room %d portal %d (obj %d)",
                              Bots[bot_index].callsign, ent_room, ent_portal, obj_room);
@@ -3161,7 +3281,7 @@ static void BotDoExploreRoaming(int bot_index) {
     // straight at the far objective room (which lets the engine re-plan via its own greedy BOA and
     // ignore our routing). Shared BotSetRoutedGoal handles the route, the hold-check, and fallback.
     bool reissued = false;
-    int wp_room = BotSetRoutedGoal(bot_index, obj_room, Rooms[obj_room].path_pnt, &reissued);
+    int wp_room = BotSetRoutedGoal(bot_index, obj_room, Rooms[obj_room].path_pnt, &reissued, TRAVEL_OWNER_OBJECTIVE);
     if (reissued) {
       int boa_next = BOA_GetNextRoom(obj->roomnum, obj_room);
       LOG_DEBUG.printf("BOT: '%s' objective nav -> wp %d (goal %d)%s", Bots[bot_index].callsign, wp_room, obj_room,
@@ -3315,6 +3435,7 @@ static void BotDoExploreRoaming(int bot_index) {
 
   pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
   Bots[bot_index].explore_dest_room = dest_room;
+  BotSetTravelDest(bot_index, dest_room, TRAVEL_OWNER_EXPLORE, TRAVEL_END_TIMEOUT);
 
   // Scale timer based on BOA distance estimate (Phase 4.0)
   float est_dist = 0.0f;
@@ -3429,7 +3550,8 @@ static void BotDoCarrierNav(int bot_index) {
   // penalized, impassable slits avoided). Final hop aims at the home room's nearest portal point.
   Bots[bot_index].last_target_room = -1;
   bool reissued = false;
-  int wp_room = BotSetRoutedGoal(bot_index, obj_room, BotGetNearestPortalPoint(obj, obj_room), &reissued);
+  int wp_room =
+      BotSetRoutedGoal(bot_index, obj_room, BotGetNearestPortalPoint(obj, obj_room), &reissued, TRAVEL_OWNER_CARRY);
   if (reissued) {
     int boa_next = BOA_GetNextRoom(obj->roomnum, obj_room);
     LOG_DEBUG.printf("BOT CTF: '%s' carrier nav room %d -> wp %d (home %d)%s", Bots[bot_index].callsign,
@@ -3461,7 +3583,8 @@ static void BotDoHoardCarrierNav(int bot_index) {
   // than straight at the far goal room. Final hop aims at the goal room's nearest portal point.
   Bots[bot_index].last_target_room = -1;
   bool reissued = false;
-  int wp_room = BotSetRoutedGoal(bot_index, obj_room, BotGetNearestPortalPoint(obj, obj_room), &reissued);
+  int wp_room =
+      BotSetRoutedGoal(bot_index, obj_room, BotGetNearestPortalPoint(obj, obj_room), &reissued, TRAVEL_OWNER_CARRY);
   if (reissued) {
     int boa_next = BOA_GetNextRoom(obj->roomnum, obj_room);
     LOG_DEBUG.printf("BOT HOARD: '%s' carrier nav (%d orbs) room %d -> wp %d (goal %d)%s", Bots[bot_index].callsign,
@@ -3534,9 +3657,10 @@ static bool BotDoEntropyInvadeNav(int bot_index) {
     Bots[bot_index].chasing_powerup_timer = 0.0f;
     if (!Bots[bot_index].entropy_holding) {
       Bots[bot_index].entropy_holding = true;
-      LOG_DEBUG.printf("BOT ENTROPY: '%s' takeover hold START (room %d, carrying %d, shields %.0f, depth %.1f, spd %.1f)",
-                       Bots[bot_index].callsign, cur_room, Bot_objective.entropy_virus_count[slot], obj->shields,
-                       BotPortalPenetration(obj, cur_room), vm_GetMagnitude(&obj->mtype.phys_info.velocity));
+      LOG_DEBUG.printf(
+          "BOT ENTROPY: '%s' takeover hold START (room %d, carrying %d, shields %.0f, depth %.1f, spd %.1f)",
+          Bots[bot_index].callsign, cur_room, Bot_objective.entropy_virus_count[slot], obj->shields,
+          BotPortalPenetration(obj, cur_room), vm_GetMagnitude(&obj->mtype.phys_info.velocity));
     }
     return true;
   }
@@ -3569,7 +3693,7 @@ static bool BotDoEntropyInvadeNav(int bot_index) {
   // the DLL's 3.0s still-clock never survived; 12 rounds, zero takeovers).
   bool reissued = false;
   BotSetRoutedGoal(bot_index, target_room, BotGetNearestPortalPoint(obj, target_room, BOT_ENTROPY_HOLD_DEPTH),
-                   &reissued);
+                   &reissued, TRAVEL_OWNER_OBJECTIVE);
   if (reissued)
     LOG_DEBUG.printf("BOT ENTROPY: '%s' invade nav (carrying %d) room %d -> goal %d", Bots[bot_index].callsign,
                      Bot_objective.entropy_virus_count[slot], cur_room, target_room);
@@ -3657,8 +3781,8 @@ static vector BotMballAvoidBallOnRoute(int bot_index, object *obj, object *ball,
     vm_NormalizeVector(&miss);
   }
   if (Gametime - Bots[bot_index].mball_avoid_log_t > 2.0f) {
-    LOG_DEBUG.printf("BOT MBALL: '%s' ball-avoid detour (bump dot %.2f, miss %.0f)", Bots[bot_index].callsign,
-                     bump_dot, missd);
+    LOG_DEBUG.printf("BOT MBALL: '%s' ball-avoid detour (bump dot %.2f, miss %.0f)", Bots[bot_index].callsign, bump_dot,
+                     missd);
     Bots[bot_index].mball_avoid_log_t = Gametime;
   }
   return ball->pos + miss * clearance;
@@ -3697,7 +3821,8 @@ static void BotDoMonsterballStrikerNav(int bot_index) {
     // No route from the ball to our goal (goal rooms unset / disconnected): legacy chase.
     if (ball_room >= 0 && !ROOMNUM_OUTSIDE(ball_room) && Rooms[ball_room].used) {
       bool reissued = false;
-      BotSetRoutedGoal(bot_index, ball_room, BotGetNearestPortalPoint(obj, ball_room), &reissued);
+      BotSetRoutedGoal(bot_index, ball_room, BotGetNearestPortalPoint(obj, ball_room), &reissued,
+                       TRAVEL_OWNER_OBJECTIVE);
     } else {
       BotDoExploreRoaming(bot_index);
     }
@@ -3728,8 +3853,8 @@ static void BotDoMonsterballStrikerNav(int bot_index) {
   // far side of the ball) repositions the striker until the fork is won. Skipped when the ball
   // is already in our goal room (no fork to lose) or outside (no portals).
   bool junction_ok = true;
-  if (Bot_mball_junction_enabled && d > 1.0f && ball_room != my_goal && ball_room >= 0 &&
-      !ROOMNUM_OUTSIDE(ball_room) && Rooms[ball_room].used) {
+  if (Bot_mball_junction_enabled && d > 1.0f && ball_room != my_goal && ball_room >= 0 && !ROOMNUM_OUTSIDE(ball_room) &&
+      Rooms[ball_room].used) {
     room &br = Rooms[ball_room];
     int on_route = BOA_GetNextRoom(ball_room, my_goal);
     int passable = 0, best_croom = -1;
@@ -3781,8 +3906,8 @@ static void BotDoMonsterballStrikerNav(int bot_index) {
                    junction_ok; // a slam's contact push is dir(bot->ball) too — same fork physics
 
   // Dry bot: ram. Approach point first so the bump still pushes the right way, then the ball.
-  bool dry = Players[slot].energy <= 0.0f && !((Players[slot].weapon_flags & (1u << VAUSS_INDEX)) &&
-                                               Players[slot].weapon_ammo[VAUSS_INDEX] > 0);
+  bool dry = Players[slot].energy <= 0.0f &&
+             !((Players[slot].weapon_flags & (1u << VAUSS_INDEX)) && Players[slot].weapon_ammo[VAUSS_INDEX] > 0);
   // Vauss finish (operator): sustained vauss fire drives the ball fast — a striker with rounds
   // and position finishes from the standoff without risking the body. Slam only without it.
   bool vauss_finish = (Players[slot].weapon_flags & (1u << VAUSS_INDEX)) &&
@@ -3801,7 +3926,7 @@ static void BotDoMonsterballStrikerNav(int bot_index) {
     nav_target = BotMballAvoidBallOnRoute(bot_index, obj, ball, ball_room, enemy_goal, nav_target);
 
   bool reissued = false;
-  BotSetRoutedGoal(bot_index, ball_room, nav_target, &reissued);
+  BotSetRoutedGoal(bot_index, ball_room, nav_target, &reissued, TRAVEL_OWNER_OBJECTIVE);
 
   // Finisher observability: log ARM/DISARM transitions, not goal reissues (2026-07-13 soak:
   // the reissue-gated line undercounted arms — single-room maps rarely reissue — and the
@@ -3870,10 +3995,10 @@ static void BotDoMonsterballSupportNav(int bot_index) {
     }
   }
   // Contact-blunder discipline (a supporter re-slotting can cross the ball too)
-  support = BotMballAvoidBallOnRoute(bot_index, obj, ball, ball_room,
-                                     Bot_objective.monsterball_goal_rooms[1 - my_team], support);
+  support = BotMballAvoidBallOnRoute(bot_index, obj, ball, ball_room, Bot_objective.monsterball_goal_rooms[1 - my_team],
+                                     support);
   bool reissued = false;
-  BotSetRoutedGoal(bot_index, ball_room, support, &reissued);
+  BotSetRoutedGoal(bot_index, ball_room, support, &reissued, TRAVEL_OWNER_OBJECTIVE);
 }
 
 // M3 KEEPER nav: shadow defense — hold the portal approach to the ENEMY goal room (where they
@@ -3904,7 +4029,7 @@ static void BotDoMonsterballKeeperNav(int bot_index) {
   // the leg back to the mouth station passes through a ball sitting AT the mouth)
   station = BotMballAvoidBallOnRoute(bot_index, obj, ball, ball_room, enemy_goal, station);
   bool reissued = false;
-  BotSetRoutedGoal(bot_index, enemy_goal, station, &reissued);
+  BotSetRoutedGoal(bot_index, enemy_goal, station, &reissued, TRAVEL_OWNER_OBJECTIVE);
 
   // Safe clear: fire whenever the shot does NOT advance the ball along their route.
   vector to_ball = ball->pos - obj->pos;
@@ -4028,14 +4153,33 @@ static bool BotCanSeePos(object *obj, vector *target_pos) {
 static bool BotIsKnownCombatPickup(const char *pname) {
   static const char *combat_pickups[] = {
       // Secondaries (powerup_data_secondary)
-      "Frag", "ImpactMortar", "NapalmRocket", "Cyclone", "BlackShark", "Concussion", "Homing", "Smart", "Mega",
-      "Guided", "4PackHoming", "4PackConc", "4PackFrag", "4PackGuided",
+      "Frag",
+      "ImpactMortar",
+      "NapalmRocket",
+      "Cyclone",
+      "BlackShark",
+      "Concussion",
+      "Homing",
+      "Smart",
+      "Mega",
+      "Guided",
+      "4PackHoming",
+      "4PackConc",
+      "4PackFrag",
+      "4PackGuided",
       // Ammo (powerup_data_ammo)
-      "Vauss clip", "MassDriverAmmo", "NapalmTank",
+      "Vauss clip",
+      "MassDriverAmmo",
+      "NapalmTank",
       // Energy + countermeasures (multisafe.cpp pickup handlers)
       // NOT "InvisiblePowerup": that is an invisible script-camera anchor (AIGame.cpp Obj_Create),
       // not a pickup — multisafe.cpp's only mention is the remove-all-powerups EXEMPTION for it.
-      "Energy", "Chaff", "Betty4Pack", "Seeker3Pack", "GunboyPowerup", "ProxMinePowerup",
+      "Energy",
+      "Chaff",
+      "Betty4Pack",
+      "Seeker3Pack",
+      "GunboyPowerup",
+      "ProxMinePowerup",
   };
   for (auto *n : combat_pickups) {
     if (!stricmp(pname, n))
@@ -4248,8 +4392,8 @@ static void BotTrollSoftStrike(int handle, const object *bot_obj, const char *bo
   if (++Troll_soft[slot] >= BOT_TROLL_SOFT_PER_STRIKE) {
     Troll_soft[slot] = 0;
     const char *nm = (p->type == OBJ_POWERUP) ? Object_info[p->id].name : "?";
-    LOG_DEBUG.printf("BOT NAV: '%s' soft-strike on powerup '%s' (room %d) — %d same-room aborts = 1 strike",
-                     botname, nm, (int)p->roomnum, BOT_TROLL_SOFT_PER_STRIKE);
+    LOG_DEBUG.printf("BOT NAV: '%s' soft-strike on powerup '%s' (room %d) — %d same-room aborts = 1 strike", botname,
+                     nm, (int)p->roomnum, BOT_TROLL_SOFT_PER_STRIKE);
     BotTrollStrike(handle, botname);
   }
 }
@@ -4889,8 +5033,8 @@ static void BotUpdateState(int bot_index) {
         Bots[bot_index].via_seal_count = 0;
         Bots[bot_index].chase_start_pos = obj->pos; // strike discipline: net displacement measured from here
         if (on_objective)
-          LOG_DEBUG.printf("BOT NAV: '%s' objective detour%s — chasing powerup in room %d",
-                           Bots[bot_index].callsign, gear_up ? " (gear-up)" : "",
+          LOG_DEBUG.printf("BOT NAV: '%s' objective detour%s — chasing powerup in room %d", Bots[bot_index].callsign,
+                           gear_up ? " (gear-up)" : "",
                            OBJECT_OUTSIDE(&Objects[pu_obj]) ? -1 : Objects[pu_obj].roomnum);
       }
 
@@ -5003,10 +5147,9 @@ static void BotUpdateState(int bot_index) {
     if (BotGetGameMode() == BGM_CTF && !BotIsCarryingEnemyFlag(bot_index)) {
       BotSquadRole role = Bots[bot_index].squad_role;
       bool is_attacker =
-          (role == SQUAD_ATTACK) ||
-          (role == SQUAD_FREELANCE && (Bots[bot_index].objective_lean == BOT_LEAN_ATTACK ||
-                                       Bots[bot_index].objective_lean == BOT_LEAN_RUNNER ||
-                                       Bots[bot_index].objective_lean == BOT_LEAN_FLEX));
+          (role == SQUAD_ATTACK) || (role == SQUAD_FREELANCE && (Bots[bot_index].objective_lean == BOT_LEAN_ATTACK ||
+                                                                 Bots[bot_index].objective_lean == BOT_LEAN_RUNNER ||
+                                                                 Bots[bot_index].objective_lean == BOT_LEAN_FLEX));
       if (is_attacker)
         ctf_pushing = true;
       // Fumble rush: any bot navigating to a dropped enemy flag also suppresses combat
@@ -5227,10 +5370,9 @@ static void BotUpdateState(int bot_index) {
     else if (BotGetGameMode() == BGM_CTF && Bots[bot_index].combat_idle_timer > BOT_CTF_ATTACK_COMBAT_TIMEOUT) {
       BotSquadRole role = Bots[bot_index].squad_role;
       bool is_attacker =
-          (role == SQUAD_ATTACK) ||
-          (role == SQUAD_FREELANCE && (Bots[bot_index].objective_lean == BOT_LEAN_ATTACK ||
-                                       Bots[bot_index].objective_lean == BOT_LEAN_RUNNER ||
-                                       Bots[bot_index].objective_lean == BOT_LEAN_FLEX));
+          (role == SQUAD_ATTACK) || (role == SQUAD_FREELANCE && (Bots[bot_index].objective_lean == BOT_LEAN_ATTACK ||
+                                                                 Bots[bot_index].objective_lean == BOT_LEAN_RUNNER ||
+                                                                 Bots[bot_index].objective_lean == BOT_LEAN_FLEX));
       if (is_attacker && !BotIsCarryingEnemyFlag(bot_index))
         new_state = BOT_STATE_EXPLORE;
     } else if (Bots[bot_index].combat_idle_timer > BOT_EVADE_COMBAT_TIMEOUT && shields < max_shields * 0.60f)
@@ -5850,7 +5992,7 @@ static void BotApplyThrust(int bot_index) {
           room &crm = Rooms[obj->roomnum];
           for (int p = 0; p < crm.num_portals; p++) {
             int cr = crm.portals[p].croom;
-            doorway *dw = crm.doorway_data ? crm.doorway_data
+            doorway *dw = crm.doorway_data                                          ? crm.doorway_data
                           : (cr >= 0 && cr <= Highest_room_index && Rooms[cr].used) ? Rooms[cr].doorway_data
                                                                                     : nullptr;
             if (!dw || !(dw->flags & DF_LOCKED) || (dw->flags & DF_GB_IGNORE_LOCKED))
@@ -5929,6 +6071,7 @@ static void BotApplyThrust(int bot_index) {
             GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
         Bots[bot_index].explore_dest_room = dest_room;
         Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MIN;
+        BotSetTravelDest(bot_index, dest_room, TRAVEL_OWNER_EXPLORE, TRAVEL_END_UNREACH);
         escaped_via_portal = true;
         LOG_DEBUG.printf("BOT: '%s' stuck escape via portal → room %d (%s)", Bots[bot_index].callsign, dest_room,
                          best_is_unvisited ? "unvisited" : "visited");
@@ -5940,6 +6083,7 @@ static void BotApplyThrust(int bot_index) {
       Bots[bot_index].explore_stuck_room = OBJECT_OUTSIDE(obj) ? -1 : obj->roomnum;
       Bots[bot_index].explore_dest_room = -1;
       Bots[bot_index].explore_room_timer = 0.0f;
+      BotClearTravelDest(bot_index, TRAVEL_END_UNREACH);
       char tdiag[128];
       LOG_DEBUG.printf("BOT: '%s' stuck escape — no portal, random lateral escape%s", Bots[bot_index].callsign,
                        BotTerrainDiag(obj, esc_dest, tdiag, sizeof(tdiag)));
@@ -6660,8 +6804,8 @@ bool BotNavDump(const char *filename) {
               "    {\"objnum\": %d, \"type\": %d, \"id\": %d, \"name\": \"%s\", \"flags\": %u, "
               "\"destroyable\": %s, \"room\": %d, \"outside\": %s, \"pos\": [%.1f,%.1f,%.1f]}",
               i, o->type, o->id, nm, (unsigned)o->flags, (o->flags & OF_DESTROYABLE) ? "true" : "false",
-              OBJECT_OUTSIDE(o) ? -1 : (int)o->roomnum, OBJECT_OUTSIDE(o) ? "true" : "false", o->pos.x(),
-              o->pos.y(), o->pos.z());
+              OBJECT_OUTSIDE(o) ? -1 : (int)o->roomnum, OBJECT_OUTSIDE(o) ? "true" : "false", o->pos.x(), o->pos.y(),
+              o->pos.z());
     }
     fprintf(fp, "\n  ],\n");
   }
@@ -6787,8 +6931,8 @@ bool BotNavDump(const char *filename) {
       if (!first_rgn)
         fprintf(fp, ",\n");
       first_rgn = false;
-      fprintf(fp, "    {\"region\": %d, \"node_count\": %d, \"comp_count\": %d, \"degenerate\": %s,\n", rg,
-              rgn_n, rcc, rdeg ? "true" : "false");
+      fprintf(fp, "    {\"region\": %d, \"node_count\": %d, \"comp_count\": %d, \"degenerate\": %s,\n", rg, rgn_n, rcc,
+              rdeg ? "true" : "false");
       fprintf(fp, "      \"nodes\": [");
       for (int i = 0; i < rgn_n; i++)
         fprintf(fp, "%s[%.2f,%.2f,%.2f]", i ? "," : "", rrpos[i].x(), rrpos[i].y(), rrpos[i].z());
@@ -7102,9 +7246,9 @@ static void BotDoFiring(int bot_index) {
       if (Gametime < last || Gametime - last > 5.0f) {
         last = Gametime;
         const char *tname = (target->type == OBJ_ROBOT && target->id >= 0) ? Object_info[target->id].name : "?";
-        LOG_DEBUG.printf("BOT FIRE: '%s' main-fire at %s %d '%s' (dist %.0f, los %d, rt %d)",
-                         Bots[bot_index].callsign, (target->type == OBJ_ROBOT) ? "robot" : "obj", OBJNUM(target),
-                         tname ? tname : "?", dist, BotHasLOS(obj, target) ? 1 : 0, target->render_type);
+        LOG_DEBUG.printf("BOT FIRE: '%s' main-fire at %s %d '%s' (dist %.0f, los %d, rt %d)", Bots[bot_index].callsign,
+                         (target->type == OBJ_ROBOT) ? "robot" : "obj", OBJNUM(target), tname ? tname : "?", dist,
+                         BotHasLOS(obj, target) ? 1 : 0, target->render_type);
       }
     }
 
@@ -7173,6 +7317,7 @@ static void BotRespawn(int bot_index) {
   Bots[bot_index].explore_dest_room = -1;
   Bots[bot_index].explore_stuck_room = -1;
   Bots[bot_index].explore_room_timer = 0.0f;
+  BotClearTravelDest(bot_index, TRAVEL_END_DEATH);
   Bots[bot_index].last_progress_room = -1;
   vm_MakeZero(&Bots[bot_index].last_progress_pos);
   Bots[bot_index].room_progress_timer = 0.0f;
@@ -7250,6 +7395,9 @@ void BotInitAll() {
     Bots[i].order_report_time = 0.0f;
     Bots[i].explore_dest_room = -1;
     Bots[i].explore_stuck_room = -1;
+    Bots[i].travel_dest_room = -1;
+    Bots[i].travel_owner = TRAVEL_OWNER_NONE;
+    Bots[i].travel_set_time = 0.0f;
     Bots[i].failed_dest_room = -1;      // fifth-cause blacklist: absolute Gametime latch,
     Bots[i].failed_dest_expires = 0.0f; // so it MUST join the per-level sweep (6.10 gotcha)
     Bots[i].explore_room_timer = 0.0f;
@@ -7434,6 +7582,9 @@ void BotReinitAll() {
     vm_MakeZero(&Bots[i].last_target_pos);
     Bots[i].explore_dest_room = -1;
     Bots[i].explore_stuck_room = -1;
+    Bots[i].travel_dest_room = -1;
+    Bots[i].travel_owner = TRAVEL_OWNER_NONE;
+    Bots[i].travel_set_time = 0.0f;
     Bots[i].failed_dest_room = -1;      // fifth-cause blacklist: absolute Gametime latch,
     Bots[i].failed_dest_expires = 0.0f; // so it MUST join the per-level sweep (6.10 gotcha)
     Bots[i].explore_room_timer = 0.0f;
@@ -7553,8 +7704,7 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
       connected++;
   }
   if (connected >= Netgame.max_players) {
-    PrintDedicatedMessage("BOT: cannot add '%s' — server full (%d/%d players)\n", name, connected,
-                          Netgame.max_players);
+    PrintDedicatedMessage("BOT: cannot add '%s' — server full (%d/%d players)\n", name, connected, Netgame.max_players);
     LOG_WARNING.printf("BOT: BotAdd refused, server at max_players (%d)", Netgame.max_players);
     return -1;
   }
@@ -7769,6 +7919,9 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   vm_MakeZero(&Bots[bot_index].last_target_pos);
   Bots[bot_index].explore_dest_room = -1;
   Bots[bot_index].explore_stuck_room = -1;
+  Bots[bot_index].travel_dest_room = -1;
+  Bots[bot_index].travel_owner = TRAVEL_OWNER_NONE;
+  Bots[bot_index].travel_set_time = 0.0f;
   Bots[bot_index].failed_dest_room = -1;      // fifth-cause blacklist: absolute Gametime latch,
   Bots[bot_index].failed_dest_expires = 0.0f; // so it MUST join the per-level sweep (6.10 gotcha)
   Bots[bot_index].explore_room_timer = 0.0f;
@@ -7884,8 +8037,8 @@ void BotDoFrame() {
   // were scraped over telnet by hand before the kill. Same self-healing Gametime latch as above.
   static float last_contend_dump = -1.0f;
   if (Gametime < last_contend_dump || Gametime - last_contend_dump > BOT_NAV_CONTEND_DUMP_INTERVAL) {
-    if (last_contend_dump >= 0.0f)                 // skip the level-start tick: nothing has happened yet
-      BotNavContendDumpAll("periodic", false);     // snapshot only — never reset a live session's totals
+    if (last_contend_dump >= 0.0f)             // skip the level-start tick: nothing has happened yet
+      BotNavContendDumpAll("periodic", false); // snapshot only — never reset a live session's totals
     last_contend_dump = Gametime;
   }
 
@@ -7939,6 +8092,7 @@ void BotDoFrame() {
       Bots[i].explore_dest_room = -1;
       Bots[i].explore_stuck_room = -1;
       Bots[i].explore_room_timer = 0.0f;
+      BotClearTravelDest(i, TRAVEL_END_DEATH);
       Bots[i].last_progress_room = -1;
       Bots[i].room_progress_timer = 0.0f;
       for (int v = 0; v < BOT_VISITED_ROOM_COUNT; v++)
@@ -8122,6 +8276,7 @@ void BotDoFrame() {
           } else {
             Bots[i].explore_dest_room = -1;
             Bots[i].explore_room_timer = 0.0f;
+            BotClearTravelDest(i, TRAVEL_END_UNREACH);
             int obj_room = BotGetObjectiveRoom(i);
             bool is_carrier = BotIsCarryingEnemyFlag(i) || BotIsCarryingHyperOrb(i);
             if (obj_room >= 0 || is_carrier) {

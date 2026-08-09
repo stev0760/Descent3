@@ -91,9 +91,10 @@
 // Powerup collection (Phase 3.8)
 #define BOT_POWERUP_SEEK_RADIUS 350.0f   // scan radius for powerup objects
 #define BOT_POWERUP_ONPATH_RADIUS 120.0f // tighter radius during objective nav — grab items on the way
-#define BOT_CHASE_STRIKE_MAX_DISP 25.0f  // chase-timeout troll strike only if the bot's NET displacement over
-                                         // the whole chase is under this — a mobile bot on a long maze route
-                                         // is a slow chase, not evidence of a troll item (0.9.6)
+#define BOT_CHASE_STRIKE_MAX_DISP                                                                                      \
+  25.0f // chase-timeout troll strike only if the bot's NET displacement over
+        // the whole chase is under this — a mobile bot on a long maze route
+        // is a slow chase, not evidence of a troll item (0.9.6)
 
 // 0.9.7 Stage 3 — progress-monitor replan ($nav replan). Detect zero-progress in ~1s and re-plan
 // from the CURRENT pose instead of pressing until the 8s chase timeout / 12s room timeout.
@@ -114,8 +115,8 @@
 // so the probe collides like a ship, not a bullet. Below the 6.7 hull so it can't false-positive
 // an opening a ship fits through.
 #define BOT_GRATE_PROBE_RADIUS 5.0f
-#define BOT_LOW_SHIELDS_PCT 0.30f        // seek shield powerups when below 30% shields
-#define BOT_LOW_ENERGY 25.0f             // seek energy powerups when below 25 energy units
+#define BOT_LOW_SHIELDS_PCT 0.30f // seek shield powerups when below 30% shields
+#define BOT_LOW_ENERGY 25.0f      // seek energy powerups when below 25 energy units
 
 // Inventory management (Phase 3.9)
 // Weapon selection uses energy level and combat distance to pick the best available weapon.
@@ -143,7 +144,7 @@
 #define BOT_VISITED_ROOM_COUNT 12               // circular buffer of recently visited rooms (anti-oscillation)
 #define BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT 12.0f // stuck if no room change for this long (Phase 4.01: 8→12)
 #define BOT_OUTDOOR_PROGRESS_DIST 50.0f         // outdoors (no room transitions) progress = moving at least this far
-#define BOT_OUTDOOR_APPROACH_OFFSET 12.0f       // 12.6: aim this far OUT of a structure door (clear of facade/open-door)
+#define BOT_OUTDOOR_APPROACH_OFFSET 12.0f // 12.6: aim this far OUT of a structure door (clear of facade/open-door)
 // $nav troute2 (v2 cost-comparison route choice, NAVIGATION.md 3.7): a terrain plan is ADOPTED over
 // an existing interior route only when meaningfully cheaper (factor = hysteresis + exposure tax),
 // and comparison composes are only attempted at all when the interior route is long enough to
@@ -152,14 +153,15 @@
 // 3716 vs 3720 — the extra 15% hysteresis double-taxed on top of hardcost's pain pricing).
 #define BOT_TROUTE_ADOPT_FACTOR 1.0f
 #define BOT_TROUTE_ADOPT_MIN_INTERIOR 500.0f
-#define BOT_ENTRY_COMMIT_DIST 30.0f  // 8.2 ($nav entry): within this of the standoff point -> commit THROUGH the door
-#define BOT_ENTRY_PUSH_DIST 25.0f    // 8.2: aim this far INSIDE the door room (> engine arrive radius: arrival = entry)
-#define BOT_SEAM_RETRY_TIME 5.0f     // $nav seam: one redirect per waypoint room per this window (anti-churn latch)
-#define BOT_HOP_PRESS_TRIGGER 4      // 0.9.7 hop-commit: same-hop re-issues before the seam push-through fires
-                                     // WITHOUT steer divergence (the 36->38 doorway-lip press: engine path is
-                                     // direct and correct, the lip approach just never crosses)
-#define BOT_GRATE_PORTAL_NEAR 30.0f  // $nav grate pass 4: a destroyable object within this of a portal = in the doorway
-#define BOT_INDOOR_PROGRESS_DIST 50.0f          // indoors, also count this much displacement as progress (big-room fix)
+#define BOT_ENTRY_COMMIT_DIST 30.0f // 8.2 ($nav entry): within this of the standoff point -> commit THROUGH the door
+#define BOT_ENTRY_PUSH_DIST 25.0f   // 8.2: aim this far INSIDE the door room (> engine arrive radius: arrival = entry)
+#define BOT_SEAM_RETRY_TIME 5.0f    // $nav seam: one redirect per waypoint room per this window (anti-churn latch)
+#define BOT_HOP_PRESS_TRIGGER                                                                                          \
+  4                                 // 0.9.7 hop-commit: same-hop re-issues before the seam push-through fires
+                                    // WITHOUT steer divergence (the 36->38 doorway-lip press: engine path is
+                                    // direct and correct, the lip approach just never crosses)
+#define BOT_GRATE_PORTAL_NEAR 30.0f // $nav grate pass 4: a destroyable object within this of a portal = in the doorway
+#define BOT_INDOOR_PROGRESS_DIST 50.0f // indoors, also count this much displacement as progress (big-room fix)
 
 // Secondary weapon firing (Phase 3.10)
 // Bots fire missiles alongside primaries in COMBAT. Each secondary has range gates and self-guards.
@@ -251,19 +253,21 @@
   40.0f // 12.3: an arrival within this of the previous one = a bounce
         // (oscillation); farther = chain progress, doesn't count
 #define BOT_VIA_SKEL_CHAIN_CAP                                                                                         \
-  8                             // 12.3.2: skeleton arrivals don't bounce-count (ring portal
-                                // nodes can sit 20-30u apart) — but cap hops/room as the
-                                // ping-pong guard; a chain this long without a room change
-                                // isn't going anywhere
-#define BOT_VIA_CHAIN_PROGRESS 12.0f // 0.9.7: an arrival this much CLOSER to the target than the last
-                                     // one is measured progress, not ping-pong — resets the chain cap
-                                     // (isengard room 36: crossing a 2000-node concave hub takes >8
-                                     // short hops; the cap was executing legitimate threads mid-room)
+  8 // 12.3.2: skeleton arrivals don't bounce-count (ring portal
+    // nodes can sit 20-30u apart) — but cap hops/room as the
+    // ping-pong guard; a chain this long without a room change
+    // isn't going anywhere
+#define BOT_VIA_CHAIN_PROGRESS                                                                                         \
+  12.0f                         // 0.9.7: an arrival this much CLOSER to the target than the last
+                                // one is measured progress, not ping-pong — resets the chain cap
+                                // (isengard room 36: crossing a 2000-node concave hub takes >8
+                                // short hops; the cap was executing legitimate threads mid-room)
 #define BOT_TROLL_STRIKES 3     // chase-timeout/seal strikes before a powerup is retired level-wide
 #define BOT_TROLL_TABLE_SIZE 32 // suspect powerups tracked per level (global, shared by all bots)
-#define BOT_TROLL_SOFT_PER_STRIKE 2 // $nav strike (0.9.7 Fix A): same-room soft chase-aborts per full strike —
-                                    // soft evidence at half weight, so 6 in-room give-ups level-wide retire a
-                                    // magnet item the hard-pin fairness rule never touches (room-36 class)
+#define BOT_TROLL_SOFT_PER_STRIKE                                                                                      \
+  2 // $nav strike (0.9.7 Fix A): same-room soft chase-aborts per full strike —
+    // soft evidence at half weight, so 6 in-room give-ups level-wide retire a
+    // magnet item the hard-pin fairness rule never touches (room-36 class)
 
 // Homing missile evasion (Phase 3.15)
 // Scans Objects[] for OBJ_WEAPON with PF_HOMING tracking the bot's handle.
@@ -286,10 +290,11 @@
 #define BOT_STUCK_FIGHT_TIMER 1.5f    // seconds stuck before firing to clear the blockage
 #define BOT_STUCK_ENEMY_RADIUS 50.0f  // proximity radius to detect a player/bot we're jammed against
 #define BOT_STUCK_OBSTACLE_DIST 40.0f // forward ray length to detect blocking destructible objects
-#define BOT_GLASS_SCAN_DIST 80.0f     // proactive glass detection range — must comfortably exceed the 30u
-                                      // splash guard so a missile-only loadout (spawn concussions) gets a
-                                      // wide firing window instead of the 10u sliver a 40u ray would leave
-#define BOT_STUCK_ABANDON_TIME 5.0f   // seconds stuck before abandoning goal and switching to EXPLORE
+#define BOT_GLASS_SCAN_DIST                                                                                            \
+  80.0f                             // proactive glass detection range — must comfortably exceed the 30u
+                                    // splash guard so a missile-only loadout (spawn concussions) gets a
+                                    // wide firing window instead of the 10u sliver a 40u ray would leave
+#define BOT_STUCK_ABANDON_TIME 5.0f // seconds stuck before abandoning goal and switching to EXPLORE
 
 // Altitude constraint (Phase 3.20)
 // Prevents bots from flying out of the level space on outdoor maps.
@@ -365,7 +370,7 @@ enum BotOrderState : uint8_t {
 #define BOT_ORDER_REPORT_THROTTLE 30.0f // min seconds between repeated BLOCKED reports
 #define BOT_ESCORT_STATION_DIST 45.0f   // escort offset-station distance behind the followed player
 #define BOT_ESCORT_STATION_ARRIVE 25.0f // within this of the offset station = ON_STATION (escort)
-#define BOT_FOLLOW_BEELINE_DIST 150.0f   // within this AND with LOS = beeline the player (tight escort); else route
+#define BOT_FOLLOW_BEELINE_DIST 150.0f  // within this AND with LOS = beeline the player (tight escort); else route
 
 struct BotDifficultyParams {
   float aim_error_deg;        // max angular offset added to aim (degrees)
@@ -390,22 +395,22 @@ enum BotState {
 // tick. Measurement only — no member here changes behavior; BotNavMemberWin() in bot.cpp just counts
 // who wins and how often the winner flips faster than a bot could act on it (the "committee" tell).
 enum BotNavMember : uint8_t {
-  NAV_MEMBER_NONE = 0,        // no routed-goal tick yet this level (idle / combat / not exploring)
-  NAV_MEMBER_BNODESP,         // $nav bnodesp — engine's own BNode path owns the leg (SP maps)
-  NAV_MEMBER_TROUTE,          // $nav troute — cross-terrain plan redirected the issue (seg0 exit door)
-  NAV_MEMBER_NO_ROUTE,        // no finite route under our cost model — engine's wind-blind BOA takes over
-  NAV_MEMBER_SEAM,            // $nav seam — engine steer-target detoured off our waypoint
-  NAV_MEMBER_HOP_COMMIT,      // 0.9.7 hop-commit — same adjacent hop re-issued past the press trigger
-  NAV_MEMBER_VIA,             // Phase 12 via-point — interior obstacle go-around
-  NAV_MEMBER_GRIDROUTE,       // $nav route — proactive in-room grid waypoint (complex rooms)
-  NAV_MEMBER_OUTDOOR_ENTRY,   // outdoor two-stage entrance approach/commit
-  NAV_MEMBER_OUTDOOR_LEG,     // $nav outroute — outdoor lattice leg follow
-  NAV_MEMBER_PATH_PNT,        // default: raw portal path_pnt / final pos, nothing else engaged
-  NAV_MEMBER_STUCK_ESCAPE,    // stuck-recovery escape thrust (can flee backward) — BotApplyThrust
-  NAV_MEMBER_ENGINE,          // raw goal handed to the engine (escort beeline / hold-station / outdoor
-                              // track) — the engine's own routing, the review's §3 top-row counterpart.
-                              // Added 2026-07-22: the first co-op session showed these legs dominate
-                              // SP travel yet were uncounted, so ours-vs-engine flips were invisible.
+  NAV_MEMBER_NONE = 0,      // no routed-goal tick yet this level (idle / combat / not exploring)
+  NAV_MEMBER_BNODESP,       // $nav bnodesp — engine's own BNode path owns the leg (SP maps)
+  NAV_MEMBER_TROUTE,        // $nav troute — cross-terrain plan redirected the issue (seg0 exit door)
+  NAV_MEMBER_NO_ROUTE,      // no finite route under our cost model — engine's wind-blind BOA takes over
+  NAV_MEMBER_SEAM,          // $nav seam — engine steer-target detoured off our waypoint
+  NAV_MEMBER_HOP_COMMIT,    // 0.9.7 hop-commit — same adjacent hop re-issued past the press trigger
+  NAV_MEMBER_VIA,           // Phase 12 via-point — interior obstacle go-around
+  NAV_MEMBER_GRIDROUTE,     // $nav route — proactive in-room grid waypoint (complex rooms)
+  NAV_MEMBER_OUTDOOR_ENTRY, // outdoor two-stage entrance approach/commit
+  NAV_MEMBER_OUTDOOR_LEG,   // $nav outroute — outdoor lattice leg follow
+  NAV_MEMBER_PATH_PNT,      // default: raw portal path_pnt / final pos, nothing else engaged
+  NAV_MEMBER_STUCK_ESCAPE,  // stuck-recovery escape thrust (can flee backward) — BotApplyThrust
+  NAV_MEMBER_ENGINE,        // raw goal handed to the engine (escort beeline / hold-station / outdoor
+                            // track) — the engine's own routing, the review's §3 top-row counterpart.
+                            // Added 2026-07-22: the first co-op session showed these legs dominate
+                            // SP travel yet were uncounted, so ours-vs-engine flips were invisible.
   NAV_MEMBER_COUNT
 };
 #define BOT_NAV_CONTEND_WINDOW 3.0f // winner flip inside this many seconds = contention, not a clean handoff
@@ -466,9 +471,18 @@ struct bot_info {
   // EXPLORE room roaming (Phase 3.9, overhauled Phase 4.0)
   int explore_dest_room;    // Rooms[] index the bot is currently navigating toward, -1 = none
   float explore_room_timer; // counts down; when <=0 bot picks a new destination room
-  vector oa_steer_pos;      // 12.6: outdoor entrance approach point (carried from entrance-seek to the
-  int oa_steer_room;        //       en-route via maintenance so the lateral go-around runs mid-flight); room=-1 none
-  int explore_stuck_room;   // last room abandoned due to stuck — blacklisted for next pick
+
+  // Task 2 (NAV_CONSOLIDATION_PLAN §6): the travel-INTENT layer — where the bot MEANS to end up and
+  // on whose authority. A shadow of explore_dest_room, which cannot carry intent itself because
+  // routed nav reuses it for per-waypoint bookkeeping (it holds wp_room mid-route — the Task 2
+  // census's key find). Written ONLY by BotSetTravelDest/BotClearTravelDest; nothing at runtime
+  // reads it back — measurement state for the destination-churn metric (BOT DEST log lines).
+  int travel_dest_room;   // final intended room, -1 = no live intent
+  int8_t travel_owner;    // BotTravelOwner of the live intent (bot.cpp), -1/none when clear
+  float travel_set_time;  // Gametime the intent was set — held-duration on BOT DEST lines
+  vector oa_steer_pos;    // 12.6: outdoor entrance approach point (carried from entrance-seek to the
+  int oa_steer_room;      //       en-route via maintenance so the lateral go-around runs mid-flight); room=-1 none
+  int explore_stuck_room; // last room abandoned due to stuck — blacklisted for next pick
   // Fifth lifetime cause: a destination that forced a stuck escape is demoted for a while, so
   // persistent intent cannot re-pick it immediately and grind the same wedge. Errand-scope only —
   // never filters the objective recompute or order anchors (those retry and report by design).
@@ -542,8 +556,8 @@ struct bot_info {
   // undercounted arms and the vauss-finish branch was fully silent — arming was unmeasurable).
   // 0 = off, 1 = slam run, 2 = vauss finish. Log-transition state only; recomputed every tick.
   uint8_t mball_finish_mode;
-  float mball_finish_log_t; // transition-log throttle (align jitters across the arm threshold)
-  float mball_avoid_log_t;  // ball-avoid detour log throttle (contact-blunder discipline)
+  float mball_finish_log_t;   // transition-log throttle (align jitters across the arm threshold)
+  float mball_avoid_log_t;    // ball-avoid detour log throttle (contact-blunder discipline)
   float mball_junction_log_t; // junction fork-veto log throttle (M2.6; absolute Gametime — reinit sweep)
 
   // 0.9.7 Stage 3 progress-monitor replan state
@@ -594,12 +608,12 @@ struct bot_info {
   // different rates (engine/bnodesp per leg issue, via per 0.5s tick, stuck-escape per FRAME), so the
   // old per-call counter overstated via and stuck-escape against the engine by ~an order of magnitude
   // and made members non-comparable. Duration lives in nav_member_held[] instead.
-  BotNavMember nav_last_member;                 // member that won most recently (NONE = no tick yet)
-  float nav_last_member_time;                   // Gametime the current winning streak started
-  uint32_t nav_member_count[NAV_MEMBER_COUNT];  // EPISODES this level, by BotNavMember (see units note)
-  float nav_member_held[NAV_MEMBER_COUNT];      // seconds ACTIVELY held (see BOT_NAV_ACTIVE_GAP)
-  float nav_member_last_win[NAV_MEMBER_COUNT];  // Gametime of that member's most recent win
-  uint32_t nav_contention_count;                // times the winner flipped within the churn window
+  BotNavMember nav_last_member;                // member that won most recently (NONE = no tick yet)
+  float nav_last_member_time;                  // Gametime the current winning streak started
+  uint32_t nav_member_count[NAV_MEMBER_COUNT]; // EPISODES this level, by BotNavMember (see units note)
+  float nav_member_held[NAV_MEMBER_COUNT];     // seconds ACTIVELY held (see BOT_NAV_ACTIVE_GAP)
+  float nav_member_last_win[NAV_MEMBER_COUNT]; // Gametime of that member's most recent win
+  uint32_t nav_contention_count;               // times the winner flipped within the churn window
 
   // Difficulty system (Phase 5.2)
   BotDifficulty difficulty; // this bot's difficulty level
@@ -636,16 +650,16 @@ struct bot_info {
 
 extern bot_info Bots[MAX_BOTS];
 extern int Num_bots;
-extern bool Bot_debug_movement;      // When true, log bot+player velocity every ~0.5s
-extern bool Bot_grate_clear_enabled; // $nav grate — proactive destroyable-obstacle clearing (0.9.6 Stage 2)
-extern bool Bot_objective_commit_enabled; // $nav commit — objective commitment: opportunistic-only powerups
-                                          // (same/adjacent room) while routing to an objective (0.9.6)
-extern bool Bot_dedicated_runner_enabled; // $nav runner — dedicated CTF flag-runner role (0.9.8)
-extern bool Bot_stall_replan_enabled;     // $nav replan — Stage 3 progress-monitor replan (0.9.7)
-extern bool Bot_soft_strike_enabled;      // $nav strike — same-room soft chase-aborts count toward troll
-                                          // retirement at BOT_TROLL_SOFT_PER_STRIKE weight (0.9.7 Fix A)
-extern bool Bot_reach_gate_enabled;       // $nav reach — single-authority reachability gate on same-room
-                                          // powerup selection (architecture north star, increment 1)
+extern bool Bot_debug_movement;               // When true, log bot+player velocity every ~0.5s
+extern bool Bot_grate_clear_enabled;          // $nav grate — proactive destroyable-obstacle clearing (0.9.6 Stage 2)
+extern bool Bot_objective_commit_enabled;     // $nav commit — objective commitment: opportunistic-only powerups
+                                              // (same/adjacent room) while routing to an objective (0.9.6)
+extern bool Bot_dedicated_runner_enabled;     // $nav runner — dedicated CTF flag-runner role (0.9.8)
+extern bool Bot_stall_replan_enabled;         // $nav replan — Stage 3 progress-monitor replan (0.9.7)
+extern bool Bot_soft_strike_enabled;          // $nav strike — same-room soft chase-aborts count toward troll
+                                              // retirement at BOT_TROLL_SOFT_PER_STRIKE weight (0.9.7 Fix A)
+extern bool Bot_reach_gate_enabled;           // $nav reach — single-authority reachability gate on same-room
+                                              // powerup selection (architecture north star, increment 1)
 extern bool Bot_bnode_native_pathing_enabled; // $nav bnodesp — operator intent: defer to the engine's
                                               // native BNode path pipeline on BNode-rich (SP campaign)
                                               // maps instead of our routing/via/seam stack (default ON —
