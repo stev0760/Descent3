@@ -514,6 +514,34 @@ Registered from the session, deliberately **not** built (operator steer, same da
 Phase state after the batch: §0.8's cockpit validation is complete on both co-op (08-08) and MP
 (08-09). Next action is unchanged: **Task 2, the churn instrument.**
 
+**THE RECLAIM PROBE RAN 2026-08-09 AND THE ANSWER IS DECISIVE: BLOCKED DOMINATES — 356 vs 3
+(99.2%).** Built as `reclaim-clear`/`reclaim-blocked` (`241a9c00`), flown same day on robo-anarchy
+d3 L1 (8 bots + operator, forcefield opened, genuine outdoor dogfights; logs
+`probe-smoke-part1/part2-20260809.log`). The decisive slice: **43/43 throttled samples with the bot
+GENUINELY OUTDOORS (`start(out=1 reg=1)`) targeting region 0 were ray-BLOCKED** — this is not the
+closed-forcefield artifact; from open canyon air, region-0 legs still have no straight hull line.
+(Counter-reset discipline note: the final dump was a post-reset segment; totals are pre-reset peak
++ part 1 — exactly the trap `ab_guard` codifies, read correctly this time.)
+
+Consequences, per the §0.86 pre-registered decision rule:
+
+- **Re-landing Step 4 would NOT fix the canyon.** The engine's tier-1 validated beeline declines
+  ~99% of the reclaimed class; those legs would ride tier-3 `AIGenerateBOAPath` (coarse portal-hop),
+  whose outdoor flight quality is exactly the unmeasured "aims and thrusts" question. Step 4's
+  value case shrinks to "hand the engine what tier-3 can carry" — possibly still positive (the
+  corrected A/B leaned that way on hard stucks) but no longer a canyon fix. **Re-run deprioritized
+  accordingly; it stays behind Task 2/Step 3 and needs its own justification now.**
+- **Arm (c) is the canyon's fix class, and it now has a measured scope:** extend fine coverage
+  (lattice/pseudo-bnode seeding) into the region-0 cells the blocked legs terminate in — the
+  operator's 08-09 unification ruling (one mechanism for SP and MP outdoor gaps: coarse
+  portal-beeline where clear, constructed lattice where blocked). A BUILD — post-consolidation,
+  scoped by this data, not before.
+- Corroborating texture from the session: `accept-outdoor` ran 3,116 evaluations (the engine
+  already flies region-1↔1 outdoor legs — why outdoor dogfights felt right to the operator:
+  "exactly how it should"); `rej-end-reg0` grew continuously while bots roamed outside; new
+  interior pinch-point registered: **d3 L1 room 43** (5 hard escalations, one bot, net_disp 3-6 —
+  the KegD3-31/32 class, unrelated to outdoor).
+
 ---
 
 ## 1. The committee census (who can seize the wheel during travel)
