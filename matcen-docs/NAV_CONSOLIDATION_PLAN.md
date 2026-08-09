@@ -484,6 +484,36 @@ content.
   that was checkable and went unchecked. Same countermeasure: verify from the artifact (the log, the
   agent transcript), never from the parameter.
 
+**COCKPIT BATCH FLOWN 2026-08-09 — everything under test PASSED.** Build `986deab7`, KegD3 CTF,
+5 bots + operator, ~25 min, zero crashes, log `ordertest-20260809.log`. Operator verdict: "this game
+felt very good … good balance with the chaos of Descent 3." Scoring even (16 caps: 8 Blue-bot /
+2 Red-bot + 6 operator — ordered bots score less by design). Stucks 19 total, **1 hard**, 0 outdoor.
+
+- **Escort oscillation GONE:** 4 escort re-arrival gaps, median 25.9s, none under 2s — against
+  08-08's sub-second flip pairs on the same map. 5 genuine escort arrivals, no through-wall parks.
+- **`!hold` exercised for the first time ever and works:** 48 hold arrivals, zero "Can't get
+  there!", no through-wall "In position."
+- **The BLOCKED detector is alive and truthful:** 3 "Can't reach you!" reports, all one 38-second
+  genuine struggle (Reaper, room 32, mid-route rooms away from the operator, net_disp 20–38 =
+  circling; escape reflex broke it out). On 08-08 that episode would have been silent.
+- **Finding 1's rad fix VALIDATED — the false-non-arrival regression class did not appear:**
+  arrivals occurred normally everywhere; the only BLOCKEDs were mid-route, never adjacent-to-post.
+
+Registered from the session, deliberately **not** built (operator steer, same day: the bar is
+*balance and feel*, not perfection — don't chase cosmetic polish):
+
+- Hold-boundary re-arrival jitter: 46 hold gaps median 3.6s, 8 under 2s — combat drift across the
+  60u edge re-triggering arrival. Cosmetic log/chat noise; the polish class is hysteresis
+  (re-enter at ~0.8× radius). Register only.
+- KegD3 rooms 31/32 are a via-ring blind spot: 27 throttled no-via verdicts (11+10) — the mechanism
+  under the one visible struggle. Map-specific geometry for the via-search backlog, unrelated to
+  arrival.
+- KegD3's standing (operator): an early gold-standard map that dropped out of recent testing because
+  it always worked — **use it as the order-nav regression map** from here on.
+
+Phase state after the batch: §0.8's cockpit validation is complete on both co-op (08-08) and MP
+(08-09). Next action is unchanged: **Task 2, the churn instrument.**
+
 ---
 
 ## 1. The committee census (who can seize the wheel during travel)
