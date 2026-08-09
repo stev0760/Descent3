@@ -115,14 +115,37 @@ static int BotTerrainRegionSafe(int roomnum) {
 // engine-flyable outdoor legs, and reg0-vs-badcell is exact rather than sampled. NOTE for readers:
 // counts are per-EVALUATION at mixed cadence (via tick 0.5s + goal issue), i.e. time-weighted — never
 // read them as leg counts.
+// STEP 4 (2026-08-08) — THE GATE NOW ASKS THE HONEST QUESTION, AND IT IS A DELETION.
+//
+// Everything above describes the gate we USED to run: a verbatim mirror of the engine's `f_bnode_ok`.
+// The 08-06 BOA probe showed that mirror answers the wrong question. `f_bnode_ok` decides *"should the
+// BNode generator be used?"*, NOT *"can the engine fly this leg?"* — `AIPathAllocPath`
+// (aipath.cpp:1017-1090) has THREE tiers: a VALIDATED fvi beeline at ship radius, then
+// `AIGenerateBNodePath`, then `AIGenerateBOAPath`. All three sit inside
+// `if (BOA_GetNextRoom(start,end) != BOA_NO_PATH)`. That is precisely why the guide-bot flies d3 L1's
+// canyon with no outdoor BNodes at all: the raycast passes and it simply flies straight.
+//
+// So mirroring `f_bnode_ok` withheld from the engine a large class of legs the engine can fly
+// perfectly well, and handed them to indoor-derived via/skeleton machinery out on open terrain. That
+// is the outdoor half of the committee, and it was self-inflicted. Measured on the 08-08 co-op
+// session: **155 of 890 evaluations (17%) rejected as `rej-end-reg0`** — every one of them
+// BOA-ROUTABLE per the probe (`boa_next=102` = the region-0 pseudo-room, a real hop; only genuinely
+// unresolvable cells returned the `BOA_NO_PATH` sentinel).
+//
+// The new gate is `BOA_GetNextRoom(start,end) != BOA_NO_PATH` — the engine's own precondition, tested
+// rather than predicted. Genuinely disconnected terrain still returns NO_PATH and is still declined,
+// which is the honest reject. **INERT ON MP BY CONSTRUCTION** and measured so: the gate only runs
+// under `BotBnodeNativeActive()` (BNode-rich SP/campaign maps), and fired ZERO times across all three
+// MP census arms.
+//
+// The old verdict is still computed, purely as instrumentation: `accept-reclaimed` counts legs the
+// engine now gets that `f_bnode_ok` would have withheld. That is the Step 4 delta, readable in a
+// single session without an A/B arm.
 enum BnodeLegVerdict {
-  BLEG_ACCEPT_INTERIOR = 0, // both ends interior — flyable, but says nothing about outdoor coverage
-  BLEG_ACCEPT_OUTDOOR,      // >=1 outdoor end accepted — THE outdoor-coverage bucket
-  BLEG_REJ_START_REG0,      // start cell in terrain region 0: engine genuinely has no BNode data there
-  BLEG_REJ_START_BADCELL,   // start cell unresolvable (-1 sentinel) — a bad cell, not a coverage fact
-  BLEG_REJ_END_REG0,
-  BLEG_REJ_END_BADCELL,
-  BLEG_REJ_CROSS_REGION,
+  BLEG_ACCEPT_INTERIOR = 0, // both ends interior, BOA-routable
+  BLEG_ACCEPT_OUTDOOR,      // >=1 outdoor end, BOA-routable, and the OLD gate would have allowed it too
+  BLEG_ACCEPT_RECLAIMED,    // BOA-routable but f_bnode_ok would have REJECTED — *** the Step 4 delta ***
+  BLEG_REJ_NO_PATH,         // BOA genuinely cannot route it — the honest reject, and the only one left
   BLEG_COUNT
 };
 static uint32_t Bnode_leg_verdicts[BLEG_COUNT];
@@ -132,19 +155,30 @@ static const char *BnodeLegVerdictName(int v) {
     return "accept-interior";
   case BLEG_ACCEPT_OUTDOOR:
     return "accept-outdoor";
-  case BLEG_REJ_START_REG0:
-    return "rej-start-reg0";
-  case BLEG_REJ_START_BADCELL:
-    return "rej-start-badcell";
-  case BLEG_REJ_END_REG0:
-    return "rej-end-reg0";
-  case BLEG_REJ_END_BADCELL:
-    return "rej-end-badcell";
-  case BLEG_REJ_CROSS_REGION:
-    return "rej-cross-region";
+  case BLEG_ACCEPT_RECLAIMED:
+    return "accept-reclaimed";
+  case BLEG_REJ_NO_PATH:
+    return "rej-boa-nopath";
   default:
     return "?";
   }
+}
+// What the retired `f_bnode_ok` mirror would have ruled. Kept ONLY to classify `accept-reclaimed` and
+// to label the throttled detail line — it no longer gates anything.
+static const char *BotBnodeLegLegacyReason(int start_room, int end_room, bool *out_would_reject) {
+  const bool s_out = ROOMNUM_OUTSIDE(start_room);
+  const bool e_out = ROOMNUM_OUTSIDE(end_room);
+  const int s_reg = s_out ? BotTerrainRegionSafe(start_room) : -1;
+  const int e_reg = e_out ? BotTerrainRegionSafe(end_room) : -1;
+  *out_would_reject = true;
+  if (s_out && s_reg <= 0)
+    return (s_reg == 0) ? "was-start-reg0" : "was-start-badcell";
+  if (e_out && e_reg <= 0)
+    return (e_reg == 0) ? "was-end-reg0" : "was-end-badcell";
+  if (s_out && e_out && s_reg != e_reg)
+    return "was-cross-region";
+  *out_would_reject = false;
+  return (s_out || e_out) ? "was-accept-outdoor" : "was-accept-interior";
 }
 static void BotBnodeLegDumpVerdicts(const char *reason, bool reset) {
   uint32_t total = 0;
@@ -152,7 +186,7 @@ static void BotBnodeLegDumpVerdicts(const char *reason, bool reset) {
     total += Bnode_leg_verdicts[v];
   if (total == 0)
     return; // nothing to say — on BNode-less maps (all MP) the gate never runs and this stays silent
-  char line[320]; // 7 buckets now — 256 was sized for 4
+  char line[320]; // grew to 7 buckets for the Step 0a split; back to 4 at Step 4 — headroom is fine
   size_t used = 0;
   for (int v = 0; v < BLEG_COUNT && used < sizeof(line); v++)
     used += (size_t)snprintf(line + used, sizeof(line) - used, " %s=%u", BnodeLegVerdictName(v), Bnode_leg_verdicts[v]);
@@ -164,51 +198,54 @@ static void BotBnodeLegDumpVerdicts(const char *reason, bool reset) {
 }
 
 static bool BotBnodeLegOk(int start_room, int end_room) {
-  const bool s_out = ROOMNUM_OUTSIDE(start_room);
-  const bool e_out = ROOMNUM_OUTSIDE(end_room);
-  const int s_reg = s_out ? BotTerrainRegionSafe(start_room) : -1;
-  const int e_reg = e_out ? BotTerrainRegionSafe(end_room) : -1;
+  bool legacy_reject = false;
+  const char *legacy = BotBnodeLegLegacyReason(start_room, end_room, &legacy_reject);
 
-  int verdict = (s_out || e_out) ? BLEG_ACCEPT_OUTDOOR : BLEG_ACCEPT_INTERIOR;
-  if (s_out && s_reg <= 0)
-    verdict = (s_reg == 0) ? BLEG_REJ_START_REG0 : BLEG_REJ_START_BADCELL;
-  else if (e_out && e_reg <= 0)
-    verdict = (e_reg == 0) ? BLEG_REJ_END_REG0 : BLEG_REJ_END_BADCELL;
-  else if (s_out && e_out && s_reg != e_reg)
-    verdict = BLEG_REJ_CROSS_REGION; // cross-region outdoor legs: the engine declines these too
+  // THE GATE IS A PURE WIDENING — `legacy_accept || BOA-routable`, never a new restriction.
+  //
+  // The first cut of this (2026-08-08) tested BOA routability for EVERY leg and dropped the legacy
+  // rule entirely. That was wrong in a way the smoke caught: the old mirror accepted all
+  // interior-interior legs UNCONDITIONALLY, without consulting BOA at all, so a bare BOA test also
+  // withdrew legs indoors that had always been allowed. Reject rate went 6.3% -> 12.5% on the same
+  // harness. Step 4 is defined as a DELETION of an over-restriction; adding a restriction indoors —
+  // in the layer this phase is trying to shrink, on the map class the engine owns — is out of scope
+  // however defensible it might be on its own merits.
+  //
+  // So: anything the old gate allowed is still allowed, and legs it withheld are additionally allowed
+  // when the engine can actually route them. Strictly more permissive, trivially revertible, and the
+  // indoor path is provably untouched.
+  const int boa_next = BOA_GetNextRoom(start_room, end_room);
+  const bool boa_ok = (boa_next != BOA_NO_PATH);
+  const bool accepted = !legacy_reject || boa_ok;
 
+  int verdict;
+  if (!accepted)
+    verdict = BLEG_REJ_NO_PATH; // old gate said no AND BOA has no route — the honest reject
+  else if (legacy_reject)
+    verdict = BLEG_ACCEPT_RECLAIMED; // the engine gets a leg the old mirror withheld — the Step 4 delta
+  else
+    verdict = ROOMNUM_OUTSIDE(start_room) || ROOMNUM_OUTSIDE(end_room) ? BLEG_ACCEPT_OUTDOOR
+                                                                      : BLEG_ACCEPT_INTERIOR;
   Bnode_leg_verdicts[verdict]++;
-  const bool accepted = (verdict == BLEG_ACCEPT_INTERIOR || verdict == BLEG_ACCEPT_OUTDOOR);
-  // Throttled detail on rejects only — accepts are the boring case and would drown the log. Reports
-  // the regions the verdict turned on AND how many BOA connections that region has, which is what
-  // separates "the engine has no data here" from "our gate mis-read resolvable terrain".
-  if (!accepted) {
+
+  // Throttled detail on the two interesting classes: reclaimed legs (what Step 4 bought) and genuine
+  // NO_PATH (what is honestly unroutable). Plain accepts are the boring case and would drown the log.
+  if (verdict == BLEG_ACCEPT_RECLAIMED || verdict == BLEG_REJ_NO_PATH) {
     static float Bleg_log_t = 0.0f;
     if (Gametime < Bleg_log_t || Gametime - Bleg_log_t > 10.0f) {
       Bleg_log_t = Gametime;
+      const bool s_out = ROOMNUM_OUTSIDE(start_room);
+      const bool e_out = ROOMNUM_OUTSIDE(end_room);
+      const int s_reg = s_out ? BotTerrainRegionSafe(start_room) : -1;
+      const int e_reg = e_out ? BotTerrainRegionSafe(end_room) : -1;
       // reg >= 0 (not > 0): BOA_num_connect is indexed by region DIRECTLY (BOA_INDEX maps region r to
-      // Highest_room_index+1+r; BOA.cpp:362 subtracts it back), so [0] is a valid, meaningful entry —
-      // and region 0's BOA connectivity is the seeding datum Step 4's lattice extension needs. The old
-      // `> 0` guard made it permanently unreportable; conn=-1 now means ONLY "interior end / bad cell".
+      // Highest_room_index+1+r; BOA.cpp:362 subtracts it back), so [0] is a valid, meaningful entry.
+      // conn=-1 means ONLY "interior end / bad cell".
       const int s_conn = (s_reg >= 0 && s_reg < MAX_BOA_TERRAIN_REGIONS) ? BOA_num_connect[s_reg] : -1;
       const int e_conn = (e_reg >= 0 && e_reg < MAX_BOA_TERRAIN_REGIONS) ? BOA_num_connect[e_reg] : -1;
-      // BOA PROBE (2026-08-06): THE decisive measurement for Step 4. `f_bnode_ok` failing does NOT
-      // mean the engine cannot fly this leg — AIPathAllocPath has three tiers (aipath.cpp:1017-1090):
-      // a VALIDATED beeline (fvi raycast at ship radius), then AIGenerateBNodePath, then
-      // AIGenerateBOAPath as fallback. That is why the guide-bot handles outdoors without any outdoor
-      // BNodes: outdoors the raycast usually passes and it simply flies straight.
-      //
-      // BUT all three tiers sit inside `if (BOA_GetNextRoom(start,end) != BOA_NO_PATH)`, and region 0
-      // reports conn=0. So the open question is whether BOA has ANY route into region 0:
-      //   boa_next >= 0 (not NO_PATH) => the engine COULD fly these legs and we are withholding them.
-      //                                  Step 4 becomes a DELETION: stop gating, let the engine tier.
-      //   boa_next == NO_PATH         => the engine genuinely cannot route there either.
-      //                                  Step 4 is a real region-0 lattice build.
-      const int boa_next = BOA_GetNextRoom(start_room, end_room);
-      const bool boa_ok = (boa_next != BOA_NO_PATH);
-      LOG_DEBUG.printf("BOT BNODELEG: %s start(out=%d reg=%d conn=%d) end(out=%d reg=%d conn=%d) boa_next=%d boa=%s",
-                       BnodeLegVerdictName(verdict), (int)s_out, s_reg, s_conn, (int)e_out, e_reg, e_conn, boa_next,
-                       boa_ok ? "ROUTABLE" : "NO_PATH");
+      LOG_DEBUG.printf(
+          "BOT BNODELEG: %s (%s) start(out=%d reg=%d conn=%d) end(out=%d reg=%d conn=%d) boa_next=%d",
+          BnodeLegVerdictName(verdict), legacy, (int)s_out, s_reg, s_conn, (int)e_out, e_reg, e_conn, boa_next);
     }
   }
   return accepted;

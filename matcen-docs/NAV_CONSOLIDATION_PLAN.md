@@ -905,6 +905,46 @@ exactly where this project has been burned (the 05-30 batch went in safe and cam
 > thrusts. That is why escort-dominated co-op still produced 130 outdoor presses. "Beeline more
 > outdoors" must mean *use the engine's validated one*, not aim harder.
 
+> **STEP 4 BUILT 2026-08-08 (`BotBnodeLegOk` is now `legacy_accept || BOA-routable`). MECHANICALLY
+> CONFIRMED, NOT YET VALIDATED — one open signal, see below.** Harness: robo-anarchy `d3.mn3`, the
+> probe's own (bots roam outdoors autonomously; headless co-op cannot). Control = the 08-06 probe log
+> on the same harness with the old gate.
+>
+> **It does exactly what the probe licensed.** Level-1 end-of-level:
+> `accept-interior=2515 accept-outdoor=726 accept-reclaimed=135 rej-boa-nopath=318`. Every
+> `accept-reclaimed` detail sample is `was-end-reg0` with `boa_next=102` (the region-0 pseudo-room, a
+> real hop); every `rej-boa-nopath` sample is `was-end-badcell` with `boa_next=110` (the `BOA_NO_PATH`
+> sentinel exactly). The probe's arithmetic, reproduced by the shipped gate. Zero faults, 2 levels.
+>
+> **The first cut was wrong and the smoke caught it — recorded because it is the reusable lesson.**
+> v1 tested BOA routability for *every* leg and dropped the legacy rule. But the old mirror accepted
+> all interior-interior legs **unconditionally, never consulting BOA**, so a bare BOA test also
+> *withdrew* indoor legs that had always been allowed (reject rate 6.3% → 12.5%). Step 4 is defined as
+> deleting an over-restriction; adding one indoors — in the layer this phase exists to shrink, on the
+> map class the engine owns — is out of scope however defensible on its own merits. v2 is
+> `!legacy_reject || boa_ok`: **strictly more permissive than the old gate, never less**, so the
+> indoor path is provably untouched and the delta is only ever legs the engine can genuinely route.
+>
+> | arm | press/min | outdoor press/min | stuck escape/min |
+> |---|---|---|---|
+> | old gate (08-06 probe, 10 min) | 10.1 | 5.2 | 0.31 |
+> | v1 bare BOA (14 min) | 9.4 | 1.5 | 0.67 |
+> | **v2 widening only (11 min)** | **6.4** | **2.5** | **0.94** |
+>
+> **⚠ THE OPEN SIGNAL: stuck escapes went 0.31 → 0.94/min, and it reproduces across both cuts.**
+> Presses fell hard (total −37%, outdoor −52%), which is the intended win, but escapes tripled.
+> Absolute numbers are small (3 → 10) on an 11-minute single run, so this is a signal, not a verdict.
+> The plausible mechanism is exactly the thing Step 4 trades: reclaimed legs are **region-0
+> destinations — open wilderness** — so bots now actually *go* there, and the engine's beeline flies
+> them into terrain our outdoor machinery used to route around. That would make it a real cost, not
+> noise. **Do not call Step 4 validated on this run** — the project's own lesson from nights 1-3 is
+> that a short run read 5.2 where 12 rounds read 12.0. Needs a long campaign/co-op run before the
+> verdict.
+>
+> *Scope note:* the bedlam conversion gate below does **not** apply — it is an MP map with no BNodes,
+> so the gate never runs there. Step 4's risk is confined to SP/campaign/co-op, which is also the only
+> place it can pay.
+
 **STEP 4 — resolve outdoors on Step 0's data.** (a) gate mis-evaluation → fix inputs, re-run the smoke
 #3 pattern; (b) region-0 with our lattice covering → make the troute composer the outdoor owner for
 *all* leg types, demote the via ring/graph/soft-hop to fallback; (c) region-0 with nothing covering →
