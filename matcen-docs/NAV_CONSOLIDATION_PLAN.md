@@ -267,12 +267,33 @@ which is the operator's "broader confusion with following", same root cause, not
 > signature of bots sitting in that state, not evidence the detector never works.
 
 **⚠ SCOPE IS FAR WIDER THAN ORDER-FOLLOWING — `!follow` is not the main caller (operator, 2026-08-08).**
-`BotCoopUpdateEscort` (`bot_objective.cpp:1090`) assigns `SQUAD_FOLLOW` to **every unordered bot
-whenever a human is present** — the 0.9.9 companion-mode ruling, *"every unordered bot escorts the
-nearest human by default"*. So this arrival test is **the default navigation posture of co-op**, running
-continuously with no order issued, and has been since 0.9.9 shipped. Explicit `!follow`/`!cover` in MP
-is the *minority* caller. This also names a backlog item that was already registered but not connected:
-co-op's "geometry-blind escort station points".
+`BotCoopUpdateEscort` (`bot_objective.cpp:1091`) assigns `SQUAD_FOLLOW` to every unordered bot with a
+human present — the 0.9.9 companion ruling, *"every unordered bot escorts the nearest human by
+default"*. So this arrival test is **the default navigation posture of co-op**, running continuously
+with no order issued, since 0.9.9 shipped. This also names a backlog item registered but never
+connected to a mechanism: co-op's "geometry-blind escort station points".
+
+**Gate verified, because the operator asked (he had not seen this in normal MP, correctly).** The only
+call is `BotPollObjectiveState()` → `switch (BotGetGameMode())` → `case BGM_COOP: BotPollCoop()` →
+`BotCoopUpdateEscort()` (`bot_objective.cpp:1268/1307`). Reachable **only** under `BGM_COOP`. Outside
+co-op the sole writers of `SQUAD_FOLLOW`/`SQUAD_COVER` in the codebase are the two explicit chat
+handlers (`bot_chat.cpp:370,388`). Risk tiers:
+
+| context | escort path runs |
+|---|---|
+| co-op | **always** — every unordered bot, continuously |
+| MP, human present | only bots explicitly ordered `!follow` / `!cover` (opt-in) |
+| MP, unmanned soak | **never** — no human ⇒ no orders ⇒ no escort nav |
+
+> **THAT THIRD ROW REVISES THE STEP 3 SEQUENCING ARGUMENT, and it is the more useful finding.**
+> Escort-close/escort-outdoor were sequenced as Step 3 commits #1/#2 on the grounds of being
+> "inert on MP". The truth is sharper and less comfortable: **the escort path has NO automated
+> coverage in any mode.** Co-op needs a human to lead; ordered MP needs a human to order; unmanned
+> soaks execute none of it. Every soak hour this project has ever run left this code entirely
+> untouched. It was never measured safe — **it was unmeasurable, and that was read as safe.** That is
+> also the honest explanation for how a bare-distance arrival test survived in the default posture of
+> a shipped feature. Any escort change must be gated on a human cockpit session, and co-op is the
+> higher-value arm because that is where the path runs by default.
 >
 > Corroboration is suggestive rather than conclusive, and is worth stating as such: one archived co-op
 > session (`coop-2b2-2026-08-06`) logged **444 arrivals from 2 escorting bots over 53 minutes** —
