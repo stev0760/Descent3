@@ -905,7 +905,69 @@ exactly where this project has been burned (the 05-30 batch went in safe and cam
 > thrusts. That is why escort-dominated co-op still produced 130 outdoor presses. "Beeline more
 > outdoors" must mean *use the engine's validated one*, not aim harder.
 
-> # ⛔ STEP 4 TRIED → REVERTED 2026-08-09. THE PROBE'S PREMISE WAS TRUE AND INSUFFICIENT.
+> # ⚠⚠ THE STEP 4 REVERT BELOW RESTS ON A BROKEN ANALYSIS — CORRECTED 2026-08-09 (Fable 5 review)
+>
+> **Everything in the revert block that follows is retracted except the revert itself. Read this first;
+> the block below is kept only as the record of how the error was made.**
+>
+> **Three methodology failures, compounding:**
+>
+> 1. **THE HARNESS NEVER HELD THE PIN.** `TimeLimit=0` did *not* keep the run on Level 1. Both arms
+>    transitioned to Level 2 partway — **control at 02:48:20 (2h24m in), Step 4 at 06:02:38 (1h38m
+>    in)** — so the arms have nearly *inverted* L1/L2 splits. The premise the whole test rested on was
+>    false and one grep would have caught it.
+> 2. **THE COUNTERS RESET AT THAT BOUNDARY, BY DESIGN.** `BotNavContendDumpAll` is documented
+>    *"Dump + reset at A/B boundaries"* (bot.cpp:370) and is called with `"level-end"` at bot.cpp:7310;
+>    `BotBnodeLegDumpVerdicts` shares it. My analyser took the **last dump per bot**, so the published
+>    table was **a Level-2-tail comparison of two differently-sized segments**, not a session total.
+>    The "44% more leg evaluations" was the same artifact — segment-summed, *control* did more legs
+>    (88,470 vs 72,883).
+> 3. **NO OUTLIER CHECK. ONE BOT IS THE ENTIRE RESULT.** Counted with the *reset-immune* discrete
+>    escalation event (bot.cpp:8072, one log line per occurrence, nothing to reset):
+>
+> | whole session | control | Step 4 |
+> |---|---|---|
+> | total stuck escalations | 94 | 233 |
+> | **Ninja[BOT] alone** | 7 | **163 (70%)** |
+> | **every other bot** | **87** | **70** |
+>
+> **Excluding one bot, Step 4 is BETTER, not 3× worse.** The `via` 486→29 / contention 84→0 collapse
+> is real and survives correction (true totals ≈642 and 15 — still a ~5× stand-down), so the
+> *structural* half of the reading was sound. The *behavioural* half was an artifact.
+>
+> **And the mechanism I blamed is also wrong.** Ninja's 163 escalations: **159 are `dest=-1(none)`
+> (goalless — no destination at all), 158 are `rgn=1` (NOT region 0), and 137 are at the single
+> terrain cell `173,233`**, spanning 05:47→08:24. That is the documented **goalless-vacancy** trap
+> (§3's eleventh member; the 2a regression's *"a goalless bot in open space has nothing to work
+> with"*) — not "the engine beelines reclaimed region-0 legs into terrain". There is no destination
+> for anything to beeline toward.
+>
+> **AND ON THE PROJECT'S OWN PREFERRED METRIC IT LOOKS LIKE AN IMPROVEMENT.** CLAUDE.md is explicit
+> that nav health is judged by the **hard** (`net_disp<10`) count, because raw totals are inflated by
+> moving-but-slow circling timeouts. Split that way:
+>
+> | | control | Step 4 |
+> |---|---|---|
+> | **hard escalations (net_disp<10)** | **33** | **10** |
+> | soft (circling) | 61 | 223 |
+>
+> **Genuinely-pinned bots fell 70%.** Ninja's 163 escalations have `net_disp` min 4 / median 13 /
+> max 46 and **zero** below 10 — it was *orbiting*, not wedged (cf. the toroidal-orbit failure mode,
+> NAVIGATION §7.2), which is a steering-layer problem and not what this gate touches.
+>
+> **CORRECTED STATUS: Step 4 is NOT shown to be a regression. It is UNPROVEN, and it stays reverted
+> for now** — not because the data condemns it, but because the data says nothing either way and one
+> open question remains: did Step 4 *increase exposure* to the goalless trap, or did Ninja get unlucky
+> in a sample an 8-bot/4-hour run can produce in either arm? That is cheap to close and must be closed
+> before Step 4 is re-landed or abandoned.
+>
+> **"The committee's outdoor machinery is load-bearing" is WITHDRAWN at the strength claimed.** The
+> scaffolding still stays — that is the operator's standing guardrail and it is unaffected — but this
+> measurement does not support it, and Step 5's outdoor-adjacent retirements must not cite it.
+>
+> ---
+>
+> # ⛔ (RETRACTED — see above) STEP 4 TRIED → REVERTED 2026-08-09.
 >
 > **8-hour build-vs-build A/B, 4 h per arm, robo-anarchy `d3.mn3` Level 1 pinned (`TimeLimit=0`),
 > 8 bots, identical cfg, zero crashes.** Control = `bot.cpp` @ `35bf82e7` (arrival fix, no Step 4).
