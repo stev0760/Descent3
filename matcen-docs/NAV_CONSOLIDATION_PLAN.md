@@ -905,8 +905,49 @@ exactly where this project has been burned (the 05-30 batch went in safe and cam
 > thrusts. That is why escort-dominated co-op still produced 130 outdoor presses. "Beeline more
 > outdoors" must mean *use the engine's validated one*, not aim harder.
 
-> **STEP 4 BUILT 2026-08-08 (`BotBnodeLegOk` is now `legacy_accept || BOA-routable`). MECHANICALLY
-> CONFIRMED, NOT YET VALIDATED — one open signal, see below.** Harness: robo-anarchy `d3.mn3`, the
+> # ⛔ STEP 4 TRIED → REVERTED 2026-08-09. THE PROBE'S PREMISE WAS TRUE AND INSUFFICIENT.
+>
+> **8-hour build-vs-build A/B, 4 h per arm, robo-anarchy `d3.mn3` Level 1 pinned (`TimeLimit=0`),
+> 8 bots, identical cfg, zero crashes.** Control = `bot.cpp` @ `35bf82e7` (arrival fix, no Step 4).
+> Logs `step4ab-control.log` / `step4ab-step4.log`.
+>
+> | | control | **Step 4** | |
+> |---|---|---|---|
+> | **stuck-escape episodes** | 471 = **1.96/min** | 1422 = **5.91/min** | **3× WORSE** |
+> | outdoor presses / 1k legs | 47.2 | 60.8 | +29% |
+> | `via` episodes | 486 | **29** | −94% |
+> | contention | 84 | **0** | −100% |
+>
+> **Step 4 achieved its structural goal PERFECTLY and made the bots substantially worse.** The
+> committee did stand down — `via` collapsed 486 → 29 and contention went to *zero*, which is exactly
+> what handing legs to the engine was supposed to do. Look at the episode split: control was
+> 486 via + 471 escape; Step 4 was 29 via + **1422 escape**. Essentially every committee episode
+> became a stuck-escape. **We removed the navigator and left only the panic button.**
+>
+> **The corrected finding, and it is the durable one: `BOA_GetNextRoom != NO_PATH` proves a leg is
+> ROUTABLE, not that the engine can FLY it well.** The 08-06 probe was right that region-0 legs are
+> BOA-routable, and I generalised that into "the engine can handle them", which the data refutes. The
+> engine routes them and then its beeline takes bots into terrain the outdoor machinery used to route
+> around. Routability and flyability are different claims and the probe only ever measured the first.
+>
+> **This reopens plan arm (c)** — *region-0 with nothing covering ⇒ extend the outdoor lattice build to
+> region 0* — which the probe was read as having ruled out. It did not; it ruled out arm (a) only.
+> Region 0 needs **coverage**, not merely permission.
+>
+> **The 11-minute smoke actively misled**, and that is the process lesson worth keeping. It showed
+> outdoor presses *falling* 52%; at four hours they *rise* 29% normalised. Same code, opposite sign.
+> Short runs on this project have now produced a wrong verdict three separate times (the 4-round 2b-2
+> A/B, the 3-round Polaris scare, this). **Structural metrics — `via`, contention, the leg histogram —
+> read true at 11 minutes; behavioural metrics did not.**
+>
+> *What survives:* the instrumentation (the `accept-reclaimed` / `rej-boa-nopath` split is the cleanest
+> way to measure any future region-0 work) and the measurement that the committee's outdoor machinery
+> is **load-bearing, not scaffolding** — the single most useful thing learned this phase about what can
+> and cannot be deleted. Reverted in code; the plan text below is left as written so the reasoning that
+> led here stays visible.
+
+> **(superseded — the as-built record) STEP 4 BUILT 2026-08-08 (`BotBnodeLegOk` is now
+> `legacy_accept || BOA-routable`). MECHANICALLY CONFIRMED, NOT YET VALIDATED — one open signal.** Harness: robo-anarchy `d3.mn3`, the
 > probe's own (bots roam outdoors autonomously; headless co-op cannot). Control = the 08-06 probe log
 > on the same harness with the old gate.
 >
