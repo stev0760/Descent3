@@ -6064,14 +6064,18 @@ static void BotApplyThrust(int bot_index) {
         vector dest_pos = cur.portals[best_portal].path_pnt;
         int dest_room = cur.portals[best_portal].croom;
 
-        goal_info gi_info{};
-        gi_info.pos = dest_pos;
-        gi_info.roomnum = dest_room;
-        Bots[bot_index].pursuit_goal_index =
-            GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
-        Bots[bot_index].explore_dest_room = dest_room;
+        // Step 3 commit #2 (NAV_CONSOLIDATION_PLAN §4): the escape retarget dispatches through the
+        // single router entry instead of issuing raw. The escape still owns WHICH room — the
+        // unvisited-portal preference is knowledge the router doesn't have — but WHO FLIES the leg
+        // is the entry's decision, recorded there like every other leg. The old errand's death is
+        // recorded UNREACH *before* dispatch so the churn shape keeps its honest cause (the entry's
+        // own record would call it replacement). The timer is re-asserted to the escape's
+        // provisional TIME_MIN after dispatch — an escape destination is a way OUT, not an errand,
+        // and must stay cheap to supersede.
+        BotClearTravelDest(bot_index, TRAVEL_END_UNREACH);
+        bool esc_reissued = false;
+        BotSetRoutedGoal(bot_index, dest_room, dest_pos, &esc_reissued, TRAVEL_OWNER_EXPLORE);
         Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MIN;
-        BotSetTravelDest(bot_index, dest_room, TRAVEL_OWNER_EXPLORE, TRAVEL_END_UNREACH);
         escaped_via_portal = true;
         LOG_DEBUG.printf("BOT: '%s' stuck escape via portal → room %d (%s)", Bots[bot_index].callsign, dest_room,
                          best_is_unvisited ? "unvisited" : "visited");
