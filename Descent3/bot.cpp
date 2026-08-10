@@ -3111,11 +3111,29 @@ static void BotDoExploreRoaming(int bot_index) {
       // Phase 12: en-route via maintenance. The interior-obstacle press happens MID-room while
       // this branch is holding course (93% of pumphouse presses were in EXPLORE), so the
       // occlusion probe has to run here, not just at goal-issue time.
-      if (!OBJECT_OUTSIDE(obj) && BotBnodeNativeActive()) {
+      if (!OBJECT_OUTSIDE(obj) && Bots[bot_index].travel_dest_room >= 0 &&
+          !ROOMNUM_OUTSIDE(Bots[bot_index].travel_dest_room) && Rooms[Bots[bot_index].travel_dest_room].used) {
+        // Step 3 (NAV_CONSOLIDATION_PLAN §4): en-route maintenance IS dispatch. The live errand —
+        // the Task 2 intent (final dest + owner) — re-enters the single router entry every tick,
+        // exactly like carrier/escort/hold legs already do. The entry's en-route guard makes this a
+        // no-op while the current hop is live, progresses the next hop on wp arrival, re-issues if
+        // the goal lapsed, and runs via/seam/hop internally. This is the ONE commit where the
+        // roadmap substrate takes over interior explore-class legs from the raw engine-BOA goal, so
+        // the validation arm attributes the substrate shift to a single place. Task 2's "nothing
+        // reads intent back" contract is REVISED here by design — §4's diagram is intent → one
+        // entry, and this is that wire. Outdoor legs (either end) keep the legacy machinery below,
+        // untouched (operator guardrail: the outdoor scaffolding stays).
+        BotTravelOwner m_owner =
+            (Bots[bot_index].travel_owner >= 0) ? (BotTravelOwner)Bots[bot_index].travel_owner : TRAVEL_OWNER_EXPLORE;
+        bool m_reissued = false;
+        BotSetRoutedGoal(bot_index, Bots[bot_index].travel_dest_room,
+                         Rooms[Bots[bot_index].travel_dest_room].path_pnt, &m_reissued, m_owner);
+      } else if (!OBJECT_OUTSIDE(obj) && BotBnodeNativeActive()) {
         // $nav bnodesp: the engine's BNode path owns this leg — skip the via-point re-aim (that
         // IS the routing/via stack this bypass exists to disable, PLAN-coop-nav-rethink.md 9.5.3).
         // Only re-issue if the pursuit goal itself lapsed, and at the SAME far goal each time.
         // BotApplyThrust's stuck-escape stays armed — untouched here (9.5.3 dormant safety net).
+        // (Intent-less fallback since Step 3 — reachable when no interior errand is recorded.)
         int dest = Bots[bot_index].explore_dest_room;
         int &pgi = Bots[bot_index].pursuit_goal_index;
         if (!(pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)) {
@@ -3125,6 +3143,7 @@ static void BotDoExploreRoaming(int bot_index) {
           pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
         }
       } else if (!OBJECT_OUTSIDE(obj)) {
+        // (Intent-less fallback since Step 3 — reachable when no interior errand is recorded.)
         int dest = Bots[bot_index].explore_dest_room;
         int steer_room = -1;
         vector steer_pos = BotGetActiveSteerPoint(obj, Rooms[dest].path_pnt, dest, &steer_room);
