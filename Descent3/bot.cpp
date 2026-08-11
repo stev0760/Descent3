@@ -3120,7 +3120,17 @@ static void BotDoExploreRoaming(int bot_index) {
   // captures) — only the churn instrument saw it, which is what it was built for.
   int errand_room = (Bots[bot_index].travel_dest_room >= 0) ? Bots[bot_index].travel_dest_room
                                                             : Bots[bot_index].explore_dest_room;
-  if (Bots[bot_index].explore_dest_room >= 0 && Bots[bot_index].explore_room_timer > 0.0f) {
+  // AN OBJECTIVE ERRAND MUST RE-EVALUATE; AN EXPLORE ERRAND MUST NOT. The objective ROOM moves —
+  // the enemy flag gets taken, returned, or carried — so an objective intent held all the way to
+  // arrival is a trip to where the flag WAS. Holding it is the mirror-image error of the waypoint
+  // re-roll above, and arm 2 measured it precisely: objective-owned intents ending in `replacement`
+  // collapsed 530 -> 18 per battery and `objective nav ->` re-issues fell 3667 -> 866, costing
+  // captures (114 -> 100, Polaris conversion 48% -> 23%) while every other metric improved.
+  // Falling through re-enters the objective block below, which re-dispatches at the CURRENT room.
+  bool objective_moved = false;
+  if (Bots[bot_index].travel_owner == TRAVEL_OWNER_OBJECTIVE)
+    objective_moved = (BotGetObjectiveRoom(bot_index) != Bots[bot_index].travel_dest_room);
+  if (!objective_moved && Bots[bot_index].explore_dest_room >= 0 && Bots[bot_index].explore_room_timer > 0.0f) {
     if (OBJECT_OUTSIDE(obj) || obj->roomnum != errand_room) {
       // Phase 12: en-route via maintenance. The interior-obstacle press happens MID-room while
       // this branch is holding course (93% of pumphouse presses were in EXPLORE), so the
