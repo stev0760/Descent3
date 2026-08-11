@@ -62,12 +62,21 @@ Manifest format (JSON):
     {"name": "B-outroute-on", "toggles": {"outroute": true},  "rounds": 4}
   ],
   "navdump": {"Plutonium": 480, "Polaris": 480},
-  "max_minutes": 180
+  "max_minutes": 180,
+  "ab": {"control_log": "/path/to/control.log", "pin": "Level1", "expect_rounds": 12}
 }
 ```
 
 - Phases run in order; toggles flip at a round boundary (never mid-round — a mixed round
   is unusable). A phase ends on `"rounds"` or `"minutes"`, whichever comes first.
+- **`ab` (optional but expected on any comparison arm): the driver runs `ab_guard.py` at
+  teardown**, writes `<log>-guard.txt`, and stamps `guard=PASS|FAIL` onto `SOAK_DONE`.
+  `control_log` = the arm you will compare against (omit it and the run self-compares, which
+  still checks the level pin); `pin` only when the experiment genuinely claims one level
+  (bedlam ROTATES — no pin there); `expect_rounds` fails a truncated, non-comparable arm.
+  **Reading numbers out of a `GUARD_FAIL` arm is a process violation, not a judgement call** —
+  fix the harness or segment the data first. This exists because the guard used to be a tool
+  someone had to remember to run, which is how the Step 4 A/B shipped a confident wrong verdict.
 - Toggle names = the `$nav` table names (`outroute`, `outlattice`, `wind`, `seam`,
   `replan`, `grid`, ... — bare `$nav` over telnet prints the live table).
 - `navdump`: map → seconds into that map's round to dump (delay matters: the outdoor

@@ -13,7 +13,9 @@ Emits line-oriented events on stdout so an agent (or a human tail) can react:
     ROUND_END n=<i> map=<level>
     NAVDUMP map=<level> file=<name>
     PHASE_END name=<name> rounds=<n>
-    SOAK_DONE log=<path> rounds=<n>
+    GUARD_PASS/GUARD_FAIL report=<path>          (only when the manifest has an "ab" block)
+    GUARD_DETAIL <the failing guard line>
+    SOAK_DONE log=<path> rounds=<n> [guard=PASS|FAIL]
     SOAK_ERROR <message>
 
 Manifest (JSON):
@@ -27,11 +29,24 @@ Manifest (JSON):
     {"name": "B-outroute-on",  "toggles": {"outroute": true},  "minutes": 45}
   ],                                             // a phase ends on rounds OR minutes, whichever first
   "navdump": {"Polaris": 480},                   // map -> seconds into the round to dump (after bots fly)
-  "max_minutes": 180                             // hard wall-clock stop (safety net)
+  "max_minutes": 180,                            // hard wall-clock stop (safety net)
+  "ab": {                                        // OPTIONAL — makes this run a guarded A/B arm
+    "control_log": "/path/to/control.log",       //   omit for a single arm: self-compare still checks the pin
+    "pin": "Level1",                             //   expected level, when the experiment claims one
+    "expect_rounds": 12                          //   a truncated arm is not comparable — fails the guard
+  }
 }
 
 Analysis is deliberately NOT here: run tools/analyze_bot_log.py and
 tools/flag_conversion.py on the captured log afterward.
+
+EXCEPT the structural guard, which IS here on purpose (2026-08-11). tools/ab_guard.py was written
+after a Step 4 A/B produced a confident, wrong verdict three ways at once — and then sat unused as a
+tool someone had to REMEMBER to run. An external audit called that out as a live process defect, and
+it is: a guard you must remember is a guard that fails exactly when you are excited about a result.
+With an "ab" block the driver now runs it at teardown, writes the report next to the log, and stamps
+the verdict onto SOAK_DONE, so a failed precondition is impossible to miss and impossible to omit
+from a report. Reading numbers from a GUARD_FAIL arm is a process violation, not a judgement call.
 """
 
 import json
@@ -83,6 +98,50 @@ class Console:
             self.sock.close()
         except OSError:
             pass
+
+
+def run_ab_guard(mf, log_path, total_rounds):
+    """Run tools/ab_guard.py at teardown when the manifest declares an "ab" block.
+
+    Returns "PASS"/"FAIL", or None when the manifest opts out (no "ab" key). A missing control log
+    is NOT an opt-out: the run is compared against itself, which still verifies the level pin and
+    surfaces reset boundaries — the two failures that silently invalidated the Step 4 arms.
+    """
+    ab = mf.get("ab")
+    if not ab:
+        return None
+
+    if ab.get("expect_rounds") and total_rounds < int(ab["expect_rounds"]):
+        emit("GUARD_FAIL report=- (arm ended at %d of %d expected rounds — not comparable)"
+             % (total_rounds, int(ab["expect_rounds"])))
+        return "FAIL"
+
+    guard = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ab_guard.py")
+    if not os.path.exists(guard):
+        emit("SOAK_ERROR ab_guard.py missing — cannot verify preconditions")
+        return "FAIL"
+
+    control = ab.get("control_log") or log_path
+    cmd = [sys.executable, guard]
+    if ab.get("pin"):
+        cmd += ["--pin", str(ab["pin"])]
+    cmd += [control, log_path]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+    except Exception as exc:  # a guard that cannot run is a failed guard, never a silent pass
+        emit("GUARD_FAIL report=- (%s)" % exc)
+        return "FAIL"
+
+    report = log_path[:-4] + "-guard.txt" if log_path.endswith(".log") else log_path + "-guard.txt"
+    with open(report, "w") as fh:
+        fh.write(r.stdout + r.stderr)
+    verdict = "PASS" if r.returncode == 0 else "FAIL"
+    emit("GUARD_%s report=%s" % (verdict, report))
+    if verdict == "FAIL":
+        for line in r.stdout.splitlines():
+            if "FAIL" in line or "^^" in line:
+                emit("GUARD_DETAIL %s" % line.strip())
+    return verdict
 
 
 def main():
@@ -224,7 +283,8 @@ def main():
             pass
         shutdown()
 
-    emit("SOAK_DONE log=%s rounds=%d" % (log_path, total_rounds))
+    verdict = run_ab_guard(mf, log_path, total_rounds)
+    emit("SOAK_DONE log=%s rounds=%d%s" % (log_path, total_rounds, " guard=%s" % verdict if verdict else ""))
 
 
 if __name__ == "__main__":
