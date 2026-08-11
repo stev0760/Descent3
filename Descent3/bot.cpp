@@ -3422,11 +3422,13 @@ static void BotDoExploreRoaming(int bot_index) {
     if (!BotHasVisitedRoom(bot_index, r))
       score += 100;
 
-    // Penalize rooms other bots are already heading to (anti-clustering)
+    // Penalize rooms other bots are already heading to (anti-clustering). Since Step 3, a routed
+    // bot's explore_dest_room holds its current WAYPOINT — the errand lives in travel intent — so
+    // both are checked or the scorer silently loses anti-clustering on routed bots.
     for (int b = 0; b < MAX_BOTS; b++) {
       if (!Bots[b].active || b == bot_index)
         continue;
-      if (Bots[b].explore_dest_room == r)
+      if (Bots[b].explore_dest_room == r || Bots[b].travel_dest_room == r)
         score -= 40;
     }
 
@@ -3457,18 +3459,32 @@ static void BotDoExploreRoaming(int bot_index) {
   }
 
   // Clear old explore goal and set new AIG_GET_TO_POS destination
-  int &pgi = Bots[bot_index].pursuit_goal_index;
-  if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
-    GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
-  pgi = -1;
+  if (!is_outdoor) {
+    // Step 3 #4: interior-origin explore dispatches through the router entry — the highest-traffic
+    // conversion, last by design, with the churn counter watching it. The old errand ends TIMEOUT
+    // (the re-roll cause; arrival upgrade happens inside the clear) BEFORE dispatch so the entry's
+    // default doesn't relabel it. The distance-scaled window below is re-asserted after dispatch:
+    // explore pacing (6-20s by distance) is the site's semantics; the entry's MAX default would
+    // slow near-hop re-rolls.
+    BotClearTravelDest(bot_index, TRAVEL_END_TIMEOUT);
+    bool ex_reissued = false;
+    BotSetRoutedGoal(bot_index, dest_room, dest_pos, &ex_reissued, TRAVEL_OWNER_EXPLORE);
+  } else {
+    // Outdoor-origin explore: legacy raw issue, unchanged — the entrance-portal approach machinery
+    // and outdoor via own these legs until the outdoor-coverage era (arm (c)).
+    int &pgi = Bots[bot_index].pursuit_goal_index;
+    if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+      GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+    pgi = -1;
 
-  goal_info gi_info{};
-  gi_info.pos = dest_pos;
-  gi_info.roomnum = dest_room;
+    goal_info gi_info{};
+    gi_info.pos = dest_pos;
+    gi_info.roomnum = dest_room;
 
-  pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
-  Bots[bot_index].explore_dest_room = dest_room;
-  BotSetTravelDest(bot_index, dest_room, TRAVEL_OWNER_EXPLORE, TRAVEL_END_TIMEOUT);
+    pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
+    Bots[bot_index].explore_dest_room = dest_room;
+    BotSetTravelDest(bot_index, dest_room, TRAVEL_OWNER_EXPLORE, TRAVEL_END_TIMEOUT);
+  }
 
   // Scale timer based on BOA distance estimate (Phase 4.0)
   float est_dist = 0.0f;
