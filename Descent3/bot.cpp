@@ -2835,7 +2835,10 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   // while the explore_dest_room writes below are per-waypoint bookkeeping the churn metric ignores.
   // Owner comes from the caller (this parameter IS Step 3's dispatch seam, cut early). Same-room
   // re-issues dedup inside the setter, so per-tick callers tracking a moving target don't spam.
-  BotSetTravelDest(bot_index, goal_room, owner, TRAVEL_END_REPLACEMENT);
+  // Intent is INTERIOR-ONLY: outdoor "rooms" are terrain cells, not room-graph errands — an outdoor
+  // goal ends the interior errand (the rule the explore sites used before Step 3), and Step 3's
+  // en-route re-dispatch reads intent, so a terrain index here would poison Rooms[] lookups.
+  BotSetTravelDest(bot_index, ROOMNUM_OUTSIDE(goal_room) ? -1 : goal_room, owner, TRAVEL_END_REPLACEMENT);
 
   // $nav bnodesp bypass (PLAN-coop-nav-rethink.md): on a BNode-rich map (SP campaign) hand the
   // engine the FAR goal directly and let AIPathAllocPath -> AIGenerateBNodePath build the full
@@ -3183,20 +3186,31 @@ static void BotDoExploreRoaming(int bot_index) {
 
   // If we have a last-known target position (from HUNT timeout), navigate there first.
   if (Bots[bot_index].last_target_room >= 0) {
-    int &pgi = Bots[bot_index].pursuit_goal_index;
-    if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
-      GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
-    pgi = -1;
+    if (!ROOMNUM_OUTSIDE(Bots[bot_index].last_target_room)) {
+      // Step 3 #3: the interior chase dispatches through the router entry. Intent (OPPORTUNISM —
+      // combat intel, not exploration) carries the final room; #2's en-route maintenance progresses
+      // the hops from there, so the chase survives past the first waypoint on roadmap routes. The
+      // entry owns pgi, bookkeeping and the timer.
+      bool lt_reissued = false;
+      BotSetRoutedGoal(bot_index, Bots[bot_index].last_target_room, Bots[bot_index].last_target_pos, &lt_reissued,
+                       TRAVEL_OWNER_OPPORTUNISM);
+    } else {
+      // Outdoor last-known position: legacy raw issue, unchanged — terrain targets are steered, not
+      // roomed, and stay outside the entry until the outdoor-coverage era (arm (c)).
+      int &pgi = Bots[bot_index].pursuit_goal_index;
+      if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+        GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+      pgi = -1;
 
-    goal_info gi_info{};
-    gi_info.pos = Bots[bot_index].last_target_pos;
-    gi_info.roomnum = Bots[bot_index].last_target_room;
+      goal_info gi_info{};
+      gi_info.pos = Bots[bot_index].last_target_pos;
+      gi_info.roomnum = Bots[bot_index].last_target_room;
 
-    pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
-    Bots[bot_index].explore_dest_room =
-        ROOMNUM_OUTSIDE(Bots[bot_index].last_target_room) ? -1 : BOA_INDEX(Bots[bot_index].last_target_room);
-    BotSetTravelDest(bot_index, Bots[bot_index].explore_dest_room, TRAVEL_OWNER_OPPORTUNISM, TRAVEL_END_REPLACEMENT);
-    Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
+      pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
+      Bots[bot_index].explore_dest_room = -1;
+      BotClearTravelDest(bot_index, TRAVEL_END_REPLACEMENT);
+      Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
+    }
 
     LOG_DEBUG.printf("BOT: '%s' explore -> last-known target pos (room %d)", Bots[bot_index].callsign,
                      Bots[bot_index].last_target_room);
