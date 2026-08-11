@@ -601,6 +601,54 @@ only ~12–20%. Bot lifetime under 4-team crossfire — not navigation — bound
 these maps. This is the yardstick Step 3's behavior-neutral gates are judged against: same owner
 mix, same end-cause shape, same arrival share, per commit. **Task 2 is CLOSED; Step 3 is next.**
 
+---
+
+## 0.88 Step 3 as-built (2026-08-10/11) — five commits, and the churn gate earning its keep
+
+**The conversion set (interior legs only; outdoor machinery untouched per the operator guardrail):**
+
+| # | Commit | Site | Semantic delta |
+|---|---|---|---|
+| 1 | `7f8b1d3e` | stuck-escape portal retarget | escape picks the ROOM, entry picks the door (documented, low-rate) |
+| 2 | `ed6ea2eb` | explore en-route maintenance | **the substrate shift** — the live errand re-enters the entry each tick instead of maintaining a raw engine goal |
+| 3 | `6102ce36` | last-known-target chase (interior) | hops now progress; the raw goal relied on engine BOA end-to-end |
+| 4 | `675fe909` | random explore (interior origin) | highest-traffic site, last by design; pacing + anti-clustering preserved explicitly |
+| 5 | `8490e111` | explore arrival test | **the fix arm 1 forced** — see below |
+
+Deferred by design: powerup chase (2b-3 detour-suspension interaction, its own commit) and the
+escort pair (cockpit-gated since §0.8 falsified their MP-inert premise). #2 formally revises Task 2's
+"nothing reads intent back" note — §4's model *is* intent → one entry, and #2 is that wire.
+
+**ARM 1 (`675fe909`, 12 rounds, control = the same-day census battery): SCORING PASSED, CHURN SHAPE
+FAILED — and the failure is the instrument's first real catch.**
+
+- Passed: 113 vs 114 bot captures; conversion in family per map; hard stucks 1 vs 1, soft 19 vs 25;
+  zero crashes; **`ab_guard` SAFE TO INTERPRET** (identical 13-level sequences, identical reset
+  counts — the arms are structurally comparable, which is what the guard exists to prove).
+- Failed: intent events ~doubled on every map (1190→2001, 887→1459, 1704→2636, 1405→2707), median
+  intent life halved (13.5→8.2, 18.4→11.2, 9.7→4.9, 13.4→4.1s), **timeout displaced death as the
+  dominant end cause**, explore re-picks 1122→2458.
+
+**Mechanism (source + log, not inferred):** the entry writes the CURRENT WAYPOINT to
+`explore_dest_room`; the explore arrival test still compared against that field. So a bot "arrived"
+at the **first hop** of every multi-hop errand and fell through to pick a fresh random destination —
+**the destination re-roll the entire intent layer exists to prevent, reintroduced one level down.**
+Fix `8490e111`: arrival tests the errand (travel intent) when one is live, legacy field otherwise.
+
+**The methodological point, worth more than the fix.** Scoring was neutral — 113 vs 114 captures,
+stucks equal-or-better. A capture-gated verdict would have PASSED this build and shipped a silent
+regression of the exact layer this phase is about. The churn instrument caught it on its first
+verdict-length outing, which retroactively justifies building the metric *before* the refactor
+rather than after. **Standing rule: a Step 3 commit is not validated by scoring neutrality alone —
+the churn shape is a first-class gate.**
+
+Arm 2 (`8490e111`) re-runs the identical manifest; pass = churn shape back in the control's family
+(events/rnd, median held, end-cause ordering) with scoring and stucks held.
+
+---
+
+## 1. The committee census (who can seize the wheel during travel)
+
 **Goal-writers** — all deliver through one legitimate channel (`GoalAddGoal(AIG_GET_TO_POS/OBJ)`).
 The channel is not the problem; the number of hands on it is.
 
