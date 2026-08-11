@@ -642,8 +642,31 @@ verdict-length outing, which retroactively justifies building the metric *before
 rather than after. **Standing rule: a Step 3 commit is not validated by scoring neutrality alone —
 the churn shape is a first-class gate.**
 
-Arm 2 (`8490e111`) re-runs the identical manifest; pass = churn shape back in the control's family
-(events/rnd, median held, end-cause ordering) with scoring and stucks held.
+**ARM 2 (`8490e111`): CHURN FIXED — AND IT COST CAPTURES, which found the opposite pole.**
+
+- Churn passed, better than control: median errand life **rose** (17.8/16.9/11.4/18.7s vs
+  13.5/18.4/9.7/13.4), timeout ends collapsed (Polaris 160→13, QuadSomniac 78→1), arrivals rose
+  (155→179, 91→122, 106→139, 217→224), explore re-picks 1122→705. Escalations 26→18, soft 25→16,
+  hard 1→2. Zero crashes; guard SAFE TO INTERPRET.
+- Failed: **captures 114→100**, concentrated on Polaris — conversion 48%→23%, consistent across all
+  four teams (42→29, 56→8, 41→35, 55→21), carrier deaths 46→73.
+
+**Mechanism, measured not inferred:** objective-owned intents ending in `replacement` collapsed
+**530→18**, and `objective nav ->` re-issues fell **3667→866**. #5 stopped objective errands from
+re-evaluating — but the objective ROOM MOVES (flag taken, returned, carried), so an objective intent
+held to arrival is a trip to where the flag *was*.
+
+**The two poles, now both measured on the same instrument.** #4 exposed the *amnesia* pole (errand
+re-rolled at every hop: events doubled, life halved, captures flat). #5 fixed that and exposed the
+*stubbornness* pole (errand held past its own expiry: churn beautiful, captures down 12%). This is
+the same amnesia/stubbornness axis the 2a→2b nights mapped at goal-lifetime scale, reappearing one
+level up at errand scale — and neither pole is visible in captures alone: pole 1 was capture-neutral,
+pole 2 was churn-perfect. **Only holding both gates at once distinguishes them.**
+
+Fix `74dcd573` (#6): an objective-owned errand whose room no longer matches the live objective falls
+through and re-dispatches at the current room; explore errands keep their persistence. Arm 3 re-runs
+the identical manifest — pass = arm 2's churn and stuck gains held **with** captures back in the
+control's family.
 
 ---
 
