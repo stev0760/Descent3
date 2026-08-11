@@ -3108,9 +3108,20 @@ static void BotDoExploreRoaming(int bot_index) {
   if (!OBJECT_OUTSIDE(obj))
     BotRecordVisitedRoom(bot_index, obj->roomnum);
 
-  // Still navigating to current destination — don't change course until we arrive or time out
+  // Still navigating to current destination — don't change course until we arrive or time out.
+  //
+  // ARRIVAL IS TESTED AGAINST THE ERRAND, NOT THE WAYPOINT. Since Step 3 #4 routed explore through
+  // the dispatch entry, `explore_dest_room` holds the entry's CURRENT WAYPOINT (an adjacent room),
+  // while the errand — where the bot actually means to end up — lives in travel intent. Testing the
+  // waypoint declared "arrived" at the FIRST HOP of every multi-hop errand and fell through to pick
+  // a fresh random destination: measured in the first Step 3 validation arm as explore re-picks
+  // 1122 -> 2458 and median intent life 13.5s -> 8.2s, i.e. the destination re-roll that the whole
+  // intent layer exists to prevent, reintroduced one level down. Scoring did not move (113 vs 114
+  // captures) — only the churn instrument saw it, which is what it was built for.
+  int errand_room = (Bots[bot_index].travel_dest_room >= 0) ? Bots[bot_index].travel_dest_room
+                                                            : Bots[bot_index].explore_dest_room;
   if (Bots[bot_index].explore_dest_room >= 0 && Bots[bot_index].explore_room_timer > 0.0f) {
-    if (OBJECT_OUTSIDE(obj) || obj->roomnum != Bots[bot_index].explore_dest_room) {
+    if (OBJECT_OUTSIDE(obj) || obj->roomnum != errand_room) {
       // Phase 12: en-route via maintenance. The interior-obstacle press happens MID-room while
       // this branch is holding course (93% of pumphouse presses were in EXPLORE), so the
       // occlusion probe has to run here, not just at goal-issue time.
