@@ -25,6 +25,18 @@ errand. The log analyzer summarizes it per map. First finding from the new numbe
 four-team maps the most common way an errand ends is the bot getting shot, not the bot getting
 lost — useful truth to have in writing before tuning anything.
 
+**One navigator decides where a bot travels.** Indoors, the parts of the bot that used to each issue
+their own travel orders — the escape reflex when a bot frees itself, the chase after a target it lost
+sight of, ordinary roaming — now go through a single planner that decides how the trip is flown and
+records the decision. Nothing about the map data or the outdoor navigation changed; this is about how
+many hands were on the wheel. Two problems surfaced during testing and were fixed: bots were treating
+each waypoint along a route as if they had arrived (and picking somewhere new to go), and then, after
+that fix, holding onto an objective long after the flag had moved. Travel now persists when it should
+and re-thinks when it should. *Still under evaluation: on a fixed test run, captures came out lower
+than the previous build while carriers got closer to home before dying and fights got more frequent —
+which may mean defences are working rather than navigation failing. This is being flown by hand
+before any conclusion.*
+
 **Bots no longer "arrive" through walls.** Found live: a bot ordered to follow or hold position
 decided it had arrived by straight-line distance alone — twenty-five units away *through a wall*
 counted as "right behind you," so the bot parked, stopped navigating, and couldn't even report itself

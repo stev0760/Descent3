@@ -664,9 +664,66 @@ level up at errand scale — and neither pole is visible in captures alone: pole
 pole 2 was churn-perfect. **Only holding both gates at once distinguishes them.**
 
 Fix `74dcd573` (#6): an objective-owned errand whose room no longer matches the live objective falls
-through and re-dispatches at the current room; explore errands keep their persistence. Arm 3 re-runs
-the identical manifest — pass = arm 2's churn and stuck gains held **with** captures back in the
-control's family.
+through and re-dispatches at the current room; explore errands keep their persistence.
+
+**ARM 3 (`74dcd573`): the fix did its structural job — and the arm is GUARD-FAILED, so its stuck
+comparison is not a population verdict.**
+
+| arm | build | caps | kills | escal/hard | `replacement` ends | churn shape |
+|---|---|---|---|---|---|---|
+| control | `58ddbb9c` | **114** | 138 | 26 / 1 | 1003 | baseline |
+| 1 | `675fe909` | 113 | 145 | 20 / 1 | — | AMNESIA (events 2×, life ½) |
+| 2 | `8490e111` | 100 | 163 | 18 / 2 | 516 | STUBBORN (objective stale) |
+| 3 | `74dcd573` | 98 | 126 | 49 / 4 | **1084** | ≈ control |
+
+- **#6 worked as designed:** objective re-evaluation restored (`replacement` 516 → 1084 ≈ control's
+  1003), arrivals comparable (166/117/111/216 vs 155/91/106/217), timeouts *below* control, median
+  errand life back in family. The churn gate — the one arm 1 failed — passes.
+- **`GUARD_FAIL`, first live firing of the integrated guard:** `Zed[BOT]` alone is **74%** of the
+  escalation delta; excluding it, control 22 vs test 28. **19 of Zed's 21 escalations are in
+  Apparition room 0**, median `net_disp` 16 — *circling, not pinned* (the §7.2 orbit class, not a
+  wedge). Per the standing rule this arm's escalation totals are NOT reportable as a population
+  result. Registered as its own signature: **Apparition room 0 circling cluster.**
+- **The capture delta is UNEXPLAINED, and that is the honest state.** It appeared in arm 2 (100) and
+  persisted in arm 3 (98) — so it is *not* caused by objective staleness, which arm 3 demonstrably
+  fixed. No measured mechanism accounts for it.
+
+**Evidence that argues AGAINST reading it as a nav regression** (operator's 08-11 ruling that captures
+are one variable among many): **carrier death distance moved CLOSER to home** — Polaris 517u → 471u,
+Apparition 586u → 502u. Under `matcen-triage`'s own rule, near-home carrier deaths mean the route
+works and carriers are being *intercepted*, i.e. a defence/combat outcome, not a return-nav failure.
+Carrier deaths rose (Polaris 46 → 77) while carriers got *further along the route*. That is the
+signature of more contested play, not of bots getting lost.
+
+### Step 3 verdict: STRUCTURALLY LANDED, NOT VALIDATED
+
+The consolidation itself is done and behaving: one dispatch entry owns interior travel legs, the
+churn shape is healthy, objective responsiveness is restored, hard pins remain low single digits.
+What is **not** established is that the capture level is unchanged, and one arm is guard-failed.
+**No further code changes** (operator, 08-11) — the next instruments are a cockpit session and an
+independent review, not another tuning pass. Two fixes have already been spent on this interaction;
+a third without new evidence would be guessing.
+
+**Open questions, for the cockpit and for review:**
+
+1. Is the ~14% capture delta real, or 3-rounds-per-map noise? (Per-map history spans 8.0–15.6
+   caps/rnd on Polaris alone across validated builds.)
+2. Does the near-home death shift mean defence is working — i.e. is the game *better* at 98 captures
+   than at 114?
+3. Apparition room 0: new circling signature, or the known toroidal-orbit class on a new map?
+4. Does anything in #2 (en-route re-dispatch) change objective *delivery* quality despite correct
+   re-evaluation — e.g. hop granularity on the final approach?
+
+---
+
+## 0.89 Provenance correction — the 08-10/11 commits are Opus 5, not Fable 5
+
+Session model changed **Fable 5 → Opus 5** partway through Step 3 (operator, 08-11). Commits
+`8490e111`, `ffa3a73b`, `ed8f4ac0`, `74dcd573`, `d786135c` carry a `Co-Authored-By: Claude Fable 5`
+trailer and are in fact **Opus 5** work; everything up to and including `675fe909` is Fable 5.
+Published history is left intact (same handling as §0.85) and this note is the correction of record.
+The recurring lesson stands: **provenance is verified from the artifact, never from the label** —
+the same failure mode as §0.85's silent model fallback and the Step 4 level pin.
 
 ---
 
