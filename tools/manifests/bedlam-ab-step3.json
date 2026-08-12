@@ -1,0 +1,25 @@
+{
+  "_comment": "BEDLAM REPLICATION ARM B (STEP 3 74dcd573). Generated after arm A so the guard compares against arm A's real log. Only the build differs.",
+  "server_dir": "/home/steve/Projects/mine/Descent3-bot-testing-client/Descent3_testing",
+  "launch": [
+    "./Descent3",
+    "-dedicated",
+    "./soak-dedicated-bedlam4t.cfg"
+  ],
+  "telnet_port": 2092,
+  "telnet_password": "test",
+  "phases": [
+    {
+      "name": "bedlam-r2-step3-74dcd573",
+      "toggles": {},
+      "rounds": 12,
+      "minutes": 200
+    }
+  ],
+  "navdump": {},
+  "max_minutes": 210,
+  "ab": {
+    "control_log": "/home/steve/Projects/mine/Descent3-bot-testing-client/Descent3_testing/bedlam-r2-control-20260811.log",
+    "expect_rounds": 12
+  }
+}

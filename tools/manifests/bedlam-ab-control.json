@@ -1,0 +1,11 @@
+{
+  "_comment": "BEDLAM REPLICATION ARM A (CONTROL 58ddbb9c) — 2026-08-11. Operator hypothesis: the Step 3 capture variance is OUTDOOR. Existing evidence: indoor QuadSomniac conversion is flat across every build (9/10/9%) and indoor KegD3 improved +16%, while outdoor maps swing (Plutonium 13-25%) and Polaris drops consistently (47% -> 26% -> 26%). This run doubles the per-map sample to test whether the Polaris drop REPLICATES a third time or regresses to the mean. No pin: bedlam rotates by design, so the guard checks equal level sequences + outlier dominance instead.",
+  "server_dir": "/home/steve/Projects/mine/Descent3-bot-testing-client/Descent3_testing",
+  "launch": ["./Descent3", "-dedicated", "./soak-dedicated-bedlam4t.cfg"],
+  "telnet_port": 2092,
+  "telnet_password": "test",
+  "phases": [{"name": "bedlam-r2-control-58ddbb9c", "toggles": {}, "rounds": 12}],
+  "navdump": {},
+  "max_minutes": 210,
+  "ab": {"expect_rounds": 12}
+}
