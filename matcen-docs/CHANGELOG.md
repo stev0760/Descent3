@@ -32,10 +32,20 @@ records the decision. Nothing about the map data or the outdoor navigation chang
 many hands were on the wheel. Two problems surfaced during testing and were fixed: bots were treating
 each waypoint along a route as if they had arrived (and picking somewhere new to go), and then, after
 that fix, holding onto an objective long after the flag had moved. Travel now persists when it should
-and re-thinks when it should. *Still under evaluation: on a fixed test run, captures came out lower
-than the previous build while carriers got closer to home before dying and fights got more frequent —
-which may mean defences are working rather than navigation failing. This is being flown by hand
-before any conclusion.*
+and re-thinks when it should.
+
+**Bots reach where they set out for, and give up on the clock far less.** Across four different map
+pools, the share of journeys that end in the bot actually arriving went up and the share that end
+in "I've been at this too long, pick somewhere else" fell — on one pool from 41% of all journeys down
+to 9%. On a single-map test where every round is flown over identical ground, captures went from 131
+to 152 and the number of bots genuinely wedged against geometry nearly halved. A second indoor pool
+halved its wedge count too. This is the payoff the rework was for.
+
+**One caution for anyone comparing their own server logs.** Scores on open outdoor maps swing widely
+from night to night on their own. Running the *same* build twice on different evenings moved one
+map's flag-conversion rate by ten points with no code change at all — which is bigger than most of
+the effects worth chasing. If you are comparing two builds, run them back to back the same evening;
+otherwise the weather will out-vote the change.
 
 **Bots no longer "arrive" through walls.** Found live: a bot ordered to follow or hold position
 decided it had arrived by straight-line distance alone — twenty-five units away *through a wall*
@@ -44,9 +54,13 @@ stuck. Arrival is now a real reachability test (same room, or a clear line the s
 actually fly — the same width check the engine uses), so an ordered bot keeps coming until it is
 genuinely with you, and "Can't reach you!" works again when it truly can't.
 
-**Under investigation:** on Polaris specifically, bots grab the enemy flag more often than before but
-score it less often — a problem on the way home rather than on the way out. Every other map on the
-test set improved.
+**Closed:** the long-running "Polaris scores worse than it should" investigation. Measured properly —
+same build, same night, back to back — Polaris performs the same as every other map on the test set.
+The apparent regression was the night-to-night swing described above, seen through two runs made on
+different days.
+
+**Still open in this build:** one room on Plutonium where bots reliably wedge, and a third game mode
+(Entropy) whose test run was cut short by a too-short time budget and still needs to be repeated.
 
 ## [0.9.10] - 2026-08-08
 

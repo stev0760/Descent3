@@ -1,12 +1,18 @@
 # Step 3 (nav dispatch consolidation) — independent review request
 
-**Date:** 2026-08-11 · **Branch:** `feature/multiplayer-bots` · **Head at writing:** `d786135c` +
-this document · **Build under test:** `74dcd573` (deployed to the test server)
-**Status:** structurally landed, NOT validated. **No further code changes are authorised** — the
-operator flies it next, and this document is the brief for an independent model review.
+**Date:** 2026-08-11, **updated 2026-08-12** · **Branch:** `feature/multiplayer-bots` · **Build under
+test:** `74dcd573` (deployed to the test server)
+**Status:** structurally landed and **VALIDATED on the layer it changed** (§3.5 — added 08-12, four
+paired data sets). **No further code changes are authorised** — the operator flies it next, and this
+document is the brief for an independent model review.
 
 This is a self-contained brief. Background lives in `NAV_CONSOLIDATION_PLAN.md` (plan of record,
-§0.86–0.89 are the last three days) and `NAVIGATION.md` §7.0 (live nav status).
+§0.86–0.90 are the last four days) and `NAVIGATION.md` §7.0 (live nav status).
+
+> **Read §3.5 before §3.** §3 records the evidence as it stood on 08-11, including a capture delta
+> that looked unexplained. §3.5 shows that delta was an artifact of comparing arms measured on
+> different days. §3 is left intact because the reasoning under uncertainty is part of what is being
+> reviewed.
 
 ---
 
@@ -82,12 +88,50 @@ home** (Polaris 517u→471u, Apparition 586u→502u) while carrier deaths rose (
 **intercepted** — a defence/combat outcome, not return-nav failure. The operator's reading is that
 more contested play may be *better*, not worse.
 
+## 3.5 What the next day's runs showed (added 2026-08-12; full detail in §0.90)
+
+No code changed. Four more paired data sets, zero crashes, guard at every teardown.
+
+**The capture delta was a cross-day artifact.** §3's control ran 08-10, arms 2–3 ran 08-11. Measuring
+the *control build against itself* across those days: bedlam Polaris conversion **47% → 37%** on
+picks 91 vs 90 — **10.6 points of swing with zero code change.** A same-evening replication A/B (12
+rounds each, only the build differing) then put conversion flat on every map: Apparition 34/36%,
+Plutonium 26/24%, QuadSomniac 7/8%, Polaris 36/35%; captures 114 vs 110; kills 129 vs 131.
+
+**Step 3 measured on its own layer, four independent pools** (arrival / timeout share of finished
+travel intents — the instrument Task 2 built for this):
+
+| pool (paired) | arrival share | timeout share |
+|---|---|---|
+| bsidectf | 7.3% → **12.4%** | 41.0% → **9.3%** |
+| Fellowship | 8.7% → **13.2%** | 19.8% → **10.4%** |
+| KegD3 | 17.0% → **19.9%** | 14.2% → **12.6%** |
+| bedlam Polaris | 18.0% → **22.5%** | 14.0% → **9.7%** |
+
+`DEST_CHURN` fires on 3 of 3 bsidectf maps on control, **0 of 3** on Step 3. Scoring: KegD3 (single
+map, identical geometry every round) **captures 131 → 152, hard pins 29 → 16**; bsidectf hard pins
+**62 → 33**. Both survive outlier exclusion; both arms guard-flagged on outlier dominance and were
+read segmented, per the project rule.
+
+**Caveats a reviewer should test rather than take on trust.** Step 3 moved the sites that *record*
+errand ends. `unreach` is **not** cross-build comparable (unconditional clear at `bot.cpp:6145` vs a
+deduped set at `58ddbb9c:6074`) and nothing above rests on it. The two classes that do carry claims
+are biased *against* the finding — HEAD over-counts `TIMEOUT` relative to control (`bot.cpp:3490` vs
+`58ddbb9c:3438`) and #5 made the arrival test stricter — so both reads are conservative. **Checking
+that reasoning is a legitimate use of this review.**
+
+**Also recorded as an error:** the Fellowship arm (9 rounds over 9 maps) is too thin to read as a
+build comparison and should not be treated as one.
+
 ## 4. What review is actually wanted
 
 Not "make navigation better" and not "finish the consolidation." Specifically:
 
-1. **Is the capture delta real or sampling noise?** 3 rounds per map; Polaris alone has spanned
-   8.0–15.6 caps/rnd across validated builds. What would settle it cheaply and correctly?
+1. ~~**Is the capture delta real or sampling noise?**~~ **ANSWERED 08-12 (§3.5): neither — it was a
+   cross-day measurement artifact**, and the same-day paired replication shows conversion flat. The
+   live question that replaces it: **is there a class of comparison this project still makes that has
+   the same defect?** `ab_guard` checks structural comparability (level sequence, reset counts) but
+   says nothing about *when* the arms were measured.
 2. **Is there a mechanism connecting #2 (en-route re-dispatch) to objective delivery quality** that
    the current instruments would not show — e.g. final-approach hop granularity, waypoint delivery
    vs whole-route delivery for carriers?
@@ -122,6 +166,13 @@ python3 tools/flag_conversion.py <log>     # primary short-run metric
 python3 tools/ab_guard.py <control> <test> # preconditions; exit 1 = do not interpret
 ```
 
-Logs: `soak-20260810T064320.log` (control), `step3-arm1-churnfail-20260810.log`,
-`step3-arm2-objstale-20260811.log`, `soak-20260811T042629.log` (arm 3) — in the test-server
-directory, with `soak-20260811T042629-guard.txt` beside the last.
+Logs (all in the test-server directory, `-guard.txt` beside each where the guard ran):
+
+| purpose | control | Step 3 |
+|---|---|---|
+| §3 four-arm series | `soak-20260810T064320.log` | `step3-arm1-churnfail-20260810.log`, `step3-arm2-objstale-20260811.log`, `step3-arm3-guardfail-20260811.log` |
+| §3.5 bedlam replication (same evening) | `bedlam-r2-control-20260811.log` | `bedlam-r2-step3-20260811.log` |
+| §3.5 KegD3 single-map A/B | `kegd3-control-20260811.log` | `kegd3-step3-20260811.log` |
+| §3.5 bsidectf (vs 08-10 manifest) | `soak-20260810T094350.log` | `night-bside-step3.log` |
+| §3.5 Fellowship (thin — see caveat) | `night-fellowship-control.log` | `night-fellowship-step3.log` |
+| Entropy — **owed**, aborted 3/6 rounds | `soak-20260810T124422.log` | *(not run)* |

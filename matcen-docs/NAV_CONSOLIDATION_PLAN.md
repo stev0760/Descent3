@@ -697,6 +697,12 @@ signature of more contested play, not of bots getting lost.
 
 ### Step 3 verdict: STRUCTURALLY LANDED, NOT VALIDATED
 
+> **SUPERSEDED 2026-08-12 by §0.90 — Step 3 is VALIDATED.** The capture gap below was read across a
+> cross-day boundary: the *control build itself* moved Polaris conversion 47% → 37% between 08-10 and
+> 08-11 with no code change. A same-day paired replication shows conversion flat on every map. The
+> open questions this section lists are answered there; the section is left intact as the record of
+> what was honestly known on 08-11.
+
 The consolidation itself is done and behaving: one dispatch entry owns interior travel legs, the
 churn shape is healthy, objective responsiveness is restored, hard pins remain low single digits.
 What is **not** established is that the capture level is unchanged, and one arm is guard-failed.
@@ -724,6 +730,167 @@ trailer and are in fact **Opus 5** work; everything up to and including `675fe90
 Published history is left intact (same handling as §0.85) and this note is the correction of record.
 The recurring lesson stands: **provenance is verified from the artifact, never from the label** —
 the same failure mode as §0.85's silent model fallback and the Step 4 level pin.
+
+---
+
+## 0.90 Step 3 VALIDATED (2026-08-11/12) — four paired data sets, and the capture gap was a cross-day artifact
+
+**No code changed for any of this.** Build under test `74dcd573` throughout, control `58ddbb9c`,
+every arm deploying its own hash-stamped binary so each log self-evidences which build produced it,
+`ab_guard` running automatically at every teardown. Zero crashes in all eight arms.
+
+### The measurement error that resolves §0.88's open question
+
+§0.88's control ran on **08-10**; arms 2 and 3 ran on **08-11**. Re-measuring the *control build
+against itself* across those days:
+
+| bedlam Polaris, control `58ddbb9c` | picks | caps | conv |
+|---|---|---|---|
+| 08-10 (§0.88's control, 3 rnd) | 91 | 43 | **47%** |
+| 08-11 (replication control, 3 rnd) | 90 | 33 | **37%** |
+
+Same binary, same manifest, near-identical pickup counts, **10.6 conversion points of swing with zero
+code change**. The 114 → 98 capture gap and the "Polaris regression" were both read across that gap.
+**A cross-day A/B is not an A/B.** This is the third time this project has been burned by the same
+class — Step 4's broken level pin (`project-step4-routable-not-flyable`), the 08-08 Polaris
+withdrawal (§0.9 note), and now this. **Standing rule: control and test run back-to-back on the same
+machine on the same evening, or the comparison is not made.** `ab_guard` proves the arms are
+structurally comparable; it does not and cannot prove they were measured in the same conditions.
+
+### 1. bedlam replication A/B — same evening, only the build differs (12 rounds each, both guard-PASS)
+
+| metric | control `58ddbb9c` | Step 3 `74dcd573` |
+|---|---|---|
+| bot captures | 114 | 110 |
+| kills | 129 | 131 |
+| conversion — Apparition | 34% | 36% |
+| conversion — Plutonium | 26% | 24% |
+| conversion — QuadSomniac | 7% | 8% |
+| conversion — **Polaris** | 36% | 35% |
+| crashes | 0 | 0 |
+
+Conversion — the duration-independent metric — is **flat on every map, Polaris included**. §0.88's
+"unexplained" capture delta does not reproduce under a properly paired comparison, and the mechanism
+it lacked is now named: **it was the comparison, not the build.**
+
+One real signature, registered and not chased: hard pins 3 → 7, and **all seven Step 3 hard pins are
+in Plutonium room 2** (control's three were Apparition 18, Plutonium 23, Polaris outdoor). One
+location, not a population effect — the same shape as arm 3's Zed / Apparition-room-0 cluster.
+*(Correction of record: the first pass at this run reported the cluster as "Apparition room 2". The
+per-map hard column and the hotspot table both put room 2 in Plutonium — Apparition contributed one
+soft stuck in the whole arm.)*
+
+### 2. KegD3 3v3 A/B — the cleanest surface the project has (13 rounds each)
+
+Single level, so both arms see **identical geometry every round** — no rotation, no per-map sampling.
+
+| metric | control | Step 3 |
+|---|---|---|
+| bot captures | 131 | **152** (+16%) |
+| stuck escalations (hard) | 163 (29) | **87 (16)** |
+| powerup pins (hard) | 109 (17) | 66 (13) |
+| carrier deaths / avg distance | 231 / 222u | 244 / 224u |
+| crashes | 0 | 0 |
+
+Guard flagged outlier dominance (`Hawk` = 53% of the delta) and **the finding survives exclusion
+(112 vs 76)** — the opposite of arm 3, where exclusion reversed the direction. That is what the guard
+is for: it does not veto a result, it forces the segmented read that shows whether one is there.
+
+### 3. Overnight sweep (08-12) — bsidectf, Fellowship, Entropy
+
+**bsidectf, 12 rounds vs the identical 08-10 control manifest** — the second indoor pool:
+
+| metric | control | Step 3 |
+|---|---|---|
+| stuck escalations | 284 | 224 |
+| **hard pins** (`net_disp<10`) | **62** | **33** |
+| kills | 107 | 113 |
+| `DEST_CHURN` anomalies | **3 of 3 maps** | **0 of 3** |
+| crashes | 0 | 0 |
+
+Guard `FAIL` on outlier dominance (`Reaper` = 47% of the delta); as with KegD3 the finding survives
+exclusion (244 vs 212), so it is a population effect with one unit amplifying it. Captures (4 vs 3)
+are meaningless on a pool where `mysterious_isle` scores ~0 and `Nightmarecastle` produces no carry
+episodes at all — both known-open items reproducing unchanged, not new damage.
+
+### The primary evidence: the layer Step 3 actually changed
+
+Captures are distal — three or four scoring events per round, gated by combat, spawns and defence.
+The **travel-intent instrument Task 2 built for exactly this purpose** measures the thing Step 3
+touched, with hundreds to thousands of errand-lifetimes per round. Across four independent pools:
+
+| pool (paired) | finished intents | **arrival share** | **timeout share** |
+|---|---|---|---|
+| bsidectf — control | 2655 | 7.3% | 41.0% |
+| bsidectf — Step 3 | 2796 | **12.4%** | **9.3%** |
+| Fellowship — control | 1270 | 8.7% | 19.8% |
+| Fellowship — Step 3 | 1062 | **13.2%** | **10.4%** |
+| KegD3 — control | 3347 | 17.0% | 14.2% |
+| KegD3 — Step 3 | 3025 | **19.9%** | **12.6%** |
+| bedlam Polaris — control | 1068 | 18.0% | 14.0% |
+| bedlam Polaris — Step 3 | 976 | **22.5%** | **9.7%** |
+
+Every pool moves the same way: **errands are reached more often and abandoned on the clock less
+often.** `DEST_CHURN` — the analyzer's own re-roll alarm — fires on three of three bsidectf maps on
+the control build and **none** on Step 3. Median errand life rose on 8 of Fellowship's 9 maps. This
+is the layer the consolidation exists to fix, measured directly rather than inferred from scoring.
+
+**Two bookkeeping caveats, stated because the claims rest on the classes involved.** Step 3 moved
+the sites that *record* errand ends, so cross-build class comparisons need the direction of the bias
+checked, not assumed:
+
+- **`unreach` is NOT comparable and no claim rests on it** (bsidectf 830 → 1503). Step 3 #1 records
+  the stuck-escape errand death with an unconditional `BotClearTravelDest(TRAVEL_END_UNREACH)`
+  (`bot.cpp:6145`); the control recorded it via `BotSetTravelDest(..., TRAVEL_END_UNREACH)`
+  (`58ddbb9c:6074`), which **returns early** when the escape re-targets the same room with the same
+  owner and so records nothing. Same event, different suppression.
+- **The bias on the two classes that DO carry claims runs against the finding, so both reads are
+  conservative.** Timeouts: HEAD records a `TIMEOUT` end even for a same-room explore re-roll that
+  the control's dedup swallowed (`bot.cpp:3490` vs `58ddbb9c:3438`) — Step 3 should *over*-count
+  timeouts, and they fell anyway. Arrivals: #5 made the arrival test **stricter** (the errand, not
+  the first waypoint), so arrivals rose *against a raised bar*.
+
+### Fellowship as a build comparison: a run-design error, recorded
+
+Captures 12 → 6, kills 25 → 15, hard pins 6 → 7 — and **none of it is a build verdict.** The arm was
+9 rounds spread across **9 different maps**, most contributing a single round, several scoring zero
+in both arms; `gollumspursuit` alone supplied 4 of the control's 12 captures. Halving 12 to 6 is four
+capture events on a one-round-per-map sample, and the parallel kill drop points at engagement rate on
+this pool, not at navigation. The error was giving Fellowship the 9 rounds that matched its existing
+gate manifest: bedlam's 9 rounds buy 3 per map on a 4-map rotation, Fellowship's buy 1. **Fellowship
+needs a pinned map or several times the rounds to be decisive.**
+
+What *is* readable there is structural: **`towerofisengard` stucks 20 → 6 per round** (a registered
+problem map), and `shirebaggins` carrier deaths now record a death distance (503u) where the control
+recorded none — bots are getting further into these maps.
+
+### Entropy: owed, not run
+
+The arm hard-stopped at 3 of 6 rounds and the guard correctly refused it. Cause is a manifest defect,
+not a build one: `max_minutes: 120` for an arm whose 08-10 control took **180 minutes** for the same
+6 rounds. Raised to 240 in `tools/manifests/night-entropy-step3.json`; the arm is still owed, and
+with it the re-read of the two `DEST_CHURN` flags (Wishbone, Inversion) that fired on 08-10.
+
+### Step 3 verdict: VALIDATED (revises §0.88)
+
+The consolidation is done, behaving, and now **validated on the layer it changed** — errand arrivals
+up and timeouts down across four independent pools, `DEST_CHURN` cleared, hard pins down on both
+indoor pools (KegD3 29 → 16, bsidectf 62 → 33), scoring up on the one single-map surface (+16%) and
+flat on a same-day paired rotation. §0.88's capture gap is closed by measurement rather than by
+argument: it was cross-day drift on the control build itself.
+
+**What this does not establish, and what is still open:**
+
+1. **Outdoor scoring remains dominated by day-to-day variance** wider than any effect this phase is
+   chasing. Nothing here changes that, and it is the region-0 coverage campaign's problem (§0.86),
+   not dispatch's.
+2. **Plutonium room 2** — 7 hard pins in one room in one arm. Specific, reproducible-looking, worth a
+   navdump. Registered alongside the Apparition room 0 circling cluster.
+3. **Entropy arm owed** (above). Third mode is unread on Step 3.
+4. **The cockpit session and the independent review** (`STEP3_REVIEW_REQUEST.md`) are still the right
+   next instruments. The operator's flown verdict outranks this table; question 1 of the brief ("is
+   the capture delta real?") is now **answered — no**, which frees the review to spend itself on the
+   remaining four.
 
 ---
 

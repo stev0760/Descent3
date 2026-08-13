@@ -1,9 +1,9 @@
 {
-  "_comment": "OVERNIGHT SWEEP 4/4 — Entropy chaos ARM B (STEP 3 74dcd573). Pairs for FREE against the 2026-08-10 census arm (soak-20260810T124422.log) on the control build. Third GAME MODE, and it includes Rim (documented nav-hostile, standing ignore-Rim directive for verdicts) plus Wishbone/Inversion which BOTH tripped DEST_CHURN on 08-10 — so this arm also re-reads those two churn anomalies on the Step 3 build.",
+  "_comment": "OVERNIGHT SWEEP 4/4 — Entropy chaos ARM B (STEP 3 74dcd573). Pairs for FREE against the 2026-08-10 census arm (soak-20260810T124422.log) on the control build. Third GAME MODE, and it includes Rim (documented nav-hostile, standing ignore-Rim directive for verdicts) plus Wishbone/Inversion which BOTH tripped DEST_CHURN on 08-10 — so this arm also re-reads those two churn anomalies on the Step 3 build. 2026-08-12: the first attempt hard-stopped at 3 of 6 rounds on max_minutes=120 — Entropy rounds run ~30 min here (the 08-10 control took 180 min for its 6), so the budget is 240. THIS ARM IS STILL OWED.",
   "server_dir": "/home/steve/Projects/mine/Descent3-bot-testing-client/Descent3_testing",
   "launch": ["./Descent3", "-dedicated", "./soak-dedicated-entropy-chaos.cfg"],
   "telnet_port": 2092, "telnet_password": "test",
   "phases": [{"name": "night-entropy-step3-74dcd573", "toggles": {}, "rounds": 6}],
-  "navdump": {}, "max_minutes": 120,
+  "navdump": {}, "max_minutes": 240,
   "ab": {"control_log": "/home/steve/Projects/mine/Descent3-bot-testing-client/Descent3_testing/soak-20260810T124422.log", "expect_rounds": 6}
 }
