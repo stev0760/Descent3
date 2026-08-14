@@ -864,12 +864,74 @@ What *is* readable there is structural: **`towerofisengard` stucks 20 → 6 per 
 problem map), and `shirebaggins` carrier deaths now record a death distance (503u) where the control
 recorded none — bots are getting further into these maps.
 
-### Entropy: owed, not run
+### Entropy: run 2026-08-13 as a same-evening pair — the strongest churn result yet
 
-The arm hard-stopped at 3 of 6 rounds and the guard correctly refused it. Cause is a manifest defect,
-not a build one: `max_minutes: 120` for an arm whose 08-10 control took **180 minutes** for the same
-6 rounds. Raised to 240 in `tools/manifests/night-entropy-step3.json`; the arm is still owed, and
-with it the re-read of the two `DEST_CHURN` flags (Wishbone, Inversion) that fired on 08-10.
+The 08-12 attempt hard-stopped at 3 of 6 rounds (`max_minutes: 120` for an arm whose 08-10 control
+took **180**), and it was going to be paired *cross-day* against that 08-10 control — the §0.90
+defect itself. Re-run as a proper pair instead: **both arms 08-13 evening, 3 rounds each = one clean
+pass of the CHAOS rotation (Wishbone, Inversion, Rim), identical level sequences, 0 crashes**
+(`tools/manifests/entropy-ab-control.json` + `entropy-ab-step3.json`).
+
+**Entropy is the most timeout-dominated mode the project has measured**, which makes it the sharpest
+test of Step 3's thesis — and the result is the largest movement on any pool:
+
+| finished travel intents | control `58ddbb9c` | Step 3 `74dcd573` |
+|---|---|---|
+| arrival share | 6.8% | **16.5%** |
+| timeout share | **54.3%** | **21.1%** |
+| Wishbone arrival share | 11.2% | **35.9%** |
+| Wishbone median errand life | 21.5s | **44.6s** |
+| Wishbone `DEST_CHURN` | fires | **cleared** |
+| takeovers (Wishbone / Inversion) | 0 / 1 | 0 / 1 |
+
+`DEST_CHURN` still fires on Inversion and Rim, at much lower churn. **`ENTROPY_ZERO_TAKEOVERS` on
+Wishbone reproduces unchanged on both builds** (27 vs 22 pickups, zero hold attempts either way) —
+pre-existing mode item, untouched by dispatch, and not Step 3's to answer.
+
+**The arm is `GUARD_FAIL` and its escalation totals are therefore not a population result:**
+`Reaper[BOT]` alone is 70 of 85 escalations (**97%** of the delta); excluding it, control 13 vs test
+15 — flat. Per the standing rule the totals are not reportable. What the segmented read found is
+below, and it is worth more than the arm.
+
+### The escape-relapse loop — one defect behind three "registered signatures"
+
+Chasing Reaper's 70 escalations produced a **reproducible livelock**, verified in the log line by
+line: stuck in Inversion room 35 → escape via portal to room 6 → errand `none -> 6 owner=explore` →
+12-15s later `6 -> none (end=unreach)` → stuck again → **escape to room 6 again**. Rooms 35 and 7
+both drain into room 6: **53 escapes to the same never-reached room**, over ~5 minutes of wall clock.
+
+**The same shape is present in every arm on BOTH builds** (same stuck room → same escape room,
+repeatedly):
+
+| log | escapes | dominant relapse |
+|---|---|---|
+| bedlam control `58ddbb9c` | 19 | rm15 → rm0 ×4, rm0 → rm84 ×4 |
+| bedlam Step 3 | 29 | rm15 → rm0 ×7, **rm2 → rm1 ×7** (the "Plutonium room 2" cluster) |
+| arm 3 Step 3 | 49 | **rm28 → rm27 ×23, rm0 → rm84 ×20** (the "Apparition room 0" cluster) |
+| bsidectf control 08-10 | 289 | rm32 → rm33 ×27, rm8 → rm9 ×24 |
+| bsidectf Step 3 | 382 | rm32 → rm33 ×54, rm9 → rm10 ×43 |
+| Entropy Step 3 08-13 | 85 | **rm35 → rm6 ×27, rm7 → rm6 ×26** |
+
+**Mechanism, from the code.** The stuck-escape portal chooser (`bot.cpp:6113-6131`) filters on
+bounds/`used`, `PF_TOO_SMALL_FOR_ROBOT` and passability, skips `croom == explore_dest_room`, and then
+merely *prefers* unvisited. **It never consults `failed_dest_room`** — the fifth-lifetime-cause
+blacklist added in `31873fd1` for exactly this purpose, whose only consumer is the explore scorer at
+`bot.cpp:3389`. So the blacklist stops the *scorer* re-picking a room that beat the bot while the
+*escape* re-picks it freely. Worse, the unvisited preference is self-reinforcing: `BotRecordVisitedRoom`
+only records rooms the bot actually **enters**, so a target it never reaches stays unvisited forever
+and keeps winning the +preference — visible in arm 3, where all 43 dominant relapses are labelled
+`(unvisited)` after dozens of failed attempts.
+
+**This is NOT a Step 3 regression** — it is present, with the same signature, on every control arm
+measured. Step 3 does not create it. What varies wildly run to run is *how hard a given bot falls
+into it*, which is precisely what `ab_guard`'s outlier check keeps catching. **The three separately
+registered signatures — Apparition room 0 circling, Plutonium room 2 hard pins, and tonight's
+Inversion 35/7 — are very likely one defect, and it is not the one this phase is about.**
+
+Registered, not fixed: the no-code-changes ruling stands. Fix class when it is picked up = make the
+escape chooser consult `failed_dest_room` (and consider a short per-bot ring of failed escape targets
+rather than the single-slot blacklist). Cheap to build, and it has a ready-made A/B: escapes-per-bot
+concentration and the relapse-pair histogram above.
 
 ### Step 3 verdict: VALIDATED (revises §0.88)
 
@@ -884,9 +946,10 @@ argument: it was cross-day drift on the control build itself.
 1. **Outdoor scoring remains dominated by day-to-day variance** wider than any effect this phase is
    chasing. Nothing here changes that, and it is the region-0 coverage campaign's problem (§0.86),
    not dispatch's.
-2. **Plutonium room 2** — 7 hard pins in one room in one arm. Specific, reproducible-looking, worth a
-   navdump. Registered alongside the Apparition room 0 circling cluster.
-3. **Entropy arm owed** (above). Third mode is unread on Step 3.
+2. **The escape-relapse loop** (above) — now the best root-cause candidate for Plutonium room 2,
+   Apparition room 0, *and* the bsidectf hotspots. Build-independent; owns a fix class of its own,
+   outside this phase.
+3. ~~Entropy arm owed~~ — **run 08-13** (above). All five pools are now read on Step 3.
 4. **The cockpit session and the independent review** (`STEP3_REVIEW_REQUEST.md`) are still the right
    next instruments. The operator's flown verdict outranks this table; question 1 of the brief ("is
    the capture delta real?") is now **answered — no**, which frees the review to spend itself on the

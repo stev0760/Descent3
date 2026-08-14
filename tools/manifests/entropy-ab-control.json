@@ -1,0 +1,11 @@
+{
+  "_comment": "ENTROPY PAIRED A/B, ARM A (CONTROL 58ddbb9c) — 2026-08-13. Replaces the 08-12 overnight attempt on TWO counts: that arm hard-stopped at 3 of 6 rounds on max_minutes=120 (Entropy runs TimeLimit=30, so 6 rounds needs ~180), AND it was going to be paired against the 08-10 census arm — a CROSS-DAY comparison, the exact defect §0.90 closed. Both arms now run back-to-back the same evening, only the build differing. 3 rounds = one clean pass of the CHAOS rotation (Wishbone, Inversion, Rim), so both arms see identical level sequences. Rim is under the standing ignore-for-verdicts directive (documented nav-hostile). The metric this arm exists for is the TRAVEL INTENT / DEST_CHURN shape on Wishbone and Inversion, which both tripped DEST_CHURN on the control build on 08-10 — errand-lifetime counts run in the hundreds per round, so 1 round per map resolves it where scoring would not.",
+  "server_dir": "/home/steve/Projects/mine/Descent3-bot-testing-client/Descent3_testing",
+  "launch": ["./Descent3", "-dedicated", "./soak-dedicated-entropy-chaos.cfg"],
+  "telnet_port": 2092,
+  "telnet_password": "test",
+  "phases": [{"name": "entropy-r2-control-58ddbb9c", "toggles": {}, "rounds": 3, "minutes": 110}],
+  "navdump": {},
+  "max_minutes": 120,
+  "ab": {"expect_rounds": 3}
+}
