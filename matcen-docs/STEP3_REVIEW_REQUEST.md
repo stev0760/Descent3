@@ -2,9 +2,17 @@
 
 **Date:** 2026-08-11, **updated 2026-08-12** · **Branch:** `feature/multiplayer-bots` · **Build under
 test:** `74dcd573` (deployed to the test server)
-**Status:** structurally landed and **VALIDATED on the layer it changed** (§3.5 — added 08-12, four
-paired data sets). **No further code changes are authorised** — the operator flies it next, and this
-document is the brief for an independent model review.
+**Status:** structurally landed and **VALIDATED on the explore-owned travel layer** (§3.5 — added
+08-12; **scope narrowed 08-19** after the independent review). **No further code changes are
+authorised** — the operator flies it next.
+
+> **The independent review this brief asked for has been done** (GPT-5.6 Sol, 2026-08-19) and its
+> findings are folded into `NAV_CONSOLIDATION_PLAN.md` **§0.91**, with the §0.90 corrections marked
+> inline. Headline: the code stays landed, but the claim narrows to **explore-owned** errands;
+> timeout share is confounded by a per-hop clock renewal; the bsidectf hard-pin result was one bot;
+> and the escape-relapse mechanism written up in §0.90 was wrong. **Read §0.91 before using this
+> brief** — several numbers below are superseded. The one question still outstanding is the
+> operator's flown cockpit verdict.
 
 This is a self-contained brief. Background lives in `NAV_CONSOLIDATION_PLAN.md` (plan of record,
 §0.86–0.90 are the last four days) and `NAVIGATION.md` §7.0 (live nav status).
@@ -173,6 +181,7 @@ Logs (all in the test-server directory, `-guard.txt` beside each where the guard
 | §3 four-arm series | `soak-20260810T064320.log` | `step3-arm1-churnfail-20260810.log`, `step3-arm2-objstale-20260811.log`, `step3-arm3-guardfail-20260811.log` |
 | §3.5 bedlam replication (same evening) | `bedlam-r2-control-20260811.log` | `bedlam-r2-step3-20260811.log` |
 | §3.5 KegD3 single-map A/B | `kegd3-control-20260811.log` | `kegd3-step3-20260811.log` |
-| §3.5 bsidectf (vs 08-10 manifest) | `soak-20260810T094350.log` | `night-bside-step3.log` |
+| §3.5 bsidectf (**unpaired** — 08-10 vs 08-12) | `soak-20260810T094350.log` | `night-bside-step3.log` |
+| **bsidectf REPLICATION (paired, 08-18/19)** | `soak-20260818T233102.log` | `soak-20260819T023142.log` |
 | §3.5 Fellowship (thin — see caveat) | `night-fellowship-control.log` | `night-fellowship-step3.log` |
-| Entropy — **owed**, aborted 3/6 rounds | `soak-20260810T124422.log` | *(not run)* |
+| Entropy — **run 08-13** as a same-evening pair | `entropy-r2-control-20260813.log` | `entropy-r2-step3-20260813.log` |

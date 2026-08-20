@@ -733,7 +733,20 @@ the same failure mode as §0.85's silent model fallback and the Step 4 level pin
 
 ---
 
-## 0.90 Step 3 VALIDATED (2026-08-11/12) — four paired data sets, and the capture gap was a cross-day artifact
+## 0.90 Step 3 VALIDATED on the explore-owned travel layer (2026-08-11/12; corrected 08-19)
+
+> [!IMPORTANT]
+> **§0.91 revises this section.** An independent cross-model review (GPT-5.6 Sol, 2026-08-19,
+> commissioned by the operator) found **three measurement defects** in the reading below and **one
+> wrong mechanism claim**, and ran a same-evening bsidectf replication. Every one of its findings
+> was re-verified against source and re-computed from the logs before being accepted. The landing
+> verdict survives; **the scope of the claim does not.** What is defensible:
+>
+> > **Step 3 improves the persistence and completion of EXPLORE-owned interior errands, and the
+> > §0.88 scoring regression did not reproduce.** Objective-owned errands did not improve.
+> > Timeout share is not a clean effect size. Hard pins are not a population result.
+>
+> Corrections are marked inline below. The new evidence is in §0.91 — read them together.
 
 **No code changed for any of this.** Build under test `74dcd573` throughout, control `58ddbb9c`,
 every arm deploying its own hash-stamped binary so each log self-evidences which build produced it,
@@ -756,6 +769,17 @@ class — Step 4's broken level pin (`project-step4-routable-not-flyable`), the 
 withdrawal (§0.9 note), and now this. **Standing rule: control and test run back-to-back on the same
 machine on the same evening, or the comparison is not made.** `ab_guard` proves the arms are
 structurally comparable; it does not and cannot prove they were measured in the same conditions.
+
+*(Correction of record, 08-19 — the rule is right, the stated reason was too strong.* What the
+same-binary swing demonstrates is **run-to-run variance wide enough to swamp the effect**; it does
+*not* establish that crossing a date boundary is what caused it, and nothing here measured a date
+effect as such. Sized: the same-build cross-day difference is −10.6 points with an approximate 95%
+interval of **−24.9 to +3.7**; the same-evening A/B difference is −0.9 points, interval **−15.3 to
++13.6**. Both intervals contain zero and each other. The honest claim is **"the regression did not
+reproduce"** — not "it was proven to be a date artifact", and not "the builds were proven
+equivalent." One null pair is not an equivalence proof. **Also still confounded: every clean pair
+this project has run put control first and Step 3 second**, so arm order and time-of-night are
+perfectly collinear with build. The next validation arm should reverse the order in one pair.)
 
 ### 1. bedlam replication A/B — same evening, only the build differs (12 rounds each, both guard-PASS)
 
@@ -780,9 +804,11 @@ location, not a population effect — the same shape as arm 3's Zed / Apparition
 per-map hard column and the hotspot table both put room 2 in Plutonium — Apparition contributed one
 soft stuck in the whole arm.)*
 
-### 2. KegD3 3v3 A/B — the cleanest surface the project has (13 rounds each)
+### 2. KegD3 3v3 A/B — the cleanest surface the project has (12 rounds each)
 
 Single level, so both arms see **identical geometry every round** — no rotation, no per-map sampling.
+*(Corrected 08-19: this said "13 rounds each". Both manifests specify `rounds: 12` /
+`expect_rounds: 12`; the analyzer's thirteenth segment is the teardown sliver, not a round.)*
 
 | metric | control | Step 3 |
 |---|---|---|
@@ -808,8 +834,12 @@ is for: it does not veto a result, it forces the segmented read that shows wheth
 | `DEST_CHURN` anomalies | **3 of 3 maps** | **0 of 3** |
 | crashes | 0 | 0 |
 
-Guard `FAIL` on outlier dominance (`Reaper` = 47% of the delta); as with KegD3 the finding survives
-exclusion (244 vs 212), so it is a population effect with one unit amplifying it. Captures (4 vs 3)
+Guard `FAIL` on outlier dominance (`Reaper` = 47% of the delta); as with KegD3 the *escalation*
+finding survives exclusion (244 vs 212). **The hard-pin row does not — see §0.91.** The 08-19
+replication reproduced the raw hard-pin drop almost exactly (63 → 34) and then showed it is
+**one bot's story**: excluding that bot, 37 → 33, i.e. flat. **Stop citing `62 → 33` as a
+population effect.** This arm is also unpaired (control 08-10, test 08-12) and therefore falls
+foul of the very rule this section states; §0.91 replaces it with a same-evening pair. Captures (4 vs 3)
 are meaningless on a pool where `mysterious_isle` scores ~0 and `Nightmarecastle` produces no carry
 episodes at all — both known-open items reproducing unchanged, not new damage.
 
@@ -818,6 +848,10 @@ episodes at all — both known-open items reproducing unchanged, not new damage.
 Captures are distal — three or four scoring events per round, gated by combat, spawns and defence.
 The **travel-intent instrument Task 2 built for exactly this purpose** measures the thing Step 3
 touched, with hundreds to thousands of errand-lifetimes per round. Across four independent pools:
+
+> **These are RAW shares — their denominator includes `unreach`, the one class this section itself
+> declares non-comparable. Superseded by §0.91's recomputed table.** Direction survives; magnitudes
+> do not. Kept here as the record of what was originally claimed.
 
 | pool (paired) | finished intents | **arrival share** | **timeout share** |
 |---|---|---|---|
@@ -835,20 +869,32 @@ often.** `DEST_CHURN` — the analyzer's own re-roll alarm — fires on three of
 the control build and **none** on Step 3. Median errand life rose on 8 of Fellowship's 9 maps. This
 is the layer the consolidation exists to fix, measured directly rather than inferred from scoring.
 
-**Two bookkeeping caveats, stated because the claims rest on the classes involved.** Step 3 moved
-the sites that *record* errand ends, so cross-build class comparisons need the direction of the bias
-checked, not assumed:
+**Bookkeeping caveats — REWRITTEN 08-19. The original three-part argument here was wrong on all
+three parts.** It is preserved in git history (`2a50b56d`); what it claimed, and what is actually
+true, verified in source:
 
-- **`unreach` is NOT comparable and no claim rests on it** (bsidectf 830 → 1503). Step 3 #1 records
-  the stuck-escape errand death with an unconditional `BotClearTravelDest(TRAVEL_END_UNREACH)`
-  (`bot.cpp:6145`); the control recorded it via `BotSetTravelDest(..., TRAVEL_END_UNREACH)`
-  (`58ddbb9c:6074`), which **returns early** when the escape re-targets the same room with the same
-  owner and so records nothing. Same event, different suppression.
-- **The bias on the two classes that DO carry claims runs against the finding, so both reads are
-  conservative.** Timeouts: HEAD records a `TIMEOUT` end even for a same-room explore re-roll that
-  the control's dedup swallowed (`bot.cpp:3490` vs `58ddbb9c:3438`) — Step 3 should *over*-count
-  timeouts, and they fell anyway. Arrivals: #5 made the arrival test **stricter** (the errand, not
-  the first waypoint), so arrivals rose *against a raised bar*.
+| the §0.90 claim | what the code says |
+|---|---|
+| "`unreach` is not comparable **and no claim rests on it**" | **False.** `analyze_bot_log.py:668` computes `finished = sum(de.values())`, so `unreach` sits in the denominator of every published arrival and timeout *share*. Every claim rested on it. |
+| "Step 3 should *over*-count timeouts, so the fall is conservative" | **Backwards.** The dominant bias runs the other way — see the timer-policy note below. |
+| "#5 made the arrival test **stricter**, so arrivals rose against a raised bar" | **False.** `8490e111` made arrival stricter than the *broken first Step 3 arm*; it restored **control-equivalent** final-destination semantics. The arrival inference at `bot.cpp:317-360` is identical in both builds. There is no raised bar. |
+
+**The timeout-policy confound, which is the one that matters.** Step 3 does not merely re-record
+timeouts — it changes how much clock an errand gets:
+
+- control gives one complete random-explore errand **a single distance-scaled 6-20s timer**
+  (`58ddbb9c:bot.cpp:3436-3451`, `BOT_EXPLORE_ROOM_TIME_MIN/MAX`);
+- Step 3 routes explore legs through `BotSetRoutedGoal()`, which sets
+  `explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX` — **the full 20s, on every hop**
+  (`bot.cpp:3083`);
+- the travel intent itself is *continuous* across those hops (same destination + owner
+  deduplicates), so one Step 3 intent can be handed **several** 20-second timeout windows where
+  control handed its errand one.
+
+**A lower timeout share is therefore partly manufactured by a more generous clock, and the bias runs
+FOR Step 3, not against it.** Timeout share must not be quoted as an unbiased effect size until
+clock policy is equalised. **Arrival share is the clean half of the instrument** — same inference,
+same bar, both builds.
 
 ### Fellowship as a build comparison: a run-design error, recorded
 
@@ -912,15 +958,38 @@ repeatedly):
 | bsidectf Step 3 | 382 | rm32 → rm33 ×54, rm9 → rm10 ×43 |
 | Entropy Step 3 08-13 | 85 | **rm35 → rm6 ×27, rm7 → rm6 ×26** |
 
-**Mechanism, from the code.** The stuck-escape portal chooser (`bot.cpp:6113-6131`) filters on
-bounds/`used`, `PF_TOO_SMALL_FOR_ROBOT` and passability, skips `croom == explore_dest_room`, and then
-merely *prefers* unvisited. **It never consults `failed_dest_room`** — the fifth-lifetime-cause
-blacklist added in `31873fd1` for exactly this purpose, whose only consumer is the explore scorer at
-`bot.cpp:3389`. So the blacklist stops the *scorer* re-picking a room that beat the bot while the
-*escape* re-picks it freely. Worse, the unvisited preference is self-reinforcing: `BotRecordVisitedRoom`
-only records rooms the bot actually **enters**, so a target it never reaches stays unvisited forever
-and keeps winning the +preference — visible in arm 3, where all 43 dominant relapses are labelled
-`(unvisited)` after dozens of failed attempts.
+**Mechanism — CORRECTED 08-19. The loop is real; the explanation below it was wrong, and the fix
+class it implied would probably not have broken the loop.** The original text (git `22d5b032`)
+blamed the escape chooser for ignoring `failed_dest_room` and claimed `BotRecordVisitedRoom` only
+records rooms the bot physically enters. Re-verified against HEAD, **both halves are false**:
+
+- the chooser **does** skip the live destination — `croom == explore_dest_room` is filtered at
+  `bot.cpp:6121-6123`, and `esc_dest` is snapshotted at `bot.cpp:6099` before
+  `BotClearActiveGoal()` (which, at `bot.cpp:822-858`, does not clear it anyway);
+- the escape **does** write failure memory — `failed_dest_room = esc_dest`, `failed_dest_expires`,
+  **and `BotRecordVisitedRoom(esc_dest)`** at `bot.cpp:6183-6186`. A never-entered room *is* marked
+  visited.
+
+**The actual hole is the room-progress timeout, not the escape.** `bot.cpp:8351-8353` — the
+non-escalation branch — does `explore_dest_room = -1` plus
+`BotClearTravelDest(TRAVEL_END_UNREACH)` and writes **no** `failed_dest_room` and **no** visited
+mark. So:
+
+1. escape (or the scorer) picks room E;
+2. the routed hop installs E or its first waypoint;
+3. the room-progress timeout clears the destination and the intent — recording *nothing*;
+4. E keeps the explore scorer's unvisited bonus and can win again;
+5. and when an escape does later fire, `esc_dest` is already `-1`, so the `esc_dest >= 0` gate at
+   `bot.cpp:6183` skips the blacklist write entirely.
+
+`failed_dest_room` has exactly **one writer** (`bot.cpp:6184`) and **one reader** (the explore
+scorer, `bot.cpp:3389`) — grep-verified.
+
+**A second defect sits in the same area: a scope mismatch.** `travel_dest_room` is the final errand;
+since Step 3, `explore_dest_room` holds the current routed **waypoint**. The stuck handler
+blacklists the *waypoint*, while the explore filter at `bot.cpp:3389` tests `failed_dest_room`
+against sampled **final** destinations. On any multi-hop errand those are different rooms, so the
+blacklist and the filter are not talking about the same thing.
 
 **This is NOT a Step 3 regression** — it is present, with the same signature, on every control arm
 measured. Step 3 does not create it. What varies wildly run to run is *how hard a given bot falls
@@ -928,18 +997,30 @@ into it*, which is precisely what `ab_guard`'s outlier check keeps catching. **T
 registered signatures — Apparition room 0 circling, Plutonium room 2 hard pins, and tonight's
 Inversion 35/7 — are very likely one defect, and it is not the one this phase is about.**
 
-Registered, not fixed: the no-code-changes ruling stands. Fix class when it is picked up = make the
-escape chooser consult `failed_dest_room` (and consider a short per-bot ring of failed escape targets
-rather than the single-slot blacklist). Cheap to build, and it has a ready-made A/B: escapes-per-bot
-concentration and the relapse-pair histogram above.
+Registered, not fixed: the no-code-changes ruling stands. **Fix class — RESTATED 08-19:** decide who
+owns failure memory (the waypoint? the final errand? the escape target? more than one) and make the
+**timeout** path write it. *Do not simply add a `failed_dest_room` read to the escape chooser* — the
+chooser is not where this loop is created, and the room that timed out was frequently never written
+there in the first place. A short per-bot ring rather than the single-slot blacklist is still worth
+considering, but it is the second decision, not the first. Ready-made A/B is unchanged:
+escapes-per-bot concentration and the relapse-pair histogram above.
 
-### Step 3 verdict: VALIDATED (revises §0.88)
+### Step 3 verdict: VALIDATED, explore-owned scope (revises §0.88; scope narrowed by §0.91)
 
-The consolidation is done, behaving, and now **validated on the layer it changed** — errand arrivals
-up and timeouts down across four independent pools, `DEST_CHURN` cleared, hard pins down on both
-indoor pools (KegD3 29 → 16, bsidectf 62 → 33), scoring up on the one single-map surface (+16%) and
-flat on a same-day paired rotation. §0.88's capture gap is closed by measurement rather than by
-argument: it was cross-day drift on the control build itself.
+The consolidation is done, behaving, and **validated on the part of the layer it changed that the
+instrument can read cleanly**: **explore-owned errand arrivals up in all six pools** (§0.91), the
+`DEST_CHURN` re-roll ratio collapsing on the indoor maps, scoring up on the one single-map surface
+(+16%) and flat on a same-evening paired rotation. §0.88's capture gap is closed by measurement
+rather than by argument — it did not reproduce when the arms were paired properly.
+
+**Struck from the original verdict, and why:**
+
+- ~~"errand arrivals up and timeouts down across four independent pools"~~ → **arrivals up for
+  *explore-owned* errands.** Objective-owned arrival fell in all six pools. Timeout share is
+  clock-policy-confounded in Step 3's favour and is not an effect size.
+- ~~"hard pins down on both indoor pools ... bsidectf 62 → 33"~~ → **one bot.** The replication
+  reproduced the raw drop and showed the population is flat after exclusion (37 → 33). KegD3's
+  29 → 16 is not similarly segmented and should be treated as unconfirmed until it is.
 
 **What this does not establish, and what is still open:**
 
@@ -950,10 +1031,205 @@ argument: it was cross-day drift on the control build itself.
    Apparition room 0, *and* the bsidectf hotspots. Build-independent; owns a fix class of its own,
    outside this phase.
 3. ~~Entropy arm owed~~ — **run 08-13** (above). All five pools are now read on Step 3.
-4. **The cockpit session and the independent review** (`STEP3_REVIEW_REQUEST.md`) are still the right
-   next instruments. The operator's flown verdict outranks this table; question 1 of the brief ("is
-   the capture delta real?") is now **answered — no**, which frees the review to spend itself on the
-   remaining four.
+4. **The cockpit session is still the right next instrument.** The operator's flown verdict outranks
+   this table; question 1 of the brief ("is the capture delta real?") is **answered — no**, which
+   frees the flown session to spend itself on the remaining four.
+5. ~~The independent review is owed~~ — **done 08-19, see §0.91** (`STEP3_REVIEW_REQUEST.md`).
+6. **Objective-owned errands got worse on this instrument, in every pool** (§0.91). Partly by
+   design — Step 3 #6 makes objective errands re-evaluate — but not entirely, and it is the
+   population that CTF scoring actually depends on. Open.
+7. **Nightmarecastle seam refires** (§0.91): 0 → 232 exact same-bot/same-detour retries at the 5s
+   latch cadence. An execution-layer signature, not a refutation, but "validated" must not be read
+   as "seam/via delivery is clean."
+
+---
+
+## 0.91 Independent cross-model review (2026-08-19) — what it corrected, and the replication
+
+**No behaviour changed** (one stale `bot.h` comment corrected — see below; the review itself
+changed nothing). The operator commissioned a fresh-eyes review of the §0.90 validation from a
+different model family (GPT-5.6 Sol, in Opencode) precisely because §0.88-0.90 were written by the
+same model that wrote the code. Review-only; transcript in the repo root as `session-ses_fe83.txt`
+(untracked). **Every finding below was re-verified here against source and re-computed from the
+logs before being written down** — one of the review's own owner-attribution numbers was checked
+and reproduced exactly, and a first attempt at reproducing it *failed* until the attribution rule
+was read off the log format properly (see "reading the intent log" below).
+
+**Verdict: the code stays landed. The claim narrows.** The three §0.90 measurement defects and the
+one wrong mechanism claim are corrected inline above. What follows is the new evidence.
+
+### The recomputed instrument: `unreach` out of the denominator, and stratified by owner
+
+The correct denominator excludes `unreach` (§0.90's own rule, which its published shares did not
+follow). Recomputed on every pool, and split by the owner of the *ending* intent:
+
+| pool (paired unless noted) | finished intents | **arrival** (excl `unreach`) | timeout (excl `unreach`) |
+|---|---|---|---|
+| bsidectf (08-10/12, **unpaired**) | 2655 → 2796 | 10.7% → **26.9%** | 59.6% → 20.0% |
+| &nbsp;&nbsp;— explore-owned | 2016 → 1827 | 11.0% → **30.8%** | 66.2% → 21.8% |
+| &nbsp;&nbsp;— objective-owned | 580 → 900 | 10.1% → **9.3%** | 14.6% → 13.7% |
+| **bsidectf REPLICATION (08-18/19, paired)** | 3069 → 1829 | 13.2% → **25.1%** | 54.7% → 24.0% |
+| &nbsp;&nbsp;— explore-owned | 2200 → 1189 | 13.5% → **29.7%** | 60.9% → 26.3% |
+| &nbsp;&nbsp;— objective-owned | 773 → 569 | 13.0% → **7.2%** | 15.4% → 17.4% |
+| Fellowship (08-12) | 1270 → 1062 | 10.7% → **17.1%** | 24.3% → 13.4% |
+| &nbsp;&nbsp;— explore-owned | 661 → 454 | 11.8% → **32.5%** | 34.6% → 13.6% |
+| &nbsp;&nbsp;— objective-owned | 566 → 566 | 9.1% → **6.3%** | 15.8% → 14.3% |
+| KegD3 (08-11) | 3347 → 3025 | 19.5% → **21.8%** | 16.2% → 13.8% |
+| &nbsp;&nbsp;— explore-owned | 1102 → 911 | 22.7% → **34.3%** | 23.3% → 4.9% |
+| &nbsp;&nbsp;— objective-owned | 1685 → 1572 | 16.8% → **13.0%** | 17.1% → 24.2% |
+| bedlam Polaris (08-11) | 1068 → 976 | 18.6% → **23.4%** | 14.5% → 10.1% |
+| &nbsp;&nbsp;— explore-owned | 394 → 328 | 26.8% → **45.3%** | 23.5% → 4.7% |
+| &nbsp;&nbsp;— objective-owned | 531 → 547 | 12.1% → **10.7%** | 11.6% → 14.9% |
+| Entropy (08-13) | 906 → 558 | 7.7% → **24.2%** | 61.2% → 31.1% |
+| &nbsp;&nbsp;— explore-owned | 790 → 472 | 6.9% → **26.5%** | 65.7% → 28.3% |
+| &nbsp;&nbsp;— objective-owned | 111 → 86 | 15.5% → **6.8%** | 20.2% → 52.3% |
+
+**The pooled row was mixing two populations moving in opposite directions.**
+
+- **Explore-owned arrival rises in all six pools**, by a lot — the smallest gain is +11.6 points
+  (KegD3), the largest +25.8 (bsidectf original). This is Step 3's real result and it is a strong
+  one. It is also exactly what Step 3 #6 was designed to do ("explore errands persist").
+- **Objective-owned arrival falls in all six pools**, without exception: 10.1→9.3, 13.0→7.2,
+  9.1→6.3, 16.8→13.0, 12.1→10.7, 15.5→6.8.
+
+**Do not read that second row as a clean regression either — it is a flag, not a verdict.** Step 3
+#6 deliberately makes objective intents re-evaluate and re-dispatch as the flag moves, which
+mechanically converts would-be arrivals into `replacement`s. So `arrival` means something different
+for objective-owned errands after #6 than before, and the two columns are not strictly comparable.
+The honest reading is that **the instrument reads explore-owned errands cleanly and objective-owned
+errands ambiguously**, and the pooled §0.90 table hid that by averaging them.
+
+What is *not* explained by #6's design: **objective-owned `timeout` also rose** where sample is
+largest — KegD3 233 → 342 raw (17.1% → 24.2%), Polaris 61 → 81 (11.6% → 14.9%). Re-evaluation
+converts arrivals to replacements; it does not obviously buy more timeouts. Registered as open.
+*Counterweight, stated so this is not over-read:* KegD3 **captures rose 131 → 152 in the same arm**
+where objective-owned arrival fell, so this metric is not tracking scoring in any simple way.
+
+### The same-evening bsidectf replication (08-18/19)
+
+§0.90's bsidectf arm was control 08-10 vs test 08-12 — **unpaired, in the same section that made
+pairing a standing rule.** Re-run properly by the review:
+
+- control `soak-20260818T233102.log` (freshly built from detached `58ddbb9c`), Step 3
+  `soak-20260819T023142.log` (`74dcd573`), both hash-verified;
+- `soak-dedicated-bside38.cfg`, 8 bots 4v4, **12 × 15-minute rounds per arm**, identical level
+  sequences and reset counts, **0 crashes**, back-to-back on one machine on one evening.
+
+**The intent result replicates cleanly** (table above): 13.2% → 25.1% arrival, and it survives
+removal of the guard-flagged outlier (14.2% → 27.3%).
+
+**The hard-pin headline does not survive segmentation.** `ab_guard` failed the arm on outlier
+dominance and the segmented read is decisive:
+
+| | escalations | hard pins (`net_disp<10`) |
+|---|---|---|
+| control / Step 3, raw | 253 → 199 | **63 → 34** |
+| `Gregg[BOT]` alone | 37 → 6 | **26 → 1** |
+| **population, excluding Gregg** | 216 → 193 | **37 → 33 — flat** |
+
+The raw drop reproduced §0.90's `62 → 33` almost exactly *and* is almost entirely one bot escaping
+the relapse loop. **This is the clearest demonstration yet of why the guard exists**, and it cuts
+against a Step 3 claim rather than for one — which is the point.
+
+Scoring stays unreadable on this pool and must not be used either way: captures 4 → 2,
+`mysterious_isle` picks 56 → 31 (caps 1 → 1), `batteriesincluded` picks 3 → 4, `Nightmarecastle`
+produces no carry episodes at all on either build. The lower `mysterious_isle` pickup count is worth
+*registering* as a possible outbound-attempt signal; one low-scoring pair cannot establish it.
+
+Per-map, the win is indoor and not universal:
+
+| map | arrival (excl `unreach`) | timeout (excl `unreach`) |
+|---|---|---|
+| batteriesincluded | 11.3% → **31.5%** | 60.4% → 36.3% |
+| Nightmarecastle | 14.8% → **34.7%** | 66.9% → 27.0% |
+| mysterious_isle | 11.8% → **9.8%** | 26.7% → 14.6% |
+
+**`mysterious_isle` — the outdoor-connected map — did not improve arrival.** Consistent with the
+region-0 finding (§0.86): Step 3 took over *interior* explore legs by design and outdoor legs kept
+the legacy machinery.
+
+### `DEST_CHURN`: the ratio is the evidence, the alarm count is not
+
+The alarm fires above a 4.0 ratio of `(timeout + replacement) / arrival`. §0.90 reported it as
+"3 of 3 maps → 0 of 3", which overstates a threshold crossing:
+
+| run | batteriesincluded | Nightmarecastle | mysterious_isle |
+|---|---|---|---|
+| 08-10 control | 17.09 | 4.73 | 6.83 |
+| 08-12 Step 3 | 2.33 | 0.66 | 3.55 |
+| 08-18 control (paired) | 7.37 | 4.96 | 3.62 |
+| 08-19 Step 3 (paired) | 1.75 | 0.89 | **3.62** |
+
+In the paired replication it is **2 of 3 → 0 of 3**, and `mysterious_isle` reads **3.62 → 3.62** —
+identical to two decimals, already under threshold on both builds. **Cite the ratio collapse on the
+two indoor maps (7.37 → 1.75, 4.96 → 0.89); stop citing the alarm count.**
+
+### Open signature: seam refires at the latch cadence
+
+`soak_report.py` flagged `SEAM_CHURN` on every Step 3 arm. Most of the gross growth is expected —
+Step 3 deliberately exposes explore hops to `BotSetRoutedGoal`, so route-normalised seam share was
+flat or lower. But **exact same-bot, same-detour, same-waypoint retries at the 5-second latch
+cadence** are a different thing, and they are concentrated somewhere new:
+
+| map | control seams | Step 3 seams | control exact-5s refires | Step 3 exact-5s refires |
+|---|---|---|---|---|
+| batteriesincluded | 141 | 613 | 2 | 37 |
+| **Nightmarecastle** | 131 | 1,155 | **0** | **232** |
+| mysterious_isle | 470 | 498 | 53 | 46 |
+
+This is not a latch bypass — the latch is throttling correctly at 5s. It is an **unresolved hop
+retrying indefinitely under that throttle**. Via suspensions were flat (≈+2%). It does not overturn
+Step 3, but **"validated" must not be read as "seam/via delivery is clean."** Open, unowned.
+
+### Instrument and comment defects found on the way
+
+- **`tools/ab_guard.py:92` compares only the *length* of the two level sequences, not the
+  sequences.** Two arms that ran the same number of differently-ordered or differently-named levels
+  pass this check. It also prints reset counts without failing on a mismatch. The arms reviewed here
+  were manually verified identical, so nothing is corrupted — but the guard is weaker than the
+  places it is cited as proof imply. **Not fixed** (tooling change, deliberately left for the
+  operator's call alongside the no-code ruling).
+- **`Descent3/bot.h` claimed nothing reads travel intent at runtime.** True when Task 2 landed;
+  false since Step 3, which reads `travel_dest_room`/`travel_owner` in `BotDoExploreRoaming()` at
+  `bot.cpp:3121-3154`. Comment corrected (comment-only, no behaviour change — see the note in the
+  commit).
+
+### Reading the intent log (write this down — it is easy to get wrong)
+
+`BOT DEST` lines come in two shapes, and the owner of the **ending** intent is in a different field
+in each:
+
+```text
+N -> none (owner=X end=Y held=T)          # BotClearTravelDest — owner= IS the ending intent's owner
+N -> M owner=NEW (prev=OLD end=Y held=T)  # BotSetTravelDest supersession — prev= is the ending one
+```
+
+A naive `owner=`-first regex attributes every *superseded* intent to its **replacement's** owner and
+silently produces a plausible-looking, wrong stratification (it read KegD3 control objective-owned
+timeout as 0.0%). **Rule: `prev=` if present, else `owner=`.**
+
+### What survived the review unchanged
+
+- The 08-10 vs 08-11 same-build conversion swing reproduces (the §0.90 measurement error is real).
+- The same-evening bedlam conversion table reproduces; the §0.88 capture regression did not recur.
+- All seven corrected hard pins are **Plutonium** room 2, not Apparition room 2.
+- The escape-relapse *signature* exists on both builds in every arm (only the mechanism was wrong).
+- The Step 3 intent direction survives removal of the guard outlier in all four flagged pools.
+- No crash, no stale-binary, and no rule-bending was found in any arm.
+
+### Standing methodology rules, updated
+
+1. **Same evening, back to back, same machine** — unchanged, but justified by *run-to-run variance*,
+   not by a proven date effect. **And reverse the arm order in at least one pair**: every clean pair
+   to date ran control first, so order is collinear with build.
+2. **Exclude `unreach` from intent denominators**, always. It is recorded by different code paths on
+   the two builds.
+3. **Stratify intent metrics by owner.** A pooled arrival share can hide two populations moving in
+   opposite directions — it did here, for four commits.
+4. **Segment the primary metric by bot, not just the guard's metric.** §0.90 cited "survives
+   exclusion" for stuck escalations only; the intent metric was never segmented until this review
+   (it survives — but that was luck, not method).
+5. **Timeout share is not an effect size** while Step 3 renews the clock per hop and control does not.
 
 ---
 

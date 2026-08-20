@@ -475,8 +475,11 @@ struct bot_info {
   // Task 2 (NAV_CONSOLIDATION_PLAN §6): the travel-INTENT layer — where the bot MEANS to end up and
   // on whose authority. A shadow of explore_dest_room, which cannot carry intent itself because
   // routed nav reuses it for per-waypoint bookkeeping (it holds wp_room mid-route — the Task 2
-  // census's key find). Written ONLY by BotSetTravelDest/BotClearTravelDest; nothing at runtime
-  // reads it back — measurement state for the destination-churn metric (BOT DEST log lines).
+  // census's key find). Written ONLY by BotSetTravelDest/BotClearTravelDest.
+  // NOTE: Task 2's "nothing reads this back at runtime" contract was REVISED by Step 3 — the
+  // en-route maintenance branch in BotDoExploreRoaming() reads travel_dest_room/travel_owner and
+  // feeds them to BotSetRoutedGoal (bot.cpp:3121-3154). This is live dispatch input now, not only
+  // measurement state for the destination-churn metric (BOT DEST log lines).
   int travel_dest_room;   // final intended room, -1 = no live intent
   int8_t travel_owner;    // BotTravelOwner of the live intent (bot.cpp), -1/none when clear
   float travel_set_time;  // Gametime the intent was set — held-duration on BOT DEST lines

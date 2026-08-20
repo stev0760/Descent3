@@ -34,12 +34,20 @@ each waypoint along a route as if they had arrived (and picking somewhere new to
 that fix, holding onto an objective long after the flag had moved. Travel now persists when it should
 and re-thinks when it should.
 
-**Bots reach where they set out for, and give up on the clock far less.** Across four different map
-pools, the share of journeys that end in the bot actually arriving went up and the share that end
-in "I've been at this too long, pick somewhere else" fell — on one pool from 41% of all journeys down
-to 9%. On a single-map test where every round is flown over identical ground, captures went from 131
-to 152 and the number of bots genuinely wedged against geometry nearly halved. A second indoor pool
-halved its wedge count too. This is the payoff the rework was for.
+**Bots reach where they set out for — when they are roaming.** Journeys a bot undertakes on its own
+initiative (patrolling, exploring, going to look at something) now end in the bot actually arriving
+far more often: measured across six map pools, on every one of them, and roughly doubling on several.
+On a single-map test where every round is flown over identical ground, captures went from 131 to 152.
+That is the payoff the rework was for, and it is a real one.
+
+**Two honest limits on that claim**, both found by a second opinion after the first write-up. *One:*
+the gain is in self-directed roaming. Journeys toward the **game objective** — the flag run — did not
+improve on the same measurements, and on the two maps with enough data to tell, they got slightly
+worse. Part of that is by design (a bot chasing a flag is now supposed to re-think when the flag
+moves, which the measurement counts as not-arriving), but not all of it, and it is still open.
+*Two:* an earlier claim here that wedging "nearly halved" on a second map pool turned out to be
+almost entirely **one bot** having a bad night in the first run and a good one in the second; across
+all the other bots that pool was flat. Both numbers stand corrected rather than quietly dropped.
 
 **One caution for anyone comparing their own server logs.** Scores on open outdoor maps swing widely
 from night to night on their own. Running the *same* build twice on different evenings moved one
@@ -56,11 +64,15 @@ genuinely with you, and "Can't reach you!" works again when it truly can't.
 
 **Closed:** the long-running "Polaris scores worse than it should" investigation. Measured properly —
 same build, same night, back to back — Polaris performs the same as every other map on the test set.
-The apparent regression was the night-to-night swing described above, seen through two runs made on
-different days.
+The apparent regression **did not reproduce**. That is not quite the same as proving the two builds
+identical there: a single night's comparison on a map this noisy could still miss a small real
+difference. But there is nothing left to chase.
 
-**Still open in this build:** one room on Plutonium where bots reliably wedge, and a third game mode
-(Entropy) whose test run was cut short by a too-short time budget and still needs to be repeated.
+**Still open in this build:** one room on Plutonium where bots reliably wedge; a bot that gets stuck
+and frees itself will often set off for the very spot that just defeated it, over and over (this one
+is not new — it is in older builds too, and it is the single best explanation for most of the
+"wedged bot" reports); and on one map a bot can retry the same blocked doorway indefinitely, five
+seconds apart, without ever escalating.
 
 ## [0.9.10] - 2026-08-08
 
