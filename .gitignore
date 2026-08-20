@@ -445,6 +445,8 @@ savegame/
 # Claude Code session exports + session-to-session handoff notes
 2026-*.txt
 HANDOFF*.txt
+session-ses_*.txt
+session-*.txt
 
 # Navdump JSON dumps ($navdump / $nav dump) + their visualize_navdump.py SVG/PNG renders.
 # These land in the repo root as scratch; the real, tracked config JSON is kept below.
