@@ -2736,10 +2736,17 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   // direct portal, claimed in the CURRENT room so the engine steers straight with no BOA path.
   bool seam_redirect = false;
   vector seam_pnt{};
-  // Buried-center rooms (hollow-core annuli like abend2's mirror discs): Rooms[].path_pnt is void
-  // space, so aiming a hop at it press-cycles the engine at an unreachable point. Aim at the
-  // skeleton node toward the goal instead (portal nodes / hull-verified pseudo-bnodes).
-  const vector wp_aim = (wp_room == goal_room) ? routed_pos : BotWaypointAimPos(wp_room, routed_pos);
+  // One aim point per room (the d6efc603 lesson — one resolution, one helper, all layers): in a
+  // buried-center room resolve once via BotResolveRoomAim, the SAME helper the via layer and the
+  // seam direction share. The node it hands back is a real hull-proven point (skeleton BFS /
+  // roadmap / soft-hop), never the void `path_pnt`. Issue claimed in the CURRENT room below — the
+  // engine steers straight; no room-flap re-issue fights over which layer aimed where.
+  bool unified_aim = false;
+  vector wp_aim{};
+  if (BotRoomIsBuried(obj->roomnum))
+    unified_aim = BotResolveRoomAim(obj, routed_pos, goal_room, obj->size, &wp_aim, wp_room);
+  if (!unified_aim)
+    wp_aim = (wp_room == goal_room) ? routed_pos : BotWaypointAimPos(wp_room, routed_pos);
   {
     vector goal_pos = wp_aim;
     int steer_room = -1;
@@ -2804,6 +2811,17 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
       }
     }
     if (BotViaPointTick(bot_index, steer_pos, steer_room, Bots[bot_index].pursuit_goal_index, nullptr)) {
+      // AIMSPLIT (paired-log diagnostic, filtered): with resolution unified, a skeleton-flagged
+      // via commit (the helper's own output) must coincide with this routed goal's aim. Any
+      // split beyond one hop distance = a REAL leftover voice, not a probe target mismatch.
+      if (unified_aim && Bots[bot_index].via_is_skeleton) {
+        float split = vm_VectorDistanceQuick(&wp_aim, &Bots[bot_index].via_point);
+        static float Aimsplit_log_t[MAX_BOTS];
+        if (split > BOT_VIA_ARRIVE_DIST * 2 && Gametime - Aimsplit_log_t[bot_index] > 5.0f) {
+          Aimsplit_log_t[bot_index] = Gametime;
+          LOG_DEBUG.printf("BOT NAV: '%s' AIMSPLIT %.1f (routed vs via)", Bots[bot_index].callsign, split);
+        }
+      }
       Bots[bot_index].explore_dest_room = wp_room; // keep waypoint bookkeeping for progress/hold checks
       if (Bots[bot_index].explore_room_timer <= 0.0f)
         Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
@@ -2839,6 +2857,13 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
     // at the doorway, and the push-through offset (> arrive radius) makes arrival = crossing.
     dest = seam_pnt;
     dest_room = obj->roomnum;
+  } else if (unified_aim) {
+    // The resolved in-room hop, claimed in the CURRENT room (the helper's one answer — gridroute
+    // is deliberately skipped so it can't re-aim into the buried "resolution"; the roadmap finder
+    // inside the helper already had its chance in non-buried rooms).
+    dest = wp_aim;
+    dest_room = obj->roomnum;
+    nav_dest_overridden = true;
   } else if (Bot_gridnav_enabled && Bot_gridroute_enabled && !OBJECT_OUTSIDE(obj)) {
     vector gvia;
     if (BotRoadmapFindVia(obj, dest, wp_room, &gvia, /*proactive=*/true) == BOT_VIA_FOUND) {
@@ -2919,8 +2944,8 @@ static void BotDoExploreRoaming(int bot_index) {
   // 1122 -> 2458 and median intent life 13.5s -> 8.2s, i.e. the destination re-roll that the whole
   // intent layer exists to prevent, reintroduced one level down. Scoring did not move (113 vs 114
   // captures) — only the churn instrument saw it, which is what it was built for.
-  int errand_room = (Bots[bot_index].travel_dest_room >= 0) ? Bots[bot_index].travel_dest_room
-                                                            : Bots[bot_index].explore_dest_room;
+  int errand_room =
+      (Bots[bot_index].travel_dest_room >= 0) ? Bots[bot_index].travel_dest_room : Bots[bot_index].explore_dest_room;
   // AN OBJECTIVE ERRAND MUST RE-EVALUATE; AN EXPLORE ERRAND MUST NOT. The objective ROOM moves —
   // the enemy flag gets taken, returned, or carried — so an objective intent held all the way to
   // arrival is a trip to where the flag WAS. Holding it is the mirror-image error of the waypoint
@@ -2951,8 +2976,8 @@ static void BotDoExploreRoaming(int bot_index) {
         BotTravelOwner m_owner =
             (Bots[bot_index].travel_owner >= 0) ? (BotTravelOwner)Bots[bot_index].travel_owner : TRAVEL_OWNER_EXPLORE;
         bool m_reissued = false;
-        BotSetRoutedGoal(bot_index, Bots[bot_index].travel_dest_room,
-                         Rooms[Bots[bot_index].travel_dest_room].path_pnt, &m_reissued, m_owner);
+        BotSetRoutedGoal(bot_index, Bots[bot_index].travel_dest_room, Rooms[Bots[bot_index].travel_dest_room].path_pnt,
+                         &m_reissued, m_owner);
       } else if (!OBJECT_OUTSIDE(obj) && BotBnodeNativeActive()) {
         // $nav bnodesp: the engine's BNode path owns this leg — skip the via-point re-aim (that
         // IS the routing/via stack this bypass exists to disable, PLAN-coop-nav-rethink.md 9.5.3).
@@ -2970,15 +2995,29 @@ static void BotDoExploreRoaming(int bot_index) {
       } else if (!OBJECT_OUTSIDE(obj)) {
         // (Intent-less fallback since Step 3 — reachable when no interior errand is recorded.)
         int dest = Bots[bot_index].explore_dest_room;
+        // The fourth voice folded (d6efc603 lesson): buried destinations must not re-issue the
+        // raw void path_pnt — resolve/re-aim the same way BotSetRoutedGoal does (helper first,
+        // then nearest-skeleton-node fallback). The via tick still sees the resolved aim.
+        vector aim_pos = Rooms[dest].path_pnt;
+        int aim_room = dest;
+        if (BotRoomIsBuried(dest)) {
+          vector resolved{};
+          if (BotResolveRoomAim(obj, aim_pos, dest, obj->size, &resolved)) {
+            aim_pos = resolved;
+            aim_room = obj->roomnum; // claim CURRENT room — engine steers straight
+          } else {
+            aim_pos = BotWaypointAimPos(dest, aim_pos);
+          }
+        }
         int steer_room = -1;
-        vector steer_pos = BotGetActiveSteerPoint(obj, Rooms[dest].path_pnt, dest, &steer_room);
+        vector steer_pos = BotGetActiveSteerPoint(obj, aim_pos, aim_room, &steer_room);
         int &pgi = Bots[bot_index].pursuit_goal_index;
         if (!BotViaPointTick(bot_index, steer_pos, steer_room, pgi, nullptr) &&
             !(pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)) {
-          // Via just completed (or the goal was flushed) — re-aim at the original destination
+          // Via just completed (or the goal was flushed) — re-aim at the resolved destination
           goal_info gi_info{};
-          gi_info.pos = Rooms[dest].path_pnt;
-          gi_info.roomnum = dest;
+          gi_info.pos = aim_pos;
+          gi_info.roomnum = aim_room;
           pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
         }
       } else if (Bot_outdoor_via_enabled && Bots[bot_index].oa_steer_room >= 0 &&
@@ -3112,8 +3151,7 @@ static void BotDoExploreRoaming(int bot_index) {
           // follow the region lattice toward it (waypoint advances on goal completion, en_route
           // holds between waypoints). troute owns this follower for all entrance legs (the
           // piece-1-proper prescription). Skipped on the entry commit — that's a ~25u door push.
-          bool routed =
-              !entry_commit && BotOutdoorRouteLeg(obj, ent_pos, ent_room, &gi_info.pos, &gi_info.roomnum);
+          bool routed = !entry_commit && BotOutdoorRouteLeg(obj, ent_pos, ent_room, &gi_info.pos, &gi_info.roomnum);
           pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
           Bots[bot_index].explore_dest_room = ent_room;
           Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;

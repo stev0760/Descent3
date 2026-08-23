@@ -69,7 +69,8 @@ bool Bot_glass_route_enabled = true;   // 0.9.6 2b: breakable-glass portals get 
 bool Bot_wind_route_enabled = true;    // 0.9.7: wind-tunnel one-way gating + downwind shortcut bias ($nav wind)
 bool Bot_seam_guard_enabled = true;    // 0.9.7: re-aim through the direct door when the engine path detours ($nav seam)
 bool Bot_entry_commit_enabled = true;  // 0.9.7 Phase 8.2: commit THROUGH the door from the standoff point ($nav entry)
-bool Bot_outdoor_tier_enabled = true;  // 0.9.7 piece 1: entrance choice by full routed cost, not BOA estimate ($nav outtier)
+bool Bot_outdoor_tier_enabled =
+    true; // 0.9.7 piece 1: entrance choice by full routed cost, not BOA estimate ($nav outtier)
 // 12.7 $softfollow early via-release was REMOVED (validated as a dead end): it fired inside the via commit
 // window and re-introduced the exact circling it meant to avoid (darkjourney via-arrival 73%→18%). Any future
 // rigidity-loosening must be non-oscillating (hysteresis / release-once-after-passing). See NAVIGATION.md §7.0.
@@ -238,8 +239,7 @@ float BotPortalGeoCost(int room_idx, int portal_idx) {
         }
       }
       if (glass) {
-        LOG_DEBUG << "[Nav] Room " << room_idx << " portal " << portal_idx
-                  << " breakable glass -> finite break cost";
+        LOG_DEBUG << "[Nav] Room " << room_idx << " portal " << portal_idx << " breakable glass -> finite break cost";
         return cached = BOT_PORTAL_GLASS_PENALTY;
       }
     }
@@ -494,6 +494,150 @@ bool BotRoomPathPntReachable(int room_idx) {
       return true;
   }
   return false;
+}
+
+// --- One aim point per room (the d6efc603 revert lesson): a single in-room resolution helper that
+// every layer (goal issue, via, seam direction, explore fallback) calls, so routing resolutions stop
+// disagreeing at room-flap cadence. Branch order is deterministic and shared by all callers:
+//   (a) in non-buried rooms, the 0.9.4 volumetric roadmap (Lazy Theta*) goes FIRST — the proactive
+//       in-room planner; in buried rooms (RoomBuriedCenter) it is skipped because its relaxed-graph
+//       chords fight the skeleton the entry-hop experiments died over;
+//   (b) skeleton BFS first-hop — the hull-proven arc for annuli/buried centers (12.3/12.5b);
+//   (c) soft-hop fallback — aim at the nearest egress portal when the graph is disconnected
+//       (12.4/12.7 generalized reach-door; the route over the open tunnel doors still works).
+// Guard BEFORE build: obj + target_room used/indoor/non-external; fvi startroom for obj→node probes
+// is obj->roomnum (never the skeleton-graph room — the BotWaypointAimPos guard pattern at ~499).
+// Optional `next_room` hint avoids a second BotComputeRoute Dijkstra when the caller has it.
+bool BotResolveRoomAim(object *obj, const vector &target_pos, int target_room, float radius, vector *out,
+                       int next_room_hint) {
+  if (!obj || !out)
+    return false;
+  if (target_room < 0 || target_room > Highest_room_index || (Rooms[target_room].flags & RF_EXTERNAL) || !obj->ai_info)
+    return false;
+
+  int room_idx = obj->roomnum;
+  if (room_idx < 0 || room_idx > Highest_room_index)
+    return false;
+  SkelLevelReset(); // explicit re-invocation of pass 3's old reset (buried gate below can skip it)
+  room &rm = Rooms[room_idx];
+
+  // (a) non-buried rooms ask the roadmap first — zero-divergence: buried rooms skip straight to (b).
+  if (Bot_gridnav_enabled && !RoomBuriedCenter(room_idx)) {
+    vector rv;
+    if (BotRoadmapFindVia(obj, target_pos, target_room, &rv) == BOT_VIA_FOUND) {
+      *out = rv;
+      return true;
+    }
+  }
+
+  int np = SkelPortalCount(rm);
+  if (np < 2)
+    return false;
+  if (!skel_built[room_idx])
+    SkelBuild(room_idx);
+  int n = skel_node_count[room_idx]; // portal nodes [0,np), pseudo-bnodes [np,n)
+
+  // (b) skeleton BFS first-hop.
+  uint32_t exits = 0;
+  if (target_room != room_idx) {
+    int next_room = (next_room_hint >= 0) ? next_room_hint : BotComputeRoute(room_idx, target_room);
+    if (next_room_hint < 0 && next_room < 0)
+      next_room = target_room;
+    for (int i = 0; i < np; i++)
+      if (rm.portals[i].croom == next_room)
+        exits |= (1u << i);
+    if (!exits) { // router returned a non-adjacent hop (shouldn't happen) — direct fallback
+      for (int i = 0; i < np; i++)
+        if (rm.portals[i].croom == target_room)
+          exits |= (1u << i);
+    }
+  } else {
+    for (int i = 0; i < n; i++)
+      if (BotSegmentClear(obj->roomnum, skel_node_pos[room_idx][i], target_pos, radius))
+        exits |= (1u << i);
+  }
+
+  if (exits) {
+    // Standing-neighbor rule (12.3.1): nodes under the bot contribute their edges, not themselves.
+    uint32_t vis = 0, standing = 0;
+    for (int i = 0; i < n; i++) {
+      float nd = vm_VectorDistanceQuick(&obj->pos, &skel_node_pos[room_idx][i]);
+      if (nd < BOT_VIA_ARRIVE_DIST) {
+        standing |= (1u << i);
+        vis |= skel_edges[room_idx][i];
+        continue;
+      }
+      if (BotSegmentClear(obj->roomnum, obj->pos, skel_node_pos[room_idx][i], radius))
+        vis |= (1u << i);
+    }
+    vis &= ~standing;
+
+    int hop = -1;
+    for (int i = 0; i < n && hop < 0; i++)
+      if ((exits & vis) & (1u << i))
+        hop = i;
+
+    if (hop < 0 && vis) {
+      // BFS outward FROM the exit set; first bot-visible node reached is the bot-adjacent hop.
+      int dist_n[SKEL_MAX_NODES], qq[SKEL_MAX_NODES], qh = 0, qt = 0;
+      for (int i = 0; i < n; i++)
+        dist_n[i] = -1;
+      for (int i = 0; i < n; i++)
+        if (exits & (1u << i)) {
+          dist_n[i] = 0;
+          qq[qt++] = i;
+        }
+      while (hop < 0 && qh < qt) {
+        int u = qq[qh++];
+        for (int v = 0; v < n; v++) {
+          if (!(skel_edges[room_idx][u] & (1u << v)) || dist_n[v] >= 0)
+            continue;
+          dist_n[v] = dist_n[u] + 1;
+          qq[qt++] = v;
+          if (vis & (1u << v)) {
+            hop = v;
+            break;
+          }
+        }
+      }
+    }
+
+    if (hop >= 0) {
+      *out = skel_node_pos[room_idx][hop];
+      return true;
+    }
+
+    // (c) soft-hop fallback (12.4/12.7 reach-door): no skeleton hop resolves — aim at the nearest
+    // egress portal anyway and let wall-avoidance thread the bot toward it. Gated as in live code.
+    if (Bot_reach_door_enabled && (Bot_soft_hop_enabled || RoomBuriedCenter(room_idx))) {
+      int best = -1;
+      float best_d = 1e30f;
+      for (int i = 0; i < np; i++) {
+        if (!(exits & (1u << i)))
+          continue;
+        float d = vm_VectorDistanceQuick(&obj->pos, &skel_node_pos[room_idx][i]);
+        if (d < best_d) {
+          best_d = d;
+          best = i;
+        }
+      }
+      if (best >= 0) {
+        *out = skel_node_pos[room_idx][best];
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// Public gate for bot.cpp callers (the static RoomBuriedCenter isn't linkable there): guards the
+// room, then returns the cached buried-center verdict. All resolution work stays in bot_steering.cpp
+// so the consolidate-the-voices caller discipline is compile-enforced.
+bool BotRoomIsBuried(int room_idx) {
+  SkelLevelReset();
+  if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used || (Rooms[room_idx].flags & RF_EXTERNAL))
+    return false;
+  return RoomBuriedCenter(room_idx);
 }
 
 vector BotWaypointAimPos(int wp_room, const vector &toward) {
@@ -903,145 +1047,19 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
     return BOT_VIA_NONE;
   }
 
-  // --- Pass 3 (12.3 + 12.5b): skeleton hop over portals AND pseudo-bnodes. Indoor-only: it indexes
-  // Rooms[obj->roomnum], which is a terrain cell outdoors. The outdoor connecting graph is Stage B. ---
+  // --- Pass 3 (12.3 + 12.5b): one resolution, one helper. The in-room resolution for this leg is
+  // computed by BotResolveRoomAim — the SINGLE implementation shared by goal issue, via and seam
+  // (the d6efc603 lesson: three layers resolving "room N" to different points = ping-pong voice,
+  // until one helper owns the whole branch order). Indoor-only — outdoors pass 3 is the 12.6
+  // connecting graph. ---
   if (!is_outdoor) {
-    // 0.9.4 Stage 1: the volumetric grid roadmap (Lazy Theta*) is the pass-3 in-room planner, IN PLACE OF
-    // the portal skeleton — and it runs AFTER the reactive rings above, so healthy rooms keep their light
-    // 0.9.3 behavior (rings resolve the easy cases) and the roadmap only engages where they fail. Returns a
-    // furthest-visible waypoint marked skeleton (the chain-cap/suspend governor bounds it); on BOT_VIA_NONE
-    // (degenerate / disconnected / unseen) we fall through to the skeleton BFS below. $gridnav off = 0.9.3.
-    if (Bot_gridnav_enabled) {
-      vector rv;
-      if (BotRoadmapFindVia(obj, target_pos, target_room, &rv) == BOT_VIA_FOUND) {
-        if (via_out)
-          *via_out = rv;
-        if (skeleton_out)
-          *skeleton_out = true;
-        return BOT_VIA_FOUND;
-      }
-    }
-    SkelLevelReset();
-    int room_idx = obj->roomnum;
-    room &rm = Rooms[room_idx];
-    int np = SkelPortalCount(rm);
-    if (np >= 2) {
-      if (!skel_built[room_idx])
-        SkelBuild(room_idx);
-      int n = skel_node_count[room_idx]; // portal nodes [0,np), then pseudo-bnodes [np,n)
-
-      // Exit set: the portal(s) toward the routed next room (cross-room target), or the nodes
-      // that can see the target (same-room target — e.g. a powerup across the ring). Only PORTAL
-      // nodes lead to other rooms, so the cross-room scan is bounded by np.
-      uint32_t exits = 0;
-      if (target_room != room_idx) {
-        int next_room = BotComputeRoute(room_idx, target_room);
-        if (next_room < 0)
-          next_room = target_room;
-        for (int i = 0; i < np; i++)
-          if (rm.portals[i].croom == next_room)
-            exits |= (1u << i);
-        if (!exits) { // router said something not adjacent (shouldn't happen) — direct fallback
-          for (int i = 0; i < np; i++)
-            if (rm.portals[i].croom == target_room)
-              exits |= (1u << i);
-        }
-      } else {
-        for (int i = 0; i < n; i++)
-          if (ViaSegmentClear(room_idx, skel_node_pos[room_idx][i], target_pos, radius, nullptr))
-            exits |= (1u << i);
-      }
-
-      if (exits) {
-        // Start set: skeleton nodes the bot can reach directly at hull radius. 12.3.1: nodes the
-        // bot is already STANDING at must not be chosen as the hop (navmapping19: issue node i →
-        // "reached" 1s later → re-issue i → bounce-suspend; the off-node probe to the NEXT node
-        // often fails, leaving i the only visible node). A standing node instead contributes its
-        // skeleton NEIGHBORS to the start set — the cached edge already proves those legs are
-        // ship-flyable from i, which is where the bot effectively is.
-        uint32_t vis = 0, standing = 0;
-        for (int i = 0; i < n; i++) {
-          float nd = vm_VectorDistanceQuick(&obj->pos, &skel_node_pos[room_idx][i]);
-          if (nd < BOT_VIA_ARRIVE_DIST) {
-            standing |= (1u << i);
-            vis |= skel_edges[room_idx][i]; // neighbors reachable via the proven corridor
-            continue;
-          }
-          if (ViaSegmentClear(room_idx, obj->pos, skel_node_pos[room_idx][i], radius, nullptr))
-            vis |= (1u << i);
-        }
-        vis &= ~standing; // never hop to where we already are
-
-        int hop = -1;
-        for (int i = 0; i < n && hop < 0; i++) // trivial: an exit node the bot can already see
-          if ((exits & vis) & (1u << i))
-            hop = i;
-
-        if (hop < 0 && vis) {
-          // BFS outward FROM the exit set over skeleton edges; the first bot-visible node
-          // reached is the bot-adjacent node on a shortest node-path to the exit — the hop.
-          int dist_n[SKEL_MAX_NODES], qq[SKEL_MAX_NODES], qh = 0, qt = 0;
-          for (int i = 0; i < n; i++)
-            dist_n[i] = -1;
-          for (int i = 0; i < n; i++)
-            if (exits & (1u << i)) {
-              dist_n[i] = 0;
-              qq[qt++] = i;
-            }
-          while (hop < 0 && qh < qt) {
-            int u = qq[qh++];
-            for (int v = 0; v < n; v++) {
-              if (!(skel_edges[room_idx][u] & (1u << v)) || dist_n[v] >= 0)
-                continue;
-              dist_n[v] = dist_n[u] + 1;
-              qq[qt++] = v;
-              if (vis & (1u << v)) {
-                hop = v;
-                break;
-              }
-            }
-          }
-        }
-
-        if (hop >= 0) {
-          if (via_out)
-            *via_out = skel_node_pos[room_idx][hop];
-          if (skeleton_out)
-            *skeleton_out = true;
-          return BOT_VIA_FOUND;
-        }
-
-        // Soft progress hop toward the egress portal (12.4 reach-the-door, generalized in 12.7): the
-        // exit toward the goal is known (exits) but no clean skeleton path reaches it — the room's two
-        // portal sub-graphs are disconnected (a free-standing divider, or a buried center). Aim straight
-        // at the nearest egress portal anyway and let the engine's wall-avoidance thread the bot toward
-        // it — "help the engine bridge the gap." Still a goal-aware AIG_GET_TO_POS waypoint, never a
-        // steering force; marked skeleton so chain-cap -> suspend -> room-progress-timeout -> dyn-bump ->
-        // reroute governs it (no infinite grind; reroutes if it can't cross). 12.4 fired only in
-        // RoomBuriedCenter rooms; $navbridge (12.7) extends it to ALL 2-component rooms — the open-center
-        // case (khazaddum 20/31, buried=0) where the engine CAN deflect around the divider to the exit,
-        // the soak's #1 hard-pin bucket. $navbridge off restores the buried-only 12.4 behavior.
-        if (Bot_reach_door_enabled && (Bot_soft_hop_enabled || RoomBuriedCenter(room_idx))) {
-          int best = -1;
-          float best_d = 1e30f;
-          for (int i = 0; i < np; i++) {
-            if (!(exits & (1u << i)))
-              continue;
-            float d = vm_VectorDistanceQuick(&obj->pos, &skel_node_pos[room_idx][i]);
-            if (d < best_d) {
-              best_d = d;
-              best = i;
-            }
-          }
-          if (best >= 0) {
-            if (via_out)
-              *via_out = skel_node_pos[room_idx][best];
-            if (skeleton_out)
-              *skeleton_out = true;
-            return BOT_VIA_FOUND;
-          }
-        }
-      }
+    vector hop;
+    if (BotResolveRoomAim(obj, target_pos, target_room, radius, &hop)) {
+      if (via_out)
+        *via_out = hop;
+      if (skeleton_out)
+        *skeleton_out = true;
+      return BOT_VIA_FOUND;
     }
   }
   return BOT_VIA_NONE;
@@ -1382,8 +1400,8 @@ bool BotResolveOutdoorEntrance(const object *obj, int objective_room, int *out_r
       float appr;
       vector diff = Rooms[er].portals[ep].path_pnt - obj->pos;
       if (Bot_troute_enabled) {
-        vector door_appr =
-            Rooms[er].portals[ep].path_pnt - Rooms[er].faces[Rooms[er].portals[ep].portal_face].normal * BOT_OUTDOOR_APPROACH_OFFSET;
+        vector door_appr = Rooms[er].portals[ep].path_pnt -
+                           Rooms[er].faces[Rooms[er].portals[ep].portal_face].normal * BOT_OUTDOOR_APPROACH_OFFSET;
         appr = BotRoadmapOutdoorPathCost(region, obj->pos, door_appr);
         if (appr < 0.0f)
           appr = vm_GetMagnitude(&diff) * 1.5f;
@@ -1513,8 +1531,8 @@ static float TroutePairCost(int region, int ci, int cj, const vector &a, const v
 // (E = exit toward terrain, B = entry toward the goal): interiorCost(bot->E.room) + lattice(E->B)
 // + interiorCost(B.room->goal_room). Rule 1 (coverage-verified FOUND) is the lattice term itself:
 // a pair without a finite Theta* path is not a plan. Returns false when no pair qualifies.
-bool BotTrouteCompose(const object *obj, int goal_room, int *out_exit_room, int *out_exit_portal,
-                      int *out_entry_room, int *out_entry_portal, int *out_region, float *out_total) {
+bool BotTrouteCompose(const object *obj, int goal_room, int *out_exit_room, int *out_exit_portal, int *out_entry_room,
+                      int *out_entry_portal, int *out_region, float *out_total) {
   if (!obj || OBJECT_OUTSIDE(obj))
     return false;
   float best_total = 1e30f;

@@ -32,10 +32,10 @@
 // from "tight but flyable" so the router prefers roomier parallel routes when they exist.
 // The verdict feeds ONLY our Dijkstra cost (a soft weight) — it never mutates engine portal
 // flags, so a false positive degrades to a longer route or engine fallback, never a stranded bot.
-#define BOT_PORTAL_IMPASSABLE 1.0e6f   // edges at/above this are excluded by the router
-#define BOT_PORTAL_SHIP_RADIUS 2.5f    // swept-sphere fit test: can a ship fly through at all?
-#define BOT_PORTAL_TIGHT_RADIUS 4.0f   // comfortable-margin test: fits but no slack -> tightness penalty
-#define BOT_PORTAL_TIGHT_PENALTY 40.0f // cost added for a tight-but-passable opening (~one BOA hop)
+#define BOT_PORTAL_IMPASSABLE 1.0e6f    // edges at/above this are excluded by the router
+#define BOT_PORTAL_SHIP_RADIUS 2.5f     // swept-sphere fit test: can a ship fly through at all?
+#define BOT_PORTAL_TIGHT_RADIUS 4.0f    // comfortable-margin test: fits but no slack -> tightness penalty
+#define BOT_PORTAL_TIGHT_PENALTY 40.0f  // cost added for a tight-but-passable opening (~one BOA hop)
 #define BOT_PORTAL_GLASS_PENALTY 120.0f // TF_BREAKABLE glass: crossable after a shatter (~3 hops detour tolerance)
 
 // Pseudo-bnode (interior-waypoint) synthesis — Phase 12.5b. Edges among synthesized nodes are tested at
@@ -124,6 +124,20 @@ bool BotRoomPathPntReachable(int room_idx);
 // path_pnt, but in a buried-center room that point is void/core space, so return the skeleton
 // node nearest `toward` (portal nodes are guaranteed-flyable; pseudo-bnodes are hull-verified).
 vector BotWaypointAimPos(int wp_room, const vector &toward);
+
+// The ONE in-room resolution point (d6efc603 lesson — one aim point per room): all navigators
+// resolve a leg's in-room target through this helper, sharing one branch order: (a) the 0.9.4
+// volumetric roadmap (Lazy Theta*) first in NON-buried rooms, (b) the skeleton BFS first-hop
+// (the hull-proven arc for buried centers), (c) the soft-hop fallback (reach-door). All obj→node
+// probes use startroom = obj->roomnum (never the skeleton-graph room). Guards obj/target_room
+// (used, indoor, non-external) before SkelBuild. `next_room_hint` skips a second BotComputeRoute
+// Dijkstra when the caller has the router hop.
+bool BotResolveRoomAim(object *obj, const vector &target_pos, int target_room, float radius, vector *out,
+                       int next_room_hint = -1);
+
+// Public gate for bot.cpp calls into the static RoomBuriedCenter (cached per level): true when the
+// room's path_pnt is buried/void — the room class where resolution must go through the helper.
+bool BotRoomIsBuried(int room_idx);
 
 // $navdump diagnostic (12.5b): dump a room's skeleton graph — node positions (portal nodes
 // [0,*portal_count_out), then pseudo-bnodes) and the per-node hull-clear edge bitmask. Builds the
@@ -261,7 +275,7 @@ extern bool Bot_troute_compare_enabled; // $nav troute2: v2 cost-comparison rout
 // them, so measured traversal pain is priced into every route/comparison (single cost language).
 extern bool Bot_hard_cost_enabled;
 #define BOT_HARD_ROOM_ROUTE_PENALTY 800.0f
-bool BotTrouteCompose(const object *obj, int goal_room, int *out_exit_room, int *out_exit_portal,
-                      int *out_entry_room, int *out_entry_portal, int *out_region, float *out_total);
+bool BotTrouteCompose(const object *obj, int goal_room, int *out_exit_room, int *out_exit_portal, int *out_entry_room,
+                      int *out_entry_portal, int *out_region, float *out_total);
 
 #endif // BOT_STEERING_H
