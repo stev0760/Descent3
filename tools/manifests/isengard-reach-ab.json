@@ -5,10 +5,10 @@
   "telnet_port": 2092,
   "telnet_password": "test",
   "phases": [
-    {"name": "ROFF1", "toggles": {"reach": false, "strike": false, "dense": true, "gridall": false, "outroute": false}, "minutes": 30},
-    {"name": "RON1",  "toggles": {"reach": true,  "strike": false, "dense": true, "gridall": false, "outroute": false}, "minutes": 30},
-    {"name": "ROFF2", "toggles": {"reach": false, "strike": false, "dense": true, "gridall": false, "outroute": false}, "minutes": 30},
-    {"name": "RON2",  "toggles": {"reach": true,  "strike": false, "dense": true, "gridall": false, "outroute": false}, "minutes": 30}
+    {"name": "ROFF1", "toggles": {"reach": false, "strike": false, "dense": true}, "minutes": 30},
+    {"name": "RON1",  "toggles": {"reach": true,  "strike": false, "dense": true}, "minutes": 30},
+    {"name": "ROFF2", "toggles": {"reach": false, "strike": false, "dense": true}, "minutes": 30},
+    {"name": "RON2",  "toggles": {"reach": true,  "strike": false, "dense": true}, "minutes": 30}
   ],
   "navdump": {},
   "max_minutes": 140

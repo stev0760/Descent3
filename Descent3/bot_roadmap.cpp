@@ -55,12 +55,6 @@
 bool Bot_gridnav_enabled = true;        // $gridnav — default ON for 0.9.4
 bool Bot_roadmap_corner_enabled = true; // $gridbridge — corner-rounding component bridge (Stage 3.5 prototype)
 bool Bot_gridroute_enabled = true;      // $gridroute — proactive in-room grid planning for objective/carrier nav
-// $nav outroute — proactive outdoor lattice following on objective legs. DEFAULT OFF 2026-07-05:
-// shipped ON untested and is the prime suspect for the bedlam outdoor-CTF collapse (Plutonium 16
-// flag grabs / 0 returns home; Polaris dead — see project bedlam-regression forensics). Re-enable
-// live with `$nav outroute on` for the isengard/bree A-side; re-default only after the bedlam
-// triage soak clears it.
-bool Bot_outdoor_route_enabled = false;
 // $nav outlattice — consult the outdoor region lattice (BotRoadmapFindViaOutdoor) in the
 // blocked-line via RESCUE, ahead of the 12.6B connecting graph. OFF = the 0.9.3 rescue order
 // (rings -> connecting graph), the bedlam gold-reference outdoor stack, without giving up the
@@ -68,10 +62,6 @@ bool Bot_outdoor_route_enabled = false;
 // the 0.9.4 lattice-first ordering.
 bool Bot_outdoor_lattice_enabled = true;
 bool Bot_hard_room_enabled = true; // 0.9.7: evidence-gated gridroute promotion ($nav hardroom)
-// $nav gridall — proactive grid routing in EVERY room (deterministic-traversal A/B). With seam/
-// hop-commit/chain-cap-progress/entry live, the 0.9.4-era indirection cost of ungated proactive
-// routing may be gone. Default OFF until the both-pool A/B says otherwise.
-bool Bot_grid_always = false;
 // $nav curve — curve-following at the STRAIGHTENING layer (0.9.7, the isengard room-36 corkscrew).
 // Diagnostic (soak-20260708T181641, hard-room path-shape) confirmed FORK B: Theta* collapses the
 // corkscrew into a straight over-the-mound chord (room-36 len/chord 1.04, 100% chord) using bare-hull
@@ -1124,7 +1114,7 @@ BotViaResult BotRoadmapFindVia(object *obj, const vector &target_pos, int target
   // indirection (the soak-measured easy-pool regression: gollums/darkjourney recovered with gridroute off,
   // khazaddum's divider rooms collapsed). Reactive calls (proactive=false) always run — a blocked line in a
   // simple room still needs a go-around.
-  if (proactive && !rr->complex && !Bot_grid_always && !BotRoadmapRoomIsHard(room_idx))
+  if (proactive && !rr->complex && !BotRoadmapRoomIsHard(room_idx))
     return BOT_VIA_NONE;
 
   // Goal node: the nearest node to an in-room target, or the seam node toward the next room.

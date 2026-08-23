@@ -96,20 +96,6 @@
         // the whole chase is under this — a mobile bot on a long maze route
         // is a slow chase, not evidence of a troll item (0.9.6)
 
-// 0.9.7 Stage 3 — progress-monitor replan ($nav replan). Detect zero-progress in ~1s and re-plan
-// from the CURRENT pose instead of pressing until the 8s chase timeout / 12s room timeout.
-// NON-OSCILLATING BY CONSTRUCTION (the $softfollow tombstone): the trigger is net displacement
-// ≈ 0 — a FAILURE signal only a bot that physically cannot move toward its via/goal produces —
-// never a target-line re-check, which flickers on a bot moving laterally past an obstacle.
-#define BOT_STALL_WINDOW 1.0f   // seconds per displacement sample window
-#define BOT_STALL_DISP 8.0f     // net displacement under this per window = stalled (flight speed is 30-60 u/s)
-#define BOT_STALL_COOLDOWN 3.0f // hysteresis: min seconds between stall ACTIONS (detector keeps sampling)
-// Second octave — CIRCLING (the analyzer's "moving-but-slow" class, live): a via/skeleton dance
-// moves >8u every second but nets ~40u over twelve, so the fast window reads it as progress.
-// The slow window measures net displacement at the dance's own timescale.
-#define BOT_CIRCLE_WINDOW 8.0f // seconds per slow-window sample
-#define BOT_CIRCLE_DISP 35.0f  // net displacement under this per slow window = circling, not traveling
-
 // Grate detection probe radius (0.9.7): grate bars have gaps a zero-width ray threads — bots shot
 // players THROUGH isengard grates while the rad-0 detector saw nothing. Sweep at a sub-hull radius
 // so the probe collides like a ship, not a bullet. Below the 6.7 hull so it can't false-positive
@@ -404,7 +390,7 @@ enum BotNavMember : uint8_t {
   NAV_MEMBER_VIA,           // Phase 12 via-point — interior obstacle go-around
   NAV_MEMBER_GRIDROUTE,     // $nav route — proactive in-room grid waypoint (complex rooms)
   NAV_MEMBER_OUTDOOR_ENTRY, // outdoor two-stage entrance approach/commit
-  NAV_MEMBER_OUTDOOR_LEG,   // $nav outroute — outdoor lattice leg follow
+  NAV_MEMBER_OUTDOOR_LEG,   // $nav troute — outdoor lattice segment follower
   NAV_MEMBER_PATH_PNT,      // default: raw portal path_pnt / final pos, nothing else engaged
   NAV_MEMBER_STUCK_ESCAPE,  // stuck-recovery escape thrust (can flee backward) — BotApplyThrust
   NAV_MEMBER_ENGINE,        // raw goal handed to the engine (escort beeline / hold-station / outdoor
@@ -563,14 +549,6 @@ struct bot_info {
   float mball_avoid_log_t;    // ball-avoid detour log throttle (contact-blunder discipline)
   float mball_junction_log_t; // junction fork-veto log throttle (M2.6; absolute Gametime — reinit sweep)
 
-  // 0.9.7 Stage 3 progress-monitor replan state
-  vector stall_check_pos;   // position at the start of the current sample window
-  float stall_check_time;   // Gametime when the current sample window opened
-  int stall_streak;         // consecutive stalled windows (resets on any window with progress)
-  float stall_action_until; // Gametime until which stall ACTIONS are on cooldown (hysteresis)
-  vector circle_check_pos;  // slow-window start position (circling detection)
-  float circle_check_time;  // Gametime when the slow window opened
-
   // Long-term powerup blacklist (Phase 7.4) — survives BotClearActiveGoal so the 12-second
   // Plasmacannon loop is broken. Set when a powerup chase times out; checked in BotFindBestPowerup.
   int blacklisted_powerup_handle;    // handle of recently-timed-out powerup; OBJECT_HANDLE_NONE = none
@@ -658,7 +636,6 @@ extern bool Bot_grate_clear_enabled;          // $nav grate — proactive destro
 extern bool Bot_objective_commit_enabled;     // $nav commit — objective commitment: opportunistic-only powerups
                                               // (same/adjacent room) while routing to an objective (0.9.6)
 extern bool Bot_dedicated_runner_enabled;     // $nav runner — dedicated CTF flag-runner role (0.9.8)
-extern bool Bot_stall_replan_enabled;         // $nav replan — Stage 3 progress-monitor replan (0.9.7)
 extern bool Bot_soft_strike_enabled;          // $nav strike — same-room soft chase-aborts count toward troll
                                               // retirement at BOT_TROLL_SOFT_PER_STRIKE weight (0.9.7 Fix A)
 extern bool Bot_reach_gate_enabled;           // $nav reach — single-authority reachability gate on same-room

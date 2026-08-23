@@ -5,10 +5,10 @@
   "telnet_port": 2092,
   "telnet_password": "test",
   "phases": [
-    {"name": "TOFF1", "toggles": {"troute": false, "gridall": false, "outroute": false}, "minutes": 30},
-    {"name": "TON1",  "toggles": {"troute": true,  "gridall": false, "outroute": false}, "minutes": 30},
-    {"name": "TOFF2", "toggles": {"troute": false, "gridall": false, "outroute": false}, "minutes": 30},
-    {"name": "TON2",  "toggles": {"troute": true,  "gridall": false, "outroute": false}, "minutes": 30}
+    {"name": "TOFF1", "toggles": {"troute": false}, "minutes": 30},
+    {"name": "TON1",  "toggles": {"troute": true},  "minutes": 30},
+    {"name": "TOFF2", "toggles": {"troute": false}, "minutes": 30},
+    {"name": "TON2",  "toggles": {"troute": true},  "minutes": 30}
   ],
   "navdump": {},
   "max_minutes": 140

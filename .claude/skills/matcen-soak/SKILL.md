@@ -58,8 +58,8 @@ Manifest format (JSON):
   "telnet_port": 2092,
   "telnet_password": "test",
   "phases": [
-    {"name": "A-defaults",    "toggles": {},                  "rounds": 4},
-    {"name": "B-outroute-on", "toggles": {"outroute": true},  "rounds": 4}
+    {"name": "A-route-off", "toggles": {"route": false}, "rounds": 4},
+    {"name": "B-route-on",  "toggles": {"route": true},  "rounds": 4}
   ],
   "navdump": {"Plutonium": 480, "Polaris": 480},
   "max_minutes": 180,
@@ -77,8 +77,8 @@ Manifest format (JSON):
   **Reading numbers out of a `GUARD_FAIL` arm is a process violation, not a judgement call** —
   fix the harness or segment the data first. This exists because the guard used to be a tool
   someone had to remember to run, which is how the Step 4 A/B shipped a confident wrong verdict.
-- Toggle names = the `$nav` table names (`outroute`, `outlattice`, `wind`, `seam`,
-  `replan`, `grid`, ... — bare `$nav` over telnet prints the live table).
+- Toggle names come from the live `$nav` table (`outlattice`, `wind`, `seam`, `grid`, ...).
+  `soakctl.py` fails the run if a requested toggle is unknown or does not reach the requested state.
 - `navdump`: map → seconds into that map's round to dump (delay matters: the outdoor
   region roadmap is built lazily, so dump only AFTER bots have flown outdoors, ~480s in).
   Dump files land in `~/.local/share/Outrage Entertainment/Descent 3/`, NOT the server dir.
@@ -134,9 +134,10 @@ Comparability: a cfg change (TimeLimit, roster size, NumTeams) changes the basel
 compare runs only against runs with the same cfg, and say so in the report. The reference
 numbers in "Judging results" are 8-bot 4-team 15-min rounds.
 
-Useful console commands over telnet besides `$nav ...`: `$quit` (clean shutdown; proven),
-and the cvar-style `EndLevel` / `SetLevel <n>` to skip ahead in a mission rotation (e.g.
+Useful console commands over telnet besides `$nav ...`: the cvar-style `EndLevel` / `SetLevel <n>`
+to skip ahead in a mission rotation (e.g.
 straight to bedlam level 4 = Polaris) — verify their echo in the log on first use.
+`$quit` is ignored by this dedicated path; `soakctl.py` terminates the process after requesting it.
 For interactive param fiddling the user has D3 Pyrodeck; this section is for agents
 authoring repeatable experiments.
 

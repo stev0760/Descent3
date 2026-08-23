@@ -67,13 +67,6 @@ bool Bot_grate_clear_enabled = true;      // $nav grate — proactive destroyabl
 bool Bot_objective_commit_enabled = true; // $nav commit — opportunistic-only powerups while on an objective route
 bool Bot_soft_strike_enabled = true;      // $nav strike — same-room soft chase-aborts accrue troll strikes (0.9.7)
 bool Bot_reach_gate_enabled = true;       // $nav reach — roadmap-gated same-room powerup selection (north star inc. 1)
-// $nav replan — Stage 3 progress-monitor replan (0.9.7). DEFAULT OFF pending the outdoor A/B
-// (2026-07-04): operator observed replan-era isengard bots nav-churning (hill re-entry loop, tunnel
-// turn-arounds) where pre-replan builds fought outside more — suspicion is the fast-window
-// release/abort/re-pick churn starves combat + commitment outdoors. Indoor value is real
-// (BsideCTF: 0 circle false positives, HARD share 50%->5-11%), so the machinery stays and the
-// toggle re-enables it live for A/B; re-default ON only after an outdoor-clean soak.
-bool Bot_stall_replan_enabled = false;
 // $nav bnodesp — defer to the engine's native BNode path pipeline on BNode-rich (SP campaign) maps
 // instead of our routing/via/seam stack (PLAN-coop-nav-rethink.md). Default ON: client-launched co-op
 // has no console, so default-OFF would be untestable (9.5.1); inert by construction on every MP map
@@ -2012,191 +2005,6 @@ static void BotProactiveObstacleClear(int bot_index) {
   }
 }
 
-// 0.9.7 Stage 3 — progress-monitor replan ("$nav replan"). Samples net displacement in
-// BOT_STALL_WINDOW windows while the bot is navigating (EXPLORE, not parked on a hold order, not
-// escorting). A stalled window means the bot physically cannot move toward its current aim — act
-// gentlest-first, one action per cooldown:
-//   1. Active via commitment -> release it (via_expires = 0). The next BotViaPointTick hits its
-//      "lapsed without arrival" branch, cleans its own goal slot, and re-searches from the
-//      CURRENT pose — replan-from-current-pose through the existing machinery.
-//   2. Stalled powerup chase (2+ windows) -> abort: personal blacklist, NO troll strike (a stall
-//      says nothing about the item; the via-seal path keeps striking genuine seals). Retires the
-//      8s wall-press window that produced the mass false retirements.
-//   3. Routed/explore leg (2+ windows) -> clear the destination so the next roam/router tick
-//      recomputes from the bot's actual room.
-// NON-OSCILLATING (the $softfollow tombstone): the trigger is displacement ~= 0 — a FAILURE
-// signal. A via the bot is actually flying toward moves it 30-60u per window and is never
-// released mid-flight; only a via it cannot move toward gets dropped.
-static void BotStallMonitor(int bot_index) {
-  int slot = Bots[bot_index].player_slot;
-  object *obj = &Objects[Players[slot].objnum];
-  if (!obj->ai_info)
-    return;
-
-  bool eligible = (Bots[bot_index].state == BOT_STATE_EXPLORE) &&
-                  (Bots[bot_index].order_anchor_type != ORDER_ANCHOR_POSITION) &&
-                  (Bots[bot_index].squad_role != SQUAD_FOLLOW) && (Bots[bot_index].squad_role != SQUAD_COVER);
-  if (!eligible) {
-    Bots[bot_index].stall_check_time = 0.0f;
-    Bots[bot_index].stall_streak = 0;
-    Bots[bot_index].circle_check_time = 0.0f;
-    return;
-  }
-
-  // Slow window — CIRCLING (the analyzer's "moving-but-slow" class, live). A via/skeleton dance
-  // in a grid-degenerate room (isengard 37, bree 56: hop -> arrive -> re-probe -> hop, 15-45u
-  // legs netting ~40u/12s) clears the fast window every second, so only a longer baseline sees
-  // it. No turn/door qualification needed — nothing innocent spends 8s netting under 35u while
-  // the engine is being asked to move. Response: suspend the via layer in this room (the 12.2c
-  // mechanism, but displacement-triggered — the arrival-count trigger is skeleton-exempt and
-  // never fired here) and drop the goal that is being danced around.
-  // INDOOR ONLY: outdoors the "nothing innocent" premise is false — slow terrain threading against
-  // a hillside legitimately nets 15-33u/8s (isengard 2026-07-04: Zed tripped this ~18x in 2.5min,
-  // each trip suspending the via layer — the only mechanism producing outdoor progress — and the
-  // outroute leg never converged). Outdoor wedges stay covered by stuck escalation + the 12.2c
-  // arrival-count via suspension, both of which fired correctly in that trace.
-  if (OBJECT_OUTSIDE(obj)) {
-    Bots[bot_index].circle_check_time = 0.0f;
-  } else if (Bots[bot_index].circle_check_time <= 0.0f || Gametime < Bots[bot_index].circle_check_time) {
-    Bots[bot_index].circle_check_time = Gametime;
-    Bots[bot_index].circle_check_pos = obj->pos;
-  } else if (Gametime - Bots[bot_index].circle_check_time >= BOT_CIRCLE_WINDOW) {
-    float cdisp = vm_VectorDistanceQuick(&obj->pos, &Bots[bot_index].circle_check_pos);
-    Bots[bot_index].circle_check_time = Gametime;
-    Bots[bot_index].circle_check_pos = obj->pos;
-    if (cdisp < BOT_CIRCLE_DISP) {
-      Bots[bot_index].via_expires = 0.0f;
-      Bots[bot_index].via_suspend_until = Gametime + BOT_VIA_SUSPEND_TIME;
-      Bots[bot_index].via_suspend_room = obj->roomnum;
-      if (Bots[bot_index].powerup_goal_index >= 0 && Bots[bot_index].chasing_powerup_handle != OBJECT_HANDLE_NONE) {
-        Bots[bot_index].blacklisted_powerup_handle = Bots[bot_index].chasing_powerup_handle;
-        Bots[bot_index].blacklisted_powerup_expires = Gametime + BOT_POWERUP_BLACKLIST_DURATION;
-        int &pgi = Bots[bot_index].powerup_goal_index;
-        if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
-          GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
-        pgi = -1;
-        // $nav strike: circling next to the item it was chasing — the room-36 magnet signature
-        BotTrollSoftStrike(Bots[bot_index].chasing_powerup_handle, obj, Bots[bot_index].callsign);
-        Bots[bot_index].chasing_powerup_handle = OBJECT_HANDLE_NONE;
-        Bots[bot_index].chasing_powerup_timer = 0.0f;
-        Bots[bot_index].via_seal_count = 0;
-      } else if (Bots[bot_index].explore_dest_room >= 0 && BotGetObjectiveRoom(bot_index) < 0) {
-        Bots[bot_index].explore_dest_room = -1;
-        Bots[bot_index].explore_room_timer = 0.0f;
-        BotClearTravelDest(bot_index, TRAVEL_END_TIMEOUT);
-      }
-      Bots[bot_index].stall_action_until = Gametime + BOT_STALL_COOLDOWN;
-      LOG_DEBUG.printf("BOT NAV: '%s' stall-replan: circling (disp=%.0f/%.0fs) — via suspended in room %d",
-                       Bots[bot_index].callsign, cdisp, BOT_CIRCLE_WINDOW,
-                       OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum);
-      return;
-    }
-  }
-
-  // Open (or re-open after level change — Gametime can reset) the sample window
-  if (Bots[bot_index].stall_check_time <= 0.0f || Gametime < Bots[bot_index].stall_check_time) {
-    Bots[bot_index].stall_check_time = Gametime;
-    Bots[bot_index].stall_check_pos = obj->pos;
-    return;
-  }
-  if (Gametime - Bots[bot_index].stall_check_time < BOT_STALL_WINDOW)
-    return;
-
-  float disp = vm_VectorDistanceQuick(&obj->pos, &Bots[bot_index].stall_check_pos);
-  Bots[bot_index].stall_check_time = Gametime;
-  Bots[bot_index].stall_check_pos = obj->pos;
-  if (disp >= BOT_STALL_DISP) {
-    Bots[bot_index].stall_streak = 0;
-    return;
-  }
-
-  // Low displacement — but is the bot actually PRESSING, or innocently stationary? v2
-  // qualification (the 0.9.7 first-flight lesson: 48 via releases in two rounds = the circling
-  // this feature was meant to end):
-  // (a) A TURNING ship reads as stalled — it translates along fvec, so a bot mid-turn toward a
-  //     fresh via has ~0 displacement for up to a second. That is what the 4s via commit window
-  //     exists to survive; releasing at 1s re-created oscillation through the back door. Same
-  //     divergence signal as the afterburner facing gate.
-  // (b) A bot nosing a DOOR while it opens (1-2s) is waiting, not stalled.
-  {
-    vector mdir = obj->ai_info->movement_dir;
-    float mmag = vm_GetMagnitude(&mdir);
-    if (mmag < 0.1f)
-      return; // engine isn't asking for movement this frame — nothing to stall against
-    mdir = mdir * (1.0f / mmag);
-    if (vm_DotProduct(&mdir, &obj->orient.fvec) < 0.6f)
-      return; // mid-turn: not yet facing the direction the engine wants — don't count the window
-  }
-  {
-    fvi_query dq{};
-    fvi_info dh{};
-    vector dend = obj->pos + obj->orient.fvec * 30.0f;
-    dq.p0 = &obj->pos;
-    dq.p1 = &dend;
-    dq.startroom = obj->roomnum;
-    dq.rad = 0.0f;
-    dq.thisobjnum = OBJNUM(obj);
-    dq.ignore_obj_list = nullptr;
-    dq.flags = FQ_CHECK_OBJS | FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS;
-    if (fvi_FindIntersection(&dq, &dh) == HIT_OBJECT && dh.hit_object[0] >= 0 &&
-        Objects[dh.hit_object[0]].type == OBJ_DOOR)
-      return; // waiting on a door — the engine carries the bot through when it opens
-  }
-  Bots[bot_index].stall_streak++;
-
-  if (Gametime < Bots[bot_index].stall_action_until)
-    return; // hysteresis — let the previous action (or the stuck machinery) play out
-
-  if (Bots[bot_index].stall_streak < 2)
-    return; // one qualified stalled window is not evidence yet — require 2s of genuine press
-
-  // Action 1: release a committed via the bot cannot reach
-  if (Bots[bot_index].via_expires > Gametime) {
-    Bots[bot_index].via_expires = 0.0f;
-    Bots[bot_index].stall_action_until = Gametime + BOT_STALL_COOLDOWN;
-    LOG_DEBUG.printf("BOT NAV: '%s' stall-replan: via released (disp=%.0f, room %d)", Bots[bot_index].callsign, disp,
-                     OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum);
-    return;
-  }
-
-  if (Bots[bot_index].stall_streak < 3)
-    return; // give the engine one more window before firmer action
-
-  // Action 2: abort a stalled powerup chase — blacklist; a same-room abort also accrues
-  // soft troll evidence ($nav strike, half weight — see BotTrollSoftStrike)
-  if (Bots[bot_index].powerup_goal_index >= 0 && Bots[bot_index].chasing_powerup_handle != OBJECT_HANDLE_NONE) {
-    Bots[bot_index].blacklisted_powerup_handle = Bots[bot_index].chasing_powerup_handle;
-    Bots[bot_index].blacklisted_powerup_expires = Gametime + BOT_POWERUP_BLACKLIST_DURATION;
-    int &pgi = Bots[bot_index].powerup_goal_index;
-    if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
-      GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
-    pgi = -1;
-    BotTrollSoftStrike(Bots[bot_index].chasing_powerup_handle, obj, Bots[bot_index].callsign);
-    Bots[bot_index].chasing_powerup_handle = OBJECT_HANDLE_NONE;
-    Bots[bot_index].chasing_powerup_timer = 0.0f;
-    Bots[bot_index].via_seal_count = 0;
-    Bots[bot_index].stall_action_until = Gametime + BOT_STALL_COOLDOWN;
-    Bots[bot_index].stall_streak = 0;
-    LOG_DEBUG.printf("BOT NAV: '%s' stall-replan: chase aborted (disp=%.0f) — blacklist %.0fs, no strike",
-                     Bots[bot_index].callsign, disp, BOT_POWERUP_BLACKLIST_DURATION);
-    return;
-  }
-
-  // Action 3: re-pick the FREE-ROAM explore destination from the bot's actual position. On an
-  // objective leg the destination is the objective — clearing it just recomputes the same route
-  // (churn, and the backtrack feel from the first flight); the router already recomputes on every
-  // room advance, and the dyn-penalty/room-progress machinery owns objective-route rerouting.
-  if (Bots[bot_index].explore_dest_room >= 0 && BotGetObjectiveRoom(bot_index) < 0) {
-    Bots[bot_index].explore_dest_room = -1;
-    Bots[bot_index].explore_room_timer = 0.0f;
-    BotClearTravelDest(bot_index, TRAVEL_END_TIMEOUT);
-    Bots[bot_index].stall_action_until = Gametime + BOT_STALL_COOLDOWN;
-    Bots[bot_index].stall_streak = 0;
-    LOG_DEBUG.printf("BOT NAV: '%s' stall-replan: route re-pick (disp=%.0f, room %d)", Bots[bot_index].callsign, disp,
-                     OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum);
-  }
-}
-
 // SQUAD_FOLLOW / SQUAD_COVER navigation: steer toward the followed/covered player.
 // Called from the EXPLORE branch of BotUpdateState when no powerup goal is active.
 // Returns false if the follow target is unavailable (caller falls back to normal roaming).
@@ -2619,21 +2427,10 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
   return 1;
 }
 
-// 0.9.7 terrain track, piece 2 ($nav outroute): proactive outdoor lattice following on objective legs.
-// The coarse router has no outdoor tier, so an outdoor bot's leg to a cross-terrain goal is a straight
-// beeline; the region lattice only engaged as a blocked-line RESCUE after the bot wedged on a hillside
-// (the isengard/bree wedge->recover->re-acquire circling loop). This redirects the leg at GOAL-ISSUE
-// time instead: straight line hull-clear = keep the beeline (open terrain unchanged); blocked = aim at
-// the lattice's furthest-visible waypoint toward the target, from a healthy position. The waypoint
-// advances at goal-completion cadence (AIG_GET_TO_POS self-clears at circle_distance ~10u, reopening
-// the caller's hold-check) — no early release, no per-tick recompute (the $softfollow oscillation
-// class). Args by value so callers may pass their dest as both target and out. Returns true when
-// dest/dest_room were redirected to a lattice waypoint.
-static bool BotOutdoorRouteLeg(object *obj, vector target_pos, int target_room, vector *dest, int *dest_room,
-                               bool force = false) {
-  // force ($nav troute seg1): an active terrain plan engages the lattice follower for its approach
-  // leg even while the legacy $nav outroute lever is off (troute owns its follower outright).
-  if (!Bot_gridnav_enabled || (!Bot_outdoor_route_enabled && !force) || !OBJECT_OUTSIDE(obj))
+// `$nav troute` owns outdoor lattice following. The retired `$nav outroute` experiment used this
+// same delivery path; its default-off branch was removed without changing troute behavior.
+static bool BotOutdoorRouteLeg(object *obj, vector target_pos, int target_room, vector *dest, int *dest_room) {
+  if (!Bot_gridnav_enabled || !Bot_troute_enabled || !OBJECT_OUTSIDE(obj))
     return false;
   if (BotSegmentClearOutdoor(obj->pos, target_pos, obj->size))
     return false; // straight leg is flyable — beeline, exactly today's behavior
@@ -3060,13 +2857,13 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
     // pre-check keeps open terrain untouched, and the bedlam gate verdicts the default).
     // (BotOutdoorEntranceStage/BotOutdoorRouteLeg self-report their own §7 member win.)
     nav_dest_overridden = true;
-    if (!entry_commit && BotOutdoorRouteLeg(obj, dest, dest_room, &dest, &dest_room, Bot_troute_enabled))
+    if (!entry_commit && BotOutdoorRouteLeg(obj, dest, dest_room, &dest, &dest_room))
       LOG_DEBUG.printf("BOT NAV: '%s' %s wp (entrance leg, goal %d)", Bots[bot_index].callsign,
                        troute_active ? "troute seg1" : "outdoor-route", goal_room);
     else
       LOG_DEBUG.printf("BOT NAV: '%s' outdoor entrance %s -> room %d (goal %d)", Bots[bot_index].callsign,
                        entry_commit ? "ENTRY" : "approach", dest_room, goal_room);
-  } else if (BotOutdoorRouteLeg(obj, dest, dest_room, &dest, &dest_room, Bot_troute_enabled)) {
+  } else if (BotOutdoorRouteLeg(obj, dest, dest_room, &dest, &dest_room)) {
     // Terrain track piece 2: the outdoor analog of the branch above — the leg to the goal is
     // terrain-blocked, so aim at the region lattice's next waypoint instead of the beeline.
     // (BotOutdoorRouteLeg self-reports its own §7 member win.)
@@ -3311,8 +3108,8 @@ static void BotDoExploreRoaming(int bot_index) {
           // follow the region lattice toward it (waypoint advances on goal completion, en_route
           // holds between waypoints). troute owns this follower for all entrance legs (the
           // piece-1-proper prescription). Skipped on the entry commit — that's a ~25u door push.
-          bool routed = !entry_commit &&
-                        BotOutdoorRouteLeg(obj, ent_pos, ent_room, &gi_info.pos, &gi_info.roomnum, Bot_troute_enabled);
+          bool routed =
+              !entry_commit && BotOutdoorRouteLeg(obj, ent_pos, ent_room, &gi_info.pos, &gi_info.roomnum);
           pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
           Bots[bot_index].explore_dest_room = ent_room;
           Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
@@ -7693,8 +7490,7 @@ void BotReinitAll() {
     // Same trap, full sweep (2026-07-14: mball log throttles carried the previous level's
     // timestamps and silenced every throttled Monsterball log for the whole next round; audit
     // then found the class): every absolute-Gametime latch must reset here or the feature it
-    // gates goes quiet for up to a full round after a level transition. stall/circle window
-    // opens self-heal (`Gametime < check_time` guard) and don't need entries.
+    // gates goes quiet for up to a full round after a level transition.
     Bots[i].seam_wp_room = -1; // repeated-map rotations reuse room numbers — a stale latch matches
     Bots[i].seam_next_time = 0.0f;
     // §7 contention instrumentation (NAV_DESIGN_REVIEW.md): nav_last_member_time is the same
@@ -7708,7 +7504,6 @@ void BotReinitAll() {
       Bots[i].nav_member_last_win[m] = 0.0f;
     }
     Bots[i].nav_contention_count = 0;
-    Bots[i].stall_action_until = 0.0f;
     Bots[i].troute_reject_until = 0.0f;
     Bots[i].troute_goal_room = -1;
     Bots[i].entropy_holding = false;
@@ -8481,10 +8276,6 @@ void BotDoFrame() {
 
     // Apply thrust-based movement every frame (also advances stuck_timer — must precede StuckClear)
     BotApplyThrust(i);
-
-    // Stage 3 ($nav replan): 1s progress windows; stalled → release via / abort chase / re-pick route
-    if (Bot_stall_replan_enabled)
-      BotStallMonitor(i);
 
     // Proactive obstacle clearing ($nav grate): destroyable grate/crate dead ahead → shoot it
     // out with a safe weapon before the stuck pin, not after

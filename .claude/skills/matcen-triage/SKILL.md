@@ -35,7 +35,7 @@ From `flag_conversion.py` output (picks -> caps per team):
 | `proactive-clearing destroyable obstacle (type=17 ...)` | grate-DOOR engagement (isengard class) — GOOD | if grate never dies: route pressure question, not detection |
 | `proactive-clear SKIP: destroyable type=N` | clear filtered by allowlist — a NEW obstacle type | report type/id; consider allowlist admit |
 | `probe hit NON-destroyable object` | something solid parked in the line | usually decor; only matters if bots pin there |
-| `outdoor-route wp (goal/entrance room N, Xu leg)` | outroute lattice-following active | legs must SHRINK; ~150u repeats = orbit class |
+| `outdoor-route wp (goal/entrance room N, Xu leg)` | troute lattice follower active (or historical outroute log) | legs must SHRINK; ~150u repeats = orbit class |
 | `carrier nav room X -> wp Y (home Z)` same X re-issued 20+ | carrier can't leave its spot | outdoor: approach-leg; indoor: check seam/dance |
 | `[DIVERGE]` on carrier/objective nav | our router chose a different door than BOA | normal and usually good (wind/glass/penalty aware) |
 
