@@ -2739,7 +2739,7 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   // Buried-center rooms (hollow-core annuli like abend2's mirror discs): Rooms[].path_pnt is void
   // space, so aiming a hop at it press-cycles the engine at an unreachable point. Aim at the
   // skeleton node toward the goal instead (portal nodes / hull-verified pseudo-bnodes).
-  const vector wp_aim = (wp_room == goal_room) ? routed_pos : BotWaypointAimPos(wp_room, routed_pos);
+  const vector wp_aim = (wp_room == goal_room) ? routed_pos : BotWaypointAimPos(wp_room, routed_pos, obj->roomnum);
   {
     vector goal_pos = wp_aim;
     int steer_room = -1;
