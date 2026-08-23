@@ -603,49 +603,6 @@ bool BotResolveRoomAim(object *obj, const vector &target_pos, int target_room, f
     }
 
     if (hop >= 0) {
-      // Threshold commit (the shaft-mouth class, cockpit-verified 2026-08-23): when the answer is
-      // a PORTAL node in a buried room and the bot is OUTSIDE that room (the shaft case), the aim
-      // sits on the boundary plane — roomnum flaps at the mouth and the next re-issue flips the
-      // goal back, the back-and-forth the operator watched. Aim at the next hop INSIDE the buried
-      // room instead (the arc continues past the plane), so the engine's straight-line steer
-      // crosses the mouth rather than parking on it. Only for cross-room targets: same-room aims
-      // are already inside. The inner-BFS case (bot inside, hop far from the exit) is untouched.
-      if (hop < np && RoomBuriedCenter(room_idx) && !BotRoomIsBuried(obj->roomnum)) {
-        int depth[SKEL_MAX_NODES], parent[SKEL_MAX_NODES], qq[SKEL_MAX_NODES], qh = 0, qt = 0;
-        for (int i = 0; i < n; i++) {
-          depth[i] = -1;
-          parent[i] = -1;
-        }
-        for (int i = 0; i < n; i++)
-          if (exits & (1u << i)) {
-            depth[i] = 0;
-            qq[qt++] = i;
-          }
-        int target = -1;
-        while (qh < qt) {
-          int u = qq[qh++];
-          if (vis & (1u << u)) {
-            target = u;
-            break;
-          }
-          for (int v = 0; v < n; v++) {
-            if (!(skel_edges[room_idx][u] & (1u << v)) || depth[v] >= 0)
-              continue;
-            depth[v] = depth[u] + 1;
-            parent[v] = u;
-            qq[qt++] = v;
-          }
-        }
-        if (target >= 0 && depth[target] > 0) {
-          // Walk parents from the bot-adjacent node back toward the exits; the child of the exit
-          // on that path is the FIRST STEP INSIDE the ring — the threshold-commit aim.
-          int cur = target;
-          while (parent[cur] >= 0 && depth[parent[cur]] > 0)
-            cur = parent[cur];
-          *out = skel_node_pos[room_idx][cur];
-          return true;
-        }
-      }
       *out = skel_node_pos[room_idx][hop];
       return true;
     }
