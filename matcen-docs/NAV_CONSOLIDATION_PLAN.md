@@ -1233,6 +1233,65 @@ timeout as 0.0%). **Rule: `prev=` if present, else `owner=`.**
 
 ---
 
+## 0.93 One aim point per room — the room-scale committee collapsed on abend2 (2026-08-23)
+
+**The build (`8a2f772f`).** The `d6efc603` revert message said what the reverted entry-hop fix
+proved: three independent layers — `BotSetRoutedGoal` goal issue, the via layer, the seam
+direction — each resolve "target point in room N" to a different aim point, and strengthening one
+adds a voice rather than unifying. This section's build is §4's "one dispatch point" applied at
+room scale: **`BotResolveRoomAim`** (bot_steering.cpp) is the single in-room resolution helper —
+extracted from `BotFindViaPoint` pass 3 with one deterministic branch order all callers share
+(0.9.4 roadmap in NON-buried rooms → skeleton BFS first-hop → soft-hop fallback), consumed by
+`BotFindViaPoint` (pass 3 refactored to call it), `BotSetRoutedGoal` (buried-room aim, issued
+claimed in the CURRENT room so the engine steers straight with no BOA re-plan), and the explore
+intent-less fallback (which had re-issued raw void `path_pnt` — the fourth voice). Guard-before-
+build (used/indoor/non-external), fvi startroom always `obj->roomnum`, optional next-hop hint.
+`BotRoomIsBuried` is the public gate (the static `RoomBuriedCenter` isn't linkable from bot.cpp).
+**Scope is detector-bounded to buried-center rooms; nothing else changes.** Designed with an
+adversarial pre-build review (seven findings, all folded).
+
+**The paired A/B (same evening, same machine, both arms `GUARD_PASS`).** Control = deployed
+pre-fix snapshot `d6efc603`, test = `8a2f772f`, identical cfg (`soak-dedicated-abend28.cfg`,
+8 bots, abend2.mn3 CTF, 4 rounds each). Logs `soak-20260823T021435.log` / `...T031539.log`.
+
+| metric (abend2) | control `d6efc603` | test `8a2f772f` |
+|---|---|---|
+| flag grabs | **0** | **12** |
+| captures | **0** | **1** — first unattended capture in fork history (Gregg, full route: ring 0 → tray 38 → tunnels → home) |
+| skel-via issues, ring 30 | 2144 | **1073** (halved) |
+| skel-via issues, ring 0 | 1509 | 2118 (up — see residual) |
+| stucks (hard) | 4 (1) | 14 (2) |
+| kills | 28 | 21 |
+| carrier deaths / avg dist | 1 / 728u | 10 / 501u |
+
+**Verdict: ring entry and ring traversal are UNBLOCKED; abend2 is not solved.** The 07-11-era
+failure (bots reach the rings, never productively cross them) is gone — the door set that Opus's
+symmetry argument could not explain turns out to need no explanation beyond "the three layers each
+had their own point." Ring 30's orbit halved. But:
+
+1. **Ring 0's tray-descent seam is the live residual.** Carrier nav flips 0↔38 at ~1s cadence
+   (109 lines in the test arm) — the stacked-room false-arrival class from the 07-11 memory note
+   (arrival radius reachable across the open ceiling seam without descent), still open for
+   objective nav; `BotStationReached` (0.8) covered order-nav arrivals only. Registered, owns a
+   fix class, not this section's build.
+2. **AIMSPLIT is noisy by construction** (188 firings, median 108u): the check compares the via
+   layer's *committed* point against this tick's *fresh* resolution, so a legitimately advancing
+   arc-walk flags the previous hop vs the next (~one arc segment). Only same-tick pairs could
+   prove divergence; as run it bounds divergence to "no multi-hop disagreement," not zero.
+   Powerup pins rose with movement (27 vs 3 — more bots traveling, more detour chases).
+3. Ring 0's absolute dance share went up even as ring 30's fell — consistent with the map-level
+   asymmetry conversation (08-22): same machinery, different door adjacency. The numbers no longer
+   require a geometric asymmetry to explain them.
+
+**The plan-vocabulary lesson, recorded:** the committee pattern is fractal — §1 censused twelve
+members at travel scale; a buried-center room grows three more at room scale (goal issue, via,
+seam), plus a fourth in explore fallback. "One authority per leg" (§4) and "one aim point per
+room" are the same rule at two scales, and the abend2 pair is the second instance of the plan's
+own thesis producing a measurable win. KegD3 12-round regression gate and the tray-descent fix
+are the queued successors.
+
+---
+
 ## 0.92 Cockpit exit, measurement repair, and the Step 4 decision (2026-08-22)
 
 **The owed Step 3 cockpit session is complete, and Step 3 is CLOSED.** KegD3 CTF was flown with a

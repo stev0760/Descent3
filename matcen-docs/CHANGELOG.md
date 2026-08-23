@@ -26,6 +26,14 @@ off by default and are removed along with their hidden flat aliases and dead sta
 behavior is unchanged. Terrain-route following remains active under `$nav troute`, which already
 owned it in normal builds. Old logs containing the retired mechanisms still analyze correctly.
 
+**The toroid map finally plays.** abend2 — the two flat donut-shaped flag arenas — has never
+produced a bot capture. The cause was three navigation layers each picking a different aim point
+inside a ring-shaped room and fighting over it several times a second. They now resolve through
+one shared calculation. In a paired overnight test on abend2: flag grabs 0 → 12, the first
+unattended bot capture on the map, and half the wandering in one of the two rings. Remaining
+known issue: carriers can still loop at one flag pocket's open ceiling seam instead of dropping
+in — a separate, already-registered fix.
+
 **A/B tooling now fails closed.** The guard compares exact level order and reset counts, not just the
 number of levels. The soak driver now stops if a manifest requests an unknown toggle instead of
 silently running a no-op arm. Four-team CTF reports also count two- and three-flag cash-ins, which the

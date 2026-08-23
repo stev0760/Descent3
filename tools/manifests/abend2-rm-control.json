@@ -1,0 +1,13 @@
+{
+  "_comment": "Abend2 overnight paired A/B, CONTROL arm — same-evening pair with abend2-rm-test. Uses the pre-fix binary (Descent3.control-d6efc603) because soakctl always launches ./Descent3; the fix build at this point is HEAD. Bots enter rings; measurement per the plan's pre-registered metrics (ring-exit, ping-pong, skel-via, trays, grabs, caps). manifest file left for reference — do not run.",
+  "server_dir": "/home/steve/Projects/mine/Descent3-bot-testing-client/Descent3_testing",
+  "launch": ["./Descent3", "-dedicated", "./soak-dedicated-abend28.cfg"],
+  "telnet_port": 2092,
+  "telnet_password": "test",
+  "phases": [
+    {"name": "A-defaults", "toggles": {}, "rounds": 4}
+  ],
+  "navdump": {"abend2": 480},
+  "max_minutes": 90,
+  "ab": {"pin": "abend2", "expect_rounds": 4}
+}
