@@ -5,7 +5,7 @@
   "telnet_port": 2092,
   "telnet_password": "test",
   "phases": [
-    {"name": "reliability", "toggles": {}, "rounds": 8}
+    {"name": "reliability-threshold", "toggles": {}, "rounds": 8}
   ],
   "navdump": {"abend2": 480},
   "max_minutes": 160,
