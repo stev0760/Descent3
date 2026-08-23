@@ -1287,8 +1287,10 @@ had their own point." Ring 30's orbit halved. But:
 members at travel scale; a buried-center room grows three more at room scale (goal issue, via,
 seam), plus a fourth in explore fallback. "One authority per leg" (§4) and "one aim point per
 room" are the same rule at two scales, and the abend2 pair is the second instance of the plan's
-own thesis producing a measurable win. KegD3 12-round regression gate and the tray-descent fix
-are the queued successors.
+own thesis producing a measurable win. **KegD3 12-round regression gate PASSED same day** (`8a2f772f`,
+`soak-20260823T093109.log`, GUARD_PASS): 154 caps (family 131–152), hard pins 19 (family 16–29),
+zero crashes — the pass-3 refactor leaks nothing on a map with zero buried rooms. The tray-descent
+fix (`d7125788`) is built and queued on the same tree; its soak follows this section.
 
 ---
 
