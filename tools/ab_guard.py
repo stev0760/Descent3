@@ -37,6 +37,8 @@ def scan(path):
     levels, resets, escal, first, last = [], 0, [], None, None
     day = 0.0
     prev = None
+    t = None
+    last_reset = None
     with open(path, "r", errors="replace") as fh:
         for line in fh:
             m = TS.match(line)
@@ -52,8 +54,11 @@ def scan(path):
             m = LEVEL.search(line)
             if m:
                 levels.append((m.group(1), last))
-            if RESET.search(line):
+            # One boundary emits one global BNODELEG line plus up to one NAVCONTEND line per bot.
+            # Count the timestamp cluster, not diagnostic lines, or bot activity biases this value.
+            if RESET.search(line) and (last_reset is None or t is None or t - last_reset > 2.0):
                 resets += 1
+                last_reset = t
             m = ESCAL.search(line)
             if m:
                 escal.append((m.group(1), int(m.group(2)), int(m.group(4))))
@@ -86,12 +91,16 @@ def main():
     for name, d in (("control", ctrl), ("test", test)):
         seq = [lv for lv, _ in d["levels"]]
         print(f"  {name:<8} {d['minutes']:6.0f} min  levels={seq}")
-        if pin and any(lv.lower() != pin.lower() for lv in seq):
+        if not seq:
+            print("           ^^ FAIL: no level loads found")
+            ok = False
+        elif pin and any(lv.lower() != pin.lower() for lv in seq):
             print(f"           ^^ FAIL: expected only '{pin}'")
             ok = False
-    if len(ctrl["levels"]) != len(test["levels"]):
-        print(f"  FAIL: arms saw a different number of levels "
-              f"({len(ctrl['levels'])} vs {len(test['levels'])}) — segments are not comparable")
+    ctrl_seq = [lv.lower() for lv, _ in ctrl["levels"]]
+    test_seq = [lv.lower() for lv, _ in test["levels"]]
+    if ctrl_seq != test_seq:
+        print("  FAIL: arms saw different level sequences — segments are not comparable")
         ok = False
     elif len(ctrl["levels"]) > 1:
         print("  WARN: multiple levels per arm — compare PER SEGMENT, never whole-run totals")
@@ -99,6 +108,9 @@ def main():
     # (2) reset awareness
     print("\n[2] COUNTER RESETS (cumulative dumps are wiped at these boundaries)")
     print(f"  control level-end resets: {ctrl['resets']}   test: {test['resets']}")
+    if ctrl["resets"] != test["resets"]:
+        print("  FAIL: arms have different reset counts — cumulative segments are not comparable")
+        ok = False
     if ctrl["resets"] or test["resets"]:
         print("  WARN: NAVCONTEND/BNODELEG totals are PER-SEGMENT. Do not read the last dump as a")
         print("        session total — sum segments, or use the reset-immune metric in [3].")

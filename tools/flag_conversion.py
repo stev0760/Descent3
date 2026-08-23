@@ -28,7 +28,7 @@ LEVEL_RE = re.compile(r"Opening level '([^'.]+)\.d3l'", re.IGNORECASE)
 # a literal-space requirement here silently misclassified every bot event as human (caught
 # 2026-07-20 auditing the 0.9.9 regression battery; bot picks/caps read 0 on every map).
 PICK_RE = re.compile(r"\*?(\S+?)(\s?\[BOT\])? \((\w+)\) (?:picks up the|finds the) (\w+) Flag")
-CAP_RE = re.compile(r"\*?(\S+?)(\s?\[BOT\])? \((\w+)\) captures the (\w+) Flag")
+CAP_RE = re.compile(r"\*?(\S+?)(\s?\[BOT\])? \((\w+)\) captures the (.+?) Flags?\b")
 RET_RE = re.compile(r"\*?(\S+?)(\s?\[BOT\])? \((\w+)\) returns the (\w+) Flag")
 
 
@@ -49,11 +49,12 @@ def analyze(path):
             for tag, rx in (("pick", PICK_RE), ("cap", CAP_RE), ("ret", RET_RE)):
                 m = rx.search(line)
                 if m:
-                    name, botsfx, team, _flag = m.groups()
+                    name, botsfx, team, flags = m.groups()
                     who = "bot" if botsfx else "human"
-                    per_map[cur][team]["%s_%s" % (tag, who)] += 1
+                    count = len([word for word in re.findall(r"\b\w+\b", flags) if word.lower() != "and"])
+                    per_map[cur][team]["%s_%s" % (tag, who)] += count if tag == "cap" else 1
                     if botsfx and tag in ("pick", "cap"):
-                        bots[cur]["%s(%s) %s" % (name, team, tag)] += 1
+                        bots[cur]["%s(%s) %s" % (name, team, tag)] += count if tag == "cap" else 1
                     break
 
     print("# %s" % path)

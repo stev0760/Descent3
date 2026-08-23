@@ -4,7 +4,7 @@
 Runs a dedicated-server soak from a JSON manifest: launches the server headless,
 applies a $nav toggle recipe per phase over the telnet console, counts rounds by
 watching level loads, optionally requests $nav dump mid-round, flips to the next
-phase at a round boundary, and $quits cleanly at the end.
+phase at a round boundary, and terminates the dedicated process at the end.
 
 Emits line-oriented events on stdout so an agent (or a human tail) can react:
     SOAK_START log=<path> build=<hash>
@@ -25,8 +25,8 @@ Manifest (JSON):
   "telnet_port": 2092,
   "telnet_password": "test",
   "phases": [                                    // applied in order, flipped at round boundaries
-    {"name": "A-outroute-off", "toggles": {"outroute": false}, "rounds": 4},
-    {"name": "B-outroute-on",  "toggles": {"outroute": true},  "minutes": 45}
+    {"name": "A-route-off", "toggles": {"route": false}, "rounds": 4},
+    {"name": "B-route-on",  "toggles": {"route": true},  "minutes": 45}
   ],                                             // a phase ends on rounds OR minutes, whichever first
   "navdump": {"Polaris": 480},                   // map -> seconds into the round to dump (after bots fly)
   "max_minutes": 180,                            // hard wall-clock stop (safety net)
@@ -223,10 +223,17 @@ def main():
     round_start = time.time()
     emit("ROUND_START n=1 map=%s" % cur_map)
 
+    run_error = None
     try:
         for phase in mf["phases"]:
             for name, on in phase.get("toggles", {}).items():
-                con.send("$nav %s %s" % (name, "on" if on else "off"), settle=0.5)
+                state = "ON" if on else "OFF"
+                reply = con.send("$nav %s %s" % (name, state.lower()), settle=0.5)
+                # Include the response delimiter so an echoed `$nav name on` command cannot pass.
+                expected = "nav %s %s -" % (name, state)
+                if expected.lower() not in reply.lower():
+                    raise RuntimeError("toggle '%s' was not applied; console replied: %s" %
+                                       (name, reply.strip() or "<empty>"))
             # Raw console lines for non-boolean knobs (e.g. "$nav mtenure 15")
             for cmd in phase.get("commands", []):
                 con.send(cmd, settle=0.5)
@@ -275,6 +282,9 @@ def main():
             emit("PHASE_END name=%s rounds=%d" % (phase["name"], phase_rounds))
     except KeyboardInterrupt:
         pass
+    except RuntimeError as exc:
+        run_error = str(exc)
+        emit("SOAK_ERROR %s" % run_error)
     finally:
         try:
             con.send("$quit", settle=2.0)
@@ -283,6 +293,8 @@ def main():
             pass
         shutdown()
 
+    if run_error:
+        sys.exit(1)
     verdict = run_ab_guard(mf, log_path, total_rounds)
     emit("SOAK_DONE log=%s rounds=%d%s" % (log_path, total_rounds, " guard=%s" % verdict if verdict else ""))
 

@@ -3,7 +3,7 @@
 # Usage: soak_battery.sh <output-dir> <manifest.json> [more manifests...]
 # Events on stdout: BATTERY_SOAK_BEGIN/DONE/FAILED <name>, BATTERY_DONE.
 # Per-soak outputs in <output-dir>: <name>.events, <name>-analysis.md, <name>-conversion.txt.
-set -u
+set -uo pipefail
 cd "$(dirname "$0")/.."
 BATT_DIR="${1:?usage: soak_battery.sh <output-dir> <manifest...>}"
 shift
@@ -12,8 +12,9 @@ for MF in "$@"; do
   NAME=$(basename "$MF" .json)
   echo "BATTERY_SOAK_BEGIN $NAME"
   python3 tools/soakctl.py "$MF" | tee "$BATT_DIR/$NAME.events"
+  SOAK_RC=${PIPESTATUS[0]}
   LOG=$(grep -aoE "log=[^ ]+" "$BATT_DIR/$NAME.events" | head -1 | cut -d= -f2)
-  if [ -n "$LOG" ] && [ -f "$LOG" ] && grep -q "SOAK_DONE" "$BATT_DIR/$NAME.events"; then
+  if [ "$SOAK_RC" -eq 0 ] && [ -n "$LOG" ] && [ -f "$LOG" ] && grep -q "^SOAK_DONE " "$BATT_DIR/$NAME.events"; then
     python3 tools/analyze_bot_log.py "$LOG" > "$BATT_DIR/$NAME-analysis.md" 2>&1
     python3 tools/flag_conversion.py "$LOG" > "$BATT_DIR/$NAME-conversion.txt" 2>&1
     echo "BATTERY_SOAK_DONE $NAME log=$LOG"

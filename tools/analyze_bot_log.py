@@ -27,7 +27,7 @@ RE_GAME_MODE = re.compile(r"Detected game mode: (\S+)")
 RE_STUCK = re.compile(r"stuck escalation \(room (-?\d+)")
 # g1=player name (bots carry the " [BOT]" suffix), g2=team. Split bot vs human captures —
 # soak stats must not credit bots with captures a human in the lobby made.
-RE_CAPTURE = re.compile(r"\*?(.+?) \((\w+)\) captures the \w+ Flag")
+RE_CAPTURE = re.compile(r"\*?(.+?) \((\w+)\) captures the (.+?) Flags?\b")
 RE_KILL = re.compile(r"was killed by")
 # Carrier nav — tolerant of both the pre-Phase-11 ("-> home N") and Phase-11 waypoint-injection
 # ("-> wp W (home N)" / Hoard "(K orbs) room R -> wp W (goal N)") formats. g1=current room, g2=goal.
@@ -57,6 +57,7 @@ RE_VIA_FAIL = re.compile(r"via search failed in room (-?\d+)")   # line blocked,
 # owner, so new-intent owners are counted only when the arrow target is a room.
 RE_DEST = re.compile(r"BOT DEST: '([^']+)' (none|-?\d+) -> (none|-?\d+)")
 RE_DEST_OWNER = re.compile(r"owner=(\w+)")
+RE_DEST_PREV = re.compile(r"prev=(\w+)")
 RE_DEST_END = re.compile(r"end=(\w+)")
 RE_DEST_HELD = re.compile(r"held=([\d.]+)s")
 
@@ -92,13 +93,11 @@ RE_CHASE_TIMEOUT_LEGACY = re.compile(r"powerup chase timeout \([\d.]+s\) — bla
 RE_GLASS_CLEAR = re.compile(r"proactive-clearing breakable glass \(room (-?\d+)")
 RE_GRATE_CLEAR = re.compile(r"proactive-clearing destroyable obstacle \(type=\d+ objnum=\d+ room (-?\d+)\)")
 
-# 0.9.7 Stage 3 — progress-monitor replan ($nav replan): stalled window (net disp < 8u in 1s) ->
-# gentlest applicable action. via = committed via released; chase = powerup chase aborted (no
-# strike); route = explore/routed destination re-picked.
+# Historical 0.9.7 progress-monitor replan events. The mechanism was retired in 0.9.11, but the
+# parser remains so archived logs stay comparable.
 RE_STALL_REPLAN = re.compile(r"stall-replan: (via released|chase aborted|route re-pick|circling)")
-# 0.9.7 terrain track piece 2 ($nav outroute): a terrain-blocked outdoor leg redirected to a region-
-# lattice waypoint at goal-issue time. g1 = leg kind (goal = router/carrier leg, entrance = Phase 8.1
-# door approach), g2 = target room, g3 = straight-line leg length (u).
+# Outdoor lattice follower event. Current builds emit it under troute; archived 0.9.7 logs emitted
+# the same wording under the retired outroute lever. g1 = leg kind, g2 = target room, g3 = leg length.
 RE_OUTDOOR_ROUTE = re.compile(r"outdoor-route wp \((goal|entrance) room (-?\d+), (\d+)u leg\)")
 
 # Outdoor diagnostic suffix appended (by BotTerrainDiag) to outdoor stuck/escalation/escape lines:
@@ -167,7 +166,7 @@ def new_map_stats():
     return {
         "rounds": 0,
         "game_mode": "Unknown",
-        "captures": 0,               # ALL captures (bot + human)
+        "captures": 0,               # ALL flags captured (bot + human; multi-flag cash-ins expand)
         "ent_pickups": 0,            # Entropy: virus pickups (all players)
         "ent_pickups_bot": 0,
         "ent_death_losses": 0,       # Entropy: death events that erased carried viruses
@@ -201,6 +200,8 @@ def new_map_stats():
         "dest_owners": Counter(),
         "dest_ends": Counter(),
         "dest_held": [],
+        "dest_ends_by_owner": defaultdict(Counter),
+        "dest_held_by_owner": defaultdict(list),
         "human_caps": 0,             # captures by players without the [BOT] suffix
         "human_cappers": Counter(),
         "team_caps": Counter(),
@@ -272,8 +273,8 @@ def new_map_stats():
         "glass_clears": 0,           # proactive breakable-glass shatters ($nav grate)
         "glass_clear_rooms": Counter(),
         "grate_clears": 0,           # proactive destroyable-object clears ($nav grate)
-        "outroute_goal": 0,          # $nav outroute lattice redirects on router/carrier legs
-        "outroute_ent": 0,           # $nav outroute lattice redirects on entrance-approach legs
+        "outroute_goal": 0,          # outdoor lattice redirects on router/carrier legs
+        "outroute_ent": 0,           # outdoor lattice redirects on entrance-approach legs
         "stall_via": 0,              # 0.9.7 stall actions: committed via released
         "stall_chase": 0,            # 0.9.7 stall actions: powerup chase aborted (no strike)
         "stall_route": 0,            # 0.9.7 stall actions: explore/routed destination re-picked
@@ -358,15 +359,24 @@ def parse_log(path):
             if m:
                 s["dest_events"] += 1
                 if m.group(3) != "none":
-                    mo = RE_DEST_OWNER.search(line)
-                    if mo:
-                        s["dest_owners"][mo.group(1)] += 1
+                    new_owner = RE_DEST_OWNER.search(line)
+                    if new_owner:
+                        s["dest_owners"][new_owner.group(1)] += 1
                 me = RE_DEST_END.search(line)
                 if me:
-                    s["dest_ends"][me.group(1)] += 1
+                    end = me.group(1)
+                    s["dest_ends"][end] += 1
+                    # Supersession lines name the ending owner in prev=; clear lines use owner=.
+                    owner_match = RE_DEST_PREV.search(line) or RE_DEST_OWNER.search(line)
+                    if owner_match:
+                        owner = owner_match.group(1)
+                        s["dest_ends_by_owner"][owner][end] += 1
                 mh = RE_DEST_HELD.search(line)
                 if mh:
-                    s["dest_held"].append(float(mh.group(1)))
+                    held = float(mh.group(1))
+                    s["dest_held"].append(held)
+                    if me and owner_match:
+                        s["dest_held_by_owner"][owner].append(held)
                 continue
 
             m = RE_VIA_RESCUE.search(line)
@@ -600,11 +610,12 @@ def parse_log(path):
 
             m = RE_CAPTURE.search(line)
             if m:
-                s["captures"] += 1
+                captured = len([word for word in re.findall(r"\b\w+\b", m.group(3)) if word.lower() != "and"])
+                s["captures"] += captured
                 if "[BOT]" not in m.group(1):
-                    s["human_caps"] += 1
-                    s["human_cappers"][m.group(1).strip()] += 1
-                s["team_caps"][m.group(2)] += 1
+                    s["human_caps"] += captured
+                    s["human_cappers"][m.group(1).strip()] += captured
+                s["team_caps"][m.group(2)] += captured
                 continue
 
             if RE_KILL.search(line):
@@ -658,19 +669,19 @@ def detect_anomalies(stats):
         cap_rate = bot_caps / rounds
         mode = s["game_mode"]
 
-        # Task 2: destination churn — finished intents dying by timeout/replacement far more often
-        # than arriving is the re-roll mill, the subjective "bots wander" made countable. Gated on a
-        # sample floor so a short smoke can't trip it on noise. Replacement includes legitimate
-        # supersession (orders, combat intel), hence the conservative 4:1 threshold.
-        de = s["dest_ends"]
-        finished = sum(de.values())
+        # Task 2: destination churn. Objective replacement is expected when a flag moves, so only
+        # explore-owned errands have comparable arrival semantics. Exclude unreach, which different
+        # failure paths record at different rates and which is not a completion outcome.
+        de = s["dest_ends_by_owner"].get("explore", Counter())
+        finished = sum(c for end, c in de.items() if end != "unreach")
         if finished >= 50:
             arrivals = de.get("arrival", 0)
             churn = de.get("timeout", 0) + de.get("replacement", 0)
             if churn > 4 * max(arrivals, 1):
                 anomalies.append((name, "DEST_CHURN",
                                   f"{churn} timeout/replacement vs {arrivals} arrival over {finished} finished "
-                                  f"intents — destinations are being re-rolled, not reached"))
+                                  f"explore-owned intents (unreach excluded) — destinations are being re-rolled, "
+                                  f"not reached"))
 
         # Flag pickup failure: CTF mode, bots navigate to flag rooms but never capture
         # (judged on BOT captures only — a human capping doesn't exonerate the bots)
@@ -1073,22 +1084,40 @@ def print_report(stats, total_lines, log_path):
     if any(s["dest_events"] for s in stats.values()):
         print(f"## Travel Intent (Task 2)")
         print()
-        print(f"Owners = who set each new intent (§0.5 hierarchy). Ends = why each finished intent "
-              f"stopped. Churn = intents finished per round; judge by the arrival share, not the rate.")
+        print(f"Owners = who set each new intent (§0.5 hierarchy). Outcomes are split by the owner of "
+              f"the ending intent; completion shares exclude unreach. Objective replacement is expected "
+              f"when a live objective moves, so compare explore-owned arrival across builds.")
         print()
-        print(f"| Map | Events (/rnd) | Owners | Ends | Median held |")
-        print(f"|---|---|---|---|---|")
+        print(f"| Map | Events (/rnd) | New owners |")
+        print(f"|---|---|---|")
         for name in maps:
             s = stats[name]
             if not s["dest_events"]:
                 continue
             rounds = max(s["rounds"], 1)
             owners_str = ", ".join(f"{o}={c}" for o, c in s["dest_owners"].most_common()) or "-"
-            ends_str = ", ".join(f"{e}={c}" for e, c in s["dest_ends"].most_common()) or "-"
-            held = sorted(s["dest_held"])
-            held_str = f"{held[len(held)//2]:.1f}s" if held else "-"
             print(f"| {name} | {s['dest_events']} ({s['dest_events']/rounds:.1f}) "
-                  f"| {owners_str} | {ends_str} | {held_str} |")
+                  f"| {owners_str} |")
+        print()
+        print(f"| Map | Ending owner | Finished* | Arrival | Timeout | Replacement | Death | Unreach | Median held |")
+        print(f"|---|---|---|---|---|---|---|---|---|")
+        for name in maps:
+            s = stats[name]
+            for owner in ("order", "carry", "objective", "opportunism", "explore"):
+                ends = s["dest_ends_by_owner"].get(owner)
+                if not ends:
+                    continue
+                finished = sum(c for end, c in ends.items() if end != "unreach")
+                held = sorted(s["dest_held_by_owner"].get(owner, []))
+                held_str = f"{held[len(held)//2]:.1f}s" if held else "-"
+                print(f"| {name} | {owner} | {finished} "
+                      f"| {fmt_pct(ends.get('arrival', 0), finished)} "
+                      f"| {fmt_pct(ends.get('timeout', 0), finished)} "
+                      f"| {fmt_pct(ends.get('replacement', 0), finished)} "
+                      f"| {fmt_pct(ends.get('death', 0), finished)} "
+                      f"| {ends.get('unreach', 0)} | {held_str} |")
+        print()
+        print("\\* Finished excludes unreach; percentages use Finished as their denominator.")
         print()
 
     # 0.9.6 — objective arbitration ($nav commit) + proactive obstacle clearing ($nav grate/glass).
@@ -1282,12 +1311,10 @@ def print_report(stats, total_lines, log_path):
                 print(f"| {name} | {s['oa_seek_events']} | {top_rooms} |")
             print()
 
-    # 0.9.7 terrain track piece 2 ($nav outroute): terrain-blocked outdoor legs redirected onto the
-    # region lattice at goal-issue time. Waypoints advance at goal-completion cadence, so each count
-    # is one waypoint hop. Read against the Outdoor Steering section: routes up + entrance-miss /
-    # ground-pin down = the lattice-following is landing.
+    # Outdoor lattice follower. Current builds run it under troute; historical outroute logs use the
+    # same event wording. Waypoints advance at goal-completion cadence, so each count is one hop.
     if any(s["outroute_goal"] or s["outroute_ent"] for s in stats.values()):
-        print(f"## Outdoor Lattice Routing ($nav outroute, 0.9.7)")
+        print(f"## Outdoor Lattice Routing (troute; historical outroute)")
         print()
         print("Terrain-blocked objective legs redirected to region-lattice waypoints instead of "
               "beelining (one count = one waypoint hop). `goal legs` = router/carrier legs; "
