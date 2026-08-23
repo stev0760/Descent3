@@ -496,7 +496,7 @@ bool BotRoomPathPntReachable(int room_idx) {
   return false;
 }
 
-vector BotWaypointAimPos(int wp_room, const vector &toward, int from_room) {
+vector BotWaypointAimPos(int wp_room, const vector &toward) {
   if (wp_room < 0 || wp_room > Highest_room_index || !Rooms[wp_room].used || (Rooms[wp_room].flags & RF_EXTERNAL))
     return toward;
   SkelLevelReset();
@@ -508,56 +508,18 @@ vector BotWaypointAimPos(int wp_room, const vector &toward, int from_room) {
   if (!skel_built[wp_room])
     SkelBuild(wp_room);
   int n = skel_node_count[wp_room];
-
-  // Node closest to the goal — where we ultimately want to end up inside this room.
-  int goal_n = -1;
+  int best = -1;
   float best_d = 1e30f;
   for (int i = 0; i < n; i++) {
     float d = vm_VectorDistanceQuick(&skel_node_pos[wp_room][i], &toward);
     if (d < best_d) {
       best_d = d;
-      goal_n = i;
+      best = i;
     }
   }
-  if (goal_n < 0)
+  if (best < 0)
     return Rooms[wp_room].path_pnt;
-
-  // The goal-side node is NOT automatically a legal aim point. On a hollow annulus the node nearest
-  // the goal sits across the core from the door we are entering by (abend2 ring 0: entry portal ->
-  // tray node is 172u with NO hull-clear leg), so aiming there presses the bot into the inner wall,
-  // deflects it, and drops it back out the door — the 48<->30 / 51<->0 limit cycle, relocated rather
-  // than removed. Aim at the FIRST HOP from our entry door along the skeleton instead, exactly as
-  // BotFindViaPoint pass 3 does once inside; the hop advances as each waypoint is reached.
-  int entry_n = -1;
-  for (int p = 0; p < np; p++)
-    if (Rooms[wp_room].portals[p].croom == from_room) {
-      entry_n = p;
-      break;
-    }
-  if (entry_n < 0 || entry_n == goal_n)
-    return skel_node_pos[wp_room][goal_n]; // unknown approach: no better information than before
-  if (skel_edges[wp_room][entry_n] & (1u << goal_n))
-    return skel_node_pos[wp_room][goal_n]; // straight shot from the door — take it
-
-  // BFS outward from the goal node; the first node adjacent to the entry door is that door's next
-  // hop on a shortest skeleton path to the goal.
-  int dist_n[SKEL_MAX_NODES], qq[SKEL_MAX_NODES], qh = 0, qt = 0;
-  for (int i = 0; i < n; i++)
-    dist_n[i] = -1;
-  dist_n[goal_n] = 0;
-  qq[qt++] = goal_n;
-  while (qh < qt) {
-    int u = qq[qh++];
-    for (int v = 0; v < n; v++) {
-      if (!(skel_edges[wp_room][u] & (1u << v)) || dist_n[v] >= 0)
-        continue;
-      dist_n[v] = dist_n[u] + 1;
-      if (skel_edges[wp_room][entry_n] & (1u << v))
-        return skel_node_pos[wp_room][v];
-      qq[qt++] = v;
-    }
-  }
-  return skel_node_pos[wp_room][goal_n]; // disconnected: leave it to the via/bridge layer
+  return skel_node_pos[wp_room][best];
 }
 
 // $navdump diagnostic (12.5b): dump the room's skeleton graph for offline tooling. Builds it lazily,
