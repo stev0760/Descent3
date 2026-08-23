@@ -69,8 +69,7 @@ bool Bot_glass_route_enabled = true;   // 0.9.6 2b: breakable-glass portals get 
 bool Bot_wind_route_enabled = true;    // 0.9.7: wind-tunnel one-way gating + downwind shortcut bias ($nav wind)
 bool Bot_seam_guard_enabled = true;    // 0.9.7: re-aim through the direct door when the engine path detours ($nav seam)
 bool Bot_entry_commit_enabled = true;  // 0.9.7 Phase 8.2: commit THROUGH the door from the standoff point ($nav entry)
-bool Bot_outdoor_tier_enabled =
-    true; // 0.9.7 piece 1: entrance choice by full routed cost, not BOA estimate ($nav outtier)
+bool Bot_outdoor_tier_enabled = true;  // 0.9.7 piece 1: entrance choice by full routed cost, not BOA estimate ($nav outtier)
 // 12.7 $softfollow early via-release was REMOVED (validated as a dead end): it fired inside the via commit
 // window and re-introduced the exact circling it meant to avoid (darkjourney via-arrival 73%→18%). Any future
 // rigidity-loosening must be non-oscillating (hysteresis / release-once-after-passing). See NAVIGATION.md §7.0.
@@ -239,23 +238,10 @@ float BotPortalGeoCost(int room_idx, int portal_idx) {
         }
       }
       if (glass) {
-        LOG_DEBUG << "[Nav] Room " << room_idx << " portal " << portal_idx << " breakable glass -> finite break cost";
+        LOG_DEBUG << "[Nav] Room " << room_idx << " portal " << portal_idx
+                  << " breakable glass -> finite break cost";
         return cached = BOT_PORTAL_GLASS_PENALTY;
       }
-    }
-
-    // Engine-agreement demotion: the engine's own size gate (find_small_portals' 6u bbox) already
-    // passed this opening — BOA paths players and its own followers through it. Our probe aims at
-    // the far room's bbox center, which in hollow-core/stacked rooms is void or interior structure
-    // the crossing never touches (abend2's discs: every "slit" verdict, operator-verified flyable).
-    // A hard IMPASSABLE there doesn't just lengthen a route — it desyncs our router from the
-    // engine's steering (the bot is constantly seam-guard-yanked off the door the engine insists
-    // on) and bans arteries the engine uses. Demote to the finite tight penalty: avoided when a
-    // roomier parallel route exists, taken when it is the best route.
-    if (BOA_PassablePortal(room_idx, portal_idx, false, false)) {
-      LOG_DEBUG << "[Nav] Room " << room_idx << " portal " << portal_idx
-                << " engine-passable despite probe block -> tight penalty";
-      return cached = BOT_PORTAL_TIGHT_PENALTY;
     }
     LOG_DEBUG << "[Nav] Room " << room_idx << " portal " << portal_idx << " IMPASSABLE (ship-radius probe blocked)";
     return cached = BOT_PORTAL_IMPASSABLE;
@@ -1396,8 +1382,8 @@ bool BotResolveOutdoorEntrance(const object *obj, int objective_room, int *out_r
       float appr;
       vector diff = Rooms[er].portals[ep].path_pnt - obj->pos;
       if (Bot_troute_enabled) {
-        vector door_appr = Rooms[er].portals[ep].path_pnt -
-                           Rooms[er].faces[Rooms[er].portals[ep].portal_face].normal * BOT_OUTDOOR_APPROACH_OFFSET;
+        vector door_appr =
+            Rooms[er].portals[ep].path_pnt - Rooms[er].faces[Rooms[er].portals[ep].portal_face].normal * BOT_OUTDOOR_APPROACH_OFFSET;
         appr = BotRoadmapOutdoorPathCost(region, obj->pos, door_appr);
         if (appr < 0.0f)
           appr = vm_GetMagnitude(&diff) * 1.5f;
@@ -1527,8 +1513,8 @@ static float TroutePairCost(int region, int ci, int cj, const vector &a, const v
 // (E = exit toward terrain, B = entry toward the goal): interiorCost(bot->E.room) + lattice(E->B)
 // + interiorCost(B.room->goal_room). Rule 1 (coverage-verified FOUND) is the lattice term itself:
 // a pair without a finite Theta* path is not a plan. Returns false when no pair qualifies.
-bool BotTrouteCompose(const object *obj, int goal_room, int *out_exit_room, int *out_exit_portal, int *out_entry_room,
-                      int *out_entry_portal, int *out_region, float *out_total) {
+bool BotTrouteCompose(const object *obj, int goal_room, int *out_exit_room, int *out_exit_portal,
+                      int *out_entry_room, int *out_entry_portal, int *out_region, float *out_total) {
   if (!obj || OBJECT_OUTSIDE(obj))
     return false;
   float best_total = 1e30f;
