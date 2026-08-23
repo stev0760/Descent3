@@ -996,7 +996,7 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
       PrintDedicatedMessage("  Bot %d '%s' slot=%d state=%s role=%s lean=%s speed=%.1f shields=%.0f target=%s\n", i,
                             Bots[i].callsign, slot, state_names[Bots[i].state], BotSquadRoleName(Bots[i].squad_role),
                             BotLeanName(Bots[i].objective_lean), speed, obj->shields, tgt_name);
-      char nav_diag[192];
+      char nav_diag[256];
       BotFormatNavDiag(i, nav_diag, sizeof(nav_diag));
       if (nav_diag[0])
         PrintDedicatedMessage("      %s\n", nav_diag);

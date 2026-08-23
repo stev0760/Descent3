@@ -6448,8 +6448,19 @@ void BotFormatNavDiag(int bot_index, char *buf, size_t buflen) {
     via[0] = '\0';
   }
 
-  snprintf(buf, buflen, "nav: dest_room=%d num_paths=%d path=%u/%u mdir|%.2f| ahead:%s%s%s", dest_room,
-           (int)path.num_paths, path.cur_path, path.cur_node, mdir_mag, probe, route, via);
+  // Step 3 intent layer: the live travel errand (final room, owning priority, how long it has been
+  // held). This is the state Step 3 changed; dest_room above is the legacy explore field and is NOT
+  // it. Owner matters most here — objective-owned errands are the population §0.91 left open.
+  char intent[64];
+  if (Bots[bot_index].travel_dest_room >= 0) {
+    snprintf(intent, sizeof(intent), " intent:room=%d owner=%s held=%.1fs", Bots[bot_index].travel_dest_room,
+             BotTravelOwnerName(Bots[bot_index].travel_owner), Gametime - Bots[bot_index].travel_set_time);
+  } else {
+    snprintf(intent, sizeof(intent), " intent:none");
+  }
+
+  snprintf(buf, buflen, "nav: dest_room=%d num_paths=%d path=%u/%u mdir|%.2f| ahead:%s%s%s%s", dest_room,
+           (int)path.num_paths, path.cur_path, path.cur_node, mdir_mag, probe, route, via, intent);
 }
 
 // --- Navigation geometry dump (diagnostic, read-only) -------------------------
