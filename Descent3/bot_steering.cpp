@@ -640,6 +640,117 @@ bool BotRoomIsBuried(int room_idx) {
   return RoomBuriedCenter(room_idx);
 }
 
+// Skeleton chain export — the ordered node list [bot-adjacent node ... exit portal node,
+// target_pos] for a buried-center room. Same exit-set + standing-neighbor + BFS geometry as
+// BotResolveRoomAim, but emits the WHOLE chain instead of one hop. RETAINED, currently UNCALLED,
+// for a future "via-layer owns the ring" consolidation. Its first consumer issued the chain as one
+// AIG_FOLLOW_PATH goal and was reverted: that goal type restores any freed path as STATIC, indexed
+// by g_info.id — so a dynamic-pool slot indexes GamePaths[] and segfaults (proven, gdb; see
+// NAV_CONSOLIDATION_PLAN). The chain builder itself is engine-agnostic and correct; only the
+// AIG_FOLLOW_PATH issuance was the dead end. Returns node count (>= 2 on success), 0 = no chain.
+// rooms array parallels positions; all room_idx except the last (target_room). max_nodes caps it.
+int BotSkelBuildPath(object *obj, int room_idx, int target_room, const vector &target_pos, vector *pos_out,
+                     int *room_out, int max_nodes) {
+  if (!obj || !pos_out || !room_out || max_nodes < 3)
+    return 0;
+  SkelLevelReset();
+  if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used || (Rooms[room_idx].flags & RF_EXTERNAL))
+    return 0;
+  if (target_room < 0 || target_room > Highest_room_index)
+    return 0;
+  room &rm = Rooms[room_idx];
+  int np = SkelPortalCount(rm);
+  if (np < 2)
+    return 0;
+  if (!skel_built[room_idx])
+    SkelBuild(room_idx);
+  int n = skel_node_count[room_idx];
+  if (n < 2)
+    return 0;
+
+  // Exit set — identical to BotResolveRoomAim's.
+  uint32_t exits = 0;
+  if (target_room != room_idx) {
+    int next_room = BotComputeRoute(room_idx, target_room);
+    if (next_room < 0)
+      next_room = target_room;
+    for (int i = 0; i < np; i++)
+      if (rm.portals[i].croom == next_room)
+        exits |= (1u << i);
+    if (!exits) {
+      for (int i = 0; i < np; i++)
+        if (rm.portals[i].croom == target_room)
+          exits |= (1u << i);
+    }
+  } else {
+    for (int i = 0; i < n; i++)
+      if (BotSegmentClear(obj->roomnum, skel_node_pos[room_idx][i], target_pos, obj->size))
+        exits |= (1u << i);
+  }
+  if (!exits)
+    return 0;
+
+  // Bot-adjacent start node — identical standing-neighbor rule.
+  uint32_t vis = 0, standing = 0;
+  for (int i = 0; i < n; i++) {
+    float nd = vm_VectorDistanceQuick(&obj->pos, &skel_node_pos[room_idx][i]);
+    if (nd < BOT_VIA_ARRIVE_DIST) {
+      standing |= (1u << i);
+      vis |= skel_edges[room_idx][i];
+      continue;
+    }
+    if (BotSegmentClear(obj->roomnum, obj->pos, skel_node_pos[room_idx][i], obj->size))
+      vis |= (1u << i);
+  }
+  vis &= ~standing;
+
+  // BFS from exits with parents (shortest hop count).
+  int depth[SKEL_MAX_NODES], parent[SKEL_MAX_NODES], qq[SKEL_MAX_NODES], qh = 0, qt = 0;
+  for (int i = 0; i < n; i++) {
+    depth[i] = -1;
+    parent[i] = -1;
+  }
+  for (int i = 0; i < n; i++)
+    if (exits & (1u << i)) {
+      depth[i] = 0;
+      qq[qt++] = i;
+    }
+  int target = -1;
+  while (qh < qt && target < 0) {
+    int u = qq[qh++];
+    for (int v = 0; v < n; v++) {
+      if (!(skel_edges[room_idx][u] & (1u << v)) || depth[v] >= 0)
+        continue;
+      depth[v] = depth[u] + 1;
+      parent[v] = u;
+      qq[qt++] = v;
+      if (vis & (1u << v)) {
+        target = v;
+        break;
+      }
+    }
+  }
+  if (target < 0)
+    return 0;
+
+  // Walk parents from the bot-adjacent node back toward the exits, then reverse: ordered chain
+  // bot-adjacent -> ... -> exit portal. The engine path-follower consumes them in order.
+  int rev[SKEL_MAX_NODES], k = 0;
+  for (int cur = target; cur >= 0 && k < SKEL_MAX_NODES; cur = parent[cur])
+    rev[k++] = cur;
+  int out_n = 0;
+  for (int i = k - 1; i >= 0 && out_n < max_nodes - 1; i--) {
+    pos_out[out_n] = skel_node_pos[room_idx][rev[i]];
+    room_out[out_n] = room_idx;
+    out_n++;
+  }
+  // The leg's final position (tray push / exit path_pnt / destination pos), claimed in its room.
+  pos_out[out_n] = target_pos;
+  room_out[out_n] = target_room;
+  out_n++;
+  return out_n;
+}
+
 // Stacked-room descent (the tray-seam class, 07-11 memory + §0.93 residual): a single-portal room
 // hanging off a buried-center room across an open HORIZONTAL ceiling seam (abend2's trays 37/38
 // under rings 30/0). GET_TO_POS arrival is a raw 3D-distance test with no room check

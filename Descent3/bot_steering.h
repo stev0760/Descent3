@@ -139,6 +139,15 @@ bool BotResolveRoomAim(object *obj, const vector &target_pos, int target_room, f
 // room's path_pnt is buried/void — the room class where resolution must go through the helper.
 bool BotRoomIsBuried(int room_idx);
 
+// Skeleton chain export (RETAINED, currently UNCALLED — staged for a future "via-layer owns the
+// ring" consolidation): emit the ordered node list [bot-adjacent node ... exit portal node,
+// target_pos] for a buried-center room. Same geometry as BotResolveRoomAim, whole chain not one
+// hop. Returns node count (>= 2 on success), 0 = no chain. rooms array parallels positions; all
+// room_idx except the last (target_room). Its AIG_FOLLOW_PATH consumer was reverted (static-restore
+// crash — see NAV_CONSOLIDATION_PLAN); the builder is engine-agnostic and kept for reuse.
+int BotSkelBuildPath(object *obj, int room_idx, int target_room, const vector &target_pos, vector *pos_out,
+                     int *room_out, int max_nodes);
+
 // Stacked-room descent (tray-seam class): wp_room is a single-portal tray hanging off the buried
 // parent prev_room across an open horizontal seam. Aim THROUGH the seam into tray air so the
 // 3D-distance GET_TO_POS arrival can only fire inside the tray (the false-arrival loop otherwise
