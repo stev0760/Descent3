@@ -496,6 +496,32 @@ bool BotRoomPathPntReachable(int room_idx) {
   return false;
 }
 
+vector BotWaypointAimPos(int wp_room, const vector &toward) {
+  if (wp_room < 0 || wp_room > Highest_room_index || !Rooms[wp_room].used || (Rooms[wp_room].flags & RF_EXTERNAL))
+    return toward;
+  SkelLevelReset();
+  if (!RoomBuriedCenter(wp_room))
+    return Rooms[wp_room].path_pnt;
+  int np = SkelPortalCount(Rooms[wp_room]);
+  if (np < 1)
+    return Rooms[wp_room].path_pnt;
+  if (!skel_built[wp_room])
+    SkelBuild(wp_room);
+  int n = skel_node_count[wp_room];
+  int best = -1;
+  float best_d = 1e30f;
+  for (int i = 0; i < n; i++) {
+    float d = vm_VectorDistanceQuick(&skel_node_pos[wp_room][i], &toward);
+    if (d < best_d) {
+      best_d = d;
+      best = i;
+    }
+  }
+  if (best < 0)
+    return Rooms[wp_room].path_pnt;
+  return skel_node_pos[wp_room][best];
+}
+
 // $navdump diagnostic (12.5b): dump the room's skeleton graph for offline tooling. Builds it lazily,
 // copies node positions (portals [0,np) then pseudo-bnodes) + per-node edge bitmasks into caller arrays
 // (sized BOT_SKEL_MAX_NODES). Returns total node count; 0 for external/invalid rooms. Reflects the live

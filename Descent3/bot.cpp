@@ -2736,8 +2736,12 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   // direct portal, claimed in the CURRENT room so the engine steers straight with no BOA path.
   bool seam_redirect = false;
   vector seam_pnt{};
+  // Buried-center rooms (hollow-core annuli like abend2's mirror discs): Rooms[].path_pnt is void
+  // space, so aiming a hop at it press-cycles the engine at an unreachable point. Aim at the
+  // skeleton node toward the goal instead (portal nodes / hull-verified pseudo-bnodes).
+  const vector wp_aim = (wp_room == goal_room) ? routed_pos : BotWaypointAimPos(wp_room, routed_pos);
   {
-    vector goal_pos = (wp_room == goal_room) ? routed_pos : Rooms[wp_room].path_pnt;
+    vector goal_pos = wp_aim;
     int steer_room = -1;
     vector steer_pos = BotGetActiveSteerPoint(obj, goal_pos, wp_room, &steer_room);
     // Two triggers share the push-through: (a) engine steer target detours off-route (the Polaris
@@ -2775,13 +2779,13 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
       }
       if (best_p >= 0 && BotPortalWindDir(obj->roomnum, best_p) >= 0) {
         const portal &pt = crm.portals[best_p];
-        vector through = Rooms[wp_room].path_pnt - pt.path_pnt;
+        vector through = wp_aim - pt.path_pnt;
         float td = vm_GetMagnitude(&through);
         if (td > 1.0f) {
           float push = (td * 0.6f < BOT_SEAM_PUSH_DIST) ? td * 0.6f : BOT_SEAM_PUSH_DIST;
           seam_pnt = pt.path_pnt + through * (push / td);
         } else {
-          seam_pnt = Rooms[wp_room].path_pnt;
+          seam_pnt = wp_aim;
         }
         seam_redirect = true;
         Bots[bot_index].seam_wp_room = wp_room;
@@ -2819,7 +2823,7 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   pgi = -1;
 
   goal_info gi_info{};
-  vector dest = (wp_room == goal_room) ? routed_pos : Rooms[wp_room].path_pnt;
+  vector dest = wp_aim;
   int dest_room = wp_room;
   // 0.9.4 Stage 2 ($gridroute): plan the in-room leg over the volumetric grid PROACTIVELY. The raw portal
   // path_pnt is a single point the engine path-follower stalls on inside a buried-center / multi-level room;

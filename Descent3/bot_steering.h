@@ -120,6 +120,11 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
 // ring or labyrinth center) — the navdump's annulus detector.
 bool BotRoomPathPntReachable(int room_idx);
 
+// Waypoint-hop aim point within wp_room (caller validates used/indoor): normally the room's
+// path_pnt, but in a buried-center room that point is void/core space, so return the skeleton
+// node nearest `toward` (portal nodes are guaranteed-flyable; pseudo-bnodes are hull-verified).
+vector BotWaypointAimPos(int wp_room, const vector &toward);
+
 // $navdump diagnostic (12.5b): dump a room's skeleton graph — node positions (portal nodes
 // [0,*portal_count_out), then pseudo-bnodes) and the per-node hull-clear edge bitmask. Builds the
 // skeleton lazily; returns the total node count (0 if the room is external/invalid). Caller arrays
