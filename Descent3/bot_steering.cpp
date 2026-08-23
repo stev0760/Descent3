@@ -640,6 +640,53 @@ bool BotRoomIsBuried(int room_idx) {
   return RoomBuriedCenter(room_idx);
 }
 
+// Stacked-room descent (the tray-seam class, 07-11 memory + §0.93 residual): a single-portal room
+// hanging off a buried-center room across an open HORIZONTAL ceiling seam (abend2's trays 37/38
+// under rings 30/0). GET_TO_POS arrival is a raw 3D-distance test with no room check
+// (AIStatusCircleFrame), and the tray is only 10u deep — so a 10u arrival sphere reaches from the
+// ring above the open seam to ANY point in the tray: the goal self-clears without descent
+// (the 0->38 re-issue loop). Two parts, both required: (a) aim THROUGH the seam at a point clamped
+// inside the tray (the seam guard's push-through construction, bounded by the tray's own depth);
+// (b) the caller shrinks THIS goal's circle_distance to BOT_STACKED_TRAY_ARRIVE_DIST so arrival
+// can only fire with the hull center past the seam plane. Detector is deliberately narrow:
+// exactly one portal, that portal connects to the buried parent, face normal horizontal-ish.
+bool BotStackedTrayAim(int wp_room, int prev_room, vector *out) {
+  if (!out)
+    return false;
+  SkelLevelReset();
+  if (wp_room < 0 || wp_room > Highest_room_index || !Rooms[wp_room].used || (Rooms[wp_room].flags & RF_EXTERNAL))
+    return false;
+  if (prev_room < 0 || prev_room > Highest_room_index || !Rooms[prev_room].used)
+    return false;
+  room &rm = Rooms[wp_room];
+  if (rm.num_portals != 1 || rm.portals[0].croom != prev_room)
+    return false;
+  if (!RoomBuriedCenter(prev_room))
+    return false;
+  const vector &n = rm.faces[rm.portals[0].portal_face].normal;
+  float nyz = (n.y() >= 0.0f) ? n.y() : -n.y();
+  if (nyz < 0.9f) // open horizontal seam only — a side door is not this defect
+    return false;
+  // Push INTO the tray, clamped by the tray's own depth along the seam normal (the tray is 10u
+  // tall — an unclamped push lands in the floor). Require enough depth that a hover above the
+  // seam stays outside the shrunken arrival sphere: push > arrive dist + 1.
+  const vector &bmin = rm.bbf_min_xyz, &bmax = rm.bbf_max_xyz;
+  float depth = (bmax.x() - bmin.x()) * (n.x() >= 0.0f ? n.x() : -n.x()) + (bmax.y() - bmin.y()) * nyz +
+                (bmax.z() - bmin.z()) * (n.z() >= 0.0f ? n.z() : -n.z());
+  float push = depth * 0.5f - 2.0f;
+  if (push > BOT_STACKED_TRAY_PUSH)
+    push = BOT_STACKED_TRAY_PUSH;
+  if (push < BOT_STACKED_TRAY_ARRIVE_DIST + 1.0f)
+    return false;
+  vector aim = rm.portals[0].path_pnt + n * push;
+  // Refuse a blocked descent (the push point must be flyable at hull radius from the portal —
+  // a tray whose mouth is obstructed falls back to today's aim and its own investigation).
+  if (!BotSegmentClear(prev_room, rm.portals[0].path_pnt, aim, BOT_PORTAL_SHIP_RADIUS))
+    return false;
+  *out = aim;
+  return true;
+}
+
 vector BotWaypointAimPos(int wp_room, const vector &toward) {
   if (wp_room < 0 || wp_room > Highest_room_index || !Rooms[wp_room].used || (Rooms[wp_room].flags & RF_EXTERNAL))
     return toward;

@@ -139,6 +139,12 @@ bool BotResolveRoomAim(object *obj, const vector &target_pos, int target_room, f
 // room's path_pnt is buried/void — the room class where resolution must go through the helper.
 bool BotRoomIsBuried(int room_idx);
 
+// Stacked-room descent (tray-seam class): wp_room is a single-portal tray hanging off the buried
+// parent prev_room across an open horizontal seam. Aim THROUGH the seam into tray air so the
+// 3D-distance GET_TO_POS arrival can only fire inside the tray (the false-arrival loop otherwise
+// clears the goal from the room above without descent). False = not this class; caller falls back.
+bool BotStackedTrayAim(int wp_room, int prev_room, vector *out);
+
 // $navdump diagnostic (12.5b): dump a room's skeleton graph — node positions (portal nodes
 // [0,*portal_count_out), then pseudo-bnodes) and the per-node hull-clear edge bitmask. Builds the
 // skeleton lazily; returns the total node count (0 if the room is external/invalid). Caller arrays
@@ -206,6 +212,13 @@ int BotPortalWindDir(int room_idx, int portal_idx);
 // with no BOA path to detour on.
 extern bool Bot_seam_guard_enabled;
 #define BOT_SEAM_PUSH_DIST 25.0f // aim this far past the portal plane (> BOT_VIA_ARRIVE_DIST, so arrival = crossing)
+
+// Stacked-room descent (tray-seam class): aim THROUGH the open ceiling seam, clamped to the
+// tray's own depth (BOT_STACKED_TRAY_PUSH is the cap; the real push is depth*0.5 - 2). The issued
+// goal's circle_distance is shrunk to BOT_STACKED_TRAY_ARRIVE_DIST so a hover above the seam can
+// never satisfy arrival — the tray is shallower than the default 10u sphere.
+#define BOT_STACKED_TRAY_PUSH 20.0f
+#define BOT_STACKED_TRAY_ARRIVE_DIST 2.0f
 
 // 0.9.7 Phase 8.2 ($nav entry): stage-2 of the outdoor entrance approach. Stage 1 (12.6) aims at a
 // standoff point 12u OUTSIDE the resolved door; but nothing ever aimed the bot THROUGH it — arrival

@@ -2742,11 +2742,22 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   // roadmap / soft-hop), never the void `path_pnt`. Issue claimed in the CURRENT room below — the
   // engine steers straight; no room-flap re-issue fights over which layer aimed where.
   bool unified_aim = false;
+  bool tray_aim = false;
   vector wp_aim{};
-  if (BotRoomIsBuried(obj->roomnum))
+  if (wp_room == goal_room && BotStackedTrayAim(wp_room, obj->roomnum, &wp_aim)) {
+    tray_aim = true;
+    // Stacked-room descent (tray-seam class, §0.93 residual): the tray's path_pnt sits within
+    // GET_TO_POS's 10u 3D-distance arrival sphere of the room above the open ceiling seam — the
+    // goal self-clears without descent (the 0->38 re-issue loop). Aim THROUGH the seam instead;
+    // arrival then can only fire inside the tray. Issued claim-room stays wp_room.
+    unified_aim = true; // skip the buried-parent resolver — this hop IS the descent
+  } else if (BotRoomIsBuried(obj->roomnum)) {
     unified_aim = BotResolveRoomAim(obj, routed_pos, goal_room, obj->size, &wp_aim, wp_room);
-  if (!unified_aim)
+    if (!unified_aim)
+      wp_aim = (wp_room == goal_room) ? routed_pos : BotWaypointAimPos(wp_room, routed_pos);
+  } else {
     wp_aim = (wp_room == goal_room) ? routed_pos : BotWaypointAimPos(wp_room, routed_pos);
+  }
   {
     vector goal_pos = wp_aim;
     int steer_room = -1;
@@ -2905,6 +2916,12 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   gi_info.pos = dest;
   gi_info.roomnum = dest_room;
   pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
+  if (tray_aim && pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used) {
+    // The other half of the tray fix: shrink THIS goal's arrival sphere. The default 10u circle
+    // spans the whole 10u-deep tray, so a hover above the open seam "arrives" without descending
+    // (the 0->38 re-issue loop). At 2u, arrival requires the hull center past the seam plane.
+    obj->ai_info->goals[pgi].circle_distance = BOT_STACKED_TRAY_ARRIVE_DIST;
+  }
   Bots[bot_index].explore_dest_room = wp_room;
   Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
   // Hop-commit press bookkeeping: consecutive re-issues of the same waypoint hop = the engine
