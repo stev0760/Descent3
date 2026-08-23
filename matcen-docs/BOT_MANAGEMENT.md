@@ -20,11 +20,17 @@ All bot commands use the `$` prefix, consistent with other server admin commands
 | `$removebot <index>` | Remove bot by Bots[] index |
 | `$removebots` | Remove all bots |
 | `$botlist` | List active bots with slot/state info |
-| `$botstat [index\|all]` | Real-time physics/state debugging |
+| `$botstat [index\|all]` | Real-time physics/state debugging; nav line includes final intent owner/room/held time |
 | `$botmov on\|off` | Toggle movement debug logging |
+| `$nav [name on\|off\|dump]` | Volatile navigation diagnostic namespace; bare `$nav` lists 33 live rows |
 | `$servercaps` | Print server capabilities for remote admin handshake |
 | `$botdifficulty <index\|all> <level>` | Change difficulty mid-game |
 | `$bothelp` | List all bot commands |
+
+The `$nav` surface is diagnostic, not a remote-admin compatibility contract. In 0.9.11 the
+default-off `gridall`, `outroute`, and `replan` rows and flat aliases were removed; Pyrodeck and other
+administration clients must continue capability-gating on `$servercaps`, not on diagnostic command
+existence.
 
 ### Current Architecture
 

@@ -205,7 +205,7 @@ exists. Adding or removing a diagnostic command is invisible churn; a real capab
 |------|----------|---------------|
 | **1 — Stable contract** | `$servercaps` (anchor), `$botlist`, `$addbot` / `$removebot` / `$removebots` / `$botdifficulty` (fire-and-forget verbs), `$botmode`, plus the vanilla `$scores` / player / team / settings commands in §5.3 | parse output, build UI, feature-gate |
 | **2 — Semi-stable** | `$botstat` *status* line (line 1 only), `$botobj` | expose as console/help text; avoid hard output parsers |
-| **3 — Volatile diagnostics (mid-flight)** | `$botstat` **nav: line** (`route:goal=… dijkstra=… boa=… gcost=…`), the `$nav` namespace (0.9.5: bare `$nav` = toggle table, `$nav <name> on|off`, `$nav dump [file]` = the nav-geometry JSON; flat pre-0.9.5 names `$navdump`/`$gridnav`/`$terrainsteer`/… remain hidden aliases), `$botmov` | reference as text only — **zero** output binding |
+| **3 — Volatile diagnostics (mid-flight)** | `$botstat` **nav: line** (`route:goal=… dijkstra=… boa=… gcost=… intent:room=… owner=… held=…`), the `$nav` namespace (bare `$nav` = toggle table, `$nav <name> on|off`, `$nav dump [file]` = nav-geometry JSON; flat aliases may be added or retired), `$botmov` | reference as text only — **zero** output binding |
 
 **Tier 3 detail.** These commands exist to support active bot-AI/navigation debugging and change shape without
 notice. As of 0.9.1 the in-flight intra-room steering work (the "pumphouse glass-press" fix) is expected to change
@@ -213,9 +213,10 @@ the `$botstat` nav: line format and/or extend the `$navdump` schema. Do not writ
 `CommandReference` entries for them as "format unstable — do not parse." Skip the `$botstat` nav: line when
 parsing the status block (the status line is Tier 2).
 
-**Removed commands — never reference.** Deleted in the Phase 10 nav consolidation and confirmed absent in 0.9.1:
-`$navrouting`, `$flowfield`, `$potentialfield`, `$botpathfind`, `$botdispersal`. If an older Pyrodeck build
-references any of these, strip them.
+**Removed commands — never reference.** `$navrouting`, `$flowfield`, `$potentialfield`, `$botpathfind`,
+and `$botdispersal` were deleted in the earlier nav consolidation. The 0.9.11 retirement audit also
+removed `$nav gridall`, `$nav outroute`, `$nav replan` and flat aliases `$gridall`, `$outdoorroute`,
+`$stallreplan`. If an older Pyrodeck build references any of these, strip them.
 
 ### 5.2 Bot Management Commands
 

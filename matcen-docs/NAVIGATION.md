@@ -6,16 +6,12 @@
 > validated, and folded in as §3.5–§3.6 + §8 History; original in git history). Deep engine research
 > lives in `PATHFINDING_CODEBASE_EXPLORE.md`; per-frame field/constant detail in `BOT_DEV_REFERENCE.md`.
 
-**Status:** Matcen 0.9.8 (released 2026-07-18, the game-modes release). The navigation milestone is
-**0.9.7** (2026-07-12): the single-spatial-authority stack (curve / strike / dense / reach / troute /
-hardcost / heal), validated across five map pools with roughly thirty hours of crash-free soak testing;
-0.9.8 layers the game-mode role structures on top of it. Under both sits the ground-up 0.9.4 rewrite:
-a per-room/per-region grid-seeded volumetric roadmap routed with any-angle Lazy Theta\*, hull-aware
-(6.7u fit clearance + corner-bridging across wall-split components), with **selective** proactive
-in-room routing (gated to genuinely complex rooms) driving objective, carrier, and escort nav (see
-**§3.5**; a 9-map Fellowship soak measured captures +58% vs 0.9.3). The Phase 10–12 stack below
-(two-layer architecture + cost-aware Dijkstra router + portal skeleton / pseudo-bnodes / outdoor
-connecting graph) remains live as the `$gridnav off` fallback (§4.2–§4.3) until Stage 4 retires it.
+**Status:** Matcen 0.9.11-dev (navigation consolidation). The 0.9.4 volumetric roadmap and 0.9.7
+single-spatial-authority stack remain the substrate. The 0.9.10/0.9.11 consolidation adds persistent
+travel intent and one dispatch entry for explore-owned interior travel. Step 3 is closed after the
+2026-08-22 cockpit gate; the proposed Step 4 SP outdoor widening is closed-no-go, so the existing
+outdoor and legacy fallback substrates remain. Step 5 has retired three default-off experiment
+levers (`gridall`, `outroute`, `replan`) without changing default behavior.
 **For the live current-status snapshot (toggle states, open issues, the tried-and-reverted ledger) see
 §7.0**, kept current per soak. The narrative sections below are the design rationale; §7.0 is "what's
 true right now."
@@ -412,9 +408,9 @@ is a 3-segment plan composed from parts that already exist and are individually 
   Carriers and escorts ride automatically (both route through `BotSetRoutedGoal` — closes the
   known `!follow`-dead-outdoors gap).
 
-**Staging.** New toggle **`$nav troute`** (terrain-route tier), default ON for test builds, owning
-the composer + its follower path outright (`outroute` stays a retired legacy lever, default OFF —
-its reactive-redirect design is superseded; its delivery skeleton is reused as code). Plan state
+**Staging.** Toggle **`$nav troute`** (terrain-route tier), default ON, owns the composer and follower
+path outright. The superseded default-off `outroute` lever was removed in 0.9.11; its delivery helper
+remains as troute-owned code. Plan state
 per bot: {exit door, entry door, segment index, region path handle}; invalidated on goal change,
 death, or roadmap serial bump.
 
@@ -633,12 +629,14 @@ verdict is a **partial** win — it ends the dead-pins but not yet the crossing 
 `$botstat [index|all]` prints, per bot, a status line and a nav line:
 ```
 nav: dest_room=5 num_paths=1 path=0/3 mdir|0.98| ahead:WALL d=12.3 solid=0 portal=1 \
-     route:goal=19 dijkstra=3 boa=24 [DIVERGE] gcost=40
+     route:goal=19 dijkstra=3 boa=24 [DIVERGE] gcost=40 intent:room=19 owner=explore held=8.4s
 ```
 - `dest_room` = current waypoint; `num_paths`/`path` = engine path-follower state; `mdir|x|` =
   `movement_dir` magnitude; `ahead:` = forward probe (clear / WALL+solid+portal / TERRAIN / OBJ).
 - `route:` = the router's next hop (`dijkstra`) vs the engine's BOA hop (`boa`); **`[DIVERGE]`** when
   they differ; `gcost` = geometry cost of the chosen portal (`1000000` = impassable).
+- `intent:` = final travel room, deciding owner, and uninterrupted hold time. `dest_room` remains
+  legacy waypoint/explore bookkeeping and is not the persistent-intent destination.
 
 **Validation gate:** `[DIVERGE]` should appear **only** where `gcost>0` or a dynamic penalty is
 active. DIVERGE at a wide-open portal (`gcost=0`, no penalty) means the base cost isn't reproducing
@@ -693,7 +691,35 @@ overnight log. A full verbosity-tier + event-vocabulary consolidation is registe
 
 ## 7. Open problems (roadmap)
 
-### 7.0 Current status snapshot — 2026-07-18 (0.9.8 RELEASED; hosted-campaign reading; $botstat crash + wind-blind Entropy targeting fixed)
+### 7.0 Current status snapshot — 2026-08-22 (0.9.11-dev consolidation)
+
+**Phase state.** Step 3 is closed for explore-owned interior errands after six-pool measurement,
+independent review, and the KegD3 cockpit verdict ("Feels excellent"). Capture does not explicitly
+complete travel intent, so carry/objective arrival remains conservative telemetry rather than a
+success rate; the analyzer now reports ending outcomes by owner and gates `DEST_CHURN` on explore.
+
+**Outdoor ruling.** Step 4's proposed `legacy_accept || BOA-routable` widening is closed-no-go. The
+reclaim probe measured 356 hull-ray-blocked legs vs 3 clear (99.2% blocked), so widening would hand
+almost the entire class to the engine's unproven coarse outdoor fallback. Keep `BotBnodeLegOk`,
+troute, the outdoor roadmap, and the five legacy fallback controls. Region-0 coverage remains a
+post-consolidation construction item.
+
+**Live `$nav` surface: 33 rows.** Defaults are ON for every row except `mjunction` (OFF):
+
+`grid bridge route grate glass commit outlattice wind seam entry outtier hardroom curve strike dense
+reach troute bnodesp troute2 hardcost heal runner hyper entropy mball mroles mavoid terrain bnodes
+outdoorvia outdoorgraph softhop`
+
+Retired in Step 5 tranche 1: `gridall`, `outroute`, `replan`, including their flat aliases and dead
+state. Default behavior is unchanged because all three were OFF. `BotOutdoorRouteLeg` remains under
+troute, and historical log parsers remain. Later retirements stay evidence-gated.
+
+**Open consolidation items:** Nightmarecastle's five-second seam refire loop; the build-independent
+escape-relapse/failure-memory loop; region-0 outdoor coverage; later Step 5 firing-rate audits for
+seam/via/strike/hard-room/fallback machinery. Do not reopen the closed Step 3 or Step 4 measurements
+to chase these separate mechanisms.
+
+### (superseded) 7.0 snapshot — 2026-07-18 (0.9.8 release)
 
 > **0.9.8 stamped 2026-07-18** (tag v0.9.8) off the 07-13→18 hosted-server validation campaign:
 > operator ran overnight soaks + live PiccuEngine play on a remote Linux host (metropol_gt 11h CTF,

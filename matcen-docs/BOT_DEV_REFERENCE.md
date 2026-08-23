@@ -7,9 +7,15 @@ Current implementation status is in `BOTS_DEVEL.md`. Physics model reference is 
 
 ## Current Status
 
-**0.9.8** (stable, released 2026-07-18): the game-modes release (Entropy E1–E3, Monsterball M1–M3, CTF runner/flex roles, Hyper-Anarchy orb roles), on top of the 0.9.7 navigation-intelligence stack (reach/troute/heal/curve/strike/dense and the rest of the `$nav` family).
+**0.9.11-dev** (in progress): navigation consolidation. Persistent intent and one dispatch entry now
+own explore-class interior travel. Step 3 is closed; the Step 4 SP outdoor widening is closed-no-go;
+Step 5 has retired the default-off `gridall`, `outroute`, and `replan` mechanisms (33 `$nav` rows
+remain). The stable release remains 0.9.10.
 
-The nav substrate is the **volumetric grid-seeded roadmap** (`NAVIGATION.md` §3.5, `bot_roadmap.cpp`), shipped and validated in 0.9.4. The 0.9.3 portal-skeleton stack (Phase 11 router → via-points → pseudo-bnodes → outdoor graph → soft-hop) stays live as the `$gridnav off` fallback until Stage 4 retires it. The bot only ever sets the engine's *goal*; the engine does all steering. Objective-mode routing is inert in anarchy/team/robo/coop. **Live toggle table, open issues, and the tried-&-reverted ledger: `NAVIGATION.md` §7.0.**
+The nav substrate is the **volumetric grid-seeded roadmap** (`NAVIGATION.md` §3.5,
+`bot_roadmap.cpp`), shipped and validated in 0.9.4. The 0.9.3 portal-skeleton stack remains as the
+`$gridnav off` fallback because no validated Step 4 replacement licensed its deletion. The bot only
+sets the engine's *goal*; the engine does all steering. **Live status: `NAVIGATION.md` §7.0.**
 
 > Built on the **Phase 10** two-layer consolidation (Phases 7–9 grew bot-side steering layers — potential field, flow-field-as-steering, occupancy dispersal — that fought the engine; all removed). Phase 11 adds routing intelligence back *without* re-adding a steering override.
 
@@ -98,6 +104,11 @@ float   chasing_powerup_timer;   // seconds spent chasing current powerup withou
 int     explore_dest_room;    // current navigation destination room, -1 = none
 float   explore_room_timer;   // time budget for current destination
 int     explore_stuck_room;   // last room blacklisted due to stuck — skipped on next pick
+
+// Persistent travel intent (0.9.10/0.9.11 consolidation)
+int     travel_dest_room;     // final errand room; unlike explore_dest_room, never a routed waypoint
+int8_t  travel_owner;         // order/carry/objective/opportunism/explore
+float   travel_set_time;      // Gametime when this uninterrupted intent began
 
 // Room-change progress tracking (Phase 4.0)
 int     last_progress_room;                      // roomnum at last progress check

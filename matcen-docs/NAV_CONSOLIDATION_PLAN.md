@@ -1233,6 +1233,52 @@ timeout as 0.0%). **Rule: `prev=` if present, else `owner=`.**
 
 ---
 
+## 0.92 Cockpit exit, measurement repair, and the Step 4 decision (2026-08-22)
+
+**The owed Step 3 cockpit session is complete, and Step 3 is CLOSED.** KegD3 CTF was flown with a
+contested 3v3 roster and the live intent field added to `$botstat`; operator verdict after the first
+full round: **"Feels excellent."** The log agrees on the bounded claim: explore-owned arrival was
+44% with `unreach` excluded, no explore timeout mill appeared, both teams scored, and the only stuck
+cluster was KegD3 room 32 (3 hard of 7 total). This was a feel/continuity gate, not another effect-size
+arm. No further Step 3 soak is owed.
+
+**The cockpit also explained objective/carry arrival's ambiguity.** Capture is handled in the CTF DLL
+and never explicitly completes the travel intent. A successful carry is credited as arrival only when
+a later soft clear/replacement happens while the bot is still in the destination room; otherwise the
+completed carry can remain live until death. In this session, 5 of 15 bot capture events later booked
+as death. Consequences:
+
+- carry/objective arrival, death share, held duration, and pooled `DEST_CHURN` are not clean success
+  measures;
+- explore-owned arrival remains the Step 3 metric because the explore errand itself is "reach room N"
+  and its dispatch path performs that room-level completion;
+- captures, kills, stuck/hard-pin events, carrier distance, and `flag_conversion.py` are independent
+  of the travel-end inference.
+
+The analyzer now enforces that boundary: end owners use `prev=` on supersession and `owner=` on clear,
+outcomes are owner-stratified, `unreach` is excluded from completion denominators, and `DEST_CHURN`
+uses explore-owned intents only. A second blind spot was also repaired: both CTF parsers now recognize
+the DLL's two- and three-flag cash-in messages instead of silently dropping them on four-team maps.
+
+**STEP 4 is CLOSED-NO-GO in its tested form; do not re-land the gate widening.** The later hull probe
+already supplied the missing decision datum: rejected-but-BOA-routable legs were
+`reclaim-blocked=356` vs `reclaim-clear=3` (**99.2% blocked**), including 43/43 samples genuinely
+outdoors. The proposed `legacy_accept || BOA-routable` widening therefore hands almost the entire
+class to the engine's coarse portal-hop fallback, not its validated straight beeline. The prior A/B
+was invalid, but invalid evidence against a change is not evidence for it; after the probe there is no
+positive value case that justifies another long run. The old SP gate and the outdoor roadmap/troute
+substrate remain. Region-0 coverage is a separate post-consolidation construction item, not Step 4 by
+permission.
+
+**STEP 5 has begun with the evidence-complete tranche.** `gridall`, `outroute`, and `replan` were all
+default OFF and explicitly dispositioned for deletion. Their flags, command rows, dead state, and
+obsolete experiment manifests are removed. The active outdoor follower remains under default-ON
+`troute`; historical `stall-replan` and `outdoor-route wp` log parsers remain for archived runs.
+`soakctl.py` now fails immediately when a manifest requests an unknown toggle, preventing a retired
+lever from silently turning an A/B arm into a no-op.
+
+---
+
 ## 1. The committee census (who can seize the wheel during travel)
 
 **Goal-writers** — all deliver through one legitimate channel (`GoalAddGoal(AIG_GET_TO_POS/OBJ)`).
@@ -1362,12 +1408,12 @@ never will) then lives in one predicate instead of thirteen call sites' habits.
 
 ---
 
-## 5. Toggle disposition (36 in `Nav_toggles[]`, dedicated_server.cpp:749–829)
+## 5. Toggle disposition (36 at phase start; 33 live after Step 5 tranche 1)
 
 - **Out of scope — mode behavior, not nav (7):** `runner`, `hyper`, `entropy`, `mball`, `mroles`,
   `mavoid`, `mjunction`.
-- **Retire now — dead by measurement or default (3):** `gridall`, `outroute`, `replan`. Pure code
-  removal, no behavior change on defaults.
+- **Retired 2026-08-22 — dead by measurement or default (3):** `gridall`, `outroute`, `replan`.
+  Pure code removal, no behavior change on defaults; troute retains the outdoor follower.
 - **Substrate parameters — keep code, retire levers late (5):** `grid`, `bridge`, `dense`, `heal`,
   `curve`. Off-arms exist only to reproduce the 0.9.3 baseline.
 - **Router cost model — load-bearing (4):** `wind`, `glass`, `outtier`, `entry`. Fold to unconditional
@@ -1376,9 +1422,9 @@ never will) then lives in one predicate instead of thirteen call sites' habits.
   `hardroom`, `hardcost`. Audit firing rates after the collapse; retire at ~zero.
 - **Selection layer (4):** `reach` (keep — it *is* the single-authority direction), `strike`,
   `commit`, `grate`.
-- **Legacy 0.9.3 fallback (5):** `terrain`, `bnodes`, `outdoorvia`, `outdoorgraph`, `softhop`. **Not
-  deletable today** — the 08-04 smoke shows this stack is the only thing flying outdoor legs in co-op
-  (438 skeleton hops). Retire only after §6 Step 4.
+- **Legacy 0.9.3 fallback (5):** `terrain`, `bnodes`, `outdoorvia`, `outdoorgraph`, `softhop`. **Retain.**
+  The old Step 4 gate-widening is closed-no-go (§0.92), so no validated replacement licenses deleting
+  this outdoor/SP fallback substrate.
 - **SP hand-off (1):** `bnodesp` — keep; its lever retires last.
 
 ---
@@ -1403,8 +1449,8 @@ conversion gates protect the modes.
 > | 1 | ~~**Polaris return-leg forensics**~~ | DONE 08-08 — **not a nav defect**; route metrics improved, captures z=-0.63, team redistribution. See the RESOLVED block in §6 |
 > | 2 | **The destination-churn instrument** | Step 2b's owed pass metric, never built; the newest layer is the one layer judged only on feel. Built as a **typed setter** (`BotSetTravelDest(bot, room, owner, why)`) rather than scattered log calls, because that choke point *is* the intent-side half of Step 3's dispatch — the same lesson as `BotEnforceNoOrphanPath` |
 > | 3 | **Step 3** — one dispatch point | one call site per commit, mandatory. **§0.8 falsified the "escort commits are MP-inert" premise** — an ordered carrier runs the escort path on MP |
-> | 4 | **Step 4** — SP outdoor gate deletion | inert on MP by construction; unblocks the legacy five |
-> | 5 | **Step 5** — the retirement audit | RETURN TO ORIGIN |
+> | 4 | **Step 4** — SP outdoor gate deletion | **CLOSED-NO-GO 08-22** — 99.2% of the reclaimed class is hull-ray blocked; retain the gate/substrate |
+> | 5 | **Step 5** — the retirement audit | **IN PROGRESS 08-22** — first three dead/default-off levers removed |
 >
 > Standing discipline for the back half, earned on nights 1-3: **12 rounds minimum** for anything
 > gated on escalations or captures (the 4-round A/B that blessed 2b-2 read 5.2/rnd where 12 rounds
@@ -1896,12 +1942,27 @@ extend the outdoor lattice build to region 0 (seed policy is the open design que
 collapse is the cautionary precedent. This step risks the modes most; it does not ship on campaign
 feel alone.
 
+> **FINAL DISPOSITION 2026-08-22 — CLOSED-NO-GO FOR THE GATE WIDENING.** The §0.86 probe answered
+> the decision question before another A/B: 356/359 rejected-but-routable evaluations (99.2%) were
+> hull-ray blocked, including every genuinely-outdoor sample. Reclaiming the class would therefore
+> exercise the coarse BOA fallback almost exclusively, whose flight quality is the unproven part of
+> the proposal. The widening remains reverted. The legacy five and troute/outdoor roadmap remain;
+> region-0 coverage is a separate post-consolidation build, not permission to delete a gate.
+
 **STEP 5 — the retirement audit.** With one owner per leg and histograms live, ask each mechanism
 whether it still fires. Delete now: `gridall`, `outroute`, `replan`. Expected to go quiet then delete:
 seam/hop-commit, the via-vs-gridroute split, `strike` + per-bot blacklists, `hardroom`/`hardcost`, the
 legacy five. Expected to remain (folded unconditional): substrate params, cost model, `bnodesp` as
 code, and stuck-escape as a genuinely dormant safety net — after Step 1 its firing rate *is* the
 health metric.
+
+> **TRANCHE 1 APPLIED 2026-08-22.** `gridall`, `outroute`, and `replan` are removed from production
+> code and the `$nav` table (36 → 33 rows). Default behavior is unchanged: all three flags were OFF.
+> `BotOutdoorRouteLeg` remains and is owned directly by `troute`; the retired outroute branch is gone.
+> Obsolete manifests that depended on enabling those experiments were removed, default-false pins
+> were dropped from still-useful manifests, and `soakctl.py` now hard-fails an unknown toggle response.
+> Historical analyzer parsers remain so old logs still compare. Later Step 5 retirements remain
+> evidence-gated; this tranche does not license deleting seam/via/fallback machinery.
 
 ---
 

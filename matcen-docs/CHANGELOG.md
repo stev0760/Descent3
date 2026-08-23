@@ -10,11 +10,26 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
 ## [0.9.11-dev] - unreleased
 
 *In progress: the second half of the navigation cleanup. 0.9.10 gave bots a travel intent that
-survives interruption; this build collapses the ten-odd subsystems that decide **how** a bot gets
-where it is going into a single decision point, lets the engine fly outdoor legs on campaign maps it
-is perfectly capable of flying, and retires the tuning switches that only ever existed to paper over
-the overlap. No operator-visible feature work is planned — the goal is that bots travel the same way
-they do today, for reasons that fit in one place instead of thirteen.*
+survives interruption; this build routes self-directed interior travel through one decision point
+and begins removing experiments that no longer have a role. The proven outdoor stack stays in place:
+a proposed campaign-map shortcut was rejected when ship-width probes showed almost every target leg
+was obstructed. No operator-visible feature work is planned; the goal is the same flight behavior
+with fewer competing mechanisms.*
+
+**The cockpit gate is complete.** A contested KegD3 CTF round was the final feel check for the new
+interior dispatch. Operator verdict: "Feels excellent." That closes the self-directed-travel work;
+the remaining navigation issues have separate, already-named owners rather than requiring another
+round of measuring the same change.
+
+**Three retired experiments are gone.** `$nav gridall`, `$nav outroute`, and `$nav replan` were all
+off by default and are removed along with their hidden flat aliases and dead state. Normal server
+behavior is unchanged. Terrain-route following remains active under `$nav troute`, which already
+owned it in normal builds. Old logs containing the retired mechanisms still analyze correctly.
+
+**A/B tooling now fails closed.** The guard compares exact level order and reset counts, not just the
+number of levels. The soak driver now stops if a manifest requests an unknown toggle instead of
+silently running a no-op arm. Four-team CTF reports also count two- and three-flag cash-ins, which the
+old parsers omitted.
 
 **The server log now explains where bots are trying to go.** Every change of a bot's travel
 *errand* — the destination it is deliberately journeying to — is logged with who decided it (a human
@@ -41,10 +56,9 @@ On a single-map test where every round is flown over identical ground, captures 
 That is the payoff the rework was for, and it is a real one.
 
 **Two honest limits on that claim**, both found by a second opinion after the first write-up. *One:*
-the gain is in self-directed roaming. Journeys toward the **game objective** — the flag run — did not
-improve on the same measurements, and on the two maps with enough data to tell, they got slightly
-worse. Part of that is by design (a bot chasing a flag is now supposed to re-think when the flag
-moves, which the measurement counts as not-arriving), but not all of it, and it is still open.
+the gain is in self-directed roaming. The same arrival percentage is not a valid success rate for
+objective or carry trips: moving flags legitimately replace an errand, and a successful capture does
+not explicitly close the logged intent. Those trips must be judged by flag conversion and live play.
 *Two:* an earlier claim here that wedging "nearly halved" on a second map pool turned out to be
 almost entirely **one bot** having a bad night in the first run and a good one in the second; across
 all the other bots that pool was flat. Both numbers stand corrected rather than quietly dropped.
