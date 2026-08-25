@@ -37,7 +37,7 @@ project(Descent3
 set(MATCEN_VERSION_MAJOR 0)
 set(MATCEN_VERSION_MINOR 9)
 set(MATCEN_VERSION_PATCH 11)
-set(MATCEN_VERSION_SUFFIX "-dev")
+set(MATCEN_VERSION_SUFFIX "")
 
 if (${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})
   message(FATAL_ERROR "In-source builds are not supported. Please run CMake with a different build path.")

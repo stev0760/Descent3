@@ -7,14 +7,15 @@ live navigation status is in [NAVIGATION.md](NAVIGATION.md) §7.0.
 Versioning: `0.8.x` = feature releases; `0.9.x` = the navigation-milestone series.
 A `-dev` suffix marks an in-test build that has not yet passed its validation gate.
 
-## [0.9.11-dev] - unreleased
+## [0.9.11] - 2026-08-24
 
-*In progress: the second half of the navigation cleanup. 0.9.10 gave bots a travel intent that
-survives interruption; this build routes self-directed interior travel through one decision point
-and begins removing experiments that no longer have a role. The proven outdoor stack stays in place:
-a proposed campaign-map shortcut was rejected when ship-width probes showed almost every target leg
-was obstructed. No operator-visible feature work is planned; the goal is the same flight behavior
-with fewer competing mechanisms.*
+*The second half of the navigation cleanup. 0.9.10 gave bots a travel intent that survives
+interruption; this build routes self-directed interior travel through one decision point, makes the
+long-unplayable toroid flag map produce captures, and removes experiments that no longer have a role.
+The proven outdoor stack stays in place: a proposed campaign-map shortcut was rejected when ship-width
+probes showed almost every target leg was obstructed. No operator-visible feature work; the goal is
+the same flight behavior with fewer competing mechanisms. Validated by an overnight nine-stage
+mode-spread soak (CTF, anarchy, team, entropy, monsterball) with no crashes and no regression.*
 
 **The cockpit gate is complete.** A contested KegD3 CTF round was the final feel check for the new
 interior dispatch. Operator verdict: "Feels excellent." That closes the self-directed-travel work;
@@ -30,9 +31,10 @@ owned it in normal builds. Old logs containing the retired mechanisms still anal
 produced a bot capture. The cause was three navigation layers each picking a different aim point
 inside a ring-shaped room and fighting over it several times a second. They now resolve through
 one shared calculation. In a paired overnight test on abend2: flag grabs 0 → 12, the first
-unattended bot capture on the map, and half the wandering in one of the two rings. Remaining
-known issue: carriers can still loop at one flag pocket's open ceiling seam instead of dropping
-in — a separate, already-registered fix.
+unattended bot capture on the map, and half the wandering in one of the two rings. A follow-up helps
+flag carriers drop into the hanging flag pockets rather than hovering the open ceiling seam above them,
+roughly halving that loop. Remaining known issue: bots still hesitate at the shaft-to-ring threshold —
+a separate, already-registered fix.
 
 **A/B tooling now fails closed.** The guard compares exact level order and reset counts, not just the
 number of levels. The soak driver now stops if a manifest requests an unknown toggle instead of

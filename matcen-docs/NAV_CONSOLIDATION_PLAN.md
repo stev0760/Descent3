@@ -1233,6 +1233,41 @@ timeout as 0.0%). **Rule: `prev=` if present, else `owner=`.**
 
 ---
 
+## 0.94 "Skeleton owns the ring" tried, reverted, and 0.9.11 cut on the validated base (2026-08-23/24)
+
+**The experiment (`87768fc8`→`dddf90a9`, all reverted).** §0.93 unified the *aim point* in buried rooms
+but the committee census still showed five hands voting inside ring 0 (seam=138, via=214, path_pnt=70).
+The next attempt tried the fullest consolidation: issue the buried-room skeleton chain as a single
+`AIG_FOLLOW_PATH` goal over a **dynamic** path so the engine rides it and the referees stand down —
+"one planner per ring, engine as pure executor." `BotSkelBuildPath` (the ordered chain export) was
+built for it, plus an errand-stamp to stop a re-issue storm.
+
+**Why it cannot work (gdb-proven, and why it is recorded here so it is never re-attempted).**
+`AIG_FOLLOW_PATH` is a **static-path** goal in this engine. `GoalDoFrame` (AIGoal.cpp:699) restores
+any *freed* `AIG_FOLLOW_PATH` goal as a STATIC path via `AIPathSetAsStaticPath(obj, goal, g_info.id, …)`,
+and `GoalAddGoal` (AIGoal.cpp:1063) set `g_info.id` = the **dynamic pool slot**. `AIPathAddStaticPath`
+has no validation, so `path_type` flips to `AIP_STATIC` and the dynamic slot indexes the empty
+`GamePaths[]` table → segfault at `AIPathGetCurrentNodePos` aipath.cpp:229 (gdb: `p_type=AIP_STATIC`,
+`p_index=2`, crash in `ObjDoFrameAll → ai_move`, the engine frame that runs *before* `BotDoFrame`).
+Paths are freed constantly by `GoalClearGoal`/`GoalAllocSlot` on any higher-priority goal in combat,
+so it crashes within ~20 min. The `dddf90a9` "handshake" fix re-stamped `static_path_info` values
+`GoalAddGoal` already wrote and never touched `g_info.id` — a no-op; reproduced fresh under gdb.
+**To use `AIG_FOLLOW_PATH` you must allocate a real `GamePaths[]` static slot; a via-layer chain
+follower that does not use `AIG_FOLLOW_PATH` is the registered successor. `BotSkelBuildPath` is
+retained (uncalled) for it.**
+
+**0.9.11 cut on the validated base (`a6c891cc`).** Hard reset to §0.93's `a79cc95a` (unified aim +
+tray descent — first unattended abend2 captures, refires halved), retaining `BotSkelBuildPath`.
+Overnight 9-stage mode-spread validation (abend2, kegd3, bedlam, fellowship@Isengard, anarchy, team,
+robo, entropy, monsterball): **crash-free across ~334k log lines**, no regression (kegd3 11.4 caps/rnd,
+bedlam conversion in-family, hard stucks in family). Monsterball scoring confirmed working
+(Snake Eyes 25 goals/rnd; Crossfire an accepted bunker outlier). `reg-robo` errored on a mission-compat
+misconfiguration (robo-anarchy on a non-COOP mission), not code. Operator cockpit test still owed but
+not gating. **Consolidation continues** at Step 5 tranche 2 (firing-rate audit of the 7 targets) and
+the via-layer "one planner per ring" successor.
+
+---
+
 ## 0.93 One aim point per room — the room-scale committee collapsed on abend2 (2026-08-23)
 
 **The build (`8a2f772f`).** The `d6efc603` revert message said what the reverted entry-hop fix
