@@ -110,6 +110,22 @@ RE_TERRAIN_DIAG = re.compile(
 # Pairs with terrain_entrance (the stuck-miss count): seeks issued should rise as misses fall.
 RE_OA_SEEK = re.compile(r"outdoor entrance-seek -> room (\d+) portal (\d+) \(obj (\d+)\)")
 
+# Terrain route composer ($nav troute). ADOPT = a cross-terrain plan was chosen over the interior
+# route, which REDIRECTS the bot's routed goal at the exit room. A map whose interior->terrain
+# boundaries are all window faces still yields ADOPTs (the engine records the connection from the
+# terrain side), so a plan count alone says nothing about whether anyone flew it — pair it with
+# whether any bot ever actually reached terrain. See LEVEL_INTERIOR_ONLY below.
+RE_TROUTE_ADOPT = re.compile(r"troute v2 ADOPT: .*?exit rm(\d+) -> region (\d+) -> entry rm(\d+)")
+RE_TROUTE_KEEP = re.compile(r"troute v2 keep-interior")
+RE_TROUTE_REJECT = re.compile(r"troute REJECT")
+# Our router found no finite interior route and handed the leg to the engine's BOA path. Throttled
+# ~10s/bot, so treat it as "this pair kept failing", not as a per-tick count. A pair that recurs all
+# round is a route the cost model cannot see — cross-ref $navdump connectivity before blaming nav.
+RE_NO_ROUTE = re.compile(r"NO-ROUTE fallback rm(-?\d+) -> rm(-?\d+)")
+# 0.9.12 level classification, emitted once per mine load.
+RE_LEVEL_INTERIOR_ONLY = re.compile(r"level is interior-only — (\d+) terrain connection")
+RE_LEVEL_TERRAIN_EXITS = re.compile(r"level terrain exits: (\d+) of (\d+) connection")
+
 # 0.9.8 Entropy (E1-E3, ENTROPY_MODE.md §4): economy + takeover events. Takeovers/round is
 # the outcome metric (the captures analog); hold starts vs aborts vs completions reads how
 # often the 3s still-hold survives; pickups/losses read the virus economy. Sources:
@@ -224,6 +240,15 @@ def new_map_stats():
         "terrain_agl_sum": 0,
         "terrain_agl_n": 0,
         "terrain_agl_min": 999999,
+        "troute_adopts": 0,           # terrain plans chosen over the interior route (goal gets redirected)
+        "troute_adopt_exits": Counter(),  # exit room → count (where adopted plans send bots)
+        "troute_keeps": 0,            # composed but interior kept (cheaper) — healthy, costs nothing
+        "troute_rejects": 0,          # no door pair reached the goal
+        "no_route": 0,                # router found no finite interior route (throttled per bot)
+        "no_route_pairs": Counter(),  # "from->goal" → count
+        "level_interior_only": 0,     # 0.9.12 classifier: connections present, none flyable from inside
+        "level_exits_usable": None,   # 0.9.12 classifier: flyable interior->terrain exits
+        "level_exits_total": None,
         "oa_seek_events": 0,          # Phase 8.1: outdoor entrance-seek goals issued
         "oa_seek_rooms": Counter(),   # entrance room → count (which structures bots are seeking)
         "waiting_flag": 0,
@@ -281,6 +306,7 @@ def new_map_stats():
         "stall_circle": 0,           # 0.9.7 slow-window circling verdicts (via suspended in room)
         "first_ts": None,
         "last_ts": None,
+        "load_ts": None,   # timestamp of this map's most recent `Opening level` line
     }
 
 
@@ -307,6 +333,7 @@ def parse_log(path):
             if m:
                 current_map = m.group(1).replace(".d3l", "")
                 stats[current_map]["rounds"] += 1
+                stats[current_map]["load_ts"] = last_ts
                 if stats[current_map]["first_ts"] is None:
                     stats[current_map]["first_ts"] = last_ts
                 continue
@@ -520,6 +547,37 @@ def parse_log(path):
                 s["oa_seek_rooms"][int(mo.group(1))] += 1
                 continue
 
+            mo = RE_TROUTE_ADOPT.search(line)
+            if mo:
+                s["troute_adopts"] += 1
+                s["troute_adopt_exits"][int(mo.group(1))] += 1
+                continue
+            if RE_TROUTE_KEEP.search(line):
+                s["troute_keeps"] += 1
+                continue
+            if RE_TROUTE_REJECT.search(line):
+                s["troute_rejects"] += 1
+                continue
+            mo = RE_NO_ROUTE.search(line)
+            if mo:
+                s["no_route"] += 1
+                s["no_route_pairs"][f"rm{mo.group(1)}->rm{mo.group(2)}"] += 1
+                continue
+            mo = RE_LEVEL_INTERIOR_ONLY.search(line)
+            if mo:
+                s["level_interior_only"] = int(mo.group(1))
+                s["level_exits_usable"], s["level_exits_total"] = 0, int(mo.group(1))
+                continue
+            mo = RE_LEVEL_TERRAIN_EXITS.search(line)
+            if mo:
+                s["level_exits_usable"], s["level_exits_total"] = int(mo.group(1)), int(mo.group(2))
+                # The classifier re-tests a negative verdict, so negative->positive is the EXPECTED
+                # recovery (a pane gets shattered and the exit becomes usable). Clear the latch or
+                # CLASSIFIER_BYPASSED fires on a level that recovered exactly as designed.
+                if s["level_exits_usable"]:
+                    s["level_interior_only"] = 0
+                continue
+
             m = RE_POWERUP_PIN.search(line)
             if m:
                 room = int(m.group(1))
@@ -654,6 +712,29 @@ def parse_log(path):
                 s["obj_nav"] += 1
                 continue
 
+    # soakctl can only count a round once the NEXT level begins loading, then it shuts the server
+    # down. That terminal load is not gameplay: it produced a map entry with a round count and a few
+    # seconds of spawn-time events, which is why Batteries reports kept carrying a phantom
+    # Nightmarecastle round. Drop a map whose only appearance is that trailing load. (ab_guard.py
+    # applies the same grace to the level pin; keep the two thresholds in step.)
+    TERMINAL_LOAD_GRACE = 30.0
+
+    def _secs(t):
+        if not t:
+            return None
+        try:
+            h, m_, rest = t.split(" ")[1].split(":")[0], t.split(" ")[1].split(":")[1], t.split(" ")[1].split(":")[2]
+            return int(h) * 3600 + int(m_) * 60 + float(rest)
+        except (IndexError, ValueError):
+            return None
+
+    if len(stats) > 1:
+        newest = max(stats.items(), key=lambda kv: (_secs(kv[1]["load_ts"]) or -1))
+        name, st = newest
+        lo, hi = _secs(st["load_ts"]), _secs(st["last_ts"])
+        if lo is not None and hi is not None and st["rounds"] == 1 and (hi - lo) <= TERMINAL_LOAD_GRACE:
+            del stats[name]
+
     return stats, total_lines
 
 
@@ -746,6 +827,27 @@ def detect_anomalies(stats):
                     anomalies.append((name, "ENGINE_WOBBLE_SUSPECT",
                                       f"{top2_total}/{s['stucks']} stucks ({top2_total/s['stucks']*100:.0f}%) "
                                       f"concentrated in {rooms_str}{hard_note}"))
+
+        # Terrain plans nobody can fly. The engine discovers an interior<->terrain connection from
+        # the TERRAIN side, so a window face is recorded as a connection and the composer will
+        # happily price a route out through it. The plan then redirects the bot's routed goal to
+        # that exit room, and the bot parks at the glass. The tell is a map with terrain plans and
+        # no terrain presence at all: no entrance-seek, no outdoor stucks, no outdoor carrier ticks.
+        reached_terrain = (s["oa_seek_events"] + s["terrain_events"] + s["outdoor_stucks"]
+                           + s["carrier_outdoor_ticks"] + s["outroute_ent"] + s["outroute_goal"])
+        if s["troute_adopts"] >= 5 and reached_terrain == 0:
+            top = ", ".join(f"room {r}x{c}" for r, c in s["troute_adopt_exits"].most_common(3))
+            anomalies.append((name, "TERRAIN_PLAN_NEVER_FLOWN",
+                              f"{s['troute_adopts']} terrain plans adopted but no bot ever reached terrain "
+                              f"(0 entrance-seeks, 0 outdoor stucks, 0 outdoor carrier ticks) — top exit rooms: "
+                              f"{top}. Each adopted plan redirects the routed goal at its exit room, so bots "
+                              f"pile into rooms they cannot leave. Cross-ref $navdump: an interior->external "
+                              f"portal with face_solid=1 is a window, not a door"))
+        # The 0.9.12 classifier's own verdict, when the build emits it.
+        if s["level_interior_only"] and s["troute_adopts"]:
+            anomalies.append((name, "CLASSIFIER_BYPASSED",
+                              f"level classified interior-only ({s['level_interior_only']} unusable "
+                              f"connections) yet {s['troute_adopts']} terrain plans were still adopted"))
 
         # Outdoor nav bottleneck
         if s["carrier_nav_ticks"] > 0:
@@ -1310,6 +1412,38 @@ def print_report(stats, total_lines, log_path):
                 top_rooms = ", ".join(f"room {r}x{c}" for r, c in s["oa_seek_rooms"].most_common(3))
                 print(f"| {name} | {s['oa_seek_events']} | {top_rooms} |")
             print()
+
+    # Terrain route composer + the 0.9.12 level classifier. "Exits" is the classifier's verdict:
+    # how many of the engine's interior<->terrain connections a ship can actually fly OUT through.
+    # A level with connections but zero usable exits is interior-only — terrain plans there are
+    # unflyable by construction, and troute is expected to report none.
+    if any(s["troute_adopts"] or s["troute_keeps"] or s["troute_rejects"]
+           or s["level_exits_total"] is not None for s in stats.values()):
+        print("## Terrain Route Composer (troute)")
+        print()
+        print("Adopt = terrain route beat the interior route, and the bot's routed goal is redirected at the")
+        print("exit room. Keep = composed and interior won (healthy). Exits = flyable interior->terrain")
+        print("connections (BOA_connect entries, capped at MAX_PATH_PORTALS=40/region — NOT the portal")
+        print("count a $navdump shows); `0 of N` means the level is interior-only and troute stands down.")
+        print("Terrain reached? is a PRESENCE flag (any entrance-seek / outdoor stuck / outdoor carrier")
+        print("tick / lattice hop), deliberately not a count — those counters measure unlike things.")
+        print("NO-ROUTE = our router found no finite interior route; throttled ~10s/bot, so read the")
+        print("recurring PAIRS, not the magnitude. A pair recurring all round is a cost-model blind spot.")
+        print()
+        print("| Map | Exits (usable/total) | Adopts | Keeps | Rejects | Terrain reached? | NO-ROUTE (top pairs) |")
+        print("|---|---|---|---|---|---|---|")
+        for name, s in sorted(stats.items()):
+            if not (s["troute_adopts"] or s["troute_keeps"] or s["troute_rejects"]
+                    or s["level_exits_total"] is not None):
+                continue
+            ex = ("n/a (pre-0.9.12 build)" if s["level_exits_total"] is None
+                  else f"{s['level_exits_usable']} of {s['level_exits_total']}")
+            reached = (s["oa_seek_events"] + s["terrain_events"] + s["outdoor_stucks"]
+                       + s["carrier_outdoor_ticks"] + s["outroute_ent"] + s["outroute_goal"])
+            nr = ", ".join(f"{k}x{c}" for k, c in s["no_route_pairs"].most_common(3)) or "-"
+            print(f"| {name} | {ex} | {s['troute_adopts']} | {s['troute_keeps']} | "
+                  f"{s['troute_rejects']} | {'YES' if reached else 'NO'} | {s['no_route']} ({nr}) |")
+        print()
 
     # Outdoor lattice follower. Current builds run it under troute; historical outroute logs use the
     # same event wording. Waypoints advance at goal-completion cadence, so each count is one hop.

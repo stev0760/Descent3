@@ -13,7 +13,6 @@ Design documents, reference material, and specifications for the Matcen multipla
 | [BOTS_DEVEL.md](BOTS_DEVEL.md) | Phase history and implementation notes (newest-first build log; current status lives in its header + NAVIGATION §7.0) |
 | [BOT_MANAGEMENT.md](BOT_MANAGEMENT.md) | Config rosters, ship selection, difficulty levels, UI, remote admin |
 | [CHAT_COMMANDS.md](CHAT_COMMANDS.md) | Chat-based bot command system (squad orders, verb taxonomy, Stage 6 "Orders as Goals") |
-| [CTF_ROLES_DESIGN.md](CTF_ROLES_DESIGN.md) | CTF role auto-assignment design (attacker/defender ratios, flag-state reactions, the 0.9.8 runner/flex structure) |
 | [ENTROPY_MODE.md](ENTROPY_MODE.md) | Entropy mode mechanics + phased bot spec (implemented in 0.9.8) |
 | [MONSTERBALL_MODE.md](MONSTERBALL_MODE.md) | Monsterball mechanics + phased bot spec (implemented in 0.9.8) |
 | [PATHFINDING_CODEBASE_EXPLORE.md](PATHFINDING_CODEBASE_EXPLORE.md) | Guide-bot navigation analysis (deep engine research, cited by NAVIGATION.md) |
@@ -21,4 +20,3 @@ Design documents, reference material, and specifications for the Matcen multipla
 | [D3_PYRODECK_SPEC.md](D3_PYRODECK_SPEC.md) | Spec for D3 Pyrodeck, the companion web admin tool |
 | [UPSTREAM_PATCHES.md](UPSTREAM_PATCHES.md) | Portable upstream-bug fixes applied in the fork (for sharing back to the community) |
 | [PLAN.md](PLAN.md) | Original Phase 0 design document and full phase roadmap (**historical**, not live status) |
-| [SOAK_BATTERY_2026-07-06.md](SOAK_BATTERY_2026-07-06.md) | Dated soak-battery run sheet from the 0.9.7 validation campaign (**historical** artifact) |

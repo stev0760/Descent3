@@ -460,3 +460,4 @@ session-*.txt
 
 # Scratch analysis output accidentally written to the repo root
 /scratchpad_*.txt
+review-logs/

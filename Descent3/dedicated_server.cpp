@@ -1016,7 +1016,7 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
                             Bot_mball_role_tenure);
       PrintDedicatedMessage("  %-13s      dump nav geometry to JSON: $nav dump [file]\n", "dump");
       PrintDedicatedMessage(
-          "  %-13s      §7 committee contention counts (NAV_DESIGN_REVIEW.md): $nav contend [index|all]\n", "contend");
+          "  %-13s      §7 committee contention counts (NAVIGATION.md §6.9): $nav contend [index|all]\n", "contend");
       return true;
     }
     if (stricmp(sub, "dump") == 0)
@@ -1143,7 +1143,7 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     PrintDedicatedMessage("  $nav                   - Navigation toggles & status ($nav <name> on|off; bare = list)\n");
     PrintDedicatedMessage("  $nav dump [file]       - Dump current level nav geometry to JSON (alias: $navdump)\n");
     PrintDedicatedMessage(
-        "  $nav contend [index|all] - §7 nav-committee contention counts (NAV_DESIGN_REVIEW.md)\n");
+        "  $nav contend [index|all] - §7 nav-committee contention counts (NAVIGATION.md §6.9)\n");
     PrintDedicatedMessage("  $botmov on|off         - Toggle movement debug logging\n");
     PrintDedicatedMessage("  $botmode               - Show detected game mode\n");
     PrintDedicatedMessage("  $botobj                - Show objective state (CTF flags, orbs, etc.)\n");

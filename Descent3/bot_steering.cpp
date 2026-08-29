@@ -646,7 +646,7 @@ bool BotRoomIsBuried(int room_idx) {
 // for a future "via-layer owns the ring" consolidation. Its first consumer issued the chain as one
 // AIG_FOLLOW_PATH goal and was reverted: that goal type restores any freed path as STATIC, indexed
 // by g_info.id — so a dynamic-pool slot indexes GamePaths[] and segfaults (proven, gdb; see
-// NAV_CONSOLIDATION_PLAN). The chain builder itself is engine-agnostic and correct; only the
+// NAVIGATION.md §6.9). The chain builder itself is engine-agnostic and correct; only the
 // AIG_FOLLOW_PATH issuance was the dead end. Returns node count (>= 2 on success), 0 = no chain.
 // rooms array parallels positions; all room_idx except the last (target_room). max_nodes caps it.
 int BotSkelBuildPath(object *obj, int room_idx, int target_room, const vector &target_pos, vector *pos_out,

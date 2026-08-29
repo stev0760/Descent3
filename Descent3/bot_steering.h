@@ -144,7 +144,7 @@ bool BotRoomIsBuried(int room_idx);
 // target_pos] for a buried-center room. Same geometry as BotResolveRoomAim, whole chain not one
 // hop. Returns node count (>= 2 on success), 0 = no chain. rooms array parallels positions; all
 // room_idx except the last (target_room). Its AIG_FOLLOW_PATH consumer was reverted (static-restore
-// crash — see NAV_CONSOLIDATION_PLAN); the builder is engine-agnostic and kept for reuse.
+// crash — see NAVIGATION.md §6.9); the builder is engine-agnostic and kept for reuse.
 int BotSkelBuildPath(object *obj, int room_idx, int target_room, const vector &target_pos, vector *pos_out,
                      int *room_out, int max_nodes);
 

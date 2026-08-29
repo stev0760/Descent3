@@ -31,6 +31,7 @@ ESCAL = re.compile(r"BOT: '([^']+)' stuck escalation \(room (-?\d+), (\d+) conse
 TS = re.compile(r"^\d{4}-\d\d-\d\d (\d\d):(\d\d):(\d\d)")
 OUTLIER_SHARE = 0.30  # one unit above this share of a delta = a unit story, not a population story
 MIN_DELTA_EVENTS = 20  # below this the delta is noise; the share test would fail a 3-vs-1 split
+TERMINAL_LOAD_GRACE = 30.0  # next-level loading can take ~15s before soakctl's clean shutdown completes
 
 
 def scan(path):
@@ -62,6 +63,11 @@ def scan(path):
             m = ESCAL.search(line)
             if m:
                 escal.append((m.group(1), int(m.group(2)), int(m.group(4))))
+    # soakctl counts a round when the following level begins loading, then shuts the server down.
+    # That terminal load is not gameplay exposure and must not break a single-level pin. Keep any
+    # level resident for longer than the shutdown grace so a genuinely broken pin still fails closed.
+    if len(levels) > 1 and last is not None and levels[-1][1] is not None and last - levels[-1][1] <= TERMINAL_LOAD_GRACE:
+        levels.pop()
     return {"levels": levels, "resets": resets, "escal": escal,
             "minutes": ((last or 0) - (first or 0)) / 60.0}
 

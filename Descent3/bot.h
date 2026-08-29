@@ -376,7 +376,7 @@ enum BotState {
   BOT_STATE_EVADE,   // Prolonged combat stall. Break off, regroup, then re-engage.
 };
 
-// §7 contention instrumentation (NAV_DESIGN_REVIEW.md, 2026-07-21): each value names one member of
+// §7 contention instrumentation (NAVIGATION.md §6.9, 2026-07-21): each value names one member of
 // the nav "committee" (the review's §3 table) that can seize the bot's travel goal or thrust for a
 // tick. Measurement only — no member here changes behavior; BotNavMemberWin() in bot.cpp just counts
 // who wins and how often the winner flips faster than a bot could act on it (the "committee" tell).
@@ -458,7 +458,7 @@ struct bot_info {
   int explore_dest_room;    // Rooms[] index the bot is currently navigating toward, -1 = none
   float explore_room_timer; // counts down; when <=0 bot picks a new destination room
 
-  // Task 2 (NAV_CONSOLIDATION_PLAN §6): the travel-INTENT layer — where the bot MEANS to end up and
+  // Task 2 (NAVIGATION.md §6.9): the travel-INTENT layer — where the bot MEANS to end up and
   // on whose authority. A shadow of explore_dest_room, which cannot carry intent itself because
   // routed nav reuses it for per-waypoint bookkeeping (it holds wp_room mid-route — the Task 2
   // census's key find). Written ONLY by BotSetTravelDest/BotClearTravelDest.
@@ -580,11 +580,11 @@ struct bot_info {
   float via_suspend_until;    // Gametime until via search is suspended in via_suspend_room
   int via_suspend_room;       // room the suspension applies to
 
-  // §7 contention instrumentation (NAV_DESIGN_REVIEW.md, 2026-07-21) — measurement only, no
+  // §7 contention instrumentation (NAVIGATION.md §6.9, 2026-07-21) — measurement only, no
   // behavior change. Tracks which nav-committee member (BotNavMember) last won this bot's routed
   // goal/thrust, and counts how often the winner flips to a DIFFERENT member before the previous
   // one held the wheel for BOT_NAV_CONTEND_WINDOW seconds. See BotNavMemberWin() in bot.cpp.
-  // UNITS (fixed 2026-08-04, NAV_CONSOLIDATION_PLAN.md §2a): counts are EPISODES — one per
+  // UNITS (fixed 2026-08-04, NAVIGATION.md §6.9a): counts are EPISODES — one per
   // uninterrupted streak of a member holding the wheel — NOT per call. The call sites fire at wildly
   // different rates (engine/bnodesp per leg issue, via per 0.5s tick, stuck-escape per FRAME), so the
   // old per-call counter overstated via and stuck-escape against the engine by ~an order of magnitude
@@ -756,7 +756,7 @@ void BotFormatNavDiag(int bot_index, char *buf, size_t buflen);
 #define BOT_NAV_DIAG_PROBE_DIST 50.0f // forward look distance for the $botstat movement_dir probe
 
 // §7 contention instrumentation ($nav contend): write a one-line per-bot nav-committee win-count
-// histogram + contention total into buf (NAV_DESIGN_REVIEW.md). Diagnostic-only; no behavior change.
+// histogram + contention total into buf (NAVIGATION.md §6.9). Diagnostic-only; no behavior change.
 void BotFormatNavContend(int bot_index, char *buf, size_t buflen);
 
 // Dump every active bot's contend histogram to the log, then reset the counters — called at the

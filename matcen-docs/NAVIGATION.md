@@ -691,7 +691,111 @@ overnight log. A full verbosity-tier + event-vocabulary consolidation is registe
 
 ## 7. Open problems (roadmap)
 
-### 7.0 Current status snapshot — 2026-08-22 (0.9.11-dev consolidation)
+### 6.9 The consolidation phase — design of record
+
+*Absorbed 2026-08-29 from `NAVIGATION.md §6.9` and `NAVIGATION.md §6.9`, both retired. The
+2,300 lines they held were ~90% dated session narrative; this is what survives as design. Full text
+in git history.*
+
+**The diagnosis (2026-07-22):** the bot *fights* like a pilot and *travels* like a committee.
+Navigation grew into ten-odd cooperating subsystems as game modes were added, and they compete for
+the same decision. This is incoherence, not a routing shortfall — the substrate is sound.
+
+**The north star (operator, 2026-08-04):** *a bot **flying** a ship — not code that **is** the ship,
+taking orders from multiple different vectors.* Two physics rulings constrain everything:
+
+1. **D3 has real drag. Braking is just not thrusting.** Stop thrusting and the ship decelerates on
+   its own. A bot that reverse-thrusts to stop is not flying the way a human flies.
+2. **Bots do not resist weapon knockback.** Near-impossible for a human, and it reads as unnatural.
+   Active braking should be *loosened* generally. Under-fire hold failure is the game as designed.
+
+Both reinforce the standing rule: bots use only legal thrust — no velocity-zeroing, position-snapping
+or knockback immunity, even to fix a park. (The Entropy v6 active park thrusts against residual
+velocity including knockback; flagged as over-reach, untouched, and explicitly **not** a template.)
+
+**What "one authority" means here — one router, two substrates, one contract:**
+
+```
+travel intent (persistent: dest + owner + why)
+        │
+   ONE router entry — decides per leg, records the decision:
+        │      ENGINE substrate  iff BotBnodeNativeActive() && BotBnodeLegOk()
+        │      ROADMAP substrate otherwise:
+        │          indoor  = coarse Dijkstra + volumetric roadmap (0.9.4)
+        │          outdoor = troute composer over the region lattice
+        ▼
+   one engine goal → engine steers → BotApplyThrust flies the vector
+```
+
+The contract is already singular — every mechanism delivers one engine goal. What was missing is a
+single **dispatch point** deciding, once per leg, *who plans it*. The referee layers (seam guard, hop
+commit, via) exist because adjacent-hop delivery lets the engine re-plan through its own BOA; a
+roadmap-owned leg delivered as a same-room-claimed waypoint gives the engine nothing to re-plan, so
+those referees have nothing to referee. The hard split — campaign has BNodes, MP never will — then
+lives in one predicate instead of thirteen call sites' habits.
+
+**Where the staged plan got to:** Step 3 (dispatch consolidation) **closed** for explore-owned
+interior errands — validated across six pools, an independent cross-model review, and the KegD3
+cockpit verdict ("Feels excellent"). Step 4 (campaign-outdoor gate widening) **closed NO-GO** — 99.2%
+of its target legs failed a ship-width clear-line test. Step 5 removed three default-off experiments
+(`gridall`, `outroute`, `replan`) with no behaviour change. Toggle count 36 → 33.
+
+**Never measured, still true:** whether seam/hop go quiet under roadmap-owned delivery on MP maps —
+the MP committee census does not exist. Do not assume it.
+
+**Where this leads next:** `PLAN.md` §3. The 08-29 work established that routing wins keep cashing
+out as steering failures, and named the prerequisite (per-entry-portal aim) that gates the rest.
+
+---
+
+### 7.0 Investigation notes — 2026-08-29 (NO CODE SHIPPED; tree is 0.9.11)
+
+**Everything in this section is a FINDING, not a change.** A 0.9.12-dev branch of work was built,
+measured over nine pinned Batteries rounds, and **reverted in full** on operator call: it did not
+improve play, and cleanup that does not improve or preserve play does not earn its place. The tree
+is stable 0.9.11. The engine facts below were verified against source and are worth keeping; the
+code that acted on them is gone (full patch preserved outside the repo).
+
+**Finding 1 — terrain connections are recorded from the terrain side.** `BOA_connect` stores the
+interior room + portal but is discovered from the EXTERNAL side, so a *window* onto the skybox is
+recorded exactly like a hangar door. Batteries Included has 22 external rooms, a terrain region with
+a full 4096-node outdoor roadmap, and **zero** openings a ship can fly out of — an interior-only
+level. `$nav troute` adopted 31 terrain plans in a 15-minute round with no bot ever reaching
+terrain; each redirects the routed goal at its exit room, so exit rooms 16/27/70 were simultaneously
+the top via-search-failure rooms and a carrier held room 70 for 160 seconds. Mechanics and the
+seven-map measurement: `OBSTACLE_GEOMETRY.md` §4b.
+
+**Finding 2 — intact breakable glass is routable at BOA build time and unroutable at runtime**
+(`OBSTACLE_GEOMETRY.md` §4bb). `BotRouteDijkstra` tests `BOA_PassablePortal` before reading the
+finite glass cost, so `$nav glass` (0.9.6) never let the router *plan* through a pane. Bots do still
+shatter glass opportunistically and fly through — measured, and the reason the stage looked like it
+worked. The Stage 2b premise "BOA already routes through glass" is corrected in place in
+`BOTS_DEVEL.md`.
+
+**Why the fixes were reverted.** Both were implemented and measured. Deterministic signals moved as
+designed (`NO-ROUTE rm1 -> rm84` 246 → 0 across three rounds; room-1 via-search failures 412 → 0).
+Play did not: hard stucks ran ~4 (stable) → ~16 (terrain fix) → ~46 (with glass routing) while
+captures stayed flat (1.3 → 0.7 → 1.5). The mechanism was visible — the router planned through panes
+the clearing layer did not shatter, piling bots into rooms 8/35/6 (room 6 is the blue flag room).
+**Routing improvements kept cashing out as steering failures.**
+
+**The likely blocker underneath, unfixed.** `BotRoomPathPntReachable` returns true if ANY ONE portal
+sees the room's `path_pnt`, and `BotWaypointAimPos` uses only that boolean — so a room with one
+clear portal out of thirty-eight hands the raw `path_pnt` to a bot entering through any of the other
+thirty-seven. On Batteries **34% of portal entries** land in a room whose centre the entering bot
+cannot see (Isengard 19%, Nightmare Castle 16%, Polaris 11%, abend2 4%), and the worst rooms are
+exactly the ones bots got stuck in. A room-level boolean is answering a per-entry-portal question.
+Fix this before re-attempting either routing change.
+
+**Also open, unfixed:** the destination sampler picks `RF_EXTERNAL` window rooms as goals — every
+surviving `NO-ROUTE` pair was one (`rm84->rm85`, `rm80->rm81`, `rm66->rm69`).
+
+**The forward plan for all of this lives in `PLAN.md` §3** — the arterial/hierarchy model, the
+per-entry-portal aim prerequisite (Step A), and the dependency order. Do not re-attempt either
+reverted routing fix before Step A lands; every routing win so far has been consumed by the aim
+defect.
+
+### 7.0.1 Previous snapshot — 2026-08-22 (0.9.11-dev consolidation)
 
 **Phase state.** Step 3 is closed for explore-owned interior errands after six-pool measurement,
 independent review, and the KegD3 cockpit verdict ("Feels excellent"). Capture does not explicitly
@@ -1018,6 +1122,19 @@ softhop) gate the fallback substrate and are deleted together with that code in 
 
 **Tried & reverted ledger (so we don't re-chase these ghosts):**
 
+- **Committed-leg executor** (0.9.12-dev, 2026-08-29 — never committed; patch preserved as
+  `0.9.12-committed-leg-experiment.patch`) → **DROPPED unbuilt**. A per-bot executor took exclusive
+  ownership of one planner-selected leg and drove it with sequential `AIG_GET_TO_POS` goals
+  (deliberately *not* `AIG_FOLLOW_PATH` — the static-restore crash path stayed avoided). It never
+  passed a smoke: the final build ran 203 `START` → 23 `COMPLETE`, with 163 of 180 cancels as
+  `left-source-room`, and tightening node arrival to 3u made completion *worse*, not better.
+  Three structural reasons, worth knowing before anyone rebuilds it: activation keyed on
+  `BotRoomIsBuried` fires far beyond the intended ring class; requiring the ship to stay in the
+  source room while chasing intermediate in-room nodes cancels on ordinary portal drift; and the
+  global stand-down (`BotViaPointTick` returning 1 whenever a leg is live) is far too blunt — it
+  silences the via layer for callers that have nothing to do with the leg. The Batteries deadlock
+  it was built for turned out to be the terrain-exit bug in §7.0 and needed none of it.
+
 - **Runtime BNode generation** (`f0f39007`/`4d515800`) → **REVERTED** (`730dab37`). The engine's all-or-
   nothing `BNode_allocated` flag *displaced* working crude-BOA everywhere, and the generator pruned edges to
   `max_rad 5.0` vs the 6.676 ship hull → unflyable. Pivoted to additive **pseudo-bnodes** instead. Do not
@@ -1158,7 +1275,8 @@ every blast-damage secondary. Smallest diff, unconditional win — ship first.
 - `BotClearObstacleSafely(bot, target, need_matter)`: within splash range **never** a secondary.
   Grate object → **Laser** (always owned, zero splash, works on any destroyable); glass
   (`need_matter`) → Vauss → MassDriver. Rework `BotBreakGlassObstacle` to drop the secondary-first
-  branch and route stuck-clear priorities 2+3 through it.
+  branch and route stuck-clear priorities 2+3 through it. *(Landed: `BotClearObstacleSafely`,
+  `bot.cpp:1645`. `BotBreakGlassObstacle` no longer exists — this paragraph is the design record.)*
 - **Proactive trigger:** `BotPortalBreakableObstacle(room, portal, &obj)` scans the committed route's
   next portal for an `OF_DESTROYABLE` object; when found and the bot is approaching, start clearing
   *before* the 1.5s stuck pin. No object found → dormant (self-verifying on every other map).

@@ -86,7 +86,7 @@ static int BotTerrainRegionSafe(int roomnum) {
   return TERRAIN_REGION(roomnum);
 }
 
-// Subtraction #2 (NAV_DESIGN_REVIEW.md §9 finding 4): can the ENGINE's native BNode pipeline fly
+// Subtraction #2 (NAVIGATION.md §6.9 finding 4): can the ENGINE's native BNode pipeline fly
 // this leg? This mirrors the engine's own `f_bnode_ok` gate verbatim (aipath.cpp:1087-1092) — which
 // ACCEPTS outdoor endpoints, rejecting only terrain region 0 (open wilderness with no BNode data)
 // and cross-region outdoor->outdoor legs. AIGenerateBNodePath has an explicit BOA_connect branch
@@ -96,7 +96,7 @@ static int BotTerrainRegionSafe(int roomnum) {
 // contract — so every outdoor leg fell back to the committee (the 07-22 arm C collapse, and 100%
 // of the residual contention in the 07-23 smoke). Matching the engine's gate is a DELETION of an
 // over-restriction, not a new mechanism. Unresolvable cells (the -1 sentinel) stay excluded.
-// Step 0a instrumentation (NAV_CONSOLIDATION_PLAN.md §6): the 08-04 smoke showed this gate declining
+// Step 0a instrumentation (NAVIGATION.md §6.9): the 08-04 smoke showed this gate declining
 // 100% of outdoor legs (0 of 42 reached the engine) but the gate was SILENT about why, leaving three
 // live hypotheses that fork the whole outdoor half of the plan. These counters name the branch, and
 // the throttled line reports the terrain the decision was made on. Measurement only.
@@ -119,7 +119,7 @@ enum BnodeLegVerdict {
   BLEG_COUNT
 };
 static uint32_t Bnode_leg_verdicts[BLEG_COUNT];
-// §0.86 pre-registered probe (NAV_CONSOLIDATION_PLAN.md): of the REJECTED legs BOA can route —
+// §0.86 pre-registered probe (NAVIGATION.md §6.9): of the REJECTED legs BOA can route —
 // Step 4's would-be-reclaimed class — how many would the engine's tier-1 VALIDATED beeline actually
 // fly? Ray at ship radius, mirroring aipath.cpp:1019-1037; rad-0 would overcount clear
 // (see-through ≠ passable). This turns "routable vs flyable" from an 8-hour behavioural A/B into a
@@ -247,7 +247,7 @@ static bool BotBnodeLegOk(object *obj, int start_room, int end_room, const vecto
   }
   return accepted;
 }
-// --- Task 2: the destination-churn instrument (NAV_CONSOLIDATION_PLAN §6) ---
+// --- Task 2: the destination-churn instrument (NAVIGATION.md §6.9) ---
 // Step 2b shipped a persistent-intent layer with no metric; this is the owed one, built as the
 // dispatch seam Step 3 reuses. The census (2026-08-09) found explore_dest_room doing TWO jobs —
 // explore intent AND routed-nav waypoint bookkeeping (it holds wp_room mid-route, not the final
@@ -391,7 +391,7 @@ extern void MultiSendPlayerEnteredGame(int which);
 extern void MultiSendRenewPlayer(int slot);
 extern void MultiSendPlayerDisconnect(int slot);
 
-// --- §7 contention instrumentation (NAV_DESIGN_REVIEW.md, 2026-07-21) ---
+// --- §7 contention instrumentation (NAVIGATION.md §6.9, 2026-07-21) ---
 // Measurement only, no behavior change: names the nav-committee members from the review's §3 table
 // and records which one wins each tick, so the eventual collapse-to-one-router decision is made from
 // counted contention, not from argument. BotNavMember + the per-bot counters live in bot.h; $nav
@@ -437,7 +437,7 @@ static void BotNavMemberWin(int bot_index, BotNavMember member) {
   if (bot_index < 0 || bot_index >= MAX_BOTS || member <= NAV_MEMBER_NONE || member >= NAV_MEMBER_COUNT)
     return;
   bot_info &bi = Bots[bot_index];
-  // EPISODE counting (NAV_CONSOLIDATION_PLAN.md §2a): increment only when the wheel actually changes
+  // EPISODE counting (NAVIGATION.md §6.9a): increment only when the wheel actually changes
   // hands. Counting per call mixed three units — per-leg (engine/bnodesp), per-0.5s-tick (via) and
   // per-frame (stuck-escape) — which made the histogram unreadable and overstated the reflex members.
   // Duration is tracked separately in nav_member_held[], so "held the wheel a long time" and "grabbed
@@ -773,7 +773,7 @@ static bool BotHasVisitedRoom(int bot_index, int roomnum) {
 }
 
 // Clear the bot's current level-2 goal (pursuit, combat, or flee).
-// STEP 2a (NAV_CONSOLIDATION_PLAN.md §6): enforce "no live goal => no live path", once per bot per
+// STEP 2a (NAVIGATION.md §6.9): enforce "no live goal => no live path", once per bot per
 // frame. See the call site in BotDoFrame for why this is an invariant rather than ~20 call-site
 // patches. A bot's goal slots are exclusively ours, so with all three dead no legitimate path can
 // remain — anything still there is an orphan feeding movement_dir toward a dead intent.
@@ -827,7 +827,7 @@ static void BotClearActiveGoal(int bot_index) {
   clear_goal(Bots[bot_index].combat_goal_index);
   clear_goal(Bots[bot_index].powerup_goal_index);
 
-  // STEP 2a (NAV_CONSOLIDATION_PLAN.md §6): the path dies with the goals, unconditionally.
+  // STEP 2a (NAVIGATION.md §6.9): the path dies with the goals, unconditionally.
   //
   // GoalClearGoal only frees the engine path when `path.goal_uid == cur_goal->goal_uid`
   // (AIGoal.cpp:567-570), so any slot overwrite or uid drift ORPHANS a live path — and an orphaned
@@ -2271,7 +2271,7 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
   object *obj = &Objects[Players[slot].objnum];
   if (!obj->ai_info)
     return 0;
-  // Subtraction #1 (NAV_DESIGN_REVIEW.md, from the 07-22 L1 A/B): when the engine's native BNode
+  // Subtraction #1 (NAVIGATION.md §6.9, from the 07-22 L1 A/B): when the engine's native BNode
   // pipeline owns SP travel, the via layer stands down on interior legs — one mind flies the ship.
   // The 6.20 bypass gated BotSetRoutedGoal and explore-roaming but left this function's OTHER
   // callers (escort close-beeline, hold-station, outdoor fallback) seizing the wheel: 42 via wins
@@ -2980,7 +2980,7 @@ static void BotDoExploreRoaming(int bot_index) {
       // occlusion probe has to run here, not just at goal-issue time.
       if (!OBJECT_OUTSIDE(obj) && Bots[bot_index].travel_dest_room >= 0 &&
           !ROOMNUM_OUTSIDE(Bots[bot_index].travel_dest_room) && Rooms[Bots[bot_index].travel_dest_room].used) {
-        // Step 3 (NAV_CONSOLIDATION_PLAN §4): en-route maintenance IS dispatch. The live errand —
+        // Step 3 (NAVIGATION.md §6.9): en-route maintenance IS dispatch. The live errand —
         // the Task 2 intent (final dest + owner) — re-enters the single router entry every tick,
         // exactly like carrier/escort/hold legs already do. The entry's en-route guard makes this a
         // no-op while the current hop is live, progresses the next hop on wp arrival, re-issues if
@@ -4801,7 +4801,7 @@ static void BotUpdateState(int bot_index) {
 
   switch (old_state) {
   case BOT_STATE_EXPLORE: {
-    // STEP 2b OWNER HIERARCHY (NAV_CONSOLIDATION_PLAN.md §0.5 A — operator ruling 2026-08-05):
+    // STEP 2b OWNER HIERARCHY (NAVIGATION.md §6.9 A — operator ruling 2026-08-05):
     //
     //     order  >  carry  >  objective  >  opportunism  >  explore
     //
@@ -5025,7 +5025,7 @@ static void BotUpdateState(int bot_index) {
       if (rgi >= 0 && rgi < MAX_GOALS && obj->ai_info->goals[rgi].used)
         GoalClearGoal(obj, &obj->ai_info->goals[rgi]);
       rgi = -1;
-      // STEP 2b-3 (NAV_CONSOLIDATION_PLAN.md §0.5): a powerup detour SUSPENDS the errand, it does not
+      // STEP 2b-3 (NAVIGATION.md §6.9): a powerup detour SUSPENDS the errand, it does not
       // cancel it — for every bot, not just the one that happened to be on-objective.
       //
       // The on-objective half of this was already correct and its comment already described the
@@ -5357,7 +5357,7 @@ static void BotUpdateState(int bot_index) {
     switch (new_state) {
     case BOT_STATE_EXPLORE:
       AISetTarget(obj, OBJECT_HANDLE_NONE);
-      // STEP 2b-2 (NAV_CONSOLIDATION_PLAN.md §0.5): TRAVEL INTENT SURVIVES THE FLIP.
+      // STEP 2b-2 (NAVIGATION.md §6.9): TRAVEL INTENT SURVIVES THE FLIP.
       //
       // This used to wipe explore_dest_room and explore_room_timer, so a two-second HUNT blip
       // DESTROYED the errand: on return the bot re-rolled a RANDOM room (the "random backtrack"
@@ -5652,7 +5652,7 @@ static void BotApplyThrust(int bot_index) {
     sideways = vm_DotProduct(&effective_dir, &obj->orient.rvec);
     vertical = vm_DotProduct(&effective_dir, &obj->orient.uvec);
   } else {
-    // STEP 1 (NAV_CONSOLIDATION_PLAN.md §3): no nav direction => NO THRUST. Descent 3 has real drag,
+    // STEP 1 (NAVIGATION.md §6.9): no nav direction => NO THRUST. Descent 3 has real drag,
     // so releasing thrust IS the brake — a pilot with nowhere to go coasts to a stop, they do not
     // reverse-thrust and they do not fly into the wall in front of them.
     //
@@ -5990,7 +5990,7 @@ static void BotApplyThrust(int bot_index) {
         vector dest_pos = cur.portals[best_portal].path_pnt;
         int dest_room = cur.portals[best_portal].croom;
 
-        // Step 3 commit #2 (NAV_CONSOLIDATION_PLAN §4): the escape retarget dispatches through the
+        // Step 3 commit #2 (NAVIGATION.md §6.9): the escape retarget dispatches through the
         // single router entry instead of issuing raw. The escape still owns WHICH room — the
         // unvisited-portal preference is knowledge the router doesn't have — but WHO FLIES the leg
         // is the entry's decision, recorded there like every other leg. The old errand's death is
@@ -7552,7 +7552,7 @@ void BotReinitAll() {
     // gates goes quiet for up to a full round after a level transition.
     Bots[i].seam_wp_room = -1; // repeated-map rotations reuse room numbers — a stale latch matches
     Bots[i].seam_next_time = 0.0f;
-    // §7 contention instrumentation (NAV_DESIGN_REVIEW.md): nav_last_member_time is the same
+    // §7 contention instrumentation (NAVIGATION.md §6.9): nav_last_member_time is the same
     // absolute-Gametime latch class — reset per level, same trap. Win/contention counts reset too
     // so $nav contend attributes to the CURRENT map (matches the project's per-map soak analysis).
     Bots[i].nav_last_member = NAV_MEMBER_NONE;
@@ -7970,7 +7970,7 @@ void BotDoFrame() {
     last_objective_poll = Gametime;
   }
 
-  // Step 0c (NAV_CONSOLIDATION_PLAN.md §6): periodic contention flush. The dump used to hook only
+  // Step 0c (NAVIGATION.md §6.9): periodic contention flush. The dump used to hook only
   // level-end / toggle-flip / bots-removed, and SIGTERM — the ACTUAL shutdown path, since $quit over
   // telnet is ignored — runs none of them. The 08-04 session's histograms survived only because they
   // were scraped over telnet by hand before the kill. Same self-healing Gametime latch as above.
@@ -8317,7 +8317,7 @@ void BotDoFrame() {
       }
     }
 
-    // STEP 2a invariant (NAV_CONSOLIDATION_PLAN.md §6): NO LIVE GOAL => NO LIVE PATH.
+    // STEP 2a invariant (NAVIGATION.md §6.9): NO LIVE GOAL => NO LIVE PATH.
     //
     // Clearing the path inside BotClearActiveGoal was necessary but nowhere near sufficient: there
     // are ~25 GoalAddGoal sites and ~20 GoalClearGoal sites outside it, and each re-issue clears its

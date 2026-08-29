@@ -86,7 +86,7 @@ more permissive than a real ship hull. See §4 (DISAGREE band).
 | Type | Engine representation | Engine routes through? | Breakable by | Our bot |
 |---|---|---|---|---|
 | **Standard wall** | non-portal face, or rendered opaque portal face → `FPF_SOLID` | No | — | Routes around (BOA + swept probe agree) |
-| **Regular glass** | `TF_BREAKABLE` on a **portal** face | **Yes** (BOA exempts `TF_BREAKABLE`) | `WF_MATTER_WEAPON` only — **kinetic**; energy does nothing | `BotBreakGlassObstacle` shatters it (matter weapon) |
+| **Regular glass** | `TF_BREAKABLE` on a **portal** face | **Only while BOA is being built** — see §4bb. `BOA_PassablePortal` admits it under `BOA_f_making_boa` and REJECTS it during gameplay while the pane is intact. The old "BOA exempts `TF_BREAKABLE`" claim here was wrong | `WF_MATTER_WEAPON` only — **kinetic**; energy does nothing | `BotPortalGeoCost` prices it at `BOT_PORTAL_GLASS_PENALTY` (`$nav glass`), but `BotRouteDijkstra` still vetoes it first, so the ROUTER does not plan through panes — see §4bb. `BotClearObstacleSafely` shatters one that is dead ahead |
 | **Bulletproof glass** | see-through portal face, **not** `TF_BREAKABLE`, **not** `TF_FORCEFIELD` | **No** (BOA impassable) | nothing | Routes around — *but powerup goals still beeline at it (bug, §5)* |
 | **Grate / slit / hole** | `PF_TOO_SMALL_FOR_ROBOT` (bbox<6u), or a 6u–ship-radius opening → **DISAGREE** | small=no; mid-band=**yes (wrongly)** | shoot-through; ship can't pass | `BotPortalGeoCost` swept probe rejects it |
 | **Breakable object** | `OBJ_*` with `OF_DESTROYABLE` (an **object**, not a face) — sometimes grate-shaped | n/a (object) | any weapon | `BotDoStuckClear` priority 2 blasts it open |
@@ -143,6 +143,136 @@ tight-slit DISAGREE territory (e.g. nysa r69→r73, megafactory r10→r11).
 
 ---
 
+## 4b. Terrain boundaries are recorded from the outside (windows read as doors)
+
+`BOA_connect[region][c]` is the engine's table of connections between a terrain region and the
+buildings on it. Each entry stores `{roomnum, portal}` — the **interior** room and its portal —
+but the table is *discovered from the terrain side*: `BOA_PassablePortal` handed a terrain
+pseudo-room translates through the entry to the **external** room's face before it decides
+(`BOA.cpp:220-226`). A connection therefore records that terrain can see a building, and says
+nothing about whether a ship can fly out of that building through it.
+
+Custom maps make this bite. A window onto the skybox is a `portal_face` with `face_solid=1`
+joining an interior room to an `RF_EXTERNAL` room, and it lands in `BOA_connect` exactly like a
+hangar door. **See-through is not passable, and neither is "the engine listed it."**
+
+Query the interior side directly — `BOA_PassablePortal(interior_room, portal)` — and the two
+cases separate cleanly. Measured across seven maps' `$navdump`s (2026-08-29), every connection
+that passes is an `open` or `door` face and every one that fails is `wall`/`solid`, `tight`, or
+`PF_TOO_SMALL_FOR_ROBOT`, with no false negatives.
+
+**Read the counts below as interior→external PORTAL FACES, which is what a `$navdump` exposes — not
+as the number of `BOA_connect` entries the classifier actually walks.** `BOA_num_connect` is capped
+at `MAX_PATH_PORTALS` (40) per region (`BOA.cpp:779-795`), and both `BotTrouteCompose` and the
+classifier clamp to it. That is why the runtime reports `40 of 40` on Isengard where the dump shows
+47 faces, and `40` connections on Batteries where the dump shows 51. Same verdict either way here
+(all-usable vs all-unusable), but the populations differ and the numbers should not be quoted
+interchangeably:
+
+| map | interior→terrain connections | flyable from inside |
+|---|---|---|
+| towerofisengard | 47 | 47 |
+| plutonium | 23 | 23 |
+| polaris | 20 | 8 |
+| mysterious_isle | 24 | 10 |
+| geodomes | 270 | 14 |
+| rim | 22 | 0 |
+| **batteriesincluded** | **51** | **0** |
+
+Batteries Included is the pure case and the reason this section exists: 22 external rooms, a
+full terrain region with a 4096-node outdoor roadmap, and not one opening a ship can fly out
+of. It is an **interior-only level** — outdoors exists and is unreachable. The terrain route
+composer read those 51 windows as doors, priced routes through them, and redirected flag
+carriers to park at the glass; one carrier held room 70 for 160 seconds. A level classifier that stood `$nav troute` down on such a
+map was built and reverted 2026-08-29 (it worked as specified but did not improve play). **No code
+currently guards this** — troute will still compose plans through windows on an interior-only map.
+
+Two consequences worth remembering:
+
+- **Terrain existing ≠ terrain being reachable.** `BOA_num_terrain_regions > 0`, an outdoor
+  roadmap, and `RF_EXTERNAL` rooms are all true on an interior-only map. The only sound test is
+  whether some interior-side portal onto that terrain is flyable.
+- Every *other* terrain consumer is reached only once the ship is already outside
+  (`OBJECT_OUTSIDE` / `TERRAIN_REGION(CELLNUM(...))` guards), so they are dead code on such a
+  map. The composer is the one tier that plans a terrain leg *from inside*, which is why it is
+  the one that needs the check.
+
+`analyze_bot_log.py` flags the symptom as `TERRAIN_PLAN_NEVER_FLOWN`: terrain plans adopted
+with zero terrain presence in the whole run (no entrance-seeks, no outdoor stucks, no outdoor
+carrier ticks).
+
+## 4bb. Intact breakable glass is routable at build time and unroutable at runtime
+
+`BOA_PassablePortal()` wraps its entire passability block in `if (!BOA_f_making_boa)`
+(`BOA.cpp:235`). While BOA is being **built** the checks are skipped, so a breakable-glass portal
+is admitted and gets a normal finite cost in `BOA_cost_array` (Batteries room 1 portal 6 reads
+`boa_cost_fwd = 107.58`). During **gameplay** the block runs, and `BOA.cpp:244` rejects any portal
+with `PF_RENDER_FACES` set and `PF_RENDERED_FLYTHROUGH` clear — which is precisely an unbroken
+pane. `damage.cpp:1523-1524` clears `PF_RENDER_FACES` on **both** sides only when the glass
+actually shatters.
+
+So an intact glass portal is **routable in the cost table and unroutable to the live predicate**,
+and it flips the moment someone shoots it.
+
+This has a direct consequence our code does not currently account for. `BotPortalGeoCost()` goes
+out of its way to price breakable glass as crossable — `BOT_PORTAL_GLASS_PENALTY` (120.0f, "~3 hops
+detour tolerance"), logged as `breakable glass -> finite break cost`. But `BotRouteDijkstra()`
+requires **both** predicates:
+
+```c
+if (!BOA_PassablePortal(r, p)) continue;          // vetoes INTACT glass
+float geo = BotPortalGeoCost(r, p);
+if (geo >= BOT_PORTAL_IMPASSABLE) continue;       // glass passes this: 120
+```
+
+The engine predicate vetoes the very portals the geometry cost was written to admit, so **the
+glass-crossing intent is effectively dead code in the router**. Bots still shatter glass
+opportunistically (`$nav grate` proactive clears), but the router will not *plan* a route through
+an unbroken pane.
+
+Observed cost of this on Batteries Included (110 breakable-glass portals, a glass-heavy map): room
+1's only routable exit is a glass portal to room 125, itself a 7-face closet with glass on both
+sides. Bots in room 1 produced `NO-ROUTE fallback rm1 -> rm84` (rm84 = the red flag room) 246 times
+in a 15-minute round, 18-24x/minute for the full round, while the room graph is statically fine —
+rm84 is reachable from 295 of 302 interior rooms. Every observed NO-ROUTE **source** room had
+exactly one routable exit and that exit was glass, or led to a room whose exits were.
+
+**Diagnostic trap:** a `$navdump` records whatever the pane's state was at dump time. A dump taken
+after a bot shattered the glass shows `flags = 0x00000000` and `engine_passable = true`, which
+reads as "this portal is fine" and hides the whole mechanism. Check `tf_breakable`, not the flags,
+when reasoning about a route that fails at runtime but looks connected in the dump.
+
+**Tried and reverted (2026-08-29).** Exempting `TF_BREAKABLE` from the `BotRouteDijkstra` veto was
+implemented and measured over three pinned Batteries rounds. It did what it says — `NO-ROUTE
+rm1 -> rm84` 246 → 0, room-1 via-search failures 412 → 0 — but hard stucks roughly tripled again
+(~16 → ~46) with captures flat, because the router then planned through panes the clearing layer did
+not shatter (Batteries room 8: stucks 3 → 25 with 0-1 glass clears). **Do not re-attempt without
+first fixing the in-room aim resolution** (§4b note / NAVIGATION §7.0) and considering whether glass
+should win only as a sole route rather than as a shortcut. Bots already shatter glass reactively and
+fly through it; that behaviour predates and survives this.
+
+---
+
+## 4c. Our cost model calls some solid faces free
+
+The `DISAGREE` flag only catches one direction — engine-passable, we-say-impassable. The
+opposite happens too and nothing reports it. Counting portals where `our_geocost <
+BOT_PORTAL_IMPASSABLE` but `BOA_PassablePortal` is false (2026-08-29):
+
+| map | portals | we-pass / engine-no |
+|---|---|---|
+| geodomes | 596 | 504 (all `wall`/solid) |
+| batteriesincluded | 1092 | 142 (110 breakable glass — intended; 32 solid wall) |
+| rim | 160 | 22 |
+| polaris | 256 | 20 |
+| towerofisengard / plutonium / abend2 | — | 0 |
+
+Breakable glass is deliberate (§5 gap #1: the bot shatters it). The solid-wall residue is not,
+and it is why the terrain-exit check above tests **both** predicates rather than trusting the
+geometry cost alone. Not yet diagnosed; the navdump has no field for this direction.
+
+---
+
 ## 5. Known gaps / TODO (Phase 12 nav + powerup pass, 0.9.3 stable)
 
 1. **`BotPortalGeoCost` does not exempt `TF_BREAKABLE`.** A breakable-glass portal is
@@ -190,11 +320,14 @@ tight-slit DISAGREE territory (e.g. nysa r69→r73, megafactory r10→r11).
 
 ## 6. Where our bot already handles obstacles (existing code)
 
-- **`BotBreakGlassObstacle`** — bot.cpp:1029 — fires a matter weapon (secondary → Vauss →
-  Mass Driver) at a glass face. Only matter weapons break `TF_BREAKABLE` glass (collide.cpp:1176).
-- **`BotDoStuckClear`** — bot.cpp:1071 — reactive, runs while stuck. Priority: (1) jammed enemy →
-  fire; (2) forward ray hits `OF_DESTROYABLE` object → blast; (3) forward ray hits `TF_BREAKABLE`
-  portal face → `BotBreakGlassObstacle`. Correctly **skips** `TF_DESTROYABLE` faces (cosmetic).
+- **`BotClearObstacleSafely`** — `bot.cpp:1645` — fires at a blocker, picking a weapon that is
+  safe at the current range. `blocker == nullptr` means the target is a `TF_BREAKABLE` glass face
+  and `need_matter` is set, because only matter weapons shatter glass. (Supersedes the former
+  `BotBreakGlassObstacle`, which no longer exists.)
+- **`BotDoStuckClear`** — `bot.cpp:1694` — reactive, runs while stuck. Priority: (1) jammed enemy →
+  fire; (2) forward ray hits an `OF_DESTROYABLE` object → blast it (`bot.cpp:1743`); (3) forward
+  ray hits a `TF_BREAKABLE` portal face → matter-weapon shatter (`bot.cpp:1761`). Skips teammates
+  — it used to shoot allied players as "obstacles" (79K hits in one overnight).
   *Reactive only — it clears a blockage after the bot is already stuck; it does not prevent the pin.*
 - **`BotPortalGeoCost` / `BotCheckPortalPassable`** — bot_steering.cpp:155 / :100 — routing-time
   passability: `RF_EXTERNAL`→neutral, `PF_BLOCK`/`PF_TOO_SMALL_FOR_ROBOT`→impassable, unlocked
