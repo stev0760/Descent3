@@ -131,6 +131,52 @@ def aim_gate(rooms):
     print()
 
 
+def entry_gate(rooms):
+    """Step A ground truth — the trustworthy probe direction. `los_portal_to_pathpnt_clear` casts
+    FROM each portal INTO the room's path_pnt: the exact per-portal test whose any-portal pass makes
+    BotRoomPathPntReachable() true, and the exact cast the per-entry-portal aim conditions on.
+    (`los_from_pathpnt_clear`, used by aim_gate above, probes the opposite direction — indicative
+    only, per its own comment in the dumper.)
+
+    ENTRY-BLIND = a traversable portal whose entry->centre cast is blocked, in a room that still
+    passes as not-buried today. That is precisely the population the per-entry-portal aim fixes:
+    the room hands out its raw path_pnt, and a bot entering through one of these portals is aimed
+    at a centre it cannot see. If this is ~0 on the target maps, Step A has nothing to fix there."""
+    if not any("los_portal_to_pathpnt_clear" in p for r in rooms for p in (r.get("portals") or [])):
+        print("## Entry gate — ABSENT (dump predates the los_portal_to_pathpnt_clear field)\n")
+        return
+    blind_trav, ent_trav, blind_all, ent_all = 0, 0, 0, 0
+    per_room = []
+    for r in rooms:
+        if r.get("external"):
+            continue
+        portals = r.get("portals") or []
+        if not portals or not r.get("path_pnt_reachable", True):
+            continue  # buried rooms already aim via the skeleton; not Step A's population
+        trav = [p for p in portals if portal_traversable(p)]
+        ent_trav += len(trav)
+        ent_all += len(portals)
+        bt = sum(1 for p in trav if p.get("los_portal_to_pathpnt_clear") == 0)
+        ba = sum(1 for p in portals if p.get("los_portal_to_pathpnt_clear") == 0)
+        blind_trav += bt
+        blind_all += ba
+        if bt:
+            per_room.append((r.get("id", -1), len(portals), len(trav), bt))
+    pt = 100.0 * blind_trav / ent_trav if ent_trav else 0.0
+    pa = 100.0 * blind_all / ent_all if ent_all else 0.0
+    print("## Entry gate — entry portals blind to the centre (the Step A population)")
+    print(f"  entry-blind portal entries: {blind_trav}/{ent_trav} ({pt:.1f}%) counting TRAVERSABLE portals")
+    print(f"                              {blind_all}/{ent_all} ({pa:.1f}%) counting ALL portals")
+    print(f"  rooms carrying ≥1 blind traversable entry: {len(per_room)}")
+    if per_room:
+        print(f"\n  {'room':>5} {'portals':>7} {'traversable':>11} {'blind entries':>13}")
+        for rid, npt, ntr, bt in sorted(per_room, key=lambda x: -x[3])[:12]:
+            print(f"  {rid:5d} {npt:7d} {ntr:11d} {bt:13d}")
+        print("\n  A bot entering one of these rooms through a blind entry gets aimed at the raw")
+        print("  path_pnt it cannot see. If this table is ~empty, Step A has nothing to fix here.")
+    print()
+
+
 def diff_verdicts(old_path, new_path):
     """Before/after gate for a change to BotRoomPathPntReachable (the aim gate).
 
@@ -172,6 +218,7 @@ def analyze(path, data):
     rooms = data.get("rooms", [])
     summary = data.get("summary", {})
     aim_gate(rooms)
+    entry_gate(rooms)
     powerups = data.get("powerups", [])
 
     print(f"# Navdump Analysis — `{path}`\n")

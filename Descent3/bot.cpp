@@ -6623,6 +6623,14 @@ bool BotNavDump(const char *filename) {
       float los_d = -1.0f;
       bool los_clear = BotNavDumpLOS(rm.path_pnt, po.path_pnt, r, rad, &los_d);
 
+      // And the direction the runtime aim actually trusts: FROM the portal INTO the room's steer
+      // point — the exact per-portal cast whose any-portal pass makes BotRoomPathPntReachable()
+      // true (the one the per-entry-portal aim conditions on). los_from_pathpnt_clear above probes
+      // the opposite direction and is indicative only; both are emitted so old and new reads stay
+      // comparable across dumps.
+      float los_d_pe = -1.0f;
+      bool los_clear_pe = BotNavDumpLOS(po.path_pnt, rm.path_pnt, r, rad, &los_d_pe);
+
       fprintf(fp, "        {\"idx\": %d, \"croom\": %d, \"cportal\": %d, \"flags\": \"0x%08x\", ", p, cr, po.cportal,
               po.flags);
       fprintf(fp, "\"face\": %d, \"face_center\": [%.2f,%.2f,%.2f], \"face_normal\": [%.2f,%.2f,%.2f], ", fi, fc.x(),
@@ -6636,7 +6644,8 @@ bool BotNavDump(const char *filename) {
       fprintf(fp, "\"boa_cost_fwd\": %.2f, \"boa_cost_rev\": %.2f, ", boa_fwd, boa_rev);
       fprintf(fp, "\"engine_passable\": %s, \"our_geocost\": %.1f, \"our_impassable\": %s, \"DISAGREE\": %s, ",
               eng_pass ? "true" : "false", gcost, our_impass ? "true" : "false", disagree ? "true" : "false");
-      fprintf(fp, "\"los_from_pathpnt_clear\": %s, \"los_dist\": %.2f}%s\n", los_clear ? "true" : "false", los_d,
+      fprintf(fp, "\"los_from_pathpnt_clear\": %s, \"los_dist\": %.2f, \"los_portal_to_pathpnt_clear\": %s}%s\n",
+              los_clear ? "true" : "false", los_d, los_clear_pe ? "true" : "false",
               (p == rm.num_portals - 1) ? "" : ",");
     }
     fprintf(fp, "      ],\n");
