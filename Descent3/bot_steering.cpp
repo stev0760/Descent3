@@ -703,6 +703,94 @@ bool BotResolveRoomAim(object *obj, const vector &target_pos, int target_room, f
   return false;
 }
 
+// Committed multi-hop chain export (Step 3, 2026-08-30): the ORDERED skeleton crossing a bot should
+// fly THROUGH a buried room to its exit portal, built ONCE so the via layer can advance a cursor per
+// arrival instead of re-deriving a single hop each time (the abend2 ring orbit). Same exit-set +
+// standing-neighbor + BFS-with-parents as BotResolveRoomAim, but walks the parent chain from the
+// bot-adjacent node back to the exit and emits the whole reversed list [bot-adjacent ... exit
+// portal], with pos_out[k] = target_pos in target_room appended. By construction pos_out[0] is the
+// EXACT node BotResolveRoomAim would return (same SkelBfs seed/stop), so committing the chain
+// changes only hops 1..k-1 (pre-committed vs re-derived), never the first hop.
+//
+// This is the deleted BotSkelBuildPath (its AIG_FOLLOW_PATH consumer crashed and was reverted — the
+// BUILDER was always correct) rebuilt on the SkelBfs kernel. Delivery is sequential AIG_GET_TO_POS
+// in the via layer, never AIG_FOLLOW_PATH (NAVIGATION.md §6.9). Returns node count (>= 2 on success,
+// counting the appended target), 0 = no chain. pos_out must hold BOT_SKEL_MAX_NODES entries.
+int BotSkelBuildChain(object *obj, int room_idx, int target_room, const vector &target_pos, vector *pos_out,
+                      int max_nodes) {
+  if (!obj || !pos_out || max_nodes < 3)
+    return 0;
+  SkelLevelReset();
+  if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used || (Rooms[room_idx].flags & RF_EXTERNAL))
+    return 0;
+  if (target_room < 0 || target_room > Highest_room_index)
+    return 0;
+  room &rm = Rooms[room_idx];
+  int np = SkelPortalCount(rm);
+  if (np < 2)
+    return 0;
+  if (!skel_built[room_idx])
+    SkelBuild(room_idx);
+  int n = skel_node_count[room_idx];
+  if (n < 2)
+    return 0;
+
+  // Exit set — identical to BotResolveRoomAim's (portals toward the next hop room, or the target).
+  uint32_t exits = 0;
+  if (target_room != room_idx) {
+    int next_room = BotComputeRoute(room_idx, target_room);
+    if (next_room < 0)
+      next_room = target_room;
+    for (int i = 0; i < np; i++)
+      if (rm.portals[i].croom == next_room)
+        exits |= (1u << i);
+    if (!exits) {
+      for (int i = 0; i < np; i++)
+        if (rm.portals[i].croom == target_room)
+          exits |= (1u << i);
+    }
+  } else {
+    for (int i = 0; i < n; i++)
+      if (BotSegmentClear(obj->roomnum, skel_node_pos[room_idx][i], target_pos, obj->size))
+        exits |= (1u << i);
+  }
+  if (!exits)
+    return 0;
+
+  // Bot-adjacent visibility set — identical standing-neighbor rule to BotResolveRoomAim.
+  uint32_t vis = 0, standing = 0;
+  for (int i = 0; i < n; i++) {
+    float nd = vm_VectorDistanceQuick(&obj->pos, &skel_node_pos[room_idx][i]);
+    if (nd < BOT_VIA_ARRIVE_DIST) {
+      standing |= (1u << i);
+      vis |= skel_edges[room_idx][i];
+      continue;
+    }
+    if (BotSegmentClear(obj->roomnum, obj->pos, skel_node_pos[room_idx][i], obj->size))
+      vis |= (1u << i);
+  }
+  vis &= ~standing;
+
+  // BFS from the exits, stop at the first bot-visible node — the SAME kernel and result as
+  // BotResolveRoomAim's first-hop, but we keep the whole parent chain.
+  int dist_n[SKEL_MAX_NODES], parent[SKEL_MAX_NODES];
+  int hop = SkelBfs(room_idx, n, exits, vis, dist_n, parent);
+  if (hop < 0)
+    return 0;
+
+  // Walk parents from the bot-adjacent node back to an exit seed (dist 0), then reverse into
+  // pos_out: ordered bot-adjacent -> ... -> exit portal.
+  int rev[SKEL_MAX_NODES], k = 0;
+  for (int cur = hop; cur >= 0 && k < SKEL_MAX_NODES; cur = parent[cur])
+    rev[k++] = cur;
+  int out_n = 0;
+  for (int i = k - 1; i >= 0 && out_n < max_nodes - 1; i--)
+    pos_out[out_n++] = skel_node_pos[room_idx][rev[i]];
+  // Append the leg's final position (the destination / exit path_pnt), in target_room.
+  pos_out[out_n++] = target_pos;
+  return out_n;
+}
+
 // Public gate for bot.cpp callers (the static RoomBuriedCenter isn't linkable there): guards the
 // room, then returns the cached buried-center verdict. All resolution work stays in bot_steering.cpp
 // so the consolidate-the-voices caller discipline is compile-enforced.

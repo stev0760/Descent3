@@ -2261,6 +2261,10 @@ static vector BotGetActiveSteerPoint(object *obj, const vector &goal_pos, int go
 // write (Invariant #1). Returns nonzero while a via sub-goal is active this tick (the caller must
 // skip its own goal issue); on via arrival the slot is cleared so the caller re-aims at the real
 // target the same tick. *verdict_out (optional) reports the probe result for sealed-target logic.
+// The committed-chain array (bot_info::BOT_CHAIN_MAX) must hold a full skeleton chain; keep it in
+// lockstep with the builder's cap so BotSkelBuildChain can never overrun via_chain[].
+static_assert(bot_info::BOT_CHAIN_MAX == BOT_SKEL_MAX_NODES, "via_chain must match the skeleton node cap");
+
 static int BotViaPointTick(int bot_index, const vector &target_pos, int target_room, int &goal_slot,
                            BotViaResult *verdict_out) {
   if (verdict_out)
@@ -2291,6 +2295,21 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
     return 0;
   }
 
+  // Committed multi-hop chain (Step 3) — invalidate a stale one BEFORE anything reads it. The chain
+  // is "cross THIS room to that exit"; it dies the instant its premise changes: the bot left the room
+  // (crossing = success, or knocked elsewhere = rebuild there), or the router re-aimed at a different
+  // next-hop room. Natural in-room flight toward the exit does NOT change roomnum, so ordinary portal
+  // drift never cancels it — the committed-leg executor's fatal "stay in source room" bug, avoided.
+  if (Bots[bot_index].via_chain_len > 0 &&
+      ((int)obj->roomnum != Bots[bot_index].via_chain_room || target_room != Bots[bot_index].via_chain_target_room)) {
+    if ((int)obj->roomnum != Bots[bot_index].via_chain_room)
+      LOG_DEBUG.printf("BOT NAV: '%s' chain complete rm%d -> rm%d", Bots[bot_index].callsign,
+                       Bots[bot_index].via_chain_room, OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum);
+    Bots[bot_index].via_chain_len = 0;
+    Bots[bot_index].via_chain_room = -1;
+    Bots[bot_index].via_chain_target_room = -1;
+  }
+
   auto issue_via_goal = [&]() {
     if (goal_slot >= 0 && goal_slot < MAX_GOALS && obj->ai_info->goals[goal_slot].used)
       GoalClearGoal(obj, &obj->ai_info->goals[goal_slot]);
@@ -2306,6 +2325,32 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
   // re-introduced the circling it was meant to avoid; see NAVIGATION.md §7.0 ledger.)
   if (Bots[bot_index].via_expires > Gametime) {
     if (vm_VectorDistanceQuick(&obj->pos, &Bots[bot_index].via_point) < BOT_VIA_ARRIVE_DIST) {
+      // Committed multi-hop chain (Step 3): reached a chain node with more chain ahead — ADVANCE the
+      // cursor to the next node instead of dropping to the caller for a full single-hop re-resolve.
+      // This is the fix for the abend2 orbit: one committed intent flying THROUGH the room, not a
+      // fresh derivation each arrival. Cursor is monotonic (forward-only, never re-checks the line),
+      // so it cannot oscillate — the $softfollow ghost. Same progress credit as a non-capped arrival
+      // (reset the room-progress timer so the 12s timeout doesn't fire mid-chain).
+      if (Bots[bot_index].via_chain_len > 0 && (int)obj->roomnum == Bots[bot_index].via_chain_room &&
+          Bots[bot_index].via_chain_cursor + 1 < Bots[bot_index].via_chain_len) {
+        Bots[bot_index].via_chain_cursor++;
+        Bots[bot_index].via_point = Bots[bot_index].via_chain[Bots[bot_index].via_chain_cursor];
+        Bots[bot_index].via_expires = Gametime + BOT_VIA_COMMIT_TIME;
+        Bots[bot_index].via_is_skeleton = 1;
+        issue_via_goal();
+        Bots[bot_index].last_progress_pos = obj->pos;
+        Bots[bot_index].room_progress_timer = 0.0f;
+        Bots[bot_index].room_progress_stuck_count = 0;
+        LOG_DEBUG.printf("BOT NAV: '%s' chain advance rm%d hop %d/%d", Bots[bot_index].callsign, (int)obj->roomnum,
+                         Bots[bot_index].via_chain_cursor + 1, Bots[bot_index].via_chain_len);
+        BotNavMemberWin(bot_index, NAV_MEMBER_VIA); // still one committed VIA intent — no member flip
+        return 1;
+      }
+      // Chain exhausted (last node reached — the next arrival crosses the portal) or no chain:
+      // today's exact drop-and-account behavior. Clear any spent chain so it can't linger.
+      Bots[bot_index].via_chain_len = 0;
+      Bots[bot_index].via_chain_room = -1;
+      Bots[bot_index].via_chain_target_room = -1;
       Bots[bot_index].via_expires = 0.0f;
       if (goal_slot >= 0 && goal_slot < MAX_GOALS && obj->ai_info->goals[goal_slot].used)
         GoalClearGoal(obj, &obj->ai_info->goals[goal_slot]);
@@ -2391,6 +2436,41 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
   // let the room-progress timeout / dyn-penalty / escape machinery reroute instead.
   if (Bots[bot_index].via_suspend_until > Gametime && (int)obj->roomnum == Bots[bot_index].via_suspend_room)
     return 0;
+
+  // Committed multi-hop chain (Step 3) — the committee-collapse fix. In a BURIED room with a
+  // GENUINELY multi-hop crossing, build the ordered skeleton chain ONCE and commit to flying it,
+  // instead of re-deriving one skeleton hop per arrival (the abend2 ring orbit, where per-hop
+  // resolution oscillates between adjacent vestibule nodes). Activation is deliberately NARROW —
+  // the committed-leg executor died from firing on blanket BotRoomIsBuried:
+  //   * indoor crossing only (outdoor has its own connecting-graph layer);
+  //   * RoomBuriedCenter — the hollow-core/ring class where per-hop orbits (normal rooms don't);
+  //   * chain length >= 3 — a room a single hop already crosses cleanly builds len<=2 and is SKIPPED
+  //     (falls through to today's BotFindViaPoint path unchanged). Purely geometric, no map
+  //     knowledge, self-limiting: only rooms that actually need it activate.
+  // chain[0] is built by the same SkelBfs seed/stop as BotResolveRoomAim, so the FIRST hop is
+  // identical to today; only hops 1.. become pre-committed. On success this owns the tick (return 1);
+  // the existing cycle-cap/suspend backstop still catches a chain that never produces a crossing.
+  if (!OBJECT_OUTSIDE(obj) && !ROOMNUM_OUTSIDE(target_room) && Bots[bot_index].via_chain_len == 0 &&
+      BotRoomIsBuried(obj->roomnum)) {
+    int clen = BotSkelBuildChain(obj, obj->roomnum, target_room, target_pos, Bots[bot_index].via_chain,
+                                 bot_info::BOT_CHAIN_MAX);
+    if (clen >= 3) {
+      Bots[bot_index].via_chain_len = clen;
+      Bots[bot_index].via_chain_cursor = 0;
+      Bots[bot_index].via_chain_room = obj->roomnum;
+      Bots[bot_index].via_chain_target_room = target_room;
+      Bots[bot_index].via_point = Bots[bot_index].via_chain[0];
+      Bots[bot_index].via_expires = Gametime + BOT_VIA_COMMIT_TIME;
+      Bots[bot_index].via_is_skeleton = 1;
+      issue_via_goal();
+      if (verdict_out)
+        *verdict_out = BOT_VIA_FOUND;
+      LOG_DEBUG.printf("BOT NAV: '%s' chain built rm%d len%d (target room %d)", Bots[bot_index].callsign,
+                       (int)obj->roomnum, clen, target_room);
+      BotNavMemberWin(bot_index, NAV_MEMBER_VIA);
+      return 1;
+    }
+  }
 
   // Not committed: probe the line to the active steer target and detour if an interior face
   // blocks it AND a clear go-around exists. CLEAR and NONE both mean "steer normally" here —
@@ -7324,6 +7404,10 @@ void BotInitAll() {
     Bots[i].via_arrivals_same_room = 0;
     Bots[i].via_suspend_until = 0.0f;
     Bots[i].via_suspend_room = -1;
+    Bots[i].via_chain_len = 0;
+    Bots[i].via_chain_cursor = 0;
+    Bots[i].via_chain_room = -1;
+    Bots[i].via_chain_target_room = -1;
     Bots[i].order_anchor_type = ORDER_ANCHOR_NONE;
     vm_MakeZero(&Bots[i].order_anchor_pos);
     Bots[i].order_anchor_room = -1;
@@ -7497,6 +7581,10 @@ void BotReinitAll() {
     Bots[i].via_arrivals_same_room = 0;
     Bots[i].via_suspend_until = 0.0f;
     Bots[i].via_suspend_room = -1;
+    Bots[i].via_chain_len = 0;
+    Bots[i].via_chain_cursor = 0;
+    Bots[i].via_chain_room = -1;
+    Bots[i].via_chain_target_room = -1;
     Bots[i].order_anchor_type = ORDER_ANCHOR_NONE;
     vm_MakeZero(&Bots[i].order_anchor_pos);
     Bots[i].order_anchor_room = -1;
@@ -7821,6 +7909,10 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   Bots[bot_index].via_arrivals_same_room = 0;
   Bots[bot_index].via_suspend_until = 0.0f;
   Bots[bot_index].via_suspend_room = -1;
+  Bots[bot_index].via_chain_len = 0;
+  Bots[bot_index].via_chain_cursor = 0;
+  Bots[bot_index].via_chain_room = -1;
+  Bots[bot_index].via_chain_target_room = -1;
   // §7 contention instrumentation: a re-added bot in a reused slot must not inherit the previous
   // occupant's counts/latch (same reasoning as the via_* reset above).
   Bots[bot_index].nav_last_member = NAV_MEMBER_NONE;

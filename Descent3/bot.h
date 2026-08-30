@@ -580,6 +580,18 @@ struct bot_info {
   float via_suspend_until;    // Gametime until via search is suspended in via_suspend_room
   int via_suspend_room;       // room the suspension applies to
 
+  // Committed multi-hop in-room chain (Step 3, 2026-08-30 committee collapse): the ordered skeleton
+  // crossing THROUGH a buried room, built once by BotSkelBuildChain and flown hop-by-hop by advancing
+  // via_chain_cursor on each arrival — so a bot commits to LEAVING the room (one mind) instead of
+  // re-deriving a single hop per arrival (the abend2 ring orbit). Valid only while roomnum ==
+  // via_chain_room; any room change clears it. BOT_CHAIN_MAX = BOT_SKEL_MAX_NODES (bot_steering.h).
+  static constexpr int BOT_CHAIN_MAX = 32;
+  vector via_chain[BOT_CHAIN_MAX]; // ordered node positions [bot-adjacent ... exit portal, target]
+  int via_chain_len;               // valid entries in via_chain, 0 = no active chain
+  int via_chain_cursor;            // index of the node currently being flown toward
+  int via_chain_room;              // roomnum the chain is valid in (-1 = none)
+  int via_chain_target_room;       // next-hop room the chain exits toward (clear on change)
+
   // §7 contention instrumentation (NAVIGATION.md §6.9, 2026-07-21) — measurement only, no
   // behavior change. Tracks which nav-committee member (BotNavMember) last won this bot's routed
   // goal/thrust, and counts how often the winner flips to a DIFFERENT member before the previous

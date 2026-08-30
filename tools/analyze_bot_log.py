@@ -54,6 +54,11 @@ RE_VIA_FAIL = re.compile(r"via search failed in room (-?\d+)")   # line blocked,
 # door is blind to it (throttled 5s global). Firing rate + room concentration are the change's
 # own health metrics; the line is also the A/B arm marker for the Step A build.
 RE_ENTRY_AIM = re.compile(r"entry-aim rm(-?\d+) via portal (-?\d+) -> node hop (-?\d+)")
+# Step 3 (committee collapse): committed multi-hop in-room chain lifecycle. built-vs-complete ratio
+# is the win metric; a chain that completes = a bot flew THROUGH the room (one mind). Compare
+# `complete` against `built` and watch `via suspended` FALL on the same map (the orbit was the cap).
+RE_CHAIN_BUILT = re.compile(r"chain built rm(-?\d+) len(\d+)")
+RE_CHAIN_COMPLETE = re.compile(r"chain complete rm(-?\d+) -> rm(-?\d+)")
 
 # Task 2 destination-churn instrument (0.9.11): BOT DEST lines from BotSetTravelDest/BotClearTravelDest.
 # Three shapes: "'B' none -> 47 owner=explore" (first intent), "'B' 12 -> 47 owner=X (prev=Y end=Z held=N.Ns)"
@@ -271,6 +276,9 @@ def new_map_stats():
         "sealed_rooms": Counter(),
         "via_fails": 0,        # blocked-but-no-via verdicts (throttled ~5s/bot) — the funnel's stage-0 misses
         "via_fail_rooms": Counter(),
+        "chains_built": 0,     # Step 3 committed multi-hop chains built (buried multi-hop crossings)
+        "chains_done": 0,      # chains that completed (bot crossed out of the room — one mind flowed through)
+        "chain_built_rooms": Counter(),
         "entry_aims": 0,       # Step A per-entry-portal aims (throttled 5s global) — blind-entry centre replacements
         "entry_aim_rooms": Counter(),
         # Phase 12.2
@@ -392,6 +400,17 @@ def parse_log(path):
             if m:
                 s["entry_aims"] += 1
                 s["entry_aim_rooms"][int(m.group(1))] += 1
+                continue
+
+            m = RE_CHAIN_BUILT.search(line)
+            if m:
+                s["chains_built"] += 1
+                s["chain_built_rooms"][int(m.group(1))] += 1
+                continue
+
+            m = RE_CHAIN_COMPLETE.search(line)
+            if m:
+                s["chains_done"] += 1
                 continue
 
             m = RE_DEST.search(line)
@@ -1270,6 +1289,27 @@ def print_report(stats, total_lines, log_path):
         print()
 
     # Phase 12.2 — wrong-side rescues, cycle-cap suspensions, troll retirements.
+    # Step 3 (committee collapse): committed multi-hop chain flow. built = a bot committed to crossing
+    # a buried multi-hop room; done = it flew THROUGH (crossed out). A high done/built ratio + a FALL in
+    # Via Suspends (below) on the same rooms is the "one mind flows through" win (abend2 rooms 0/30).
+    has_chains = any(s["chains_built"] for s in stats.values())
+    if has_chains:
+        print(f"## Committed Chains (Step 3 — multi-hop in-room intent)")
+        print()
+        print(f"built = committed to crossing a buried multi-hop room; done = crossed out (flowed through). "
+              f"Low done/built or high Via Suspends on the same rooms = chains not completing (investigate).")
+        print()
+        print(f"| Map | Chains Built (top rooms) | Chains Done | Completion |")
+        print(f"|---|---|---|---|")
+        for name in maps:
+            s = stats[name]
+            if not s["chains_built"]:
+                continue
+            brooms = ", ".join(f"{r}x{c}" for r, c in s["chain_built_rooms"].most_common(3))
+            print(f"| {name} | {s['chains_built']} ({brooms}) | {s['chains_done']} | "
+                  f"{fmt_pct(s['chains_done'], s['chains_built'])} |")
+        print()
+
     has_122 = any(s["rescues"] or s["via_suspends"] or s["trolls_retired"] for s in stats.values())
     if has_122:
         print(f"## Troll Guards / Cycle Cap (Phase 12.2)")
