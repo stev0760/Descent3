@@ -65,9 +65,113 @@ def skel_portal_components(r):
     return (n - np, len(pcomps))
 
 
+
+def portal_traversable(p):
+    """Can a ship actually fly through this opening? The engine agrees AND our graded geometry verdict
+    is finite. This is the offline mirror of the in-engine PortalTraversable predicate: intact
+    breakable glass reads engine_passable=false at runtime, grates/slits read our_impassable=true.
+
+    rm.portals[] holds every portal the engine knows — panes and grates included. Anything that
+    treats a portal as a doorway without this filter is counting glass as navigation."""
+    return bool(p.get("engine_passable")) and not bool(p.get("our_impassable"))
+
+
+def aim_gate(rooms):
+    """The aim gate (PLAN.md §3 / NAVIGATION.md §7.0): BotRoomPathPntReachable() returns true if ANY
+    portal has a clear hull line to the room's path_pnt, without asking whether a ship can fly
+    through that portal. In a glass-walled room a pane satisfies the probe while the one real door
+    does not — the room reports "not buried", BotResolveRoomAim is never called, and the bot is aimed
+    at a path_pnt it cannot see.
+
+    A FLIPPED room is one that passes today and would NOT pass with the probe restricted to
+    traversable portals. Those are the rooms the fix changes; this is also the Step 2 verification —
+    after the fix each flipped room must report path_pnt_reachable=false, and nothing may flip back."""
+    flipped, blind_all, blind_trav, ent_all, ent_trav = [], 0, 0, 0, 0
+    n_rooms = 0
+    for r in rooms:
+        if r.get("external"):
+            continue
+        portals = r.get("portals") or []
+        if not portals:
+            continue
+        n_rooms += 1
+        trav = [p for p in portals if portal_traversable(p)]
+        buried_now = not r.get("path_pnt_reachable", True)
+        # Would the probe still find a clear line using only portals a ship can use?
+        buried_trav = not any(p.get("los_from_pathpnt_clear") == 1 for p in trav)
+        for p in portals:
+            ent_all += 1
+            if not buried_now and p.get("los_from_pathpnt_clear") == 0:
+                blind_all += 1
+        for p in trav:
+            ent_trav += 1
+            if not buried_now and p.get("los_from_pathpnt_clear") == 0:
+                blind_trav += 1
+        if not buried_now and buried_trav:
+            flipped.append((r.get("id", -1), len(portals), len(trav),
+                            sum(1 for p in portals if p.get("tf_breakable"))))
+
+    print("## Aim gate — portals that are not doorways")
+    pa = 100.0 * blind_all / ent_all if ent_all else 0.0
+    pt = 100.0 * blind_trav / ent_trav if ent_trav else 0.0
+    print(f"  blind portal entries: {blind_all}/{ent_all} ({pa:.1f}%) counting ALL portals")
+    print(f"                        {blind_trav}/{ent_trav} ({pt:.1f}%) counting TRAVERSABLE portals only")
+    print(f"  rooms buried today: {sum(1 for r in rooms if not r.get('external') and (r.get('portals') or []) and not r.get('path_pnt_reachable', True))}"
+          f"   would be buried with a traversable-only probe: "
+          f"{sum(1 for r in rooms if not r.get('external') and (r.get('portals') or []) and not any(p.get('los_from_pathpnt_clear') == 1 for p in (r.get('portals') or []) if portal_traversable(p)))}")
+    pct = 100.0 * len(flipped) / n_rooms if n_rooms else 0.0
+    print(f"  FLIPPED (pass today only because an impassable portal sees the centre): "
+          f"{len(flipped)}/{n_rooms} ({pct:.1f}%)")
+    if flipped:
+        print(f"\n  {'room':>5} {'portals':>7} {'traversable':>11} {'glass':>5}")
+        for rid, npt, ntr, ngl in sorted(flipped):
+            print(f"  {rid:5d} {npt:7d} {ntr:11d} {ngl:5d}")
+        print("\n  These rooms hand the raw path_pnt to a bot that cannot see it. After the fix each")
+        print("  must report path_pnt_reachable=false, and no room may flip the other way.")
+    print()
+
+
+def diff_verdicts(old_path, new_path):
+    """Before/after gate for a change to BotRoomPathPntReachable (the aim gate).
+
+    `path_pnt_reachable` in the dump IS that function's verdict, so diffing two dumps of the same
+    map measures the change exactly — no prediction involved. This exists because the per-portal
+    `los_from_pathpnt_clear` field CANNOT stand in for it: that probe is cast from the room's
+    path_pnt toward the portal, the direction BotRoomPathPntReachable deliberately avoids because a
+    ray leaving a buried path_pnt exits one-sided faces unobstructed and reads falsely clear.
+    (abend2 shows the gap plainly: 17 rooms buried, every portal reporting a clear line.)
+
+    Expected shape for the traversable-portal filter: rooms move reachable -> buried only. Any room
+    moving buried -> reachable means the filter widened something, which it cannot do — investigate."""
+    old, new = load(old_path), load(new_path)
+    ov = {r["id"]: r.get("path_pnt_reachable") for r in old.get("rooms", []) if not r.get("external")}
+    nv = {r["id"]: r.get("path_pnt_reachable") for r in new.get("rooms", []) if not r.get("external")}
+    if old.get("boa_mine_checksum") != new.get("boa_mine_checksum"):
+        print(f"!! checksum mismatch — different levels, not comparable "
+              f"({old.get('boa_mine_checksum')} vs {new.get('boa_mine_checksum')})")
+        return
+    to_buried = sorted(k for k in ov if k in nv and ov[k] and not nv[k])
+    to_reach = sorted(k for k in ov if k in nv and not ov[k] and nv[k])
+    print(f"## Verdict diff — {old_path} -> {new_path}")
+    print(f"  rooms compared: {len(set(ov) & set(nv))}")
+    print(f"  reachable -> BURIED : {len(to_buried)}  {to_buried}")
+    print(f"  buried -> REACHABLE : {len(to_reach)}  {to_reach}"
+          + ("   <-- UNEXPECTED, the filter can only narrow" if to_reach else ""))
+    if to_buried:
+        rooms = {r["id"]: r for r in new.get("rooms", [])}
+        print(f"\n  {'room':>5} {'portals':>7} {'traversable':>11} {'glass':>5} {'roadmap_comps':>13}")
+        for rid in to_buried:
+            r = rooms.get(rid, {})
+            pl = r.get("portals", [])
+            print(f"  {rid:5d} {len(pl):7d} {sum(1 for x in pl if portal_traversable(x)):11d} "
+                  f"{sum(1 for x in pl if x.get('tf_breakable')):5d} {r.get('roadmap_comp_count', -1):13d}")
+    print()
+
+
 def analyze(path, data):
     rooms = data.get("rooms", [])
     summary = data.get("summary", {})
+    aim_gate(rooms)
     powerups = data.get("powerups", [])
 
     print(f"# Navdump Analysis — `{path}`\n")
@@ -225,8 +329,15 @@ def analyze(path, data):
 
 def main():
     ap = argparse.ArgumentParser(description="Analyze $navdump JSON files.")
-    ap.add_argument("files", nargs="+", help="navdump .json file(s)")
+    ap.add_argument("files", nargs="*", help="navdump .json file(s)")
+    ap.add_argument("--diff", nargs=2, metavar=("OLD", "NEW"),
+                    help="compare path_pnt_reachable between two dumps of the SAME map "
+                         "(the before/after gate for an aim-gate change)")
     args = ap.parse_args()
+
+    if args.diff:
+        diff_verdicts(args.diff[0], args.diff[1])
+        return
 
     for i, path in enumerate(args.files):
         if i:

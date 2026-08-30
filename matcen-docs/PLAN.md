@@ -73,6 +73,11 @@ So one clear portal out of thirty-eight makes a room count as "fine", and a bot 
 of the other thirty-seven is aimed at a point it cannot see. **A room-level boolean is answering a
 question that is per-entry-portal.**
 
+> **CORRECTED 2026-08-30 — read `NAVIGATION.md` §7.0 first.** The table below counts glass panes and
+> grates as doorways; restricted to portals a ship can traverse, Batteries is **16.7%**, not 34%, and
+> the probe direction is the untrustworthy one. Full glass routing was then measured as a hard
+> REGRESSION (picks/rnd 1.94 -> 0.56). Do not plan from these numbers unrevised.
+
 Measured from `los_from_pathpnt_clear` across seven `$navdump`s — portal entries landing in a room
 whose `path_pnt` that entry portal cannot see, in rooms that still pass as "not buried":
 

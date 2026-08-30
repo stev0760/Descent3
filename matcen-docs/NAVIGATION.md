@@ -748,7 +748,70 @@ out as steering failures, and named the prerequisite (per-entry-portal aim) that
 
 ---
 
-### 7.0 Investigation notes — 2026-08-29 (NO CODE SHIPPED; tree is 0.9.11)
+### 7.0 Measured result — 2026-08-30: FULL glass routing is a REGRESSION (do not retry)
+
+**Paired A/B, 33 pinned Batteries rounds, arms alternating round-by-round, 28/28 `guard=PASS`.**
+Arm A = stable 0.9.11. Arm B = artery hierarchy + unrestricted glass routing + per-bot break
+capability. Arm B lost decisively:
+
+| | rounds | picks/rnd | distinct pickers/rnd | caps/rnd | 0-pick rounds | glass clears/rnd |
+|---|---|---|---|---|---|---|
+| A — stable 0.9.11 | 17 | **1.94** | **1.71** | **0.94** | 18% | **30.2** |
+| B — artery + free glass routing | 16 | 0.56 | 0.56 | 0.31 | 50% | 19.4 |
+
+Mechanism: **stucks +131%** (409 -> 944 per round) and dyn-penalty bumps +74%, while via/seam/
+hop-commit all FELL — the drop is bots not travelling, not bots travelling better. Glass clears fell
+even though arm B is the arm routing through panes: bots were aimed at glass they then failed to
+cross. **127 of Batteries' 207 breakable portals are CEILING vents**; free routing sends bots at
+horizontal openings they cannot thread, and they pin. Reverted in full
+(`0.9.12-artery-glass-REVERTED.patch`, outside the repo). This CONFIRMS the 0.9.12 revert with a
+proper paired A/B, which that attempt never had.
+
+**Baseline of record (new):** Batteries on stable 0.9.11 = 1.94 picks/rnd, 0.94 caps/rnd, 56%
+conversion over 17 pinned 15-minute rounds, 8 bots, 4v4, PPS=40.
+
+**Two corrections to load-bearing numbers in this file and PLAN.md §3.2.**
+1. The "34% of Batteries portal entries are blind" figure counted glass panes and grates as
+   doorways. Restricted to portals a ship can traverse it is **16.7%**, and geodomes collapses
+   77.9% -> 2.9%. Blindness is roughly uniform across maps (7-25%), not a Batteries anomaly.
+   The figure is ALSO derived from `los_from_pathpnt_clear`, which probes FROM the room path_pnt
+   toward the portal — the opposite direction to `BotRoomPathPntReachable`, and the direction its
+   own comment calls untrustworthy. Treat it as indicative only.
+2. "Hub rooms have roadmaps shattered into 17-20 components" is a MISREAD. Those rooms are one
+   giant lattice component plus N-1 orphaned singleton portal seeds, and in rooms 3/22/31/33
+   **55 of the 70 orphaned seeds are intact breakable glass, 8 are grates** — the roadmap is
+   correctly refusing to seed through them. The airspace is not fragmented.
+
+**Reach is the metric that matters, not captures.** Across the whole soak corpus, picks/round splits
+maps into two populations with a ~10x gap: quadsomniac 42.8, kegd3 29.8, plutonium 25.2, polaris
+18.8, apparition 16.3 vs batteriesincluded 1.42, abend2 1.15, isengard 0.93, rim 0.33, bree 0.10,
+nightmarecastle 0.00. Distinct pickers/round on Batteries is **1.18 of 8 bots** — one bot per round
+reaches the enemy flag, which is the operator's "spawn lottery" quantified. Batteries' conversion
+(56%) is the BEST in the set: its return leg works, its outbound reach does not. What defines the
+two populations is NOT yet known and is the open question worth answering next.
+
+**Map structure facts (Batteries, operator-corrected).** 207 breakable portals = 127 on horizontal
+faces (ceiling/floor — a VENT NETWORK across 75 rooms, sometimes the only way in, often a shortcut)
++ 80 vertical (office window/partition panes, incl. the conference room). Do not call these "vent
+offices" — that merges a routing layer with a wall type. Glass = one kinetic shot; grates = several
+shots of anything; both already solved in the CLEARING layer months ago — do not rebuild it.
+
+**Objective approach shape (all maps, derived).** Every CTF flag room in the set has exactly ONE
+adjacent room, so flank must be measured between the ANTECHAMBERS, not at the flag room. Node-
+disjoint routes there: batteriesincluded 4, abend2 2 (the two ways round the toroid), rim 2,
+polaris 2, nightmarecastle 1, isengard 1, mysterious_isle 1. On a 1-route map a blocked approach has
+no alternative, so "reroute" is wasted motion and the honest answers are commit, wait, or fight —
+today's committee hunts alternatives there by construction.
+
+**Arterial model, sharpened (operator).** HALLWAYS are the arteries, specifically the centre of each
+hallway; they branch into rooms and/or the ceiling vent. A vent is only an artery where it is the
+sole way in. This is a MAP-scale, room-level property — per-room node classification approximates a
+hallway centreline but has no concept of which ROOMS are hallways. Derivable and verified across 7
+maps by room BETWEENNESS (traffic concentration), NOT by shape: long-and-narrow is a Batteries
+artifact (it is an office building); Rim's spine is a toroid, abend2's a ring, Isengard's a tower.
+Spine length (rooms carrying 80% of transits) ranges 15% (rim) to 58% (nightmarecastle).
+
+### 7.0.0 Investigation notes — 2026-08-29 (NO CODE SHIPPED; tree is 0.9.11)
 
 **Everything in this section is a FINDING, not a change.** A 0.9.12-dev branch of work was built,
 measured over nine pinned Batteries rounds, and **reverted in full** on operator call: it did not

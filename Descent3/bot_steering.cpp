@@ -1314,7 +1314,7 @@ int BotPortalWindDir(int room_idx, int portal_idx) {
 // through the sky when it did). If from or goal is outdoor, returns -1 and the engine takes over.
 // No result cache — edge costs are dynamic, and one run over even the largest D3 map (~215 rooms)
 // is microseconds; it runs only on room-advance.
-static float BotRouteDijkstra(int from_room, int goal_room, int *first_hop_out) {
+static float BotRouteDijkstra(int from_room, int goal_room, int *first_hop_out, bool allow_glass) {
   if (first_hop_out)
     *first_hop_out = -1;
   if (from_room < 0 || from_room > Highest_room_index || !Rooms[from_room].used)
@@ -1364,12 +1364,22 @@ static float BotRouteDijkstra(int from_room, int goal_room, int *first_hop_out) 
         continue;
       if (nodes[nr].visited)
         continue;
-      if (!BOA_PassablePortal(r, p))
-        continue;
-
       float geo = BotPortalGeoCost(r, p);
       if (geo >= BOT_PORTAL_IMPASSABLE)
         continue; // grate/slit/locked — route around it
+
+      // Breakable glass is a door that costs one kinetic shot, but the engine calls an intact pane
+      // impassable and this gate used to run BEFORE the finite glass cost was read — which is why
+      // $nav glass never actually let a route cross one (NAVIGATION.md 7.0 finding 2).
+      //
+      // Panes are admitted only on the SOLE-ROUTE pass (allow_glass), never on the first pass. Glass
+      // as a free shortcut was measured on 2026-08-30 and is a hard regression: picks/round 1.94 ->
+      // 0.56 and stucks +131%, because bots got aimed at panes all over the map — 127 of Batteries'
+      // 207 breakable portals are CEILING vents, and a bot that cannot thread a hole above it pins
+      // there. Sole-route keeps the seven genuinely gated rooms reachable without ever preferring a
+      // pane over a door that is already open.
+      if (!BOA_PassablePortal(r, p) && !(allow_glass && geo == BOT_PORTAL_GLASS_PENALTY))
+        continue;
 
       // 0.9.7 wind tunnels ($nav wind): against-wind traversal is physically impossible (the
       // one-way gate), with-wind is a boosted shortcut the discount below biases toward.
@@ -1423,11 +1433,30 @@ static float BotRouteDijkstra(int from_room, int goal_room, int *first_hop_out) 
   return nodes[goal_room].cost;
 }
 
-int BotComputeRoute(int from_room, int goal_room) {
+int BotComputeRoute(int from_room, int goal_room, int bot_index) {
   int hop = -1;
   if (from_room == goal_room)
     return -1; // preserve the public contract: same-room = no hop
-  BotRouteDijkstra(from_room, goal_room, &hop);
+
+  // Pass 1: doors only. If any all-clear route exists it wins outright, so a pane can never be
+  // chosen as a shortcut past an open door.
+  if (BotRouteDijkstra(from_room, goal_room, &hop, false) < BOT_ROUTE_NO_PATH)
+    return hop;
+
+  // Pass 2 (sole route): no door-only route exists. A pane is the way in — but only for a bot that
+  // can actually open one. A laser-only bot gets no route rather than a route it would park at.
+  if (!Bot_glass_route_enabled || !BotCanBreakGlass(bot_index))
+    return hop;
+  int ghop = -1;
+  if (BotRouteDijkstra(from_room, goal_room, &ghop, true) < BOT_ROUTE_NO_PATH) {
+    static float glassroute_log_t = 0.0f;
+    if (Gametime < glassroute_log_t || Gametime - glassroute_log_t > 5.0f) {
+      glassroute_log_t = Gametime;
+      LOG_DEBUG.printf("BOT NAV: sole-route glass rm%d -> rm%d (no door-only route; hop rm%d)", from_room, goal_room,
+                       ghop);
+    }
+    return ghop;
+  }
   return hop;
 }
 
@@ -1435,7 +1464,9 @@ int BotComputeRoute(int from_room, int goal_room) {
 // dynamic penalties) — what BotEstimatePathCost pretends to be but isn't (the BOA-chain estimate
 // is wind/glass/penalty-blind, so on a wind-tunnel map it can price an unflyable route as cheap).
 // 1e30 = no finite route.
-float BotComputeRouteCost(int from_room, int goal_room) { return BotRouteDijkstra(from_room, goal_room, nullptr); }
+float BotComputeRouteCost(int from_room, int goal_room) {
+  return BotRouteDijkstra(from_room, goal_room, nullptr, false);
+}
 
 // --- Path cost estimation via BOA chain ---
 
