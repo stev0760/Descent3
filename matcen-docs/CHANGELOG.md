@@ -7,6 +7,20 @@ live navigation status is in [NAVIGATION.md](NAVIGATION.md) §7.0.
 Versioning: `0.8.x` = feature releases; `0.9.x` = the navigation-milestone series.
 A `-dev` suffix marks an in-test build that has not yet passed its validation gate.
 
+## [0.9.12-dev] - in test, NOT VALIDATED
+
+*An in-test build. The routing change below has not passed a validation gate — do not treat this
+as a release, and do not judge 0.9.11's behaviour by it.*
+
+*   **Rooms sealed behind breakable glass become reachable.** On maps where a pane is the only way
+    into a room, bots could not plan a route there at all; they arrived only by accident. Routing
+    now considers a pane, but strictly as a last resort: any route through open doors always wins,
+    so a bot never picks a window over a door it could simply fly through. Only bots carrying
+    something that can actually break glass are routed that way.
+*   **Known:** an earlier form of this that let bots treat glass as a general shortcut made things
+    clearly worse — bots got stuck roughly twice as often and reached the enemy flag a third as
+    often — and was removed. The restricted form shipped here has not yet been measured.
+
 ## [0.9.11] - 2026-08-24
 
 *The second half of the navigation cleanup. 0.9.10 gave bots a travel intent that survives
