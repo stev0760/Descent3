@@ -691,6 +691,51 @@ overnight log. A full verbosity-tier + event-vocabulary consolidation is registe
 
 ## 7. Open problems (roadmap)
 
+### 7.0-CURRENT Committee-collapse consolidation — 2026-08-30 (LIVE STATUS)
+
+Branch `feature/multiplayer-bots` @ `fe3445df`, `0.9.12-dev`. The "one bot, one mind, piloting a
+ship" arc: the accreted nav committee is being collapsed into one resolver by **subtraction**, not
+by adding fixes. Prior sessions kept adding per-hop improvements that play never cashed; the thesis
+this session validated is that the committee's real defect was **statelessness** (voices
+re-deciding every ~20u with no shared memory), not the number of voices.
+
+Shipped this session (each committed + built + deployed):
+- **Step A** (`4a8e63b2`) — per-entry-portal aim: `BotWaypointAimPos` answered a per-entry question
+  with a room-level boolean; now bot/entry-aware. Measured population real (Batteries 14.4% of
+  traversable entries blind, 74 rooms; abend2 4/108).
+- **Step 1** (`d5bd0a33`) — deleted 9 always-on interior toggles (`gridroute, objective_commit,
+  seam_guard, entry_commit, reach_gate, hard_cost, pseudo_bnodes, soft_hop, reach_door`), −37 lines.
+  Kept 6 real switches. Behaviour-neutral by construction.
+- **Step 2** (`55bce413`) — collapsed 3 duplicated skeleton-BFS loops into one `SkelBfs` kernel,
+  deleted dead `BotSkelBuildPath`, folded Step A in as a kernel caller. −115 lines. Verified
+  behaviour-identical.
+- **Step 3** (`fe3445df`, UNVALIDATED-for-play) — **committed multi-hop in-room intent**: the via
+  layer (`BotViaPointTick`) stores an ordered `BotSkelBuildChain` and advances a cursor per arrival
+  instead of re-deriving one hop each time. `via_chain[0]` is bit-identical to `BotResolveRoomAim`;
+  activation is narrow (indoor + `RoomBuriedCenter` + chain_len≥3). Avoids all three committed-leg
+  failure modes (broad activation / stay-in-room cancel / global stand-down) and the $softfollow
+  oscillation. No new toggle.
+
+**Step 3 smoke result (abend2, 1 round, bots-only): the toroid ORBIT is eliminated** — 0 hard
+stucks in rings 0/30 (baseline ~25), 0 `via suspended`, 0 `skeleton via room 0` re-picks; chains
+build and complete (bots cross the ring instead of wall-pressing). No crash. **BUT 0 caps** — and
+operator flew it live: bots now reach the ring but wall-press on the FAR side, needing to "go
+around."
+
+**Root cause found (live `$botstat`/`$nav contend` + navdump `abend2-step3-stuck`):** the wall-press
+is a **routing** failure, not a via failure. Every toroid ring room has one connector portal our
+router prices impassable — rm0→rm20, rm30→rm4, rm51→rm10, rm48→rm36 read
+`type=tight pass=True gcost=1000000 OUR-IMPASS DISAGREE`. The engine says passable and bots fly them
+with a nudge, but `ProbePortalClearance(…, BOT_PORTAL_SHIP_RADIUS)` in `BotPortalGeoCost`
+(bot_steering.cpp ~250) says a ship sphere can't fit → `gcost = BOT_PORTAL_IMPASSABLE (1e6)` → the
+router EXCLUDES the edge. On a toroid the ring only connects around through these, so exclusion =
+`no-route` → beeline into the far bulletproof-glass wall (bots observed nose-to-wall 377s; Hawk
+`no-route`×90). **Next fix target: the tight-portal fit-probe DISAGREE** — relax the probe toward
+the engine's verdict, or price tight-but-engine-passable as a finite penalty (like glass) instead of
+IMPASSABLE, so the router takes the only ring connector. This is upstream of the whole via/chain
+stack and is the same DISAGREE class flagged in the tried-&-reverted ledger. Open decision: push
+Step 3 (a structural win that doesn't move caps until the tight-portal fix lands) vs hold it.
+
 ### 6.9 The consolidation phase — design of record
 
 *Absorbed 2026-08-29 from `NAVIGATION.md §6.9` and `NAVIGATION.md §6.9`, both retired. The

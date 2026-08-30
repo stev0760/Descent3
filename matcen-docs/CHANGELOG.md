@@ -9,16 +9,28 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
 
 ## [0.9.12-dev] - in test
 
-*An in-test build. It currently carries **no gameplay change over 0.9.11**: a routing change
-(sole-route glass crossing) sat on this branch briefly and was reverted without being validated.
-What remains is the measurement record.*
+*An in-test build, mid-way through a navigation "consolidation" pass: bots are being made to fly
+like one pilot instead of a committee of competing behaviours, by simplifying the navigation code
+rather than piling on more special cases. Not yet validated for play — do not treat as a release.*
 
-*   **Full glass routing is a proven regression, not a candidate.** A paired A/B on Batteries
-    Included (33 pinned 15-minute rounds, arms alternating round-by-round, both arms guard-verified)
-    showed that letting the router plan through breakable glass as a shortcut made play clearly
-    worse: bots got stuck roughly twice as often and reached the enemy flag about a third as often.
-    That branch is reverted and should not be retried. See `NAVIGATION.md` §7.0 for the numbers and
-    the mechanism (most of that map's breakable panes are ceiling vents a ship cannot thread).
+*   **Bots aim correctly at the door they actually enter through.** When heading into a new room a
+    bot used to aim at the room's centre even when the doorway it was coming through couldn't see
+    that centre — so it pressed the wall between. It now aims from the specific door it's entering.
+*   **A big navigation simplification, no behaviour change.** Nine long-settled navigation tuning
+    switches were removed (their behaviour is now always on), three duplicated copies of the
+    in-room path search were collapsed into one, and dead code was deleted. Bots fly exactly as
+    before; the code is materially smaller and easier to reason about.
+*   **Bots commit to crossing a room instead of circling it.** On the toroid ("donut") arenas like
+    abend2, bots used to reach a flag ring and orbit its inner nodes without ever committing to fly
+    through — the long-standing "won't enter the toroid without a nudge" problem. A bot now commits
+    to a whole path *through* the room and flies it. In testing the orbit and the associated
+    stuck-spinning are gone.
+*   **Known / next:** on the toroids bots now cross into the ring but can wall-press on the far
+    side — the router refuses one flyable-but-tight connector portal per ring room and so finds no
+    way around. Fixing that portal-fit judgement is the next step. See `NAVIGATION.md` §7.0-CURRENT.
+*   **Full glass routing remains a proven regression** (earlier this line): letting the router plan
+    shortcuts through breakable glass made bots stick twice as often and reach the enemy flag a
+    third as often. Reverted; do not retry. `NAVIGATION.md` §7.0.
 
 ## [0.9.11] - 2026-08-24
 
