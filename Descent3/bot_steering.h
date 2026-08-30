@@ -32,7 +32,6 @@
 // from "tight but flyable" so the router prefers roomier parallel routes when they exist.
 // The verdict feeds ONLY our Dijkstra cost (a soft weight) — it never mutates engine portal
 // flags, so a false positive degrades to a longer route or engine fallback, never a stranded bot.
-#define BOT_ROUTE_NO_PATH 1.0e30f       // BotRouteDijkstra's "no finite route" sentinel
 #define BOT_PORTAL_IMPASSABLE 1.0e6f    // edges at/above this are excluded by the router
 #define BOT_PORTAL_SHIP_RADIUS 2.5f     // swept-sphere fit test: can a ship fly through at all?
 #define BOT_PORTAL_TIGHT_RADIUS 4.0f    // comfortable-margin test: fits but no slack -> tightness penalty
@@ -267,9 +266,7 @@ float BotPortalGeoCost(int room_idx, int portal_idx);
 // Cost-aware next-hop router (Phase 11). Dijkstra over the interior room graph weighting
 // portals by BOA base cost + graded geometry cost + dynamic penalty. Returns the next room to
 // head toward, or -1 if no finite route exists (caller falls back to the engine's own pathing).
-// bot_index identifies WHO is routing. It matters only for the sole-route glass pass: a pane is a
-// door for a bot carrying kinetic and a wall for one that is not. Pass -1 for diagnostics.
-int BotComputeRoute(int from_room, int goal_room, int bot_index = -1);
+int BotComputeRoute(int from_room, int goal_room);
 
 // Dynamic portal penalty (emergent obstacles). A traversal failure bumps the portal's cost so
 // the router reroutes around it; the penalty decays over time. Soft and capped — never strands.

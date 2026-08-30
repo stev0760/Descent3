@@ -7,19 +7,18 @@ live navigation status is in [NAVIGATION.md](NAVIGATION.md) §7.0.
 Versioning: `0.8.x` = feature releases; `0.9.x` = the navigation-milestone series.
 A `-dev` suffix marks an in-test build that has not yet passed its validation gate.
 
-## [0.9.12-dev] - in test, NOT VALIDATED
+## [0.9.12-dev] - in test
 
-*An in-test build. The routing change below has not passed a validation gate — do not treat this
-as a release, and do not judge 0.9.11's behaviour by it.*
+*An in-test build. It currently carries **no gameplay change over 0.9.11**: a routing change
+(sole-route glass crossing) sat on this branch briefly and was reverted without being validated.
+What remains is the measurement record.*
 
-*   **Rooms sealed behind breakable glass become reachable.** On maps where a pane is the only way
-    into a room, bots could not plan a route there at all; they arrived only by accident. Routing
-    now considers a pane, but strictly as a last resort: any route through open doors always wins,
-    so a bot never picks a window over a door it could simply fly through. Only bots carrying
-    something that can actually break glass are routed that way.
-*   **Known:** an earlier form of this that let bots treat glass as a general shortcut made things
-    clearly worse — bots got stuck roughly twice as often and reached the enemy flag a third as
-    often — and was removed. The restricted form shipped here has not yet been measured.
+*   **Full glass routing is a proven regression, not a candidate.** A paired A/B on Batteries
+    Included (33 pinned 15-minute rounds, arms alternating round-by-round, both arms guard-verified)
+    showed that letting the router plan through breakable glass as a shortcut made play clearly
+    worse: bots got stuck roughly twice as often and reached the enemy flag about a third as often.
+    That branch is reverted and should not be retried. See `NAVIGATION.md` §7.0 for the numbers and
+    the mechanism (most of that map's breakable panes are ceiling vents a ship cannot thread).
 
 ## [0.9.11] - 2026-08-24
 

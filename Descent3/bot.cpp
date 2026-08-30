@@ -1683,24 +1683,6 @@ static void BotClearObstacleSafely(int bot_index, object *blocker, vector *targe
   BotFireAtPosition(bot_index, target_pos);
 }
 
-// Can this bot actually OPEN a pane? Glass takes one kinetic hit; a laser will not do it. The set
-// mirrors exactly what the glass branch of BotClearObstacleSafely fires — Vauss, Mass Driver, or the
-// selected secondary missile with ammo (concussions qualify, so this is true of nearly every
-// loadout) — so routing and shooting cannot disagree. Keep the two in step if either changes.
-bool BotCanBreakGlass(int bot_index) {
-  if (bot_index < 0 || bot_index >= MAX_BOTS || !Bots[bot_index].active)
-    return false;
-  int slot = Bots[bot_index].player_slot;
-  if (slot < 0 || slot >= MAX_PLAYERS)
-    return false;
-  if (Players[slot].weapon_flags & HAS_FLAG(VAUSS_INDEX))
-    return true;
-  if (Players[slot].weapon_flags & HAS_FLAG(MASSDRIVER_INDEX))
-    return true;
-  int sec_wb = Players[slot].weapon[PW_SECONDARY].index;
-  return (sec_wb >= 10 && sec_wb < 20 && Players[slot].weapon_ammo[sec_wb] > 0);
-}
-
 // When the bot has been stuck for BOT_STUCK_FIGHT_TIMER seconds, try to fight through the blockage.
 //
 // Priority order:
@@ -2719,7 +2701,7 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   const bool troute_active =
       Bot_troute_enabled && Bots[bot_index].troute_goal_room >= 0 && Bots[bot_index].troute_goal_room == goal_room;
 
-  int wp_room = BotComputeRoute(obj->roomnum, goal_room, bot_index);
+  int wp_room = BotComputeRoute(obj->roomnum, goal_room);
   if (wp_room < 0) {
     // No finite route under OUR cost model (wind one-way gate / geometry verdicts) between two
     // interior rooms — the engine's wind-blind BOA path takes over, which on a wind-tunnel map

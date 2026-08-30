@@ -820,9 +820,4 @@ void BotSpawnFromUI();
 // Returns "Pyro-GL" if the index is invalid.
 const char *BotShipAliasFromIndex(int ship_index);
 
-// True when this bot carries something that can shatter a pane: Vauss, Mass Driver, or a selected
-// secondary missile with ammo. Same set BotClearObstacleSafely fires at glass, so the router never
-// plans a crossing the firing code would decline to open.
-bool BotCanBreakGlass(int bot_index);
-
 #endif // BOT_H
