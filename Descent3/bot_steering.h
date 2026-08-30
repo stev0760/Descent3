@@ -125,6 +125,29 @@ bool BotRoomPathPntReachable(int room_idx);
 // node nearest `toward` (portal nodes are guaranteed-flyable; pseudo-bnodes are hull-verified).
 vector BotWaypointAimPos(int wp_room, const vector &toward);
 
+// Step A (PLAN.md §3.4): the per-entry-portal overload. The 2-arg form answers a per-entry
+// question with a room-level boolean — ANY portal seeing the centre makes the room pass, so a bot
+// entering through any other door is aimed at a centre it cannot see (the mechanism that consumed
+// four routing fixes; NAVIGATION.md §7.0). This overload conditions the answer on the door the
+// bot will actually enter through (BotEntryPortalIndex — the seam guard's selection). When that
+// door can see the centre the answer is unchanged; when it cannot, the aim becomes the first
+// hull-proven skeleton hop from the entry door's twin node toward the goal side. Every failure
+// path falls back to the 2-arg answer verbatim, so this can never return a worse point than today.
+vector BotWaypointAimPos(int wp_room, const vector &toward, object *obj);
+
+// The one "which door will I enter wp_room through" answer, shared by the per-entry aim and the
+// seam guard so the two can never pick different doors in the same tick: among the CURRENT room's
+// portals into wp_room, passable by graded geometry, the one nearest the bot (first-found wins
+// ties — the isengard six-slot lesson), then wind-checked (a one-way tunnel mouth fails).
+// Returns the portal index in obj's current room, or -1 when there is no usable door.
+int BotEntryPortalIndex(object *obj, int wp_room);
+
+// Per-(room, entry-portal) form of the buried-centre probe: does THIS portal's path_pnt have a
+// hull-clear line to the room's path_pnt? The exact cast BotRoomPathPntReachable makes per portal
+// — the one whose any-portal pass makes the room count as "not buried" — cached per level like
+// room_buried[]. Invalid room/portal reads clear (permissive: not this mechanism's question).
+bool BotEntryCenterClear(int room_idx, int portal_idx);
+
 // The ONE in-room resolution point (d6efc603 lesson — one aim point per room): all navigators
 // resolve a leg's in-room target through this helper, sharing one branch order: (a) the 0.9.4
 // volumetric roadmap (Lazy Theta*) first in NON-buried rooms, (b) the skeleton BFS first-hop

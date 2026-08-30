@@ -380,12 +380,16 @@ static uint32_t skel_edges[MAX_ROOMS][SKEL_MAX_NODES];  // bit j of [room][i]: l
 static uint8_t skel_node_count[MAX_ROOMS];              // total nodes built (portals + pseudo)
 static int8_t skel_built[MAX_ROOMS];
 static int8_t room_buried[MAX_ROOMS]; // -1 unknown, else BotRoomPathPntReachable() == false
+// Step A per-(room, entry-portal) centre probe: -1 unknown, 1 = this portal sees the path_pnt,
+// 0 = entry-blind. Same lifecycle as room_buried (reset per level on checksum change).
+static int8_t entry_center_clear[MAX_ROOMS][SKEL_MAX_NODES];
 static int skel_level_checksum = 0;
 
 static void SkelLevelReset() {
   if (skel_level_checksum != BOA_mine_checksum) {
     memset(skel_built, 0, sizeof(skel_built));
     memset(room_buried, -1, sizeof(room_buried));
+    memset(entry_center_clear, -1, sizeof(entry_center_clear));
     skel_level_checksum = BOA_mine_checksum;
   }
 }
@@ -494,6 +498,59 @@ bool BotRoomPathPntReachable(int room_idx) {
       return true;
   }
   return false;
+}
+
+// Step A (PLAN.md §3.4): the per-entry-portal form of the buried-centre probe — the exact cast
+// BotRoomPathPntReachable makes per portal, answered for ONE portal instead of "any". This is
+// the test whose any-portal pass makes a room count as "not buried"; a 0 here for the door the
+// bot is entering through is the blind-entry case the room-level boolean hides. Cached per level
+// (SkelLevelReset) so steady state adds no fvi casts.
+bool BotEntryCenterClear(int room_idx, int portal_idx) {
+  SkelLevelReset();
+  if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used ||
+      (Rooms[room_idx].flags & RF_EXTERNAL))
+    return true; // invalid/outdoor: not this mechanism's question — behave permissively
+  int np = SkelPortalCount(Rooms[room_idx]);
+  if (portal_idx < 0 || portal_idx >= np)
+    return false;
+  if (entry_center_clear[room_idx][portal_idx] < 0)
+    entry_center_clear[room_idx][portal_idx] =
+        ViaSegmentClear(room_idx, Rooms[room_idx].portals[portal_idx].path_pnt, Rooms[room_idx].path_pnt,
+                        BOT_PORTAL_SHIP_RADIUS, nullptr)
+            ? 1
+            : 0;
+  return entry_center_clear[room_idx][portal_idx] == 1;
+}
+
+// The one "which door will I enter wp_room through" answer, shared by the per-entry aim and the
+// seam guard (factored out of the seam block verbatim — same order, same first-found tie rule):
+// portals of the CURRENT room into wp_room, graded-geometry passable, nearest to the bot, then
+// wind-checked. Two systems that must agree, one implementation (the BotCanBreakGlass lesson).
+int BotEntryPortalIndex(object *obj, int wp_room) {
+  if (!obj || !obj->ai_info)
+    return -1;
+  int cur = obj->roomnum;
+  if (cur < 0 || cur > Highest_room_index || !Rooms[cur].used)
+    return -1;
+  if (wp_room < 0 || wp_room > Highest_room_index || !Rooms[wp_room].used)
+    return -1;
+  room &crm = Rooms[cur];
+  int best_p = -1;
+  float best_d = 1e30f;
+  for (int p = 0; p < crm.num_portals; p++) {
+    if (crm.portals[p].croom != wp_room)
+      continue;
+    if (BotPortalGeoCost(cur, p) >= BOT_PORTAL_IMPASSABLE)
+      continue;
+    float d = vm_VectorDistanceQuick(&obj->pos, &crm.portals[p].path_pnt);
+    if (d < best_d) {
+      best_d = d;
+      best_p = p;
+    }
+  }
+  if (best_p >= 0 && BotPortalWindDir(cur, best_p) < 0)
+    return -1;
+  return best_p;
 }
 
 // --- One aim point per room (the d6efc603 revert lesson): a single in-room resolution helper that
@@ -822,6 +879,91 @@ vector BotWaypointAimPos(int wp_room, const vector &toward) {
   if (best < 0)
     return Rooms[wp_room].path_pnt;
   return skel_node_pos[wp_room][best];
+}
+
+// Step A (PLAN.md §3.4): the per-entry-portal waypoint aim. The 2-arg form above answers a
+// per-entry question with a room-level boolean — ANY portal seeing the centre makes the room
+// pass, so a bot entering through any other door is aimed at a centre it cannot see. This
+// overload conditions the answer on the door the bot will actually enter through; it replaces
+// the aim ONLY when that door is blind to the centre, and every failure path falls back to the
+// 2-arg answer verbatim — it can never return a worse point than today.
+vector BotWaypointAimPos(int wp_room, const vector &toward, object *obj) {
+  // No bot context, or no door into the waypoint room (explore to a far/non-adjacent room):
+  // the room-level answer.
+  if (!obj || !obj->ai_info)
+    return BotWaypointAimPos(wp_room, toward);
+  if (wp_room < 0 || wp_room > Highest_room_index || !Rooms[wp_room].used || (Rooms[wp_room].flags & RF_EXTERNAL))
+    return BotWaypointAimPos(wp_room, toward);
+  int cur = obj->roomnum;
+  if (cur < 0 || cur > Highest_room_index || cur == wp_room || !Rooms[cur].used)
+    return BotWaypointAimPos(wp_room, toward);
+
+  // The door this bot will enter through — the SAME selection the seam guard uses (they share
+  // BotEntryPortalIndex precisely so aim and seam can never pick different doors in one tick).
+  int best_p = BotEntryPortalIndex(obj, wp_room);
+  if (best_p < 0)
+    return BotWaypointAimPos(wp_room, toward);
+
+  // The entry door's twin portal in wp_room is skeleton node q (portal nodes mirror portals[0..np)).
+  int q = Rooms[cur].portals[best_p].cportal;
+  int np = SkelPortalCount(Rooms[wp_room]);
+  if (q < 0 || q >= np)
+    return BotWaypointAimPos(wp_room, toward);
+
+  // The per-entry question: today's raw-centre answer stands exactly when THIS door can see it.
+  if (!RoomBuriedCenter(wp_room) && BotEntryCenterClear(wp_room, q))
+    return Rooms[wp_room].path_pnt;
+
+  // Entry-blind (or buried centre): aim at the first hull-proven skeleton hop FROM the entry
+  // door's twin node toward the goal side — the in-room arc the door can actually reach, which
+  // the room-level answer never checked. BFS over the pre-tested edges (the BotSkelBuildPath
+  // parent-walk pattern), reachable node nearest `toward`, tie-break fewest hops from the entry.
+  SkelLevelReset();
+  if (!skel_built[wp_room])
+    SkelBuild(wp_room);
+  int n = skel_node_count[wp_room];
+  int dist_n[SKEL_MAX_NODES], parent[SKEL_MAX_NODES], bfs_q[SKEL_MAX_NODES], qh = 0, qt = 0;
+  for (int i = 0; i < n; i++) {
+    dist_n[i] = -1;
+    parent[i] = -1;
+  }
+  dist_n[q] = 0;
+  bfs_q[qt++] = q;
+  while (qh < qt) {
+    int u = bfs_q[qh++];
+    for (int v = 0; v < n; v++) {
+      if (!(skel_edges[wp_room][u] & (1u << v)) || dist_n[v] >= 0)
+        continue;
+      dist_n[v] = dist_n[u] + 1;
+      parent[v] = u;
+      bfs_q[qt++] = v;
+    }
+  }
+  int best = -1;
+  float best_d = 1e30f;
+  for (int i = 0; i < n; i++) {
+    if (i == q || dist_n[i] < 0)
+      continue;
+    float d = vm_VectorDistanceQuick(&skel_node_pos[wp_room][i], &toward);
+    if (d < best_d) { // strict nearest wins; exact float-distance ties go to the lower node index
+      best_d = d;
+      best = i;
+    }
+  }
+  if (best < 0) // entry node isolated (single-door room, no hull-clear legs) -> today's answer
+    return BotWaypointAimPos(wp_room, toward);
+  int h = best;
+  while (parent[h] >= 0 && parent[h] != q)
+    h = parent[h];
+  if (parent[h] != q) // defensive: chain must terminate at the entry node
+    return BotWaypointAimPos(wp_room, toward);
+
+  static float entry_aim_log_t = 0.0f;
+  if (Gametime < entry_aim_log_t || Gametime - entry_aim_log_t > 5.0f) {
+    entry_aim_log_t = Gametime;
+    LOG_DEBUG.printf("BOT NAV: entry-aim rm%d via portal %d -> node hop %d (center blind from entry)", wp_room, best_p, h);
+  }
+  return skel_node_pos[wp_room][h];
 }
 
 // $navdump diagnostic (12.5b): dump the room's skeleton graph for offline tooling. Builds it lazily,

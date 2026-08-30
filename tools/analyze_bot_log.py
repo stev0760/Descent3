@@ -50,6 +50,10 @@ RE_VIA_DETOUR = re.compile(r"via-point detour in room (-?\d+)")   # line blocked
 RE_VIA_REACHED = re.compile(r"via-point reached \(room (-?\d+)\)")  # committed via-point arrived at
 RE_PU_SEALED = re.compile(r"powerup sealed in room (-?\d+)")      # same-room powerup abandoned as sealed (troll)
 RE_VIA_FAIL = re.compile(r"via search failed in room (-?\d+)")   # line blocked, NO via found (throttled ~5s/bot)
+# Step A (PLAN.md §3.4): the per-entry-portal aim replaced the raw room centre because the entry
+# door is blind to it (throttled 5s global). Firing rate + room concentration are the change's
+# own health metrics; the line is also the A/B arm marker for the Step A build.
+RE_ENTRY_AIM = re.compile(r"entry-aim rm(-?\d+) via portal (-?\d+) -> node hop (-?\d+)")
 
 # Task 2 destination-churn instrument (0.9.11): BOT DEST lines from BotSetTravelDest/BotClearTravelDest.
 # Three shapes: "'B' none -> 47 owner=explore" (first intent), "'B' 12 -> 47 owner=X (prev=Y end=Z held=N.Ns)"
@@ -267,6 +271,8 @@ def new_map_stats():
         "sealed_rooms": Counter(),
         "via_fails": 0,        # blocked-but-no-via verdicts (throttled ~5s/bot) — the funnel's stage-0 misses
         "via_fail_rooms": Counter(),
+        "entry_aims": 0,       # Step A per-entry-portal aims (throttled 5s global) — blind-entry centre replacements
+        "entry_aim_rooms": Counter(),
         # Phase 12.2
         "rescues": 0,            # wrong-side rescues issued (item behind an intra-room divider)
         "rescue_rooms": Counter(),  # room the bot was IN when rescued (the wrong side)
@@ -380,6 +386,12 @@ def parse_log(path):
             if m:
                 s["via_fails"] += 1
                 s["via_fail_rooms"][int(m.group(1))] += 1
+                continue
+
+            m = RE_ENTRY_AIM.search(line)
+            if m:
+                s["entry_aims"] += 1
+                s["entry_aim_rooms"][int(m.group(1))] += 1
                 continue
 
             m = RE_DEST.search(line)
@@ -1155,11 +1167,11 @@ def print_report(stats, total_lines, log_path):
               f"committed via-point was arrived at (the funnel's success stage — low reach % means "
               f"chosen-but-not-flown). Sealed = same-room powerups abandoned+blacklisted as sealed.")
         print()
-        print(f"| Map | Detours | Reached (rate) | Top Detour Rooms | Search Fails (top rooms) | Sealed Abandons | Skeleton Hops (12.3) |")
-        print(f"|---|---|---|---|---|---|---|")
+        print(f"| Map | Detours | Reached (rate) | Top Detour Rooms | Search Fails (top rooms) | Sealed Abandons | Skeleton Hops (12.3) | Entry-Aims (Step A) |")
+        print(f"|---|---|---|---|---|---|---|---|")
         for name in maps:
             s = stats[name]
-            if s["via_detours"] == 0 and s["sealed_abandons"] == 0 and s["via_fails"] == 0:
+            if s["via_detours"] == 0 and s["sealed_abandons"] == 0 and s["via_fails"] == 0 and s["entry_aims"] == 0:
                 continue
             rooms_str = ", ".join(f"{r}x{c}" for r, c in s["via_detour_rooms"].most_common(3)) or "-"
             sealed_str = str(s["sealed_abandons"])
@@ -1171,13 +1183,17 @@ def print_report(stats, total_lines, log_path):
             skel_str = str(s["skel_vias"])
             if s["skel_vias"]:
                 skel_str += " (" + ", ".join(f"{r}x{c}" for r, c in s["skel_via_rooms"].most_common(3)) + ")"
+            entry_str = str(s["entry_aims"])
+            if s["entry_aims"]:
+                entry_str += " (" + ", ".join(f"{r}x{c}" for r, c in s["entry_aim_rooms"].most_common(3)) + ")"
             total_commits = s['via_detours'] + s['skel_vias']
             print(f"| {name} | {s['via_detours']} "
                   f"| {s['via_reached']} ({fmt_pct(s['via_reached'], total_commits)}) "
                   f"| {rooms_str} "
                   f"| {fails_str} "
                   f"| {sealed_str} "
-                  f"| {skel_str} |")
+                  f"| {skel_str} "
+                  f"| {entry_str} |")
         print()
 
     # Task 2 (0.9.11) — travel-intent churn. The Step 2b layer's owed metric: who decides where bots

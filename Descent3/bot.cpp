@@ -2754,9 +2754,9 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   } else if (BotRoomIsBuried(obj->roomnum)) {
     unified_aim = BotResolveRoomAim(obj, routed_pos, goal_room, obj->size, &wp_aim, wp_room);
     if (!unified_aim)
-      wp_aim = (wp_room == goal_room) ? routed_pos : BotWaypointAimPos(wp_room, routed_pos);
+      wp_aim = (wp_room == goal_room) ? routed_pos : BotWaypointAimPos(wp_room, routed_pos, obj);
   } else {
-    wp_aim = (wp_room == goal_room) ? routed_pos : BotWaypointAimPos(wp_room, routed_pos);
+    wp_aim = (wp_room == goal_room) ? routed_pos : BotWaypointAimPos(wp_room, routed_pos, obj);
   }
   {
     vector goal_pos = wp_aim;
@@ -2777,25 +2777,16 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
         // stuck escalation owns a hop that still won't cross.
         !(Bots[bot_index].seam_wp_room == wp_room && Gametime < Bots[bot_index].seam_next_time)) {
       room &crm = Rooms[obj->roomnum];
-      // Among passable portals to the waypoint room, pick the one NEAREST THE BOT — not the
-      // first/lowest-geocost. The isengard flag antechambers (47->49, 45->48) are joined by SIX
-      // parallel slot portals (a pillared opening); first-found aimed bots diagonally through a
-      // pillar (133 hop commits at room 49's door in one hour, ~0 crossings). The near slot is
-      // the one the bot is actually lined up with.
-      int best_p = -1;
-      float best_d = 1e30f;
-      for (int p = 0; p < crm.num_portals; p++) {
-        if (crm.portals[p].croom != wp_room)
-          continue;
-        if (BotPortalGeoCost(obj->roomnum, p) >= BOT_PORTAL_IMPASSABLE)
-          continue;
-        float d = vm_VectorDistanceQuick(&obj->pos, &crm.portals[p].path_pnt);
-        if (d < best_d) {
-          best_d = d;
-          best_p = p;
-        }
-      }
-      if (best_p >= 0 && BotPortalWindDir(obj->roomnum, best_p) >= 0) {
+      // The entry door: BotEntryPortalIndex — the ONE selection shared with the per-entry-portal
+      // waypoint aim (Step A), so the aim and the seam push can never pick different doors in the
+      // same tick. Among passable portals to the waypoint room it picks the one NEAREST THE BOT —
+      // not the first/lowest-geocost. The isengard flag antechambers (47->49, 45->48) are joined by
+      // SIX parallel slot portals (a pillared opening); first-found aimed bots diagonally through a
+      // pillar (133 hop commits at room 49's door in one hour, ~0 crossings). The near slot is the
+      // one the bot is actually lined up with. Wind is checked inside the helper (a one-way tunnel
+      // mouth reads as "no door", exactly as the old inline wind gate did).
+      int best_p = BotEntryPortalIndex(obj, wp_room);
+      if (best_p >= 0) {
         const portal &pt = crm.portals[best_p];
         vector through = wp_aim - pt.path_pnt;
         float td = vm_GetMagnitude(&through);
@@ -3023,7 +3014,7 @@ static void BotDoExploreRoaming(int bot_index) {
             aim_pos = resolved;
             aim_room = obj->roomnum; // claim CURRENT room — engine steers straight
           } else {
-            aim_pos = BotWaypointAimPos(dest, aim_pos);
+            aim_pos = BotWaypointAimPos(dest, aim_pos, obj);
           }
         }
         int steer_room = -1;
