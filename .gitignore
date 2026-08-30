@@ -461,3 +461,10 @@ session-*.txt
 # Scratch analysis output accidentally written to the repo root
 /scratchpad_*.txt
 review-logs/
+
+# Soak harness: the runtime dir is per-workstation and never committed.
+# soak.local.json holds it locally; copy soak.local.example.json to create yours.
+/tools/soak.local.json
+# Ad-hoc / one-off experiment manifests live here so throwaways don't join the tracked set.
+# Canonical manifests (templates + the regression battery) stay tracked in tools/manifests/.
+/tools/manifests/local/

@@ -1,9 +1,0 @@
-{
-  "_comment": "OVERNIGHT SWEEP 3/4 — bsidectf ARM B (STEP 3 74dcd573). Pairs for FREE against the 2026-08-10 census battery arm (soak-20260810T094350.log), which ran the identical manifest on the control build 58ddbb9c. bsidectf is the SECOND INDOOR-heavy pool (batteriesincluded / Nightmarecastle / mysterious_isle), so it tests the other half of the indoor/outdoor split: indoor should be stable-or-better, as KegD3 (+16%) and QuadSomniac (flat) already showed.",
-  "server_dir": "/home/steve/Projects/mine/Descent3-bot-testing-client/Descent3_testing",
-  "launch": ["./Descent3", "-dedicated", "./soak-dedicated-bside38.cfg"],
-  "telnet_port": 2092, "telnet_password": "test",
-  "phases": [{"name": "night-bside-step3-74dcd573", "toggles": {}, "rounds": 12}],
-  "navdump": {}, "max_minutes": 210,
-  "ab": {"control_log": "/home/steve/Projects/mine/Descent3-bot-testing-client/Descent3_testing/soak-20260810T094350.log", "expect_rounds": 12}
-}

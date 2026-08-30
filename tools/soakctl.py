@@ -18,10 +18,17 @@ Emits line-oriented events on stdout so an agent (or a human tail) can react:
     SOAK_DONE log=<path> rounds=<n> [guard=PASS|FAIL]
     SOAK_ERROR <message>
 
+Usage:
+    python3 tools/soakctl.py [--server-dir DIR] <manifest.json>
+
+The runtime dir (cwd for the server, where logs land) is resolved OUTSIDE the manifest so nothing
+workstation-specific is committed. Precedence: --server-dir arg > $SOAK_SERVER_DIR env >
+tools/soak.local.json ({"server_dir": "..."}, gitignored — see tools/soak.local.example.json) >
+a manifest "server_dir" key (legacy fallback).
+
 Manifest (JSON):
 {
-  "server_dir": "/path/to/deploy/dir",          // cwd for the server process
-  "launch": ["./Descent3", "-dedicated", "./dedicated.cfg"],
+  "launch": ["./Descent3", "-dedicated", "./dedicated.cfg"],  // relative to the resolved server dir
   "telnet_port": 2092,
   "telnet_password": "test",
   "phases": [                                    // applied in order, flipped at round boundaries
@@ -31,7 +38,7 @@ Manifest (JSON):
   "navdump": {"Polaris": 480},                   // map -> seconds into the round to dump (after bots fly)
   "max_minutes": 180,                            // hard wall-clock stop (safety net)
   "ab": {                                        // OPTIONAL — makes this run a guarded A/B arm
-    "control_log": "/path/to/control.log",       //   omit for a single arm: self-compare still checks the pin
+    "control_log": "control.log",                //   basename in the server dir (or an abs path); omit for self-compare
     "pin": "Level1",                             //   expected level, when the experiment claims one
     "expect_rounds": 12                          //   a truncated arm is not comparable — fails the guard
   }
@@ -121,7 +128,11 @@ def run_ab_guard(mf, log_path, total_rounds):
         emit("SOAK_ERROR ab_guard.py missing — cannot verify preconditions")
         return "FAIL"
 
-    control = ab.get("control_log") or log_path
+    control = ab.get("control_log")
+    if control and not os.path.isabs(control):
+        # a bare basename is resolved against the run's own dir (== the server dir)
+        control = os.path.join(os.path.dirname(log_path), control)
+    control = control or log_path
     cmd = [sys.executable, guard]
     if ab.get("pin"):
         cmd += ["--pin", str(ab["pin"])]
@@ -144,14 +155,46 @@ def run_ab_guard(mf, log_path, total_rounds):
     return verdict
 
 
+def resolve_server_dir(mf, cli_dir=None):
+    """Resolve the runtime dir from config, never from a committed absolute path.
+
+    Precedence: --server-dir arg > $SOAK_SERVER_DIR > tools/soak.local.json > manifest "server_dir".
+    Exits with a SOAK_ERROR (not a traceback) when unset or missing.
+    """
+    local = None
+    cfg = os.path.join(os.path.dirname(os.path.abspath(__file__)), "soak.local.json")
+    if os.path.exists(cfg):
+        with open(cfg) as fh:
+            local = json.load(fh).get("server_dir")
+    d = cli_dir or os.environ.get("SOAK_SERVER_DIR") or local or mf.get("server_dir")
+    if not d:
+        emit("SOAK_ERROR no server dir — pass --server-dir, set $SOAK_SERVER_DIR, or create "
+             "tools/soak.local.json (see tools/soak.local.example.json)")
+        sys.exit(2)
+    d = os.path.expanduser(d)
+    if not os.path.isdir(d):
+        emit("SOAK_ERROR server dir does not exist: %s" % d)
+        sys.exit(2)
+    return d
+
+
 def main():
-    if len(sys.argv) != 2:
+    args = sys.argv[1:]
+    cli_dir = None
+    if "--server-dir" in args:
+        i = args.index("--server-dir")
+        if i + 1 >= len(args):
+            print(__doc__)
+            sys.exit(2)
+        cli_dir = args[i + 1]
+        del args[i:i + 2]
+    if len(args) != 1:
         print(__doc__)
         sys.exit(2)
-    with open(sys.argv[1]) as f:
+    with open(args[0]) as f:
         mf = json.load(f)
 
-    server_dir = mf["server_dir"]
+    server_dir = resolve_server_dir(mf, cli_dir)
     log_path = os.path.join(
         server_dir, "soak-%s.log" % time.strftime("%Y%m%dT%H%M%S")
     )

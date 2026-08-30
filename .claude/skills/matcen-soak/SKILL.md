@@ -22,9 +22,9 @@ quit cleanly → analyze the log → compare against the reference numbers.**
    on your own shell wrapper — the pattern text appears in your own command line.)
 2. **Never leave a server running.** If a soak errors out, verify the process is gone
    (`pgrep -x Descent3`), `pkill -9 -x Descent3` if needed.
-3. **Deploy before testing.** The test server runs the binary in
-   `~/Projects/mine/Descent3-bot-testing-client/Descent3_testing/`. After any rebuild:
-   `cp builds/linux/build/Debug/Descent3 ~/Projects/mine/Descent3-bot-testing-client/Descent3_testing/Descent3`
+3. **Deploy before testing.** The test server runs the binary from the **runtime dir**, which is
+   resolved from config (never hardcoded in a manifest — see "One-time setup" below). After any rebuild:
+   `cp builds/linux/build/Debug/Descent3 "$SOAK_SERVER_DIR/Descent3"`
    then confirm the git hash is in the binary: `strings <deployed binary> | grep -m1 <commit-hash>`.
    A soak on a stale binary is worthless and has burned whole sessions before.
 4. **Linux Debug builds only for diagnostics.** Windows Release logs contain ZERO nav
@@ -32,14 +32,28 @@ quit cleanly → analyze the log → compare against the reference numbers.**
 5. **Don't trust rates from short runs.** Captures/round needs hours; the short-run metrics
    are conversion % and hard-fail signatures (see "Judging results").
 
+## One-time setup
+
+The runtime dir (game install + deployed binary + soak logs) is **per-workstation and never
+committed**. Point the harness at it once, by either:
+- `export SOAK_SERVER_DIR=/path/to/your/Descent3-matcen-soak-lab` in your shell profile, or
+- `cp tools/soak.local.example.json tools/soak.local.json` and edit the path (gitignored).
+
+`soakctl.py` resolves the dir in this order: `--server-dir` arg → `$SOAK_SERVER_DIR` →
+`tools/soak.local.json`. With none set it prints `SOAK_ERROR no server dir …` and exits.
+
 ## Running a soak
 
-Manifests live in `tools/manifests/`. To run one:
+Manifests live in `tools/manifests/`. Tracked manifests are the canonical set — the regression
+`battery/` plus a few mode templates (`smoke-2min`, `entropy-*`, `monsterball-*`). **Ad-hoc /
+one-off experiment manifests go in `tools/manifests/local/` (gitignored)** so throwaways never join
+the tracked set. To run one:
 
 ```
-# 1. Check no server is running (rule 1), binary is current (rule 3).
+# 1. Check no server is running (rule 1), binary is current (rule 3), runtime dir configured (setup).
 # 2. Launch in the background:
 python3 tools/soakctl.py tools/manifests/<name>.json    # run_in_background: true
+# (or override the runtime dir ad-hoc: python3 tools/soakctl.py --server-dir /path tools/manifests/<name>.json)
 ```
 
 The driver emits events on stdout: `SOAK_START log=<path> build=<hash>`, `PHASE_START`,
@@ -53,7 +67,6 @@ Manifest format (JSON):
 
 ```json
 {
-  "server_dir": "/home/steve/Projects/mine/Descent3-bot-testing-client/Descent3_testing",
   "launch": ["./Descent3", "-dedicated", "./dedicated.cfg"],
   "telnet_port": 2092,
   "telnet_password": "test",
@@ -63,7 +76,7 @@ Manifest format (JSON):
   ],
   "navdump": {"Plutonium": 480, "Polaris": 480},
   "max_minutes": 180,
-  "ab": {"control_log": "/path/to/control.log", "pin": "Level1", "expect_rounds": 12}
+  "ab": {"control_log": "control.log", "pin": "Level1", "expect_rounds": 12}
 }
 ```
 
@@ -71,8 +84,9 @@ Manifest format (JSON):
   is unusable). A phase ends on `"rounds"` or `"minutes"`, whichever comes first.
 - **`ab` (optional but expected on any comparison arm): the driver runs `ab_guard.py` at
   teardown**, writes `<log>-guard.txt`, and stamps `guard=PASS|FAIL` onto `SOAK_DONE`.
-  `control_log` = the arm you will compare against (omit it and the run self-compares, which
-  still checks the level pin); `pin` only when the experiment genuinely claims one level
+  `control_log` = the arm you will compare against — a **basename** resolved in the runtime dir
+  (omit it and the run self-compares, which still checks the level pin); `pin` only when the
+  experiment genuinely claims one level
   (bedlam ROTATES — no pin there); `expect_rounds` fails a truncated, non-comparable arm.
   **Reading numbers out of a `GUARD_FAIL` arm is a process violation, not a judgement call** —
   fix the harness or segment the data first. This exists because the guard used to be a tool
