@@ -98,7 +98,6 @@ extern bool Bot_roadmap_corner_enabled; // $gridbridge — corner-rounding compo
 // though the grid has the interior nodes to plan it. With this on, the router asks the roadmap for a
 // furthest-visible waypoint toward the destination and aims there, falling back to the path_pnt when the room
 // roadmap is degenerate. Indoor only (outdoor already routes its region roadmap via the reactive path).
-extern bool Bot_gridroute_enabled;
 
 // $nav outlattice: gate the outdoor region lattice inside the blocked-line via rescue
 // (bot_steering.cpp pass ordering: rings -> [lattice] -> 12.6B connecting graph). OFF restores the

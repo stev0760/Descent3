@@ -198,9 +198,6 @@ bool BotRoomSealedForShip(int room_idx);
 // Runtime toggle (default ON — disable with $terrainsteer off)
 extern bool Bot_terrain_steering_enabled;
 
-// Phase 12.4: reactive "reach-the-door" in-room fallback for BNode-less custom maps (default ON).
-extern bool Bot_reach_door_enabled;
-extern bool Bot_pseudo_bnodes_enabled;
 extern bool Bot_outdoor_via_enabled;
 extern bool Bot_outdoor_graph_enabled; // 12.6 Stage B: connecting graph for multi-hop go-around ($outdoorgraph)
 
@@ -209,7 +206,6 @@ extern bool Bot_outdoor_graph_enabled; // 12.6 Stage B: connecting graph for mul
 // soft progress hop and let the engine's avoid-walls thread the gap — instead of dead-ending into a pin.
 // "Help the engine bridge the gap," no new graph edges. ($softfollow commitment-loosening was tried alongside
 // this and REMOVED — it re-introduced circling; see NAVIGATION.md §7.0 ledger.)
-extern bool Bot_soft_hop_enabled;
 
 // 0.9.6 Stage 2b ($nav glass): route through TF_BREAKABLE glass portals at a finite break cost
 // instead of IMPASSABLE. The engine's BOA already routes through them; this re-aligns our router
@@ -242,7 +238,6 @@ int BotPortalWindDir(int room_idx, int portal_idx);
 // When the engine's active steer target leaves {current room, waypoint room}, re-aim the goal
 // just past the direct portal instead, claimed in the CURRENT room so the engine steers straight
 // with no BOA path to detour on.
-extern bool Bot_seam_guard_enabled;
 #define BOT_SEAM_PUSH_DIST 25.0f // aim this far past the portal plane (> BOT_VIA_ARRIVE_DIST, so arrival = crossing)
 
 // Stacked-room descent (tray-seam class): aim THROUGH the open ceiling seam, clamped to the
@@ -256,11 +251,9 @@ extern bool Bot_seam_guard_enabled;
 // standoff point 12u OUTSIDE the resolved door; but nothing ever aimed the bot THROUGH it — arrival
 // at the standoff just re-issued the same outside point, so entering relied on drift (works for
 // side doors, never for top-hatch/shaft entrances: the bot hovers over the hatch forever — the
-// "fly up to the entrance then down into the structure" gap, and the entrance-miss stuck class
-// that throttles bedlam/fellowship attempt rates). With this on, a bot within BOT_ENTRY_COMMIT_DIST
-// of the standoff re-aims seam-style at a point INSIDE the door room (toward its path_pnt), so
-// goal arrival = crossing the portal; once the roomnum flips indoors, the interior router owns it.
-extern bool Bot_entry_commit_enabled;
+// A bot within BOT_ENTRY_COMMIT_DIST of the standoff re-aims seam-style at a point INSIDE the door
+// room (toward its path_pnt), so goal arrival = crossing the portal; once the roomnum flips indoors,
+// the interior router owns it. (Always on — consolidation Step 1, 2026-08-30.)
 
 // 0.9.7 terrain-track piece 1 ($nav outtier): outdoor entrance selection scores room+door jointly
 // by outdoor approach distance + OUR routed interior cost (wind/glass/geometry/penalty-aware,
@@ -318,7 +311,6 @@ extern bool Bot_troute_enabled;
 extern bool Bot_troute_compare_enabled; // $nav troute2: v2 cost-comparison route choice (see .cpp)
 // $nav hardcost: hard-room-promoted rooms ($nav hardroom evidence) add this to route edges INTO
 // them, so measured traversal pain is priced into every route/comparison (single cost language).
-extern bool Bot_hard_cost_enabled;
 #define BOT_HARD_ROOM_ROUTE_PENALTY 800.0f
 bool BotTrouteCompose(const object *obj, int goal_room, int *out_exit_room, int *out_exit_portal, int *out_entry_room,
                       int *out_entry_portal, int *out_region, float *out_total);

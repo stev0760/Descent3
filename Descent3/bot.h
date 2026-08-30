@@ -633,13 +633,9 @@ extern bot_info Bots[MAX_BOTS];
 extern int Num_bots;
 extern bool Bot_debug_movement;               // When true, log bot+player velocity every ~0.5s
 extern bool Bot_grate_clear_enabled;          // $nav grate — proactive destroyable-obstacle clearing (0.9.6 Stage 2)
-extern bool Bot_objective_commit_enabled;     // $nav commit — objective commitment: opportunistic-only powerups
-                                              // (same/adjacent room) while routing to an objective (0.9.6)
 extern bool Bot_dedicated_runner_enabled;     // $nav runner — dedicated CTF flag-runner role (0.9.8)
 extern bool Bot_soft_strike_enabled;          // $nav strike — same-room soft chase-aborts count toward troll
                                               // retirement at BOT_TROLL_SOFT_PER_STRIKE weight (0.9.7 Fix A)
-extern bool Bot_reach_gate_enabled;           // $nav reach — single-authority reachability gate on same-room
-                                              // powerup selection (architecture north star, increment 1)
 extern bool Bot_bnode_native_pathing_enabled; // $nav bnodesp — operator intent: defer to the engine's
                                               // native BNode path pipeline on BNode-rich (SP campaign)
                                               // maps instead of our routing/via/seam stack (default ON —

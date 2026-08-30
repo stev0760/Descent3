@@ -64,9 +64,7 @@ bot_info Bots[MAX_BOTS];
 int Num_bots = 0;
 bool Bot_debug_movement = false;          // Toggle with "$botmov on/off" console command
 bool Bot_grate_clear_enabled = true;      // $nav grate — proactive destroyable-obstacle clearing (0.9.6 Stage 2)
-bool Bot_objective_commit_enabled = true; // $nav commit — opportunistic-only powerups while on an objective route
 bool Bot_soft_strike_enabled = true;      // $nav strike — same-room soft chase-aborts accrue troll strikes (0.9.7)
-bool Bot_reach_gate_enabled = true;       // $nav reach — roadmap-gated same-room powerup selection (north star inc. 1)
 // $nav bnodesp — defer to the engine's native BNode path pipeline on BNode-rich (SP campaign) maps
 // instead of our routing/via/seam stack (PLAN-coop-nav-rethink.md). Default ON: client-launched co-op
 // has no console, so default-OFF would be untestable (9.5.1); inert by construction on every MP map
@@ -2476,7 +2474,7 @@ static bool BotOutdoorEntranceStage(object *obj, int goal_room, vector *dest, in
   // Stage 1: the 12.6 standoff — the face normal points INTO the room, so subtract to push outward.
   vector out_pos = ep.path_pnt - Rooms[ent_room].faces[ep.portal_face].normal * BOT_OUTDOOR_APPROACH_OFFSET;
   bool entry = false;
-  if (Bot_entry_commit_enabled && vm_VectorDistanceQuick(&obj->pos, &out_pos) < BOT_ENTRY_COMMIT_DIST) {
+  if (vm_VectorDistanceQuick(&obj->pos, &out_pos) < BOT_ENTRY_COMMIT_DIST) {
     // Stage 2: commit through the door (same push-through construction as the $nav seam guard).
     vector through = Rooms[ent_room].path_pnt - ep.path_pnt;
     float td = vm_GetMagnitude(&through);
@@ -2769,7 +2767,7 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
     bool steer_divergent = !ROOMNUM_OUTSIDE(steer_room) && steer_room >= 0 && steer_room <= Highest_room_index &&
                            Rooms[steer_room].used && steer_room != obj->roomnum && steer_room != wp_room;
     bool hop_pressed = Bots[bot_index].hop_press_wp == wp_room && Bots[bot_index].hop_press_n >= BOT_HOP_PRESS_TRIGGER;
-    if (Bot_seam_guard_enabled && !OBJECT_OUTSIDE(obj) && wp_room != obj->roomnum && wp_room >= 0 &&
+    if (!OBJECT_OUTSIDE(obj) && wp_room != obj->roomnum && wp_room >= 0 &&
         wp_room <= Highest_room_index && Rooms[wp_room].used && (steer_divergent || hop_pressed) &&
         // Anti-churn latch: one redirect per waypoint per window. A hop the bot cannot actually
         // cross (unbroken glass as the "direct door") otherwise re-fires every tick — 1054
@@ -2866,7 +2864,7 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
     dest = wp_aim;
     dest_room = obj->roomnum;
     nav_dest_overridden = true;
-  } else if (Bot_gridnav_enabled && Bot_gridroute_enabled && !OBJECT_OUTSIDE(obj)) {
+  } else if (Bot_gridnav_enabled && !OBJECT_OUTSIDE(obj)) {
     vector gvia;
     if (BotRoadmapFindVia(obj, dest, wp_room, &gvia, /*proactive=*/true) == BOT_VIA_FOUND) {
       dest = gvia;
@@ -4327,7 +4325,7 @@ static int8_t Reach_verdicts[BOT_REACH_TABLE_SIZE];
 static int Reach_serial = 0;
 
 static bool BotReachGateAllows(object *bot_obj, object *p) {
-  if (!Bot_reach_gate_enabled || OBJECT_OUTSIDE(bot_obj) || OBJECT_OUTSIDE(p))
+  if (OBJECT_OUTSIDE(bot_obj) || OBJECT_OUTSIDE(p))
     return true;
   if (p->roomnum != bot_obj->roomnum)
     return true; // v1 scope: same-room selection only (where the LOS gate misleads)
@@ -4442,7 +4440,7 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
     // committed bots still wandered off-route. Indoors, an on-path candidate must also be in the
     // bot's own room or one portal away: a true grab-in-passing, never a cross-maze detour.
     bool commit_filter = (max_dist_override > 0.0f);
-    if ((commit_filter || require_los) && Bot_objective_commit_enabled && !OBJECT_OUTSIDE(obj) && !OBJECT_OUTSIDE(p)) {
+    if ((commit_filter || require_los) && !OBJECT_OUTSIDE(obj) && !OBJECT_OUTSIDE(p)) {
       if (commit_filter && p->roomnum != obj->roomnum) {
         bool adjacent = false;
         room &br = Rooms[obj->roomnum];

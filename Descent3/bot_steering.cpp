@@ -57,18 +57,15 @@ bool Bot_terrain_steering_enabled = true;
 
 // Phase 12.4: reactive "reach-the-door" in-room fallback. On BNode-less custom maps the engine bakes
 // no in-room waypoints, so a buried-center / no-clear-leg room (Bree's tavern, Isengard's labyrinth)
-// strands the bot — the via search finds no clean path and gives up. When that happens but the egress
-// portal toward the goal is known, aim at it anyway and let the engine grind the bot to the threshold.
-// Kill-switch for the §7 goal-aware-escape regression history (flip + rebuild to A/B).
-bool Bot_reach_door_enabled = true;
-bool Bot_pseudo_bnodes_enabled = true; // 12.5b: synthesize interior waypoints in disconnected rooms ($pseudobnodes)
+// Consolidation Step 1 (2026-08-30): the interior-nav flags below were all always-on validated
+// behaviour (never set false in code) — the accreted $nav experiment scaffolding. Deleted:
+// reach_door, pseudo_bnodes, soft_hop, seam_guard, entry_commit (here), hard_cost (~1796),
+// gridroute (bot_roadmap.cpp), reach_gate/objective_commit (bot.cpp). Behaviour inlined
+// unconditionally. Kept: the genuine map-class/experiment switches below.
 bool Bot_outdoor_via_enabled = true;   // 12.6: lateral go-around outdoors (around structures) ($outdoorvia)
 bool Bot_outdoor_graph_enabled = true; // 12.6 Stage B: connecting graph multi-hop go-around ($outdoorgraph)
-bool Bot_soft_hop_enabled = true;      // 12.7: soft progress hop across disconnected graphs ($navbridge)
 bool Bot_glass_route_enabled = true;   // 0.9.6 2b: breakable-glass portals get a finite break cost ($nav glass)
 bool Bot_wind_route_enabled = true;    // 0.9.7: wind-tunnel one-way gating + downwind shortcut bias ($nav wind)
-bool Bot_seam_guard_enabled = true;    // 0.9.7: re-aim through the direct door when the engine path detours ($nav seam)
-bool Bot_entry_commit_enabled = true;  // 0.9.7 Phase 8.2: commit THROUGH the door from the standoff point ($nav entry)
 bool Bot_outdoor_tier_enabled =
     true; // 0.9.7 piece 1: entrance choice by full routed cost, not BOA estimate ($nav outtier)
 // 12.7 $softfollow early via-release was REMOVED (validated as a dead end): it fired inside the via commit
@@ -415,7 +412,7 @@ static int SkelPortalCount(const room &rm) { return rm.num_portals < SKEL_MAX_NO
 // engine's BNode generator (offset-into-room + center node), but layered on top of crude-BOA via the
 // via machinery and **hull-aware** so we never synthesize an unflyable edge (the lesson that sank the
 // reverted engine-BNode experiment: it kept edges down to max_rad 5.0 while the ship hull is ~6.676).
-// Phase 12.5b — gated by Bot_pseudo_bnodes_enabled (NAVIGATION.md §4.2).
+// Phase 12.5b — always on (NAVIGATION.md §4.2; consolidation Step 1 inlined the toggle).
 static void SkelBuild(int room_idx) {
   room &rm = Rooms[room_idx];
   int np = SkelPortalCount(rm);
@@ -443,7 +440,7 @@ static void SkelBuild(int room_idx) {
   }
 
   // Pseudo-bnodes: only when a portal pair is disconnected (most rooms are fully connected → no cost).
-  if (Bot_pseudo_bnodes_enabled && np >= 2 && disconnected_pair) {
+  if (np >= 2 && disconnected_pair) {
     int first_pseudo = n;
     // (a) one node per portal, pushed off the portal face into the room's airspace (mirrors the
     // engine generator's path_pnt + normal*k). Keep only if it's actually reachable from its portal.
@@ -665,8 +662,8 @@ bool BotResolveRoomAim(object *obj, const vector &target_pos, int target_room, f
     }
 
     // (c) soft-hop fallback (12.4/12.7 reach-door): no skeleton hop resolves — aim at the nearest
-    // egress portal anyway and let wall-avoidance thread the bot toward it. Gated as in live code.
-    if (Bot_reach_door_enabled && (Bot_soft_hop_enabled || RoomBuriedCenter(room_idx))) {
+    // egress portal anyway and let wall-avoidance thread the bot toward it. Always on (Step 1).
+    {
       int best = -1;
       float best_d = 1e30f;
       for (int i = 0; i < np; i++) {
@@ -1179,8 +1176,6 @@ static bool BotOutdoorGraphHop(object *obj, const vector &target_pos, float radi
     // than dead-end (-> NONE -> beeline into a wall -> pin), step TOWARD the door: pick the bot-visible node
     // nearest the target and hand it back. The engine threads the leg; if it's a true building local-minimum
     // the existing skeleton chain-cap -> suspend -> reroute catches it (no worse than the pin it replaces).
-    if (!Bot_soft_hop_enabled)
-      return false;
     float bot_to_tgt = vm_VectorDistanceQuick(&obj->pos, &ograph_node[region][tgt].pos);
     int best = -1;
     float best_d = bot_to_tgt; // only accept a node strictly closer to the door than we are (real progress)
@@ -1539,7 +1534,7 @@ static float BotRouteDijkstra(int from_room, int goal_room, int *first_hop_out) 
       // the isengard corkscrew read 1171-1702 while the (flyable) valley read 1822-2784, so
       // troute2's honest comparison could never choose the route the map was designed around.
       // Evidence-based, per-room, resets each level with the promotion table.
-      if (Bot_hard_cost_enabled && BotRoadmapRoomIsHard(nr))
+      if (BotRoadmapRoomIsHard(nr))
         edge += BOT_HARD_ROOM_ROUTE_PENALTY;
       if (wdir > 0) {
         // Downwind hop: the tunnel's push makes the crossing near-free — bias the route toward
@@ -1793,7 +1788,6 @@ bool Bot_troute_enabled = true; // terrain tier of the single spatial authority 
 // cheaper (v1 composed only on interior-route failure — a carrier never chose the valley while
 // the corkscrew existed). Also the seam the 3.6 flanking hook plugs into (tactical cost term).
 bool Bot_troute_compare_enabled = true;
-bool Bot_hard_cost_enabled = true; // $nav hardcost: price hard-room evidence into route edges
 
 // Door-pair lattice-cost cache: BOA_connect entries are static per level; the region roadmap is
 // static per build. Costs cached by connect INDEX pair, keyed to the roadmap serial. -2 = not yet
