@@ -150,8 +150,10 @@ Bias in-room path selection toward artery nodes: reach the artery, traverse it, 
 to matter most on the toroid class (abend2 rings, Rim) and on rooms with fragmented roadmaps
 (Batteries has 127 rooms with >1 roadmap component).
 
-**Step D — re-attempt the two reverted routing fixes** behind Step A, and re-measure. Both are
-preserved as a patch outside the repo.
+**Step D — re-attempt the two reverted routing fixes** behind Step A, and re-measure. Both patch
+files were deleted at operator decision (2026-08-30): the experiments are written off, and
+rebuilding either one means from scratch — justified only if Steps A–C leave a measured gap they
+would fill.
 
 ### 3.5 Open, unfixed, lower priority
 
