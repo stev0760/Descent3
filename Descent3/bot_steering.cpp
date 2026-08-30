@@ -552,6 +552,41 @@ int BotEntryPortalIndex(object *obj, int wp_room) {
 
 // --- One aim point per room (the d6efc603 revert lesson): a single in-room resolution helper that
 // every layer (goal issue, via, seam direction, explore fallback) calls, so routing resolutions stop
+// Shared skeleton-BFS kernel (Step 2 consolidation, 2026-08-30): the single breadth-first walk of
+// skel_edges[room] that BotResolveRoomAim and the per-entry BotWaypointAimPos overload both ran as
+// hand-rolled copies (and the deleted BotSkelBuildPath a third time). Seeds every node in `seed_mask`
+// at distance 0, then FIFO-expands, scanning neighbours v = 0..n-1 ascending — the exact visitation
+// order both callers used, so their results are bit-identical to the inline loops. Fills dist[]
+// (-1 = unreached, else hop count from the nearest seed) and parent[] (-1 for seeds/unreached, else
+// the node it was first reached from). If `stop_mask` is nonzero, returns the FIRST node reached that
+// is in stop_mask (the RoomResolve early-out: first bot-visible node); else returns -1 after a full
+// walk (the Waypoint case, which selects afterward). Caller supplies dist/parent (SKEL_MAX_NODES).
+static int SkelBfs(int room_idx, int n, uint32_t seed_mask, uint32_t stop_mask, int *dist, int *parent) {
+  int qq[SKEL_MAX_NODES], qh = 0, qt = 0;
+  for (int i = 0; i < n; i++) {
+    dist[i] = -1;
+    parent[i] = -1;
+  }
+  for (int i = 0; i < n; i++)
+    if (seed_mask & (1u << i)) {
+      dist[i] = 0;
+      qq[qt++] = i;
+    }
+  while (qh < qt) {
+    int u = qq[qh++];
+    for (int v = 0; v < n; v++) {
+      if (!(skel_edges[room_idx][u] & (1u << v)) || dist[v] >= 0)
+        continue;
+      dist[v] = dist[u] + 1;
+      parent[v] = u;
+      qq[qt++] = v;
+      if (stop_mask & (1u << v))
+        return v;
+    }
+  }
+  return -1;
+}
+
 // disagreeing at room-flap cadence. Branch order is deterministic and shared by all callers:
 //   (a) in non-buried rooms, the 0.9.4 volumetric roadmap (Lazy Theta*) goes FIRST — the proactive
 //       in-room planner; in buried rooms (RoomBuriedCenter) it is skipped because its relaxed-graph
@@ -633,27 +668,11 @@ bool BotResolveRoomAim(object *obj, const vector &target_pos, int target_room, f
 
     if (hop < 0 && vis) {
       // BFS outward FROM the exit set; first bot-visible node reached is the bot-adjacent hop.
-      int dist_n[SKEL_MAX_NODES], qq[SKEL_MAX_NODES], qh = 0, qt = 0;
-      for (int i = 0; i < n; i++)
-        dist_n[i] = -1;
-      for (int i = 0; i < n; i++)
-        if (exits & (1u << i)) {
-          dist_n[i] = 0;
-          qq[qt++] = i;
-        }
-      while (hop < 0 && qh < qt) {
-        int u = qq[qh++];
-        for (int v = 0; v < n; v++) {
-          if (!(skel_edges[room_idx][u] & (1u << v)) || dist_n[v] >= 0)
-            continue;
-          dist_n[v] = dist_n[u] + 1;
-          qq[qt++] = v;
-          if (vis & (1u << v)) {
-            hop = v;
-            break;
-          }
-        }
-      }
+      // (Seeds themselves are not stop candidates — an exit that is directly visible was already
+      // taken by the (exits & vis) scan above; SkelBfs only stops on a NEWLY reached node, matching
+      // the old loop which tested `vis` only inside the neighbour expansion.)
+      int dist_n[SKEL_MAX_NODES], parent_n[SKEL_MAX_NODES];
+      hop = SkelBfs(room_idx, n, exits, vis, dist_n, parent_n);
     }
 
     if (hop >= 0) {
@@ -692,117 +711,6 @@ bool BotRoomIsBuried(int room_idx) {
   if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used || (Rooms[room_idx].flags & RF_EXTERNAL))
     return false;
   return RoomBuriedCenter(room_idx);
-}
-
-// Skeleton chain export — the ordered node list [bot-adjacent node ... exit portal node,
-// target_pos] for a buried-center room. Same exit-set + standing-neighbor + BFS geometry as
-// BotResolveRoomAim, but emits the WHOLE chain instead of one hop. RETAINED, currently UNCALLED,
-// for a future "via-layer owns the ring" consolidation. Its first consumer issued the chain as one
-// AIG_FOLLOW_PATH goal and was reverted: that goal type restores any freed path as STATIC, indexed
-// by g_info.id — so a dynamic-pool slot indexes GamePaths[] and segfaults (proven, gdb; see
-// NAVIGATION.md §6.9). The chain builder itself is engine-agnostic and correct; only the
-// AIG_FOLLOW_PATH issuance was the dead end. Returns node count (>= 2 on success), 0 = no chain.
-// rooms array parallels positions; all room_idx except the last (target_room). max_nodes caps it.
-int BotSkelBuildPath(object *obj, int room_idx, int target_room, const vector &target_pos, vector *pos_out,
-                     int *room_out, int max_nodes) {
-  if (!obj || !pos_out || !room_out || max_nodes < 3)
-    return 0;
-  SkelLevelReset();
-  if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used || (Rooms[room_idx].flags & RF_EXTERNAL))
-    return 0;
-  if (target_room < 0 || target_room > Highest_room_index)
-    return 0;
-  room &rm = Rooms[room_idx];
-  int np = SkelPortalCount(rm);
-  if (np < 2)
-    return 0;
-  if (!skel_built[room_idx])
-    SkelBuild(room_idx);
-  int n = skel_node_count[room_idx];
-  if (n < 2)
-    return 0;
-
-  // Exit set — identical to BotResolveRoomAim's.
-  uint32_t exits = 0;
-  if (target_room != room_idx) {
-    int next_room = BotComputeRoute(room_idx, target_room);
-    if (next_room < 0)
-      next_room = target_room;
-    for (int i = 0; i < np; i++)
-      if (rm.portals[i].croom == next_room)
-        exits |= (1u << i);
-    if (!exits) {
-      for (int i = 0; i < np; i++)
-        if (rm.portals[i].croom == target_room)
-          exits |= (1u << i);
-    }
-  } else {
-    for (int i = 0; i < n; i++)
-      if (BotSegmentClear(obj->roomnum, skel_node_pos[room_idx][i], target_pos, obj->size))
-        exits |= (1u << i);
-  }
-  if (!exits)
-    return 0;
-
-  // Bot-adjacent start node — identical standing-neighbor rule.
-  uint32_t vis = 0, standing = 0;
-  for (int i = 0; i < n; i++) {
-    float nd = vm_VectorDistanceQuick(&obj->pos, &skel_node_pos[room_idx][i]);
-    if (nd < BOT_VIA_ARRIVE_DIST) {
-      standing |= (1u << i);
-      vis |= skel_edges[room_idx][i];
-      continue;
-    }
-    if (BotSegmentClear(obj->roomnum, obj->pos, skel_node_pos[room_idx][i], obj->size))
-      vis |= (1u << i);
-  }
-  vis &= ~standing;
-
-  // BFS from exits with parents (shortest hop count).
-  int depth[SKEL_MAX_NODES], parent[SKEL_MAX_NODES], qq[SKEL_MAX_NODES], qh = 0, qt = 0;
-  for (int i = 0; i < n; i++) {
-    depth[i] = -1;
-    parent[i] = -1;
-  }
-  for (int i = 0; i < n; i++)
-    if (exits & (1u << i)) {
-      depth[i] = 0;
-      qq[qt++] = i;
-    }
-  int target = -1;
-  while (qh < qt && target < 0) {
-    int u = qq[qh++];
-    for (int v = 0; v < n; v++) {
-      if (!(skel_edges[room_idx][u] & (1u << v)) || depth[v] >= 0)
-        continue;
-      depth[v] = depth[u] + 1;
-      parent[v] = u;
-      qq[qt++] = v;
-      if (vis & (1u << v)) {
-        target = v;
-        break;
-      }
-    }
-  }
-  if (target < 0)
-    return 0;
-
-  // Walk parents from the bot-adjacent node back toward the exits, then reverse: ordered chain
-  // bot-adjacent -> ... -> exit portal. The engine path-follower consumes them in order.
-  int rev[SKEL_MAX_NODES], k = 0;
-  for (int cur = target; cur >= 0 && k < SKEL_MAX_NODES; cur = parent[cur])
-    rev[k++] = cur;
-  int out_n = 0;
-  for (int i = k - 1; i >= 0 && out_n < max_nodes - 1; i--) {
-    pos_out[out_n] = skel_node_pos[room_idx][rev[i]];
-    room_out[out_n] = room_idx;
-    out_n++;
-  }
-  // The leg's final position (tray push / exit path_pnt / destination pos), claimed in its room.
-  pos_out[out_n] = target_pos;
-  room_out[out_n] = target_room;
-  out_n++;
-  return out_n;
 }
 
 // Stacked-room descent (the tray-seam class, 07-11 memory + §0.93 residual): a single-portal room
@@ -913,29 +821,15 @@ vector BotWaypointAimPos(int wp_room, const vector &toward, object *obj) {
 
   // Entry-blind (or buried centre): aim at the first hull-proven skeleton hop FROM the entry
   // door's twin node toward the goal side — the in-room arc the door can actually reach, which
-  // the room-level answer never checked. BFS over the pre-tested edges (the BotSkelBuildPath
-  // parent-walk pattern), reachable node nearest `toward`, tie-break fewest hops from the entry.
+  // the room-level answer never checked. SkelBfs from the entry node, then pick the reachable node
+  // nearest `toward` and parent-walk back to the first hop off the entry.
   SkelLevelReset();
   if (!skel_built[wp_room])
     SkelBuild(wp_room);
   int n = skel_node_count[wp_room];
-  int dist_n[SKEL_MAX_NODES], parent[SKEL_MAX_NODES], bfs_q[SKEL_MAX_NODES], qh = 0, qt = 0;
-  for (int i = 0; i < n; i++) {
-    dist_n[i] = -1;
-    parent[i] = -1;
-  }
-  dist_n[q] = 0;
-  bfs_q[qt++] = q;
-  while (qh < qt) {
-    int u = bfs_q[qh++];
-    for (int v = 0; v < n; v++) {
-      if (!(skel_edges[wp_room][u] & (1u << v)) || dist_n[v] >= 0)
-        continue;
-      dist_n[v] = dist_n[u] + 1;
-      parent[v] = u;
-      bfs_q[qt++] = v;
-    }
-  }
+  // Full BFS from the entry node q (no stop — the selection below scans all reached nodes).
+  int dist_n[SKEL_MAX_NODES], parent[SKEL_MAX_NODES];
+  SkelBfs(wp_room, n, (1u << q), 0u, dist_n, parent);
   int best = -1;
   float best_d = 1e30f;
   for (int i = 0; i < n; i++) {
