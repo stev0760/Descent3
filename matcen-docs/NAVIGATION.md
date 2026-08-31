@@ -762,6 +762,26 @@ produce a capture: 2 grabs, 0 caps. The caution signal moved downstream: portal-
 promote this from one short run. The next abend2 run must distinguish useful added ring traffic from
 a new connector loop, then the grate/open-map guards still apply.
 
+**One-mind subtraction (`cddde48c`, IN TEST): the engine's steer node is no longer a routing
+authority on routed legs.** Root cause of the recurring abend2 shaft flip-flop (bots climb to the
+toroid, reverse back down, oscillate, never entering unassisted): on a routed leg `BotSetRoutedGoal`
+resolved the correct entry aim, then `BotGetActiveSteerPoint()` overwrote it with the engine's active
+BOA path node — which points back *down* the shaft — and `BotViaPointTick` committed Step 3's chain
+to that node (`AIMSPLIT 214.9` continuous). The subtraction: on routed/resolved-aim legs the via/chain
+target is our resolved aim, never the engine node; the steer point keeps only its divergence-detection
+job (the seam-guard trigger). Applied at `BotSetRoutedGoal` (~2839) and the explore intent-less
+fallback (~3105); escort/hold/powerup/fallback/outdoor sites unchanged; `BotGetActiveSteerPoint` itself
+untouched; no new toggle. **One-round abend2 smoke (`soak-20260830T205207.log`, cddde48c vs the
+tight-connector `173141` baseline): AIMSPLIT 538→213 (−60%), 1 cap vs 0, hard stucks 0 both — a real
+authority subtraction, kept.** But it did **not** solve the toroid: bots still oscillate, now *between
+ring rooms* — `chain complete rm30→rm48` ×42 with `rm48→rm30` ×0, `rm0→neighbor` ×44 with `→rm0` ×0,
+and the router resolves a ring room's OWN room as the next hop (`target room 30` while in rm30). Room 0
+still logs 29 progress-timeouts. **The remaining toroid failure is upstream in the routing / in-ring
+aim layer — the router won't commit to a direction around the toroid or to the flag-pocket aim — a
+different fix class from the second-authority seam.** Overnight regression sweep (bedlam / fellowship /
+rim / abend2 / batteriesincluded) staged to check the subtraction for regressions before that next
+diagnosis.
+
 ### 6.9 The consolidation phase — design of record
 
 *Absorbed 2026-08-29 from `NAVIGATION.md §6.9` and `NAVIGATION.md §6.9`, both retired. The
