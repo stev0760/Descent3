@@ -6,12 +6,10 @@
 > validated, and folded in as §3.5–§3.6 + §8 History; original in git history). Deep engine research
 > lives in `PATHFINDING_CODEBASE_EXPLORE.md`; per-frame field/constant detail in `BOT_DEV_REFERENCE.md`.
 
-**Status:** Matcen 0.9.11-dev (navigation consolidation). The 0.9.4 volumetric roadmap and 0.9.7
-single-spatial-authority stack remain the substrate. The 0.9.10/0.9.11 consolidation adds persistent
-travel intent and one dispatch entry for explore-owned interior travel. Step 3 is closed after the
-2026-08-22 cockpit gate; the proposed Step 4 SP outdoor widening is closed-no-go, so the existing
-outdoor and legacy fallback substrates remain. Step 5 has retired three default-off experiment
-levers (`gridall`, `outroute`, `replan`) without changing default behavior.
+**Status:** Matcen 0.9.12-dev (navigation consolidation). The 0.9.4 volumetric roadmap and 0.9.7
+single-spatial-authority stack remain the substrate. Committed multi-hop in-room intent has removed
+the abend2 toroid orbit. A strict-first coarse-router retry now admits engine-passable fit-probe
+disagreements only when the strict geometry graph has no route; runtime validation is in progress.
 **For the live current-status snapshot (toggle states, open issues, the tried-and-reverted ledger) see
 §7.0**, kept current per soak. The narrative sections below are the design rationale; §7.0 is "what's
 true right now."
@@ -202,7 +200,13 @@ edge = BOA_cost_array[r][p] + BOA_cost_array[nr][cportal]   // forward+reverse: 
      + BotPortalDynPenalty(r, p)                            // runtime obstacles
 ```
 
-Returns the next room toward `goal`, or **`-1` when no finite interior route exists** — the caller
+The router first searches the strict geometry graph. If that graph is disconnected, it searches a
+second time with engine-passable fit-probe disagreements priced at
+`BOT_PORTAL_DISAGREE_PENALTY`; these edges never compete with a fully probe-clear route. This is
+deliberately narrower than the reverted 2026-08-22 blanket demotion, which admitted every abend2
+disagreement at normal tight-edge cost and regressed the map.
+
+Returns the next room toward `goal`, or **`-1` when neither interior graph has a route** — the caller
 then hands the engine the far goal and lets engine pathing take over. **The router can lengthen a
 route but never strands a bot.** No result cache (costs are dynamic); a run is microseconds even on
 the largest maps, and it runs only on room-advance.
@@ -216,6 +220,9 @@ a runtime penalty genuinely differs, never silently replacing BOA everywhere.
   `PF_BLOCK` / `PF_TOO_SMALL_FOR_ROBOT` → `BOT_PORTAL_IMPASSABLE`.
 - Fits-but-no-margin (a wider probe is blocked) → `BOT_PORTAL_TIGHT_PENALTY` (prefer a roomier
   parallel route when one exists).
+- Engine-passable but ship-radius-probe-blocked remains `BOT_PORTAL_IMPASSABLE` in this strict
+  physical verdict. The coarse router alone may price it at `BOT_PORTAL_DISAGREE_PENALTY`, and only
+  after a strict search returns no route. Sealed-room, grate, and powerup checks remain strict.
 - Wide open → 0. Cached per level (geometry is static).
 - **Never mutates engine portal flags.** This is the critical fix over the earlier `$navprobe`
   attempt, which set `PF_TOO_SMALL_FOR_ROBOT` globally and a false positive **walled off a whole hub**
@@ -735,6 +742,25 @@ the engine's verdict, or price tight-but-engine-passable as a finite penalty (li
 IMPASSABLE, so the router takes the only ring connector. This is upstream of the whole via/chain
 stack and is the same DISAGREE class flagged in the tried-&-reverted ledger. Open decision: push
 Step 3 (a structural win that doesn't move caps until the tight-portal fix lands) vs hold it.
+
+**Tight-connector fix now in test:** the coarse router keeps the strict graph as its first and normal
+answer. Only when that search has no route does it retry with engine-passable `DISAGREE` edges at a
+120-unit last-resort penalty. `BotPortalGeoCost` itself stays strict, so the sealed-room/powerup gates
+and grate diagnostics do not start calling blocked openings flyable. Delivery uses the same fallback
+class when selecting the entry portal, keeping Step A and seam/hop commit aligned with the chosen
+route. No toggle was added. This specifically avoids repeating `6d9c23d3`: that reverted change made
+all 18 abend2 disagreements ordinary 40-unit edges even when a strict route existed. Gate: abend2
+must lose the recurring ring `NO-ROUTE` pairs without restoring the room-4 presses or toroid orbit;
+SewerRat/grate and open-map regression checks still follow before release.
+
+**First smoke (`soak-20260830T173141.log`, one 15-minute abend2 round): mechanism passes; play
+gate remains open.** Against the immediately preceding Step-3 run, recurring `NO-ROUTE` fell 26→0,
+hard stucks 1→0, room-30 chain completions rose 44→107, and via-search failures fell 19→11. The
+cost-model change therefore reconnects the graph and bots keep moving through the ring. It did not
+produce a capture: 2 grabs, 0 caps. The caution signal moved downstream: portal-48 seam pushes rose
+25→164 and room-30 via suspensions 1→16, although total seam churn fell 616→458. Keep `-dev`; do not
+promote this from one short run. The next abend2 run must distinguish useful added ring traffic from
+a new connector loop, then the grate/open-map guards still apply.
 
 ### 6.9 The consolidation phase — design of record
 

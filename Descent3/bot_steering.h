@@ -32,10 +32,12 @@
 // from "tight but flyable" so the router prefers roomier parallel routes when they exist.
 // The verdict feeds ONLY our Dijkstra cost (a soft weight) — it never mutates engine portal
 // flags, so a false positive degrades to a longer route or engine fallback, never a stranded bot.
-#define BOT_PORTAL_IMPASSABLE 1.0e6f    // edges at/above this are excluded by the router
-#define BOT_PORTAL_SHIP_RADIUS 2.5f     // swept-sphere fit test: can a ship fly through at all?
-#define BOT_PORTAL_TIGHT_RADIUS 4.0f    // comfortable-margin test: fits but no slack -> tightness penalty
-#define BOT_PORTAL_TIGHT_PENALTY 40.0f  // cost added for a tight-but-passable opening (~one BOA hop)
+#define BOT_PORTAL_IMPASSABLE 1.0e6f   // edges at/above this are excluded by the router
+#define BOT_PORTAL_SHIP_RADIUS 2.5f    // swept-sphere fit test: can a ship fly through at all?
+#define BOT_PORTAL_TIGHT_RADIUS 4.0f   // comfortable-margin test: fits but no slack -> tightness penalty
+#define BOT_PORTAL_TIGHT_PENALTY 40.0f // cost added for a tight-but-passable opening (~one BOA hop)
+// Engine-passable probe rejection, used only if the strict graph has no route.
+#define BOT_PORTAL_DISAGREE_PENALTY 120.0f
 #define BOT_PORTAL_GLASS_PENALTY 120.0f // TF_BREAKABLE glass: crossable after a shatter (~3 hops detour tolerance)
 
 // Pseudo-bnode (interior-waypoint) synthesis — Phase 12.5b. Edges among synthesized nodes are tested at

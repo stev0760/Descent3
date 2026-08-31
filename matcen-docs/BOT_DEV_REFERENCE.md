@@ -7,10 +7,10 @@ Current implementation status is in `BOTS_DEVEL.md`. Physics model reference is 
 
 ## Current Status
 
-**0.9.11-dev** (in progress): navigation consolidation. Persistent intent and one dispatch entry now
-own explore-class interior travel. Step 3 is closed; the Step 4 SP outdoor widening is closed-no-go;
-Step 5 has retired the default-off `gridall`, `outroute`, and `replan` mechanisms (33 `$nav` rows
-remain). The stable release remains 0.9.10.
+**0.9.12-dev** (in progress): navigation consolidation. Persistent intent and one dispatch entry now
+own explore-class interior travel; committed multi-hop intent has removed the abend2 toroid orbit.
+The coarse router is testing a strict-first retry that admits engine-passable fit-probe disagreements
+only when the strict geometry graph has no route. The stable release remains 0.9.11.
 
 The nav substrate is the **volumetric grid-seeded roadmap** (`NAVIGATION.md` §3.5,
 `bot_roadmap.cpp`), shipped and validated in 0.9.4. The 0.9.3 portal-skeleton stack remains as the

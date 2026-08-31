@@ -25,9 +25,14 @@ rather than piling on more special cases. Not yet validated for play — do not 
     through — the long-standing "won't enter the toroid without a nudge" problem. A bot now commits
     to a whole path *through* the room and flies it. In testing the orbit and the associated
     stuck-spinning are gone.
-*   **Known / next:** on the toroids bots now cross into the ring but can wall-press on the far
-    side — the router refuses one flyable-but-tight connector portal per ring room and so finds no
-    way around. Fixing that portal-fit judgement is the next step. See `NAVIGATION.md` §7.0-CURRENT.
+*   **The remaining toroid press was isolated to routing.** Bots crossed the ring, but the router
+    refused one flyable-but-tight connector per ring room and found no way around the far wall.
+*   **Tight ring connectors now get a last-resort route.** The router still rejects fit-probe
+    disagreements during its normal search. If that leaves no route, it retries with portals the
+    engine calls passable at a high finite cost. This keeps real grates out of normal routes while
+    allowing the only connector around abend2's rings. The first short test removed the no-route
+    failures and hard stucks, but captures stayed at zero and more route attempts ended in the
+    ring's polite give-up guard. In-test; the abend2 and grate-map gates have not yet cleared.
 *   **Full glass routing remains a proven regression** (earlier this line): letting the router plan
     shortcuts through breakable glass made bots stick twice as often and reach the enemy flag a
     third as often. Reverted; do not retry. `NAVIGATION.md` §7.0.

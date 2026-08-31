@@ -253,6 +253,41 @@ float BotPortalGeoCost(int room_idx, int portal_idx) {
   return cached = cost;
 }
 
+// Keep BotPortalGeoCost as the strict physical verdict used by sealed-room and grate checks. The
+// coarse router may tolerate a probe rejection only in its second, last-resort search: BOA must
+// independently call the portal passable, and every strictly flyable route must already have failed.
+static float BotPortalRouteCost(int room_idx, int portal_idx, bool allow_disagree) {
+  float cost = BotPortalGeoCost(room_idx, portal_idx);
+  if (cost < BOT_PORTAL_IMPASSABLE || !allow_disagree || room_idx < 0 || room_idx > Highest_room_index ||
+      !Rooms[room_idx].used || portal_idx < 0 || portal_idx >= Rooms[room_idx].num_portals ||
+      portal_idx >= MAX_PATH_PORTALS)
+    return cost;
+
+  const portal &pt = Rooms[room_idx].portals[portal_idx];
+  if (pt.flags & (PF_BLOCK | PF_TOO_SMALL_FOR_ROBOT))
+    return cost;
+  int connected_room = pt.croom;
+  if (connected_room < 0 || connected_room > Highest_room_index || !Rooms[connected_room].used)
+    return cost;
+  // BOA_PassablePortal does not check doorway locks. At this point any door rejected by geocost
+  // is locked, because unlocked doors return zero before the swept probe.
+  if (Rooms[room_idx].doorway_data || Rooms[connected_room].doorway_data)
+    return cost;
+
+  // The router returns a next room, not a specific portal. If a strict, downwind-usable parallel
+  // portal reaches that same room, keep the disagreement excluded so delivery cannot choose a
+  // different physical edge than Dijkstra priced after dynamic penalties are applied.
+  for (int p = 0; p < Rooms[room_idx].num_portals && p < MAX_PATH_PORTALS; p++) {
+    if (p == portal_idx || Rooms[room_idx].portals[p].croom != connected_room)
+      continue;
+    if (BotPortalGeoCost(room_idx, p) < BOT_PORTAL_IMPASSABLE && BOA_PassablePortal(room_idx, p) &&
+        BotPortalWindDir(room_idx, p) >= 0)
+      return cost;
+  }
+
+  return BOA_PassablePortal(room_idx, portal_idx) ? BOT_PORTAL_DISAGREE_PENALTY : cost;
+}
+
 // --- Dynamic portal penalty (emergent obstacles, Phase 11) ---
 // A traversal failure (a room-progress timeout while heading through a portal) bumps that
 // portal's cost; the next route recompute then prefers an alternate door. Penalties decay over
@@ -522,7 +557,9 @@ bool BotEntryCenterClear(int room_idx, int portal_idx) {
 // The one "which door will I enter wp_room through" answer, shared by the per-entry aim and the
 // seam guard (factored out of the seam block verbatim — same order, same first-found tie rule):
 // portals of the CURRENT room into wp_room, graded-geometry passable, nearest to the bot, then
-// wind-checked. Two systems that must agree, one implementation (the BotCanBreakGlass lesson).
+// wind-checked. If none passes the strict probe, use the router's last-resort engine-agreement
+// class so delivery can name the same door selected by the fallback search. Two systems that must
+// agree, one implementation (the BotCanBreakGlass lesson).
 int BotEntryPortalIndex(object *obj, int wp_room) {
   if (!obj || !obj->ai_info)
     return -1;
@@ -534,19 +571,22 @@ int BotEntryPortalIndex(object *obj, int wp_room) {
   room &crm = Rooms[cur];
   int best_p = -1;
   float best_d = 1e30f;
-  for (int p = 0; p < crm.num_portals; p++) {
-    if (crm.portals[p].croom != wp_room)
-      continue;
-    if (BotPortalGeoCost(cur, p) >= BOT_PORTAL_IMPASSABLE)
-      continue;
-    float d = vm_VectorDistanceQuick(&obj->pos, &crm.portals[p].path_pnt);
-    if (d < best_d) {
-      best_d = d;
-      best_p = p;
+  for (int pass = 0; pass < 2 && best_p < 0; pass++) {
+    bool allow_disagree = (pass == 1);
+    for (int p = 0; p < crm.num_portals; p++) {
+      if (crm.portals[p].croom != wp_room)
+        continue;
+      if (BotPortalRouteCost(cur, p, allow_disagree) >= BOT_PORTAL_IMPASSABLE)
+        continue;
+      if (BotPortalWindDir(cur, p) < 0)
+        continue;
+      float d = vm_VectorDistanceQuick(&obj->pos, &crm.portals[p].path_pnt);
+      if (d < best_d) {
+        best_d = d;
+        best_p = p;
+      }
     }
   }
-  if (best_p >= 0 && BotPortalWindDir(cur, best_p) < 0)
-    return -1;
   return best_p;
 }
 
@@ -1425,15 +1465,16 @@ int BotPortalWindDir(int room_idx, int portal_idx) {
 // --- Cost-aware next-hop router (Phase 11) ---
 // Runs Dijkstra over the interior room graph from from_room to goal_room, weighting each
 // portal by BOA's base traversal cost plus our graded geometry cost (grates/slits excluded,
-// tight pipes penalized). Returns the NEXT room to head toward, or -1 if no finite route
-// exists — in which case the caller falls back to the engine's own pathing, so a bad geometry
-// verdict can only lengthen a route, never strand a bot.
+// tight pipes penalized). The public entry runs this first with strict geometry; only if that graph
+// is disconnected does it retry with engine-passable probe disagreements at a finite penalty.
+// Returns the NEXT room to head toward, or -1 if neither graph has a route — in which case the
+// caller falls back to the engine's own pathing, so a bad geometry verdict can never strand a bot.
 //
 // Interior-only by design: terrain regions are NOT expanded (the old flow-field code routed
 // through the sky when it did). If from or goal is outdoor, returns -1 and the engine takes over.
 // No result cache — edge costs are dynamic, and one run over even the largest D3 map (~215 rooms)
 // is microseconds; it runs only on room-advance.
-static float BotRouteDijkstra(int from_room, int goal_room, int *first_hop_out) {
+static float BotRouteDijkstra(int from_room, int goal_room, int *first_hop_out, bool allow_disagree) {
   if (first_hop_out)
     *first_hop_out = -1;
   if (from_room < 0 || from_room > Highest_room_index || !Rooms[from_room].used)
@@ -1486,7 +1527,7 @@ static float BotRouteDijkstra(int from_room, int goal_room, int *first_hop_out) 
       if (!BOA_PassablePortal(r, p))
         continue;
 
-      float geo = BotPortalGeoCost(r, p);
+      float geo = BotPortalRouteCost(r, p, allow_disagree);
       if (geo >= BOT_PORTAL_IMPASSABLE)
         continue; // grate/slit/locked — route around it
 
@@ -1546,7 +1587,9 @@ int BotComputeRoute(int from_room, int goal_room) {
   int hop = -1;
   if (from_room == goal_room)
     return -1; // preserve the public contract: same-room = no hop
-  BotRouteDijkstra(from_room, goal_room, &hop);
+  float cost = BotRouteDijkstra(from_room, goal_room, &hop, false);
+  if (cost >= 1e30f)
+    BotRouteDijkstra(from_room, goal_room, &hop, true);
   return hop;
 }
 
@@ -1554,7 +1597,10 @@ int BotComputeRoute(int from_room, int goal_room) {
 // dynamic penalties) — what BotEstimatePathCost pretends to be but isn't (the BOA-chain estimate
 // is wind/glass/penalty-blind, so on a wind-tunnel map it can price an unflyable route as cheap).
 // 1e30 = no finite route.
-float BotComputeRouteCost(int from_room, int goal_room) { return BotRouteDijkstra(from_room, goal_room, nullptr); }
+float BotComputeRouteCost(int from_room, int goal_room) {
+  float cost = BotRouteDijkstra(from_room, goal_room, nullptr, false);
+  return (cost < 1e30f) ? cost : BotRouteDijkstra(from_room, goal_room, nullptr, true);
+}
 
 // --- Path cost estimation via BOA chain ---
 

@@ -30,7 +30,7 @@ All bot commands use the `$` prefix, consistent with other server admin commands
 The `$nav` surface is diagnostic, not a remote-admin compatibility contract. In 0.9.11 the
 default-off `gridall`, `outroute`, and `replan` rows and flat aliases were removed; Pyrodeck and other
 administration clients must continue capability-gating on `$servercaps`, not on diagnostic command
-existence.
+existence. The 0.9.12 tight-connector router work adds no toggle or command; the row count remains 33.
 
 ### Current Architecture
 

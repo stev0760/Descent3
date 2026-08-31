@@ -1,7 +1,10 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Matcen **0.9.11-dev (in progress, 2026-08-22)** — navigation consolidation back half. Step 3 is CLOSED for explore-owned interior errands after six-pool validation, independent scope correction, and the KegD3 cockpit verdict ("Feels excellent"). Step 4's SP outdoor gate widening is CLOSED-NO-GO because 99.2% of the proposed reclaimed class was hull-ray blocked; the existing gate and outdoor substrate remain. Step 5 is IN PROGRESS: default-off `gridall`, `outroute`, and `replan` are retired (33 `$nav` rows remain). Front half shipped as **0.9.10**; prior stable releases are 0.9.9 co-op companions, 0.9.8 game modes, and 0.9.7 single-spatial-authority navigation.
+**Status:** Matcen **0.9.12-dev (in progress, 2026-08-30)** — navigation consolidation. Committed
+multi-hop in-room intent removed the abend2 toroid orbit. The coarse router is now testing a
+strict-first retry that admits engine-passable fit-probe disagreements only when the strict geometry
+graph has no route. The stable release remains **0.9.11**.
 
 - **Live status** (toggle table, priority-ordered open issues, tried-&-reverted ledger): **`NAVIGATION.md` §7.0** — read that first.
 - **Canonical nav design**: `NAVIGATION.md` §3.5 (the 0.9.4 volumetric grid roadmap; the retired `GRID_NAV_DESIGN.md` spec is folded into it). The 0.9.3 portal-skeleton stack stays live as the `$gridnav off` fallback until Stage 4 retires it.
@@ -70,6 +73,24 @@ multiplayer code path and game-mode modules, not executed by the single-player c
 **Upstream-bug candidates** (would help vanilla too; see `UPSTREAM_PATCHES.md`): the `GameLoop.cpp`
 grtext_Reset (dedicated-server buffer overflow) and the `bnode.cpp` assert-hardening (retail D3 asserts on
 a room lacking BNode data — a latent crash independent of bots).
+
+---
+
+## 0.9.12-dev — Committed in-room intent + strict-first connector retry (2026-08-30, IN TEST)
+
+- `BotViaPointTick` now commits to an ordered in-room skeleton chain instead of re-deriving one hop
+  after every arrival. The first abend2 smoke removed the long-standing toroid orbit: bots crossed
+  both ring rooms with no ring hard-stucks.
+- The remaining far-side wall press is upstream in the room router. Four ring connectors are
+  `engine_passable` but fail the swept fit probe, so the strict graph reports no route and falls back
+  to an engine beeline into glass.
+- The router now retries only after the strict search fails, pricing engine-passable disagreements
+  at `BOT_PORTAL_DISAGREE_PENALTY`. `BotPortalGeoCost` and all sealed/grate checks stay strict. This
+  avoids the reverted `6d9c23d3` behavior, which let all disagreements compete with valid routes.
+- First one-round smoke: `NO-ROUTE` 26→0, hard stucks 1→0, room-30 chain completions 44→107, but
+  room-30 via suspensions 1→16 and captures remained 0 from 2 grabs. The graph reconnects and bots
+  keep moving, but the play gate is not cleared. Repeat abend2, then run SewerRat/grate and open-map
+  regression. No new `$nav` toggle.
 
 ---
 

@@ -141,6 +141,13 @@ tight-slit DISAGREE territory (e.g. nysa r69→r73, megafactory r10→r11).
 = AGREE-impassable. Regular glass is `engine_passable=true` and *should* be treated passable
 (see §5 gap #1).
 
+**Router policy (0.9.12-dev): strict first, disagreement only as a last resort.**
+`BotPortalGeoCost` keeps every DISAGREE at `BOT_PORTAL_IMPASSABLE`; this remains the physical verdict
+used by sealed-room, grate, and powerup checks. `BotComputeRoute` first searches that strict graph.
+Only if it has no route does the coarse router retry with BOA-passable DISAGREE edges assigned a
+finite 120-unit penalty. They therefore cannot shortcut a probe-clear route. This is not the reverted
+2026-08-22 blanket demotion, which made all disagreements ordinary tight edges and regressed abend2.
+
 ---
 
 ## 4b. Terrain boundaries are recorded from the outside (windows read as doors)
