@@ -2854,8 +2854,14 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
     bool steer_divergent = !ROOMNUM_OUTSIDE(steer_room) && steer_room >= 0 && steer_room <= Highest_room_index &&
                            Rooms[steer_room].used && steer_room != obj->roomnum && steer_room != wp_room;
     bool hop_pressed = Bots[bot_index].hop_press_wp == wp_room && Bots[bot_index].hop_press_n >= BOT_HOP_PRESS_TRIGGER;
+    // One-mind subtraction: the divergent-engine push must ALSO see the bot pressing this same hop without
+    // crossing (hop_press_n), not fire on a single tick of cyclic divergence. A flowing/bouncing ring bot keeps
+    // hop_press_n at 1 (every room crossing resets it) → the ring churn is gated out; a bot genuinely stalled at
+    // a divergent detour (Polaris) climbs past BOT_SEAM_DIVERGE_MIN fast and still gets its push.
+    bool steer_stalled = steer_divergent && Bots[bot_index].hop_press_wp == wp_room &&
+                         Bots[bot_index].hop_press_n >= BOT_SEAM_DIVERGE_MIN;
     if (!OBJECT_OUTSIDE(obj) && wp_room != obj->roomnum && wp_room >= 0 &&
-        wp_room <= Highest_room_index && Rooms[wp_room].used && (steer_divergent || hop_pressed) &&
+        wp_room <= Highest_room_index && Rooms[wp_room].used && (steer_stalled || hop_pressed) &&
         // Anti-churn latch: one redirect per waypoint per window. A hop the bot cannot actually
         // cross (unbroken glass as the "direct door") otherwise re-fires every tick — 1054
         // same-portal firings in one bsidectf round. One shot, then the goal gets its window;

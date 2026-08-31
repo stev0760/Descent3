@@ -146,6 +146,12 @@
   4                                 // 0.9.7 hop-commit: same-hop re-issues before the seam push-through fires
                                     // WITHOUT steer divergence (the 36->38 doorway-lip press: engine path is
                                     // direct and correct, the lip approach just never crosses)
+#define BOT_SEAM_DIVERGE_MIN                                                                                            \
+  2 // WITH steer divergence, still require this many same-hop re-issues without crossing before the seam push
+    // fires. On a toroid the engine's cyclic path to the far objective is "divergent" every tick in every ring
+    // room; firing on that alone shoved flowing bots back out (1636 seam fires/round, the rm30<->rm48 bounce).
+    // A bot that is crossing rooms resets hop_press_n to 1, so this gates out the ring churn while still
+    // catching a persistent divergent detour (Polaris wind-loop) fast — below the pure-press trigger above.
 #define BOT_GRATE_PORTAL_NEAR 30.0f // $nav grate pass 4: a destroyable object within this of a portal = in the doorway
 #define BOT_INDOOR_PROGRESS_DIST 50.0f // indoors, also count this much displacement as progress (big-room fix)
 
