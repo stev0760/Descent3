@@ -2837,9 +2837,16 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
     wp_aim = (wp_room == goal_room) ? routed_pos : BotWaypointAimPos(wp_room, routed_pos, obj);
   }
   {
-    vector goal_pos = wp_aim;
+    // One authority on a routed leg: our resolved aim (wp_aim/wp_room) owns the via/chain target.
+    // The engine's active BOA path node is queried ONLY to detect off-route divergence (the
+    // seam-guard trigger below) — it is an execution detail, never new navigation intent. Feeding
+    // it back as the via target is what produced the abend2 shaft flip-flop (AIMSPLIT): the engine's
+    // node pointed back DOWN the shaft, and the via layer committed Step 3's chain to it instead of
+    // the toroid entry, so the bot reversed at the threshold every cycle. One bot, one mind.
     int steer_room = -1;
-    vector steer_pos = BotGetActiveSteerPoint(obj, goal_pos, wp_room, &steer_room);
+    BotGetActiveSteerPoint(obj, wp_aim, wp_room, &steer_room); // divergence probe only; position discarded
+    vector via_pos = wp_aim;                                   // the router's resolved aim owns this leg
+    int via_room = wp_room;
     // Two triggers share the push-through: (a) engine steer target detours off-route (the Polaris
     // wind-loop class); (b) 0.9.7 hop-commit — BOT_HOP_PRESS_TRIGGER consecutive re-issues of the
     // SAME adjacent hop with no divergence (the isengard 36->38 doorway-lip press: 174 re-issues/
@@ -2886,11 +2893,11 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
                            Bots[bot_index].callsign, BOT_HOP_PRESS_TRIGGER, wp_room);
         BotNavMemberWin(bot_index, steer_divergent ? NAV_MEMBER_SEAM : NAV_MEMBER_HOP_COMMIT); // §7
         // The via probe should cover our bot->door line, not the engine's detour target.
-        steer_pos = seam_pnt;
-        steer_room = wp_room;
+        via_pos = seam_pnt;
+        via_room = wp_room;
       }
     }
-    if (BotViaPointTick(bot_index, steer_pos, steer_room, Bots[bot_index].pursuit_goal_index, nullptr)) {
+    if (BotViaPointTick(bot_index, via_pos, via_room, Bots[bot_index].pursuit_goal_index, nullptr)) {
       // AIMSPLIT (paired-log diagnostic, filtered): with resolution unified, a skeleton-flagged
       // via commit (the helper's own output) must coincide with this routed goal's aim. Any
       // split beyond one hop distance = a REAL leftover voice, not a probe target mismatch.
@@ -3095,10 +3102,12 @@ static void BotDoExploreRoaming(int bot_index) {
             aim_pos = BotWaypointAimPos(dest, aim_pos, obj);
           }
         }
-        int steer_room = -1;
-        vector steer_pos = BotGetActiveSteerPoint(obj, aim_pos, aim_room, &steer_room);
+        // Same one-authority rule as BotSetRoutedGoal: the via tick owns the RESOLVED aim, not the
+        // engine's active BOA node. There is no seam guard on this explore-fallback leg, so the
+        // steer-point query was pure second-authority injection — dropped. (The abend2 flip-flop
+        // otherwise persists on explore-owned legs.)
         int &pgi = Bots[bot_index].pursuit_goal_index;
-        if (!BotViaPointTick(bot_index, steer_pos, steer_room, pgi, nullptr) &&
+        if (!BotViaPointTick(bot_index, aim_pos, aim_room, pgi, nullptr) &&
             !(pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)) {
           // Via just completed (or the goal was flushed) — re-aim at the resolved destination
           goal_info gi_info{};
