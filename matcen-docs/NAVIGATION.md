@@ -782,6 +782,26 @@ different fix class from the second-authority seam.** Overnight regression sweep
 rim / abend2 / batteriesincluded) staged to check the subtraction for regressions before that next
 diagnosis.
 
+**WALL — the arbitration/commitment line is exhausted (2026-09-01). Reverted to `cddde48c`.** Two
+further in-test cuts were tried and REVERTED (commit that follows `c5ff288e`): the seam-guard
+no-crossing gate (`060678fc`) and the routed next-hop commit (`696d51c5`). Each moved its own churn
+metric (seam fires −83%/rnd; `path_pnt↔via` re-pick −40%, rm30→rm48 bounce −64%) and **neither cashed
+into play.** A 4×30-min abend2 soak (`soak-20260901T102127`) then showed caps had gone the WRONG way
+vs the `cddde48c` overnight — **1 cap / 2 h** vs ~5 caps / 1 h — with rooms 0/30 still the only stuck
+hotspots and Blue side taking 0 picks all round; the next-hop commit in particular held bots on
+unreachable ring exits for its 5 s window (room-progress timeouts up), and operator ground-truth
+confirmed bots back to **stalling at the shaft top, not entering the ring** — the original
+pre-one-mind failure. Lesson, re-confirmed: on this map class, reducing decision-layer churn is NOT
+sufficient for play; we kept optimizing a metric while the map got worse. `cddde48c` (one-mind
+via-target — the FIRST abend2 captures) stands as the known-good baseline.
+
+**Two facts the wall clarified, for the next angle:** (1) the skeleton is NOT the problem — room 0's
+skeleton is one fully-connected component and aim resolves cleanly (277 builds, 0 fails); room 30 is
+connected across 5/6 exits (only the tight rm30→rm4 isolated). Connectivity is solved. (2) The failure
+that remains is the bot committing to and THREADING to a target inside the ring — and every attempt to
+fix it from logs alone produced dead theories. **Next attempt requires the live in-world nav overlay
+(PLAN.md §3.6 / `VISUAL_DEBUG.md`) — stop guessing, watch it.** Do not resume arbitration-layer tuning.
+
 ### 6.9 The consolidation phase — design of record
 
 *Absorbed 2026-08-29 from `NAVIGATION.md §6.9` and `NAVIGATION.md §6.9`, both retired. The
