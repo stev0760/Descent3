@@ -2779,7 +2779,39 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   const bool troute_active =
       Bot_troute_enabled && Bots[bot_index].troute_goal_room >= 0 && Bots[bot_index].troute_goal_room == goal_room;
 
-  int wp_room = BotComputeRoute(obj->roomnum, goal_room);
+  // Routed next-hop commit (Option 1, the abend2 in-ring fix). BotComputeRoute folds BotPortalDynPenalty
+  // into every edge, so on a toroid each failed crossing bumps that exit and the next-hop flips among the
+  // ring exits (rm0: 51->20->38) every ~1s — the Step-3 chain then invalidates on the target change
+  // (2304) before the bot can fly to and cross ANY single exit. Hold one committed exit stable for
+  // BOT_ROUTE_HOP_COMMIT_TIME in the flip-prone buried class, so the bot reaches + crosses it; a crossing
+  // recomputes and commits the NEXT leg in the new room (commitment extended across the crossing, never a
+  // "stay put"); expiry / goal change / leaving the room releases it, restoring the dynamic-penalty reroute.
+  int wp_room;
+  bool route_held = Bots[bot_index].route_hop_from == (int)obj->roomnum &&
+                    Bots[bot_index].route_hop_goal == goal_room && Bots[bot_index].route_hop_expires > Gametime &&
+                    Bots[bot_index].route_hop_next >= 0 && Bots[bot_index].route_hop_next <= Highest_room_index &&
+                    Rooms[Bots[bot_index].route_hop_next].used;
+  if (route_held) {
+    wp_room = Bots[bot_index].route_hop_next; // hold the committed exit; ignore the dynamic-penalty flip
+    static float Route_hold_log_t[MAX_BOTS];
+    float &last = Route_hold_log_t[bot_index];
+    if (Gametime < last || Gametime - last > 5.0f) {
+      last = Gametime;
+      LOG_DEBUG.printf("BOT NAV: '%s' route hold rm%d -> rm%d (%.1fs)", Bots[bot_index].callsign, (int)obj->roomnum,
+                       wp_room, Bots[bot_index].route_hop_expires - Gametime);
+    }
+  } else {
+    wp_room = BotComputeRoute(obj->roomnum, goal_room);
+    // Commit a real cross-room hop out of a buried/ring room (the only class where the flip bites).
+    if (wp_room >= 0 && wp_room != (int)obj->roomnum && !ROOMNUM_OUTSIDE(goal_room) && BotRoomIsBuried(obj->roomnum)) {
+      Bots[bot_index].route_hop_from = obj->roomnum;
+      Bots[bot_index].route_hop_next = wp_room;
+      Bots[bot_index].route_hop_goal = goal_room;
+      Bots[bot_index].route_hop_expires = Gametime + BOT_ROUTE_HOP_COMMIT_TIME;
+    } else {
+      Bots[bot_index].route_hop_from = -1; // not a committable leg — clear any stale commitment
+    }
+  }
   if (wp_room < 0) {
     // No finite route under OUR cost model (wind one-way gate / geometry verdicts) between two
     // interior rooms — the engine's wind-blind BOA path takes over, which on a wind-tunnel map
@@ -7423,6 +7455,8 @@ void BotInitAll() {
     Bots[i].via_chain_cursor = 0;
     Bots[i].via_chain_room = -1;
     Bots[i].via_chain_target_room = -1;
+    Bots[i].route_hop_from = -1;
+    Bots[i].route_hop_expires = 0.0f;
     Bots[i].order_anchor_type = ORDER_ANCHOR_NONE;
     vm_MakeZero(&Bots[i].order_anchor_pos);
     Bots[i].order_anchor_room = -1;
@@ -7600,6 +7634,8 @@ void BotReinitAll() {
     Bots[i].via_chain_cursor = 0;
     Bots[i].via_chain_room = -1;
     Bots[i].via_chain_target_room = -1;
+    Bots[i].route_hop_from = -1;
+    Bots[i].route_hop_expires = 0.0f;
     Bots[i].order_anchor_type = ORDER_ANCHOR_NONE;
     vm_MakeZero(&Bots[i].order_anchor_pos);
     Bots[i].order_anchor_room = -1;
@@ -7928,6 +7964,8 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   Bots[bot_index].via_chain_cursor = 0;
   Bots[bot_index].via_chain_room = -1;
   Bots[bot_index].via_chain_target_room = -1;
+  Bots[bot_index].route_hop_from = -1;
+  Bots[bot_index].route_hop_expires = 0.0f;
   // §7 contention instrumentation: a re-added bot in a reused slot must not inherit the previous
   // occupant's counts/latch (same reasoning as the via_* reset above).
   Bots[bot_index].nav_last_member = NAV_MEMBER_NONE;

@@ -233,6 +233,12 @@
 #define BOT_VIA_COMMIT_TIME                                                                                            \
   4.0f                            // seconds committed to a chosen via-point (side-commit — per-tick
                                   // re-selection IS the net_disp 28-43 circling seen pre-Phase-12)
+#define BOT_ROUTE_HOP_COMMIT_TIME                                                                                       \
+  5.0f // seconds a buried/ring room holds its routed next-hop before recomputing. BotRouteDijkstra folds in
+       // BotPortalDynPenalty, so on a toroid every failed crossing bumps that exit and the next-hop flips among
+       // the ring exits (51->20->38 on abend2 rm0) every ~1s — the chain then invalidates before the bot can
+       // fly to and cross ANY exit. Holding one hop this long lets the bot reach + cross it; expiry restores the
+       // dynamic-penalty reroute (paced at 5s, not 1s). Long enough to cross one ring exit, ~= the via commit.
 #define BOT_VIA_ARRIVE_DIST 15.0f // via-point counts as reached within this distance
 #define BOT_VIA_SEALED_TICKS                                                                                           \
   4 // consecutive failed via searches on a same/adjacent-room powerup
@@ -597,6 +603,14 @@ struct bot_info {
   int via_chain_cursor;            // index of the node currently being flown toward
   int via_chain_room;              // roomnum the chain is valid in (-1 = none)
   int via_chain_target_room;       // next-hop room the chain exits toward (clear on change)
+  // Routed next-hop commit (buried/ring): hold ONE routed exit stable for BOT_ROUTE_HOP_COMMIT_TIME so
+  // the dynamic-penalty-driven flip among a toroid's exits can't invalidate the chain before the bot
+  // crosses. A crossing recomputes+recommits the NEXT leg; expiry restores the flip. NOT the seam-layer
+  // hop_press_* (that is the doorway-press push-through). route_hop_from = -1 means no commitment.
+  int route_hop_from;    // roomnum the commitment was made in (-1 = none)
+  int route_hop_next;    // committed next-hop room (reused as wp_room while held)
+  int route_hop_goal;    // goal_room the commitment was computed for (recompute if it changes)
+  float route_hop_expires; // Gametime the commitment lapses
 
   // §7 contention instrumentation (NAVIGATION.md §6.9, 2026-07-21) — measurement only, no
   // behavior change. Tracks which nav-committee member (BotNavMember) last won this bot's routed
