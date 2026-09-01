@@ -161,8 +161,44 @@ would fill.
   glass fix every surviving `NO-ROUTE` pair was one (`rm84→rm85`, `rm80→rm81`).
 - `BotPortalGeoCost` calls many solid faces free (geodomes 504/596 portals); the navdump's
   `DISAGREE` flag only catches the opposite direction. `OBSTACLE_GEOMETRY.md` §4c.
-- In-client visual debug view of the skeleton and live bot aim — deferred; would have shortened
-  several of these investigations.
+
+### 3.6 The live in-client nav overlay — the observability gap, and why it's now a priority
+
+**Design of record: `matcen-docs/VISUAL_DEBUG.md`. Not yet built; promoted from "someday" to a
+prerequisite for finishing §3.**
+
+**Why it exists.** The bot AI and every piece of nav state — the room skeleton, each bot's committed
+`via_chain`, the `route_hop` next-hop commit, the `via_point` it's flying to, its goal — live
+**server-side**, invisible. For three months we have designed and judged every navigation change from
+**log tea-leaves and offline `$navdump` snapshots**, inferring what a bot *intended* rather than
+seeing it. That inference is unreliable in a way that has repeatedly cost real time: in a single
+2026-09-01 session we floated three separate root-cause theories for the abend2 ring (the path is
+"severed", the door is "tight", it's a "powerup detour") and the data killed two-and-a-half of them
+one after another — while the operator, who could have settled it in ten seconds of flying, had no way
+to *look*. The missing piece isn't another routing idea; it's **ground truth**.
+
+**What it is.** A live, real-time, **in-world 3D overlay** — redrawn every frame from current state —
+that draws the skeleton (nodes/edges colored by connected component, so a fragmented ring is obvious
+on sight), portals (colored by our passability verdict, DISAGREE tagged), buried-center markers (the
+donut-hole point bots aim into), and **each bot's live intent**: its committed chain as a polyline,
+the current hop, and an arrow to the `route_hop` exit that visibly *snaps* when the router flips. One
+cycling hotkey (`off → skeleton+portals → +bot intent → +roadmap`).
+
+**Why it bends two standing rules, and how it stays honest.** (1) *"No new `$nav` toggles."* This is a
+**debug-render** toggle — it changes nothing a bot does, only what the screen draws — categorically
+separate from the nav-behavior toggles we're deleting; it stays out of the `$nav` census and
+`$servercaps`, and it's one cycling hotkey, not a switch family. (2) *"Keep testing simple."* Because
+the data is server-side, the overlay only works when the local process **hosts** the bots — i.e.
+single-player / listen-server via the in-game Bot menu — so it never touches the dedicated-soak
+workflow; the two channels coexist. **6DOF ruling:** no top-down / 2D / automap view — in six degrees
+of freedom the geometry overlaps in every flat projection (the toroid is not planar), so only a
+fly-through 3D overlay carries the answer.
+
+**Why it gates finishing.** The remaining §3 work is committee-collapse by subtraction, and every cut
+so far (one-mind aim, seam-gate, next-hop commit) was designed and validated by grep. The overlay
+turns that into design-and-verify **by eye** — the operator watches the exact path a bot commits to
+and where it breaks, live — which de-risks every future nav change and is the tool that lets us stop
+guessing. That is why it moves ahead of the lower-priority items above.
 
 ---
 
