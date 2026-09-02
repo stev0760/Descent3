@@ -819,6 +819,7 @@
 #include "gamespy.h"
 #include "gametexture.h"
 #include "AIMain.h"
+#include "bot_navdebug.h"
 #include "ddio.h"
 #include "hud.h"
 #include "terrain.h"
@@ -1263,6 +1264,13 @@ void ProcessNormalKey(int key) {
   case KEY_SHIFTED + KEY_F9:
     ToggleHUDMessageConsole();
     Clear_screen = 4; // clears screen.
+    break;
+
+  case KEY_ALTED + KEY_F7:
+    // Matcen: cycle the host-only nav debug overlay (off -> skeleton+portals -> +bot intent ->
+    // +roadmap). Debug-render only — changes nothing a bot does; no-ops on a remote client. See
+    // bot_navdebug.* / VISUAL_DEBUG.md.
+    BotNavDebugCycle();
     break;
 
     // #ifndef DEMO
@@ -2475,6 +2483,11 @@ void GameRenderWorld(object *viewer, vector *viewer_eye, int viewer_roomnum, mat
 
   // Done with 3D
   PostRender(viewer_roomnum);
+
+  // Matcen: live nav debug overlay (host-only; self-guards, no-ops when off / on a remote client).
+  // Drawn inside the live g3 viewer frame so it projects at true world positions. See bot_navdebug.*.
+  BotNavDebugRender(viewer_roomnum);
+
   g3_EndFrame();
 
   // Restore viewer orientation

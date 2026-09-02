@@ -159,6 +159,7 @@ set(CPPS
   BOA.cpp
   bot.cpp
   bot_chat.cpp
+  bot_navdebug.cpp
   bot_objective.cpp
   bot_roadmap.cpp
   bot_steering.cpp

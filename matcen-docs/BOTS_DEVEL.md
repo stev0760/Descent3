@@ -1,10 +1,23 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Matcen **0.9.12-dev (in progress, 2026-08-30)** — navigation consolidation. Committed
-multi-hop in-room intent removed the abend2 toroid orbit. The coarse router is now testing a
-strict-first retry that admits engine-passable fit-probe disagreements only when the strict geometry
-graph has no route. The stable release remains **0.9.11**.
+**Status:** Matcen **0.9.12-dev (2026-09-01)** — the arbitration/commitment line is exhausted and the
+tree is reverted to the known-good one-mind build (`cddde48c`, abend2's first-ever captures). The
+0.9.12 deliverable is a change of method, not another routing cut: a **live in-client nav debug
+overlay** (host-only, Alt+F7) so the remaining committee-collapse can be designed and verified *by
+eye* instead of from log tea-leaves. **Built and linking; pending the operator's live fly-through
+before the `-dev` suffix is stripped.** The stable release remains **0.9.11**.
+
+> **New files / engine touches this build (surfaced up front, per operator request):**
+> - **NEW bot-only TU:** `Descent3/bot_navdebug.cpp` + `bot_navdebug.h` — all overlay draw logic,
+>   mode state, host guard. Never reached except from the render hook + hotkey below; draws nothing
+>   unless the overlay is on and this process hosts the bots.
+> - **`Descent3/GameLoop.cpp`** — first fork touch of the client **render path**: one
+>   `BotNavDebugRender()` call inside `GameRenderWorld()` (after the mine render, before
+>   `g3_EndFrame`) and one `Alt+F7` key case in `ProcessNormalKey()`. Both self-guard; **no gameplay,
+>   SP, or dedicated-server impact** (the render path is already skipped on `Dedicated_server`).
+>   Audited in Tier C below.
+> - **`Descent3/CMakeLists.txt`** — registers the new TU (Tier D).
 
 - **Live status** (toggle table, priority-ordered open issues, tried-&-reverted ledger): **`NAVIGATION.md` §7.0** — read that first.
 - **Canonical nav design**: `NAVIGATION.md` §3.5 (the 0.9.4 volumetric grid roadmap; the retired `GRID_NAV_DESIGN.md` spec is folded into it). The 0.9.3 portal-skeleton stack stays live as the `$gridnav off` fallback until Stage 4 retires it.
@@ -66,6 +79,15 @@ multiplayer code path and game-mode modules, not executed by the single-player c
 `LR_SERVER` send path (MP only); `mmItem.cpp` adds the Matcen fork version to the menu version line
 (cosmetic, shown in all modes).
 
+`GameLoop.cpp` (nav debug overlay, 0.9.12) — a second, separate touch: one `BotNavDebugRender(viewer_roomnum)`
+call in `GameRenderWorld()` (inside the live g3 viewer frame, after `PostRender`, before `g3_EndFrame`) and
+one `case KEY_ALTED + KEY_F7: BotNavDebugCycle();` in `ProcessNormalKey()`. **Draw-only, host-only, no
+gameplay path.** The render call self-guards on `BotNavDebugActive()` (`!Dedicated_server &&
+Bot_navdebug_mode > 0`), so it is a cheap early-out at mode 0 and never runs on the dedicated server (whose
+whole render path is already skipped). It changes nothing a bot does — it is a debug-render toggle, kept out
+of the `$nav` census and `$servercaps` — so SP, robo-anarchy, co-op, and normal MP play are all unaffected.
+The overlay body lives in the new bot-only `bot_navdebug.cpp`; `GameLoop.cpp` only holds the hook + hotkey.
+
 ### Tier D — Build / version / docs (no runtime code)
 `CMakeLists.txt`, `Descent3/CMakeLists.txt`, `cmake/CheckGit.cmake`, `lib/d3_version.h.in`, `.gitignore`,
 `README.md`.
@@ -76,7 +98,43 @@ a room lacking BNode data — a latent crash independent of bots).
 
 ---
 
-## 0.9.12-dev — Committed in-room intent + strict-first connector retry (2026-08-30, IN TEST)
+## 0.9.12-dev — Live in-client nav debug overlay (2026-09-01, BUILT, pending live validation)
+
+The observability tool the last session's wall demanded (`VISUAL_DEBUG.md`, `PLAN.md` §3.6). After the
+one-mind capture win (`cddde48c`), two further decision-layer cuts each moved a churn metric but neither
+cashed into play, and a 4×30-min abend2 soak went the wrong way — both reverted; `cddde48c` stands. The
+lesson: on this toroid class we keep judging nav from log tea-leaves, inferring what a bot *intended*
+instead of seeing it. This build stops guessing and builds the eyes.
+
+- **New module `bot_navdebug.{cpp,h}`** — a host-only, in-world 3D overlay redrawn every frame from live
+  state. **Phase 1 (static):** per-room skeleton via the existing `BotSkelDumpRoom` accessor, nodes/edges
+  colored by connected component (union-find over the edge bitmask) so a fragmented ring shows as two
+  colors on sight; portal markers colored by `BotPortalGeoCost` vs. `BOA_PassablePortal` verdict
+  (green/yellow/red, magenta = DISAGREE); buried-center X via `BotRoomIsBuried`. **Phase 2 (live intent):**
+  each active bot's committed `via_chain` polyline, the `via_chain_cursor` node, the exit (route-hop) node,
+  the reactive `via_point`, and its goal room. One cycling hotkey **Alt+F7** (`off → skeleton+portals →
+  +bot intent → +roadmap`; layer 3 reserved for Phase 3 — 3D text labels + faint roadmap — drawn later).
+- **No new nav accessors were needed** — everything is already header-exposed (`BotSkelDumpRoom`,
+  `BotPortalGeoCost`, `BOA_PassablePortal`, `BotRoomIsBuried`) or a public global (`Rooms`, `Objects`,
+  `Players`, `Bots`). The overlay is pure reader.
+- **Scope/perf:** viewer room + one-hop portal neighbors + any room holding a bot; external/terrain rooms
+  skipped. Skeletons are tiny (≤~15 nodes/room).
+- **Rules kept:** debug-render toggle only — not a bot-behavior switch, so out of the `$nav` census and
+  `$servercaps`; doesn't touch the dedicated-soak workflow (that stays log/analyzer-driven). See the
+  file-touch audit up top and Tier C.
+- **Status:** compiles + links clean (Debug); the abend2 fly-through is the validation gate before the
+  `-dev` suffix is stripped to ship 0.9.12. Committee is **not** yet collapsed — this is the tool that
+  makes the next collapse observable, not the collapse itself.
+
+---
+
+## 0.9.12-dev — Committed in-room intent + strict-first connector retry (2026-08-30, IN TEST → REVERTED at the arbitration wall)
+
+> **Superseded 2026-09-01:** the seam-gate + next-hop-commit cuts that followed this entry were reverted
+> back to `cddde48c` (the one-mind build) after neither cashed into play; see the overlay entry above and
+> `NAVIGATION.md` §7.0 for the tried-&-reverted ledger. The one-mind aim and committed in-room chain
+> described here **stand**; the strict-first connector retry tuning that came after did not.
+
 
 - `BotViaPointTick` now commits to an ordered in-room skeleton chain instead of re-deriving one hop
   after every arrival. The first abend2 smoke removed the long-standing toroid orbit: bots crossed

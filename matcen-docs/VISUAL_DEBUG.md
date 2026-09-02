@@ -1,9 +1,20 @@
-# Visual Nav Debug — in-client skeleton + bot-intent overlay (DESIGN / brainstorm, not yet built)
+# Visual Nav Debug — in-client skeleton + bot-intent overlay (BUILT: Phase 1+2, 0.9.12)
 
-**Status:** brainstorm + plan, 2026-09-01. Do NOT build yet. Prompted by a full session spent
-guessing bot behavior from log tea-leaves (three theories floated, two-plus killed by the data) —
-the missing piece is *seeing* what the bot intends, not inferring it. This is the live, in-world
-version of `tools/visualize_navdump.py`.
+**Status:** **BUILT 2026-09-01 — Phase 1 (static skeleton/portals/buried-center) + Phase 2 (live bot
+intent) implemented in `Descent3/bot_navdebug.{cpp,h}`, hotkey Alt+F7; compiles + links clean.
+Pending the operator's live fly-through on abend2 before the 0.9.12 `-dev` suffix is stripped.**
+Phase 3 (projected 3D text labels + faint roadmap layer) is deferred. Originally prompted by a full
+session spent guessing bot behavior from log tea-leaves (three theories floated, two-plus killed by
+the data) — the missing piece is *seeing* what the bot intends, not inferring it. This is the live,
+in-world version of `tools/visualize_navdump.py`.
+
+**As-built notes vs. this design:** no new nav accessors were needed — the static layer reuses the
+existing `BotSkelDumpRoom` / `BotPortalGeoCost` / `BOA_PassablePortal` / `BotRoomIsBuried`, and the
+intent layer reads `Bots[]` directly (`via_chain`/`via_chain_cursor`/`via_point`/`travel_dest_room`);
+there is no literal `route_hop_next` field, so the "route-hop arrow" is drawn as the committed
+`via_chain`'s exit node. The render hook lives in `GameRenderWorld()` (GameLoop.cpp), after
+`PostRender` and before `g3_EndFrame`. Depth is z-tested (the no-z draw-over variant is a Phase-3
+nicety).
 
 ## The core constraint (and why it "breaks a rule")
 

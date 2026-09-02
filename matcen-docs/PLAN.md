@@ -164,8 +164,9 @@ would fill.
 
 ### 3.6 The live in-client nav overlay — the observability gap, and why it's now a priority
 
-**Design of record: `matcen-docs/VISUAL_DEBUG.md`. Not yet built; promoted from "someday" to a
-prerequisite for finishing §3.**
+**Design of record: `matcen-docs/VISUAL_DEBUG.md`. BUILT 2026-09-01 (Phase 1+2, hotkey Alt+F7;
+compiles+links) — pending the operator's live fly-through before 0.9.12 ships. Phase 3 (3D text
+labels + roadmap layer) deferred.** Promoted from "someday" to a prerequisite for finishing §3.
 
 **Why it exists.** The bot AI and every piece of nav state — the room skeleton, each bot's committed
 `via_chain`, the `route_hop` next-hop commit, the `via_point` it's flying to, its goal — live
