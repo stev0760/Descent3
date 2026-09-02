@@ -44,8 +44,12 @@ extern int Bot_navdebug_mode;
 // server it is always false.
 bool BotNavDebugActive();
 
-// Advance the overlay mode 0->1->2->3->0. Bound to Alt+F7 in ProcessNormalKey().
+// Advance the overlay mode 0->1->2->3->0. Bound to Ctrl+F7 in ProcessNormalKey().
 void BotNavDebugCycle();
+
+// Human-readable name of the current mode ("off", "skeleton+portals", ...) — for a HUD confirmation
+// message on keypress, so the operator sees the toggle fire even before any geometry is in view.
+const char *BotNavDebugModeName();
 
 // Draw the overlay for the current frame. MUST be called inside the live g3 viewer frame (after the
 // mine render, before g3_EndFrame) — see GameRenderWorld() in GameLoop.cpp. Self-guards on

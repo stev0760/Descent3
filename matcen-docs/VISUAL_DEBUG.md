@@ -1,7 +1,7 @@
 # Visual Nav Debug — in-client skeleton + bot-intent overlay (BUILT: Phase 1+2, 0.9.12)
 
 **Status:** **BUILT 2026-09-01 — Phase 1 (static skeleton/portals/buried-center) + Phase 2 (live bot
-intent) implemented in `Descent3/bot_navdebug.{cpp,h}`, hotkey Alt+F7; compiles + links clean.
+intent) implemented in `Descent3/bot_navdebug.{cpp,h}`, hotkey Ctrl+F7; compiles + links clean.
 Pending the operator's live fly-through on abend2 before the 0.9.12 `-dev` suffix is stripped.**
 Phase 3 (projected 3D text labels + faint roadmap layer) is deferred. Originally prompted by a full
 session spent guessing bot behavior from log tea-leaves (three theories floated, two-plus killed by
@@ -71,10 +71,18 @@ chain drawn in the air.
 
 ## The hotkey (one key, cycling — not a toggle family)
 
-Add a case to the `GameLoop.cpp` key handler (alongside the existing `KEY_F1/F2/F8` cases) on an
-unused key (candidate: a Shift/Alt+F-key or an unused F-key), cycling a single
-`Bot_navdebug_mode` int: `0 off → 1 skeleton+portals → 2 +bot intent → 3 +roadmap → 0`. One key,
-predictable, self-documenting on screen (draw the current mode name in a corner).
+**As built: `KEY_CTRLED + KEY_F7` in `ProcessNormalKey()`**, cycling a single `Bot_navdebug_mode` int:
+`0 off → 1 skeleton+portals → 2 +bot intent → 3 +roadmap → 0`. One key, predictable, self-documenting
+on screen (the mode name is drawn in the corner, and the key case also fires an `AddHUDMessage` so a
+press is confirmed on the HUD even before any geometry is in view).
+
+> **Lesson (2026-09-02): do NOT use Alt+F-keys.** The first build bound Alt+F7 and it did nothing in
+> the game — **Alt+F7 is the "move window" shortcut on most Linux desktops (GNOME/KDE), grabbed by the
+> window manager before SDL/the game ever sees the keystroke.** (This is also why the existing Alt+F5 /
+> Alt+F3 cases still work — those aren't WM-bound, but F7 specifically is.) Ctrl+F-keys are not a
+> standard WM window shortcut (VT switching is Ctrl+**Alt**+Fn, not Ctrl+Fn) and pass straight through,
+> so the overlay moved to Ctrl+F7. Note keys are dispatched through `SendKeyToGameDLL()` first in
+> `GM_MULTI` (bots ⇒ multiplayer), but that passes unhandled keys through, so it is not the blocker.
 
 ## Data exposure (small, additive)
 

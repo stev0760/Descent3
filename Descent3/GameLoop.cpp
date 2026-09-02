@@ -1266,11 +1266,14 @@ void ProcessNormalKey(int key) {
     Clear_screen = 4; // clears screen.
     break;
 
-  case KEY_ALTED + KEY_F7:
+  case KEY_CTRLED + KEY_F7:
     // Matcen: cycle the host-only nav debug overlay (off -> skeleton+portals -> +bot intent ->
-    // +roadmap). Debug-render only — changes nothing a bot does; no-ops on a remote client. See
-    // bot_navdebug.* / VISUAL_DEBUG.md.
+    // +roadmap). Debug-render only — changes nothing a bot does; no-ops on a remote client. Ctrl+F7
+    // (not Alt+F7: Alt+F7 is the "move window" shortcut on most Linux desktops, grabbed by the WM
+    // before the game sees it). The HUD line confirms the toggle fired even before geometry is in
+    // view. See bot_navdebug.* / VISUAL_DEBUG.md.
     BotNavDebugCycle();
+    AddHUDMessage("Nav debug: %s", BotNavDebugModeName());
     break;
 
     // #ifndef DEMO

@@ -45,9 +45,13 @@ extern bool Dedicated_server; // hud.cpp — true on the headless server (no ren
 
 int Bot_navdebug_mode = 0;
 
+static const char *NAVDBG_MODE_NAMES[] = {"off", "skeleton+portals", "+bot intent", "+roadmap"};
+
 bool BotNavDebugActive() { return !Dedicated_server && Bot_navdebug_mode > 0; }
 
 void BotNavDebugCycle() { Bot_navdebug_mode = (Bot_navdebug_mode + 1) % 4; }
+
+const char *BotNavDebugModeName() { return NAVDBG_MODE_NAMES[Bot_navdebug_mode & 3]; }
 
 // --- colors ------------------------------------------------------------------------------------
 // Skeleton nodes/edges are colored by connected component so a fragmented ring room shows as two (or
@@ -206,9 +210,8 @@ static void NavDbgDrawBotIntent(int bot_index) {
 
 // --- on-screen mode label ----------------------------------------------------------------------
 static void NavDbgDrawModeLabel() {
-  static const char *names[] = {"off", "skeleton+portals", "+bot intent", "+roadmap"};
   char buf[64];
-  std::snprintf(buf, sizeof(buf), "NAVDBG: %s", names[Bot_navdebug_mode & 3]);
+  std::snprintf(buf, sizeof(buf), "NAVDBG: %s", NAVDBG_MODE_NAMES[Bot_navdebug_mode & 3]);
   grtext_SetFont(HUD_FONT);
   grtext_SetColor(GR_RGB(255, 255, 0));
   grtext_Puts(8, 8, buf);

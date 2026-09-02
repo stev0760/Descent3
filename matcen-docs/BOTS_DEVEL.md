@@ -4,7 +4,7 @@
 **Status:** Matcen **0.9.12-dev (2026-09-01)** — the arbitration/commitment line is exhausted and the
 tree is reverted to the known-good one-mind build (`cddde48c`, abend2's first-ever captures). The
 0.9.12 deliverable is a change of method, not another routing cut: a **live in-client nav debug
-overlay** (host-only, Alt+F7) so the remaining committee-collapse can be designed and verified *by
+overlay** (host-only, Ctrl+F7) so the remaining committee-collapse can be designed and verified *by
 eye* instead of from log tea-leaves. **Built and linking; pending the operator's live fly-through
 before the `-dev` suffix is stripped.** The stable release remains **0.9.11**.
 
@@ -14,7 +14,7 @@ before the `-dev` suffix is stripped.** The stable release remains **0.9.11**.
 >   unless the overlay is on and this process hosts the bots.
 > - **`Descent3/GameLoop.cpp`** — first fork touch of the client **render path**: one
 >   `BotNavDebugRender()` call inside `GameRenderWorld()` (after the mine render, before
->   `g3_EndFrame`) and one `Alt+F7` key case in `ProcessNormalKey()`. Both self-guard; **no gameplay,
+>   `g3_EndFrame`) and one `Ctrl+F7` key case in `ProcessNormalKey()`. Both self-guard; **no gameplay,
 >   SP, or dedicated-server impact** (the render path is already skipped on `Dedicated_server`).
 >   Audited in Tier C below.
 > - **`Descent3/CMakeLists.txt`** — registers the new TU (Tier D).
@@ -112,7 +112,7 @@ instead of seeing it. This build stops guessing and builds the eyes.
   colors on sight; portal markers colored by `BotPortalGeoCost` vs. `BOA_PassablePortal` verdict
   (green/yellow/red, magenta = DISAGREE); buried-center X via `BotRoomIsBuried`. **Phase 2 (live intent):**
   each active bot's committed `via_chain` polyline, the `via_chain_cursor` node, the exit (route-hop) node,
-  the reactive `via_point`, and its goal room. One cycling hotkey **Alt+F7** (`off → skeleton+portals →
+  the reactive `via_point`, and its goal room. One cycling hotkey **Ctrl+F7** (`off → skeleton+portals →
   +bot intent → +roadmap`; layer 3 reserved for Phase 3 — 3D text labels + faint roadmap — drawn later).
 - **No new nav accessors were needed** — everything is already header-exposed (`BotSkelDumpRoom`,
   `BotPortalGeoCost`, `BOA_PassablePortal`, `BotRoomIsBuried`) or a public global (`Rooms`, `Objects`,
