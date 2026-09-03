@@ -863,6 +863,16 @@ always says yes and buys nothing. The whole defect is *which points get connecte
 asserts spokes (segment→shaft-hub) and omits the real adjacency (segment→neighbouring segment). The fix
 is to build the **correct connectivity** (the ring cycle), full stop — a topology fix, not a
 space-validity fix.
+  - **VERIFIED in code (2026-09-02): the space validation already exists — nothing to add there.**
+    `ViaSegmentClear` is a swept ship-radius `fvi_FindIntersection` (false on HIT_WALL/BACKFACE/TERRAIN),
+    and **every** skeleton edge is gated on it in `SkelBuild` (bot_steering.cpp ~456–506): portal↔portal
+    edges, the per-portal offset pseudo-nodes (kept only if reachable from their portal), and all
+    pseudo-node edges incl. the centroid ("an isolated pseudo-node simply gets no edges and is ignored").
+    `BotRoomPathPntReachable`/`RoomBuriedCenter` add further reachability validation. So every spoke to
+    the hub already *passed* a ship-sized clearance test — a ship can fly it. That is the clincher that
+    this is a connectivity bug, not an invalid-space bug: the validity checks ran and passed. (The only
+    unvalidated thing is the centroid node's *position*, added unconditionally in step (b) — harmless,
+    because its edges are hull-gated, so it can never wire a bot into solid.)
 
 **abend2 geometry (operator's precise model — use this):** a **centre room** with two portals per side,
 top and bottom. The **top portal** has a door + a **bulletproof-glass barrier with a side door** leading
