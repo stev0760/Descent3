@@ -832,10 +832,10 @@ around."
 - **Design target (operator):** the ring skeleton must be a **cycle** — each segment linked to the one
   adjacent to it around the tube — not hub-and-spoke through the centre.
 - **Fix direction (next session — NOT yet built):** for ring/concave rooms, suppress the global
-  portal-centroid node and instead chain **adjacent** portals (order them around the ring; connect
-  neighbour→neighbour with midpoint pseudo-bnodes placed **inside the tube**); reject any candidate edge
-  whose leg passes through dead/off-volume space even when it is hull-clear. The defect is in **skeleton
-  construction**, so that is where the next work goes — do not resume via/arbitration tuning.
+  portal-centroid hub and instead chain **adjacent** portals (order them around the ring; connect
+  neighbour→neighbour with midpoint pseudo-bnodes placed **inside the tube**). The defect is in
+  **skeleton construction** — building the wrong *connectivity* — so that is where the next work goes;
+  do not resume via/arbitration tuning.
 
 **REFINED 2026-09-02 (operator's second, careful flight — corrects specifics above):** two things in
 the first write-up are wrong and are corrected here.
@@ -855,6 +855,14 @@ the first write-up are wrong and are corrected here.
     view would have confirmed the wrong diagnosis; only the 6DOF fly-through separates "in the hole"
     from "below the hole, in the shaft." This is exactly the case the VISUAL_DEBUG "no 2D view" ruling
     was written for.
+
+**THIS IS A CONNECTIVITY BUG, NOT A BAD-NODE / INVALID-SPACE BUG (operator ruling — do not chase this
+ghost).** Every node here sits in **real, flyable space** — the hub included. Do **not** build machinery
+to detect or reject nodes/edges as being "in invalid/void space": the space is valid, so that check
+always says yes and buys nothing. The whole defect is *which points get connected to which*: the graph
+asserts spokes (segment→shaft-hub) and omits the real adjacency (segment→neighbouring segment). The fix
+is to build the **correct connectivity** (the ring cycle), full stop — a topology fix, not a
+space-validity fix.
 
 **abend2 geometry (operator's precise model — use this):** a **centre room** with two portals per side,
 top and bottom. The **top portal** has a door + a **bulletproof-glass barrier with a side door** leading
