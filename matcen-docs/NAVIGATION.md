@@ -805,8 +805,10 @@ that remains is the bot committing to and THREADING to a target inside the ring 
 fix it from logs alone produced dead theories. **Next attempt requires the live in-world nav overlay
 (PLAN.md §3.6 / `VISUAL_DEBUG.md`) — stop guessing, watch it.** Do not resume arbitration-layer tuning.
 
-**OVERLAY'S FIRST FINDING (2026-09-02) — the toroid skeleton is hub-and-spoke through the donut hole,
-not a ring cycle. This is the root cause, and it invalidates the "connectivity solved" claim above.**
+**OVERLAY'S FIRST FINDING (2026-09-02) — the toroid skeleton is hub-and-spoke, not a ring cycle. This
+is the root cause, and it invalidates the "connectivity solved" claim above.** *(See the REFINED note
+just below for the corrected specifics: the hub is ~¾ up the connecting shaft in open air, NOT in a
+buried donut hole, and the skeleton is mostly right — a rework of construction, not a rewrite.)*
 The overlay (built 0.9.12, Ctrl+F7) drew abend2's ring and the operator saw it directly: the ring
 segments are **not** linked neighbour-to-neighbour around the tube — every segment is wired
 hub-and-spoke to a single node sitting in the **hollow centre of the donut**, under the mos shaft. The
@@ -829,12 +831,53 @@ around."
   fix a graph whose edges are wrong.
 - **Design target (operator):** the ring skeleton must be a **cycle** — each segment linked to the one
   adjacent to it around the tube — not hub-and-spoke through the centre.
-- **Fix direction (next session — NOT yet built):** for ring/concave rooms (signalled by
-  `RoomBuriedCenter`), suppress the global portal-centroid node and instead chain **adjacent** portals
-  (order them around the ring; connect neighbour→neighbour with midpoint pseudo-bnodes placed **inside
-  the tube**, not the hole); reject any candidate edge whose leg passes through the buried centre even
-  when it is hull-clear. The defect is in **skeleton construction**, so that is where the next work
-  goes — do not resume via/arbitration tuning.
+- **Fix direction (next session — NOT yet built):** for ring/concave rooms, suppress the global
+  portal-centroid node and instead chain **adjacent** portals (order them around the ring; connect
+  neighbour→neighbour with midpoint pseudo-bnodes placed **inside the tube**); reject any candidate edge
+  whose leg passes through dead/off-volume space even when it is hull-clear. The defect is in **skeleton
+  construction**, so that is where the next work goes — do not resume via/arbitration tuning.
+
+**REFINED 2026-09-02 (operator's second, careful flight — corrects specifics above):** two things in
+the first write-up are wrong and are corrected here.
+- **The skeleton is MOSTLY RIGHT, not fundamentally flawed.** Many segments ARE correctly connected,
+  and since the capture work the inner shaft does connect to the toroid at one point. This is a
+  **re-work** of skeleton *construction*, not a rewrite — and the exact rework is deliberately NOT
+  designed yet: the operator is surveying more maps first to see how general the pattern is.
+- **The hub is NOT in a "buried donut hole"; the room is NOT buried-centre.** The centroid node is drawn
+  roughly **¾ of the way up the angled connecting shaft** (open airspace), and spokes outward to major
+  points on the toroid segments. So `RoomBuriedCenter` is **not** the right trigger for the fix — this
+  room would not flag as buried. (Ignore the "hole/void/buried" language above; the mechanism is a hub
+  in open shaft space, not in solid.)
+  - **Why "the hole" was the easy wrong read — and why the 3D overlay was essential.** In a top-down /
+    2D projection the hub *appears* to sit in the donut hole (invalid space). In 3D it is actually
+    **below** that invalid hole-space, in **valid** air down in the shaft — and the shaft-hub and the
+    ring segments **cannot be traversably joined the way the straight-line spoke edges pretend**. A flat
+    view would have confirmed the wrong diagnosis; only the 6DOF fly-through separates "in the hole"
+    from "below the hole, in the shaft." This is exactly the case the VISUAL_DEBUG "no 2D view" ruling
+    was written for.
+
+**abend2 geometry (operator's precise model — use this):** a **centre room** with two portals per side,
+top and bottom. The **top portal** has a door + a **bulletproof-glass barrier with a side door** leading
+to the toroid. The **bottom portal** is open and feeds a **long shaft on a slight upward incline** toward
+the toroid, whose exit lands on the **far side of the toroid from the centre room**. Each team has this
+system, mirrored exactly. The skeleton's centroid node lands ~¾ up that shaft and spokes to toroid
+segments; **many toroid segments connect to the shaft-centre hub with ZERO edges to their neighbouring
+segments.** So a bot at the shaft exit literally cannot see that the way around is to enter the adjacent
+connecting segment first — it smashes into walls and turns around hunting an exit that the graph never
+offered. That is the wall-press-and-reverse the operator has watched for months.
+
+**SEQUENCING PRINCIPLE (operator ruling, do not violate):** Phase 3 "capillaries" (the fine volumetric
+roadmap filling gaps) would *likely* add abend2's missing segment-to-segment links and paper over the
+symptom — **which is exactly why it must NOT be the fix.** Capillary-filling on top of a wrong base
+skeleton **masks** the base defect and lets it persist across the map pool. So: **fix the base skeleton
+construction FIRST** (correct ring cycles, correct adjacency), **THEN** use the roadmap/capillaries to
+fill the residual gaps — because even a correct builder will not land every map perfectly connected. Base
+skeleton correctness is the prerequisite; gap-filling is the follow-on, never the substitute.
+
+**Related class — maze-like interiors (e.g. the tavern on Town of Bree):** a *different* problem class
+(dense, cell-like interior connectivity, not a ring), but the operator's read is it is **solvable by the
+same programme** — get the base navigation skeleton built correctly, then the roadmap on top. Track it
+alongside the ring-cycle rework, not as a separate effort.
 
 ### 6.9 The consolidation phase — design of record
 
