@@ -795,12 +795,46 @@ pre-one-mind failure. Lesson, re-confirmed: on this map class, reducing decision
 sufficient for play; we kept optimizing a metric while the map got worse. `cddde48c` (one-mind
 via-target — the FIRST abend2 captures) stands as the known-good baseline.
 
-**Two facts the wall clarified, for the next angle:** (1) the skeleton is NOT the problem — room 0's
+**Two facts the wall clarified, for the next angle:** (1) ~~the skeleton is NOT the problem — room 0's
 skeleton is one fully-connected component and aim resolves cleanly (277 builds, 0 fails); room 30 is
-connected across 5/6 exits (only the tight rm30→rm4 isolated). Connectivity is solved. (2) The failure
+connected across 5/6 exits (only the tight rm30→rm4 isolated). Connectivity is solved.~~ **[SUPERSEDED
+2026-09-02 by the overlay finding below — the "one fully-connected component" measurement was a FALSE
+POSITIVE: the graph is connected, but through invalid hub-and-spoke edges, not a ring cycle. The
+skeleton IS the problem.]** (2) The failure
 that remains is the bot committing to and THREADING to a target inside the ring — and every attempt to
 fix it from logs alone produced dead theories. **Next attempt requires the live in-world nav overlay
 (PLAN.md §3.6 / `VISUAL_DEBUG.md`) — stop guessing, watch it.** Do not resume arbitration-layer tuning.
+
+**OVERLAY'S FIRST FINDING (2026-09-02) — the toroid skeleton is hub-and-spoke through the donut hole,
+not a ring cycle. This is the root cause, and it invalidates the "connectivity solved" claim above.**
+The overlay (built 0.9.12, Ctrl+F7) drew abend2's ring and the operator saw it directly: the ring
+segments are **not** linked neighbour-to-neighbour around the tube — every segment is wired
+hub-and-spoke to a single node sitting in the **hollow centre of the donut**, under the mos shaft. The
+loop drawn at the shaft-top entrance is exactly the path the bots trace before turning around — they
+are faithfully following the topology the skeleton drew; the skeleton simply cannot express "go
+around."
+- **Mechanism, confirmed in code:** `SkelBuild`'s pseudo-bnode step (`bot_steering.cpp` ~487–495) adds
+  a **portal-centroid node** — the arithmetic mean of ALL the room's portal `path_pnt`s — then edges
+  every portal to it wherever the straight leg is hull-clear. On a ring, that centroid lands in the
+  middle of the hole/shaft. The shaft is open air, so those straight legs across the opening ARE
+  hull-clear → the fit test passes → the edges are accepted, and they route through the core. Its own
+  comment admits the blind spot ("lands in airspace for bent/L/**convex** rooms"); a donut is
+  **concave**, the one case where the centroid falls in void.
+- **Why the logs said "connectivity solved":** the graph is one connected component — but connected by
+  **semantically invalid** edges. Straight-line hull-clearance is necessary but NOT sufficient: a leg
+  that crosses the buried centre of a ring is geometrically clear yet useless, because it goes through
+  the hole instead of around the tube. "Fully-connected component" measured the wrong thing.
+- **This is upstream of the entire via/chain/router stack.** The router threads the skeleton
+  faithfully; the skeleton doesn't describe the ring. No amount of arbitration/commitment tuning can
+  fix a graph whose edges are wrong.
+- **Design target (operator):** the ring skeleton must be a **cycle** — each segment linked to the one
+  adjacent to it around the tube — not hub-and-spoke through the centre.
+- **Fix direction (next session — NOT yet built):** for ring/concave rooms (signalled by
+  `RoomBuriedCenter`), suppress the global portal-centroid node and instead chain **adjacent** portals
+  (order them around the ring; connect neighbour→neighbour with midpoint pseudo-bnodes placed **inside
+  the tube**, not the hole); reject any candidate edge whose leg passes through the buried centre even
+  when it is hull-clear. The defect is in **skeleton construction**, so that is where the next work
+  goes — do not resume via/arbitration tuning.
 
 ### 6.9 The consolidation phase — design of record
 
