@@ -208,13 +208,49 @@ static void NavDbgDrawBotIntent(int bot_index) {
     NavDbgCross(Rooms[gr].path_pnt, 3.0f, NAVDBG_GOAL);
 }
 
-// --- on-screen mode label ----------------------------------------------------------------------
-static void NavDbgDrawModeLabel() {
-  char buf[64];
-  std::snprintf(buf, sizeof(buf), "NAVDBG: %s", NAVDBG_MODE_NAMES[Bot_navdebug_mode & 3]);
+// --- on-screen mode label + color legend --------------------------------------------------------
+// A key drawn in the top-left whenever the overlay is on: the current mode (with the cycle hotkey)
+// plus a legend whose every entry is drawn IN its own marker color, so the map reads without having
+// to remember what each hue means. Intent entries appear only once the intent layer is on.
+static void NavDbgDrawHud() {
+  const int x = 8;
+  int y = 8;
+  const int lh = grfont_GetHeight(HUD_FONT) + 1;
   grtext_SetFont(HUD_FONT);
+
+  char buf[96];
+  std::snprintf(buf, sizeof(buf), "NAVDBG (Ctrl+F7): %s", NAVDBG_MODE_NAMES[Bot_navdebug_mode & 3]);
   grtext_SetColor(GR_RGB(255, 255, 0));
-  grtext_Puts(8, 8, buf);
+  grtext_Puts(x, y, buf);
+  y += lh + lh / 2;
+
+  auto key = [&](ddgr_color c, const char *label) {
+    grtext_SetColor(c);
+    grtext_Puts(x, y, label);
+    y += lh;
+  };
+
+  // Static layer (shown for every active mode).
+  key(GR_RGB(200, 200, 200), "skeleton  node/edge color = component");
+  key(NAVDBG_PORTAL_OPEN, "portal  open");
+  key(NAVDBG_PORTAL_TIGHT, "portal  tight");
+  key(NAVDBG_PORTAL_BLOCKED, "portal  blocked");
+  key(NAVDBG_PORTAL_DISAGREE, "portal  DISAGREE (engine says open)");
+  key(NAVDBG_BURIED, "X  buried-center room");
+
+  // Live intent layer.
+  if (Bot_navdebug_mode >= 2) {
+    key(NAVDBG_CHAIN, "bot  committed chain");
+    key(NAVDBG_CURSOR, "bot  current hop (cursor)");
+    key(NAVDBG_EXIT, "bot  exit / route-hop node");
+    key(NAVDBG_VIA, "bot  via_point");
+    key(NAVDBG_GOAL, "X  goal room");
+  }
+
+  // Roadmap layer (reserved / Phase 3).
+  if (Bot_navdebug_mode >= 3)
+    key(GR_RGB(160, 160, 160), "roadmap  (reserved / Phase 3)");
+
   grtext_Flush();
 }
 
@@ -262,5 +298,5 @@ void BotNavDebugRender(int viewer_roomnum) {
   // Mode 3 (roadmap layer) is reserved for Phase 3 — nothing drawn yet, but the mode cycles through
   // it so the hotkey contract (off -> skeleton -> +intent -> +roadmap) is stable.
 
-  NavDbgDrawModeLabel();
+  NavDbgDrawHud();
 }
