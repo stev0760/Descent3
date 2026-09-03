@@ -897,6 +897,37 @@ skeleton correctness is the prerequisite; gap-filling is the follow-on, never th
 same programme** — get the base navigation skeleton built correctly, then the roadmap on top. Track it
 alongside the ring-cycle rework, not as a separate effort.
 
+**MULTI-MAP OVERLAY SURVEY (2026-09-02) — the pattern generalises: mostly-correct skeletons with
+BAFFLING MISSING EDGES.** Operator flew four maps with the overlay. The consistent theme is **not** wrong
+nodes or bad space — it is **node pairs that a human sees as connected by an obvious path, but which have
+no edge.** Per map:
+- **abend2** — the most egregious: the shaft-hub spokes (edges that "don't really work" as a route) PLUS
+  the missing ring-adjacency edges. Both faces of the same gap problem in one room.
+- **batteries included** — very well connected overall, BUT specific rooms — including the **blue flag
+  room** — poorly connected (missing edges).
+- **nysa** — the **blue flag room** has the same gap, and *the geometry there is not even difficult from a
+  human perspective* — an obvious connection simply isn't made.
+- **stadium plus** (anarchy, so play is unaffected) — overall very well connected, main room already a
+  dense lattice, but a **side room is left unconnected**.
+- **Operator's conclusion:** the skeleton *principle* is sound; the failure is **incomplete
+  connectivity**, and the **router cannot pick good routes over a graph with these holes.**
+
+**Leading hypothesis for the gaps (grounded in code, TO CONFIRM tomorrow with the overlay on the named
+rooms):** the skeleton only ever connects two nodes when a **single straight** ship-radius leg between
+them is hull-clear (`ViaSegmentClear`), or when the narrow per-room pseudo-bnode synthesis happens to drop
+a bridging node in just the right spot. So **any pair whose obvious real path is BENT / L-shaped / around a
+corner gets no edge** — the straight line between their positions hits a wall, and the pseudo-bnode step
+(fires only on a disconnected pair; adds only per-portal offset nodes + one centroid) often doesn't place a
+node where the bend needs it. abend2's ring is the extreme (a curved tube has no straight adjacency at
+all, so it collapses to the hub); the flag-room / side-room gaps are the milder, same-cause version. If
+this holds, the base-skeleton fix is about **edge/bridge generation completeness** — richer interior-node
+synthesis so bent-but-flyable connections actually get made — which is squarely the "fix base skeleton
+FIRST" work, with the volumetric roadmap as the follow-on gap-fill, never the substitute.
+
+**These four rooms are the verification set** for any construction fix: abend2 rings, batteries blue-flag
+room, nysa blue-flag room, stadium-plus side room. A fix that closes these gaps on the overlay without
+inventing bad edges is the bar. (Survey is a couple of maps deep — more still needed to gauge breadth.)
+
 ### 6.9 The consolidation phase — design of record
 
 *Absorbed 2026-08-29 from `NAVIGATION.md §6.9` and `NAVIGATION.md §6.9`, both retired. The
