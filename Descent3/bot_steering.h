@@ -47,6 +47,19 @@
 #define BOT_PSEUDO_BNODE_OFFSET 8.0f // push portal offset-nodes this far off the portal face into the room
 #define BOT_SKEL_MAX_NODES 32        // skeleton node cap per room (portal nodes + pseudo-bnodes)
 
+// Collision-guided bridge search (0.9.12 skeleton rework — SKELETON_REWORK.md). Replaces the old
+// all-portal-centroid pseudo-bnode with a bounded best-first search that traces BENT flyable paths:
+// when a straight leg blocks, it fans candidates around the blocker (reusing BotFindViaPoint's
+// tangent frame) and expands until it reaches the goal, then string-pulls the polyline into explicit
+// bend nodes. Never adds an edge that fails ViaSegmentClear; fails closed on budget/geometry.
+#define BOT_SKEL_BRIDGE_BACKOFF 6.0f   // bend candidates sit this far on the near side of the blocking face
+#define BOT_SKEL_BRIDGE_OFF_BASE 12.0f // first lateral candidate offset from the blocked line (units)
+#define BOT_SKEL_BRIDGE_OFF_STEP 14.0f // offset increment per ring (12 / 26 / 40 / 54)
+#define BOT_SKEL_BRIDGE_RINGS 4        // lateral candidate rings tried per side
+#define BOT_SKEL_BRIDGE_MAX_EXPAND 40  // best-first expansion budget (scratch reached-points) per bridge
+#define BOT_SKEL_BRIDGE_MAX_BENDS 5    // max bend nodes committed per chain (post string-pull)
+#define BOT_SKEL_BRIDGE_DEDUP 6.0f     // candidates closer than this to an existing reached point are merged
+
 // Outdoor connecting graph — Phase 12.6 Stage B. The outdoor analog of the room skeleton: a per-
 // terrain-region node graph (entrance approach points + structure perimeter anchors) BFS'd to route a
 // bot AROUND a building footprint to a door behind it (the reactive ring can't — its candidate must see

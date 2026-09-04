@@ -441,6 +441,185 @@ static bool RoomBuriedCenter(int room_idx) {
 
 static int SkelPortalCount(const room &rm) { return rm.num_portals < SKEL_MAX_NODES ? rm.num_portals : SKEL_MAX_NODES; }
 
+// --- Collision-guided bridge search (0.9.12 skeleton rework, SKELETON_REWORK.md) ----------------
+// The base skeleton connects two nodes only when a SINGLE STRAIGHT ship-radius leg is hull-clear, so
+// any pair whose real flyable path BENDS (an L, a corner, a curved toroid tube) got no edge — and the
+// old all-portal-centroid pseudo-bnode papered over that with a hub every segment spoked to (the
+// abend2 ring failure the nav overlay revealed). These helpers replace the centroid with a bounded
+// best-first search that traces the bend: when a straight leg blocks, fan candidates around the
+// blocker (the same tangent frame BotFindViaPoint uses at runtime), expand from the near end until a
+// candidate reaches the goal, then string-pull the polyline into explicit bend nodes. Soundness is
+// invariant: every committed leg is re-checked with ViaSegmentClear; a chain commits atomically (all
+// bend nodes or none) and fails closed on budget/geometry — never an unflyable edge.
+
+// Connected component id of every node [0,n), via union-find over the edge bitmask. comp_out[i] gets a
+// representative root; two nodes share a component iff their roots match.
+static void SkelComponents(int room_idx, int n, int *comp_out) {
+  for (int i = 0; i < n; i++)
+    comp_out[i] = i;
+  for (int i = 0; i < n; i++)
+    for (int j = i + 1; j < n; j++)
+      if (skel_edges[room_idx][i] & (1u << j)) {
+        int ri = i, rj = j;
+        while (comp_out[ri] != ri)
+          ri = comp_out[ri];
+        while (comp_out[rj] != rj)
+          rj = comp_out[rj];
+        if (ri != rj)
+          comp_out[ri < rj ? rj : ri] = (ri < rj ? ri : rj);
+      }
+  for (int i = 0; i < n; i++) { // flatten
+    int r = i;
+    while (comp_out[r] != r)
+      r = comp_out[r];
+    comp_out[i] = r;
+  }
+}
+
+// A stable perpendicular to dir: cross with the blocking face normal, falling back to world axes when
+// the face squarely opposes travel (dir ∥ normal), so a room always builds identically (cached graph).
+static vector SkelSideAxis(const vector &dir, const vector &wallnorm) {
+  vector side = vm_Cross3Product(dir, wallnorm);
+  if (vm_GetMagnitude(&side) >= 0.3f)
+    return side;
+  vector wy{};
+  wy.y() = 1.0f;
+  side = vm_Cross3Product(dir, wy);
+  if (vm_GetMagnitude(&side) >= 0.3f)
+    return side;
+  vector wx{};
+  wx.x() = 1.0f;
+  return vm_Cross3Product(dir, wx);
+}
+
+// Commit an ordered swept-clear path (pts[0..npts-1], endpoints already skeleton nodes a_idx/b_idx)
+// into the skeleton: string-pull away redundant interior points, then insert the survivors as bend
+// nodes and edge the chain. Returns false without touching the graph if it can't stay sound/in-budget.
+static bool SkelCommitChain(int room_idx, int a_idx, int b_idx, const vector *pts, int npts, int *pn) {
+  // String-pull: keep an interior point only when skipping it would break swept clearance.
+  int keep[BOT_SKEL_BRIDGE_MAX_BENDS + 2];
+  int kn = 0;
+  keep[kn++] = 0; // a
+  int anchor = 0;
+  for (int i = 1; i < npts - 1; i++) {
+    if (!ViaSegmentClear(room_idx, pts[anchor], pts[i + 1], BOT_PSEUDO_BNODE_RADIUS, nullptr)) {
+      if (kn >= BOT_SKEL_BRIDGE_MAX_BENDS + 1)
+        return false; // too many bends for one chain — fail closed
+      keep[kn++] = i;
+      anchor = i;
+    }
+  }
+  keep[kn++] = npts - 1; // b
+  int nbends = kn - 2;
+  if (nbends < 0 || *pn + nbends > SKEL_MAX_NODES)
+    return false; // fail closed on node budget
+
+  // Validate every surviving leg BEFORE mutating the graph (atomic + sound).
+  for (int k = 0; k + 1 < kn; k++)
+    if (!ViaSegmentClear(room_idx, pts[keep[k]], pts[keep[k + 1]], BOT_PSEUDO_BNODE_RADIUS, nullptr))
+      return false;
+
+  int idx[BOT_SKEL_BRIDGE_MAX_BENDS + 2];
+  idx[0] = a_idx;
+  for (int k = 1; k < kn - 1; k++) {
+    skel_node_pos[room_idx][*pn] = pts[keep[k]];
+    idx[k] = (*pn)++;
+  }
+  idx[kn - 1] = b_idx;
+  for (int k = 0; k + 1 < kn; k++) {
+    int u = idx[k], v = idx[k + 1];
+    skel_edges[room_idx][u] |= (1u << v);
+    skel_edges[room_idx][v] |= (1u << u);
+  }
+  return true;
+}
+
+// Try to connect skeleton nodes a_idx and b_idx through hull-clear bend nodes. Bounded best-first
+// search: expand the reached point nearest the goal; a blocked cast spawns a tangent fan around the
+// blocker; a candidate is admitted only if its leg from the expanded point is swept-clear. On reaching
+// the goal, reconstruct + commit the chain. Returns true iff an edge/chain was committed.
+static bool SkelBridge(int room_idx, int a_idx, int b_idx, int *pn) {
+  const vector a_pos = skel_node_pos[room_idx][a_idx];
+  const vector b_pos = skel_node_pos[room_idx][b_idx];
+  const room &rm = Rooms[room_idx];
+  const float R = BOT_PSEUDO_BNODE_RADIUS;
+  const float margin = 2.0f * R;
+
+  struct RP {
+    vector pos;
+    int pred;
+    bool done;
+  };
+  RP rp[BOT_SKEL_BRIDGE_MAX_EXPAND + 2];
+  int rpn = 0;
+  rp[rpn++] = {a_pos, -1, false};
+
+  for (int iter = 0; iter < BOT_SKEL_BRIDGE_MAX_EXPAND; iter++) {
+    int best = -1;
+    float bestd = 0.0f;
+    for (int i = 0; i < rpn; i++) {
+      if (rp[i].done)
+        continue;
+      float d = vm_VectorDistanceQuick(&rp[i].pos, &b_pos);
+      if (best < 0 || d < bestd) {
+        best = i;
+        bestd = d;
+      }
+    }
+    if (best < 0)
+      break;
+    rp[best].done = true;
+
+    // Reached the goal? Reconstruct root..best, append b, commit.
+    fvi_info hit{};
+    if (ViaSegmentClear(room_idx, rp[best].pos, b_pos, R, &hit)) {
+      vector chain[BOT_SKEL_BRIDGE_MAX_EXPAND + 2];
+      int order[BOT_SKEL_BRIDGE_MAX_EXPAND + 2];
+      int on = 0;
+      for (int c = best; c >= 0 && on <= BOT_SKEL_BRIDGE_MAX_EXPAND; c = rp[c].pred)
+        order[on++] = c;
+      int cn = 0;
+      for (int t = on - 1; t >= 0; t--)
+        chain[cn++] = rp[order[t]].pos; // root (a_pos) .. best
+      chain[cn++] = b_pos;
+      return SkelCommitChain(room_idx, a_idx, b_idx, chain, cn, pn);
+    }
+
+    // Blocked: fan tangent candidates around the blocking face.
+    vector dir = b_pos - rp[best].pos;
+    if (vm_GetMagnitude(&dir) < 1.0f)
+      continue;
+    vm_NormalizeVector(&dir);
+    vector side = SkelSideAxis(dir, hit.hit_wallnorm[0]);
+    vm_NormalizeVector(&side);
+    vector up = vm_Cross3Product(side, dir);
+    vm_NormalizeVector(&up);
+    vector anchor = hit.hit_pnt - dir * BOT_SKEL_BRIDGE_BACKOFF;
+
+    for (int ring = 0; ring < BOT_SKEL_BRIDGE_RINGS && rpn < BOT_SKEL_BRIDGE_MAX_EXPAND; ring++) {
+      float off = BOT_SKEL_BRIDGE_OFF_BASE + ring * BOT_SKEL_BRIDGE_OFF_STEP;
+      const vector cands[4] = {anchor + side * off, anchor - side * off, anchor + up * off, anchor - up * off};
+      for (const vector &c : cands) {
+        if (rpn >= BOT_SKEL_BRIDGE_MAX_EXPAND)
+          break;
+        // Keep candidates inside the room bbox (a cheap runaway guard).
+        if (c.x() < rm.min_xyz.x() - margin || c.x() > rm.max_xyz.x() + margin || c.y() < rm.min_xyz.y() - margin ||
+            c.y() > rm.max_xyz.y() + margin || c.z() < rm.min_xyz.z() - margin || c.z() > rm.max_xyz.z() + margin)
+          continue;
+        bool dup = false;
+        for (int i = 0; i < rpn && !dup; i++)
+          if (vm_VectorDistanceQuick(&c, &rp[i].pos) < BOT_SKEL_BRIDGE_DEDUP)
+            dup = true;
+        if (dup)
+          continue;
+        if (ViaSegmentClear(room_idx, rp[best].pos, c, R, nullptr))
+          rp[rpn++] = {c, best, false};
+      }
+    }
+  }
+  return false;
+}
+
 // Build the per-room node graph: the portal nodes (guaranteed-flyable points) plus, in rooms where
 // some portal pair has no direct hull-clear leg, **pseudo-bnodes** — interior waypoints the BFS can
 // hop through to route AROUND an obstacle between two portals. This is the bot-code analog of the
@@ -475,42 +654,55 @@ static void SkelBuild(int room_idx) {
   }
 
   // Pseudo-bnodes: only when a portal pair is disconnected (most rooms are fully connected → no cost).
+  // 0.9.12 rework (SKELETON_REWORK.md): instead of the old all-portal-centroid + blanket offset nodes
+  // (which manufactured the abend2 ring hub), repeatedly bridge the closest still-disconnected portal
+  // pair with the collision-guided search. This builds the spanning connectivity a room actually
+  // supports — segment→bend→segment chains around a curved tube, or portal→corner→portal in an L —
+  // without ever wiring a false hub. Fails closed: unbridgeable pairs stay disconnected.
   if (np >= 2 && disconnected_pair) {
-    int first_pseudo = n;
-    // (a) one node per portal, pushed off the portal face into the room's airspace (mirrors the
-    // engine generator's path_pnt + normal*k). Keep only if it's actually reachable from its portal.
-    for (int i = 0; i < np && n < SKEL_MAX_NODES; i++) {
-      vector off = rm.portals[i].path_pnt + rm.faces[rm.portals[i].portal_face].normal * BOT_PSEUDO_BNODE_OFFSET;
-      if (ViaSegmentClear(room_idx, rm.portals[i].path_pnt, off, BOT_PSEUDO_BNODE_RADIUS, nullptr))
-        skel_node_pos[room_idx][n++] = off;
-    }
-    // (b) portal-centroid node — lands in airspace for bent/L/convex rooms even when the bbox-center
-    // path_pnt is buried in solid (which is exactly why the engine's center node stranded there).
-    if (n < SKEL_MAX_NODES) {
-      vector cen{};
+    bool failed[SKEL_MAX_NODES][SKEL_MAX_NODES] = {{false}};
+    int comp[SKEL_MAX_NODES];
+    for (int attempt = 0; attempt < np * np && n < SKEL_MAX_NODES; attempt++) {
+      SkelComponents(room_idx, n, comp);
+      // Closest cross-component portal pair not already known unbridgeable.
+      int ai = -1, bi = -1;
+      float bestd = 0.0f;
       for (int i = 0; i < np; i++)
-        cen = cen + rm.portals[i].path_pnt;
-      cen = cen * (1.0f / (float)np);
-      skel_node_pos[room_idx][n++] = cen;
-    }
-    // Edges touching the new pseudo-nodes, tested at the **real hull** so the BFS never routes a bot
-    // into a gap it can't fit (an isolated pseudo-node simply gets no edges and is ignored).
-    for (int i = first_pseudo; i < n; i++) {
-      for (int j = 0; j < i; j++) {
-        if (ViaSegmentClear(room_idx, skel_node_pos[room_idx][i], skel_node_pos[room_idx][j], BOT_PSEUDO_BNODE_RADIUS,
-                            nullptr)) {
-          skel_edges[room_idx][i] |= (1u << j);
-          skel_edges[room_idx][j] |= (1u << i);
+        for (int j = i + 1; j < np; j++) {
+          if (comp[i] == comp[j] || failed[i][j])
+            continue;
+          float d = vm_VectorDistanceQuick(&skel_node_pos[room_idx][i], &skel_node_pos[room_idx][j]);
+          if (ai < 0 || d < bestd) {
+            ai = i;
+            bi = j;
+            bestd = d;
+          }
         }
-      }
+      if (ai < 0)
+        break; // every portal pair connected (or all remaining pairs known unbridgeable)
+      if (!SkelBridge(room_idx, ai, bi, &n))
+        failed[ai][bi] = true; // fail closed; don't retry this pair
     }
   }
 
   skel_node_count[room_idx] = (uint8_t)n;
   skel_built[room_idx] = 1;
-  if (n > np) { // pseudo-bnodes synthesized — confirm generation + placement (grep "pseudo-bnodes")
-    LOG_DEBUG.printf("BOT: pseudo-bnodes room %d: +%d interior nodes (%d portals, buried=%d)", room_idx, n - np, np,
-                     RoomBuriedCenter(room_idx) ? 1 : 0);
+  if (n > np) { // bridge nodes synthesized — confirm generation + resulting connectivity (grep "skel bridge")
+    // Report how many connected components the PORTAL set ended in: 1 = fully traversable, >1 = the
+    // room still has an unbridged split (the diagnostic the nav overlay reads by eye).
+    int comp[SKEL_MAX_NODES];
+    SkelComponents(room_idx, n, comp);
+    int ncomp = 0;
+    for (int i = 0; i < np; i++) {
+      bool seen = false;
+      for (int j = 0; j < i && !seen; j++)
+        if (comp[j] == comp[i])
+          seen = true;
+      if (!seen)
+        ncomp++;
+    }
+    LOG_DEBUG.printf("BOT: skel bridge room %d: +%d bend nodes (%d portals -> %d component(s), buried=%d)", room_idx,
+                     n - np, np, ncomp, RoomBuriedCenter(room_idx) ? 1 : 0);
   }
 }
 
@@ -539,8 +731,7 @@ bool BotRoomPathPntReachable(int room_idx) {
 // (SkelLevelReset) so steady state adds no fvi casts.
 bool BotEntryCenterClear(int room_idx, int portal_idx) {
   SkelLevelReset();
-  if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used ||
-      (Rooms[room_idx].flags & RF_EXTERNAL))
+  if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used || (Rooms[room_idx].flags & RF_EXTERNAL))
     return true; // invalid/outdoor: not this mechanism's question — behave permissively
   int np = SkelPortalCount(Rooms[room_idx]);
   if (portal_idx < 0 || portal_idx >= np)
@@ -980,7 +1171,8 @@ vector BotWaypointAimPos(int wp_room, const vector &toward, object *obj) {
   static float entry_aim_log_t = 0.0f;
   if (Gametime < entry_aim_log_t || Gametime - entry_aim_log_t > 5.0f) {
     entry_aim_log_t = Gametime;
-    LOG_DEBUG.printf("BOT NAV: entry-aim rm%d via portal %d -> node hop %d (center blind from entry)", wp_room, best_p, h);
+    LOG_DEBUG.printf("BOT NAV: entry-aim rm%d via portal %d -> node hop %d (center blind from entry)", wp_room, best_p,
+                     h);
   }
   return skel_node_pos[wp_room][h];
 }
