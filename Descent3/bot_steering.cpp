@@ -829,7 +829,9 @@ static int SkelBfs(int room_idx, int n, uint32_t seed_mask, uint32_t stop_mask, 
 // is obj->roomnum (never the skeleton-graph room — the BotWaypointAimPos guard pattern at ~499).
 // Optional `next_room` hint avoids a second BotComputeRoute Dijkstra when the caller has it.
 bool BotResolveRoomAim(object *obj, const vector &target_pos, int target_room, float radius, vector *out,
-                       int next_room_hint) {
+                       int next_room_hint, BotRoomAimSource *source_out) {
+  if (source_out)
+    *source_out = BOT_ROOM_AIM_NONE;
   if (!obj || !out)
     return false;
   if (target_room < 0 || target_room > Highest_room_index || (Rooms[target_room].flags & RF_EXTERNAL) || !obj->ai_info)
@@ -846,6 +848,8 @@ bool BotResolveRoomAim(object *obj, const vector &target_pos, int target_room, f
     vector rv;
     if (BotRoadmapFindVia(obj, target_pos, target_room, &rv) == BOT_VIA_FOUND) {
       *out = rv;
+      if (source_out)
+        *source_out = BOT_ROOM_AIM_ROADMAP;
       return true;
     }
   }
@@ -908,6 +912,8 @@ bool BotResolveRoomAim(object *obj, const vector &target_pos, int target_room, f
 
     if (hop >= 0) {
       *out = skel_node_pos[room_idx][hop];
+      if (source_out)
+        *source_out = BOT_ROOM_AIM_SKELETON;
       return true;
     }
 
@@ -927,6 +933,8 @@ bool BotResolveRoomAim(object *obj, const vector &target_pos, int target_room, f
       }
       if (best >= 0) {
         *out = skel_node_pos[room_idx][best];
+        if (source_out)
+          *source_out = BOT_ROOM_AIM_SKELETON;
         return true;
       }
     }
@@ -1440,9 +1448,11 @@ int BotOGraphDump(int region, vector *pos_out, uint64_t *edges_out, int *ent_cou
 }
 
 BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_room, vector *via_out,
-                             bool *skeleton_out) {
+                             bool *skeleton_out, BotRoomAimSource *source_out) {
   if (skeleton_out)
     *skeleton_out = false;
+  if (source_out)
+    *source_out = BOT_ROOM_AIM_NONE;
   if (!obj)
     return BOT_VIA_CLEAR;
   // 12.6: outdoors, run the SAME ring search (now ceiling-aware) to route laterally around structures
@@ -1563,11 +1573,14 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
   // connecting graph. ---
   if (!is_outdoor) {
     vector hop;
-    if (BotResolveRoomAim(obj, target_pos, target_room, radius, &hop)) {
+    BotRoomAimSource source = BOT_ROOM_AIM_NONE;
+    if (BotResolveRoomAim(obj, target_pos, target_room, radius, &hop, -1, &source)) {
       if (via_out)
         *via_out = hop;
       if (skeleton_out)
         *skeleton_out = true;
+      if (source_out)
+        *source_out = source;
       return BOT_VIA_FOUND;
     }
   }

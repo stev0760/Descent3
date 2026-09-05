@@ -107,6 +107,15 @@ enum BotViaResult {
   BOT_VIA_NONE = 2,  // line blocked and no clear via-point exists — fall back / sealed-target evidence
 };
 
+// Diagnostic source of an in-room graph aim. Kept separate from BotFindViaPoint's `skeleton_out`:
+// that flag also selects the existing generous chain governor, while this enum only reports which
+// fine substrate actually produced the waypoint.
+enum BotRoomAimSource {
+  BOT_ROOM_AIM_NONE = 0,
+  BOT_ROOM_AIM_ROADMAP,
+  BOT_ROOM_AIM_SKELETON,
+};
+
 // Shared hull-radius swept-segment clearance test (the nav substrate's one geometry primitive — used by
 // the via search, the pseudo-bnode skeleton, AND the 0.9.4 volumetric roadmap for node growth, edge
 // probing, and Theta* line-of-sight). True when a sphere of `radius` sweeps a→b without hitting wall/
@@ -132,7 +141,7 @@ float BotOutdoorCeilingCap();
 // 12.3: when the ring passes fail, a portal-skeleton hop may be returned instead (an intermediate
 // node on the room's portal graph, no target LOS required) — *skeleton_out reports that case.
 BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_room, vector *via_out,
-                             bool *skeleton_out = nullptr);
+                             bool *skeleton_out = nullptr, BotRoomAimSource *source_out = nullptr);
 
 // 12.3 diagnostic: is the room's path_pnt hull-reachable from at least one of its portals
 // (probed FROM the portal — trustworthy start point)? False = buried/void path_pnt (hollow-core
@@ -175,7 +184,7 @@ bool BotEntryCenterClear(int room_idx, int portal_idx);
 // (used, indoor, non-external) before SkelBuild. `next_room_hint` skips a second BotComputeRoute
 // Dijkstra when the caller has the router hop.
 bool BotResolveRoomAim(object *obj, const vector &target_pos, int target_room, float radius, vector *out,
-                       int next_room_hint = -1);
+                       int next_room_hint = -1, BotRoomAimSource *source_out = nullptr);
 
 // Public gate for bot.cpp calls into the static RoomBuriedCenter (cached per level): true when the
 // room's path_pnt is buried/void — the room class where resolution must go through the helper.

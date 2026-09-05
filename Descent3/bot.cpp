@@ -2477,7 +2477,8 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
   // NONE additionally feeds the caller's sealed-target counting via *verdict_out.
   vector via;
   bool skeleton_hop = false;
-  BotViaResult r = BotFindViaPoint(obj, target_pos, target_room, &via, &skeleton_hop);
+  BotRoomAimSource aim_source = BOT_ROOM_AIM_NONE;
+  BotViaResult r = BotFindViaPoint(obj, target_pos, target_room, &via, &skeleton_hop, &aim_source);
   if (verdict_out)
     *verdict_out = r;
   if (r != BOT_VIA_FOUND) {
@@ -2495,7 +2496,10 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
   Bots[bot_index].via_expires = Gametime + BOT_VIA_COMMIT_TIME;
   Bots[bot_index].via_is_skeleton = skeleton_hop ? 1 : 0;
   issue_via_goal();
-  if (skeleton_hop)
+  if (aim_source == BOT_ROOM_AIM_ROADMAP)
+    LOG_DEBUG.printf("BOT NAV: '%s' roadmap via in room %d (target room %d)", Bots[bot_index].callsign, obj->roomnum,
+                     target_room);
+  else if (skeleton_hop)
     LOG_DEBUG.printf("BOT NAV: '%s' skeleton via in room %d (target room %d)", Bots[bot_index].callsign, obj->roomnum,
                      target_room);
   else
