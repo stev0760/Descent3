@@ -822,6 +822,19 @@ RoadmapRoom *GetOutdoor(int region) {
   return g_region[region];
 }
 
+// Cached-only fetch for the live overlay DRAW path: never Build() and never heal — those do thousands
+// of collision sweeps and can bump g_build_serial, so calling them from inside GameRenderWorld() would
+// hitch the frame and could change WHEN a roadmap is cached relative to doors/glass opening (perturbing
+// the very bots being observed). Returns the already-built roadmap or nullptr (room not queried yet).
+RoadmapRoom *PeekCached(int room_idx) {
+  ResetIfStale(); // cheap: only drops caches if the mine checksum changed; never builds
+  if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used)
+    return nullptr;
+  if (Rooms[room_idx].flags & RF_EXTERNAL)
+    return nullptr;
+  return g_room[room_idx];
+}
+
 // Lazy Theta* over the roadmap. Fills path (start..goal node positions). Returns false if no path.
 bool ThetaStar(RoadmapRoom *rr, int start, int goal, std::vector<int> &path_out) {
   const int N = (int)rr->node.size();
@@ -1188,15 +1201,42 @@ int BotRoadmapDumpRoom(int room_idx, vector *pos_out, int *comp_out, int max_nod
   return n;
 }
 
-int BotRoadmapDumpRoomEdges(int room_idx, int *a_out, int *b_out, int max_edges) {
-  RoadmapRoom *rr = Get(room_idx);
+int BotRoadmapDumpRoomCached(int room_idx, vector *pos_out, int *comp_out, int max_nodes, int *comp_count_out,
+                             bool *degenerate_out) {
+  if (comp_count_out)
+    *comp_count_out = 0;
+  if (degenerate_out)
+    *degenerate_out = false;
+  RoadmapRoom *rr = PeekCached(room_idx); // never builds — see PeekCached
   if (!rr)
     return 0;
-  const int n = (int)rr->node.size();
+  int n = (int)rr->node.size();
+  if (n > max_nodes)
+    n = max_nodes;
+  for (int i = 0; i < n; i++) {
+    if (pos_out)
+      pos_out[i] = rr->node[i];
+    if (comp_out)
+      comp_out[i] = rr->comp[i];
+  }
+  if (comp_count_out)
+    *comp_count_out = rr->comp_count;
+  if (degenerate_out)
+    *degenerate_out = rr->degenerate;
+  return n;
+}
+
+int BotRoadmapDumpRoomEdges(int room_idx, int *a_out, int *b_out, int max_edges, int max_node_index) {
+  RoadmapRoom *rr = PeekCached(room_idx); // never builds — see PeekCached
+  if (!rr)
+    return 0;
+  int n = (int)rr->node.size();
+  if (max_node_index >= 0 && max_node_index < n) // bound edges to the nodes the overlay actually drew, so
+    n = max_node_index;                          // the max_edges budget isn't wasted on undrawable edges
   int e = 0;
   for (int i = 0; i < n && e < max_edges; i++)
     for (int j : rr->adj[i]) {
-      if (j <= i) // undirected: emit each edge once (adjacency is symmetric)
+      if (j <= i || j >= n) // undirected (emit once) AND within the drawn set
         continue;
       if (e >= max_edges)
         break;

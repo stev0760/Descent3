@@ -167,11 +167,17 @@ void BotRoadmapInvalidate();
 int BotRoadmapDumpRoom(int room_idx, vector *pos_out, int *comp_out, int max_nodes, int *comp_count_out,
                        bool *degenerate_out);
 
-// Live nav-overlay diagnostic: dump a room roadmap's EDGES (adjacency) as index pairs into the SAME
-// node ordering as BotRoadmapDumpRoom (so a[k]/b[k] index that call's pos_out[]). Each undirected edge
-// is emitted once (i<j). Returns edge count (0 = external/invalid). max_edges caps the output. The
-// overlay draws the lattice so a room reads as a connected grid (or a fragmented one) on sight.
-int BotRoadmapDumpRoomEdges(int room_idx, int *a_out, int *b_out, int max_edges);
+// Live nav-overlay accessors — CACHED-ONLY (never Build()/heal, so the render path can't hitch the
+// frame or perturb bot routing; a room not yet queried by a bot simply returns 0 and draws nothing).
+// Node dump: world positions + per-node component id (mirrors BotRoadmapDumpRoom but read-only).
+int BotRoadmapDumpRoomCached(int room_idx, vector *pos_out, int *comp_out, int max_nodes, int *comp_count_out,
+                             bool *degenerate_out);
+// Edge dump: adjacency as index pairs into the SAME node ordering as BotRoadmapDumpRoomCached (so
+// a[k]/b[k] index that call's pos_out[]). Each undirected edge once (i<j). `max_node_index` bounds
+// BOTH endpoints to the nodes actually drawn (pass the node count the overlay kept) so the max_edges
+// budget is spent only on drawable edges — otherwise a huge graph's later in-range edges get dropped
+// and the room reads as falsely fragmented. Returns edge count (0 = external/not-cached).
+int BotRoadmapDumpRoomEdges(int room_idx, int *a_out, int *b_out, int max_edges, int max_node_index);
 
 // $navdump diagnostic (Stage 3): build (lazily) + dump a terrain region's outdoor roadmap — node world
 // positions + per-node component id. Returns node count (0 = empty/out-of-range region). Sets

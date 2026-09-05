@@ -241,17 +241,21 @@ static void NavDbgDrawRoomRoadmap(int room_idx, int &node_budget, int &edge_budg
   static int comp[NAVDBG_ROADMAP_MAX_NODES];
   int comp_count = 0;
   bool degenerate = false;
-  int n = BotRoadmapDumpRoom(room_idx, pos, comp, NAVDBG_ROADMAP_MAX_NODES, &comp_count, &degenerate);
+  // CACHED-only: never triggers a build/heal from the render frame (draw-only invariant). A room whose
+  // roadmap no bot has queried yet simply draws nothing until it's built by the sim.
+  int n = BotRoadmapDumpRoomCached(room_idx, pos, comp, NAVDBG_ROADMAP_MAX_NODES, &comp_count, &degenerate);
   if (n <= 0)
     return;
 
-  // Edges first (lattice lines under the node dots).
+  // Edges first (lattice lines under the node dots). Pass n as max_node_index so the edge budget is
+  // spent only on edges among the nodes we actually drew — otherwise a huge graph's later in-range
+  // edges get dropped and the room would read as falsely fragmented.
   static int ea[NAVDBG_ROADMAP_MAX_EDGES];
   static int eb[NAVDBG_ROADMAP_MAX_EDGES];
-  int ne = BotRoadmapDumpRoomEdges(room_idx, ea, eb, NAVDBG_ROADMAP_MAX_EDGES);
+  int ne = BotRoadmapDumpRoomEdges(room_idx, ea, eb, NAVDBG_ROADMAP_MAX_EDGES, n);
   for (int k = 0; k < ne && edge_budget > 0; k++) {
     int i = ea[k], j = eb[k];
-    if (i >= n || j >= n) // an endpoint past the node cap we drew — skip (can't place it)
+    if (i >= n || j >= n) // defensive: endpoints are already bounded to n by the accessor
       continue;
     NavDbgLine(pos[i], pos[j], NavDbgRoadmapColor(comp[i]));
     edge_budget--;
