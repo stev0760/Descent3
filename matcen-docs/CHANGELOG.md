@@ -37,7 +37,9 @@ play — do not treat as a release.*
 *   **Split room grids get one bounded multi-bend repair pass.** When real portal seeds remain in
     different components after normal lattice growth and bridging, the builder traces a short chain
     around the blocking geometry. Every sub-leg is ship-width checked before the chain is committed;
-    failure leaves the old graph and fallback behavior intact. In test on abend2 room 30.
+    failure leaves the old graph and fallback behavior intact. The first portal-to-portal search was
+    too weak for abend2 room 30, so the in-test builder now grows controlled frontiers from the
+    closest existing nodes on both components instead of tracing the whole ring from one portal pair.
 
 ## [0.9.12-dev] - in test
 

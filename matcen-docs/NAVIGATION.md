@@ -283,7 +283,8 @@ explicitly flushed by `BotRoadmapInvalidate()` when a build-time toggle flips (`
    spatial-hashed, attempts capped) to round the wall corner and connect them. Collapsed the
    townofbree/khazaddum divider rooms. A gap through solid stays unbridged — that's correct.
 5. **Bounded multi-bend repair** (0.9.13, in test): after the existing builders, portal seeds that
-   still occupy different components get a deterministic bidirectional collision-guided search.
+   still occupy different components get a deterministic multi-source bidirectional search seeded
+   from the closest existing nodes on both component frontiers.
    A successful polyline is string-pulled, interpolated to ≤12u legs, and committed atomically only
    after every leg clears at 6.7u. The pass is indoor-only, pair/node bounded, and does not change
    the room's pre-repair proactive-complexity verdict. Failure leaves the graph untouched.
@@ -712,10 +713,11 @@ roadmap through the existing proactive complexity/hard-room gate. A successful q
 current-room goal and bypasses via/seam/skeleton for that issue; every query failure takes the old
 fallback path unchanged. True roadmap and skeleton waypoint counts are now logged separately.
 
-Room 30 has dense coverage but was split across two roadmap components. A separate bounded multi-bend
-pass now runs only for cross-component portal seeds after the existing lattice, corner bridge, and
-tube ladder fail to join them. It validates and interpolates a complete chain before atomic commit;
-failure leaves the old fallback intact. Both changes build cleanly; abend2 play validation is pending.
+Room 30 has dense coverage but was split across two roadmap components. The first bounded connector
+failed closed in its smoke (`+0 nodes, 0 joined, 5 failed`): its portal-to-portal tangent fan filled
+the scratch budget before tracing the curve. The current revision seeds both search sides from the
+closest existing nodes on the two component frontiers, expands both each cycle with controlled
+branching, and retains atomic validation/fallback. Build validation passes; a room-30 smoke is pending.
 
 ### 7.0.1 Committee-collapse consolidation — 2026-08-30
 

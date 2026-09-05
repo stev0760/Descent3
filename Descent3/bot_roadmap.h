@@ -65,8 +65,10 @@ extern bool Bot_gridnav_enabled;
 // Bounded multi-bend repair for portal-seed components that remain split after the lattice,
 // straight/corner bridges, and thin-tube ladder. Scratch search never mutates the graph; a full
 // chain is committed atomically only after every <=12u leg clears at hull radius.
-#define BOT_ROADMAP_MULTIBEND_SCRATCH 96
-#define BOT_ROADMAP_MULTIBEND_EXPAND 40
+#define BOT_ROADMAP_MULTIBEND_SCRATCH 256
+#define BOT_ROADMAP_MULTIBEND_EXPAND 128
+#define BOT_ROADMAP_MULTIBEND_ROOTS 8
+#define BOT_ROADMAP_MULTIBEND_BRANCH 8
 #define BOT_ROADMAP_MULTIBEND_PAIR_MAX 15
 #define BOT_ROADMAP_MULTIBEND_NODE_MAX 96
 #define BOT_ROADMAP_MULTIBEND_STEP 12.0f

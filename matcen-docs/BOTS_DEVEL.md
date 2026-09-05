@@ -4,9 +4,11 @@
 **Status:** Matcen **0.9.13-dev (2026-09-05)**. The overlay/soak census found that abend2 room 0 has
 a healthy 103-node, one-component roadmap but the buried-center dispatcher always chose the sparse
 skeleton. Complex buried rooms now admit the roadmap through the existing proactive gate and keep
-the old path as an exact fallback. A separate bounded multi-bend construction pass now targets
-room 30's two-component roadmap without changing room eligibility or global lattice spacing. Build
-validation is complete; play validation is pending. The stable release remains **0.9.11**.
+the old path as an exact fallback. A separate bounded multi-source construction pass now targets
+room 30's two-component roadmap without changing room eligibility or global lattice spacing. Its
+first portal-seeded search failed closed in the smoke; the current in-test revision seeds and grows
+both sides from the existing component frontiers. Build validation is complete; play validation is
+pending. The stable release remains **0.9.11**.
 
 > **New files / engine touches this build (surfaced up front, per operator request):**
 > - **NEW bot-only TU:** `Descent3/bot_navdebug.cpp` + `bot_navdebug.h` — all overlay draw logic,

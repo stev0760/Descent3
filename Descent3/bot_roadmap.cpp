@@ -230,100 +230,172 @@ vector RoadmapSideAxis(const vector &dir, const vector &wallnorm) {
   return side;
 }
 
-// Bidirectional scratch search between two portal seeds. Each admitted scratch edge is hull-clear,
-// but nothing touches RoadmapRoom until the complete chain is reconstructed and atomically committed.
-bool RoadmapFindMultiBend(const RoadmapRoom *rr, int a_idx, int b_idx, const vector &mn, const vector &mx,
-                          std::vector<vector> &path_out) {
+// Multi-source bidirectional search between two portal-bearing components. Seed each side from the
+// closest existing roadmap frontier nodes, then grow both sides toward their closest opposite point.
+// Each admitted scratch edge is hull-clear; RoadmapRoom remains untouched until atomic commit.
+bool RoadmapFindMultiBend(RoadmapRoom *rr, std::vector<int> &uf, int root_a, int root_b, int seed_a, int seed_b,
+                          const vector &mn, const vector &mx, std::vector<vector> &path_out, int *a_idx_out,
+                          int *b_idx_out) {
   struct ScratchPoint {
     vector pos;
     int parent;
     int side;
+    int graph_idx;
     bool done;
   };
   ScratchPoint scratch[BOT_ROADMAP_MULTIBEND_SCRATCH];
-  int count = 2;
-  scratch[0] = {rr->node[a_idx], -1, 0, false};
-  scratch[1] = {rr->node[b_idx], -1, 1, false};
-  int expanded[2] = {0, 0};
-  const float margin = BOT_ROADMAP_CLEARANCE * 2.0f;
-  const float offsets[4] = {12.0f, 26.0f, 40.0f, 54.0f};
+  int count = 0;
 
-  for (int iter = 0; iter < BOT_ROADMAP_MULTIBEND_EXPAND; iter++) {
+  struct RootCandidate {
+    float dist;
+    int node;
+  };
+  std::vector<RootCandidate> roots[2];
+  const int graph_n = (int)rr->node.size();
+  if (graph_n <= BOT_ROADMAP_BRIDGE_MAX_NODES) {
+    std::vector<int> component[2];
+    for (int i = 0; i < graph_n; i++) {
+      int root = UFFind(uf, i);
+      if (root == root_a)
+        component[0].push_back(i);
+      else if (root == root_b)
+        component[1].push_back(i);
+    }
+    for (int side = 0; side < 2; side++)
+      for (int i : component[side]) {
+        float nearest = FLT_MAX;
+        for (int j : component[1 - side])
+          nearest = std::min(nearest, Dist(rr->node[i], rr->node[j]));
+        roots[side].push_back({nearest, i});
+      }
+    auto BetterRoot = [](const RootCandidate &x, const RootCandidate &y) {
+      if (x.dist != y.dist)
+        return x.dist < y.dist;
+      return x.node < y.node;
+    };
+    for (int side = 0; side < 2; side++)
+      std::sort(roots[side].begin(), roots[side].end(), BetterRoot);
+  }
+
+  int side_roots[2] = {0, 0};
+  auto AddRoot = [&](int graph_idx, int side) {
+    if (side_roots[side] >= BOT_ROADMAP_MULTIBEND_ROOTS)
+      return;
+    for (int i = 0; i < count; i++)
+      if (scratch[i].side == side && scratch[i].graph_idx == graph_idx)
+        return;
+    if (count < BOT_ROADMAP_MULTIBEND_SCRATCH) {
+      scratch[count++] = {rr->node[graph_idx], -1, side, graph_idx, false};
+      side_roots[side]++;
+    }
+  };
+  AddRoot(seed_a, 0);
+  AddRoot(seed_b, 1);
+  for (int side = 0; side < 2; side++)
+    for (const RootCandidate &root : roots[side])
+      AddRoot(root.node, side);
+
+  const float margin = BOT_ROADMAP_CLEARANCE * 2.0f;
+  const float offsets[6] = {12.0f, 26.0f, 40.0f, 54.0f, 72.0f, 96.0f};
+  int expanded = 0;
+
+  while (expanded < BOT_ROADMAP_MULTIBEND_EXPAND) {
     int left = -1, right = -1;
-    float best_d = FLT_MAX;
-    for (int i = 0; i < count; i++) {
-      if (scratch[i].side != 0)
-        continue;
-      for (int j = 0; j < count; j++) {
-        if (scratch[j].side != 1 || (scratch[i].done && scratch[j].done))
+    // Prefer a pair with both endpoints live so normal iterations always expand both sides. Only
+    // after one frontier is exhausted may the remaining side continue toward an already-closed point.
+    for (int open_pass = 0; open_pass < 2 && left < 0; open_pass++) {
+      float best_d = FLT_MAX;
+      for (int i = 0; i < count; i++) {
+        if (scratch[i].side != 0)
           continue;
-        float d = Dist(scratch[i].pos, scratch[j].pos);
-        if (d < best_d) {
-          best_d = d;
-          left = i;
-          right = j;
+        for (int j = 0; j < count; j++) {
+          if (scratch[j].side != 1 || (scratch[i].done && scratch[j].done))
+            continue;
+          if (open_pass == 0 && (scratch[i].done || scratch[j].done))
+            continue;
+          float d = Dist(scratch[i].pos, scratch[j].pos);
+          if (d < best_d) {
+            best_d = d;
+            left = i;
+            right = j;
+          }
         }
       }
     }
     if (left < 0)
       break;
 
-    bool expand_left;
-    if (scratch[left].done)
-      expand_left = false;
-    else if (scratch[right].done)
-      expand_left = true;
-    else if (expanded[0] != expanded[1])
-      expand_left = expanded[0] < expanded[1];
-    else
-      expand_left = (iter & 1) == 0;
-    int u = expand_left ? left : right;
-    int v = expand_left ? right : left;
-    scratch[u].done = true;
-    expanded[scratch[u].side]++;
+    // Expand both ends of the closest frontier pair before choosing again. This is deliberately
+    // symmetric: one blocked portal/component cannot consume the whole budget while the other sits idle.
+    const int endpoints[2] = {left, right};
+    for (int pass = 0; pass < 2 && expanded < BOT_ROADMAP_MULTIBEND_EXPAND; pass++) {
+      int u = endpoints[pass], v = endpoints[1 - pass];
+      if (scratch[u].done)
+        continue;
+      scratch[u].done = true;
+      expanded++;
 
-    fvi_info hit{};
-    if (RoadmapTrace(rr, scratch[u].pos, scratch[v].pos, &hit)) {
-      int rev[BOT_ROADMAP_MULTIBEND_SCRATCH];
-      int nrev = 0;
-      for (int c = left; c >= 0 && nrev < BOT_ROADMAP_MULTIBEND_SCRATCH; c = scratch[c].parent)
-        rev[nrev++] = c;
-      for (int i = nrev - 1; i >= 0; i--)
-        path_out.push_back(scratch[rev[i]].pos);
-      for (int c = right; c >= 0; c = scratch[c].parent)
-        path_out.push_back(scratch[c].pos);
-      return path_out.size() >= 2;
-    }
-
-    vector dir = scratch[v].pos - scratch[u].pos;
-    if (vm_NormalizeVector(&dir) < 1.0f)
-      continue;
-    vector side = RoadmapSideAxis(dir, hit.hit_wallnorm[0]);
-    vector up = vm_Cross3Product(side, dir);
-    vm_NormalizeVector(&up);
-    vector diagonals[4] = {side + up, side - up, -side + up, -side - up};
-    for (vector &d : diagonals)
-      vm_NormalizeVector(&d);
-    const vector dirs[8] = {side, -side, up, -up, diagonals[0], diagonals[1], diagonals[2], diagonals[3]};
-    vector anchor = hit.hit_pnt - dir * 6.0f;
-
-    for (float off : offsets) {
-      for (const vector &axis : dirs) {
-        if (count >= BOT_ROADMAP_MULTIBEND_SCRATCH)
-          break;
-        vector cand = anchor + axis * off;
-        if (cand.x() < mn.x() - margin || cand.x() > mx.x() + margin || cand.y() < mn.y() - margin ||
-            cand.y() > mx.y() + margin || cand.z() < mn.z() - margin || cand.z() > mx.z() + margin)
-          continue;
-        bool duplicate = false;
-        for (int i = 0; i < count && !duplicate; i++)
-          duplicate = Dist(cand, scratch[i].pos) < 6.0f;
-        if (duplicate || !RoadmapTrace(rr, scratch[u].pos, cand, nullptr))
-          continue;
-        scratch[count++] = {cand, u, scratch[u].side, false};
+      fvi_info hit{};
+      if (RoadmapTrace(rr, scratch[u].pos, scratch[v].pos, &hit)) {
+        int rev[BOT_ROADMAP_MULTIBEND_SCRATCH];
+        int nrev = 0;
+        int left_root = left, right_root = right;
+        while (scratch[left_root].parent >= 0)
+          left_root = scratch[left_root].parent;
+        while (scratch[right_root].parent >= 0)
+          right_root = scratch[right_root].parent;
+        *a_idx_out = scratch[left_root].graph_idx;
+        *b_idx_out = scratch[right_root].graph_idx;
+        for (int c = left; c >= 0 && nrev < BOT_ROADMAP_MULTIBEND_SCRATCH; c = scratch[c].parent)
+          rev[nrev++] = c;
+        for (int i = nrev - 1; i >= 0; i--)
+          path_out.push_back(scratch[rev[i]].pos);
+        for (int c = right; c >= 0; c = scratch[c].parent)
+          path_out.push_back(scratch[c].pos);
+        return path_out.size() >= 2;
       }
       if (count >= BOT_ROADMAP_MULTIBEND_SCRATCH)
-        break;
+        continue; // keep testing stored frontier pairs; no capacity for another branch
+
+      vector dir = scratch[v].pos - scratch[u].pos;
+      if (vm_NormalizeVector(&dir) < 1.0f)
+        continue;
+      vector side = RoadmapSideAxis(dir, hit.hit_wallnorm[0]);
+      vector up = vm_Cross3Product(side, dir);
+      vm_NormalizeVector(&up);
+      vector diagonals[4] = {side + up, side - up, -side + up, -side - up};
+      for (vector &d : diagonals)
+        vm_NormalizeVector(&d);
+      const vector dirs[8] = {side, -side, up, -up, diagonals[0], diagonals[1], diagonals[2], diagonals[3]};
+      vector anchor = hit.hit_pnt - dir * 6.0f;
+
+      struct Candidate {
+        float dist;
+        vector pos;
+      };
+      std::vector<Candidate> candidates;
+      candidates.reserve(6 * 8);
+      for (float off : offsets)
+        for (const vector &axis : dirs) {
+          vector cand = anchor + axis * off;
+          if (cand.x() < mn.x() - margin || cand.x() > mx.x() + margin || cand.y() < mn.y() - margin ||
+              cand.y() > mx.y() + margin || cand.z() < mn.z() - margin || cand.z() > mx.z() + margin)
+            continue;
+          bool duplicate = false;
+          for (int i = 0; i < count && !duplicate; i++)
+            duplicate = Dist(cand, scratch[i].pos) < 6.0f;
+          for (const Candidate &c : candidates)
+            if (!duplicate && Dist(cand, c.pos) < 6.0f)
+              duplicate = true;
+          if (duplicate || !RoadmapTrace(rr, scratch[u].pos, cand, nullptr))
+            continue;
+          candidates.push_back({Dist(cand, scratch[v].pos), cand});
+        }
+      std::stable_sort(candidates.begin(), candidates.end(),
+                       [](const Candidate &a, const Candidate &b) { return a.dist < b.dist; });
+      int branches = std::min((int)candidates.size(), BOT_ROADMAP_MULTIBEND_BRANCH);
+      for (int i = 0; i < branches && count < BOT_ROADMAP_MULTIBEND_SCRATCH; i++)
+        scratch[count++] = {candidates[i].pos, u, scratch[u].side, -1, false};
     }
   }
   return false;
@@ -414,11 +486,15 @@ void RoadmapConnectPortalComponents(RoadmapRoom *rr, std::vector<int> &uf, int n
       break;
 
     attempts++;
+    int root_a = UFFind(uf, ai), root_b = UFFind(uf, bi);
+    int connect_a = ai, connect_b = bi;
     std::vector<vector> raw;
-    if (RoadmapFindMultiBend(rr, ai, bi, mn, mx, raw) &&
-        RoadmapCommitMultiBend(rr, uf, ai, bi, raw, &node_budget_used)) {
+    if (RoadmapFindMultiBend(rr, uf, root_a, root_b, ai, bi, mn, mx, raw, &connect_a, &connect_b) &&
+        RoadmapCommitMultiBend(rr, uf, connect_a, connect_b, raw, &node_budget_used)) {
       joined++;
     } else {
+      // A bounded miss is not proof that the whole component boundary is disconnected. Suppress
+      // only this portal pair; another pair contributes different explicit roots to the next search.
       failed[(size_t)ai * n_seed + bi] = 1;
       failures++;
     }
