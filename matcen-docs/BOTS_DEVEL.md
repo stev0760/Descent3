@@ -1,12 +1,11 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Matcen **0.9.12-dev (2026-09-01)** — the arbitration/commitment line is exhausted and the
-tree is reverted to the known-good one-mind build (`cddde48c`, abend2's first-ever captures). The
-0.9.12 deliverable is a change of method, not another routing cut: a **live in-client nav debug
-overlay** (host-only, Ctrl+F7) so the remaining committee-collapse can be designed and verified *by
-eye* instead of from log tea-leaves. **Built and linking; pending the operator's live fly-through
-before the `-dev` suffix is stripped.** The stable release remains **0.9.11**.
+**Status:** Matcen **0.9.13-dev (2026-09-05)**. The overlay/soak census found that abend2 room 0 has
+a healthy 103-node, one-component roadmap but the buried-center dispatcher always chose the sparse
+skeleton. Complex buried rooms now admit the roadmap through the existing proactive gate and keep
+the old path as an exact fallback. Build validation is complete; play validation is pending. The
+stable release remains **0.9.11**.
 
 > **New files / engine touches this build (surfaced up front, per operator request):**
 > - **NEW bot-only TU:** `Descent3/bot_navdebug.cpp` + `bot_navdebug.h` — all overlay draw logic,

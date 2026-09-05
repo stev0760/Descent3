@@ -79,6 +79,7 @@ RE_TROLL_RETIRED = re.compile(r"powerup troll-retired: '([^']*)' \(room (-?\d+)\
 # Phase 12.3 portal-skeleton traversal.
 RE_SKEL_VIA = re.compile(r"skeleton via in room (-?\d+)")
 RE_ROADMAP_VIA = re.compile(r"roadmap via in room (-?\d+)")
+RE_ROADMAP_ROUTE = re.compile(r"roadmap route in room (-?\d+)")
 
 # Stage 6 "Orders as Goals" ("BOT ORDER:" lines).
 RE_ORDER_STATION = re.compile(r"BOT ORDER: '([^']*)' (?:escort )?on station")
@@ -292,8 +293,10 @@ def new_map_stats():
         # Phase 12.3
         "skel_vias": 0,          # portal-skeleton hops issued (pass-3: ring/labyrinth traversal)
         "skel_via_rooms": Counter(),
-        "roadmap_vias": 0,       # true volumetric-roadmap waypoints issued (reactive or proactive)
+        "roadmap_vias": 0,       # reactive volumetric-roadmap via commits
         "roadmap_via_rooms": Counter(),
+        "roadmap_routes": 0,     # proactive roadmap goals issued directly by the routed-leg dispatcher
+        "roadmap_route_rooms": Counter(),
         # Stage 6 orders
         "order_stations": 0,     # ON_STATION arrivals (hold posts + escort stations)
         "order_blocked": 0,      # BLOCKED reports (order nav made no progress ~8s)
@@ -472,6 +475,12 @@ def parse_log(path):
             if m:
                 s["roadmap_vias"] += 1
                 s["roadmap_via_rooms"][int(m.group(1))] += 1
+                continue
+
+            m = RE_ROADMAP_ROUTE.search(line)
+            if m:
+                s["roadmap_routes"] += 1
+                s["roadmap_route_rooms"][int(m.group(1))] += 1
                 continue
 
             if "BOT ENTROPY" in line:
@@ -1188,7 +1197,7 @@ def print_report(stats, total_lines, log_path):
 
     # Via-point steering (Phase 12) — the intra-room go-around funnel.
     has_via = any(s["via_detours"] > 0 or s["sealed_abandons"] > 0 or s["via_fails"] > 0 or
-                  s["skel_vias"] > 0 or s["roadmap_vias"] > 0 for s in stats.values())
+                  s["skel_vias"] > 0 or s["roadmap_vias"] > 0 or s["roadmap_routes"] > 0 for s in stats.values())
     if has_via:
         print(f"## Via-Point Steering (Phase 12)")
         print()
@@ -1201,7 +1210,8 @@ def print_report(stats, total_lines, log_path):
         for name in maps:
             s = stats[name]
             if (s["via_detours"] == 0 and s["sealed_abandons"] == 0 and s["via_fails"] == 0 and
-                    s["entry_aims"] == 0 and s["skel_vias"] == 0 and s["roadmap_vias"] == 0):
+                    s["entry_aims"] == 0 and s["skel_vias"] == 0 and s["roadmap_vias"] == 0 and
+                    s["roadmap_routes"] == 0):
                 continue
             rooms_str = ", ".join(f"{r}x{c}" for r, c in s["via_detour_rooms"].most_common(3)) or "-"
             sealed_str = str(s["sealed_abandons"])
@@ -1213,9 +1223,10 @@ def print_report(stats, total_lines, log_path):
             skel_str = str(s["skel_vias"])
             if s["skel_vias"]:
                 skel_str += " (" + ", ".join(f"{r}x{c}" for r, c in s["skel_via_rooms"].most_common(3)) + ")"
-            roadmap_str = str(s["roadmap_vias"])
-            if s["roadmap_vias"]:
-                roadmap_str += " (" + ", ".join(f"{r}x{c}" for r, c in s["roadmap_via_rooms"].most_common(3)) + ")"
+            roadmap_rooms = s["roadmap_via_rooms"] + s["roadmap_route_rooms"]
+            roadmap_str = str(s["roadmap_vias"] + s["roadmap_routes"])
+            if roadmap_rooms:
+                roadmap_str += " (" + ", ".join(f"{r}x{c}" for r, c in roadmap_rooms.most_common(3)) + ")"
             entry_str = str(s["entry_aims"])
             if s["entry_aims"]:
                 entry_str += " (" + ", ".join(f"{r}x{c}" for r, c in s["entry_aim_rooms"].most_common(3)) + ")"

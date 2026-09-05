@@ -1112,7 +1112,7 @@ int BotRoadmapItemReach(int room, const vector &from_pos, const vector &item_pos
 }
 
 BotViaResult BotRoadmapFindVia(object *obj, const vector &target_pos, int target_room, vector *via_out,
-                               bool proactive) {
+                               bool proactive, int next_room_hint) {
   if (!obj || OBJECT_OUTSIDE(obj))
     return BOT_VIA_NONE; // outdoor uses BotRoadmapFindViaOutdoor
   const int room_idx = obj->roomnum;
@@ -1140,9 +1140,12 @@ BotViaResult BotRoadmapFindVia(object *obj, const vector &target_pos, int target
     // NONE (goal < 0 below) and the caller falls back to the skeleton instead of routing to a lie.
     goal = NearestVisibleBounded(rr, target_pos, 24, 120.0f);
   } else {
-    int next_room = BotComputeRoute(room_idx, target_room);
-    if (next_room < 0)
-      next_room = target_room;
+    int next_room = next_room_hint;
+    if (next_room < 0) {
+      next_room = BotComputeRoute(room_idx, target_room);
+      if (next_room < 0)
+        next_room = target_room;
+    }
     float best_d = FLT_MAX;
     for (int p = 0; p < Rooms[room_idx].num_portals; p++) {
       if (Rooms[room_idx].portals[p].croom != next_room)

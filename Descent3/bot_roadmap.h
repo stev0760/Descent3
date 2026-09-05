@@ -146,7 +146,7 @@ int BotRoadmapRoomComps(int room_idx);
 // before the bridges merged it) earn proactive grid routing; simple rooms route fine on the direct path_pnt.
 // Reactive callers leave it false (a blocked line always needs a go-around regardless of room complexity).
 BotViaResult BotRoadmapFindVia(object *obj, const vector &target_pos, int target_room, vector *via_out,
-                               bool proactive = false);
+                               bool proactive = false, int next_room_hint = -1);
 
 // Stage 3 query (outdoor). Route the bot's terrain REGION over its volumetric roadmap toward target_pos,
 // threading laterally around structures. Same any-angle Lazy Theta* + furthest-visible delivery as the

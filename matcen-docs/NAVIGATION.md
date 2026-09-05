@@ -698,7 +698,20 @@ overnight log. A full verbosity-tier + event-vocabulary consolidation is registe
 
 ## 7. Open problems (roadmap)
 
-### 7.0-CURRENT Committee-collapse consolidation — 2026-08-30 (LIVE STATUS)
+### 7.0-CURRENT Roadmap authority in buried complex rooms — 2026-09-05 (IN TEST)
+
+The 0.9.13 roadmap overlay/soak census separated two abend2 ring failures. Room 0 already has a
+healthy 103-node, one-component `[COMPLEX]` roadmap, but `BotResolveRoomAim` refused every roadmap
+in a buried-center room and the legacy skeleton chain preempted it. Buried rooms now query the
+roadmap through the existing proactive complexity/hard-room gate. A successful query owns a stable,
+current-room goal and bypasses via/seam/skeleton for that issue; every query failure takes the old
+fallback path unchanged. True roadmap and skeleton waypoint counts are now logged separately.
+
+Room 30 has dense coverage but remains split across two roadmap components. Its cross-component legs
+still fall back while a bounded, hull-validated component connector is developed separately. The
+room-0 dispatch change builds cleanly; abend2 play validation is pending.
+
+### 7.0.1 Committee-collapse consolidation — 2026-08-30
 
 Branch `feature/multiplayer-bots` @ `fe3445df`, `0.9.12-dev`. The "one bot, one mind, piloting a
 ship" arc: the accreted nav committee is being collapsed into one resolver by **subtraction**, not

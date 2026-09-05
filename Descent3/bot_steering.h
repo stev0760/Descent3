@@ -178,8 +178,8 @@ bool BotEntryCenterClear(int room_idx, int portal_idx);
 
 // The ONE in-room resolution point (d6efc603 lesson — one aim point per room): all navigators
 // resolve a leg's in-room target through this helper, sharing one branch order: (a) the 0.9.4
-// volumetric roadmap (Lazy Theta*) first in NON-buried rooms, (b) the skeleton BFS first-hop
-// (the hull-proven arc for buried centers), (c) the soft-hop fallback (reach-door). All obj→node
+// volumetric roadmap (Lazy Theta*) first, with buried rooms admitted only through the validated
+// complex/hard-room proactive gate, (b) the skeleton BFS first-hop, (c) the soft-hop fallback. All obj→node
 // probes use startroom = obj->roomnum (never the skeleton-graph room). Guards obj/target_room
 // (used, indoor, non-external) before SkelBuild. `next_room_hint` skips a second BotComputeRoute
 // Dijkstra when the caller has the router hop.

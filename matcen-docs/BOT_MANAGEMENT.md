@@ -1,6 +1,7 @@
 # Phase 5: Bot Management & Server Administration
 
 **Status:** Phase 5.5 complete (shipped; this document is the Phase 5 design and implementation record)
+**Current fork:** Matcen 0.9.13-dev; this navigation work does not change bot-management behavior.
 **Prerequisite reading:** `BOT_DEV_REFERENCE.md`, `BOTS_DEVEL.md`
 **Key files:** `Descent3/bot.h`, `Descent3/bot.cpp`, `Descent3/dedicated_server.cpp`
 

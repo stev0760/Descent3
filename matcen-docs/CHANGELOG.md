@@ -27,6 +27,13 @@ play — do not treat as a release.*
     interior waypoint tested its connections at a radius slightly smaller than the ship's hull, so a
     gap the ship can't actually fit through could still be offered as a route. It now uses the true
     hull size, the same as the main grid.
+*   **Complex ring rooms now use the dense roadmap before the fallback skeleton.** Buried-center
+    rooms previously skipped the roadmap even when it had a complete connected route. The roadmap
+    now owns those legs only when the existing complexity gate and per-route connectivity checks
+    pass; otherwise the legacy path remains unchanged. In test on abend2.
+*   **Navigation logs now identify the planner that supplied each waypoint.** Roadmap waypoints were
+    previously counted as skeleton hops because both shared the same execution governor. Server log
+    analysis now reports true roadmap and skeleton counts by room.
 
 ## [0.9.12-dev] - in test
 
