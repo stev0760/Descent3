@@ -282,6 +282,11 @@ explicitly flushed by `BotRoadmapInvalidate()` when a build-time toggle flips (`
    `BOT_ROADMAP_CORNER_OFFSET_MAX` 120u over spans ≤ `BOT_ROADMAP_CORNER_LEN` 220u, hull-gated,
    spatial-hashed, attempts capped) to round the wall corner and connect them. Collapsed the
    townofbree/khazaddum divider rooms. A gap through solid stays unbridged — that's correct.
+5. **Bounded multi-bend repair** (0.9.13, in test): after the existing builders, portal seeds that
+   still occupy different components get a deterministic bidirectional collision-guided search.
+   A successful polyline is string-pulled, interpolated to ≤12u legs, and committed atomically only
+   after every leg clears at 6.7u. The pass is indoor-only, pair/node bounded, and does not change
+   the room's pre-repair proactive-complexity verdict. Failure leaves the graph untouched.
 
 **Query & delivery.** Local search = **Lazy Theta\*** (any-angle — §9 refs), not
 grid-Dijkstra-then-smooth: straight segments by construction, LOS = the shared hull-sweep.
@@ -707,9 +712,10 @@ roadmap through the existing proactive complexity/hard-room gate. A successful q
 current-room goal and bypasses via/seam/skeleton for that issue; every query failure takes the old
 fallback path unchanged. True roadmap and skeleton waypoint counts are now logged separately.
 
-Room 30 has dense coverage but remains split across two roadmap components. Its cross-component legs
-still fall back while a bounded, hull-validated component connector is developed separately. The
-room-0 dispatch change builds cleanly; abend2 play validation is pending.
+Room 30 has dense coverage but was split across two roadmap components. A separate bounded multi-bend
+pass now runs only for cross-component portal seeds after the existing lattice, corner bridge, and
+tube ladder fail to join them. It validates and interpolates a complete chain before atomic commit;
+failure leaves the old fallback intact. Both changes build cleanly; abend2 play validation is pending.
 
 ### 7.0.1 Committee-collapse consolidation — 2026-08-30
 

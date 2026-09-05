@@ -18,8 +18,9 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 **0.9.13-dev status:** the live nav overlay now shows the dense roadmap as well as the legacy
 skeleton. In complex buried-center rooms, a connected roadmap now owns the in-room leg before the
-sparse skeleton; a disconnected or unusable graph still falls through to the old path. This is in
-test on abend2 and adds no new `$nav` toggle. The last validated release remains 0.9.11.
+sparse skeleton. A bounded, hull-validated multi-bend builder repairs portal components that remain
+split after the normal lattice and bridge passes; an unusable graph still falls through to the old
+path. This is in test on abend2 and adds no new `$nav` toggle. The last validated release remains 0.9.11.
 
 ### Features
 

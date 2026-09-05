@@ -21,6 +21,8 @@
 
 #include "object.h"
 
+struct fvi_info;
+
 // Portal passability probe: casts a ship-radius ray through portal openings to detect
 // geometry-based blockage (bunker slits, barred windows) that portal flags miss.
 #define BOT_PF_PASSABILITY_PROBE_RADIUS 2.5f // ship-sized sphere for passage test
@@ -120,7 +122,7 @@ enum BotRoomAimSource {
 // the via search, the pseudo-bnode skeleton, AND the 0.9.4 volumetric roadmap for node growth, edge
 // probing, and Theta* line-of-sight). True when a sphere of `radius` sweeps a→b without hitting wall/
 // terrain. Indoor use only (no ceiling check); `startroom` is the fvi start room (the bot's room for a→b).
-bool BotSegmentClear(int startroom, const vector &a, const vector &b, float radius);
+bool BotSegmentClear(int startroom, const vector &a, const vector &b, float radius, fvi_info *hit_out = nullptr);
 
 // Outdoor variant (0.9.4 Stage 3): resolves the terrain cell under `a` as the fvi start room (an
 // RF_EXTERNAL room can't start an fvi trace, but the terrain cell can) and enables the ceiling check,

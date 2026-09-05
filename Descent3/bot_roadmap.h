@@ -62,6 +62,15 @@ extern bool Bot_gridnav_enabled;
 // nodes (with small lateral jitter when the direct rung clips a wall). Rung cap bounds per-room insertions.
 #define BOT_ROADMAP_TUBE_RUNG_MAX 96
 
+// Bounded multi-bend repair for portal-seed components that remain split after the lattice,
+// straight/corner bridges, and thin-tube ladder. Scratch search never mutates the graph; a full
+// chain is committed atomically only after every <=12u leg clears at hull radius.
+#define BOT_ROADMAP_MULTIBEND_SCRATCH 96
+#define BOT_ROADMAP_MULTIBEND_EXPAND 40
+#define BOT_ROADMAP_MULTIBEND_PAIR_MAX 15
+#define BOT_ROADMAP_MULTIBEND_NODE_MAX 96
+#define BOT_ROADMAP_MULTIBEND_STEP 12.0f
+
 // Component bridge (NAVIGATION.md section 3.5, construction step 4): connect grow-from-seed components separated by a
 // navigable gap wider than the neighbour-connect radius (sp*1.8 = 36u) but still flyable — e.g. an upper
 // gallery ~45u above a tavern floor through open air. Hull-probe-gated, so solid dividers stay split.

@@ -42,7 +42,8 @@
 #include "log.h"
 #include "game.h"        // Gametime ($nav heal recheck throttle)
 #include "gametexture.h" // TF_BREAKABLE ($nav heal: glass-blocked portal watch list)
-#include "object.h"      // per-room object chain ($nav heal: live grate/door-object signature)
+#include "findintersection.h"
+#include "object.h" // per-room object chain ($nav heal: live grate/door-object signature)
 
 #include <algorithm>
 #include <cfloat>
@@ -205,6 +206,235 @@ bool RoadmapLOSr(const RoadmapRoom *rr, const vector &a, const vector &b, float 
 }
 bool RoadmapLOS(const RoadmapRoom *rr, const vector &a, const vector &b) {
   return RoadmapLOSr(rr, a, b, BOT_ROADMAP_CLEARANCE);
+}
+
+// Indoor collision trace with blocker detail for the bounded multi-bend component repair below.
+// The outdoor roadmap never enters that pass.
+bool RoadmapTrace(const RoadmapRoom *rr, const vector &a, const vector &b, fvi_info *hit_out) {
+  return !rr->outdoor && BotSegmentClear(rr->probe_room, a, b, BOT_ROADMAP_CLEARANCE, hit_out);
+}
+
+vector RoadmapSideAxis(const vector &dir, const vector &wallnorm) {
+  vector side = vm_Cross3Product(dir, wallnorm);
+  if (vm_NormalizeVector(&side) >= 0.3f)
+    return side;
+  vector wy{};
+  wy.y() = 1.0f;
+  side = vm_Cross3Product(dir, wy);
+  if (vm_NormalizeVector(&side) >= 0.3f)
+    return side;
+  vector wx{};
+  wx.x() = 1.0f;
+  side = vm_Cross3Product(dir, wx);
+  vm_NormalizeVector(&side);
+  return side;
+}
+
+// Bidirectional scratch search between two portal seeds. Each admitted scratch edge is hull-clear,
+// but nothing touches RoadmapRoom until the complete chain is reconstructed and atomically committed.
+bool RoadmapFindMultiBend(const RoadmapRoom *rr, int a_idx, int b_idx, const vector &mn, const vector &mx,
+                          std::vector<vector> &path_out) {
+  struct ScratchPoint {
+    vector pos;
+    int parent;
+    int side;
+    bool done;
+  };
+  ScratchPoint scratch[BOT_ROADMAP_MULTIBEND_SCRATCH];
+  int count = 2;
+  scratch[0] = {rr->node[a_idx], -1, 0, false};
+  scratch[1] = {rr->node[b_idx], -1, 1, false};
+  int expanded[2] = {0, 0};
+  const float margin = BOT_ROADMAP_CLEARANCE * 2.0f;
+  const float offsets[4] = {12.0f, 26.0f, 40.0f, 54.0f};
+
+  for (int iter = 0; iter < BOT_ROADMAP_MULTIBEND_EXPAND; iter++) {
+    int left = -1, right = -1;
+    float best_d = FLT_MAX;
+    for (int i = 0; i < count; i++) {
+      if (scratch[i].side != 0)
+        continue;
+      for (int j = 0; j < count; j++) {
+        if (scratch[j].side != 1 || (scratch[i].done && scratch[j].done))
+          continue;
+        float d = Dist(scratch[i].pos, scratch[j].pos);
+        if (d < best_d) {
+          best_d = d;
+          left = i;
+          right = j;
+        }
+      }
+    }
+    if (left < 0)
+      break;
+
+    bool expand_left;
+    if (scratch[left].done)
+      expand_left = false;
+    else if (scratch[right].done)
+      expand_left = true;
+    else if (expanded[0] != expanded[1])
+      expand_left = expanded[0] < expanded[1];
+    else
+      expand_left = (iter & 1) == 0;
+    int u = expand_left ? left : right;
+    int v = expand_left ? right : left;
+    scratch[u].done = true;
+    expanded[scratch[u].side]++;
+
+    fvi_info hit{};
+    if (RoadmapTrace(rr, scratch[u].pos, scratch[v].pos, &hit)) {
+      int rev[BOT_ROADMAP_MULTIBEND_SCRATCH];
+      int nrev = 0;
+      for (int c = left; c >= 0 && nrev < BOT_ROADMAP_MULTIBEND_SCRATCH; c = scratch[c].parent)
+        rev[nrev++] = c;
+      for (int i = nrev - 1; i >= 0; i--)
+        path_out.push_back(scratch[rev[i]].pos);
+      for (int c = right; c >= 0; c = scratch[c].parent)
+        path_out.push_back(scratch[c].pos);
+      return path_out.size() >= 2;
+    }
+
+    vector dir = scratch[v].pos - scratch[u].pos;
+    if (vm_NormalizeVector(&dir) < 1.0f)
+      continue;
+    vector side = RoadmapSideAxis(dir, hit.hit_wallnorm[0]);
+    vector up = vm_Cross3Product(side, dir);
+    vm_NormalizeVector(&up);
+    vector diagonals[4] = {side + up, side - up, -side + up, -side - up};
+    for (vector &d : diagonals)
+      vm_NormalizeVector(&d);
+    const vector dirs[8] = {side, -side, up, -up, diagonals[0], diagonals[1], diagonals[2], diagonals[3]};
+    vector anchor = hit.hit_pnt - dir * 6.0f;
+
+    for (float off : offsets) {
+      for (const vector &axis : dirs) {
+        if (count >= BOT_ROADMAP_MULTIBEND_SCRATCH)
+          break;
+        vector cand = anchor + axis * off;
+        if (cand.x() < mn.x() - margin || cand.x() > mx.x() + margin || cand.y() < mn.y() - margin ||
+            cand.y() > mx.y() + margin || cand.z() < mn.z() - margin || cand.z() > mx.z() + margin)
+          continue;
+        bool duplicate = false;
+        for (int i = 0; i < count && !duplicate; i++)
+          duplicate = Dist(cand, scratch[i].pos) < 6.0f;
+        if (duplicate || !RoadmapTrace(rr, scratch[u].pos, cand, nullptr))
+          continue;
+        scratch[count++] = {cand, u, scratch[u].side, false};
+      }
+      if (count >= BOT_ROADMAP_MULTIBEND_SCRATCH)
+        break;
+    }
+  }
+  return false;
+}
+
+// Validate, densify, then atomically append one connector chain. Every delivered leg is <=12u and
+// hull-clear. Failure leaves node/adj/tweight/uf untouched.
+bool RoadmapCommitMultiBend(RoadmapRoom *rr, std::vector<int> &uf, int a_idx, int b_idx, const std::vector<vector> &raw,
+                            int *node_budget_used) {
+  if (raw.size() < 2)
+    return false;
+
+  std::vector<vector> pulled;
+  pulled.push_back(raw.front());
+  size_t anchor = 0;
+  for (size_t i = 1; i + 1 < raw.size(); i++) {
+    if (!RoadmapLOS(rr, raw[anchor], raw[i + 1])) {
+      pulled.push_back(raw[i]);
+      anchor = i;
+    }
+  }
+  pulled.push_back(raw.back());
+
+  std::vector<vector> dense;
+  dense.push_back(pulled.front());
+  const int max_dense = BOT_ROADMAP_MULTIBEND_NODE_MAX - *node_budget_used + 2; // endpoints are existing nodes
+  for (size_t i = 1; i < pulled.size(); i++) {
+    const vector a = pulled[i - 1], b = pulled[i];
+    const float d = Dist(a, b);
+    const int steps = std::max(1, (int)std::ceil(d / BOT_ROADMAP_MULTIBEND_STEP));
+    if ((int)dense.size() + steps > max_dense)
+      return false;
+    for (int s = 1; s <= steps; s++)
+      dense.push_back(a + (b - a) * ((float)s / steps));
+  }
+
+  int needed = (int)dense.size() - 2;
+  if (needed < 0 || *node_budget_used + needed > BOT_ROADMAP_MULTIBEND_NODE_MAX)
+    return false;
+  for (size_t i = 1; i < dense.size(); i++)
+    if (!RoadmapLOS(rr, dense[i - 1], dense[i]))
+      return false;
+
+  int prev = a_idx;
+  for (size_t i = 1; i + 1 < dense.size(); i++) {
+    int w = (int)rr->node.size();
+    rr->node.push_back(dense[i]);
+    rr->adj.emplace_back();
+    rr->tweight.push_back(0.0f);
+    uf.push_back(w);
+    rr->adj[prev].push_back(w);
+    rr->adj[w].push_back(prev);
+    UFUnion(uf, prev, w);
+    prev = w;
+    rr->lattice_nodes++;
+  }
+  if (!HasEdge(rr->adj[prev], b_idx)) {
+    rr->adj[prev].push_back(b_idx);
+    rr->adj[b_idx].push_back(prev);
+  }
+  UFUnion(uf, prev, b_idx);
+  *node_budget_used += needed;
+  return true;
+}
+
+void RoadmapConnectPortalComponents(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vector &mn,
+                                    const vector &mx, const char *kind, int id) {
+  if (rr->outdoor || n_seed < 2)
+    return;
+
+  std::vector<uint8_t> failed((size_t)n_seed * n_seed, 0);
+  int attempts = 0, joined = 0, failures = 0, node_budget_used = 0;
+  while (attempts < BOT_ROADMAP_MULTIBEND_PAIR_MAX && node_budget_used < BOT_ROADMAP_MULTIBEND_NODE_MAX) {
+    int ai = -1, bi = -1;
+    float best_d = FLT_MAX;
+    for (int i = 0; i < n_seed; i++)
+      for (int j = i + 1; j < n_seed; j++) {
+        if (UFFind(uf, i) == UFFind(uf, j) || failed[(size_t)i * n_seed + j])
+          continue;
+        float d = Dist(rr->node[i], rr->node[j]);
+        if (d < best_d) {
+          best_d = d;
+          ai = i;
+          bi = j;
+        }
+      }
+    if (ai < 0)
+      break;
+
+    attempts++;
+    std::vector<vector> raw;
+    if (RoadmapFindMultiBend(rr, ai, bi, mn, mx, raw) &&
+        RoadmapCommitMultiBend(rr, uf, ai, bi, raw, &node_budget_used)) {
+      joined++;
+    } else {
+      failed[(size_t)ai * n_seed + bi] = 1;
+      failures++;
+    }
+  }
+
+  bool unresolved = false;
+  for (int i = 0; i < n_seed && !unresolved; i++)
+    for (int j = i + 1; j < n_seed; j++)
+      if (UFFind(uf, i) != UFFind(uf, j)) {
+        unresolved = true;
+        break;
+      }
+  if (attempts > 0) {
+    LOG_DEBUG.printf("BOT: roadmap %s %d: multibend +%d nodes, %d pair(s) joined, %d failed%s", kind, id,
+                     node_budget_used, joined, failures, unresolved ? " [BUDGET/UNRESOLVED]" : "");
+  }
 }
 
 // Grow the lattice from the already-seeded rr->node[0..n_seed) over [mn,mx] at sp_start spacing: accept a
@@ -587,6 +817,15 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     }
   }
 
+  // Preserve the existing proactive eligibility verdict. The repair below may add real interior
+  // nodes, but connectivity repair alone must not widen the room class that gets proactive routing.
+  const bool complex_before_multibend = rr->orig_comp_count > 1 && rr->lattice_nodes >= BOT_ROADMAP_COMPLEX_MIN_LATTICE;
+
+  // 2d. Last construction fallback: connect portal-seed components through an explicit bounded
+  // multi-bend chain. Unlike the tube ladder, this can trace a curved annulus. It never runs for
+  // already-connected portal seeds and commits only a fully validated, <=12u interpolated chain.
+  RoadmapConnectPortalComponents(rr, uf, n_seed, mn, mx, kind, id);
+
   // 3. Compress components to dense ids.
   const int N = (int)rr->node.size();
   rr->comp.assign(N, -1);
@@ -609,7 +848,7 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
 
   // Complexity gate: fragmented before bridging AND real interior volume (the lattice floor rejects the
   // tiny-room false positive where the bridge — not growth — connected a few sparse portal seeds).
-  rr->complex = (rr->orig_comp_count > 1 && rr->lattice_nodes >= BOT_ROADMAP_COMPLEX_MIN_LATTICE);
+  rr->complex = complex_before_multibend;
 
   LOG_DEBUG.printf("BOT: roadmap %s %d: %d nodes (%d seeds + %d lattice), %d comps, sp=%.0f%s%s", kind, id, N, n_seed,
                    rr->lattice_nodes, rr->comp_count, sp, rr->degenerate ? " [DEGENERATE]" : "",
@@ -1111,8 +1350,8 @@ int BotRoadmapItemReach(int room, const vector &from_pos, const vector &item_pos
   return (rr->comp[a] == rr->comp[b]) ? 1 : 0;
 }
 
-BotViaResult BotRoadmapFindVia(object *obj, const vector &target_pos, int target_room, vector *via_out,
-                               bool proactive, int next_room_hint) {
+BotViaResult BotRoadmapFindVia(object *obj, const vector &target_pos, int target_room, vector *via_out, bool proactive,
+                               int next_room_hint) {
   if (!obj || OBJECT_OUTSIDE(obj))
     return BOT_VIA_NONE; // outdoor uses BotRoadmapFindViaOutdoor
   const int room_idx = obj->roomnum;

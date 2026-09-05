@@ -34,6 +34,10 @@ play — do not treat as a release.*
 *   **Navigation logs now identify the planner that supplied each waypoint.** Roadmap waypoints were
     previously counted as skeleton hops because both shared the same execution governor. Server log
     analysis now reports true roadmap and skeleton counts by room.
+*   **Split room grids get one bounded multi-bend repair pass.** When real portal seeds remain in
+    different components after normal lattice growth and bridging, the builder traces a short chain
+    around the blocking geometry. Every sub-leg is ship-width checked before the chain is committed;
+    failure leaves the old graph and fallback behavior intact. In test on abend2 room 30.
 
 ## [0.9.12-dev] - in test
 
