@@ -167,6 +167,12 @@ void BotRoadmapInvalidate();
 int BotRoadmapDumpRoom(int room_idx, vector *pos_out, int *comp_out, int max_nodes, int *comp_count_out,
                        bool *degenerate_out);
 
+// Live nav-overlay diagnostic: dump a room roadmap's EDGES (adjacency) as index pairs into the SAME
+// node ordering as BotRoadmapDumpRoom (so a[k]/b[k] index that call's pos_out[]). Each undirected edge
+// is emitted once (i<j). Returns edge count (0 = external/invalid). max_edges caps the output. The
+// overlay draws the lattice so a room reads as a connected grid (or a fragmented one) on sight.
+int BotRoadmapDumpRoomEdges(int room_idx, int *a_out, int *b_out, int max_edges);
+
 // $navdump diagnostic (Stage 3): build (lazily) + dump a terrain region's outdoor roadmap — node world
 // positions + per-node component id. Returns node count (0 = empty/out-of-range region). Sets
 // *comp_count_out and *degenerate_out. Caller arrays must hold max_nodes entries.

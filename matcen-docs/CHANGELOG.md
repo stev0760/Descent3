@@ -7,6 +7,27 @@ live navigation status is in [NAVIGATION.md](NAVIGATION.md) §7.0.
 Versioning: `0.8.x` = feature releases; `0.9.x` = the navigation-milestone series.
 A `-dev` suffix marks an in-test build that has not yet passed its validation gate.
 
+## [0.9.13-dev] - in test
+
+*An in-test build. The nav debug overlay now draws the **actual grid the bots plan over**, and two
+navigation "can it really fit / can it really see it" checks were tightened. Not yet validated for
+play — do not treat as a release.*
+
+*   **The nav overlay now shows the real navigation grid.** Pressing the overlay hotkey through to
+    its last mode used to draw nothing there. It now draws the dense per-room grid the bots actually
+    route over — every node and connection, coloured so a room that's split into disconnected pieces
+    is obvious at a glance. This is the map the planner really uses; until now the overlay only
+    showed a coarse fallback, which made some rooms look emptier than they are.
+*   **Bots no longer aim a room-crossing at a point behind a wall.** When planning a path to a target
+    inside a room, the planner attached the destination to the nearest grid point *by distance* —
+    which could be a point on the far side of a thin wall. It now requires a clear line to that grid
+    point, matching the check the item-reachability test already used; when there isn't one, the bot
+    falls back instead of routing into the wall.
+*   **A navigation shortcut can no longer be too tight for the ship.** One class of synthesized
+    interior waypoint tested its connections at a radius slightly smaller than the ship's hull, so a
+    gap the ship can't actually fit through could still be offered as a route. It now uses the true
+    hull size, the same as the main grid.
+
 ## [0.9.12-dev] - in test
 
 *An in-test build, mid-way through a navigation "consolidation" pass: bots are being made to fly

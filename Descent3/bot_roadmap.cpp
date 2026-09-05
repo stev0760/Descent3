@@ -1119,7 +1119,13 @@ BotViaResult BotRoadmapFindVia(object *obj, const vector &target_pos, int target
   // Goal node: the nearest node to an in-room target, or the seam node toward the next room.
   int goal = -1;
   if (target_room == room_idx) {
-    goal = Nearest(rr, target_pos);
+    // Attach the goal to the nearest HULL-VISIBLE node, not the Euclidean-nearest one. The bare
+    // Nearest() could anchor the goal to a node on the wrong side of a thin wall from target_pos —
+    // the route then threads to that node and the (unvalidated) final hop to target_pos crosses the
+    // wall. Match the single-authority reach gate (BotRoadmapItemReach), which already requires a
+    // hull-clear link from the item to the graph; when none exists the roadmap correctly returns
+    // NONE (goal < 0 below) and the caller falls back to the skeleton instead of routing to a lie.
+    goal = NearestVisibleBounded(rr, target_pos, 24, 120.0f);
   } else {
     int next_room = BotComputeRoute(room_idx, target_room);
     if (next_room < 0)
@@ -1180,6 +1186,27 @@ int BotRoadmapDumpRoom(int room_idx, vector *pos_out, int *comp_out, int max_nod
   if (degenerate_out)
     *degenerate_out = rr->degenerate;
   return n;
+}
+
+int BotRoadmapDumpRoomEdges(int room_idx, int *a_out, int *b_out, int max_edges) {
+  RoadmapRoom *rr = Get(room_idx);
+  if (!rr)
+    return 0;
+  const int n = (int)rr->node.size();
+  int e = 0;
+  for (int i = 0; i < n && e < max_edges; i++)
+    for (int j : rr->adj[i]) {
+      if (j <= i) // undirected: emit each edge once (adjacency is symmetric)
+        continue;
+      if (e >= max_edges)
+        break;
+      if (a_out)
+        a_out[e] = i;
+      if (b_out)
+        b_out[e] = j;
+      e++;
+    }
+  return e;
 }
 
 int BotRoadmapDumpRegion(int region, vector *pos_out, int *comp_out, int max_nodes, int *comp_count_out,

@@ -43,7 +43,11 @@
 // Pseudo-bnode (interior-waypoint) synthesis — Phase 12.5b. Edges among synthesized nodes are tested at
 // the REAL ship hull (~6.676) so we never route a bot into a gap it can't fit — the lesson from the
 // reverted engine-BNode experiment, which pruned at 5.0 and pinned bots in [5.0, 6.676) gaps.
-#define BOT_PSEUDO_BNODE_RADIUS 6.0f // hull-aware clearance radius for pseudo-bnode edges (primary tuning knob)
+// 0.9.13: this was 6.0 — which is ITSELF inside the [5.0, 6.676) pin band the comment warns against, so a
+// bridge edge could pass its build probe yet be too tight for the actual hull (SOL review). Raised to
+// 6.7 to match the roadmap's BOT_ROADMAP_CLEARANCE (hull 6.676 + sliver); a bridge that no longer clears
+// simply doesn't form (fail-closed) rather than routing a bot into a gap it jams in.
+#define BOT_PSEUDO_BNODE_RADIUS 6.7f // hull-fit clearance radius for pseudo-bnode edges (== BOT_ROADMAP_CLEARANCE)
 #define BOT_PSEUDO_BNODE_OFFSET 8.0f // push portal offset-nodes this far off the portal face into the room
 #define BOT_SKEL_MAX_NODES 32        // skeleton node cap per room (portal nodes + pseudo-bnodes)
 

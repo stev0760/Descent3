@@ -31,6 +31,7 @@
 
 #include "bot.h"
 #include "bot_steering.h"
+#include "bot_roadmap.h"
 #include "BOA.h"
 #include "room.h"
 #include "object.h"
@@ -208,6 +209,61 @@ static void NavDbgDrawBotIntent(int bot_index) {
     NavDbgCross(Rooms[gr].path_pnt, 3.0f, NAVDBG_GOAL);
 }
 
+// --- roadmap layer: the dense volumetric grid (mode >= 3) --------------------------------------
+// The PRIMARY indoor fine-nav substrate (bot_roadmap.cpp) — a grid-seeded PRM the skeleton is only a
+// fallback for. Until now the overlay drew only the skeleton, so the survey was of the fallback; this
+// draws the actual roadmap the router plans over: small dots (nodes) + thin lattice lines (edges),
+// colored by connected component so a fragmented room reads at a glance. A dimmer palette than the
+// skeleton's so the two layers stay separable when both are on (skeleton = big bright spheres).
+static ddgr_color NavDbgRoadmapColor(int comp) {
+  static const ddgr_color pal[] = {
+      GR_RGB(40, 110, 150),  // dim cyan
+      GR_RGB(150, 90, 25),   // dim orange
+      GR_RGB(95, 65, 150),   // dim purple
+      GR_RGB(35, 130, 95),   // dim teal
+      GR_RGB(140, 140, 70),  // dim yellow
+      GR_RGB(150, 70, 105),  // dim pink
+      GR_RGB(110, 110, 110), // dim grey
+      GR_RGB(70, 150, 55),   // dim lime
+  };
+  return pal[((comp % 8) + 8) % 8];
+}
+
+// Per-frame draw budgets so the dense lattice can never tank framerate (a big room can carry hundreds
+// of nodes / thousands of edges). Bounded, not exact — enough to see the grid's shape and components.
+#define NAVDBG_ROADMAP_MAX_NODES 4096
+#define NAVDBG_ROADMAP_MAX_EDGES 12000
+
+static void NavDbgDrawRoomRoadmap(int room_idx, int &node_budget, int &edge_budget) {
+  if (node_budget <= 0 && edge_budget <= 0)
+    return;
+  static vector pos[NAVDBG_ROADMAP_MAX_NODES];
+  static int comp[NAVDBG_ROADMAP_MAX_NODES];
+  int comp_count = 0;
+  bool degenerate = false;
+  int n = BotRoadmapDumpRoom(room_idx, pos, comp, NAVDBG_ROADMAP_MAX_NODES, &comp_count, &degenerate);
+  if (n <= 0)
+    return;
+
+  // Edges first (lattice lines under the node dots).
+  static int ea[NAVDBG_ROADMAP_MAX_EDGES];
+  static int eb[NAVDBG_ROADMAP_MAX_EDGES];
+  int ne = BotRoadmapDumpRoomEdges(room_idx, ea, eb, NAVDBG_ROADMAP_MAX_EDGES);
+  for (int k = 0; k < ne && edge_budget > 0; k++) {
+    int i = ea[k], j = eb[k];
+    if (i >= n || j >= n) // an endpoint past the node cap we drew — skip (can't place it)
+      continue;
+    NavDbgLine(pos[i], pos[j], NavDbgRoadmapColor(comp[i]));
+    edge_budget--;
+  }
+
+  // Nodes: small dots colored by component (distinct from the skeleton's large spheres).
+  for (int i = 0; i < n && node_budget > 0; i++) {
+    NavDbgSphere(pos[i], 0.45f, NavDbgRoadmapColor(comp[i]));
+    node_budget--;
+  }
+}
+
 // --- on-screen mode label + color legend --------------------------------------------------------
 // A key drawn in the top-left whenever the overlay is on: the current mode (with the cycle hotkey)
 // plus a legend whose every entry is drawn IN its own marker color, so the map reads without having
@@ -247,9 +303,11 @@ static void NavDbgDrawHud() {
     key(NAVDBG_GOAL, "X  goal room");
   }
 
-  // Roadmap layer (reserved / Phase 3).
-  if (Bot_navdebug_mode >= 3)
-    key(GR_RGB(160, 160, 160), "roadmap  (reserved / Phase 3)");
+  // Roadmap layer (the dense grid — the primary indoor substrate).
+  if (Bot_navdebug_mode >= 3) {
+    key(NavDbgRoadmapColor(0), "roadmap grid  small dot/line = node/edge");
+    key(GR_RGB(160, 160, 160), "   (color = component; big sphere = skeleton)");
+  }
 
   grtext_Flush();
 }
@@ -295,8 +353,14 @@ void BotNavDebugRender(int viewer_roomnum) {
       if (Bots[i].active)
         NavDbgDrawBotIntent(i);
 
-  // Mode 3 (roadmap layer) is reserved for Phase 3 — nothing drawn yet, but the mode cycles through
-  // it so the hotkey contract (off -> skeleton -> +intent -> +roadmap) is stable.
+  // Mode 3: the dense volumetric roadmap (the primary indoor substrate). Shared per-frame budgets
+  // across the scope so a cluster of big rooms can't blow the frame.
+  if (Bot_navdebug_mode >= 3) {
+    int node_budget = NAVDBG_ROADMAP_MAX_NODES;
+    int edge_budget = NAVDBG_ROADMAP_MAX_EDGES;
+    for (int s = 0; s < nscope; s++)
+      NavDbgDrawRoomRoadmap(scope[s], node_budget, edge_budget);
+  }
 
   NavDbgDrawHud();
 }
