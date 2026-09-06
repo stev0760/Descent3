@@ -2267,7 +2267,6 @@ static_assert(bot_info::BOT_CHAIN_MAX == BOT_SKEL_MAX_NODES, "via_chain must mat
 
 static int BotViaPointTick(int bot_index, const vector &target_pos, int target_room, int &goal_slot,
                            BotViaResult *verdict_out) {
-  Bots[bot_index].roadmap_goal_room = -1; // via ownership supersedes a direct roadmap goal
   if (verdict_out)
     *verdict_out = BOT_VIA_CLEAR;
   int slot = Bots[bot_index].player_slot;
@@ -2732,7 +2731,6 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   // Subtraction #2: the gate is now the ENGINE's own f_bnode_ok contract (BotBnodeLegOk), not our
   // stricter both-ends-interior rule — outdoor legs the engine can fly, the engine flies.
   if (BotBnodeNativeActive() && BotBnodeLegOk(obj, obj->roomnum, goal_room, &final_pos)) {
-    Bots[bot_index].roadmap_goal_room = -1;
     BotNavMemberWin(bot_index, NAV_MEMBER_BNODESP); // §7: engine's own BNode path owns this leg
     int &pgi = Bots[bot_index].pursuit_goal_index;
     bool goal_valid = (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used);
@@ -2805,17 +2803,6 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
     wp_room = goal_room;
   }
 
-  // A current-room roadmap waypoint is already a complete fine-planner decision. Hold it until the
-  // engine completes the goal instead of recomputing Theta* or letting via/seam/skeleton overwrite it.
-  int &pgi = Bots[bot_index].pursuit_goal_index;
-  bool goal_valid = (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used);
-  if (goal_valid && Bots[bot_index].roadmap_goal_room == obj->roomnum &&
-      Bots[bot_index].explore_dest_room == wp_room && Bots[bot_index].explore_room_timer > 0.0f) {
-    BotNavMemberWin(bot_index, NAV_MEMBER_GRIDROUTE);
-    return wp_room;
-  }
-  Bots[bot_index].roadmap_goal_room = -1;
-
   // Phase 12: interior-obstacle go-around. Probe the line to the point the engine is actually
   // steering at; when a free-standing interior face blocks it, divert through a committed
   // via-point sub-goal before resuming the routed waypoint. Carriers call this every tick, so
@@ -2841,14 +2828,7 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   BotRoomAimSource aim_source = BOT_ROOM_AIM_NONE;
   vector wp_aim{};
   const bool buried_room = BotRoomIsBuried(obj->roomnum);
-  // Ask the selective roadmap before the tray special case: abend2's long ring crossing and its
-  // final tray descent share target room 38/37, but the roadmap must first deliver the bot around
-  // the ring to that seam. Near the seam QueryVia yields and the existing tray push owns descent.
-  if (buried_room && Bot_gridnav_enabled &&
-      BotRoadmapFindVia(obj, routed_pos, goal_room, &wp_aim, /*proactive=*/true, wp_room) == BOT_VIA_FOUND) {
-    unified_aim = true;
-    aim_source = BOT_ROOM_AIM_ROADMAP;
-  } else if (wp_room == goal_room && BotStackedTrayAim(wp_room, obj->roomnum, &wp_aim)) {
+  if (wp_room == goal_room && BotStackedTrayAim(wp_room, obj->roomnum, &wp_aim)) {
     tray_aim = true;
     // Stacked-room descent (tray-seam class, §0.93 residual): the tray's path_pnt sits within
     // GET_TO_POS's 10u 3D-distance arrival sphere of the room above the open ceiling seam — the
@@ -2862,18 +2842,7 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   } else {
     wp_aim = (wp_room == goal_room) ? routed_pos : BotWaypointAimPos(wp_room, routed_pos, obj);
   }
-  if (aim_source == BOT_ROOM_AIM_ROADMAP) {
-    // The roadmap now owns this leg. Kill any older committed skeleton/via state so it cannot
-    // resurrect after the roadmap waypoint completes and seize the next issue.
-    Bots[bot_index].via_expires = 0.0f;
-    Bots[bot_index].via_is_skeleton = 0;
-    Bots[bot_index].via_skel_chain = 0;
-    Bots[bot_index].via_arrivals_same_room = 0;
-    Bots[bot_index].via_chain_len = 0;
-    Bots[bot_index].via_chain_room = -1;
-    Bots[bot_index].via_chain_target_room = -1;
-  }
-  if (aim_source != BOT_ROOM_AIM_ROADMAP) {
+  {
     // One authority on a routed leg: our resolved aim (wp_aim/wp_room) owns the via/chain target.
     // The engine's active BOA path node is queried ONLY to detect off-route divergence (the
     // seam-guard trigger below) — it is an execution detail, never new navigation intent. Feeding
@@ -2953,8 +2922,10 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
     }
   }
 
+  int &pgi = Bots[bot_index].pursuit_goal_index;
+  bool goal_valid = (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used);
   if (goal_valid && Bots[bot_index].explore_dest_room == wp_room && Bots[bot_index].explore_room_timer > 0.0f &&
-      !seam_redirect && aim_source != BOT_ROOM_AIM_ROADMAP)
+      !seam_redirect)
     return wp_room; // already en route to this waypoint — leave the engine path alone
                     // (a live seam redirect falls through: the CURRENT goal is what produced the detoured path)
 
@@ -2980,13 +2951,10 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
     dest = seam_pnt;
     dest_room = obj->roomnum;
   } else if (unified_aim) {
-    // The resolved in-room hop, claimed in the CURRENT room. A roadmap result already owns the
-    // fine leg; a legacy result keeps the helper's single buried-room resolution.
+    // The resolved in-room hop, claimed in the CURRENT room (the helper's one buried-room answer).
     dest = wp_aim;
     dest_room = obj->roomnum;
     nav_dest_overridden = true;
-    if (aim_source == BOT_ROOM_AIM_ROADMAP)
-      BotNavMemberWin(bot_index, NAV_MEMBER_GRIDROUTE);
   } else if (Bot_gridnav_enabled && !OBJECT_OUTSIDE(obj)) {
     vector gvia;
     if (BotRoadmapFindVia(obj, dest, wp_room, &gvia, /*proactive=*/true) == BOT_VIA_FOUND) {
@@ -3030,7 +2998,6 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   gi_info.roomnum = dest_room;
   pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
   if (aim_source == BOT_ROOM_AIM_ROADMAP && pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used) {
-    Bots[bot_index].roadmap_goal_room = obj->roomnum;
     LOG_DEBUG.printf("BOT NAV: '%s' roadmap route in room %d (target room %d)", Bots[bot_index].callsign,
                      (int)obj->roomnum, wp_room);
   }
@@ -7364,7 +7331,6 @@ static void BotRespawn(int bot_index) {
 
   Bots[bot_index].awaiting_respawn = false;
   Bots[bot_index].pursuit_goal_index = -1;
-  Bots[bot_index].roadmap_goal_room = -1;
   Bots[bot_index].combat_goal_index = -1;
   Bots[bot_index].powerup_goal_index = -1;
   Bots[bot_index].chasing_powerup_handle = OBJECT_HANDLE_NONE;
@@ -7424,7 +7390,6 @@ void BotInitAll() {
     Bots[i].awaiting_respawn = false;
     Bots[i].last_target_update = 0.0f;
     Bots[i].pursuit_goal_index = -1;
-    Bots[i].roadmap_goal_room = -1;
     Bots[i].intended_team = 0;
     Bots[i].state = BOT_STATE_EXPLORE;
     Bots[i].combat_goal_index = -1;
@@ -7617,7 +7582,6 @@ void BotReinitAll() {
     Bots[i].death_time = 0.0f;
     Bots[i].last_target_update = 0.0f;
     Bots[i].pursuit_goal_index = -1;
-    Bots[i].roadmap_goal_room = -1;
     Bots[i].combat_goal_index = -1;
     Bots[i].powerup_goal_index = -1;
     Bots[i].chasing_powerup_handle = OBJECT_HANDLE_NONE;
@@ -7939,7 +7903,6 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   Bots[bot_index].awaiting_respawn = false;
   Bots[bot_index].last_target_update = 0.0f;
   Bots[bot_index].pursuit_goal_index = -1;
-  Bots[bot_index].roadmap_goal_room = -1;
   Bots[bot_index].combat_goal_index = -1;
   Bots[bot_index].powerup_goal_index = -1;
   Bots[bot_index].chasing_powerup_handle = OBJECT_HANDLE_NONE;
@@ -8159,7 +8122,6 @@ void BotDoFrame() {
       Bots[i].awaiting_respawn = true;
       Bots[i].death_time = Gametime;
       Bots[i].pursuit_goal_index = -1;
-      Bots[i].roadmap_goal_room = -1;
       Bots[i].combat_goal_index = -1;
       Bots[i].powerup_goal_index = -1;
       Bots[i].chasing_powerup_handle = OBJECT_HANDLE_NONE;

@@ -27,10 +27,10 @@ play — do not treat as a release.*
     interior waypoint tested its connections at a radius slightly smaller than the ship's hull, so a
     gap the ship can't actually fit through could still be offered as a route. It now uses the true
     hull size, the same as the main grid.
-*   **Complex ring rooms now use the dense roadmap before the fallback skeleton.** Buried-center
-    rooms previously skipped the roadmap even when it had a complete connected route. The roadmap
-    now owns those legs only when the existing complexity gate and per-route connectivity checks
-    pass; otherwise the legacy path remains unchanged. In test on abend2.
+*   **Roadmap-only buried-room routing was tested and reverted.** It made roadmap usage look healthy,
+    but abend2 fell from 14 captures in ten rounds to one in nine and flag pickups collapsed. The
+    change had bypassed the sparse arterial path that reaches the hanging flag pockets. The known-good
+    behavior is restored while one continuous arterial-plus-local route composer is built in stages.
 *   **Navigation logs now identify the planner that supplied each waypoint.** Roadmap waypoints were
     previously counted as skeleton hops because both shared the same execution governor. Server log
     analysis now reports true roadmap and skeleton counts by room.

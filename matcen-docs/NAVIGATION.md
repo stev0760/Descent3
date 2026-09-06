@@ -704,14 +704,19 @@ overnight log. A full verbosity-tier + event-vocabulary consolidation is registe
 
 ## 7. Open problems (roadmap)
 
-### 7.0-CURRENT Roadmap authority in buried complex rooms — 2026-09-05 (IN TEST)
+### 7.0-CURRENT One network: arterials plus local streets — 2026-09-05 (IN TEST)
 
-The 0.9.13 roadmap overlay/soak census separated two abend2 ring failures. Room 0 already has a
-healthy 103-node, one-component `[COMPLEX]` roadmap, but `BotResolveRoomAim` refused every roadmap
-in a buried-center room and the legacy skeleton chain preempted it. Buried rooms now query the
-roadmap through the existing proactive complexity/hard-room gate. A successful query owns a stable,
-current-room goal and bypasses via/seam/skeleton for that issue; every query failure takes the old
-fallback path unchanged. True roadmap and skeleton waypoint counts are now logged separately.
+The roadmap-authority experiment is reverted. It moved its own metrics exactly as intended (room 0:
+6,389 roadmap vs 4 skeleton waypoints; via failures 88 -> 4) while play cratered: abend2 captures
+fell from 14/10 rounds to 1/9 and flag pickups from roughly 49 to 4. The dense local grid wandered
+near the goal after bypassing the sparse arterial chain and typed tray descent that actually reach
+the hanging flag pockets. Substrate ownership is the wrong architecture.
+
+The known-good buried-room ordering is restored. The approved replacement is one query-time union
+network: skeleton links are **arterials**, roadmap links are **local streets**, and one weighted A*
+returns a complete route with a typed same-room/exit/tray terminal or returns NONE without changing
+state. It will land first as a shadow composer; execution remains gated on goal completion metrics,
+not substrate usage. No new `$nav` toggle.
 
 Room 30 has dense coverage but was split across two roadmap components. The first bounded connector
 failed closed in its smoke (`+0 nodes, 0 joined, 5 failed`): its portal-to-portal tangent fan filled

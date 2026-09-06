@@ -819,9 +819,9 @@ static int SkelBfs(int room_idx, int n, uint32_t seed_mask, uint32_t stop_mask, 
 }
 
 // disagreeing at room-flap cadence. Branch order is deterministic and shared by all callers:
-//   (a) the 0.9.4 volumetric roadmap (Lazy Theta*) goes FIRST. Non-buried rooms keep the reactive
-//       query. Buried rooms use the proactive complexity/hard-room gate so a proven dense graph can
-//       own the leg without applying blanket grid routing to every buried room;
+//   (a) in non-buried rooms, the 0.9.4 volumetric roadmap (Lazy Theta*) goes FIRST;
+//       buried rooms skip it because replacing their arterial/tray path with local-street hops
+//       regressed goal completion (0.9.13 rollback; the unified-network composer will replace this split);
 //   (b) skeleton BFS first-hop — the hull-proven arc for annuli/buried centers (12.3/12.5b);
 //   (c) soft-hop fallback — aim at the nearest egress portal when the graph is disconnected
 //       (12.4/12.7 generalized reach-door; the route over the open tunnel doors still works).
@@ -843,13 +843,11 @@ bool BotResolveRoomAim(object *obj, const vector &target_pos, int target_room, f
   SkelLevelReset(); // explicit re-invocation of pass 3's old reset (buried gate below can skip it)
   room &rm = Rooms[room_idx];
 
-  // (a) Ask the roadmap first. Buried rooms use the selective proactive gate: genuinely complex
-  // graphs engage immediately, while simple buried rooms retain the legacy skeleton until existing
-  // hard-room evidence promotes them. QueryVia still requires non-degenerate, same-component endpoints.
-  const bool buried = RoomBuriedCenter(room_idx);
-  if (Bot_gridnav_enabled) {
+  // (a) Preserve the known-good buried-room path until the unified-network composer can carry its
+  // arterial route and typed terminal as one complete commitment.
+  if (Bot_gridnav_enabled && !RoomBuriedCenter(room_idx)) {
     vector rv;
-    if (BotRoadmapFindVia(obj, target_pos, target_room, &rv, /*proactive=*/buried, next_room_hint) == BOT_VIA_FOUND) {
+    if (BotRoadmapFindVia(obj, target_pos, target_room, &rv, /*proactive=*/false, next_room_hint) == BOT_VIA_FOUND) {
       *out = rv;
       if (source_out)
         *source_out = BOT_ROOM_AIM_ROADMAP;
