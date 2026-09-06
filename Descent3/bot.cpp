@@ -2828,6 +2828,31 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   BotRoomAimSource aim_source = BOT_ROOM_AIM_NONE;
   vector wp_aim{};
   const bool buried_room = BotRoomIsBuried(obj->roomnum);
+  // Unified-network Stage 2 shadow: compose and report a complete arterial+local route, but do not
+  // touch goals or commitment state. The known-good tray/via/skeleton ordering below still executes.
+  if (buried_room) {
+    static bool Shadow_seen[MAX_BOTS];
+    static float Shadow_time[MAX_BOTS];
+    static int Shadow_room[MAX_BOTS], Shadow_goal[MAX_BOTS], Shadow_next[MAX_BOTS];
+    bool changed = !Shadow_seen[bot_index] || Shadow_room[bot_index] != obj->roomnum ||
+                   Shadow_goal[bot_index] != goal_room || Shadow_next[bot_index] != wp_room;
+    if (changed || Gametime < Shadow_time[bot_index] || Gametime - Shadow_time[bot_index] > 5.0f) {
+      Shadow_seen[bot_index] = true;
+      Shadow_time[bot_index] = Gametime;
+      Shadow_room[bot_index] = obj->roomnum;
+      Shadow_goal[bot_index] = goal_room;
+      Shadow_next[bot_index] = wp_room;
+      BotComposedRoute shadow{};
+      if (BotComposeRoomRoute(obj, routed_pos, goal_room, wp_room, &shadow, /*cached_only=*/true)) {
+        LOG_DEBUG.printf("BOT NAV: compose shadow rm%d -> rm%d (goal %d) FOUND terminal=%s nodes=%d arterial=%.0f "
+                         "local=%.0f transfers=%d",
+                         (int)obj->roomnum, wp_room, goal_room, BotComposedTerminalName(shadow.terminal), shadow.count,
+                         shadow.arterial_dist, shadow.local_dist, shadow.transfers);
+      } else {
+        LOG_DEBUG.printf("BOT NAV: compose shadow rm%d -> rm%d (goal %d) NONE", (int)obj->roomnum, wp_room, goal_room);
+      }
+    }
+  }
   if (wp_room == goal_room && BotStackedTrayAim(wp_room, obj->roomnum, &wp_aim)) {
     tray_aim = true;
     // Stacked-room descent (tray-seam class, §0.93 residual): the tray's path_pnt sits within

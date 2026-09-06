@@ -120,6 +120,22 @@ bool BotRoadmapRoomIsHard(int room_idx) {
 
 namespace {
 
+enum UnionEdgeKind : uint8_t {
+  UNION_LOCAL = 0,
+  UNION_TRANSFER,
+  UNION_ARTERIAL,
+};
+
+struct UnionEdge {
+  int to;
+  UnionEdgeKind kind;
+};
+
+struct UnionNode {
+  vector pos;
+  std::vector<UnionEdge> adj;
+};
+
 // Per-room/region roadmap. Lazily built on first need, cached, freed/rebuilt on BOA_mine_checksum change.
 struct RoadmapRoom {
   std::vector<vector> node;          // node world positions (seeds first, then accepted lattice cells)
@@ -145,6 +161,11 @@ struct RoadmapRoom {
   std::vector<int> heal_watch; // portal indices that were breakable-glass-blocked at build time
   int heal_door_sig = -1;      // live OBJ_DOOR count in room + portal neighbors at build time
   float heal_next_check = 0.0f;
+
+  // Query-time union topology. Derived lazily from this local graph plus the cached/built arterial
+  // skeleton, and destroyed with the room so heal/checksum invalidation cannot leave it stale.
+  std::vector<UnionNode> union_graph;
+  bool union_built = false;
 };
 
 RoadmapRoom *g_room[MAX_ROOMS] = {nullptr};
@@ -1363,7 +1384,342 @@ BotViaResult QueryVia(RoadmapRoom *rr, object *obj, int goal, vector *via_out) {
   return BOT_VIA_FOUND;
 }
 
+void AddUnionEdge(std::vector<UnionNode> &graph, int a, int b, UnionEdgeKind kind) {
+  if (a < 0 || b < 0 || a == b || a >= (int)graph.size() || b >= (int)graph.size())
+    return;
+  auto add_one = [&](int from, int to) {
+    for (UnionEdge &edge : graph[from].adj)
+      if (edge.to == to) {
+        if (kind == UNION_ARTERIAL || (kind == UNION_TRANSFER && edge.kind == UNION_LOCAL))
+          edge.kind = kind;
+        return;
+      }
+    graph[from].adj.push_back({to, kind});
+  };
+  add_one(a, b);
+  add_one(b, a);
+}
+
+bool EnsureUnionGraph(RoadmapRoom *rr, int room_idx, bool cached_only) {
+  if (rr->union_built)
+    return true;
+  std::vector<UnionNode> graph;
+  const int local_n = (int)rr->node.size();
+  graph.resize(local_n);
+  for (int i = 0; i < local_n; i++) {
+    graph[i].pos = rr->node[i];
+    for (int j : rr->adj[i])
+      if (i < j)
+        AddUnionEdge(graph, i, j, UNION_LOCAL);
+  }
+
+  vector skel_pos[BOT_SKEL_MAX_NODES];
+  uint32_t skel_edges[BOT_SKEL_MAX_NODES]{};
+  int portal_count = 0;
+  int skel_n = cached_only ? BotSkelDumpRoomCached(room_idx, skel_pos, skel_edges, &portal_count)
+                           : BotSkelDumpRoom(room_idx, skel_pos, skel_edges, &portal_count);
+  if (skel_n <= 0)
+    return false;
+
+  std::vector<int> map(skel_n, -1);
+  for (int i = 0; i < skel_n; i++) {
+    if (i < portal_count && i < (int)rr->portal_seed.size()) {
+      map[i] = rr->portal_seed[i];
+    } else {
+      map[i] = (int)graph.size();
+      graph.push_back({skel_pos[i], {}});
+    }
+  }
+
+  // Skeleton direct portal edges were historically probed at 2.5. Revalidate every imported
+  // arterial at the real 6.7 hull; only pseudo edges that still clear enter the union network.
+  for (int i = 0; i < skel_n; i++)
+    for (int j = i + 1; j < skel_n; j++) {
+      if (!(skel_edges[i] & (1u << j)) || map[i] < 0 || map[j] < 0)
+        continue;
+      if (RoadmapLOS(rr, graph[map[i]].pos, graph[map[j]].pos))
+        AddUnionEdge(graph, map[i], map[j], UNION_ARTERIAL);
+    }
+
+  // Pseudo arterial nodes join local streets through a few nearby hull-visible ramps. Portal nodes
+  // need no ramp because the union maps them to the roadmap's identical portal seed.
+  for (int i = portal_count; i < skel_n; i++) {
+    int u = map[i];
+    std::vector<std::pair<float, int>> cand;
+    for (int j = 0; j < local_n; j++) {
+      float d = Dist(graph[u].pos, graph[j].pos);
+      if (d <= BOT_ROADMAP_SPACING * 1.8f)
+        cand.emplace_back(d, j);
+    }
+    std::sort(cand.begin(), cand.end());
+    int added = 0;
+    for (const auto &entry : cand) {
+      if (added >= 6)
+        break;
+      if (!RoadmapLOS(rr, graph[u].pos, graph[entry.second].pos))
+        continue;
+      AddUnionEdge(graph, u, entry.second, UNION_TRANSFER);
+      added++;
+    }
+  }
+  rr->union_graph = std::move(graph);
+  rr->union_built = true;
+  return true;
+}
+
+std::vector<int> VisibleUnionNodes(RoadmapRoom *rr, const std::vector<UnionNode> &graph, const vector &pos,
+                                   float clearance) {
+  constexpr int kProbeBudget = 128;
+  std::vector<std::pair<float, int>> cand;
+  cand.reserve(graph.size());
+  for (int i = 0; i < (int)graph.size(); i++)
+    cand.emplace_back(Dist(pos, graph[i].pos), i);
+  int probe_n = std::min((int)cand.size(), kProbeBudget);
+  if (probe_n < (int)cand.size())
+    std::partial_sort(cand.begin(), cand.begin() + probe_n, cand.end());
+  else
+    std::sort(cand.begin(), cand.end());
+
+  std::vector<int> visible;
+  for (int i = 0; i < probe_n; i++)
+    if (RoadmapLOSr(rr, pos, graph[cand[i].second].pos, clearance))
+      visible.push_back(cand[i].second);
+  return visible;
+}
+
+bool ComposeUnionRoute(RoadmapRoom *rr, object *obj, const vector &target_pos, int target_room, int next_room_hint,
+                       BotComposedRoute *route_out, bool cached_only) {
+  constexpr float kLocalCost = 1.25f;
+  const int room_idx = obj->roomnum;
+  if (!EnsureUnionGraph(rr, room_idx, cached_only) || rr->union_graph.empty())
+    return false;
+  const std::vector<UnionNode> &graph = rr->union_graph;
+  const float clearance = std::max(obj->size, BOT_ROADMAP_CLEARANCE);
+
+  BotComposedTerminal terminal = BOT_COMPOSE_TERMINAL_NONE;
+  vector terminal_pos{};
+  int terminal_room = room_idx;
+  std::vector<int> goals;
+  std::vector<float> goal_extra(graph.size(), FLT_MAX);
+  std::vector<int> goal_portal(graph.size(), -1);
+
+  if (target_room == room_idx) {
+    terminal = BOT_COMPOSE_TERMINAL_SAME_ROOM;
+    terminal_pos = target_pos;
+    goals = VisibleUnionNodes(rr, graph, target_pos, clearance);
+    for (int node : goals)
+      goal_extra[node] = Dist(graph[node].pos, target_pos) * kLocalCost;
+  } else {
+    int next_room = next_room_hint;
+    if (next_room < 0) {
+      next_room = BotComputeRoute(room_idx, target_room);
+      if (next_room < 0)
+        next_room = target_room;
+    }
+    terminal_room = next_room;
+    room &rm = Rooms[room_idx];
+    for (int pass = 0; pass < 2 && goals.empty(); pass++)
+      for (int p = 0; p < rm.num_portals && p < (int)rr->portal_seed.size(); p++) {
+        if (rm.portals[p].croom != next_room || BotPortalRouteCost(room_idx, p, pass == 1) >= BOT_PORTAL_IMPASSABLE ||
+            BotPortalWindDir(room_idx, p) < 0)
+          continue;
+        int node = rr->portal_seed[p];
+        if (node < 0 || node >= (int)graph.size())
+          continue;
+        goals.push_back(node);
+        goal_extra[node] = 0.0f;
+        goal_portal[node] = p;
+      }
+    if (next_room == target_room && BotStackedTrayAim(next_room, room_idx, &terminal_pos)) {
+      terminal = BOT_COMPOSE_TERMINAL_STACKED_TRAY;
+    } else {
+      terminal = BOT_COMPOSE_TERMINAL_EXIT_PORTAL;
+    }
+  }
+  if (goals.empty())
+    return false;
+
+  std::vector<int> starts = VisibleUnionNodes(rr, graph, obj->pos, clearance);
+  if (starts.empty())
+    return false;
+
+  auto Heuristic = [&](int node) {
+    if (terminal == BOT_COMPOSE_TERMINAL_SAME_ROOM)
+      return Dist(graph[node].pos, target_pos);
+    float best = FLT_MAX;
+    for (int goal : goals)
+      best = std::min(best, Dist(graph[node].pos, graph[goal].pos));
+    return best;
+  };
+
+  struct OpenNode {
+    float f, g, local;
+    int node;
+    bool operator>(const OpenNode &other) const {
+      if (f != other.f)
+        return f > other.f;
+      if (local != other.local)
+        return local > other.local;
+      return node > other.node;
+    }
+  };
+  const int n = (int)graph.size();
+  std::vector<float> cost(n, FLT_MAX), local_dist(n, FLT_MAX);
+  std::vector<int> parent(n, -2);
+  std::vector<UnionEdgeKind> parent_kind(n, UNION_LOCAL);
+  std::priority_queue<OpenNode, std::vector<OpenNode>, std::greater<OpenNode>> open;
+  for (int start : starts) {
+    float d = Dist(obj->pos, graph[start].pos);
+    float g = d * kLocalCost;
+    if (g < cost[start]) {
+      cost[start] = g;
+      local_dist[start] = d;
+      parent[start] = -1;
+      open.push({g + Heuristic(start), g, d, start});
+    }
+  }
+
+  float best_total = FLT_MAX, best_local = FLT_MAX;
+  int best_goal = -1;
+  while (!open.empty()) {
+    OpenNode cur = open.top();
+    open.pop();
+    if (cur.g > cost[cur.node] + 0.001f || cur.local > local_dist[cur.node] + 0.001f)
+      continue;
+    if (cur.f >= best_total)
+      break;
+
+    if (goal_extra[cur.node] < FLT_MAX) {
+      float total = cost[cur.node] + goal_extra[cur.node];
+      float local = local_dist[cur.node] + goal_extra[cur.node] / kLocalCost;
+      if (total < best_total || (total == best_total && local < best_local)) {
+        best_total = total;
+        best_local = local;
+        best_goal = cur.node;
+      }
+    }
+
+    for (const UnionEdge &edge : graph[cur.node].adj) {
+      if (clearance > BOT_ROADMAP_CLEARANCE &&
+          !RoadmapLOSr(rr, graph[cur.node].pos, graph[edge.to].pos, clearance))
+        continue;
+      float d = Dist(graph[cur.node].pos, graph[edge.to].pos);
+      bool arterial = edge.kind == UNION_ARTERIAL;
+      float next_cost = cost[cur.node] + d * (arterial ? 1.0f : kLocalCost);
+      float next_local = local_dist[cur.node] + (arterial ? 0.0f : d);
+      if (next_cost > cost[edge.to] + 0.001f ||
+          (fabsf(next_cost - cost[edge.to]) <= 0.001f && next_local >= local_dist[edge.to]))
+        continue;
+      cost[edge.to] = next_cost;
+      local_dist[edge.to] = next_local;
+      parent[edge.to] = cur.node;
+      parent_kind[edge.to] = edge.kind;
+      open.push({next_cost + Heuristic(edge.to), next_cost, next_local, edge.to});
+    }
+  }
+  if (best_goal < 0)
+    return false;
+
+  std::vector<int> nodes;
+  for (int node = best_goal; node >= 0; node = parent[node])
+    nodes.push_back(node);
+  std::reverse(nodes.begin(), nodes.end());
+  if (nodes.empty())
+    return false;
+
+  std::vector<UnionEdgeKind> kinds;
+  for (size_t i = 1; i < nodes.size(); i++)
+    kinds.push_back(parent_kind[nodes[i]]);
+
+  std::vector<vector> waypoint;
+  waypoint.push_back(graph[nodes.front()].pos);
+  size_t edge_i = 0;
+  float arterial_dist = 0.0f;
+  int transfers = 0;
+  for (size_t i = 0; i < kinds.size(); i++) {
+    float d = Dist(graph[nodes[i]].pos, graph[nodes[i + 1]].pos);
+    if (kinds[i] == UNION_ARTERIAL)
+      arterial_dist += d;
+    else if (kinds[i] == UNION_TRANSFER)
+      transfers++;
+  }
+  const float straighten_clear =
+      std::max(clearance, Bot_curve_route_enabled ? BOT_ROADMAP_STRAIGHTEN_CLEARANCE : BOT_ROADMAP_CLEARANCE);
+  while (edge_i < kinds.size()) {
+    if (kinds[edge_i] == UNION_ARTERIAL) {
+      waypoint.push_back(graph[nodes[edge_i + 1]].pos);
+      edge_i++;
+      continue;
+    }
+    size_t run_end = edge_i;
+    while (run_end < kinds.size() && kinds[run_end] != UNION_ARTERIAL)
+      run_end++;
+    size_t at = edge_i;
+    while (at < run_end) {
+      size_t far = run_end;
+      while (far > at + 1 && !RoadmapLOSr(rr, graph[nodes[at]].pos, graph[nodes[far]].pos, straighten_clear))
+        far--;
+      waypoint.push_back(graph[nodes[far]].pos);
+      at = far;
+    }
+    edge_i = run_end;
+  }
+
+  if (terminal == BOT_COMPOSE_TERMINAL_SAME_ROOM && Dist(waypoint.back(), target_pos) > 0.1f)
+    waypoint.push_back(target_pos);
+  if (waypoint.empty() || (int)waypoint.size() > BOT_COMPOSE_MAX_NODES)
+    return false;
+  if (!RoadmapLOSr(rr, obj->pos, waypoint.front(), clearance))
+    return false;
+  for (size_t i = 1; i < waypoint.size(); i++)
+    if (!RoadmapLOSr(rr, waypoint[i - 1], waypoint[i], clearance))
+      return false;
+
+  if (terminal == BOT_COMPOSE_TERMINAL_STACKED_TRAY) {
+    int p = goal_portal[best_goal];
+    if (p < 0 || p >= Rooms[room_idx].num_portals ||
+        !BotSegmentClear(room_idx, Rooms[room_idx].portals[p].path_pnt, terminal_pos, clearance))
+      return false;
+  }
+
+  route_out->count = (int)waypoint.size();
+  for (int i = 0; i < route_out->count; i++)
+    route_out->point[i] = waypoint[i];
+  route_out->terminal = terminal;
+  route_out->terminal_pos = terminal_pos;
+  route_out->terminal_room = terminal_room;
+  route_out->terminal_portal = goal_portal[best_goal];
+  route_out->arterial_dist = arterial_dist;
+  route_out->local_dist = best_local;
+  route_out->transfers = transfers;
+  return true;
+}
+
 } // namespace
+
+const char *BotComposedTerminalName(BotComposedTerminal terminal) {
+  switch (terminal) {
+  case BOT_COMPOSE_TERMINAL_SAME_ROOM:
+    return "SAME";
+  case BOT_COMPOSE_TERMINAL_EXIT_PORTAL:
+    return "EXIT";
+  case BOT_COMPOSE_TERMINAL_STACKED_TRAY:
+    return "TRAY";
+  default:
+    return "NONE";
+  }
+}
+
+bool BotComposeRoomRoute(object *obj, const vector &target_pos, int target_room, int next_room_hint,
+                         BotComposedRoute *route_out, bool cached_only) {
+  if (!obj || !route_out || OBJECT_OUTSIDE(obj) || !Bot_gridnav_enabled)
+    return false;
+  RoadmapRoom *rr = cached_only ? PeekCached(obj->roomnum) : Get(obj->roomnum);
+  if (!rr || rr->degenerate || (!rr->complex && !BotRoadmapRoomIsHard(obj->roomnum)))
+    return false;
+  *route_out = {};
+  return ComposeUnionRoute(rr, obj, target_pos, target_room, next_room_hint, route_out, cached_only);
+}
 
 void BotRoadmapInvalidate() { FreeAll(); }
 

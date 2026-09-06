@@ -256,7 +256,7 @@ float BotPortalGeoCost(int room_idx, int portal_idx) {
 // Keep BotPortalGeoCost as the strict physical verdict used by sealed-room and grate checks. The
 // coarse router may tolerate a probe rejection only in its second, last-resort search: BOA must
 // independently call the portal passable, and every strictly flyable route must already have failed.
-static float BotPortalRouteCost(int room_idx, int portal_idx, bool allow_disagree) {
+float BotPortalRouteCost(int room_idx, int portal_idx, bool allow_disagree) {
   float cost = BotPortalGeoCost(room_idx, portal_idx);
   if (cost < BOT_PORTAL_IMPASSABLE || !allow_disagree || room_idx < 0 || room_idx > Highest_room_index ||
       !Rooms[room_idx].used || portal_idx < 0 || portal_idx >= Rooms[room_idx].num_portals ||
@@ -1211,6 +1211,25 @@ int BotSkelDumpRoom(int room_idx, vector *pos_out, uint32_t *edges_out, int *por
   }
   if (portal_count_out)
     *portal_count_out = np;
+  return n;
+}
+
+int BotSkelDumpRoomCached(int room_idx, vector *pos_out, uint32_t *edges_out, int *portal_count_out) {
+  if (portal_count_out)
+    *portal_count_out = 0;
+  SkelLevelReset();
+  if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used ||
+      (Rooms[room_idx].flags & RF_EXTERNAL) || !skel_built[room_idx])
+    return 0;
+  int n = skel_node_count[room_idx];
+  for (int i = 0; i < n; i++) {
+    if (pos_out)
+      pos_out[i] = skel_node_pos[room_idx][i];
+    if (edges_out)
+      edges_out[i] = skel_edges[room_idx][i];
+  }
+  if (portal_count_out)
+    *portal_count_out = SkelPortalCount(Rooms[room_idx]);
   return n;
 }
 

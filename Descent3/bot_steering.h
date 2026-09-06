@@ -210,6 +210,9 @@ bool BotStackedTrayAim(int wp_room, int prev_room, vector *out);
 // skeleton lazily; returns the total node count (0 if the room is external/invalid). Caller arrays
 // must hold BOT_SKEL_MAX_NODES entries.
 int BotSkelDumpRoom(int room_idx, vector *pos_out, uint32_t *edges_out, int *portal_count_out);
+// Cached-only form for shadow diagnostics: never builds the skeleton and returns 0 when the room
+// has not already been used by live navigation.
+int BotSkelDumpRoomCached(int room_idx, vector *pos_out, uint32_t *edges_out, int *portal_count_out);
 
 // $navdump diagnostic (12.6 Stage B): dump a terrain region's outdoor connecting graph — node positions
 // (entrance approach nodes [0,*ent_count_out), then perimeter anchors) and per-node hull-clear edge
@@ -306,6 +309,8 @@ bool BotCheckPortalPassable(int room_idx, int portal_idx);
 // BOT_PORTAL_IMPASSABLE for grates/slits/locked/too-small openings, otherwise a finite
 // penalty (0 = wide open, rising as the opening tightens). Cached per level.
 float BotPortalGeoCost(int room_idx, int portal_idx);
+// Delivery-side portal verdict matching the coarse router's strict-first, disagreement-last policy.
+float BotPortalRouteCost(int room_idx, int portal_idx, bool allow_disagree);
 
 // Cost-aware next-hop router (Phase 11). Dijkstra over the interior room graph weighting
 // portals by BOA base cost + graded geometry cost + dynamic penalty. Returns the next room to

@@ -146,6 +146,33 @@ int BotRoadmapRoomComps(int room_idx);
 #define BOT_ROADMAP_OUTDOOR_SPACING 30.0f // terrain-region lattice spacing (coarser than the 20u indoor grid)
 #define BOT_ROADMAP_OUTDOOR_MARGIN 60.0f  // expand each structure bbox this far into airspace to scope the lattice
 
+// Query-time union of the sparse arterial graph and dense local-street graph. A FOUND result is a
+// complete, hull-validated route to a typed terminal; the caller must treat false as an atomic
+// fallback and leave the known-good navigation path untouched.
+#define BOT_COMPOSE_MAX_NODES BOT_SKEL_MAX_NODES
+enum BotComposedTerminal {
+  BOT_COMPOSE_TERMINAL_NONE = 0,
+  BOT_COMPOSE_TERMINAL_SAME_ROOM,
+  BOT_COMPOSE_TERMINAL_EXIT_PORTAL,
+  BOT_COMPOSE_TERMINAL_STACKED_TRAY,
+};
+
+struct BotComposedRoute {
+  vector point[BOT_COMPOSE_MAX_NODES];
+  int count;
+  BotComposedTerminal terminal;
+  vector terminal_pos;
+  int terminal_room;
+  int terminal_portal;
+  float arterial_dist;
+  float local_dist;
+  int transfers;
+};
+
+bool BotComposeRoomRoute(object *obj, const vector &target_pos, int target_room, int next_room_hint,
+                         BotComposedRoute *route_out, bool cached_only = false);
+const char *BotComposedTerminalName(BotComposedTerminal terminal);
+
 // Stage 1 query. Find a go-around waypoint by routing the bot's CURRENT room's volumetric roadmap with
 // Lazy Theta* toward target_pos (same room) or the seam node toward the next room (cross room). Returns
 // BOT_VIA_FOUND (+ *via_out = furthest-visible vertex on the any-angle path) on success, or BOT_VIA_NONE
