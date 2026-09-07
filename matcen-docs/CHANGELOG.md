@@ -9,15 +9,51 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
 
 ## [0.9.13-dev] - in test
 
-*An in-test build. The nav debug overlay now draws the **actual grid the bots plan over**, and two
-navigation "can it really fit / can it really see it" checks were tightened. Not yet validated for
-play — do not treat as a release.*
+*An in-test build, and a substantial one: bots can now build and use in-room navigation in flat
+rooms, which is most of the rooms on most maps. Not yet validated for play — do not treat as a
+release.*
 
+*   **Bots can finally navigate flat rooms.** The in-room navigation grid was laid out from the
+    corner of a room's bounding box in fixed steps, so a room about as tall as one step got its only
+    sample heights at the floor and the ceiling — where a ship does not fit — and ended up with
+    almost no navigation points at all. Room height, not room difficulty, decided how much
+    navigation a room received: tall open halls were packed with thousands of redundant points while
+    corridors and ring rooms got none. The grid is now aligned to the space bots actually fly
+    through. On abend2 the two flag-ring rooms went from 10 and 9 usable points to 223 each, and
+    every pair of doorways in them can now be routed between; total points across the map rose only
+    11%, and on Batteries Included the count actually **fell** 7%, because the wasted layer that used
+    to sit flat against the wall is gone.
+*   **Rooms with good navigation are now allowed to use it.** The test deciding whether a room may
+    plan a route through its own grid was really asking "did the grid builder fail here?" — so
+    improving a room's navigation made it *ineligible* to use it. Two of abend2's flag-ring rooms
+    held a complete grid and used it zero times. Eligibility now asks whether a room has a usable
+    network: enough real sample points, and doorways that genuinely connect to each other through
+    the room's interior.
+*   **One planner owns in-room routing where a real network exists.** Where a room has a proven
+    network, the bot commits to a single continuous route through it instead of re-deciding its
+    next waypoint every few units. The route always ends either at its target or at a doorway out,
+    never on an interior point — the failure that caused the reverted experiment below. Anywhere a
+    complete route can't be produced, the previous behaviour runs unchanged.
+*   **The overlay draws outdoor navigation.** Flying outdoors with the overlay on used to show an
+    empty sky, which read as "there is no outdoor navigation here" — there is; Polaris carries over
+    4000 outdoor nodes. The overlay had no outdoor drawing at all. It now draws the terrain region
+    you are in and any region a bot is in, and states on screen which region it is showing and
+    whether that region has been built yet.
 *   **The nav overlay now shows the real navigation grid.** Pressing the overlay hotkey through to
     its last mode used to draw nothing there. It now draws the dense per-room grid the bots actually
     route over — every node and connection, coloured so a room that's split into disconnected pieces
     is obvious at a glance. This is the map the planner really uses; until now the overlay only
     showed a coarse fallback, which made some rooms look emptier than they are.
+*   **Server logs report navigation coverage honestly.** The per-room log line counted repair
+    waypoints as if they were grid coverage, so a room with 3 real sample points reported 97. Real
+    coverage and repair work are now counted separately, alongside a figure for how many of a room's
+    doorway pairs actually connect through its interior — a room can report a single connected
+    component while almost none of its doorways reach each other, which is how several rooms passed
+    inspection while bots were stuck in them.
+*   **Log analysis reports which planner is steering.** The server has always recorded which
+    navigation subsystem holds a bot's steering at each moment; nothing ever read it. `analyze_bot_log.py`
+    now reports it, including how often one subsystem takes the wheel from another so quickly that
+    the first had no time to act.
 *   **Bots no longer aim a room-crossing at a point behind a wall.** When planning a path to a target
     inside a room, the planner attached the destination to the nearest grid point *by distance* —
     which could be a point on the far side of a thin wall. It now requires a clear line to that grid

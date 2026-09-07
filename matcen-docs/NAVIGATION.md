@@ -704,7 +704,66 @@ overnight log. A full verbosity-tier + event-vocabulary consolidation is registe
 
 ## 7. Open problems (roadmap)
 
-### 7.0-CURRENT One network: arterials plus local streets — 2026-09-05 (IN TEST)
+### 7.0-CURRENT The sampler was mis-phased — coverage, eligibility, ownership — 2026-09-06 (IN TEST)
+
+**Locked vocabulary (operator, 2026-09-06).** The **navigation network** is **arterials** (the
+skeleton highway) plus **local streets** (the lattice fill). The **navigator** plans; a **route** is
+the single continuous goal-to-goal path; the **pilot** flies it. The **committee** is the set of extra
+voices that overwrite the pilot's aim, and it is what we are removing. Retire *router*, *composer*,
+*governor*, *capillaries* and *grid nav* as separate concepts.
+
+**The defect was three conflations stacked on each other, each hiding the next.**
+
+**1. Coverage tracked room HEIGHT, not need.** `GrowFromSeeds` phased its lattice at the room bbox
+minimum in fixed 20u steps, so a room one pitch tall got its only two sample planes on the floor and
+the ceiling, where the 6.79u clearance test rejects everything. abend2's ring rooms (365 x 20 x 364)
+held **3 and 9 true lattice cells**; a 106u-tall open hall held **1279**. 54 of that map's 66 interior
+rooms (82%) had no usable plane at all — median 2 nodes against 127 in the 12 tall rooms. Fixed by
+phasing the lattice through the portal-seed centroid (the seeds are flyable air by construction):
+rooms 0 and 30 went to **223 cells each at 100% portal-pair coverage**, with the repair passes falling
+silent (87 and 96 connector nodes to zero) because there was finally a real network to stand in for.
+Not a density increase — abend2 +11% nodes, batteries **-7%**.
+
+**2. The coverage counter was inflated ~10x.** `lattice_nodes` had five writers: the sampler plus
+every repair pass, one commented "rungs are real navigable coverage (clears the degenerate flag)". It
+fed `degenerate` and `complex`, the gates granting routing authority. Room 0's build line reported 97
+lattice nodes against 3 real ones. Split into `lattice_cells` (one writer) and `connector_nodes`.
+
+**3. Eligibility measured SAMPLER FAILURE.** `complex` was `orig_comp_count > 1` — "growth left the
+interior fragmented" — used as a proxy for room difficulty, so **a room became ineligible the moment
+its coverage got good**. When coverage was fixed, abend2's `[COMPLEX]` rooms fell 9 -> 5 and the ring
+rooms lost the flag; measured in that build, rooms 0 and 30 held complete 223-cell networks and served
+**0 roadmap vias against 195 skeleton vias**. Replaced with `routable = !degenerate && lattice_cells
+>= 8 && local_pair_coverage >= 75%` (22 of abend2's 66 rooms; rooms 50/53 correctly refused at 9 cells
+/ 33%).
+
+**The honest coverage predicate.** `RoadmapLocalPairCoverage` — the share of portal-seed pairs that
+reach each other WITHOUT a direct seed-to-seed sight line, i.e. through the interior. This is what
+`comp_count` cannot express: room 30 reported `comp_count == 1` both before and after the coverage
+fix while its real coverage went 20% -> 100%. **A starved room reports one component vacuously.** That
+census is what twice told this project connectivity was fine when it was not; do not use component
+counts as coverage evidence again.
+
+**Eligibility alone was not enough (measured, not assumed).** With rooms 0/30 `[ROUTABLE]`, a smoke
+still showed 0 roadmap vias against 92/120 skeleton, because `BotResolveRoomAim` gate (a) consults the
+roadmap only in NON-buried rooms and the ring is buried-center by construction. Three gates in a row,
+each defensible alone, all excluding the same rooms. The navigator now owns the crossing wherever a
+room is `routable`, with the typed-terminal contract and atomic fallback unchanged.
+
+**The committee census now exists** (it says below that it does not — that was true until
+2026-09-06). `BotNavMemberWin` had been recording it all along and nothing parsed it;
+`analyze_bot_log.py` now does. abend2, 8 bots, one round: 2885 episodes, **1930 contention (67%)**.
+`via` takes 53% of grabs and holds 97% of the time; `path_pnt` and `seam` take 36% of grabs and hold
+**1%**. Top handovers are symmetric (`via<->path_pnt` 126/107, `seam<->via` 115/100) — arguments, not
+handoffs. Same shape across the bedlam pool (59-76% contention). **Next: collapse by subtraction,
+deleting only members the census shows going silent under route ownership — never on the argument
+that they should.**
+
+**Superseded:** the dense-lattice-is-the-wrong-tool verdict of 2026-09-06. The operator's flight was
+correct about what he saw (dense where useless, connecting nothing new) but the cause was the phase
+bug, not the technique. With the phase fixed he confirmed in flight: "everything is now connected."
+
+### 7.0-PREV One network: arterials plus local streets — 2026-09-05
 
 The roadmap-authority experiment is reverted. It moved its own metrics exactly as intended (room 0:
 6,389 roadmap vs 4 skeleton waypoints; via failures 88 -> 4) while play cratered: abend2 captures
@@ -1005,6 +1064,11 @@ of its target legs failed a ship-width clear-line test. Step 5 removed three def
 
 **Never measured, still true:** whether seam/hop go quiet under roadmap-owned delivery on MP maps —
 the MP committee census does not exist. Do not assume it.
+> **Updated 2026-09-06 — the census now exists.** `BotNavMemberWin` had been recording it since 0.9.x
+> and nothing parsed it; `analyze_bot_log.py` does now. First MP reading (abend2, 8 bots, one round):
+> 2885 episodes, 1930 contention (67%); `via` 53% of grabs / 97% of held time; `path_pnt` + `seam` 36%
+> of grabs / 1% of held time. The prediction above is *supported but not yet tested* — whether they go
+> quiet under route ownership is exactly what the post-ownership census measures. See §7.0-CURRENT.
 
 **Where this leads next:** `PLAN.md` §3. The 08-29 work established that routing wins keep cashing
 out as steering failures, and named the prerequisite (per-entry-portal aim) that gates the rest.
