@@ -77,6 +77,15 @@ RE_VIA_SUSPEND = re.compile(r"via suspended in room (-?\d+)")
 RE_TROLL_RETIRED = re.compile(r"powerup troll-retired: '([^']*)' \(room (-?\d+)\)")
 
 # Phase 12.3 portal-skeleton traversal.
+# Committee census (NAVIGATION.md 6.9). BotNavMemberWin() in bot.cpp has recorded which nav member
+# holds the wheel since 0.9.x — episodes, ACTIVE-held seconds, and "contention" (a rival taking the
+# wheel inside BOT_NAV_CONTEND_WINDOW). Nothing ever parsed it, which is why the docs say "the MP
+# committee census does not exist. Do not assume it." These two patterns are that census.
+RE_NAVCENSUS = re.compile(
+    r"NAVCONTEND DUMP \[(\w+)\]: '([^']+)' episodes\((\d+)\):(.*?) \| contention=(\d+)")
+RE_NAVCENSUS_MEMBER = re.compile(r"(\S+)=(\d+)\(([\d.]+)s\)")
+RE_NAVFLIP = re.compile(r"NAVCONTEND: '([^']+)' (\S+) -> (\S+) after ([\d.]+)s")
+
 RE_SKEL_VIA = re.compile(r"skeleton via in room (-?\d+)")
 RE_ROADMAP_VIA = re.compile(r"roadmap via in room (-?\d+)")
 RE_ROADMAP_ROUTE = re.compile(r"roadmap route in room (-?\d+)")
@@ -193,6 +202,13 @@ def new_map_stats():
     return {
         "rounds": 0,
         "game_mode": "Unknown",
+        # Committee census. nav_census_* hold the LAST periodic dump seen per bot (the counters are
+        # running totals, so the last dump is the level's answer — summing dumps would multiply-count).
+        "nav_census_ep": {},        # bot -> {member: episodes}
+        "nav_census_held": {},      # bot -> {member: active-held seconds}
+        "nav_census_total": {},     # bot -> total episodes
+        "nav_census_contend": {},   # bot -> contention count
+        "nav_flips": Counter(),     # (from, to) -> logged handovers (rate-limited 1/5s per bot)
         "captures": 0,               # ALL flags captured (bot + human; multi-flag cash-ins expand)
         "ent_pickups": 0,            # Entropy: virus pickups (all players)
         "ent_pickups_bot": 0,
@@ -348,6 +364,25 @@ def parse_log(path):
             ts = RE_TIMESTAMP.match(line)
             if ts:
                 last_ts = ts.group(1)
+
+            if "NAVCONTEND" in line and current_map:
+                mc = RE_NAVCENSUS.search(line)
+                if mc:
+                    st = stats[current_map]
+                    bot = mc.group(2)
+                    ep, held = {}, {}
+                    for name, cnt, hs in RE_NAVCENSUS_MEMBER.findall(mc.group(4)):
+                        ep[name] = int(cnt)
+                        held[name] = float(hs)
+                    st["nav_census_ep"][bot] = ep
+                    st["nav_census_held"][bot] = held
+                    st["nav_census_total"][bot] = int(mc.group(3))
+                    st["nav_census_contend"][bot] = int(mc.group(5))
+                    continue
+                mf = RE_NAVFLIP.search(line)
+                if mf:
+                    stats[current_map]["nav_flips"][(mf.group(2), mf.group(3))] += 1
+                    continue
 
             m = RE_LEVEL_OPEN.search(line)
             if m:
@@ -798,6 +833,31 @@ def detect_anomalies(stats):
         bot_caps = s["captures"] - s["human_caps"]
         cap_rate = bot_caps / rounds
         mode = s["game_mode"]
+
+        # Committee thrash. The wheel changing hands is normal; changing hands INSIDE the contention
+        # window is not — the previous member had no time to act before being overwritten. Above ~40%
+        # the aim point is being rewritten faster than the ship can respond, which reads in play as a
+        # bot that does not know where it is going. Also flag any member that grabs the wheel a lot and
+        # holds it for almost nothing: that is a reflex firing into a decision another member owns.
+        if s["nav_census_total"]:
+            te = sum(s["nav_census_total"].values())
+            tc = sum(s["nav_census_contend"].values())
+            if te >= 100 and tc / te > 0.40:
+                ep, held = Counter(), Counter()
+                for d in s["nav_census_ep"].values():
+                    for k, v in d.items():
+                        ep[k] += v
+                for d in s["nav_census_held"].values():
+                    for k, v in d.items():
+                        held[k] += v
+                tot_held = sum(held.values()) or 1.0
+                grabby = [m for m, c in ep.items()
+                          if c >= 0.10 * te and held[m] / tot_held < 0.05]
+                extra = f"; grabs-but-never-holds: {', '.join(sorted(grabby))}" if grabby else ""
+                anomalies.append((name, "COMMITTEE_THRASH",
+                                  f"{tc}/{te} handovers ({100*tc/te:.0f}%) landed inside the contention "
+                                  f"window — members are overwriting each other's aim rather than handing "
+                                  f"off{extra}"))
 
         # Task 2: destination churn. Objective replacement is expected when a flag moves, so only
         # explore-owned errands have comparable arrival semantics. Exclude unreach, which different
@@ -1334,6 +1394,73 @@ def print_report(stats, total_lines, log_path):
             brooms = ", ".join(f"{r}x{c}" for r, c in s["chain_built_rooms"].most_common(3))
             print(f"| {name} | {s['chains_built']} ({brooms}) | {s['chains_done']} | "
                   f"{fmt_pct(s['chains_done'], s['chains_built'])} |")
+        print()
+
+    # --- Committee census -------------------------------------------------------------------
+    # Who holds the wheel, how often it changes hands, and whether the changes are handovers or
+    # arguments. Read the ping-pong table first: a pair with similar counts in BOTH directions is two
+    # members overwriting each other, not one handing off to the next.
+    has_census = any(s["nav_census_total"] for s in stats.values())
+    if has_census:
+        print(f"## Committee Census (who holds the wheel)")
+        print()
+        print(f"episodes = times a member TOOK the wheel; held = seconds it ACTIVELY kept it. "
+              f"contention = handovers that happened inside BOT_NAV_CONTEND_WINDOW, i.e. a rival grabbing "
+              f"the wheel almost immediately. A high contention share means the aim point is being "
+              f"rewritten faster than a bot can act on it \u2014 that is a committee arguing, not a pilot flying.")
+        print()
+        print(f"| Map | Member | Episodes | % ep | Held (s) | % held |")
+        print(f"|---|---|---|---|---|---|")
+        for name in maps:
+            st = stats[name]
+            if not st["nav_census_total"]:
+                continue
+            ep, held = Counter(), Counter()
+            for b, d in st["nav_census_ep"].items():
+                for k, v in d.items():
+                    ep[k] += v
+            for b, d in st["nav_census_held"].items():
+                for k, v in d.items():
+                    held[k] += v
+            tot_ep = sum(ep.values())
+            tot_held = sum(held.values())
+            for member, c in ep.most_common():
+                print(f"| {name} | {member} | {c} | {fmt_pct(c, tot_ep)} | {held[member]:.0f} | "
+                      f"{fmt_pct(held[member], tot_held) if tot_held else 'n/a'} |")
+        print()
+        print(f"| Map | Bots | Episodes | Contention | Share |")
+        print(f"|---|---|---|---|---|")
+        for name in maps:
+            st = stats[name]
+            if not st["nav_census_total"]:
+                continue
+            te = sum(st["nav_census_total"].values())
+            tc = sum(st["nav_census_contend"].values())
+            print(f"| {name} | {len(st['nav_census_total'])} | {te} | {tc} | {fmt_pct(tc, te)} |")
+        print()
+
+        any_flips = any(st["nav_flips"] for st in stats.values())
+        if any_flips:
+            print(f"### Wheel handovers \u2014 handoff or argument?")
+            print()
+            print(f"Each row pairs a flip with its REVERSE. Similar counts both ways = ping-pong (two "
+                  f"members overwriting each other); a one-sided count is a real handover.")
+            print()
+            print(f"| Map | Pair | A->B | B->A | Verdict |")
+            print(f"|---|---|---|---|---|")
+            for name in maps:
+                st = stats[name]
+                if not st["nav_flips"]:
+                    continue
+                seen = set()
+                for (a, b), c in st["nav_flips"].most_common():
+                    if (b, a) in seen or (a, b) in seen:
+                        continue
+                    seen.add((a, b))
+                    rev = st["nav_flips"].get((b, a), 0)
+                    lo, hi = min(c, rev), max(c, rev)
+                    verdict = "PING-PONG" if lo and lo / hi >= 0.5 else "handover"
+                    print(f"| {name} | {a} <-> {b} | {c} | {rev} | {verdict} |")
         print()
 
     has_122 = any(s["rescues"] or s["via_suspends"] or s["trolls_retired"] for s in stats.values())
