@@ -589,10 +589,35 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
   //    cap (huge rooms / wide terrain regions); the spacing is a control-loop param.
   float sp = sp_start;
   int Nx, Ny, Nz;
+
+  // PHASE THE LATTICE ON NAVIGABLE SPACE, NOT ON THE BOUNDING BOX.
+  // Anchoring sample planes at the bbox corner makes coverage a function of room HEIGHT rather than
+  // of navigational need: a room exactly one pitch tall gets its only two planes on the floor and the
+  // ceiling, where the clearance test rejects every candidate. That is why abend2's 20u-tall ring
+  // rooms held 10 and 9 real cells while a 106u-tall open hall held 1279, and why 82% of that map's
+  // rooms had no usable plane at all. The portal seeds are flyable air by construction (they are
+  // portal path points), so running a plane through their centroid puts cells where a hull fits.
+  // Indoor only — outdoor regions are open airspace where the bbox phase is harmless.
+  vector org = mn;
+  vector seed_c = mn;
+  const bool phase_on_seeds = !rr->outdoor && n_seed > 0;
+  if (phase_on_seeds) {
+    seed_c = rr->node[0];
+    for (int i = 1; i < n_seed; i++)
+      seed_c = seed_c + rr->node[i];
+    seed_c = seed_c * (1.0f / (float)n_seed);
+  }
+
   for (;;) {
-    Nx = (int)std::floor((mx.x() - mn.x()) / sp) + 1;
-    Ny = (int)std::floor((mx.y() - mn.y()) / sp) + 1;
-    Nz = (int)std::floor((mx.z() - mn.z()) / sp) + 1;
+    if (phase_on_seeds) {
+      for (int a = 0; a < 3; a++) {
+        const float d = seed_c[a] - mn[a];
+        org[a] = mn[a] + (d - std::floor(d / sp) * sp); // positive fmod: org in [mn, mn+sp)
+      }
+    }
+    Nx = (int)std::floor((mx.x() - org.x()) / sp) + 1;
+    Ny = (int)std::floor((mx.y() - org.y()) / sp) + 1;
+    Nz = (int)std::floor((mx.z() - org.z()) / sp) + 1;
     if (Nx < 1)
       Nx = 1;
     if (Ny < 1)
@@ -605,9 +630,9 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
   }
   auto CellPos = [&](int ix, int iy, int iz) {
     vector v;
-    v.x() = mn.x() + ix * sp;
-    v.y() = mn.y() + iy * sp;
-    v.z() = mn.z() + iz * sp;
+    v.x() = org.x() + ix * sp;
+    v.y() = org.y() + iy * sp;
+    v.z() = org.z() + iz * sp;
     return v;
   };
   auto CellKey = [&](int ix, int iy, int iz) -> int64_t { return ((int64_t)ix * (Ny + 2) + iy) * (Nz + 2) + iz; };
@@ -640,9 +665,9 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     const vector pu = rr->node[u];
 
     // Lattice cells within the neighbourhood of u.
-    int lx = (int)std::floor((pu.x() - nr - mn.x()) / sp), hx = (int)std::ceil((pu.x() + nr - mn.x()) / sp);
-    int ly = (int)std::floor((pu.y() - nr - mn.y()) / sp), hy = (int)std::ceil((pu.y() + nr - mn.y()) / sp);
-    int lz = (int)std::floor((pu.z() - nr - mn.z()) / sp), hz = (int)std::ceil((pu.z() + nr - mn.z()) / sp);
+    int lx = (int)std::floor((pu.x() - nr - org.x()) / sp), hx = (int)std::ceil((pu.x() + nr - org.x()) / sp);
+    int ly = (int)std::floor((pu.y() - nr - org.y()) / sp), hy = (int)std::ceil((pu.y() + nr - org.y()) / sp);
+    int lz = (int)std::floor((pu.z() - nr - org.z()) / sp), hz = (int)std::ceil((pu.z() + nr - org.z()) / sp);
     lx = std::max(lx, 0);
     ly = std::max(ly, 0);
     lz = std::max(lz, 0);
