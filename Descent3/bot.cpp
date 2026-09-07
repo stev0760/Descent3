@@ -2450,54 +2450,29 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
   // chain[0] is built by the same SkelBfs seed/stop as BotResolveRoomAim, so the FIRST hop is
   // identical to today; only hops 1.. become pre-committed. On success this owns the tick (return 1);
   // the existing cycle-cap/suspend backstop still catches a chain that never produces a crossing.
-  // The NAVIGATOR owns the crossing whenever it can produce a complete route. One A* over the
-  // arterial + local-street union returns a single continuous path that ALWAYS ends at a typed
-  // terminal — the in-room target, or the exit/tray-room portal seed — never a lattice dead-end. That
-  // terminal contract is the structural guard against the commit-A regression, which stranded bots on
-  // interior waypoints near the flag pocket.
+  // NAVIGATOR OWNERSHIP OF THIS CROSSING IS WITHDRAWN AGAIN — measured, not assumed.
   //
-  // Withdrawn in 204df725 because coverage had never been proven; reinstated now that it has (the
-  // lattice is phased on navigable space, abend2 ring rooms 3 -> 223 cells and 20% -> 100% portal-pair
-  // coverage, and eligibility asks what a room HAS).
+  // The network underneath it is now real (abend2 ring rooms 223 cells, 100% portal-pair coverage)
+  // and eligibility is honest, so the reasons it failed the first time are gone. It still regresses:
   //
-  // SCOPE AND THRESHOLD ARE BOTH MEASURED, not chosen. c32ee964 widened this past BotRoomIsBuried to
-  // every routable room and kept Stage 3a's `count >= 2`; one abend2 round went to 0 captures and ZERO
-  // flag events (from 3 caps / 5 pickups), with 84% of 1294 composed routes at len2 and half of them
-  // in the two big open halls. Two distinct faults:
+  //   build       scope/threshold        objective intents: arrival / timeout / replace / death
+  //   a64c1136    (drive absent)         161:  5% /  17% /  19% /  59%   median held 15.1s
+  //   c32ee964    routable, count>=2     — 0 captures, 0 flag events, 84% of routes len2
+  //   f3b393d7    buried,   count>=3     148:  0% /   0% /   0% / 100%   median held 31.0s
   //
-  //   * A len2 "route" is one waypoint plus a terminal — it cannot cross a toroid, and it is BELOW the
-  //     bar the fallback sets for itself (BotSkelBuildChain commits only at clen >= 3). Winning the
-  //     tick with something shorter than what it displaces is a strict downgrade. Stage 3a shipped the
-  //     same `>= 2`, which is plausibly why it regressed the first time too.
-  //   * This is the COMMITTED-CHAIN path, which suppresses re-planning for the commit window. That is
-  //     a win in a buried room, where orbiting is the failure mode. In an open hall a bot that would
-  //     otherwise fly straight at the objective gets pinned to a two-point portal hop instead — which
-  //     is where the flag pickups went.
+  // The narrowed form produced exactly the route shape wanted (39 routes, all in rooms 0/30, len 3-9)
+  // and play was no better. The signature is a STALL, not a bad path: zero timeouts and zero
+  // replacements means the give-up-and-re-roll paths stop firing entirely, hold time doubles, and
+  // death becomes the only way an errand ends. Committed-chain completion was unchanged (61% vs 58%),
+  // so the chains are not failing to finish — the bot simply never gets anywhere.
   //
-  // So: buried rooms only, and only for a route with real intermediate structure. Atomic fallback
-  // unchanged — anything else runs the known-good skeleton path below.
-  if (!OBJECT_OUTSIDE(obj) && !ROOMNUM_OUTSIDE(target_room) && Bots[bot_index].via_chain_len == 0 &&
-      BotRoomIsBuried(obj->roomnum)) {
-    BotComposedRoute croute{};
-    if (BotComposeRoomRoute(obj, target_pos, target_room, -1, &croute, /*cached_only=*/false) && croute.count >= 3) {
-      for (int i = 0; i < croute.count; i++)
-        Bots[bot_index].via_chain[i] = croute.point[i];
-      Bots[bot_index].via_chain_len = croute.count;
-      Bots[bot_index].via_chain_cursor = 0;
-      Bots[bot_index].via_chain_room = obj->roomnum;
-      Bots[bot_index].via_chain_target_room = target_room; // match the skeleton chain's invalidation key
-      Bots[bot_index].via_point = Bots[bot_index].via_chain[0];
-      Bots[bot_index].via_expires = Gametime + BOT_VIA_COMMIT_TIME;
-      Bots[bot_index].via_is_skeleton = 1; // committed multi-hop chain: same non-bounce-count cap
-      issue_via_goal();
-      if (verdict_out)
-        *verdict_out = BOT_VIA_FOUND;
-      LOG_DEBUG.printf("BOT NAV: '%s' composed route rm%d len%d term=%s (target room %d)", Bots[bot_index].callsign,
-                       (int)obj->roomnum, croute.count, BotComposedTerminalName(croute.terminal), target_room);
-      BotNavMemberWin(bot_index, NAV_MEMBER_VIA);
-      return 1;
-    }
-  }
+  // Leading hypothesis for whoever picks this up: this block called BotComposeRoomRoute with
+  // cached_only=FALSE every tick, unthrottled, for every bot in the ring rooms that all traffic
+  // crosses — while the Stage 2 shadow used cached_only=true rate-limited to 5s. A per-tick A* over a
+  // 229-node union graph, times 8 bots, is the obvious candidate and was never measured. Test that
+  // before touching the routing logic; the route shape is not the thing that looks broken.
+  //
+  // The coverage and eligibility work does NOT depend on this block and stays.
 
   if (!OBJECT_OUTSIDE(obj) && !ROOMNUM_OUTSIDE(target_room) && Bots[bot_index].via_chain_len == 0 &&
       BotRoomIsBuried(obj->roomnum)) {
