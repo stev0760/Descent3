@@ -217,6 +217,14 @@ int BotRoadmapDumpRoomCached(int room_idx, vector *pos_out, int *comp_out, int m
 // and the room reads as falsely fragmented. Returns edge count (0 = external/not-cached).
 int BotRoadmapDumpRoomEdges(int room_idx, int *a_out, int *b_out, int max_edges, int max_node_index);
 
+// Honest coverage stats for a room's local-street layer, read-only (never builds).
+//   cells      — TRUE lattice cells the volumetric sampler accepted. The coverage number.
+//   connector  — nodes traced by the repair passes (corner/tube/multibend). A path, not coverage.
+//   local_pair — %% of portal-seed pairs joined without a direct seed-to-seed sight line (-1 = n/a).
+// Keep these apart when reading them: a room can look well-populated on `connector` alone while the
+// sampler found nothing, which is precisely how the abend2 ring passed inspection.
+bool BotRoadmapCoverage(int room_idx, int *cells_out, int *connector_out, int *local_pair_pct_out);
+
 // $navdump diagnostic (Stage 3): build (lazily) + dump a terrain region's outdoor roadmap — node world
 // positions + per-node component id. Returns node count (0 = empty/out-of-range region). Sets
 // *comp_count_out and *degenerate_out. Caller arrays must hold max_nodes entries.

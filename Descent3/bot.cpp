@@ -6657,8 +6657,15 @@ bool BotNavDump(const char *filename) {
       int rcc = 0;
       bool rdegen = false;
       int rn = BotRoadmapDumpRoom(r, rpos, rcomp, 2048, &rcc, &rdegen);
+      int rcells = 0, rconn = 0, rlpair = -1;
+      BotRoadmapCoverage(r, &rcells, &rconn, &rlpair);
       fprintf(fp, "      \"roadmap_node_count\": %d, \"roadmap_comp_count\": %d, \"roadmap_degenerate\": %s,\n", rn,
               rcc, rdegen ? "true" : "false");
+      // Honest coverage split: sampled cells vs traced repair nodes, and whether the portal seeds
+      // actually reach each other through the interior rather than by a straight sight line.
+      fprintf(fp, "      \"roadmap_lattice_cells\": %d, \"roadmap_connector_nodes\": %d, "
+                  "\"roadmap_local_pair_pct\": %d,\n",
+              rcells, rconn, rlpair);
       fprintf(fp, "      \"roadmap_nodes\": [");
       for (int i = 0; i < rn; i++)
         fprintf(fp, "%s[%.2f,%.2f,%.2f]", i ? "," : "", rpos[i].x(), rpos[i].y(), rpos[i].z());

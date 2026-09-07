@@ -147,7 +147,15 @@ struct RoadmapRoom {
   int orig_comp_count = 0; // components BEFORE the bridges merged them (>1 = non-convex / multi-level)
   bool complex = false;    // proactive grid routing gate: orig_comp_count>1 AND a lattice-node floor
                            // (fragmented AND real interior volume — rejects the tiny-room false positive)
-  int lattice_nodes = 0;   // accepted lattice cells (0 => degenerate: no interior coverage gained)
+  // COVERAGE vs REPAIR — keep these apart. Conflating them is what let a room with 3 real sample
+  // cells report "97 lattice" and earn routing authority it could not honour (see NAVIGATION.md).
+  int lattice_cells = 0;    // TRUE accepted lattice cells: the volumetric sampler's own output, and the
+                            // only honest coverage signal. NOTHING else may increment this.
+  int connector_nodes = 0;  // nodes synthesized by the repair passes (corner-rounding, tube rungs,
+                            // multibend connectors). Real navigable waypoints, but they trace a single
+                            // path — they do not cover a room. Never read them as coverage.
+  int local_pair_coverage = -1; // % of portal-seed pairs joined WITHOUT a direct seed-to-seed sight
+                            // line (-1 = undefined, <2 seeds). See RoadmapLocalPairCoverage.
   bool degenerate = false; // no usable interior roadmap -> caller falls back to the skeleton
   bool outdoor = false;    // false: indoor room (probe from probe_room); true: terrain region
   int probe_room = -1;     // indoor fvi start room for the segment probe (unused when outdoor)
@@ -471,7 +479,7 @@ bool RoadmapCommitMultiBend(RoadmapRoom *rr, std::vector<int> &uf, int a_idx, in
     rr->adj[w].push_back(prev);
     UFUnion(uf, prev, w);
     prev = w;
-    rr->lattice_nodes++;
+    rr->connector_nodes++;
   }
   if (!HasEdge(rr->adj[prev], b_idx)) {
     rr->adj[prev].push_back(b_idx);
@@ -538,6 +546,43 @@ void RoadmapConnectPortalComponents(RoadmapRoom *rr, std::vector<int> &uf, int n
 // cell only when a hull-clear swept edge (RoadmapLOS) reaches it from an accepted node, bridge navigable
 // component gaps, then compress components. The shared core of the indoor (per-room) and outdoor
 // (per-region) builds — the caller supplies the seeds, the bbox, the spacing, and the probe kind (rr).
+// Portal-pair LOCAL coverage: of all portal-seed pairs, the fraction that reach each other WITHOUT
+// taking a direct seed-to-seed edge — i.e. through the interior network rather than a straight sight
+// line across the room. This is the coverage signal node counts and comp_count cannot give. A starved
+// room whose only connectivity is portal-to-portal sight lines scores 0 here while still reporting a
+// healthy-looking "1 component", which is exactly how abend2's ring rooms passed inspection for three
+// stages. A path may still pass THROUGH a seed (enter and leave it on interior edges); only the direct
+// hop between two seeds is excluded. Diagnostic only — nothing gates on it yet.
+int RoadmapLocalPairCoverage(const RoadmapRoom *rr, int n_seed) {
+  if (n_seed < 2)
+    return -1; // undefined: nothing to join
+  const int N = (int)rr->node.size();
+  std::vector<int> seen;
+  int joined = 0, pairs = 0;
+  for (int s = 0; s < n_seed; s++) {
+    seen.assign(N, 0);
+    std::queue<int> q;
+    seen[s] = 1;
+    q.push(s);
+    while (!q.empty()) {
+      int u = q.front();
+      q.pop();
+      for (int v : rr->adj[u]) {
+        if (seen[v] || (u < n_seed && v < n_seed))
+          continue; // the direct arterial sight line is excluded on purpose
+        seen[v] = 1;
+        q.push(v);
+      }
+    }
+    for (int t = s + 1; t < n_seed; t++) {
+      pairs++;
+      if (seen[t])
+        joined++;
+    }
+  }
+  return pairs ? (100 * joined) / pairs : -1;
+}
+
 void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vector &mn, const vector &mx,
                    float sp_start, const char *kind, int id) {
   // 1. Lattice over the bbox (X, Y, Z — Y mandatory). Auto-coarsen if the cell count would blow past the
@@ -636,7 +681,7 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
           rr->adj[u].push_back(w);
           rr->adj[w].push_back(u);
           UFUnion(uf, u, w);
-          rr->lattice_nodes++;
+          rr->lattice_cells++; // the ONE true lattice writer
           q.push(w);
         }
   }
@@ -803,7 +848,7 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
         rr->adj[w].push_back(j);
         UFUnion(uf, i, w);
         UFUnion(uf, j, w);
-        rr->lattice_nodes++; // the inserted waypoint is real navigable coverage
+        rr->connector_nodes++; // a traced waypoint, not sampled coverage
         bridged++;
       }
       if (bridged) {
@@ -826,7 +871,9 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
   // places nothing logs a FAILED line — this pass must never fail silently again. Chain edges + unions as
   // we go, so compression sees the merge. Indoor only — outdoor regions have no tube class.
   if (Bot_tube_densify_enabled && !rr->outdoor && n_seed >= 2) {
-    const int lattice0 = rr->lattice_nodes;
+    // Pre-ladder node total. The old inflated sum is kept here on purpose (behaviour-neutral): at this
+    // point only the sampler and the corner pass have run, so this is exactly what it used to be.
+    const int lattice0 = rr->lattice_cells + rr->connector_nodes;
     const float step = std::min(sp * 0.6f, 12.0f);
     const vector bbc = (mn + mx) * 0.5f;
     int rungs = 0, pairs = 0;
@@ -889,7 +936,7 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
               rr->adj[prev].push_back(w);
               rr->adj[w].push_back(prev);
               UFUnion(uf, prev, w);
-              rr->lattice_nodes++; // rungs are real navigable coverage (clears the degenerate flag)
+              rr->connector_nodes++; // traced rungs, not sampled coverage
               rungs++;
               prev = w;
               prev_pos = cand;
@@ -916,7 +963,12 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
 
   // Preserve the existing proactive eligibility verdict. The repair below may add real interior
   // nodes, but connectivity repair alone must not widen the room class that gets proactive routing.
-  const bool complex_before_multibend = rr->orig_comp_count > 1 && rr->lattice_nodes >= BOT_ROADMAP_COMPLEX_MIN_LATTICE;
+  // Deliberately the OLD inflated total (cells + connectors) so this commit changes no behaviour.
+  // Re-pointing this at lattice_cells alone strips [COMPLEX] from the abend2 ring rooms and changes
+  // routing; that must land with evidence, not ahead of it.
+  const bool complex_before_multibend =
+      rr->orig_comp_count > 1 &&
+      (rr->lattice_cells + rr->connector_nodes) >= BOT_ROADMAP_COMPLEX_MIN_LATTICE;
 
   // 2d. Last construction fallback: connect portal-seed components through an explicit bounded
   // multi-bend chain. Unlike the tube ladder, this can trace a curved annulus. It never runs for
@@ -941,14 +993,18 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
 
   // Degenerate = the lattice never populated (interior thinner than the spacing): no coverage gained over
   // the seeds, so defer to the 0.9.3 skeleton (indoor) / connecting graph (outdoor).
-  rr->degenerate = (rr->lattice_nodes == 0);
+  rr->degenerate = (rr->lattice_cells + rr->connector_nodes == 0);
 
   // Complexity gate: fragmented before bridging AND real interior volume (the lattice floor rejects the
   // tiny-room false positive where the bridge — not growth — connected a few sparse portal seeds).
   rr->complex = complex_before_multibend;
 
-  LOG_DEBUG.printf("BOT: roadmap %s %d: %d nodes (%d seeds + %d lattice), %d comps, sp=%.0f%s%s", kind, id, N, n_seed,
-                   rr->lattice_nodes, rr->comp_count, sp, rr->degenerate ? " [DEGENERATE]" : "",
+  rr->local_pair_coverage = RoadmapLocalPairCoverage(rr, n_seed);
+
+  LOG_DEBUG.printf("BOT: roadmap %s %d: %d nodes (%d seeds + %d cells + %d connector), %d comps, localpair=%d%%, "
+                   "sp=%.0f%s%s",
+                   kind, id, N, n_seed, rr->lattice_cells, rr->connector_nodes, rr->comp_count,
+                   rr->local_pair_coverage, sp, rr->degenerate ? " [DEGENERATE]" : "",
                    rr->complex ? " [COMPLEX]" : "");
 }
 
@@ -1898,6 +1954,25 @@ int BotRoadmapDumpRoomCached(int room_idx, vector *pos_out, int *comp_out, int m
   if (degenerate_out)
     *degenerate_out = rr->degenerate;
   return n;
+}
+
+bool BotRoadmapCoverage(int room_idx, int *cells_out, int *connector_out, int *local_pair_pct_out) {
+  if (cells_out)
+    *cells_out = 0;
+  if (connector_out)
+    *connector_out = 0;
+  if (local_pair_pct_out)
+    *local_pair_pct_out = -1;
+  RoadmapRoom *rr = PeekCached(room_idx); // never builds — see PeekCached
+  if (!rr)
+    return false;
+  if (cells_out)
+    *cells_out = rr->lattice_cells;
+  if (connector_out)
+    *connector_out = rr->connector_nodes;
+  if (local_pair_pct_out)
+    *local_pair_pct_out = rr->local_pair_coverage;
+  return true;
 }
 
 int BotRoadmapDumpRoomEdges(int room_idx, int *a_out, int *b_out, int max_edges, int max_node_index) {
