@@ -2456,17 +2456,30 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
   // terminal contract is the structural guard against the commit-A regression, which stranded bots on
   // interior waypoints near the flag pocket.
   //
-  // Withdrawn in 204df725 because coverage had never been proven; reinstated now that it has. Two
-  // things changed underneath it: the lattice is phased on navigable space (abend2 ring rooms went
-  // from 3 real cells to 223, portal-pair coverage 20% -> 100%), and eligibility asks what a room HAS
-  // rather than how badly the sampler did. Scope is the composer's own `routable` gate rather than
-  // BotRoomIsBuried: coverage, not topology, is what decides whether there is a network to fly.
+  // Withdrawn in 204df725 because coverage had never been proven; reinstated now that it has (the
+  // lattice is phased on navigable space, abend2 ring rooms 3 -> 223 cells and 20% -> 100% portal-pair
+  // coverage, and eligibility asks what a room HAS).
   //
-  // Atomic fallback: no complete route means the known-good skeleton path below runs untouched, so
-  // this can never be worse than 7b06de9f.
-  if (!OBJECT_OUTSIDE(obj) && !ROOMNUM_OUTSIDE(target_room) && Bots[bot_index].via_chain_len == 0) {
+  // SCOPE AND THRESHOLD ARE BOTH MEASURED, not chosen. c32ee964 widened this past BotRoomIsBuried to
+  // every routable room and kept Stage 3a's `count >= 2`; one abend2 round went to 0 captures and ZERO
+  // flag events (from 3 caps / 5 pickups), with 84% of 1294 composed routes at len2 and half of them
+  // in the two big open halls. Two distinct faults:
+  //
+  //   * A len2 "route" is one waypoint plus a terminal — it cannot cross a toroid, and it is BELOW the
+  //     bar the fallback sets for itself (BotSkelBuildChain commits only at clen >= 3). Winning the
+  //     tick with something shorter than what it displaces is a strict downgrade. Stage 3a shipped the
+  //     same `>= 2`, which is plausibly why it regressed the first time too.
+  //   * This is the COMMITTED-CHAIN path, which suppresses re-planning for the commit window. That is
+  //     a win in a buried room, where orbiting is the failure mode. In an open hall a bot that would
+  //     otherwise fly straight at the objective gets pinned to a two-point portal hop instead — which
+  //     is where the flag pickups went.
+  //
+  // So: buried rooms only, and only for a route with real intermediate structure. Atomic fallback
+  // unchanged — anything else runs the known-good skeleton path below.
+  if (!OBJECT_OUTSIDE(obj) && !ROOMNUM_OUTSIDE(target_room) && Bots[bot_index].via_chain_len == 0 &&
+      BotRoomIsBuried(obj->roomnum)) {
     BotComposedRoute croute{};
-    if (BotComposeRoomRoute(obj, target_pos, target_room, -1, &croute, /*cached_only=*/false) && croute.count >= 2) {
+    if (BotComposeRoomRoute(obj, target_pos, target_room, -1, &croute, /*cached_only=*/false) && croute.count >= 3) {
       for (int i = 0; i < croute.count; i++)
         Bots[bot_index].via_chain[i] = croute.point[i];
       Bots[bot_index].via_chain_len = croute.count;
