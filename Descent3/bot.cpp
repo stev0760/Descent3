@@ -2452,33 +2452,12 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
   // the existing cycle-cap/suspend backstop still catches a chain that never produces a crossing.
   if (!OBJECT_OUTSIDE(obj) && !ROOMNUM_OUTSIDE(target_room) && Bots[bot_index].via_chain_len == 0 &&
       BotRoomIsBuried(obj->roomnum)) {
-    // Stage 3a — the unified route composer OWNS the crossing when it yields a complete route. One A*
-    // over the arterial+local-street union returns a single continuous route that ALWAYS ends at a
-    // typed terminal (in-room target, or the exit/tray-room portal seed) — never a lattice dead-end,
-    // which is the exact commit-A regression it supersedes. Runs only in buried complex/hard rooms
-    // (BotComposeRoomRoute's own gate). Atomic fallback: on NONE the known-good skeleton chain below
-    // runs unchanged, so this can never be worse than 7b06de9f. Committed once and flown via the same
-    // chain executor; the route's portal-seed endpoint hands the tray descent / seam crossing to the
-    // existing next-room logic exactly as today.
-    BotComposedRoute croute{};
-    if (BotComposeRoomRoute(obj, target_pos, target_room, -1, &croute, /*cached_only=*/false) && croute.count >= 2) {
-      for (int i = 0; i < croute.count; i++)
-        Bots[bot_index].via_chain[i] = croute.point[i];
-      Bots[bot_index].via_chain_len = croute.count;
-      Bots[bot_index].via_chain_cursor = 0;
-      Bots[bot_index].via_chain_room = obj->roomnum;
-      Bots[bot_index].via_chain_target_room = target_room; // match the skeleton chain's invalidation key
-      Bots[bot_index].via_point = Bots[bot_index].via_chain[0];
-      Bots[bot_index].via_expires = Gametime + BOT_VIA_COMMIT_TIME;
-      Bots[bot_index].via_is_skeleton = 1; // committed multi-hop chain: same non-bounce-count cap
-      issue_via_goal();
-      if (verdict_out)
-        *verdict_out = BOT_VIA_FOUND;
-      LOG_DEBUG.printf("BOT NAV: '%s' roadmap route rm%d len%d term=%s (target room %d)", Bots[bot_index].callsign,
-                       (int)obj->roomnum, croute.count, BotComposedTerminalName(croute.terminal), target_room);
-      BotNavMemberWin(bot_index, NAV_MEMBER_VIA);
-      return 1;
-    }
+    // Stage 3a (the composer driving this crossing) is WITHDRAWN. It was sound routing over a
+    // local-street layer that does not exist in these rooms: abend2 ring room 0 has 3 true lattice
+    // cells in 365x20x364 units, because the lattice is phased on the room bbox and this room is
+    // exactly one grid pitch tall. The inflated lattice_nodes counter hid that. Reinstate this block
+    // verbatim only once the coverage predicate proves the required portal pairs are mutually
+    // reachable — coverage precedes authority. See matcen-docs/NAVIGATION.md.
     int clen = BotSkelBuildChain(obj, obj->roomnum, target_room, target_pos, Bots[bot_index].via_chain,
                                  bot_info::BOT_CHAIN_MAX);
     if (clen >= 3) {
