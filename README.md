@@ -16,12 +16,20 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 **Current release: 0.9.11**, a navigation-consolidation release. (The tree is currently `0.9.12-dev` — same gameplay as 0.9.11; an unvalidated routing change was reverted from it and only the measurement record remains. 0.9.11 is the last validated release.) Its headline: abend2 — the two flat donut-shaped flag arenas that had never produced a bot capture since the game shipped — now plays, because the three navigation layers that each chose their own aim point inside a ring room now resolve through one shared calculation, and a follow-up lets flag carriers drop into the hanging flag pockets instead of hovering the open seam above them. It also routes self-directed interior travel through one decision point — the same committee-collapse work, fewer competing mechanisms — and was validated by an overnight nine-mode soak (CTF, anarchy, team, entropy, monsterball) with no crashes and no regression. Beneath it, the 0.9.10 navigation cleanup release: bots travel with intent: a bot heading for the enemy flag keeps that errand through a firefight or a powerup grab instead of forgetting it and re-rolling a destination at random, sets aside a spot that has already defeated it rather than grinding the same wedge, and takes a human's orders even while carrying the flag. On a fixed twelve-round CTF test that is worth 94 → 121 captures, with bots getting stuck less often than baseline on every map. Beneath it, the 0.9.9 co-op companion work: bots fly the campaign with you, falling in on your wing automatically, keeping formation, fighting what you fight, taking squad orders (`!goal` sends a vanguard to the current objective), and on campaign maps navigating on the engine's own hand-authored path network — the guide-bot's. They deliberately never play the mission for you. Beneath that, the 0.9.8 game-modes work: Entropy and Monsterball are playable against bots for the first time since the game shipped. Entropy bots run the whole territory loop: they earn carry capacity through kill streaks, collect viruses from their own labs, invade the nearest routable enemy room, hold dead-still through the takeover clock, then retreat to repair. Monsterball bots play positions like a futsal side (one striker on the ball, a supporter, a keeper shadowing the goal mouth) with a hard own-goal refusal gate and an afterburner slam finisher. CTF teams organize into real jobs: a committed flag runner, scaling defenders, and a flex bot. Hyper-Anarchy sends the best-positioned few after the orb instead of the whole server. All of it runs on the 0.9.7 navigation stack, a single runtime spatial model that answers reachability for powerup selection, plans terrain-aware outdoor routes, prices rooms by experience, and rebuilds itself when glass or grates are destroyed. Validated over a week-long hosted-server campaign of overnight soaks and live play from unmodified PiccuEngine clients.
 
-**0.9.13-dev status:** the live nav overlay now shows the dense roadmap as well as the legacy
-skeleton, and navigation logs distinguish which one supplied a waypoint. A roadmap-only buried-room
-experiment was reverted after it sharply reduced abend2 flag pickups and captures; the known-good
-arterial/tray path is restored while a single arterial-plus-local route composer is built in stages.
-A bounded multi-source builder for split local grids remains in test. No new `$nav` toggle was added.
-The last validated release remains 0.9.11.
+**0.9.13-dev status:** bots can now build and use in-room navigation in flat rooms, which is most of
+the rooms on most maps. The in-room grid was laid out from the corner of a room's bounding box in
+fixed steps, so a room about as tall as one step got its only sample heights at the floor and the
+ceiling — where a ship does not fit. Room height, not room difficulty, decided how much navigation a
+room received: tall halls were packed with thousands of redundant points while corridors and ring
+rooms got none. With the grid aligned to the space bots actually fly through, abend2's two flag-ring
+rooms went from 10 and 9 usable points to 223 each, and total points across the map rose only 11%
+(on Batteries Included they fell 7%). Two gates downstream were measuring the wrong thing and are
+fixed with them: the eligibility test was really asking "did the grid builder fail here?", so
+improving a room's navigation made it ineligible to use it, and the roadmap was consulted only in
+rooms that were not ring-shaped. Where a room has a proven network, one planner now owns the route
+through it end to end. The nav overlay also draws outdoor navigation, which it never had, and server
+logs report coverage honestly and name which subsystem is steering. Not yet validated for play. No
+new `$nav` toggle was added. The last validated release remains 0.9.11.
 
 ### Features
 
