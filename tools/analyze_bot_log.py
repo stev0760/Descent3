@@ -198,17 +198,45 @@ AGL_GROUND_PIN = 12
 # Per-map accumulator
 # ---------------------------------------------------------------------------
 
+def _bank_census_segment(st, seg):
+    """Fold one finished census segment (a bot's peak counters for one level) into the map totals."""
+    ep, held, total, contend = seg
+    for k, v in ep.items():
+        st["nav_census_ep"][k] += v
+    for k, v in held.items():
+        st["nav_census_held"][k] += v
+    st["nav_census_total"] += total
+    st["nav_census_contend"] += contend
+    st["nav_census_segments"] += 1
+
+
+def _bank_census_pending(stats):
+    """Flush every in-flight segment at end of parse — the last level never sees a reset."""
+    for st in stats.values():
+        for seg in st["nav_census_pending"].values():
+            _bank_census_segment(st, seg)
+        st["nav_census_pending"] = {}
+
+
 def new_map_stats():
     return {
         "rounds": 0,
         "game_mode": "Unknown",
         # Committee census. nav_census_* hold the LAST periodic dump seen per bot (the counters are
         # running totals, so the last dump is the level's answer — summing dumps would multiply-count).
-        "nav_census_ep": {},        # bot -> {member: episodes}
-        "nav_census_held": {},      # bot -> {member: active-held seconds}
-        "nav_census_total": {},     # bot -> total episodes
-        "nav_census_contend": {},   # bot -> contention count
-        "nav_flips": Counter(),     # (from, to) -> logged handovers (rate-limited 1/5s per bot)
+        # Committee census. The engine's counters are cumulative WITHIN a level and are WIPED at
+        # every level-end dump, so reading the last dump gives you the final round, not the session —
+        # which silently under-reported a 20-round log as if it were one round. We bank each bot's
+        # peak per segment (detected by its episode total going DOWN, which can only mean a reset)
+        # and sum the banked segments.
+        "nav_census_ep": Counter(),      # member -> episodes, summed over segments
+        "nav_census_held": Counter(),    # member -> active-held seconds, summed over segments
+        "nav_census_total": 0,           # total episodes, summed over segments
+        "nav_census_contend": 0,         # contention count, summed over segments
+        "nav_census_bots": set(),        # bots that reported at least once
+        "nav_census_pending": {},        # bot -> (ep, held, total, contend) for the segment in flight
+        "nav_census_segments": 0,        # banked segments (sanity: should track level count)
+        "nav_flips": Counter(),          # (from, to) -> logged handovers (rate-limited 1/5s per bot)
         "captures": 0,               # ALL flags captured (bot + human; multi-flag cash-ins expand)
         "ent_pickups": 0,            # Entropy: virus pickups (all players)
         "ent_pickups_bot": 0,
@@ -374,10 +402,12 @@ def parse_log(path):
                     for name, cnt, hs in RE_NAVCENSUS_MEMBER.findall(mc.group(4)):
                         ep[name] = int(cnt)
                         held[name] = float(hs)
-                    st["nav_census_ep"][bot] = ep
-                    st["nav_census_held"][bot] = held
-                    st["nav_census_total"][bot] = int(mc.group(3))
-                    st["nav_census_contend"][bot] = int(mc.group(5))
+                    total, contend = int(mc.group(3)), int(mc.group(5))
+                    st["nav_census_bots"].add(bot)
+                    prev = st["nav_census_pending"].get(bot)
+                    if prev is not None and total < prev[2]:
+                        _bank_census_segment(st, prev)  # counters went backwards => level reset
+                    st["nav_census_pending"][bot] = (ep, held, total, contend)
                     continue
                 mf = RE_NAVFLIP.search(line)
                 if mf:
@@ -796,6 +826,8 @@ def parse_log(path):
                 s["obj_nav"] += 1
                 continue
 
+    _bank_census_pending(stats)  # the final level never sees a reset — bank it
+
     # soakctl can only count a round once the NEXT level begins loading, then it shuts the server
     # down. That terminal load is not gameplay: it produced a map entry with a round count and a few
     # seconds of spawn-time events, which is why Batteries reports kept carrying a phantom
@@ -840,16 +872,10 @@ def detect_anomalies(stats):
         # bot that does not know where it is going. Also flag any member that grabs the wheel a lot and
         # holds it for almost nothing: that is a reflex firing into a decision another member owns.
         if s["nav_census_total"]:
-            te = sum(s["nav_census_total"].values())
-            tc = sum(s["nav_census_contend"].values())
+            te = s["nav_census_total"]
+            tc = s["nav_census_contend"]
             if te >= 100 and tc / te > 0.40:
-                ep, held = Counter(), Counter()
-                for d in s["nav_census_ep"].values():
-                    for k, v in d.items():
-                        ep[k] += v
-                for d in s["nav_census_held"].values():
-                    for k, v in d.items():
-                        held[k] += v
+                ep, held = s["nav_census_ep"], s["nav_census_held"]
                 tot_held = sum(held.values()) or 1.0
                 grabby = [m for m, c in ep.items()
                           if c >= 0.10 * te and held[m] / tot_held < 0.05]
@@ -1415,28 +1441,23 @@ def print_report(stats, total_lines, log_path):
             st = stats[name]
             if not st["nav_census_total"]:
                 continue
-            ep, held = Counter(), Counter()
-            for b, d in st["nav_census_ep"].items():
-                for k, v in d.items():
-                    ep[k] += v
-            for b, d in st["nav_census_held"].items():
-                for k, v in d.items():
-                    held[k] += v
+            ep, held = st["nav_census_ep"], st["nav_census_held"]
             tot_ep = sum(ep.values())
             tot_held = sum(held.values())
             for member, c in ep.most_common():
                 print(f"| {name} | {member} | {c} | {fmt_pct(c, tot_ep)} | {held[member]:.0f} | "
                       f"{fmt_pct(held[member], tot_held) if tot_held else 'n/a'} |")
         print()
-        print(f"| Map | Bots | Episodes | Contention | Share |")
-        print(f"|---|---|---|---|---|")
+        print(f"| Map | Bots | Segments | Episodes | Contention | Share |")
+        print(f"|---|---|---|---|---|---|")
         for name in maps:
             st = stats[name]
             if not st["nav_census_total"]:
                 continue
-            te = sum(st["nav_census_total"].values())
-            tc = sum(st["nav_census_contend"].values())
-            print(f"| {name} | {len(st['nav_census_total'])} | {te} | {tc} | {fmt_pct(tc, te)} |")
+            te = st["nav_census_total"]
+            tc = st["nav_census_contend"]
+            print(f"| {name} | {len(st['nav_census_bots'])} | {st['nav_census_segments']} | {te} | {tc} | "
+                  f"{fmt_pct(tc, te)} |")
         print()
 
         any_flips = any(st["nav_flips"] for st in stats.values())
