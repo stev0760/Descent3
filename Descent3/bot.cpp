@@ -2450,14 +2450,44 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
   // chain[0] is built by the same SkelBfs seed/stop as BotResolveRoomAim, so the FIRST hop is
   // identical to today; only hops 1.. become pre-committed. On success this owns the tick (return 1);
   // the existing cycle-cap/suspend backstop still catches a chain that never produces a crossing.
+  // The NAVIGATOR owns the crossing whenever it can produce a complete route. One A* over the
+  // arterial + local-street union returns a single continuous path that ALWAYS ends at a typed
+  // terminal — the in-room target, or the exit/tray-room portal seed — never a lattice dead-end. That
+  // terminal contract is the structural guard against the commit-A regression, which stranded bots on
+  // interior waypoints near the flag pocket.
+  //
+  // Withdrawn in 204df725 because coverage had never been proven; reinstated now that it has. Two
+  // things changed underneath it: the lattice is phased on navigable space (abend2 ring rooms went
+  // from 3 real cells to 223, portal-pair coverage 20% -> 100%), and eligibility asks what a room HAS
+  // rather than how badly the sampler did. Scope is the composer's own `routable` gate rather than
+  // BotRoomIsBuried: coverage, not topology, is what decides whether there is a network to fly.
+  //
+  // Atomic fallback: no complete route means the known-good skeleton path below runs untouched, so
+  // this can never be worse than 7b06de9f.
+  if (!OBJECT_OUTSIDE(obj) && !ROOMNUM_OUTSIDE(target_room) && Bots[bot_index].via_chain_len == 0) {
+    BotComposedRoute croute{};
+    if (BotComposeRoomRoute(obj, target_pos, target_room, -1, &croute, /*cached_only=*/false) && croute.count >= 2) {
+      for (int i = 0; i < croute.count; i++)
+        Bots[bot_index].via_chain[i] = croute.point[i];
+      Bots[bot_index].via_chain_len = croute.count;
+      Bots[bot_index].via_chain_cursor = 0;
+      Bots[bot_index].via_chain_room = obj->roomnum;
+      Bots[bot_index].via_chain_target_room = target_room; // match the skeleton chain's invalidation key
+      Bots[bot_index].via_point = Bots[bot_index].via_chain[0];
+      Bots[bot_index].via_expires = Gametime + BOT_VIA_COMMIT_TIME;
+      Bots[bot_index].via_is_skeleton = 1; // committed multi-hop chain: same non-bounce-count cap
+      issue_via_goal();
+      if (verdict_out)
+        *verdict_out = BOT_VIA_FOUND;
+      LOG_DEBUG.printf("BOT NAV: '%s' composed route rm%d len%d term=%s (target room %d)", Bots[bot_index].callsign,
+                       (int)obj->roomnum, croute.count, BotComposedTerminalName(croute.terminal), target_room);
+      BotNavMemberWin(bot_index, NAV_MEMBER_VIA);
+      return 1;
+    }
+  }
+
   if (!OBJECT_OUTSIDE(obj) && !ROOMNUM_OUTSIDE(target_room) && Bots[bot_index].via_chain_len == 0 &&
       BotRoomIsBuried(obj->roomnum)) {
-    // Stage 3a (the composer driving this crossing) is WITHDRAWN. It was sound routing over a
-    // local-street layer that does not exist in these rooms: abend2 ring room 0 has 3 true lattice
-    // cells in 365x20x364 units, because the lattice is phased on the room bbox and this room is
-    // exactly one grid pitch tall. The inflated lattice_nodes counter hid that. Reinstate this block
-    // verbatim only once the coverage predicate proves the required portal pairs are mutually
-    // reachable — coverage precedes authority. See matcen-docs/NAVIGATION.md.
     int clen = BotSkelBuildChain(obj, obj->roomnum, target_room, target_pos, Bots[bot_index].via_chain,
                                  bot_info::BOT_CHAIN_MAX);
     if (clen >= 3) {
