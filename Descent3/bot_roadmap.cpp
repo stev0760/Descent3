@@ -145,8 +145,9 @@ struct RoadmapRoom {
   std::vector<int> portal_seed;      // portal index -> node index of its seam seed (indoor; size = num_portals)
   int comp_count = 0;
   int orig_comp_count = 0; // components BEFORE the bridges merged them (>1 = non-convex / multi-level)
-  bool complex = false;    // proactive grid routing gate: orig_comp_count>1 AND a lattice-node floor
-                           // (fragmented AND real interior volume — rejects the tiny-room false positive)
+  bool routable = false;   // route-ownership gate: this room HAS a usable local-street network
+                           // (cell floor + portal pairs that reach through the interior). Replaces the
+                           // old `complex`, which measured how badly the sampler did — see the header.
   // COVERAGE vs REPAIR — keep these apart. Conflating them is what let a room with 3 real sample
   // cells report "97 lattice" and earn routing authority it could not honour (see NAVIGATION.md).
   int lattice_cells = 0;    // TRUE accepted lattice cells: the volumetric sampler's own output, and the
@@ -986,15 +987,6 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     }
   }
 
-  // Preserve the existing proactive eligibility verdict. The repair below may add real interior
-  // nodes, but connectivity repair alone must not widen the room class that gets proactive routing.
-  // Deliberately the OLD inflated total (cells + connectors) so this commit changes no behaviour.
-  // Re-pointing this at lattice_cells alone strips [COMPLEX] from the abend2 ring rooms and changes
-  // routing; that must land with evidence, not ahead of it.
-  const bool complex_before_multibend =
-      rr->orig_comp_count > 1 &&
-      (rr->lattice_cells + rr->connector_nodes) >= BOT_ROADMAP_COMPLEX_MIN_LATTICE;
-
   // 2d. Last construction fallback: connect portal-seed components through an explicit bounded
   // multi-bend chain. Unlike the tube ladder, this can trace a curved annulus. It never runs for
   // already-connected portal seeds and commits only a fully validated, <=12u interpolated chain.
@@ -1020,17 +1012,23 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
   // the seeds, so defer to the 0.9.3 skeleton (indoor) / connecting graph (outdoor).
   rr->degenerate = (rr->lattice_cells + rr->connector_nodes == 0);
 
-  // Complexity gate: fragmented before bridging AND real interior volume (the lattice floor rejects the
-  // tiny-room false positive where the bridge — not growth — connected a few sparse portal seeds).
-  rr->complex = complex_before_multibend;
-
   rr->local_pair_coverage = RoadmapLocalPairCoverage(rr, n_seed);
+
+  // Route-ownership eligibility, computed on the FINISHED network rather than a pre-repair snapshot.
+  // The old `complex` was `orig_comp_count > 1` — "growth left the interior fragmented" — so a room
+  // became INELIGIBLE the moment its coverage got good. Measured on abend2 after the phase fix: rooms
+  // 0 and 30 each hold a complete 223-cell network at 100% portal-pair coverage and served 0 roadmap
+  // vias against 195 skeleton vias, because both had just lost the flag. The snapshot also existed to
+  // stop the multibend repair widening eligibility; the cell floor does that directly now, since a
+  // room whose connectivity comes from traced connectors has few real cells and fails on its own.
+  rr->routable = !rr->degenerate && rr->lattice_cells >= BOT_ROADMAP_ROUTABLE_MIN_CELLS &&
+                 rr->local_pair_coverage >= BOT_ROADMAP_ROUTABLE_MIN_PAIRPCT;
 
   LOG_DEBUG.printf("BOT: roadmap %s %d: %d nodes (%d seeds + %d cells + %d connector), %d comps, localpair=%d%%, "
                    "sp=%.0f%s%s",
                    kind, id, N, n_seed, rr->lattice_cells, rr->connector_nodes, rr->comp_count,
                    rr->local_pair_coverage, sp, rr->degenerate ? " [DEGENERATE]" : "",
-                   rr->complex ? " [COMPLEX]" : "");
+                   rr->routable ? " [ROUTABLE]" : "");
 }
 
 // --- $nav heal helpers -------------------------------------------------------------------------
@@ -1804,7 +1802,7 @@ bool BotComposeRoomRoute(object *obj, const vector &target_pos, int target_room,
   if (!obj || !route_out || OBJECT_OUTSIDE(obj) || !Bot_gridnav_enabled)
     return false;
   RoadmapRoom *rr = cached_only ? PeekCached(obj->roomnum) : Get(obj->roomnum);
-  if (!rr || rr->degenerate || (!rr->complex && !BotRoadmapRoomIsHard(obj->roomnum)))
+  if (!rr || rr->degenerate || (!rr->routable && !BotRoadmapRoomIsHard(obj->roomnum)))
     return false;
   *route_out = {};
   return ComposeUnionRoute(rr, obj, target_pos, target_room, next_room_hint, route_out, cached_only);
@@ -1886,7 +1884,7 @@ BotViaResult BotRoadmapFindVia(object *obj, const vector &target_pos, int target
   // indirection (the soak-measured easy-pool regression: gollums/darkjourney recovered with gridroute off,
   // khazaddum's divider rooms collapsed). Reactive calls (proactive=false) always run — a blocked line in a
   // simple room still needs a go-around.
-  if (proactive && !rr->complex && !BotRoadmapRoomIsHard(room_idx))
+  if (proactive && !rr->routable && !BotRoadmapRoomIsHard(room_idx))
     return BOT_VIA_NONE;
 
   // Goal node: the nearest node to an in-room target, or the seam node toward the next room.
@@ -1989,13 +1987,16 @@ int BotRoadmapDumpRoomCached(int room_idx, vector *pos_out, int *comp_out, int m
   return n;
 }
 
-bool BotRoadmapCoverage(int room_idx, int *cells_out, int *connector_out, int *local_pair_pct_out) {
+bool BotRoadmapCoverage(int room_idx, int *cells_out, int *connector_out, int *local_pair_pct_out,
+                        bool *routable_out) {
   if (cells_out)
     *cells_out = 0;
   if (connector_out)
     *connector_out = 0;
   if (local_pair_pct_out)
     *local_pair_pct_out = -1;
+  if (routable_out)
+    *routable_out = false;
   RoadmapRoom *rr = PeekCached(room_idx); // never builds — see PeekCached
   if (!rr)
     return false;
@@ -2005,6 +2006,8 @@ bool BotRoadmapCoverage(int room_idx, int *cells_out, int *connector_out, int *l
     *connector_out = rr->connector_nodes;
   if (local_pair_pct_out)
     *local_pair_pct_out = rr->local_pair_coverage;
+  if (routable_out)
+    *routable_out = rr->routable;
   return true;
 }
 

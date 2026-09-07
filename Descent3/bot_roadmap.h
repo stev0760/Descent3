@@ -99,7 +99,17 @@ extern bool Bot_roadmap_corner_enabled; // $gridbridge — corner-rounding compo
 // lattice nodes). Without the floor, a small room whose few portal seeds growth couldn't connect but the
 // BRIDGE did reads "fragmented" and over-routes (skybox anarchy: trivial 1-6-lattice rooms tagged complex).
 // Genuinely complex rooms (khazaddum divider, the Bree tavern) carry 32+ lattice; simple rooms ≤14 — gap at ~24.
-#define BOT_ROADMAP_COMPLEX_MIN_LATTICE 24
+// Route-ownership eligibility. The old gate asked "did growth leave this room fragmented?" — it
+// measured SAMPLER FAILURE and used it as a proxy for room difficulty, so a room whose coverage got
+// GOOD lost eligibility. These ask what the room actually HAS: enough sampled cells to be worth
+// composing a route through, and portal seeds that genuinely reach each other through the interior.
+// Measured (cells>=8, pairs>=75%): admits 22 of abend2's 66 roadmap rooms including both ring rooms at
+// 223 cells / 100%; on batteries 27 of 302, excluding small rooms whose median is 1 cell and where a
+// direct hop is already the right answer. Both distributions are strongly bimodal, so the exact
+// percentage is not a sensitive knob.
+#define BOT_ROADMAP_ROUTABLE_MIN_CELLS 8
+#define BOT_ROADMAP_ROUTABLE_MIN_PAIRPCT 75
+#define BOT_ROADMAP_COMPLEX_MIN_LATTICE 24 // retired with `complex`; removed in the next cleanup pass
 
 // Stage 2 ($gridroute, prototype): route the in-room leg of objective/carrier nav over the volumetric grid
 // PROACTIVELY, not just reactively when a straight line is blocked. Today the router (BotSetRoutedGoal) aims
@@ -223,7 +233,8 @@ int BotRoadmapDumpRoomEdges(int room_idx, int *a_out, int *b_out, int max_edges,
 //   local_pair — %% of portal-seed pairs joined without a direct seed-to-seed sight line (-1 = n/a).
 // Keep these apart when reading them: a room can look well-populated on `connector` alone while the
 // sampler found nothing, which is precisely how the abend2 ring passed inspection.
-bool BotRoadmapCoverage(int room_idx, int *cells_out, int *connector_out, int *local_pair_pct_out);
+bool BotRoadmapCoverage(int room_idx, int *cells_out, int *connector_out, int *local_pair_pct_out,
+                        bool *routable_out = nullptr);
 
 // $navdump diagnostic (Stage 3): build (lazily) + dump a terrain region's outdoor roadmap — node world
 // positions + per-node component id. Returns node count (0 = empty/out-of-range region). Sets
