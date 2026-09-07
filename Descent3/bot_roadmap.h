@@ -228,6 +228,11 @@ bool BotRoadmapCoverage(int room_idx, int *cells_out, int *connector_out, int *l
 // $navdump diagnostic (Stage 3): build (lazily) + dump a terrain region's outdoor roadmap — node world
 // positions + per-node component id. Returns node count (0 = empty/out-of-range region). Sets
 // *comp_count_out and *degenerate_out. Caller arrays must hold max_nodes entries.
+// Cached-only region dumps for the live overlay (never build — draw-only contract, see PeekCached).
+int BotRoadmapDumpRegionCached(int region, vector *pos_out, int *comp_out, int max_nodes, int *comp_count_out,
+                               bool *degenerate_out);
+int BotRoadmapDumpRegionEdges(int region, int *a_out, int *b_out, int max_edges, int max_node_index);
+
 int BotRoadmapDumpRegion(int region, vector *pos_out, int *comp_out, int max_nodes, int *comp_count_out,
                          bool *degenerate_out);
 

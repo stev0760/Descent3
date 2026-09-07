@@ -46,7 +46,9 @@ extern bool Dedicated_server; // hud.cpp — true on the headless server (no ren
 
 int Bot_navdebug_mode = 0;
 
-static const char *NAVDBG_MODE_NAMES[] = {"off", "skeleton+portals", "+bot intent", "+roadmap"};
+// Locked vocabulary: the navigation network is ARTERIALS (the skeleton highway) + LOCAL STREETS
+// (the lattice fill); a ROUTE is the single composed path and the PILOT flies it.
+static const char *NAVDBG_MODE_NAMES[] = {"off", "arterials+portals", "+bot intent", "+local streets"};
 
 bool BotNavDebugActive() { return !Dedicated_server && Bot_navdebug_mode > 0; }
 
@@ -268,6 +270,49 @@ static void NavDbgDrawRoomRoadmap(int room_idx, int &node_budget, int &edge_budg
   }
 }
 
+// Outdoor twin of NavDbgDrawRoomRoadmap. Until this existed the overlay had NO outdoor path at all:
+// the scope list is built from indoor rooms only (add_room rejects RF_EXTERNAL), so flying outdoors in
+// mode 3 drew an empty sky. That reads as "there is no outdoor lattice" — and the operator read it
+// exactly that way on bedlam — when Polaris actually carries 4096 region nodes in one component. The
+// overlay must never show absence where there is presence; that is the same failure class as a counter
+// that reports coverage it doesn't have.
+// Last frame's outdoor result, for the HUD status line. The HUD runs after the draw pass, and this
+// is the only honest source: querying the accessor with a zero budget would clamp to 0 and report a
+// built region as missing — the exact "absence isn't evidence" trap this whole change exists to close.
+static int NavDbg_outdoor_region = -1;
+static int NavDbg_outdoor_nodes = 0;
+
+static void NavDbgDrawRegionRoadmap(int region, int &node_budget, int &edge_budget) {
+  if (region < 0 || (node_budget <= 0 && edge_budget <= 0))
+    return;
+  static vector pos[NAVDBG_ROADMAP_MAX_NODES];
+  static int comp[NAVDBG_ROADMAP_MAX_NODES];
+  int comp_count = 0;
+  bool degenerate = false;
+  // CACHED-only, like the indoor path: a region roadmap builds lazily once bots fly it, and a render
+  // frame must never trigger that build.
+  int n = BotRoadmapDumpRegionCached(region, pos, comp, NAVDBG_ROADMAP_MAX_NODES, &comp_count, &degenerate);
+  NavDbg_outdoor_region = region;
+  NavDbg_outdoor_nodes = n;
+  if (n <= 0)
+    return;
+
+  static int ea[NAVDBG_ROADMAP_MAX_EDGES];
+  static int eb[NAVDBG_ROADMAP_MAX_EDGES];
+  int ne = BotRoadmapDumpRegionEdges(region, ea, eb, NAVDBG_ROADMAP_MAX_EDGES, n);
+  for (int k = 0; k < ne && edge_budget > 0; k++) {
+    int i = ea[k], j = eb[k];
+    if (i >= n || j >= n)
+      continue;
+    NavDbgLine(pos[i], pos[j], NavDbgRoadmapColor(comp[i]));
+    edge_budget--;
+  }
+  for (int i = 0; i < n && node_budget > 0; i++) {
+    NavDbgSphere(pos[i], 0.45f, NavDbgRoadmapColor(comp[i]));
+    node_budget--;
+  }
+}
+
 // --- on-screen mode label + color legend --------------------------------------------------------
 // A key drawn in the top-left whenever the overlay is on: the current mode (with the cycle hotkey)
 // plus a legend whose every entry is drawn IN its own marker color, so the map reads without having
@@ -291,7 +336,7 @@ static void NavDbgDrawHud() {
   };
 
   // Static layer (shown for every active mode).
-  key(GR_RGB(200, 200, 200), "skeleton  node/edge color = component");
+  key(GR_RGB(200, 200, 200), "arterials  node/edge color = component");
   key(NAVDBG_PORTAL_OPEN, "portal  open");
   key(NAVDBG_PORTAL_TIGHT, "portal  tight");
   key(NAVDBG_PORTAL_BLOCKED, "portal  blocked");
@@ -307,10 +352,20 @@ static void NavDbgDrawHud() {
     key(NAVDBG_GOAL, "X  goal room");
   }
 
-  // Roadmap layer (the dense grid — the primary indoor substrate).
+  // Local-street layer (the lattice fill), indoor rooms in scope plus the viewer's terrain region.
   if (Bot_navdebug_mode >= 3) {
-    key(NavDbgRoadmapColor(0), "roadmap grid  small dot/line = node/edge");
-    key(GR_RGB(160, 160, 160), "   (color = component; big sphere = skeleton)");
+    key(NavDbgRoadmapColor(0), "local streets  small dot/line = node/edge");
+    key(GR_RGB(160, 160, 160), "   (color = component; big sphere = arterial)");
+    // Say so explicitly: an empty sky must never again be read as "there is no lattice here".
+    char rbuf[64];
+    if (NavDbg_outdoor_region < 0)
+      std::snprintf(rbuf, sizeof(rbuf), "   outdoor: no region in scope");
+    else if (NavDbg_outdoor_nodes <= 0)
+      std::snprintf(rbuf, sizeof(rbuf), "   outdoor region %d: NOT BUILT YET", NavDbg_outdoor_region);
+    else
+      std::snprintf(rbuf, sizeof(rbuf), "   outdoor region %d: %d nodes drawn", NavDbg_outdoor_region,
+                    NavDbg_outdoor_nodes);
+    key(GR_RGB(160, 160, 160), rbuf);
   }
 
   grtext_Flush();
@@ -364,6 +419,28 @@ void BotNavDebugRender(int viewer_roomnum) {
     int edge_budget = NAVDBG_ROADMAP_MAX_EDGES;
     for (int s = 0; s < nscope; s++)
       NavDbgDrawRoomRoadmap(scope[s], node_budget, edge_budget);
+    // Outdoor: the viewer's terrain region, plus any region a bot is flying. Shares the same frame
+    // budget as the indoor rooms, so a 4096-node region can't blow the frame on its own.
+    NavDbg_outdoor_region = -1;
+    NavDbg_outdoor_nodes = 0;
+    int rgn_seen[8];
+    int nrgn = 0;
+    auto add_region = [&](int rn) {
+      int rg = BotOutdoorRegion(rn);
+      if (rg < 0)
+        return;
+      for (int k = 0; k < nrgn; k++)
+        if (rgn_seen[k] == rg)
+          return;
+      if (nrgn < (int)(sizeof(rgn_seen) / sizeof(rgn_seen[0])))
+        rgn_seen[nrgn++] = rg;
+    };
+    add_region(viewer_roomnum);
+    for (int i = 0; i < MAX_BOTS; i++)
+      if (Bots[i].active && Bots[i].player_slot >= 0)
+        add_region(Objects[Players[Bots[i].player_slot].objnum].roomnum);
+    for (int k = 0; k < nrgn; k++)
+      NavDbgDrawRegionRoadmap(rgn_seen[k], node_budget, edge_budget);
   }
 
   NavDbgDrawHud();

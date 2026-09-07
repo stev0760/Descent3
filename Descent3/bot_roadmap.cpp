@@ -1252,6 +1252,14 @@ RoadmapRoom *PeekCached(int room_idx) {
   return g_room[room_idx];
 }
 
+// Outdoor twin of PeekCached: the region roadmap already built, or nullptr. Same draw-only contract.
+RoadmapRoom *PeekCachedOutdoor(int region) {
+  ResetIfStale(); // cheap: only drops caches if the mine checksum changed; never builds
+  if (region < 0 || region >= MAX_BOA_TERRAIN_REGIONS)
+    return nullptr;
+  return g_region[region];
+}
+
 // Lazy Theta* over the roadmap. Fills path (start..goal node positions). Returns false if no path.
 bool ThetaStar(RoadmapRoom *rr, int start, int goal, std::vector<int> &path_out) {
   const int N = (int)rr->node.size();
@@ -2011,6 +2019,59 @@ int BotRoadmapDumpRoomEdges(int room_idx, int *a_out, int *b_out, int max_edges,
   for (int i = 0; i < n && e < max_edges; i++)
     for (int j : rr->adj[i]) {
       if (j <= i || j >= n) // undirected (emit once) AND within the drawn set
+        continue;
+      if (e >= max_edges)
+        break;
+      if (a_out)
+        a_out[e] = i;
+      if (b_out)
+        b_out[e] = j;
+      e++;
+    }
+  return e;
+}
+
+// Cached-only region node dump for the live overlay. BotRoadmapDumpRegion() below goes through
+// GetOutdoor(), which BUILDS — fine for $navdump, fatal for a render frame (see PeekCached). The
+// overlay had no outdoor path at all, so flying outdoors showed an empty sky and read as "there is no
+// outdoor lattice" when Polaris in fact carries 4096 nodes in one component. A diagnostic that draws
+// nothing where something exists is worse than no diagnostic.
+int BotRoadmapDumpRegionCached(int region, vector *pos_out, int *comp_out, int max_nodes, int *comp_count_out,
+                               bool *degenerate_out) {
+  if (comp_count_out)
+    *comp_count_out = 0;
+  if (degenerate_out)
+    *degenerate_out = false;
+  RoadmapRoom *rr = PeekCachedOutdoor(region); // never builds
+  if (!rr)
+    return 0;
+  int n = (int)rr->node.size();
+  if (n > max_nodes)
+    n = max_nodes;
+  for (int i = 0; i < n; i++) {
+    if (pos_out)
+      pos_out[i] = rr->node[i];
+    if (comp_out)
+      comp_out[i] = rr->comp[i];
+  }
+  if (comp_count_out)
+    *comp_count_out = rr->comp_count;
+  if (degenerate_out)
+    *degenerate_out = rr->degenerate;
+  return n;
+}
+
+int BotRoadmapDumpRegionEdges(int region, int *a_out, int *b_out, int max_edges, int max_node_index) {
+  RoadmapRoom *rr = PeekCachedOutdoor(region); // never builds
+  if (!rr)
+    return 0;
+  int n = (int)rr->node.size();
+  if (max_node_index >= 0 && max_node_index < n)
+    n = max_node_index;
+  int e = 0;
+  for (int i = 0; i < n && e < max_edges; i++)
+    for (int j : rr->adj[i]) {
+      if (j <= i || j >= n)
         continue;
       if (e >= max_edges)
         break;
