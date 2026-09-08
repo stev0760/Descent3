@@ -2450,29 +2450,57 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
   // chain[0] is built by the same SkelBfs seed/stop as BotResolveRoomAim, so the FIRST hop is
   // identical to today; only hops 1.. become pre-committed. On success this owns the tick (return 1);
   // the existing cycle-cap/suspend backstop still catches a chain that never produces a crossing.
-  // NAVIGATOR OWNERSHIP OF THIS CROSSING IS WITHDRAWN AGAIN — measured, not assumed.
+  // NAVIGATOR THROTTLE TEST — is per-tick A* the reason the composed drive stalls, or the drive itself?
   //
-  // The network underneath it is now real (abend2 ring rooms 223 cells, 100% portal-pair coverage)
-  // and eligibility is honest, so the reasons it failed the first time are gone. It still regresses:
+  // The composed-route drive was reverted twice (204df725, 9942a58c). The narrowed form (buried rooms,
+  // count>=3, f3b393d7) produced exactly the intended route shape (39 routes, all in rooms 0/30, len
+  // 3-9) yet play stalled hard: objective intents went 0% arrival / 0% timeout / 0% replace / 100%
+  // death, median hold 31.0s (a64c1136 drive-off: 5/17/19/59, 15.1s), while committed-chain completion
+  // was unchanged (61% vs 58%). Chains finish; the bot never gets anywhere.
   //
-  //   build       scope/threshold        objective intents: arrival / timeout / replace / death
-  //   a64c1136    (drive absent)         161:  5% /  17% /  19% /  59%   median held 15.1s
-  //   c32ee964    routable, count>=2     — 0 captures, 0 flag events, 84% of routes len2
-  //   f3b393d7    buried,   count>=3     148:  0% /   0% /   0% / 100%   median held 31.0s
-  //
-  // The narrowed form produced exactly the route shape wanted (39 routes, all in rooms 0/30, len 3-9)
-  // and play was no better. The signature is a STALL, not a bad path: zero timeouts and zero
-  // replacements means the give-up-and-re-roll paths stop firing entirely, hold time doubles, and
-  // death becomes the only way an errand ends. Committed-chain completion was unchanged (61% vs 58%),
-  // so the chains are not failing to finish — the bot simply never gets anywhere.
-  //
-  // Leading hypothesis for whoever picks this up: this block called BotComposeRoomRoute with
-  // cached_only=FALSE every tick, unthrottled, for every bot in the ring rooms that all traffic
-  // crosses — while the Stage 2 shadow used cached_only=true rate-limited to 5s. A per-tick A* over a
-  // 229-node union graph, times 8 bots, is the obvious candidate and was never measured. Test that
-  // before touching the routing logic; the route shape is not the thing that looks broken.
-  //
-  // The coverage and eligibility work does NOT depend on this block and stays.
+  // The only theory on record and untested: that block ran BotComposeRoomRoute with cached_only=false
+  // unthrottled EVERY TICK for every bot in the ring rooms all traffic crosses, while the Stage 2
+  // shadow ran the same call at cached_only=true rate-limited to 5s and never stalled anything. A
+  // per-tick weighted A* over a ~229-node union graph, times 8 bots, is the obvious performance
+  // suspect. This block reinstates the exact f3b393d7 drive but wrapped in the shadow's per-bot 5s
+  // throttle latch and switched to cached_only=true (EnsureUnionGraph builds the union graph on demand
+  // even in cached_only mode, so this returns real routes — same purity path the shadow already logs
+  // FOUND on). If the stall vanishes here, per-tick A* was the cost. If it persists, the drive itself
+  // is broken in a way this hypothesis cannot see and we revert this block (comment-only) and move to
+  // the pilot — the committee collapse. One variable at a time.
+  if (!OBJECT_OUTSIDE(obj) && !ROOMNUM_OUTSIDE(target_room) && Bots[bot_index].via_chain_len == 0 &&
+      BotRoomIsBuried(obj->roomnum)) {
+    static bool Drive_seen[MAX_BOTS];
+    static float Drive_last[MAX_BOTS];
+    static int Drive_room[MAX_BOTS], Drive_target[MAX_BOTS];
+    bool changed = !Drive_seen[bot_index] || Drive_room[bot_index] != obj->roomnum ||
+                   Drive_target[bot_index] != target_room;
+    if (changed || Gametime < Drive_last[bot_index] || Gametime - Drive_last[bot_index] > 5.0f) {
+      Drive_seen[bot_index] = true;
+      Drive_last[bot_index] = Gametime;
+      Drive_room[bot_index] = obj->roomnum;
+      Drive_target[bot_index] = target_room;
+      BotComposedRoute croute{};
+      if (BotComposeRoomRoute(obj, target_pos, target_room, -1, &croute, /*cached_only=*/true) && croute.count >= 3) {
+        for (int i = 0; i < croute.count; i++)
+          Bots[bot_index].via_chain[i] = croute.point[i];
+        Bots[bot_index].via_chain_len = croute.count;
+        Bots[bot_index].via_chain_cursor = 0;
+        Bots[bot_index].via_chain_room = obj->roomnum;
+        Bots[bot_index].via_chain_target_room = target_room; // match the skeleton chain's invalidation key
+        Bots[bot_index].via_point = Bots[bot_index].via_chain[0];
+        Bots[bot_index].via_expires = Gametime + BOT_VIA_COMMIT_TIME;
+        Bots[bot_index].via_is_skeleton = 1; // committed multi-hop chain: same non-bounce-count cap
+        issue_via_goal();
+        if (verdict_out)
+          *verdict_out = BOT_VIA_FOUND;
+        LOG_DEBUG.printf("BOT NAV: '%s' composed route rm%d len%d term=%s (target room %d)", Bots[bot_index].callsign,
+                         (int)obj->roomnum, croute.count, BotComposedTerminalName(croute.terminal), target_room);
+        BotNavMemberWin(bot_index, NAV_MEMBER_VIA);
+        return 1;
+      }
+    }
+  }
 
   if (!OBJECT_OUTSIDE(obj) && !ROOMNUM_OUTSIDE(target_room) && Bots[bot_index].via_chain_len == 0 &&
       BotRoomIsBuried(obj->roomnum)) {
@@ -2885,9 +2913,58 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
     // arrival then can only fire inside the tray. Issued claim-room stays wp_room.
     unified_aim = true; // skip the buried-parent resolver — this hop IS the descent
   } else if (buried_room) {
-    unified_aim = BotResolveRoomAim(obj, routed_pos, goal_room, obj->size, &wp_aim, wp_room, &aim_source);
-    if (!unified_aim)
-      wp_aim = (wp_room == goal_room) ? routed_pos : BotWaypointAimPos(wp_room, routed_pos, obj);
+    // ONE MIND ON A COMMITTED CROSSING. When the composer has already answered this crossing — a
+    // via_chain committed for this exact (room, target room) — the routed goal reads THAT answer
+    // instead of deriving an independent skeleton one. Two graphs were answering the same question
+    // every tick: BotResolveRoomAim resolved wp_aim over the skeleton (its roadmap branch is
+    // unreachable here, gated on !RoomBuriedCenter at bot_steering.cpp:848), while the via layer
+    // flew a union-graph route. The disagreement is measured, not theoretical — 165 AIMSPLITs
+    // logged against 1985 composed commits in the 20-round soak, 80-245u apart.
+    //
+    // This is the same lesson as cddde48c, one layer further out: there the engine's BOA node was a
+    // second planning vote, here the skeleton resolver is. Subtraction, not new machinery — no new
+    // commit site, no new compose call. Composition stays in BotViaPointTick, which serves eight
+    // callers; only the AIM changes, and only when a chain is already held.
+    //
+    // Side effect that is the actual point: on this path a buried room's issued destination becomes
+    // union-graph derived (arterials + lattice) instead of skeleton-only. Buried rooms had no other
+    // consumer of the lattice — the goal-issue gridroute branch below never fires here either.
+    // LIVE commitment only, not merely a held chain. A lapsed commitment zeroes via_expires and drops
+    // the goal (bot.cpp:2426-2433) but deliberately does NOT clear via_chain_len — the chain outlives
+    // its commitment until a room or target change invalidates it. Reading a dead route's cursor here
+    // would aim at a stale waypoint where the old code re-resolved fresh, so the expiry check is what
+    // keeps this a pure unification instead of a behaviour change: no live chain, no override.
+    if (Bots[bot_index].via_chain_len > 0 && Bots[bot_index].via_expires > Gametime &&
+        (int)obj->roomnum == Bots[bot_index].via_chain_room &&
+        wp_room == Bots[bot_index].via_chain_target_room && Bots[bot_index].via_chain_cursor >= 0 &&
+        Bots[bot_index].via_chain_cursor < Bots[bot_index].via_chain_len) {
+      wp_aim = Bots[bot_index].via_chain[Bots[bot_index].via_chain_cursor];
+      unified_aim = true;
+      aim_source = BOT_ROOM_AIM_ROADMAP;
+      // Direct mechanism counter. The two obvious proxies both lie about this branch: AIMSPLIT is
+      // gated on unified_aim, which this branch sets, so it measures its own trigger population; and
+      // the "roadmap route in room" line at goal issue is unreachable whenever BotViaPointTick
+      // succeeds, because that path returns early — i.e. it is blind on exactly the ticks this fires.
+      // Count the branch itself, throttled per bot so a held chain does not flood the log.
+      {
+        static float Chainaim_log_t[MAX_BOTS];
+        // `Gametime < stored` is the LEVEL-RESET guard, not redundancy: Gametime restarts each round,
+        // so a timestamp banked in the previous round reads as far in the future and the plain
+        // elapsed test stays false for the rest of the level. Omitting it silenced this counter after
+        // round 1 and undercounted the branch ~20x — the Shadow_time latch above carries the same
+        // term for the same reason.
+        if (Gametime < Chainaim_log_t[bot_index] || Gametime - Chainaim_log_t[bot_index] > 5.0f) {
+          Chainaim_log_t[bot_index] = Gametime;
+          LOG_DEBUG.printf("BOT NAV: '%s' CHAINAIM rm%d hop %d/%d (target room %d)", Bots[bot_index].callsign,
+                           (int)obj->roomnum, Bots[bot_index].via_chain_cursor + 1, Bots[bot_index].via_chain_len,
+                           wp_room);
+        }
+      }
+    } else {
+      unified_aim = BotResolveRoomAim(obj, routed_pos, goal_room, obj->size, &wp_aim, wp_room, &aim_source);
+      if (!unified_aim)
+        wp_aim = (wp_room == goal_room) ? routed_pos : BotWaypointAimPos(wp_room, routed_pos, obj);
+    }
   } else {
     wp_aim = (wp_room == goal_room) ? routed_pos : BotWaypointAimPos(wp_room, routed_pos, obj);
   }
@@ -8377,6 +8454,19 @@ void BotDoFrame() {
                              "forcing escape%s",
                              Bots[i].callsign, cur_room, Bots[i].room_progress_stuck_count, net_disp,
                              BotTerrainDiag(obj, stuck_dest, tdiag, sizeof(tdiag)));
+            // What was the bot actually trying to fly when it wedged? A stuck line that reports only
+            // room + net_disp cannot distinguish the two graphs this room can be routed over: a LIVE
+            // composed chain carries lattice connectivity, while the fallback resolves over the
+            // skeleton, whose ring segments hang off one portal-centroid hub with no segment-to-segment
+            // edges (the hub-and-spoke shape seen in the nav overlay). Prediction under test: stucks
+            // concentrate on chain=none, i.e. on the skeleton answer. Paired with the escalation line
+            // above so every stuck is attributable without re-deriving it from a theory.
+            LOG_DEBUG.printf("BOT: '%s' STUCKSTATE room %d chain=%s len=%d cursor=%d chain_room=%d "
+                             "chain_target=%d via_live=%s carrier=%s",
+                             Bots[i].callsign, cur_room, Bots[i].via_chain_len > 0 ? "held" : "none",
+                             Bots[i].via_chain_len, Bots[i].via_chain_cursor, Bots[i].via_chain_room,
+                             Bots[i].via_chain_target_room, Bots[i].via_expires > Gametime ? "yes" : "no",
+                             (BotIsCarryingEnemyFlag(i) || BotIsCarryingHyperOrb(i)) ? "yes" : "no");
           } else {
             Bots[i].explore_dest_room = -1;
             Bots[i].explore_room_timer = 0.0f;
