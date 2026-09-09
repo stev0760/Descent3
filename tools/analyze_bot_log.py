@@ -59,6 +59,23 @@ RE_ENTRY_AIM = re.compile(r"entry-aim rm(-?\d+) via portal (-?\d+) -> node hop (
 # `complete` against `built` and watch `via suspended` FALL on the same map (the orbit was the cap).
 RE_CHAIN_BUILT = re.compile(r"chain built rm(-?\d+) len(\d+)")
 RE_CHAIN_COMPLETE = re.compile(r"chain complete rm(-?\d+) -> rm(-?\d+)")
+# 0.9.13 STUCKSTATE — what route state the bot held when it wedged. TWO WIRE FORMATS, and they are
+# only PARTLY comparable, so both are parsed and the difference is reported rather than averaged over:
+#   old (<= 84e4fc4b): emitted AFTER BotClearActiveGoal, label `chain=held|none`, no team/phase.
+#                      Its `via_live` is a CONSTANT "no" — the goal clear zeroed via_expires first —
+#                      so via_live carries no information in those logs and must not be compared.
+#                      The chain fields ARE meaningful there, because the old code did not retire the
+#                      chain on goal clear, so the post-clear read still shows the pre-clear chain.
+#   new (chain-lifetime fix): emitted BEFORE the clear, label `chain=stored|none`, plus phase/team/net_disp.
+# `held` and `stored` mean the same thing (array length nonzero) and are normalized to `stored`.
+RE_STUCKSTATE = re.compile(
+    r"'([^']+)' STUCKSTATE room (-?\d+) chain=(\w+) len=(-?\d+) cursor=(-?\d+) "
+    r"chain_room=(-?\d+) chain_target=(-?\d+) via_live=(yes|no) carrier=(yes|no)")
+RE_STUCKSTATE_PHASE = re.compile(r"phase=(\w+)")
+RE_STUCKSTATE_TEAM = re.compile(r"team=(-?\d+)")
+# CHAINAIM — the goal-issue aim reading a live committed chain instead of deriving its own answer.
+# Throttled 5s/bot WITH the Gametime<stored level-reset guard, so it survives round boundaries.
+RE_CHAINAIM = re.compile(r"'([^']+)' CHAINAIM rm(-?\d+) hop (\d+)/(\d+)")
 
 # Task 2 destination-churn instrument (0.9.11): BOT DEST lines from BotSetTravelDest/BotClearTravelDest.
 # Three shapes: "'B' none -> 47 owner=explore" (first intent), "'B' 12 -> 47 owner=X (prev=Y end=Z held=N.Ns)"
@@ -189,6 +206,18 @@ DIST_MID = 500
 # massively overstates "stuck"/"pin" problems — in a 24h soak ~85% of timeouts were the moving-but-slow
 # kind — so the anomalies below key off the HARD count, not the raw total. See OBSTACLE_GEOMETRY.md.
 HARD_PIN_DISP = 10
+
+
+# The log prints the ENGINE's team index, which is 0-based (Players[].team), while bots.cfg's
+# BotTeamN uses 1-based numbering — so cfg "BotTeam1=1" (Red) appears in the log as team=0. Name
+# them here so a per-team table cannot be misread as off-by-one in the one comparison that is
+# explicitly per-team (abend2 Red vs Blue).
+_TEAM_NAMES = {"0": "Red", "1": "Blue", "2": "Green", "3": "Yellow"}
+
+
+def TEAM_NAME(t):
+    n = _TEAM_NAMES.get(str(t))
+    return f"{n} (log team={t})" if n else f"team={t}"
 # Outdoor terrain-diag (the " | TERRAIN ..." suffix on outdoor stuck/escape lines): a bot within
 # AGL_GROUND_PIN units of the ground is scraping/pinned on terrain (ship hull ~6.7u); a stuck at
 # higher agl is hovering in open air (the sky-gap non-commitment, not a geometry pin).
@@ -273,6 +302,16 @@ def new_map_stats():
         "dest_held": [],
         "dest_ends_by_owner": defaultdict(Counter),
         "dest_held_by_owner": defaultdict(list),
+        # 0.9.13 route state at the moment of a stuck escalation (see RE_STUCKSTATE).
+        "stuckstate_events": 0,
+        "stuckstate_chain": Counter(),              # stored|none
+        "stuckstate_chain_hard": Counter(),         # same, net_disp < HARD_PIN_DISP only
+        "stuckstate_chain_by_team": defaultdict(Counter),
+        "stuckstate_chain_carrier": Counter(),
+        "stuckstate_phases": Counter(),             # preclear (new build) | postclear (old build)
+        "stuckstate_via_live": Counter(),
+        "chainaims": 0,
+        "chainaim_rooms": Counter(),
         "human_caps": 0,             # captures by players without the [BOT] suffix
         "human_cappers": Counter(),
         "team_caps": Counter(),
@@ -384,6 +423,9 @@ def parse_log(path):
     current_mode = "Unknown"
     last_ts = None
     total_lines = 0
+    # Old-format STUCKSTATE carries no net_disp of its own; the escalation line that immediately
+    # preceded it in that build does. Keyed by callsign so concurrent bots don't cross-contaminate.
+    last_escal_disp = {}
 
     with open(path, errors="replace") as f:
         for line in f:
@@ -482,6 +524,35 @@ def parse_log(path):
             m = RE_CHAIN_COMPLETE.search(line)
             if m:
                 s["chains_done"] += 1
+                continue
+
+            m = RE_STUCKSTATE.search(line)
+            if m:
+                s["stuckstate_events"] += 1
+                # `held` (old) and `stored` (new) both mean "array length nonzero" — one label.
+                chain = "stored" if m.group(3) in ("held", "stored") else m.group(3)
+                s["stuckstate_chain"][chain] += 1
+                s["stuckstate_via_live"][m.group(8)] += 1
+                if m.group(9) == "yes":
+                    s["stuckstate_chain_carrier"][chain] += 1
+                ph = RE_STUCKSTATE_PHASE.search(line)
+                s["stuckstate_phases"][ph.group(1) if ph else "postclear"] += 1
+                tm = RE_STUCKSTATE_TEAM.search(line)
+                if tm:
+                    s["stuckstate_chain_by_team"][tm.group(1)][chain] += 1
+                # net_disp rides the new line directly. On the old format it lives on the stuck
+                # escalation line, which the old build emitted immediately BEFORE this one — so the
+                # last value seen for this bot is the right join.
+                nd = RE_NET_DISP.search(line)
+                disp = int(nd.group(1)) if nd else last_escal_disp.get(m.group(1))
+                if disp is not None and disp < HARD_PIN_DISP:
+                    s["stuckstate_chain_hard"][chain] += 1
+                continue
+
+            m = RE_CHAINAIM.search(line)
+            if m:
+                s["chainaims"] += 1
+                s["chainaim_rooms"][int(m.group(2))] += 1
                 continue
 
             m = RE_DEST.search(line)
@@ -772,6 +843,9 @@ def parse_log(path):
                 s["stuck_rooms"][room] += 1
                 nd = RE_NET_DISP.search(line)
                 hard = nd is not None and int(nd.group(1)) < HARD_PIN_DISP
+                bn = RE_BOT_NAME.search(line)
+                if bn and nd:
+                    last_escal_disp[bn.group(1)] = int(nd.group(1))
                 if hard:
                     s["stucks_hard"] += 1
                 if room == -1:
@@ -884,6 +958,16 @@ def detect_anomalies(stats):
                                   f"{tc}/{te} handovers ({100*tc/te:.0f}%) landed inside the contention "
                                   f"window — members are overwriting each other's aim rather than handing "
                                   f"off{extra}"))
+
+        # STUCKSTATE wire-format mix. `preclear` is emitted before the goal clear (chain-lifetime
+        # build); `postclear` after it (<= 84e4fc4b). Both in ONE log means two builds' output has
+        # been conflated, and the chain/via_live fields are then not a single population. This is a
+        # data-integrity check with no tuned threshold: either the log is homogeneous or it is not.
+        ph = s["stuckstate_phases"]
+        if len(ph) > 1:
+            anomalies.append((name, "STUCKSTATE_MIXED_PHASE",
+                              f"log carries BOTH STUCKSTATE formats ({', '.join(f'{k}={v}' for k, v in sorted(ph.items()))}) "
+                              f"— two builds conflated; segment the log before reading chain= or via_live="))
 
         # Task 2: destination churn. Objective replacement is expected when a flag moves, so only
         # explore-owned errands have comparable arrival semantics. Exclude unreach, which different
@@ -1256,6 +1340,48 @@ def print_report(stats, total_lines, log_path):
                   f"| {s['stucks']} ({s['stucks_hard']}) "
                   f"| {s['outdoor_stucks']} ({s['outdoor_stucks_hard']}) "
                   f"| {s['powerup_pins']} ({s['powerup_pins_hard']}) |")
+        print()
+
+    # 0.9.13: what route state did the bot hold when it wedged?
+    has_ss = any(s["stuckstate_events"] for s in stats.values())
+    if has_ss:
+        print(f"## Route State at Stuck Escalation (STUCKSTATE)")
+        print()
+        print(f"`stored` = the bot held a committed-chain array when it wedged; `none` = it was flying "
+              f"the single-hop answer. **Read `chain=` only within one build** — see the format note "
+              f"below. `via_live` is meaningless in postclear logs (the goal clear zeroed the timer "
+              f"before the line was written), so it is reported but must not be compared across formats.")
+        print()
+        print(f"| Map | Events | chain=stored | chain=none | stored (hard) | none (hard) | Format |")
+        print(f"|---|---|---|---|---|---|---|")
+        for name in maps:
+            s = stats[name]
+            if not s["stuckstate_events"]:
+                continue
+            c, ch = s["stuckstate_chain"], s["stuckstate_chain_hard"]
+            fmt = ", ".join(f"{k}={v}" for k, v in sorted(s["stuckstate_phases"].items()))
+            print(f"| {name} | {s['stuckstate_events']} "
+                  f"| {c.get('stored', 0)} | {c.get('none', 0)} "
+                  f"| {ch.get('stored', 0)} | {ch.get('none', 0)} | {fmt} |")
+        print()
+        for name in maps:
+            s = stats[name]
+            by_team = s["stuckstate_chain_by_team"]
+            if not by_team:
+                continue
+            print(f"**{name} by team** (abend2's capture loss was one-sided — never aggregate it):")
+            print()
+            print(f"| Team | chain=stored | chain=none |")
+            print(f"|---|---|---|")
+            for t in sorted(by_team):
+                print(f"| {TEAM_NAME(t)} | {by_team[t].get('stored', 0)} | {by_team[t].get('none', 0)} |")
+            print()
+        for name in maps:
+            s = stats[name]
+            car = s["stuckstate_chain_carrier"]
+            if sum(car.values()):
+                print(f"{name} carriers wedged: {car.get('stored', 0)} with a stored chain, "
+                      f"{car.get('none', 0)} without.")
         print()
 
     # Router activity (Phase 11) — is the cost-aware router actually doing anything?

@@ -810,7 +810,15 @@ static void BotEnforceNoOrphanPath(int bot_index) {
   vm_MakeZero(&obj->ai_info->movement_dir);
 }
 
+static void BotClearViaChain(int bot_index) {
+  Bots[bot_index].via_chain_len = 0;
+  Bots[bot_index].via_chain_cursor = 0;
+  Bots[bot_index].via_chain_room = -1;
+  Bots[bot_index].via_chain_target_room = -1;
+}
+
 static void BotClearActiveGoal(int bot_index) {
+  BotClearViaChain(bot_index); // retire stored chain metadata even in the no-ai_info window
   int slot = Bots[bot_index].player_slot;
   object *obj = &Objects[Players[slot].objnum];
   if (!obj->ai_info)
@@ -2288,10 +2296,12 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
   // it is why this is a per-leg test rather than a blanket outdoor exemption.
   if (BotBnodeNativeActive() && BotBnodeLegOk(obj, obj->roomnum, target_room, &target_pos)) {
     Bots[bot_index].via_expires = 0.0f; // drop any live commitment — no stale via resurrection later
+    BotClearViaChain(bot_index);
     return 0;
   }
   if (OBJECT_OUTSIDE(obj) && !Bot_outdoor_via_enabled) {
     Bots[bot_index].via_expires = 0.0f; // outdoor go-around disabled ($outdoorvia off) — drop commitment
+    BotClearViaChain(bot_index);
     return 0;
   }
 
@@ -2305,9 +2315,7 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
     if ((int)obj->roomnum != Bots[bot_index].via_chain_room)
       LOG_DEBUG.printf("BOT NAV: '%s' chain complete rm%d -> rm%d", Bots[bot_index].callsign,
                        Bots[bot_index].via_chain_room, OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum);
-    Bots[bot_index].via_chain_len = 0;
-    Bots[bot_index].via_chain_room = -1;
-    Bots[bot_index].via_chain_target_room = -1;
+    BotClearViaChain(bot_index);
   }
 
   auto issue_via_goal = [&]() {
@@ -2348,9 +2356,7 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
       }
       // Chain exhausted (last node reached — the next arrival crosses the portal) or no chain:
       // today's exact drop-and-account behavior. Clear any spent chain so it can't linger.
-      Bots[bot_index].via_chain_len = 0;
-      Bots[bot_index].via_chain_room = -1;
-      Bots[bot_index].via_chain_target_room = -1;
+      BotClearViaChain(bot_index);
       Bots[bot_index].via_expires = 0.0f;
       if (goal_slot >= 0 && goal_slot < MAX_GOALS && obj->ai_info->goals[goal_slot].used)
         GoalClearGoal(obj, &obj->ai_info->goals[goal_slot]);
@@ -2427,6 +2433,8 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
   // ("already en route") would keep the bot steering at a dead via point indefinitely.
   if (Bots[bot_index].via_expires != 0.0f) {
     Bots[bot_index].via_expires = 0.0f;
+    // A later single-hop via must not revive this route through the shared expiry timer.
+    BotClearViaChain(bot_index);
     if (goal_slot >= 0 && goal_slot < MAX_GOALS && obj->ai_info->goals[goal_slot].used)
       GoalClearGoal(obj, &obj->ai_info->goals[goal_slot]);
     goal_slot = -1; // caller re-issues the real target (or we recommit below if still blocked)
@@ -2929,11 +2937,9 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
     // Side effect that is the actual point: on this path a buried room's issued destination becomes
     // union-graph derived (arterials + lattice) instead of skeleton-only. Buried rooms had no other
     // consumer of the lattice — the goal-issue gridroute branch below never fires here either.
-    // LIVE commitment only, not merely a held chain. A lapsed commitment zeroes via_expires and drops
-    // the goal (bot.cpp:2426-2433) but deliberately does NOT clear via_chain_len — the chain outlives
-    // its commitment until a room or target change invalidates it. Reading a dead route's cursor here
-    // would aim at a stale waypoint where the old code re-resolved fresh, so the expiry check is what
-    // keeps this a pure unification instead of a behaviour change: no live chain, no override.
+    // LIVE commitment only, not merely a held chain. A lapsed commitment is retired with the chain
+    // at the via tick, but the timer test below still guards this earlier aim read against a route
+    // whose commitment may have elapsed mid-tick; no live chain, no override.
     if (Bots[bot_index].via_chain_len > 0 && Bots[bot_index].via_expires > Gametime &&
         (int)obj->roomnum == Bots[bot_index].via_chain_room &&
         wp_room == Bots[bot_index].via_chain_target_room && Bots[bot_index].via_chain_cursor >= 0 &&
@@ -3036,7 +3042,8 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
       if (unified_aim && Bots[bot_index].via_is_skeleton) {
         float split = vm_VectorDistanceQuick(&wp_aim, &Bots[bot_index].via_point);
         static float Aimsplit_log_t[MAX_BOTS];
-        if (split > BOT_VIA_ARRIVE_DIST * 2 && Gametime - Aimsplit_log_t[bot_index] > 5.0f) {
+        if (split > BOT_VIA_ARRIVE_DIST * 2 &&
+            (Gametime < Aimsplit_log_t[bot_index] || Gametime - Aimsplit_log_t[bot_index] > 5.0f)) {
           Aimsplit_log_t[bot_index] = Gametime;
           LOG_DEBUG.printf("BOT NAV: '%s' AIMSPLIT %.1f (routed vs via)", Bots[bot_index].callsign, split);
         }
@@ -7471,6 +7478,8 @@ static void BotRespawn(int bot_index) {
   Bots[bot_index].chasing_powerup_timer = 0.0f;
   Bots[bot_index].troute_goal_room = -1; // $nav troute: respawn position invalidates any terrain plan
   Bots[bot_index].troute_reject_until = 0.0f;
+  Bots[bot_index].via_expires = 0.0f; // respawn position invalidates any via commitment too
+  BotClearViaChain(bot_index);        // ...and the route it gated — no flying at old-life waypoints
   Bots[bot_index].state = BOT_STATE_EXPLORE;
   Bots[bot_index].afterburner_fuel = BOT_AFTERBURNER_FUEL_MAX;
   Bots[bot_index].afterburner_burst_timer = 0.0f;
@@ -7556,10 +7565,7 @@ void BotInitAll() {
     Bots[i].via_arrivals_same_room = 0;
     Bots[i].via_suspend_until = 0.0f;
     Bots[i].via_suspend_room = -1;
-    Bots[i].via_chain_len = 0;
-    Bots[i].via_chain_cursor = 0;
-    Bots[i].via_chain_room = -1;
-    Bots[i].via_chain_target_room = -1;
+    BotClearViaChain(i);
     Bots[i].order_anchor_type = ORDER_ANCHOR_NONE;
     vm_MakeZero(&Bots[i].order_anchor_pos);
     Bots[i].order_anchor_room = -1;
@@ -7733,10 +7739,7 @@ void BotReinitAll() {
     Bots[i].via_arrivals_same_room = 0;
     Bots[i].via_suspend_until = 0.0f;
     Bots[i].via_suspend_room = -1;
-    Bots[i].via_chain_len = 0;
-    Bots[i].via_chain_cursor = 0;
-    Bots[i].via_chain_room = -1;
-    Bots[i].via_chain_target_room = -1;
+    BotClearViaChain(i);
     Bots[i].order_anchor_type = ORDER_ANCHOR_NONE;
     vm_MakeZero(&Bots[i].order_anchor_pos);
     Bots[i].order_anchor_room = -1;
@@ -8061,10 +8064,7 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   Bots[bot_index].via_arrivals_same_room = 0;
   Bots[bot_index].via_suspend_until = 0.0f;
   Bots[bot_index].via_suspend_room = -1;
-  Bots[bot_index].via_chain_len = 0;
-  Bots[bot_index].via_chain_cursor = 0;
-  Bots[bot_index].via_chain_room = -1;
-  Bots[bot_index].via_chain_target_room = -1;
+  BotClearViaChain(bot_index);
   // §7 contention instrumentation: a re-added bot in a reused slot must not inherit the previous
   // occupant's counts/latch (same reasoning as the via_* reset above).
   Bots[bot_index].nav_last_member = NAV_MEMBER_NONE;
@@ -8430,6 +8430,17 @@ void BotDoFrame() {
             }
           }
 
+          // Snapshot before goal cleanup retires the via commitment. A stored chain does not by
+          // itself identify its source or prove that the bot was following it.
+          if (Bots[i].room_progress_stuck_count >= 2) {
+            LOG_DEBUG.printf("BOT: '%s' STUCKSTATE room %d chain=%s len=%d cursor=%d chain_room=%d "
+                             "chain_target=%d via_live=%s carrier=%s phase=preclear team=%d net_disp=%.0f",
+                             Bots[i].callsign, cur_room, Bots[i].via_chain_len > 0 ? "stored" : "none",
+                             Bots[i].via_chain_len, Bots[i].via_chain_cursor, Bots[i].via_chain_room,
+                             Bots[i].via_chain_target_room, Bots[i].via_expires > Gametime ? "yes" : "no",
+                             (BotIsCarryingEnemyFlag(i) || BotIsCarryingHyperOrb(i)) ? "yes" : "no",
+                             Players[slot].team, net_disp);
+          }
           BotClearActiveGoal(i);
           Bots[i].explore_stuck_room = cur_room;
           Bots[i].room_progress_timer = 0.0f;
@@ -8454,19 +8465,6 @@ void BotDoFrame() {
                              "forcing escape%s",
                              Bots[i].callsign, cur_room, Bots[i].room_progress_stuck_count, net_disp,
                              BotTerrainDiag(obj, stuck_dest, tdiag, sizeof(tdiag)));
-            // What was the bot actually trying to fly when it wedged? A stuck line that reports only
-            // room + net_disp cannot distinguish the two graphs this room can be routed over: a LIVE
-            // composed chain carries lattice connectivity, while the fallback resolves over the
-            // skeleton, whose ring segments hang off one portal-centroid hub with no segment-to-segment
-            // edges (the hub-and-spoke shape seen in the nav overlay). Prediction under test: stucks
-            // concentrate on chain=none, i.e. on the skeleton answer. Paired with the escalation line
-            // above so every stuck is attributable without re-deriving it from a theory.
-            LOG_DEBUG.printf("BOT: '%s' STUCKSTATE room %d chain=%s len=%d cursor=%d chain_room=%d "
-                             "chain_target=%d via_live=%s carrier=%s",
-                             Bots[i].callsign, cur_room, Bots[i].via_chain_len > 0 ? "held" : "none",
-                             Bots[i].via_chain_len, Bots[i].via_chain_cursor, Bots[i].via_chain_room,
-                             Bots[i].via_chain_target_room, Bots[i].via_expires > Gametime ? "yes" : "no",
-                             (BotIsCarryingEnemyFlag(i) || BotIsCarryingHyperOrb(i)) ? "yes" : "no");
           } else {
             Bots[i].explore_dest_room = -1;
             Bots[i].explore_room_timer = 0.0f;

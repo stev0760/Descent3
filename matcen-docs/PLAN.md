@@ -49,6 +49,40 @@ and has been corrected** — both shipped. Co-op is not broken; it shipped in 0.
 
 ## 3. The navigation blocker, and the plan for it
 
+### 3.0 Current checkpoint (2026-09-08, 0.9.13-dev)
+
+**Read this before treating the historical steps below as outstanding work.** Per-entry aim has
+landed. The sampler phase and coverage-accounting fixes have landed. Reopening network construction
+is not this session's task. The current baseline is `84e4fc4b`, held for further testing, not promoted
+or reverted. Its combined route-drive and chain-aim changes cannot be evaluated separately from the
+previous comparison.
+
+**The target remains one navigation network, not one flat graph:** arterials plus local streets,
+with room-scale planning refined into a continuous local route. The navigator chooses the route.
+The engine steers and the pilot applies legal thrust. Coarse planning, local search, and engine
+avoidance do different jobs. Simplification means removing duplicate answers to the same question,
+not removing necessary levels of the hierarchy or replacing working campaign/outdoor navigation.
+
+**First dependency: make route lifetime consistent.** Source review found that `BotViaPointTick`
+can retain a chain after its commitment expires. That stored chain blocks both route builders. A
+later single-waypoint detour can renew the shared timer without replacing the old chain. Chain-aim
+and advancement can then read old route points while the active waypoint belongs to the new detour.
+`BotClearActiveGoal` also ends the timer without retiring the chain. This is a lifecycle defect,
+not evidence that the map needs more nodes. Independent review and a bounded correction are the
+current task. This finding does not justify timer tuning or route-eligibility widening.
+
+The existing `STUCKSTATE` diagnostic is also emitted **after** goal cleanup clears its `via_expires`
+timer. Its `via_live` field therefore does not measure pre-failure liveness, and `chain=held` means
+only that an array length is nonzero. Repair that measurement before using it to select a change.
+Neither a missing chain nor a connected graph alone establishes why a bot failed to travel.
+
+For the play gate, compare against `84e4fc4b` with the same roster/settings and inspect abend2 by team.
+The prior handoff reports Blue conversion roughly unchanged (12/49 to 10/40) and Red down (11/57
+to 4/44). Red accounts for seven of nine lost captures, not all of them. The operator's observation
+of asymmetric toroid connections remains a lead, not a demonstrated cause of that loss. Use the
+live 3D overlay to check route following, and distinguish hard pins from slow travel in the logs.
+Keep `-dev` until play is validated. Builds and generic unit tests cannot establish this gate.
+
 ### 3.1 What three months of nav work established
 
 Route *planning* is not the problem. Repeatedly, a routing fix moves its own metric exactly as

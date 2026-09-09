@@ -13,6 +13,23 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
 rooms, which is most of the rooms on most maps. Not yet validated for play — do not treat as a
 release.*
 
+*   **Bots no longer fly to waypoints from a plan they already abandoned.** A bot's route through a
+    room outlived the commitment that authorised it. When the commitment ended — the bot's goal was
+    cleared, its plan timed out, or it was killed — the timer was reset but the route itself was
+    left in place. That stale route then blocked a fresh one from being planned, while the bot flew
+    a separate short detour; the two answers disagreed, and arriving at the detour advanced the old
+    route to a waypoint the bot had never travelled to. A bot that died within a second of planning
+    could respawn and fly at a point from where it died. Routes are now retired whenever the
+    commitment behind them ends, so a bot has one plan or none. Measured on abend2, the number of
+    times a bot's steering actually followed its planned route rose thirty-one fold.
+*   **The nav overlay no longer draws abandoned routes as live ones.** The route line was drawn
+    whenever route data existed, including after it had expired, so a route the bot was no longer
+    flying still appeared on screen.
+*   **Two diagnostics that were reporting nothing now report something.** The stuck-state line was
+    written after the goal was cleared, so its "was this route live" field read *no* on every line
+    it had ever produced; it is now captured before the state is torn down and carries the bot's
+    team. A second counter lost its throttle timestamp across level changes and fell silent after
+    the opening rounds, undercounting itself for the rest of a run.
 *   **Bots can finally navigate flat rooms.** The in-room navigation grid was laid out from the
     corner of a room's bounding box in fixed steps, so a room about as tall as one step got its only
     sample heights at the floor and the ceiling — where a ship does not fit — and ended up with

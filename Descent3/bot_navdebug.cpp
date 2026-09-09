@@ -189,8 +189,9 @@ static void NavDbgDrawBotIntent(int bot_index) {
 
   // The committed multi-hop chain: bot -> node[0] -> ... -> exit portal -> target. Drawn as a bright
   // polyline every frame from current state, so a re-pick or ring flip is SEEN happening, not
-  // reconstructed after.
-  if (b.via_chain_len > 0) {
+  // reconstructed after. Gated on the commitment (via_expires), not the stored metadata: a chain
+  // whose commitment has lapsed is retired bookkeeping, not a route the bot is flying.
+  if (b.via_chain_len > 0 && b.via_expires > Gametime) {
     vector prev = bo->pos;
     for (int k = 0; k < b.via_chain_len; k++) {
       NavDbgLine(prev, b.via_chain[k], NAVDBG_CHAIN);
