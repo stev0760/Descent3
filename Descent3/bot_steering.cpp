@@ -747,10 +747,18 @@ bool BotEntryCenterClear(int room_idx, int portal_idx) {
 
 // The one "which door will I enter wp_room through" answer, shared by the per-entry aim and the
 // seam guard (factored out of the seam block verbatim — same order, same first-found tie rule):
-// portals of the CURRENT room into wp_room, graded-geometry passable, nearest to the bot, then
-// wind-checked. If none passes the strict probe, use the router's last-resort engine-agreement
-// class so delivery can name the same door selected by the fallback search. Two systems that must
-// agree, one implementation (the BotCanBreakGlass lesson).
+// portals of the CURRENT room into wp_room, engine-passable AND geometry-passable, nearest to the
+// bot, then wind-checked. If none passes the strict probe, use the router's last-resort
+// engine-agreement class so delivery can name the same door selected by the fallback search. Two
+// systems that must agree, one implementation (the BotCanBreakGlass lesson).
+//
+// 0.9.14: the BOA_PassablePortal check was MISSING here while the router has always required it
+// (BotRouteDijkstra:1803). A room can hold a glass face our cost model prices finite (120) but the
+// engine refuses, beside the real door: batteries rm33 -> rm31 has twenty-five breakable panes the
+// engine rejects and ONE engine-passable door, and the seam/hop-commit picked the nearest refused
+// pane — 310 committed crossings timed out at 8.0s in one run, bots firing at glass that never
+// opened. Requiring engine agreement in the same two passes as the router (strict first, DISAGREE
+// last resort) keeps the seam's own selection and the route's edge set from ever disagreeing.
 int BotEntryPortalIndex(object *obj, int wp_room) {
   if (!obj || !obj->ai_info)
     return -1;
@@ -767,6 +775,8 @@ int BotEntryPortalIndex(object *obj, int wp_room) {
     for (int p = 0; p < crm.num_portals; p++) {
       if (crm.portals[p].croom != wp_room)
         continue;
+      if (!BOA_PassablePortal(cur, p))
+        continue; // engine refuses this boundary — never the door to aim through
       if (BotPortalRouteCost(cur, p, allow_disagree) >= BOT_PORTAL_IMPASSABLE)
         continue;
       if (BotPortalWindDir(cur, p) < 0)
