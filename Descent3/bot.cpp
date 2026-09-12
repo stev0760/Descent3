@@ -3439,6 +3439,9 @@ static void BotDoExploreRoaming(int bot_index) {
           continue;
         if (dest == Bots[bot_index].explore_stuck_room)
           continue;
+        int dep = BOA_connect[region][c].portal;
+        if (!BotTerrainConnectPassable(dest, dep))
+          continue; // outside bot: don't target a room reachable only through a window
         candidates[num_candidates++] = dest;
       }
     }

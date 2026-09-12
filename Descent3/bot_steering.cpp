@@ -1894,6 +1894,21 @@ static struct {
 } Troute_resolve_memo[TROUTE_RESOLVE_MEMO];
 static int Troute_resolve_rr = 0;
 
+// $nav troute per-portal terrain admission (2026-09-11, OBSTACLE_GEOMETRY §4b): BOA_connect records a
+// terrain<->structure connection DISCOVERED FROM THE TERRAIN SIDE, so a window onto the skybox
+// (face_solid, engine-impassable) lands in the table exactly like a real hangar door. Before any tier
+// routes a bot THROUGH a terrain-facing portal, query the INTERIOR side directly: a ship can cross only
+// if BOA_PassablePortal admits the interior face AND our swept-hull geocost is finite. Measured no false
+// negatives across 7 maps (OBSTACLE_GEOMETRY §4b): isengard 47/47 pass (its grate-DOORS are OBJ_DOOR,
+// read as passable doors), batteries 0/51 (all windows rejected). Per-portal, NOT a per-map classifier.
+bool BotTerrainConnectPassable(int room, int portal) {
+  if (room < 0 || room > Highest_room_index || !Rooms[room].used)
+    return false;
+  if (portal < 0 || portal >= Rooms[room].num_portals)
+    return false;
+  return BOA_PassablePortal(room, portal) && BotPortalGeoCost(room, portal) < BOT_PORTAL_IMPASSABLE;
+}
+
 bool BotResolveOutdoorEntrance(const object *obj, int objective_room, int *out_room, int *out_portal) {
   if (out_room)
     *out_room = -1;
@@ -1950,6 +1965,8 @@ bool BotResolveOutdoorEntrance(const object *obj, int objective_room, int *out_r
       int ep = BOA_connect[region][c].portal;
       if (ep < 0 || ep >= Rooms[er].num_portals)
         continue;
+      if (!BotTerrainConnectPassable(er, ep))
+        continue; // don't resolve an outside bot toward a window-entrance (mixed-map correctness)
       float interior = (er == objective_room) ? 0.0f : BotComputeRouteCost(er, objective_room);
       if (interior >= 1e30f)
         continue; // no finite interior route from this entrance (sealed / wind-gated / grates)
@@ -2030,6 +2047,8 @@ bool BotResolveOutdoorEntrance(const object *obj, int objective_room, int *out_r
     int ep = BOA_connect[region][c].portal;
     if (ep < 0 || ep >= Rooms[ent_room].num_portals)
       continue;
+    if (!BotTerrainConnectPassable(ent_room, ep))
+      continue; // skip window doors when picking the near entrance door
     vector diff = Rooms[ent_room].portals[ep].path_pnt - obj->pos;
     float d = vm_GetMagnitude(&diff);
     if (d < best_dist) {
@@ -2110,6 +2129,8 @@ bool BotTrouteCompose(const object *obj, int goal_room, int *out_exit_room, int 
       int ep = BOA_connect[r][c].portal;
       if (er < 0 || er > Highest_room_index || !Rooms[er].used || ep < 0 || ep >= Rooms[er].num_portals)
         continue;
+      if (!BotTerrainConnectPassable(er, ep))
+        continue; // window/wall, not a flyable door — leave in_a/in_b infinite (excluded as exit AND entry)
       in_a[c] = (er == obj->roomnum) ? 0.0f : BotComputeRouteCost(obj->roomnum, er);
       in_b[c] = (er == goal_room) ? 0.0f : BotComputeRouteCost(er, goal_room);
     }

@@ -310,6 +310,12 @@ bool BotCheckPortalPassable(int room_idx, int portal_idx);
 // BOT_PORTAL_IMPASSABLE for grates/slits/locked/too-small openings, otherwise a finite
 // penalty (0 = wide open, rising as the opening tightens). Cached per level.
 float BotPortalGeoCost(int room_idx, int portal_idx);
+
+// $nav troute per-portal terrain admission (OBSTACLE_GEOMETRY §4b): true only if a ship can actually
+// cross this interior->terrain portal (BOA_PassablePortal admits the interior face AND geocost is finite).
+// Rejects windows (batteries) while admitting real doors and blastable grate-DOORS (isengard). Definition
+// in bot_steering.cpp; used by the terrain composer, the outdoor-entrance resolver, and outdoor explore.
+bool BotTerrainConnectPassable(int room, int portal);
 // Delivery-side portal verdict matching the coarse router's strict-first, disagreement-last policy.
 float BotPortalRouteCost(int room_idx, int portal_idx, bool allow_disagree);
 
