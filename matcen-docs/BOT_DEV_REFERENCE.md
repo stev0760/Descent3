@@ -7,10 +7,48 @@ Current implementation status is in `BOTS_DEVEL.md`. Physics model reference is 
 
 ## Current Status
 
-**0.9.12-dev** (in progress): navigation consolidation. Persistent intent and one dispatch entry now
-own explore-class interior travel; committed multi-hop intent has removed the abend2 toroid orbit.
-The coarse router is testing a strict-first retry that admits engine-passable fit-probe disagreements
-only when the strict geometry graph has no route. The stable release remains 0.9.11.
+**0.9.13-dev** (in progress): route-lifetime cleanup is implemented, but stable promotion awaits
+follow-up testing. Exit-rooted BFS parents run from the bot toward the exit and must not be reversed.
+Cross-room skeleton chains end at that portal: a caller's local aim must not be appended as a false
+destination beyond it. Same-room chains retain their target. `tools/test_bot_skel_chain.py` checks
+the production export with synthetic geometry. The stable release remains 0.9.11.
+
+Operator ruling (2026-09-10): abend2's remaining generated skeleton/arterial imbalance is accepted
+as a map-specific limitation. Keep the hierarchy and both corrections; no further abend2 fix or
+soak. Nysa and Batteries Included are the wider validation targets on the existing build.
+Acceptance distinguishes universal usable coverage on arbitrary maps from roughly symmetric scoring
+on designed-symmetric CTF maps with equal-difficulty bots. abend2 and Batteries Included are named
+symmetric cases. Map asymmetry removes the even-scoring expectation, not the coverage requirement.
+
+Nysa's 20-round baseline recorded 67 captures. All 16 hard stuck escalations occurred in room 69.
+Eleven are Red carriers: all lack a stored chain, but six have a live via commitment and five do
+not. This localizes the symptom without diagnosing its cause. Nysa's design symmetry is undeclared.
+Nysa and earlier abend2 tests used unequal hull mixes between teams. The rotating Batteries test
+stopped after one completed Batteries round. Its replacement is a single-level mission loop with
+eight Pyro-GL/Hotshot bots, a new baseline rather than a matched comparison with those rosters.
+The operator-endorsed release boundary is in `PLAN.md` section 3.0: freeze 0.9.13 pending review,
+consider stable with known limitations, and investigate comparable room-69 crossings in the next
+sprint. Neither a complete-coverage claim nor speculative tuning follows from the current evidence.
+
+### CTF Measurement Caveats
+
+- Pickup wording tests the player's room, not the flag's prior state (`netgames/ctf/ctf.cpp:1080`).
+  `picks up` and `finds ... debris` cannot distinguish base extraction from regrab or prove leaving
+  the base. Reach also depends on how long the flag is home and available.
+- `captures + announced owner returns` counts announced resolutions, not complete flag excursions.
+  The 120-second timeout returns flags silently (`ctf.cpp:118,589-633`). Home-room touches,
+  `HandlePlayerSpew`, and level reset can also restore flags without a return announcement.
+- Keep counts by flag owner, expand multi-flag captures into flag units rather than score points,
+  and retain actor/team attribution. Returns do not identify an attacking team in multi-team CTF.
+- `C / (C + R)` is capture share among announced resolutions. `captures / pickups` is a gross
+  event ratio, not matched carrier success. Neither measures exact reach or at-home exposure.
+- Bot-poll return logs can overlap HUD endings and miss fast/simultaneous transitions. Do not sum
+  them into an allegedly exhaustive outcome ledger. Unknown reset and boundary counts stay unknown.
+
+Deferred CTF-module issue from the audit: `HandlePlayerSpew` at `ctf.cpp:1755` indexes `dObjects`
+with the player slot rather than `dPlayers[pnum].objnum` when checking the flag's home room.
+This is a separate source defect, not a navigation diagnosis; no module change is authorized in
+the current documentation-and-soak-only work.
 
 The nav substrate is the **volumetric grid-seeded roadmap** (`NAVIGATION.md` §3.5,
 `bot_roadmap.cpp`), shipped and validated in 0.9.4. The 0.9.3 portal-skeleton stack remains as the

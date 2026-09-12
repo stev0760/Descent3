@@ -34,6 +34,8 @@ RET_RE = re.compile(r"\*?(\S+?)(\s?\[BOT\])? \((\w+)\) returns the (\w+) Flag")
 
 def analyze(path):
     per_map = collections.defaultdict(lambda: collections.defaultdict(collections.Counter))
+    # Per-FLAG episode ledger (see the EXTRACTION block below for why this exists).
+    flag_ep = collections.defaultdict(collections.Counter)
     rounds = collections.Counter()
     bots = collections.defaultdict(collections.Counter)
     cur = None
@@ -55,6 +57,13 @@ def analyze(path):
                     per_map[cur][team]["%s_%s" % (tag, who)] += count if tag == "cap" else 1
                     if botsfx and tag in ("pick", "cap"):
                         bots[cur]["%s(%s) %s" % (name, team, tag)] += count if tag == "cap" else 1
+                    if tag in ("cap", "ret"):
+                        # A capture and an own-team return are the only two ways a flag episode
+                        # ENDS, and both require that flag to have been taken out of its base.
+                        for colour in re.findall(r"\b\w+\b", flags):
+                            if colour.lower() == "and":
+                                continue
+                            flag_ep[cur]["%s_%s" % (colour, tag)] += 1
                     break
 
     print("# %s" % path)
@@ -68,6 +77,27 @@ def analyze(path):
             conv = "%.0f%%" % (100.0 * cp / p) if p else "n/a"
             human = "  (+human %dp/%dc)" % (hp, hc) if (hp or hc) else ""
             print("  %-7s bot picks=%-3d caps=%-3d conv=%-5s returns=%d%s" % (team, p, cp, conv, rt, human))
+        # ANNOUNCED FLAG RESOLUTIONS — NOT an extraction census.
+        # The pickup wording cannot measure base-reaching: "picks up" vs "finds ... among some
+        # debris" tests the PLAYER'S ROOM at collide time (ctf.cpp:1080), not whether the flag was
+        # on its stand. Proof: 7 captures against 4 logged "picks up" on abend2.
+        # Counting endings is better but STILL INCOMPLETE, verified in netgames/ctf/ctf.cpp:
+        #   - a flag left loose auto-returns after FLAG_TIMEOUT_VALUE = 120s (ctf.cpp:118) and that
+        #     path (ctf.cpp:589-633) emits NO announcement at all — silent;
+        #   - home-room touches, HandlePlayerSpew and level resets also restore flags unannounced.
+        # So report ANNOUNCED RESOLUTIONS and CAPTURE SHARE AMONG THEM. Never call it extraction,
+        # never treat the total as episodes, and compare arms rather than levels: the silent leak
+        # applies to both arms of a comparison but its size is unknown and map-dependent.
+        colours = sorted({k.rsplit("_", 1)[0] for k in flag_ep[lvl]})
+        if colours:
+            print("  -- announced flag resolutions (captures + announced owner returns) --")
+            for colour in colours:
+                cp = flag_ep[lvl]["%s_cap" % colour]
+                rt = flag_ep[lvl]["%s_ret" % colour]
+                ann = cp + rt
+                share = "%.1f%%" % (100.0 * cp / ann) if ann else "n/a"
+                print("     %-6s announced %3d  captured %3d  capture share=%s" % (colour, ann, cp, share))
+            print("     (silent 120s auto-returns are NOT counted — this is a floor, not a census)")
         top = bots[lvl].most_common(6)
         if top:
             print("  top: " + ", ".join("%s=%d" % kv for kv in top))

@@ -2452,9 +2452,9 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
   // the committed-leg executor died from firing on blanket BotRoomIsBuried:
   //   * indoor crossing only (outdoor has its own connecting-graph layer);
   //   * RoomBuriedCenter — the hollow-core/ring class where per-hop orbits (normal rooms don't);
-  //   * chain length >= 3 — a room a single hop already crosses cleanly builds len<=2 and is SKIPPED
-  //     (falls through to today's BotFindViaPoint path unchanged). Purely geometric, no map
-  //     knowledge, self-limiting: only rooms that actually need it activate.
+  //   * at least two skeleton nodes — a directly visible exit stays on the single-hop fallback.
+  //     Cross-room exports end at the exit; only same-room chains append the target position.
+  //     Composed routes retain their separate count>=3 gate below. No map-specific eligibility.
   // chain[0] is built by the same SkelBfs seed/stop as BotResolveRoomAim, so the FIRST hop is
   // identical to today; only hops 1.. become pre-committed. On success this owns the tick (return 1);
   // the existing cycle-cap/suspend backstop still catches a chain that never produces a crossing.
@@ -2514,7 +2514,7 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
       BotRoomIsBuried(obj->roomnum)) {
     int clen = BotSkelBuildChain(obj, obj->roomnum, target_room, target_pos, Bots[bot_index].via_chain,
                                  bot_info::BOT_CHAIN_MAX);
-    if (clen >= 3) {
+    if (clen >= 2) { // two skeleton hops; cross-room chains no longer count an appended local aim
       Bots[bot_index].via_chain_len = clen;
       Bots[bot_index].via_chain_cursor = 0;
       Bots[bot_index].via_chain_room = obj->roomnum;
@@ -2926,8 +2926,8 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
     // instead of deriving an independent skeleton one. Two graphs were answering the same question
     // every tick: BotResolveRoomAim resolved wp_aim over the skeleton (its roadmap branch is
     // unreachable here, gated on !RoomBuriedCenter at bot_steering.cpp:848), while the via layer
-    // flew a union-graph route. The disagreement is measured, not theoretical — 165 AIMSPLITs
-    // logged against 1985 composed commits in the 20-round soak, 80-245u apart.
+    // flew a union-graph route. Logged splits were 80-245u apart. The old AIMSPLIT throttle fell
+    // silent across level resets, so its 165 events are not a comparable full-run count.
     //
     // This is the same lesson as cddde48c, one layer further out: there the engine's BOA node was a
     // second planning vote, here the skeleton resolver is. Subtraction, not new machinery — no new

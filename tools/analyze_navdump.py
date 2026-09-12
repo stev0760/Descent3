@@ -214,9 +214,69 @@ def diff_verdicts(old_path, new_path):
     print()
 
 
-def analyze(path, data):
+def flag_approach(rooms, flag_rooms):
+    """CTF flag rooms and the rooms you must cross to reach them.
+
+    WHY (operator ruling 2026-09-10): there are TWO acceptance bars and they fail differently.
+    COVERAGE applies to EVERY map — bots must find their way around an arbitrary level, user-made
+    ones included. SYMMETRY applies ONLY to maps DESIGNED symmetric (named: abend2, Batteries
+    Included), where an equal-difficulty roster should score roughly evenly; lopsided scoring there
+    is a nav defect. A designed-symmetric map whose two flag APPROACHES differ sharply is the
+    signature to catch, and it is invisible in whole-map aggregates.
+
+    Get the room numbers from the server log:
+        BOT OBJ: CTF goals: red=room84 blue=room6 ...
+    They are NOT in the dump — the dump has no notion of which room holds a flag.
+    """
+    by_id = {r.get("id"): r for r in rooms}
+
+    def line(rn, label):
+        r = by_id.get(rn)
+        if r is None:
+            print(f"  rm{rn:<4} {label:<30} !! not in dump")
+            return []
+        ports = r.get("portals", [])
+        usable = [q for q in ports if portal_traversable(q)]
+        tested = r.get("portal_los_tested", 0)
+        blocked = r.get("portal_los_blocked_count", 0)
+        comps = r.get("roadmap_comp_count", "?")
+        cells = r.get("roadmap_lattice_cells", "?")
+        print(f"  rm{rn:<4} {label:<30} portals={len(ports):<3} usable={len(usable):<3} "
+              f"los_blocked={blocked}/{tested:<4} comps={comps:<3} cells={cells}")
+        return [q.get("croom") for q in usable]
+
+    print("## CTF flag-room approach")
+    approach_comps = {}
+    for rn in flag_rooms:
+        print(f"  -- flag room {rn} --")
+        for nb in line(rn, "FLAG ROOM"):
+            if nb is None or nb == rn:
+                continue
+            line(nb, "approach (attacker crosses)")
+            r = by_id.get(nb)
+            if r is not None:
+                approach_comps.setdefault(rn, []).append(r.get("roadmap_comp_count", 0) or 0)
+
+    worst = {rn: max(v) for rn, v in approach_comps.items() if v}
+    if len(worst) >= 2:
+        print()
+        print("  approach route components per flag room: "
+              + ", ".join(f"rm{rn}={c}" for rn, c in sorted(worst.items())))
+        print("  DESCRIPTIVE ONLY — no threshold, no gate. Component count is generated-network")
+        print("  output, NOT physical disconnectedness, and NOT a coverage verdict on its own.")
+        print("  Symmetry is an explicit map-design declaration (operator-named: abend2, Batteries")
+        print("  Included); never infer it from portal counts or appearance. On a declared-symmetric")
+        print("  map a large gap is a hypothesis worth testing against carrier/reach evidence —")
+        print("  and note that roughly even scoring would NOT prove coverage healthy, since both")
+        print("  sides can fail equally.")
+    print()
+
+
+def analyze(path, data, flag_rooms=None):
     rooms = data.get("rooms", [])
     summary = data.get("summary", {})
+    if flag_rooms:
+        flag_approach(rooms, flag_rooms)
     aim_gate(rooms)
     entry_gate(rooms)
     powerups = data.get("powerups", [])
@@ -380,7 +440,19 @@ def main():
     ap.add_argument("--diff", nargs=2, metavar=("OLD", "NEW"),
                     help="compare path_pnt_reachable between two dumps of the SAME map "
                          "(the before/after gate for an aim-gate change)")
+    ap.add_argument("--flag-rooms", metavar="N,N",
+                    help="CTF flag room numbers, comma separated, from the server log line "
+                         "'BOT OBJ: CTF goals: red=roomN blue=roomM'. Adds the flag-room approach "
+                         "section (coverage/symmetry triage).")
     args = ap.parse_args()
+
+    flag_rooms = []
+    if args.flag_rooms:
+        try:
+            flag_rooms = [int(x) for x in args.flag_rooms.replace("room", "").split(",") if x.strip()]
+        except ValueError:
+            print("!! --flag-rooms wants comma-separated integers, e.g. --flag-rooms 84,6", file=sys.stderr)
+            return
 
     if args.diff:
         diff_verdicts(args.diff[0], args.diff[1])
@@ -394,7 +466,7 @@ def main():
         except (OSError, json.JSONDecodeError) as e:
             print(f"!! could not read {path}: {e}", file=sys.stderr)
             continue
-        analyze(path, data)
+        analyze(path, data, flag_rooms)
 
 
 if __name__ == "__main__":

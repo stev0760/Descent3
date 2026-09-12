@@ -82,7 +82,7 @@ static const int NAVDBG_NUM_COMPONENT_COLORS =
 
 #define NAVDBG_CHAIN GR_RGB(255, 255, 255) // committed via_chain polyline
 #define NAVDBG_CURSOR GR_RGB(60, 160, 255) // the node the bot is currently flying toward
-#define NAVDBG_EXIT GR_RGB(255, 200, 0)    // the chain's exit node (route-hop; snaps on a flip)
+#define NAVDBG_EXIT GR_RGB(255, 200, 0)    // last stored point: exit portal or appended target
 #define NAVDBG_VIA GR_RGB(255, 100, 255)   // the reactive via_point (go-around waypoint)
 #define NAVDBG_GOAL GR_RGB(120, 255, 120)  // the bot's goal room path_pnt
 
@@ -199,7 +199,7 @@ static void NavDbgDrawBotIntent(int bot_index) {
     }
     if (b.via_chain_cursor >= 0 && b.via_chain_cursor < b.via_chain_len)
       NavDbgSphere(b.via_chain[b.via_chain_cursor], 1.5f, NAVDBG_CURSOR); // where it's flying now
-    NavDbgSphere(b.via_chain[b.via_chain_len - 1], 1.9f, NAVDBG_EXIT);    // the exit (route-hop) node
+    NavDbgSphere(b.via_chain[b.via_chain_len - 1], 1.9f, NAVDBG_EXIT);    // last stored point, not always an exit
   }
 
   // The reactive go-around via_point (valid only while committed).
@@ -348,7 +348,7 @@ static void NavDbgDrawHud() {
   if (Bot_navdebug_mode >= 2) {
     key(NAVDBG_CHAIN, "bot  committed chain");
     key(NAVDBG_CURSOR, "bot  current hop (cursor)");
-    key(NAVDBG_EXIT, "bot  exit / route-hop node");
+    key(NAVDBG_EXIT, "bot  last stored route point");
     key(NAVDBG_VIA, "bot  via_point");
     key(NAVDBG_GOAL, "X  goal room");
   }

@@ -54,10 +54,9 @@ RE_VIA_FAIL = re.compile(r"via search failed in room (-?\d+)")   # line blocked,
 # door is blind to it (throttled 5s global). Firing rate + room concentration are the change's
 # own health metrics; the line is also the A/B arm marker for the Step A build.
 RE_ENTRY_AIM = re.compile(r"entry-aim rm(-?\d+) via portal (-?\d+) -> node hop (-?\d+)")
-# Step 3 (committee collapse): committed multi-hop in-room chain lifecycle. built-vs-complete ratio
-# is the win metric; a chain that completes = a bot flew THROUGH the room (one mind). Compare
-# `complete` against `built` and watch `via suspended` FALL on the same map (the orbit was the cap).
+# Chain exits are room changes observed with a stored chain, not paired successful route completions.
 RE_CHAIN_BUILT = re.compile(r"chain built rm(-?\d+) len(\d+)")
+RE_COMPOSED_BUILT = re.compile(r"composed route rm(-?\d+) len(\d+)")
 RE_CHAIN_COMPLETE = re.compile(r"chain complete rm(-?\d+) -> rm(-?\d+)")
 # 0.9.13 STUCKSTATE — what route state the bot held when it wedged. TWO WIRE FORMATS, and they are
 # only PARTLY comparable, so both are parsed and the difference is reported rather than averaged over:
@@ -310,6 +309,8 @@ def new_map_stats():
         "stuckstate_chain_carrier": Counter(),
         "stuckstate_phases": Counter(),             # preclear (new build) | postclear (old build)
         "stuckstate_via_live": Counter(),
+        "stuckstate_context": defaultdict(Counter),  # (room, team, phase, chain, live) -> events/hard
+        "composed_built": 0,
         "chainaims": 0,
         "chainaim_rooms": Counter(),
         "human_caps": 0,             # captures by players without the [BOT] suffix
@@ -526,6 +527,11 @@ def parse_log(path):
                 s["chains_done"] += 1
                 continue
 
+            m = RE_COMPOSED_BUILT.search(line)
+            if m:
+                s["composed_built"] += 1
+                continue
+
             m = RE_STUCKSTATE.search(line)
             if m:
                 s["stuckstate_events"] += 1
@@ -536,7 +542,8 @@ def parse_log(path):
                 if m.group(9) == "yes":
                     s["stuckstate_chain_carrier"][chain] += 1
                 ph = RE_STUCKSTATE_PHASE.search(line)
-                s["stuckstate_phases"][ph.group(1) if ph else "postclear"] += 1
+                phase = ph.group(1) if ph else "postclear"
+                s["stuckstate_phases"][phase] += 1
                 tm = RE_STUCKSTATE_TEAM.search(line)
                 if tm:
                     s["stuckstate_chain_by_team"][tm.group(1)][chain] += 1
@@ -547,6 +554,11 @@ def parse_log(path):
                 disp = int(nd.group(1)) if nd else last_escal_disp.get(m.group(1))
                 if disp is not None and disp < HARD_PIN_DISP:
                     s["stuckstate_chain_hard"][chain] += 1
+                context = (int(m.group(2)), tm.group(1) if tm else "unknown", phase, chain,
+                           m.group(8) if phase == "preclear" else "unknown")
+                s["stuckstate_context"][context]["events"] += 1
+                if disp is not None and disp < HARD_PIN_DISP:
+                    s["stuckstate_context"][context]["hard"] += 1
                 continue
 
             m = RE_CHAINAIM.search(line)
@@ -1347,8 +1359,8 @@ def print_report(stats, total_lines, log_path):
     if has_ss:
         print(f"## Route State at Stuck Escalation (STUCKSTATE)")
         print()
-        print(f"`stored` = the bot held a committed-chain array when it wedged; `none` = it was flying "
-              f"the single-hop answer. **Read `chain=` only within one build** — see the format note "
+        print(f"`stored` = a chain array existed; `none` = no stored chain. Neither proves which "
+              f"goal the engine was flying. **Read `chain=` only within one build** — see the format note "
               f"below. `via_live` is meaningless in postclear logs (the goal clear zeroed the timer "
               f"before the line was written), so it is reported but must not be compared across formats.")
         print()
@@ -1363,6 +1375,13 @@ def print_report(stats, total_lines, log_path):
             print(f"| {name} | {s['stuckstate_events']} "
                   f"| {c.get('stored', 0)} | {c.get('none', 0)} "
                   f"| {ch.get('stored', 0)} | {ch.get('none', 0)} | {fmt} |")
+        print()
+        print("| Map | Room | Team | Phase | Chain | Via Live | Events | Hard |")
+        print("|---|---|---|---|---|---|---|---|")
+        for name in maps:
+            for (room, team, phase, chain, live), counts in sorted(stats[name]["stuckstate_context"].items()):
+                print(f"| {name} | {room} | {TEAM_NAME(team)} | {phase} | {chain} | {live} "
+                      f"| {counts['events']} | {counts['hard']} |")
         print()
         for name in maps:
             s = stats[name]
@@ -1526,26 +1545,23 @@ def print_report(stats, total_lines, log_path):
                   f"| {to_str} | {stall_str} | {glass_str} | {s['grate_clears']} |")
         print()
 
-    # Phase 12.2 — wrong-side rescues, cycle-cap suspensions, troll retirements.
-    # Step 3 (committee collapse): committed multi-hop chain flow. built = a bot committed to crossing
-    # a buried multi-hop room; done = it flew THROUGH (crossed out). A high done/built ratio + a FALL in
-    # Via Suspends (below) on the same rooms is the "one mind flows through" win (abend2 rooms 0/30).
-    has_chains = any(s["chains_built"] for s in stats.values())
+    # Both builders share the room-exit diagnostic. It does not identify a route or its intended exit.
+    has_chains = any(s["chains_built"] or s["composed_built"] or s["chains_done"] for s in stats.values())
     if has_chains:
         print(f"## Committed Chains (Step 3 — multi-hop in-room intent)")
         print()
-        print(f"built = committed to crossing a buried multi-hop room; done = crossed out (flowed through). "
-              f"Low done/built or high Via Suspends on the same rooms = chains not completing (investigate).")
+        print("Build counts distinguish skeleton and composed routes. Observed exits include any room "
+              "change with a stored chain, including knockback or the wrong exit. These unpaired "
+              "events do not establish a route-completion rate.")
         print()
-        print(f"| Map | Chains Built (top rooms) | Chains Done | Completion |")
+        print(f"| Map | Skeleton Builds (top rooms) | Composed Builds | Observed Exits |")
         print(f"|---|---|---|---|")
         for name in maps:
             s = stats[name]
-            if not s["chains_built"]:
+            if not (s["chains_built"] or s["composed_built"] or s["chains_done"]):
                 continue
             brooms = ", ".join(f"{r}x{c}" for r, c in s["chain_built_rooms"].most_common(3))
-            print(f"| {name} | {s['chains_built']} ({brooms}) | {s['chains_done']} | "
-                  f"{fmt_pct(s['chains_done'], s['chains_built'])} |")
+            print(f"| {name} | {s['chains_built']} ({brooms}) | {s['composed_built']} | {s['chains_done']} |")
         print()
 
     # --- Committee census -------------------------------------------------------------------
@@ -1712,7 +1728,10 @@ def print_report(stats, total_lines, log_path):
     if has_carrier:
         print(f"## Outdoor Breakdown")
         print()
-        print(f"| Map | Carrier Ticks | Outdoor % | Stucks | Outdoor Stuck % |")
+        print("Carrier counts are logged goal reissues, not travel time or successful crossings. "
+              "Outdoor share is the fraction of those reissues made outdoors.")
+        print()
+        print(f"| Map | Carrier Reissues | Outdoor Reissue % | Stucks | Outdoor Stuck % |")
         print(f"|---|---|---|---|---|")
         for name in maps:
             s = stats[name]
@@ -1885,7 +1904,7 @@ def print_report(stats, total_lines, log_path):
         if not s["bot_carrier_ticks"]:
             continue
         print(f"**{name}:**")
-        print(f"| Bot | Carrier Ticks | Carrier Deaths |")
+        print(f"| Bot | Carrier Reissues | Carrier Deaths |")
         print(f"|---|---|---|")
         all_bots = set(s["bot_carrier_ticks"].keys()) | set(s["bot_carrier_deaths"].keys())
         for bot in sorted(all_bots, key=lambda b: s["bot_carrier_ticks"].get(b, 0), reverse=True):

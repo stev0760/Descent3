@@ -7,11 +7,68 @@ live navigation status is in [NAVIGATION.md](NAVIGATION.md) §7.0.
 Versioning: `0.8.x` = feature releases; `0.9.x` = the navigation-milestone series.
 A `-dev` suffix marks an in-test build that has not yet passed its validation gate.
 
-## [0.9.13-dev] - in test
+## [0.9.13] - 2026-09-11
 
-*An in-test build, and a substantial one: bots can now build and use in-room navigation in flat
-rooms, which is most of the rooms on most maps. Not yet validated for play — do not treat as a
-release.*
+*A correctness checkpoint — source-proven routing corrections plus much sharper navigation
+diagnostics. This is **not** a "navigation solved" release: the hard interior-navigation cases in
+**Known limitations** below are unchanged and scoped for 0.9.14.*
+
+*   **Wider testing still finds carrier stalls.** Nysa produced 67 captures in 20 completed rounds,
+    but Red carriers recorded 11 hard stalls in the room beside the Blue flag room. This is useful
+    localization, not a confirmed cause or complete-coverage pass. The rotating Batteries test was
+    stopped after one round. Its replacement uses a single-level mission and equal-difficulty
+    Pyro-GL rosters. The release decision awaits review, with known limitations stated explicitly;
+    this candidate does not claim to finish navigation.
+*   **abend2 is an accepted map-specific limitation.** Toroid navigation is partly solved, but its
+    generated skeleton/arterial network remains uneven between teams. The route-order and endpoint
+    corrections stay. Testing now moves to Nysa and Batteries Included instead of further tuning
+    abend2. This scope decision is not a claim that the failed comparison guard passed.
+    Usable navigation on arbitrary maps remains the coverage goal. Roughly balanced scoring is a
+    separate expectation for designed-symmetric CTF maps with equal-difficulty bots.
+*   **Fix under test: a room-crossing route must not end back at its start.** Some callers pass a
+    local steering point alongside the next room. The skeleton builder appended that point after
+    the exit, creating a return leg back into the room. Cross-room chains now stop at the selected
+    exit portal, like composed routes. Same-room chains retain their local destination. The caller
+    still requires two skeleton nodes, and directly visible exits keep the single-hop fallback.
+    The follow-up comparison failed its guard because one bot dominated the soft-stuck change.
+    Pickup wording does not reliably distinguish a base extraction from a regrab. The remaining
+    abend2 imbalance is documented rather than being pursued in another test arm.
+*   **Fix under test: fly skeleton waypoints toward the exit, not backward.** The search starts at
+    the exit and follows parent pointers back from the bot. Those pointers already give the flight
+    order, but the export reversed them again, sending the bot at the far door first. It now keeps
+    the correct order, handles directly visible exits, and rejects routes too long for the output
+    buffer instead of skipping their remaining legs. A synthetic test reproduces the old reversal
+    and passes with the correction. A matched test removed all stuck records with a stored chain,
+    but Blue flag pickups fell from 48 to 20. That count alone does not identify the cause.
+*   **More precise navigation analysis.** Hard-pin reports now split by room, team, stored route,
+    and commitment liveness. Carrier counts are labelled as goal reissues, not time spent travelling.
+    Skeleton and composed route builds are counted separately. Room-exit events no longer appear
+    as a route-completion percentage because they do not identify which route or exit was taken.
+
+### Known limitations (unchanged in 0.9.13; scoped for 0.9.14)
+
+*   **Interior-only CTF maps (the Batteries Included class) play poorly.** These maps have decorative,
+    unreachable outdoor scenery seen through windows; bots can still plan routes through that window
+    glass, and a bot that reaches a flag room can fail to close on the flag and stall there. A
+    per-portal fix for the window misroute exists but is deliberately held for 0.9.14.
+*   **Flag carriers still stall on some return legs** — e.g. Nysa's room beside the Blue flag room; on
+    Polaris, carriers spend nearly all their time outdoors.
+*   **Polaris wind routing can collapse:** with the wind gate on, the router may give up and hand the
+    leg to the engine, degrading carrier routing.
+*   **Powerup chasing can wall-press:** a bot chasing an item may pin against interior geometry and
+    time out instead of reaching it. (Pre-existing, not new to this release.)
+*   **abend2 is an accepted map-specific limitation** — toroid navigation is partly solved, but its
+    generated network is uneven between teams.
+*   **QuadSomniac** Red-team conversion is weak (attribution open), and **Entropy** room takeover has
+    not been observed in testing.
+*   **Validation and known costs.** A 20-round abend2 test and roughly 30 additional rounds across
+    six modes reported no crashes or assertion failures. abend2 hard pins rose from 25 to 49.
+    The comparison guard failed on one bot's share of the stuck increase, and the apparent Red
+    capture recovery is not established. Bedlam hard pins fell, but Fellowship results were mixed.
+*   **Unresolved map and mode limitations.** QuadSomniac Red flag conversion fell from 24% to zero
+    against an older build spanning two changes, so the responsible change is unknown. Polaris
+    wind routing and Batteries Included flag-room connectivity still need work. Entropy takeovers
+    remain unobserved in testing. These issues are not fixed by the current candidate.
 
 *   **Bots no longer fly to waypoints from a plan they already abandoned.** A bot's route through a
     room outlived the commitment that authorised it. When the commitment ended — the bot's goal was
@@ -20,8 +77,9 @@ release.*
     a separate short detour; the two answers disagreed, and arriving at the detour advanced the old
     route to a waypoint the bot had never travelled to. A bot that died within a second of planning
     could respawn and fly at a point from where it died. Routes are now retired whenever the
-    commitment behind them ends, so a bot has one plan or none. Measured on abend2, the number of
-    times a bot's steering actually followed its planned route rose thirty-one fold.
+    commitment behind them ends, so a bot has one plan or none. Measured on abend2, diagnostic
+    events where goal aim read a live route rose thirty-one fold. That measures route use, not
+    completed crossings or better play.
 *   **The nav overlay no longer draws abandoned routes as live ones.** The route line was drawn
     whenever route data existed, including after it had expired, so a route the bot was no longer
     flying still appeared on screen.
@@ -91,7 +149,7 @@ release.*
     different components after normal lattice growth and bridging, the builder traces a short chain
     around the blocking geometry. Every sub-leg is ship-width checked before the chain is committed;
     failure leaves the old graph and fallback behavior intact. The first portal-to-portal search was
-    too weak for abend2 room 30, so the in-test builder now grows controlled frontiers from the
+    too weak for abend2 room 30, so the builder now grows controlled frontiers from the
     closest existing nodes on both components instead of tracing the whole ring from one portal pair.
 
 ## [0.9.12-dev] - in test

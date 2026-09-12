@@ -193,9 +193,10 @@ bool BotResolveRoomAim(object *obj, const vector &target_pos, int target_room, f
 bool BotRoomIsBuried(int room_idx);
 
 // Committed multi-hop chain (Step 3): the ordered skeleton crossing [bot-adjacent node ... exit
-// portal, target_pos] a bot flies THROUGH a buried room, built once so the via layer advances a
-// cursor per arrival instead of re-deriving one hop each time. pos_out[0] equals BotResolveRoomAim's
-// first hop by construction. Returns node count (>= 2), 0 = no chain. pos_out holds BOT_SKEL_MAX_NODES.
+// portal] a bot flies through a buried room. Only same-room routes append target_pos; a routed
+// cross-room caller may supply a local aim, not a position in target_room. At least two skeleton
+// nodes are required; direct exits use the caller's single-hop fallback. Returns node count (>= 2),
+// 0 = no multi-hop chain. pos_out holds max_nodes entries.
 int BotSkelBuildChain(object *obj, int room_idx, int target_room, const vector &target_pos, vector *pos_out,
                       int max_nodes);
 

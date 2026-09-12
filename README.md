@@ -14,22 +14,28 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 **No client modifications are required.** Retail D3 v1.5 clients and compatible engines (PiccuEngine) connect and play against bots as-is. A server with no bot configuration behaves exactly like vanilla D3.
 
-**Current release: 0.9.11**, a navigation-consolidation release. (The tree is currently `0.9.12-dev` — same gameplay as 0.9.11; an unvalidated routing change was reverted from it and only the measurement record remains. 0.9.11 is the last validated release.) Its headline: abend2 — the two flat donut-shaped flag arenas that had never produced a bot capture since the game shipped — now plays, because the three navigation layers that each chose their own aim point inside a ring room now resolve through one shared calculation, and a follow-up lets flag carriers drop into the hanging flag pockets instead of hovering the open seam above them. It also routes self-directed interior travel through one decision point — the same committee-collapse work, fewer competing mechanisms — and was validated by an overnight nine-mode soak (CTF, anarchy, team, entropy, monsterball) with no crashes and no regression. Beneath it, the 0.9.10 navigation cleanup release: bots travel with intent: a bot heading for the enemy flag keeps that errand through a firefight or a powerup grab instead of forgetting it and re-rolling a destination at random, sets aside a spot that has already defeated it rather than grinding the same wedge, and takes a human's orders even while carrying the flag. On a fixed twelve-round CTF test that is worth 94 → 121 captures, with bots getting stuck less often than baseline on every map. Beneath it, the 0.9.9 co-op companion work: bots fly the campaign with you, falling in on your wing automatically, keeping formation, fighting what you fight, taking squad orders (`!goal` sends a vanguard to the current objective), and on campaign maps navigating on the engine's own hand-authored path network — the guide-bot's. They deliberately never play the mission for you. Beneath that, the 0.9.8 game-modes work: Entropy and Monsterball are playable against bots for the first time since the game shipped. Entropy bots run the whole territory loop: they earn carry capacity through kill streaks, collect viruses from their own labs, invade the nearest routable enemy room, hold dead-still through the takeover clock, then retreat to repair. Monsterball bots play positions like a futsal side (one striker on the ball, a supporter, a keeper shadowing the goal mouth) with a hard own-goal refusal gate and an afterburner slam finisher. CTF teams organize into real jobs: a committed flag runner, scaling defenders, and a flex bot. Hyper-Anarchy sends the best-positioned few after the orb instead of the whole server. All of it runs on the 0.9.7 navigation stack, a single runtime spatial model that answers reachability for powerup selection, plans terrain-aware outdoor routes, prices rooms by experience, and rebuilds itself when glass or grates are destroyed. Validated over a week-long hosted-server campaign of overnight soaks and live play from unmodified PiccuEngine clients.
+**Current release: 0.9.13** (2026-09-11) — a correctness checkpoint with documented limitations (see [matcen-docs/CHANGELOG.md](matcen-docs/CHANGELOG.md)), **not** a "navigation solved" release.
+Bots now build usable navigation grids in flat rooms and combine arterial paths with local routes
+through complex interiors. They discard routes when the commitment ends, including on respawn,
+instead of reusing waypoints from an abandoned plan. The host overlay shows indoor and outdoor
+navigation, and server diagnostics distinguish stored routes from live commitments.
+The skeleton-order fix removed stalled-chain stuck records in a follow-up test. The endpoint fix
+stops cross-room chains at their exit instead of appending a local aim back inside the room.
+abend2 remains uneven between teams, but its partially solved toroid navigation is accepted as good
+enough for now. Nysa's 20-round baseline produced 67 captures, but Red carriers still pinned near
+the Blue flag room. This is not a complete-coverage pass. The first Batteries validation run was
+stopped after the mission rotated away. A replacement single-level test is running with all-Pyro
+rosters to remove the unequal ship mixes present in earlier tests.
 
-**0.9.13-dev status:** bots can now build and use in-room navigation in flat rooms, which is most of
-the rooms on most maps. The in-room grid was laid out from the corner of a room's bounding box in
-fixed steps, so a room about as tall as one step got its only sample heights at the floor and the
-ceiling — where a ship does not fit. Room height, not room difficulty, decided how much navigation a
-room received: tall halls were packed with thousands of redundant points while corridors and ring
-rooms got none. With the grid aligned to the space bots actually fly through, abend2's two flag-ring
-rooms went from 10 and 9 usable points to 223 each, and total points across the map rose only 11%
-(on Batteries Included they fell 7%). Two gates downstream were measuring the wrong thing and are
-fixed with them: the eligibility test was really asking "did the grid builder fail here?", so
-improving a room's navigation made it ineligible to use it, and the roadmap was consulted only in
-rooms that were not ring-shaped. Where a room has a proven network, one planner now owns the route
-through it end to end. The nav overlay also draws outdoor navigation, which it never had, and server
-logs report coverage honestly and name which subsystem is steering. Not yet validated for play. No
-new `$nav` toggle was added. The last validated release remains 0.9.11.
+Testing included live play, a 20-round abend2 test, and roughly 30 additional rounds across six
+game modes, with no reported crashes or assertion failures. This is not an across-the-board
+navigation improvement: abend2 hard pins increased, while its apparent Red capture recovery remains
+unproven. QuadSomniac also has an unresolved Red return-navigation signal against an older build.
+0.9.13 ships as that correctness release — the limitations above are documented, not solved. The
+interior-only window misroute (bots routing through unreachable window glass) and the flag-room
+arrival stalls are held for the 0.9.14 sprint, which traces failed and successful carrier crossings
+to identify the remaining fault.
+See [Known limitations](#known-limitations) and the [release notes](matcen-docs/CHANGELOG.md).
 
 ### Features
 
@@ -111,12 +117,15 @@ Available in the dedicated server console or via remote telnet:
 
 ### Known limitations
 
+*   **abend2 ring crossings**: the visually symmetric toroids produce an imbalanced skeleton/arterial network and uneven team behavior. This map-specific limitation is accepted for now. The navigation architecture and source corrections stay; no further abend2-specific fix or soak is planned.
+*   **CTF return and reach failures**: QuadSomniac Red conversion fell from 24% to zero against an older build spanning two changes, so attribution remains open. Polaris wind routing and Batteries Included flag-room connectivity also remain unresolved.
+*   **Entropy and co-op**: Entropy bots have not completed a room takeover in the recorded tests. Co-op still has reported bot-freezing and client-compatibility problems and was not validated by the latest test set.
 *   **Thin divider rooms**: a few rooms with paper-thin disconnected sections remain hard to route across; a densification pass is planned.
 *   **Tight-doorway precision**: doorways barely wider than the ship are routable, but the engine path-follower can be clumsy threading them.
 *   **Outdoor edges**: bots can ground-pin against steep hillsides on rough terrain, and a decorative concave alcove (a doorway-shaped recess with no real door) can trap a flag carrier.
 *   **Decoration powerups**: items sealed inside non-enterable scenery are occasionally chased briefly, then retired level-wide by an evidence-based backstop, so the behavior corrects itself without operator action.
 *   **Multi-flag CTF**: in 4-team CTF, bots don't deliberately hoard multiple flags for the bonus cash-in; they only do it opportunistically.
-*   **Map fit**: most maps play well, but extreme verticality or deliberately obtuse geometry won't suit bots. The goal is a great experience on the majority of maps, not all of them.
+*   **Coverage and map balance**: usable navigation on arbitrary maps is the goal, including user-made levels; remaining coverage gaps are limitations, not exemptions. Roughly balanced scoring is expected on designed-symmetric CTF maps with equal-difficulty bots, not on genuinely asymmetric maps. Even scoring alone does not prove coverage is adequate.
 
 ### For developers
 

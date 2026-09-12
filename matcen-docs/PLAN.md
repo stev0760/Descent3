@@ -20,14 +20,31 @@ bots is a server worth joining.
 Anarchy, Team Anarchy, CTF, Monsterball and Entropy competently enough that a human wants to keep
 playing. Not perfect — *balanced and fun*.
 
+### Acceptance criteria
+
+1. **Coverage is universal.** Bots must be able to navigate the ship-passable space of arbitrary
+   maps, including user-made levels. Genuine map asymmetry does not excuse incomplete navigation.
+   Node counts, component counts and direct portal sight lines help diagnose coverage; none alone
+   establishes whether a playable route exists or the bot can follow it.
+2. **Scoring symmetry is conditional.** On maps designed to be symmetric, CTF bots at the same
+   difficulty should produce roughly symmetric scoring over adequate observation. Persistent
+   lopsided results are a navigation-defect signal under this criterion. The operator names
+   abend2 and Batteries Included as designed-symmetric cases. Do not require even scoring on a
+   genuinely asymmetric map, or assume all user-made maps are asymmetric.
+
+Verify actual per-bot difficulty and record other roster differences before applying the symmetry
+test. Balanced scoring cannot substitute for coverage: two teams can fail equally. A short run
+without flag activity raises a reach concern but does not identify a coverage defect by itself.
+
 ---
 
-## 2. Where the project actually is (2026-08-29, 0.9.11)
+## 2. Where the project actually is (2026-09-10, 0.9.13-dev)
 
-Working and validated: Anarchy, Team Anarchy, Robo-Anarchy, CTF, Monsterball, Entropy,
-Hyper-Anarchy, and co-op companion mode. Config-file rosters, five difficulty levels, chat orders,
-`$nav` diagnostics, `$servercaps` handshake, in-client Bot Settings menu. Runs against vanilla v1.5
-and PiccuEngine clients. ~30h of soaks without crashes.
+The candidate is 0.9.13-dev, not promoted. Anarchy, Team Anarchy, Robo-Anarchy, CTF, Monsterball, Entropy,
+and Hyper-Anarchy have bot implementations, with mode-specific limitations. Entropy takeovers
+remain unobserved in testing. Co-op has reported freezes and client-compatibility failures and was
+not part of the latest validation. Config-file rosters, five difficulty levels, chat orders,
+`$nav` diagnostics, `$servercaps`, and the in-client Bot Settings menu have shipped.
 
 **The one thing standing between here and done is navigation.** Everything else is either finished
 or small. Bots fight well and travel badly, and travel has consumed roughly three months.
@@ -42,20 +59,71 @@ or small. Bots fight well and travel badly, and travel has consumed roughly thre
 | D3 Pyrodeck companion admin tool | Spec written (`D3_PYRODECK_SPEC.md`), not built |
 | **In-room navigation** | **The blocker. See §3.** |
 
-Everything in the old phase table marked "Not started" for client UI and mode awareness is **wrong
-and has been corrected** — both shipped. Co-op is not broken; it shipped in 0.9.9.
+Client UI and mode awareness have shipped. Co-op companion support was introduced in 0.9.9, but
+that implementation milestone does not resolve the failures recorded in `BOTS_DEVEL.md`.
 
 ---
 
 ## 3. The navigation blocker, and the plan for it
 
-### 3.0 Current checkpoint (2026-09-08, 0.9.13-dev)
+### 3.0 Current direction (2026-09-10, 0.9.13-dev)
+
+**Operator ruling:** abend2 is good enough for now. Its visually symmetric toroids produce an
+imbalanced skeleton/arterial network, treated as a map-specific output limitation. Keep the
+hierarchical design, route-order fix and endpoint fix. Do not make another abend2 fix or launch
+another abend2 arm. Build work is deferred; `-dev` remains pending wider validation.
+This accepts a known symmetry defect temporarily; it does not lower either acceptance criterion.
+
+Nysa's existing-build baseline is complete: 20 rounds, 67 captures and 16 hard stuck escalations.
+Eleven hard events are Red carriers in room 69, neighboring the Blue flag room. Six have a live
+via commitment and five do not, all without a stored chain. This localizes the reported symptom,
+not its mechanism, and does not establish complete coverage or a reach-versus-return diagnosis.
+Nysa's design symmetry is undeclared. Its mixed-hull roster also limits team-balance conclusions.
+
+The rotating Batteries run was manually stopped after one completed Batteries round. It did not
+provide the planned baseline. `SetLevel` chose the start level, not a restriction on later rotation.
+Opus 4.8 has started a replacement using a single-level `batteriesincluded.mn3`, derived from
+`bsidectf.mn3` with its branching removed. The production driver confirms three consecutive Batteries
+round ends. Leave the running test undisturbed. It targets 20 rounds with eight Pyro-GL/Hotshot bots
+on the unchanged binary. This is a fresh baseline, not a mixed-hull or cross-map A/B comparison.
+The proposed server-restart-per-round workaround is superseded, not a second test to launch.
+
+CTF metric correction: pickup wording describes the player's room, not base extraction versus
+regrab (`ctf.cpp:1080`). Flag availability limits opportunities to steal. Captures plus announced
+returns also omit silent timeout/reset paths, so they count announced resolutions only. Do not
+claim exact extractions, at-home exposure, or independent excursions from the existing HUD stream.
+
+#### 0.9.13 release decision
+
+The operator endorsed a bounded correctness release, subject to Batteries review, rather than keeping
+0.9.13 open until all navigation is solved. Freeze the current candidate and retain the lifetime,
+order and endpoint corrections. Stable means tested and understood with accepted limitations, not
+complete navigation coverage. No speculative tuning or broad rewrite belongs in this release.
+
+1. Meaningful flag play without a severe recurring failure supports considering stable with documented limitations.
+2. Little/no flag play or persistent one-sided failure means no automatic promotion. Establish whether it is an existing limitation or a new correctness problem. A fresh baseline alone cannot prove regression.
+3. A concrete defect attributable to the current corrections should be fixed and specifically validated before release, once that work is authorized.
+
+These are decision rules, not authorization to commit, promote, rebuild or launch another test.
+
+#### Proposed 0.9.14-dev investigation
+
+Start with one failed and one successful Nysa room-69 carrier crossing under comparable conditions,
+including hull, entry and intended exit where possible. Follow the full sequence: actual position
+and intended exit, selected route, installed engine goal, movement, then recovery. Distinguish failure
+to construct a usable route, unsuitable local-target selection, and interruption or handoff of a
+usable route. The six live-via and five inactive-via carrier pins do not by themselves identify a cause.
+
+Use that evidence to change the smallest responsible component. Do not start with another graph
+rewrite, timer or tuning collection. Preserve hierarchical routing and engine-owned steering.
+This plan does not start the sprint or change the version; the current candidate remains 0.9.13-dev.
+
+### 3.0.1 Candidate history (superseded task directions)
 
 **Read this before treating the historical steps below as outstanding work.** Per-entry aim has
 landed. The sampler phase and coverage-accounting fixes have landed. Reopening network construction
-is not this session's task. The current baseline is `84e4fc4b`, held for further testing, not promoted
-or reverted. Its combined route-drive and chain-aim changes cannot be evaluated separately from the
-previous comparison.
+is not this session's task. The candidate baseline is `c8566c37`, including the route-lifetime
+correction. The operator requires diagnosis, justified fixes, and a follow-up soak before promotion.
 
 **The target remains one navigation network, not one flat graph:** arterials plus local streets,
 with room-scale planning refined into a continuous local route. The navigator chooses the route.
@@ -63,25 +131,37 @@ The engine steers and the pilot applies legal thrust. Coarse planning, local sea
 avoidance do different jobs. Simplification means removing duplicate answers to the same question,
 not removing necessary levels of the hierarchy or replacing working campaign/outdoor navigation.
 
-**First dependency: make route lifetime consistent.** Source review found that `BotViaPointTick`
-can retain a chain after its commitment expires. That stored chain blocks both route builders. A
-later single-waypoint detour can renew the shared timer without replacing the old chain. Chain-aim
-and advancement can then read old route points while the active waypoint belongs to the new detour.
-`BotClearActiveGoal` also ends the timer without retiring the chain. This is a lifecycle defect,
-not evidence that the map needs more nodes. Independent review and a bounded correction are the
-current task. This finding does not justify timer tuning or route-eligibility widening.
+Route lifetime is now consistent at the reviewed retirement sites: goal clear, bypasses, expiry,
+arrival exhaustion, lifecycle resets, and respawn. Stored chains no longer suppress rebuilding or
+inherit an unrelated waypoint's timer. `STUCKSTATE` now captures pre-clear state, the overlay hides
+expired routes, and AIMSPLIT logging handles level-clock resets. Neither an absent chain nor a
+connected graph alone establishes why a bot failed to travel.
 
-The existing `STUCKSTATE` diagnostic is also emitted **after** goal cleanup clears its `via_expires`
-timer. Its `via_live` field therefore does not measure pre-failure liveness, and `chain=held` means
-only that an array length is nonzero. Repair that measurement before using it to select a change.
-Neither a missing chain nor a connected graph alone establishes why a bot failed to travel.
+There is no stable-promotion decision. Against `84e4fc4b`, the matched
+20-round abend2 arm recorded 141 -> 231 escalations and 25 -> 49 hard pins. Its guard failed on
+one bot's share of the increase. Red conversion rose 9.1% -> 20.0% without establishing recovery,
+and Blue stayed at 25%. Wider testing and live play do not settle the trade. Fellowship hard-pin
+results were mixed and QuadSomniac has an unresolved Red return signal against an older comparator.
+The skeleton-order arm passed its comparison guard: stored-chain stuck records fell 43 -> 0, but
+Blue pickups fell 48 -> 20. The next candidate repairs a false endpoint revealed by that ordering:
+the routed caller's local aim A was appended after the exit, exporting [A, B, exit, A]. Cross-room
+chains now end at the selected portal; only same-room chains append their target. The two-skeleton-node
+minimum remains, with direct exits left to single-hop fallback. Production-function tests cover both
+order and endpoint contracts. The endpoint arm against `soak-20260909T212422.log` completed 20 rounds
+but failed its guard: Phantom dominated the soft-stuck decrease. Blue's two pickup-wording counts
+were 4 -> 5 and 16 -> 25, and Phantom supplied nine of the ten extra pickups. Reach recovery is not
+established. Blue conversion 7/20 -> 3/30 gives two-sided Fisher exact p=0.0673 and remains uncertain.
+Retain the corrections under `-dev`; isolate an episode-level failure before another behavior change.
+Do not exclude a bot or repeat runs merely to get a passing guard. Existing seam/tray handoff is
+unchanged; aggregate reissue counts do not rule out localized near-portal loops.
+Do not infer successful crossings from build counts, unpaired exits, or carrier goal reissues.
 
-For the play gate, compare against `84e4fc4b` with the same roster/settings and inspect abend2 by team.
-The prior handoff reports Blue conversion roughly unchanged (12/49 to 10/40) and Red down (11/57
-to 4/44). Red accounts for seven of nine lost captures, not all of them. The operator's observation
-of asymmetric toroid connections remains a lead, not a demonstrated cause of that loss. Use the
-live 3D overlay to check route following, and distinguish hard pins from slow travel in the logs.
-Keep `-dev` until play is validated. Builds and generic unit tests cannot establish this gate.
+Fresh Polaris/QuadSomniac geometry falsifies the proposed side-mouth wind misclassification: chord
+and face-normal verdicts agree everywhere, including engine-impassable lateral portals. Wind stays
+unchanged. QuadSomniac attribution, Batteries Included connectivity, state-transition route loss,
+and the remaining engine-path-node target callers stay open, not bundled into this test arm.
+Do not reopen coverage or introduce arbitration timers, eligibility widening, or map-specific
+geometry exceptions as release cleanup.
 
 ### 3.1 What three months of nav work established
 

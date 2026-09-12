@@ -1,7 +1,19 @@
 # Phase 5: Bot Management & Server Administration
 
 **Status:** Phase 5.5 complete (shipped; this document is the Phase 5 design and implementation record)
-**Current fork:** Matcen 0.9.13-dev; this navigation work does not change bot-management behavior.
+**Current fork:** Matcen 0.9.13 (released 2026-09-11). This navigation work does not change bot-management
+behavior, configuration, or console commands. `$servercaps` remains numeric-only (`fork_version=0.9.13`).
+abend2's residual navigation imbalance is accepted for now; wider validation uses Nysa and Batteries
+Included on the existing build. No roster-management change accompanies that testing.
+For scoring-symmetry tests, verify all bots use the same difficulty. The expectation applies to
+designed-symmetric CTF maps, not to arbitrary maps merely because team sizes match. Record ships,
+roles and per-bot overrides alongside the test roster; coverage remains a separate universal test.
+The operator has standardized future test rosters on Pyro-GL. The replacement single-level Batteries
+loop uses eight Pyro-GL/Hotshot bots after the rotating run stopped at one completed Batteries round.
+Nysa finished with the earlier unequal team hull mixes, also used in the abend2 arms, so its
+team splits retain that confounder. This is a test-config change, not a restriction on supported ships.
+0.9.13 shipped as a bounded correctness release (documented limitations accepted). The 0.9.14
+investigation is recorded in `PLAN.md` section 3.0.
 **Prerequisite reading:** `BOT_DEV_REFERENCE.md`, `BOTS_DEVEL.md`
 **Key files:** `Descent3/bot.h`, `Descent3/bot.cpp`, `Descent3/dedicated_server.cpp`
 

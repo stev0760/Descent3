@@ -6,10 +6,10 @@
 > validated, and folded in as §3.5–§3.6 + §8 History; original in git history). Deep engine research
 > lives in `PATHFINDING_CODEBASE_EXPLORE.md`; per-frame field/constant detail in `BOT_DEV_REFERENCE.md`.
 
-**Status:** Matcen 0.9.12-dev (navigation consolidation). The 0.9.4 volumetric roadmap and 0.9.7
-single-spatial-authority stack remain the substrate. Committed multi-hop in-room intent has removed
-the abend2 toroid orbit. A strict-first coarse-router retry now admits engine-passable fit-probe
-disagreements only when the strict geometry graph has no route; runtime validation is in progress.
+**Status:** Matcen 0.9.13-dev (2026-09-10), retained for wider validation. The operator accepts abend2's
+remaining generated skeleton/arterial imbalance as a map-specific limitation. Keep the hierarchy
+and both source corrections; no further abend2 fix or arm. Nysa and Batteries Included are next on
+the existing build. This is a scope decision, not a retrospective pass of the failed soak guard.
 **For the live current-status snapshot (toggle states, open issues, the tried-and-reverted ledger) see
 §7.0**, kept current per soak. The narrative sections below are the design rationale; §7.0 is "what's
 true right now."
@@ -704,7 +704,145 @@ overnight log. A full verbosity-tier + event-vocabulary consolidation is registe
 
 ## 7. Open problems (roadmap)
 
-### 7.0-CURRENT The sampler was mis-phased — coverage, eligibility, ownership — 2026-09-06 (IN TEST)
+### 7.0-CURRENT Wider validation - 2026-09-10 (0.9.13-dev)
+
+The operator's acceptance tests are separate:
+
+- **Coverage:** usable navigation through ship-passable space on every map, including arbitrary
+  user-made levels. An asymmetric map must still be navigable.
+- **Symmetry:** roughly symmetric scoring on designed-symmetric CTF maps with bots at the same
+  difficulty. abend2 and Batteries Included are the named symmetric cases. Persistent imbalance
+  is a defect signal there, not an expectation to impose on genuinely asymmetric maps.
+
+Neither test replaces the other. Equal failure is not good coverage. Generated component counts
+describe network output, not proof of physical disconnection. Missing flag activity in a short run
+does not localize its cause. Verify per-bot difficulty and report roster differences before using
+scoring imbalance as evidence. Symmetry is a design declaration, not inferred from portal counts.
+
+The operator accepts abend2 as good enough: its toroid navigation is partly solved, with remaining
+imbalance in the generated skeleton/arterial output despite the map's visual symmetry. Treat this
+as a map-specific limitation, not a reason to redesign the hierarchical navigation model. Retain
+the order and endpoint corrections. No more abend2 fixes or test arms; no build work at this stage.
+The symmetry defect remains documented; accepting it for now does not establish a clean pass.
+
+Nysa's baseline (`soak-20260910T131149.log`, `e967cb48`) completed 20 rounds: 67 bot captures
+(Blue 36, Red 31), 32 stuck escalations, 16 hard. All 16 hard escalations occurred in room 69:
+11 Red carriers and five Blue non-carriers. The Blue flag room, 62, had none. The carrier symptom
+is now localized to its neighboring room, not diagnosed from geometry alone. All 11 carrier
+records have no stored chain, but six have `via_live=yes` and five `no`. Do not infer that every
+pin lacked a live via commitment, or that an absent chain identifies the engine's active goal.
+
+The driver confirms 20 completed rounds plus an 11-second trailing startup with no flag/stuck
+events. The analyzers count 21 level opens. Normalize these capture/stuck counts by 20, but check
+the partial round before normalizing other counters. Captures demonstrate successful travel, not
+complete coverage. Announced resolutions cannot isolate reach versus return failure. Nysa's design
+symmetry is undeclared, and its equal-difficulty roster had unequal hull mixes between teams.
+Earlier abend2 per-team results share that hull confounder, constant within each matched comparison.
+
+The rotating Batteries run was manually stopped after one completed Batteries round. Opus 4.8's
+replacement uses a single-level `batteriesincluded.mn3` derived from `bsidectf.mn3`, without its branch.
+`batteries-loop-20rnd.json` requests 20 rounds, pinned to Batteries, with eight Pyro-GL/Hotshot bots
+on the same binary. `batteries-loop.out` confirms three consecutive Batteries round ends. Do not
+disturb the running test. The restart-per-round proposal is superseded, not another authorized arm.
+This roster and mission packaging define a new baseline, not a comparison with mixed-hull runs.
+A fragmented generated graph and blocked direct portal sight lines do not prove that physical
+winding routes are absent. Retain the geometry checks without predeclaring a play verdict.
+
+Neither target has a suitable matched control for this wider run. Self-comparison checks run
+structure, not improvement. The abend2 history below preserves its failed guard and uncertain
+play result; it no longer defines the next task or blocks moving to other maps.
+
+The operator endorsed a bounded 0.9.13 release decision after Batteries review, not a claim that
+navigation is solved. Meaningful flag play without severe recurring failure supports considering
+stable with limitations. Little/no flag play requires distinguishing existing limitations from a
+new defect, not an automatic verdict. An attributable defect in the current corrections needs a
+specific fix and validation before release. Keep the candidate frozen while the test runs.
+
+The proposed 0.9.14 investigation traces one failed and one successful room-69 carrier crossing:
+position and intended exit, selected route, installed engine goal, movement and recovery. Separate
+construction failure, unsuitable target selection and interrupted handoff before choosing a fix.
+Do not infer a mechanism from component counts or the final stuck snapshot. See `PLAN.md` section 3.0
+for the release rules and sprint boundary. No version bump or new test is authorized by this plan.
+
+**CTF measurement correction:** `netgames/ctf/ctf.cpp:1080` chooses pickup wording by player room,
+not the flag's old state. Earlier home-steal/debris-regrab labels were unjustified. At-home flag
+availability is also unmeasured, so neither wording count establishes reach quality. Captures plus
+announced owner returns are not complete extraction episodes: the 120-second timeout at
+`ctf.cpp:589-633`, home-room touches, spew handling and level resets can return flags silently.
+Use announced-resolution counts and a descriptive capture share only. Exact transitions, exposure
+and boundary censoring need additional authoritative telemetry; none is being added during this run.
+
+### 7.0-PREV Endpoint correction - 2026-09-10 (0.9.13-dev)
+
+The endpoint arm (`soak-20260910T072205.log`, binary SHA prefix `e967cb48`) is complete but inconclusive.
+Its guard failed because Phantom dominated the soft-stuck decrease. Per-bot hard-pin changes were
+mixed, and no whole-arm verdict is claimed. Blue's `picks up` wording counts were 4 -> 5; its
+`finds ... debris` counts were 16 -> 25, with Phantom providing nine of ten extra pickups. Blue conversion 7/20 ->
+3/30 gives two-sided Fisher exact p=0.0673, with further dependence from repeated regrabs. Do not
+claim that reach recovered or that the bottleneck moved to returns. Retain the source corrections
+under `-dev` and seek an attributable episode-level failure before another behavior change or soak.
+
+The implementation and preceding evidence follow; proposed verification below describes the now
+completed arm, not authorization to launch another one.
+
+The matched 20-round order-only arm (`soak-20260909T212422.log`, binary SHA prefix `321c0765`)
+passed its guard against the lifetime candidate. Stored-chain stuck records fell 43 -> 0 and hard
+pins 49 -> 36. Blue flag pickups fell 48 -> 20, including `picks up` wording 19 -> 4. Red pickups
+were 60 -> 63. Blue's logged enemy-base intent starts increased, so do not diagnose lost offensive
+intent from fewer stuck records in the enemy ring. Stable promotion remains blocked.
+
+**Source-proven endpoint error:** a routed query can pair a local aim A with the next room.
+`BotSkelBuildChain` appended A after the actual exit, exporting [A, B, exit, A]. The current
+correction ends cross-room chains at their selected exit and appends a target only for same-room
+routes. At least two skeleton nodes are still required; the caller now counts those nodes without
+the false appended aim. A directly visible exit produces no stored chain and retains single-hop
+fallback. The production-function test reproduces the old endpoint error and passes the correction.
+
+This follows the existing composed-route terminal contract. It does not add a new crossing
+controller: exhaustion clears the via goal and returns to the normal/seam/tray caller in the same
+tick. The 15-unit arrival sphere can still stop short of a portal, so near-lip reissues and pins
+are an explicit test risk. Opus 5 owns the next matched arm against the order-only build. Preserve
+the earlier order correction and do not bundle wind, role tuning, or old engine-node caller changes.
+
+### 7.0-PREV Candidate review - 2026-09-09 (0.9.13-dev)
+
+The candidate baseline is `c8566c37`, not promoted. Stored
+routes retire when their commitment ends, including on respawn. Goal aim reads live chains rather
+than inheriting stale metadata under an unrelated detour's timer. Stuck-state logging now samples
+before cleanup, overlay lines require a live commitment, and AIMSPLIT handles level-clock resets.
+
+The implementer's test results record live play, 20 matched
+abend2 rounds, and roughly 30 further rounds across six modes without reported crashes or asserts.
+The abend2 A/B guard failed on outlier share: escalations rose 141 -> 231 and hard pins 25 -> 49.
+Red conversion rose 9.1% -> 20.0% without establishing recovery, while Blue stayed at 25%.
+Live-chain aim events rose 104 -> 3245, evidence of route use rather than completed crossings.
+
+This is not a clean regression pass. Bedlam hard pins improved, Fellowship
+was mixed, and several modes have only first baselines. The claim that the cost is confined
+to abend2 is stronger than those comparisons establish. QuadSomniac Red conversion is an unresolved
+signal against a comparator spanning two changes. State-transition chain loss remains a possible
+cause of abend2's increased wedging, not a demonstrated one.
+
+**Current fix under test:** `BotSkelBuildChain` reversed an already ordered parent walk. The BFS
+is rooted at the exit, so parents lead from the bot-visible hop toward that exit. The old export
+sent the bot at the far portal first. Preserve that order, accept directly visible exit seeds,
+and reject routes exceeding output capacity rather than truncating them. The isolated test fails
+on the old export and passes on the correction. Repeated cursor-zero skeleton rebuilds in the
+hard-pin traces fit this defect, but the aggregate regression remains unassigned pending a soak.
+
+**Wind hypothesis checked against fresh geometry:** Polaris checksum `526814691` and QuadSomniac
+checksum `484160667` each have 16 directed wind-touching portal edges. Chord and signed-face-normal
+classification agree on every edge. Polaris's side portals (38 to 40, 105 to 103, and their twins)
+are neutral under both tests and engine-impassable. The four-portals explanation is not supported
+by these snapshots. Wind behavior stays unchanged. The wind-off probe also toggled the downwind
+cost discount, and its carrier-nav counter measures goal reissues rather than elapsed travel.
+
+The operator requires diagnosis, justified fixes, and another soak before stable promotion.
+Opus 5 owns the next matched abend2 run against `c8566c37` after build verification. QuadSomniac
+return attribution, Batteries Included connectivity, and the old engine-node target callers remain
+separate open issues. Do not add them to the same behavior arm or infer their causes from this fix.
+
+### 7.0-PREV The sampler was mis-phased — coverage, eligibility, ownership — 2026-09-06
 
 **Locked vocabulary (operator, 2026-09-06).** The **navigation network** is **arterials** (the
 skeleton highway) plus **local streets** (the lattice fill). The **navigator** plans; a **route** is

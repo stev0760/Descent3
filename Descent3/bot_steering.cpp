@@ -947,18 +947,17 @@ bool BotResolveRoomAim(object *obj, const vector &target_pos, int target_room, f
 // fly THROUGH a buried room to its exit portal, built ONCE so the via layer can advance a cursor per
 // arrival instead of re-deriving a single hop each time (the abend2 ring orbit). Same exit-set +
 // standing-neighbor + BFS-with-parents as BotResolveRoomAim, but walks the parent chain from the
-// bot-adjacent node back to the exit and emits the whole reversed list [bot-adjacent ... exit
-// portal], with pos_out[k] = target_pos in target_room appended. By construction pos_out[0] is the
+// bot-adjacent node back to the exit and emits that list in order [bot-adjacent ... exit
+// portal]. Only same-room routes append target_pos. By construction pos_out[0] is the
 // EXACT node BotResolveRoomAim would return (same SkelBfs seed/stop), so committing the chain
 // changes only hops 1..k-1 (pre-committed vs re-derived), never the first hop.
 //
-// This is the deleted BotSkelBuildPath (its AIG_FOLLOW_PATH consumer crashed and was reverted — the
-// BUILDER was always correct) rebuilt on the SkelBfs kernel. Delivery is sequential AIG_GET_TO_POS
+// Delivery is sequential AIG_GET_TO_POS
 // in the via layer, never AIG_FOLLOW_PATH (NAVIGATION.md §6.9). Returns node count (>= 2 on success,
-// counting the appended target), 0 = no chain. pos_out must hold BOT_SKEL_MAX_NODES entries.
+// counting a same-room terminal), 0 = no multi-hop chain. pos_out holds max_nodes entries.
 int BotSkelBuildChain(object *obj, int room_idx, int target_room, const vector &target_pos, vector *pos_out,
                       int max_nodes) {
-  if (!obj || !pos_out || max_nodes < 3)
+  if (!obj || !pos_out || max_nodes < 2)
     return 0;
   SkelLevelReset();
   if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used || (Rooms[room_idx].flags & RF_EXTERNAL))
@@ -1011,6 +1010,13 @@ int BotSkelBuildChain(object *obj, int room_idx, int target_room, const vector &
   }
   vis &= ~standing;
 
+  // A visible exit needs only one skeleton hop, which the caller's existing single-hop path owns.
+  // BFS does not test its seeds against the stop mask, so do not manufacture a longer detour here.
+  for (int i = 0; i < n; i++) {
+    if ((exits & vis) & (1u << i))
+      return 0;
+  }
+
   // BFS from the exits, stop at the first bot-visible node — the SAME kernel and result as
   // BotResolveRoomAim's first-hop, but we keep the whole parent chain.
   int dist_n[SKEL_MAX_NODES], parent[SKEL_MAX_NODES];
@@ -1018,16 +1024,22 @@ int BotSkelBuildChain(object *obj, int room_idx, int target_room, const vector &
   if (hop < 0)
     return 0;
 
-  // Walk parents from the bot-adjacent node back to an exit seed (dist 0), then reverse into
-  // pos_out: ordered bot-adjacent -> ... -> exit portal.
-  int rev[SKEL_MAX_NODES], k = 0;
+  // The search is rooted at the EXIT. Parent pointers already run from the bot toward the exit;
+  // reversing them sends the bot straight at the far portal before flying the intervening legs.
+  int nodes[SKEL_MAX_NODES], k = 0;
   for (int cur = hop; cur >= 0 && k < SKEL_MAX_NODES; cur = parent[cur])
-    rev[k++] = cur;
+    nodes[k++] = cur;
+  const bool same_room = target_room == room_idx;
+  if (k + (same_room ? 1 : 0) > max_nodes)
+    return 0; // a truncated chain must not jump across omitted legs to the final target
   int out_n = 0;
-  for (int i = k - 1; i >= 0 && out_n < max_nodes - 1; i--)
-    pos_out[out_n++] = skel_node_pos[room_idx][rev[i]];
-  // Append the leg's final position (the destination / exit path_pnt), in target_room.
-  pos_out[out_n++] = target_pos;
+  for (int i = 0; i < k; i++)
+    pos_out[out_n++] = skel_node_pos[room_idx][nodes[i]];
+  // A routed cross-room query may supply its first local aim as target_pos, not a point beyond
+  // the exit. Appending it would close the chain back onto its start. End at the portal and let
+  // the routed caller issue the crossing/tray goal, as it already does for composed routes.
+  if (same_room)
+    pos_out[out_n++] = target_pos;
   return out_n;
 }
 

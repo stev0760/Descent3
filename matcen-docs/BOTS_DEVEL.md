@@ -1,13 +1,188 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Matcen **0.9.13-dev (2026-09-05)**. The overlay/soak census found that abend2 room 0 has
-a healthy 103-node local grid, but making that grid own the whole buried room bypassed the arterial
-and tray path: roadmap usage rose while abend2 collapsed from 14 captures/10 rounds to 1/9. That
-ownership change is reverted and the known-good path restored. The approved replacement is one
-query-time union route over arterials plus local streets, staged behind a shadow composer before any
-execution. The bounded room-30 local-grid connector and honest source telemetry remain. The stable
-release remains **0.9.11**.
+**Status:** Matcen **0.9.13 (released 2026-09-11)** — a correctness checkpoint (skeleton-order +
+endpoint corrections on `c8566c37`) shipped with documented limitations; navigation is NOT solved on
+interior-only maps. The operator accepts abend2's residual generated-network imbalance for now. The
+single-level Batteries baseline completed (67-cap Nysa baseline + a 20-round Batteries A/B); the
+window-misroute per-portal fix was built and validated as source-correct + isengard-safe but is
+UNFAVORABLE STANDALONE (batteries hard-stucks 190→607), so it is HELD for 0.9.14 along with the
+interior-nav bugs it exposed (flag-room arrival stall, powerup-chase wall-press).
+The last stable release is now **0.9.13** (0.9.11 preceded it; 0.9.12 was never promoted).
+
+### 2026-09-10: corrected handoff and release boundary
+
+The operator manually stopped `soak-20260910T193204.log` when it moved to Nightmarecastle.
+Only one Batteries round completed, not the planned 21-round baseline. A task-timeout explanation
+was proposed and withdrawn. `SetLevel` chooses a start level without preventing later mission rotation.
+
+Opus 4.8 replaced that setup with a single-level `batteriesincluded.mn3`, extracted from `bsidectf.mn3`
+with its mission branch removed. He reports a three-round, two-minute loop check passed. The new
+production driver independently shows three consecutive completed Batteries rounds and a fourth start.
+The manifest is `batteries-loop-20rnd.json`, log `soak-20260910T202440.log`, driver `batteries-loop.out`.
+It targets 20 fifteen-minute rounds with eight Pyro-GL/Hotshot bots on the unchanged `e967cb48` binary.
+Its self-comparison guard checks run structure. Earlier mixed-hull Nysa/abend2 runs are not matched
+controls, and comparisons across maps remain descriptive. Keep the packaging change in provenance.
+The server-restart-per-round proposal is superseded. Leave the replacement soak undisturbed.
+
+The operator endorsed keeping 0.9.13 as a bounded correctness release if Batteries review supports
+accepting the remaining limitations. Successful flag play is not complete coverage. Little/no activity
+requires diagnosis, not automatic promotion or proof of regression. A concrete defect attributable to
+the current corrections should be fixed and validated before release once that work is authorized.
+No speculative tuning, build, commit, promotion or version bump is authorized now.
+
+The proposed first 0.9.14 investigation traces comparable failed and successful room-69 carrier
+crossings from position/intended exit through route selection, engine goal, movement and recovery.
+Find the responsible stage before choosing a small fix. The canonical decision rules are in `PLAN.md`
+section 3.0. Older handoff claims that Nysa passed coverage, or two quiet Batteries rounds proved
+coverage failure, are superseded. The room-69 liveness split and CTF measurement caveats below remain.
+
+### 2026-09-10: Nysa baseline reviewed, carrier pins localized
+
+`soak-20260910T131149.log` ran the `e967cb48` candidate for 20 completed `nysafinal` rounds.
+The self-comparison guard passed its structural checks, not an improvement test. `nysa.out`
+records 20 round ends and an unfinished round 21. That final startup lasted about 11 seconds
+and contained no flag events or stuck escalations. Use 20 for capture/stuck rates, not the
+analyzers' 21 level opens. Other whole-log counters can include activity from the partial round.
+
+The run recorded 67 bot captures (Blue 36, Red 31), 412 pickup events and 32 stuck escalations,
+16 hard. This demonstrates substantial successful objective travel, not complete map coverage.
+There is no Nysa control and no basis for attributing these totals to either source correction.
+
+All 16 hard stuck escalations occurred in room 69, the Blue flag room's only neighboring room.
+Red carriers account for 11, Blue non-carriers for five. Red also had three soft non-carrier
+escalations there. Room 62, the Blue flag room, had no stuck escalation records. These observations
+localize a carrier failure population near the flag room, but do not establish its route history
+or mechanism. All 11 Red carrier records have `chain=none`, with **six `via_live=yes` and five
+`via_live=no`**. The first three examples are all `no`, not a representative liveness distribution.
+Examples: 13:14:26.583 Reaper (`no`) and 14:07:25.055 Zed (`yes`), both `phase=preclear`.
+
+The roster used equal Hotshot difficulty but unequal hull mixes: Red had two Pyro-GLs, one Black
+Pyro and one Phoenix. Blue had one of each hull, including a Magnum-AHT. The same confounder applies
+to the earlier abend2 per-team results. It does not make the matched arms differently configured,
+but it prevents treating their team imbalance as purely a map-navigation effect.
+
+Nysa has not been declared symmetric or asymmetric by the operator. User-made provenance does not
+decide that question. Announced flag resolutions remain partial counts, not reach measurements or
+conditional return-success rates. The silent-return source audit is complete; exact event accounting
+remains unavailable without additional telemetry. The claim that Nysa's penalty affects reach but
+not the return trip was withdrawn, as was the claim that these captures prove complete coverage.
+
+At this review, Opus reported Batteries running as `soak-20260910T193204.log`, using `batteries-wide.json`: 21 total
+rounds across the rotating `bsidectf` mission, not 21 Batteries rounds. Its log confirms eight
+Pyro-GL/Hotshot bots, following the operator's new test-roster direction. Report actual completed
+rounds per map, not a projected rotation share. This is a fresh baseline, not a mixed-hull A/B arm.
+Opus launched on his interpretation of the wider-soak request, not a separate explicit launch order.
+The review left that run undisturbed. It was later stopped and replaced, as recorded above.
+No build, promotion or further abend2 arm was authorized by the review.
+
+### 2026-09-10: abend2 accepted, wider validation next
+
+The operator separates universal navigation coverage from conditional scoring symmetry. Every map,
+including user-made levels, must have enough usable navigation for bots to get around. Roughly even
+CTF scoring is expected only on designed-symmetric maps with equal-difficulty bots. abend2 and
+Batteries Included are the named symmetric cases. Nysa's design symmetry has not been declared.
+Genuine map asymmetry does not excuse missing routes or carrier wall-press.
+Graph-component differences remain diagnostic output to investigate, not a proof of physical
+disconnection or a standalone coverage verdict. These tests do not reopen the abend2 work below.
+
+The operator treats abend2's remaining asymmetry as a defect in this map's generated skeleton/
+arterial output, not a reason to replace the navigation hierarchy. The toroid problem is partly
+solved and accepted as good enough. Keep the route-order and endpoint corrections. The endpoint
+arm's failed guard remains in the record; this scope decision does not retrospectively make it pass.
+
+Opus 5 owns wider validation on the unchanged `e967cb48` binary. Nysa is a first baseline, not an
+A/B improvement claim: the operator reported Red wall-pressing after taking the Blue flag. Inspect
+carrier state, actual room and neighboring approach geometry rather than assuming where it occurs.
+Batteries Included remains a geometry-first check of its flag-room approaches. Its `bsidectf`
+rotation must be reported per map. There is no new build, commit, promotion or abend2 arm.
+
+The CTF source audit corrects both agents' earlier measurement claims. `OnClientCollide` at
+`netgames/ctf/ctf.cpp:1080` selects pickup wording by the player's room, not prior flag state.
+The counts below remain valid as wording counts, not home-steal/debris-regrab classifications.
+Availability also matters: a flag already away cannot be stolen from its base again.
+
+The proposed `captures + owner returns` replacement is incomplete too. `OnInterval:589-633` silently
+returns an unowned flag after its 120-second timer. Home-room touches, spew handling and level
+resets also have unannounced outcomes. Count these HUD events as announced flag resolutions and
+their capture fraction as a descriptive share, not exact extractions or independent excursions.
+The missing-event count cannot be reconstructed exactly from the existing HUD log. Exact exposure
+and excursion accounting would require authoritative transitions, outside the current no-build scope.
+
+### 2026-09-10: endpoint soak remains inconclusive
+
+The endpoint arm (`soak-20260910T072205.log`, binary SHA prefix `e967cb48`) completed 20 rounds with
+matching map, duration and roster. The guard failed: Phantom accounted for 77% of the decrease in
+stuck escalations, all soft events. Per-bot hard pins moved in opposite directions: Hawk 21 -> 9,
+Shadow 7 -> 13, Phantom unchanged at 6. No whole-arm improvement or release pass is claimed.
+
+Blue `picks up` wording counts were 4 -> 5 and `finds ... debris` counts 16 -> 25. Phantom supplied
+nine of the ten additional pickups. Red's corresponding counts were 12 -> 7 and 51 -> 62. These splits do
+not establish recovery in reaching the opposing base. Blue conversion was 7/20 -> 3/30; two-sided
+Fisher exact p=0.0673, not the normal approximation's p=0.030. Repeated regrabs also violate the
+simple independent-pickup assumption. Neither a return regression nor safety is established.
+
+Retain the source-proven order and endpoint corrections under `-dev`. Do not remove a bot, change
+comparators or repeat runs solely to obtain a passing guard. A localized, attributable failure is
+needed before another behavior change. The completed run does not authorize promotion or a new soak.
+
+### 2026-09-10: cross-room chain endpoint correction
+
+The 20-round skeleton-order arm (`321c0765` binary SHA prefix) passed the A/B guard against the
+route-lifetime candidate. Stored-chain stuck records fell 43 -> 0 and hard pins 49 -> 36, but Blue
+flag pickups fell 48 -> 20. Red pickups were 60 -> 63. The build is not promoted.
+
+Per-team reanalysis does not support abandoning offensive intent: Blue objective-room-38 starts
+rose 1294 -> 1438. Blue respawns rose 1340 -> 1400, compared with Red's 1378 -> 1497. Blue pickups
+with `picks up` wording fell 19 -> 4, and `finds ... debris` wording 29 -> 16. Logged chain exits 30 -> 48 fell
+554 -> 168. These are partial observations, not complete room-occupancy or combat histories.
+
+Source review found a second contract defect. `BotSetRoutedGoal` can pass its resolved local aim A
+with the next room as the via target. The skeleton builder then exports [A, B, exit, A]. Correcting
+the order made the appended local aim a backward leg after the exit. The new correction ends
+cross-room chains at the selected portal and appends a destination only for same-room routes.
+The builder requires two skeleton nodes, the caller accepts their actual count, and directly visible
+exits return no stored chain. This is a coupled builder/caller correction, not a gate-only experiment.
+
+The isolated production-function test reproduces the false endpoint before the correction and
+passes afterward, including two-node crossings, same-room terminals and capacity rejection.
+Doorway handoff deliberately remains with the existing normal/seam/tray caller. Arrival within
+15 units of a portal does not prove crossing, so near-portal reissue or pin loops remain a test risk.
+No new push distance, arbitration timer, wind change or engine-node caller substitution is included.
+Opus 5 owns the next matched 20-round abend2 run against the order-only arm.
+
+### 2026-09-09: 0.9.13 candidate review
+
+The operator's flight and the implementer's test results do not establish a clean A/B win.
+Testing covered 20 abend2 rounds and roughly 30 further rounds across six modes, with no reported
+crashes or assertion failures. The abend2 comparison guard failed on Phantom's share of the stuck
+increase. Hard pins rose 25 -> 49, while Red conversion rose 9.1% -> 20.0% without establishing an
+improvement (reported p=0.128). Blue conversion remained 25%.
+
+Live-chain aim events rose 104 -> 3245 with much smaller changes in route-build counts. This supports
+increased live-route use, not proof of completed crossings or of why bots still wedge. Destroying
+chains on state transitions remains a suspected abend2 cost. Bedlam hard pins improved, Fellowship
+was mixed, and non-CTF runs mostly supply first baselines rather than regression comparisons.
+
+Follow-up source review found a direct reconstruction defect in `BotSkelBuildChain`. `SkelBfs` starts
+at the exit, so walking parents from the bot-visible node already yields bot-to-exit order. The
+export reversed that order and flew at the exit first. The pending fix preserves parent order,
+handles a visible exit like `BotResolveRoomAim`, and rejects insufficient output capacity atomically.
+`tools/test_bot_skel_chain.py` compiles the production functions against a synthetic graph. It fails
+on the original order and passes on the correction. Geometry is stubbed, so this is not a play test.
+
+Candidate hard-pin traces repeatedly rebuild a skeleton chain at cursor zero about every four
+seconds, consistent with the reversed first leg. This does not establish the cause of the aggregate
+25 -> 49 increase. Keep the next behavior arm limited to chain export, against `c8566c37`.
+
+The fresh Polaris and QuadSomniac dumps give identical chord and signed-face-normal wind verdicts
+on all 16 directed wind-touching edges per map. Polaris's lateral portals are neutral and
+engine-impassable, not misclassified usable side entrances. That falsifies the proposed side-mouth
+overblocking explanation for these snapshots. Wind behavior stays unchanged. Carrier-nav lines
+count goal reissues, not carrier duration, so their 39-fold increase does not establish routing recovery.
+
+Opus 5 owns deployment and follow-up soak execution after the verified build handoff. Diagnosis,
+source edits, and build verification remain with this session. Stable promotion is still pending.
 
 > **New files / engine touches this build (surfaced up front, per operator request):**
 > - **NEW bot-only TU:** `Descent3/bot_navdebug.cpp` + `bot_navdebug.h` — all overlay draw logic,
