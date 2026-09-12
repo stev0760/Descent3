@@ -9,10 +9,22 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
 
 ## [0.9.14-dev] - in test
 
-*Development build — diagnostic telemetry plus the first fix guided by it. The window-misroute
+*Development build — diagnostic telemetry plus the first fixes guided by it. The window-misroute
 admission fix and the remaining interior-navigation defects are still being worked. Do not run this
 as a release.*
 
+*   **Breakable glass is a route again — for bots that can shoot it open.** The engine treats an
+    intact breakable pane as a wall at runtime, so a plain pathfinding gate priced every pane as
+    impassable and bots stopped planning through glass at all. Now a bot carrying a weapon that can
+    shatter glass (a Vauss, Mass Driver, or any loaded missile — which is nearly every loadout)
+    treats a vertical pane (an office window or partition, like Batteries Included's conference-room
+    glass walls) as a priced shortcut: it costs about three extra hops, so a comparable open door
+    still wins, but a genuine short-cut through glass gets taken. A ceiling or floor vent — the
+    horizontal openings bots pinned on in the earlier glass-routing attempt — is only ever used when
+    no door route exists at all, so it can rescue a room whose only way in is a vent without
+    tempting bots at openings they cannot thread. Bots without a glass-breaking weapon route around
+    exactly as before. A pane the router commits a bot to is also shot open deliberately rather
+    than only when the nose happens to point at it.
 *   **Bots no longer press a window when the door is right there.** Three aim-layer corrections, all
     guided by the new telemetry. (1) The in-room aim resolver refused any room with fewer than two
     doorways, so a single-exit room got no aim at all — the bot's raw goal direction pointed at

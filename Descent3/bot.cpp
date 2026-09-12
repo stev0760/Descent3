@@ -1689,6 +1689,24 @@ static void BotClearObstacleSafely(int bot_index, object *blocker, vector *targe
   BotFireAtPosition(bot_index, target_pos);
 }
 
+// Can this bot actually OPEN a pane? Glass takes a kinetic hit; a laser will not do it. The set
+// mirrors exactly what the glass branch of BotClearObstacleSafely fires — Vauss, Mass Driver, or the
+// selected secondary missile with ammo (concussions qualify, so this is true of nearly every
+// loadout) — so routing and shooting cannot disagree. Keep the two in step if either changes.
+bool BotCanBreakGlass(int bot_index) {
+  if (bot_index < 0 || bot_index >= MAX_BOTS || !Bots[bot_index].active)
+    return false;
+  int slot = Bots[bot_index].player_slot;
+  if (slot < 0 || slot >= MAX_PLAYERS)
+    return false;
+  if (Players[slot].weapon_flags & HAS_FLAG(VAUSS_INDEX))
+    return true;
+  if (Players[slot].weapon_flags & HAS_FLAG(MASSDRIVER_INDEX))
+    return true;
+  int sec_wb = Players[slot].weapon[PW_SECONDARY].index;
+  return (sec_wb >= 10 && sec_wb < 20 && Players[slot].weapon_ammo[sec_wb] > 0);
+}
+
 // When the bot has been stuck for BOT_STUCK_FIGHT_TIMER seconds, try to fight through the blockage.
 //
 // Priority order:
@@ -2008,6 +2026,67 @@ static void BotProactiveObstacleClear(int bot_index) {
         return;
       }
     }
+  }
+}
+
+// Pass 5 (0.9.14, $nav glass): shoot open a pane we are ROUTED through. The passes above fire on
+// what the bot is facing or aiming at this tick; a bot committed to a glass edge (the router chose
+// it, the aim layer aimed at it) can approach at an angle where neither ray ever strikes the pane —
+// the 2026-08-30 finding that glass clears FELL in the arm that routed through panes. Walk the
+// portals of the current room: any intact TF_BREAKABLE face the router admits for THIS bot within
+// firing range gets a matter shot, so a planned crossing actually opens. Rate-limited by the same
+// proactive-glass throttle; deliberately narrow (portal faces only, one shot per pass).
+static void BotClearCommittedGlassHop(int bot_index) {
+  int slot = Bots[bot_index].player_slot;
+  object *obj = &Objects[Players[slot].objnum];
+  if (!obj->ai_info)
+    return;
+  if (OBJECT_OUTSIDE(obj) || obj->roomnum < 0 || obj->roomnum > Highest_room_index || !Rooms[obj->roomnum].used)
+    return;
+  if (!Bot_glass_route_enabled || !BotCanBreakGlass(bot_index))
+    return; // not a bot the router would route through a pane
+  // Only when the next routed hop is adjacent and its door is a pane: the bot is committed to it.
+  int wp = Bots[bot_index].explore_dest_room;
+  if (wp < 0 || wp > Highest_room_index || !Rooms[wp].used || wp == (int)obj->roomnum)
+    return;
+  room &crm = Rooms[obj->roomnum];
+  for (int p = 0; p < crm.num_portals; p++) {
+    if (crm.portals[p].croom != wp)
+      continue;
+    if (BOA_PassablePortal(obj->roomnum, p) || !BotPortalIsBreakableGlass(obj->roomnum, p))
+      continue; // already-open door or not a pane — nothing to shoot
+    if (BotPortalRouteCost(obj->roomnum, p, true) < BOT_PORTAL_IMPASSABLE)
+      continue; // the pane is already shattered (probe clears) — fly through
+    vector pp = crm.portals[p].path_pnt;
+    vector dp = pp - obj->pos;
+    float dm = vm_GetMagnitude(&dp);
+    if (dm > BOT_GLASS_SCAN_DIST || dm < 1.0f)
+      continue;
+    // Fire throttle: the shot needs a moment to land, and the pane reads intact until the face is
+    // actually broken — without this the bot hammers the trigger every frame until it opens.
+    static float committed_glass_fire_t[MAX_BOTS];
+    if (Gametime - committed_glass_fire_t[bot_index] < 1.0f && Gametime >= committed_glass_fire_t[bot_index])
+      continue;
+    committed_glass_fire_t[bot_index] = Gametime;
+    // The aim may be off-axis; fire at the pane's own point, and only with a weapon whose splash
+    // cannot reach back to a bot this close (same gate BotClearObstacleSafely applies).
+    bool has_matter_primary = (Players[slot].weapon_flags & HAS_FLAG(VAUSS_INDEX)) ||
+                              (Players[slot].weapon_flags & HAS_FLAG(MASSDRIVER_INDEX));
+    bool has_safe_missile = false;
+    if (dm >= BOT_SPLASH_SELF_GUARD) {
+      int sec_wb = Players[slot].weapon[PW_SECONDARY].index;
+      has_safe_missile = (sec_wb >= 10 && sec_wb < 20 && Players[slot].weapon_ammo[sec_wb] > 0);
+    }
+    if (!has_matter_primary && !has_safe_missile)
+      continue;
+    BotClearObstacleSafely(bot_index, nullptr, &pp, true);
+    static float committed_glass_log_t[MAX_BOTS];
+    if (Gametime - committed_glass_log_t[bot_index] > 5.0f || Gametime < committed_glass_log_t[bot_index]) {
+      committed_glass_log_t[bot_index] = Gametime;
+      LOG_DEBUG.printf("BOT NAV: '%s' clearing committed glass hop rm%d -> rm%d via portal %d (d=%.0f)",
+                       Bots[bot_index].callsign, (int)obj->roomnum, wp, p, dm);
+    }
+    return;
   }
 }
 
@@ -2703,7 +2782,7 @@ static bool BotTrouteRedirect(int bot_index, object *obj, int *goal_room, vector
   if (bi.troute_goal_room == real_goal) {
     // Completion needs the terrain segment flown (troute_crossed) — a cost-adopted plan would
     // otherwise self-cancel the moment it was adopted (an interior route exists by definition).
-    if (bi.troute_crossed && BotComputeRoute(obj->roomnum, real_goal) >= 0) {
+    if (bi.troute_crossed && BotComputeRoute(obj->roomnum, real_goal, bot_index) >= 0) {
       LOG_DEBUG.printf("BOT NAV: '%s' troute complete — interior route resumed (goal rm%d)", bi.callsign, real_goal);
       bi.troute_goal_room = -1;
       bi.troute_replans = 0;
@@ -2854,7 +2933,7 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   const bool troute_active =
       Bot_troute_enabled && Bots[bot_index].troute_goal_room >= 0 && Bots[bot_index].troute_goal_room == goal_room;
 
-  int wp_room = BotComputeRoute(obj->roomnum, goal_room);
+  int wp_room = BotComputeRoute(obj->roomnum, goal_room, bot_index);
   if (wp_room < 0) {
     // No finite route under OUR cost model (wind one-way gate / geometry verdicts) between two
     // interior rooms — the engine's wind-blind BOA path takes over, which on a wind-tunnel map
@@ -6556,7 +6635,7 @@ void BotFormatNavDiag(int bot_index, char *buf, size_t buflen) {
   char route[96];
   int goal_room = BotGetObjectiveRoom(bot_index);
   if (goal_room >= 0 && !OBJECT_OUTSIDE(obj) && obj->roomnum != goal_room) {
-    int dnext = BotComputeRoute(obj->roomnum, goal_room);
+    int dnext = BotComputeRoute(obj->roomnum, goal_room, bot_index);
     int bnext = BOA_GetNextRoom(obj->roomnum, goal_room);
     if (bnext == BOA_NO_PATH)
       bnext = -1;
@@ -8686,6 +8765,12 @@ void BotDoFrame() {
     // out with a safe weapon before the stuck pin, not after
     if (Bot_grate_clear_enabled)
       BotProactiveObstacleClear(i);
+
+    // $nav glass: a pane the router committed this bot to must open even when the approach is
+    // off-axis (the passes above only fire on the nose/aim line). Runs after the grate scan so a
+    // destroyable object parked in the doorway keeps its established priority.
+    if (Bot_glass_route_enabled)
+      BotClearCommittedGlassHop(i);
 
     // Stuck-clear: when pinned by a player/bot or blocking destructible object, fight through it
     if (Bots[i].stuck_timer > BOT_STUCK_FIGHT_TIMER)

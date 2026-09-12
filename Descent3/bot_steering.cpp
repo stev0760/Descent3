@@ -82,6 +82,11 @@ static int pf_passable_level_checksum = 0;
 static float pf_portal_geocost[MAX_ROOMS][MAX_PATH_PORTALS];
 static int pf_geocost_level_checksum = 0;
 
+// Per-level breakable-pane cache ($nav glass, defined with the glass helpers below): whether each
+// portal is an intact TF_BREAKABLE pane and whether it is the vertical shortcut class. Declared
+// here so BotGeoCostInvalidate can flush them with the rest of the geometry caches.
+static int pf_glass_level_checksum;
+
 // --- Portal Passability Probe ---
 // Catches geometry-based blockage (bunker slits, barred openings) that portal flags miss.
 // Casts a ship-radius ray through the portal opening; caches results per level.
@@ -118,6 +123,7 @@ static bool ProbePortalClearance(int room_idx, int connected_room, const portal 
 void BotGeoCostInvalidate() {
   pf_geocost_level_checksum = 0;
   pf_passable_level_checksum = 0;
+  pf_glass_level_checksum = 0;
 }
 
 bool BotCheckPortalPassable(int room_idx, int portal_idx) {
@@ -286,6 +292,144 @@ float BotPortalRouteCost(int room_idx, int portal_idx, bool allow_disagree) {
   }
 
   return BOA_PassablePortal(room_idx, portal_idx) ? BOT_PORTAL_DISAGREE_PENALTY : cost;
+}
+
+// --- 0.9.14 glass routing ($nav glass): intact breakable panes as routable edges ---------------
+// The admission decision for an intact pane is per-BOT (kinetic weapon or not) while the geometry
+// verdict is per-LEVEL, so these helpers answer the bot-independent questions and BotRouteDijkstra
+// takes the budget as a parameter. See bot_steering.h for the three budgets.
+static int8_t pf_glass_pane[MAX_ROOMS][MAX_PATH_PORTALS];       // 1 = breakable pane, 0 = not
+static int8_t pf_glass_vertical[MAX_ROOMS][MAX_PATH_PORTALS];   // 1 = vertical (shortcut class)
+// pf_glass_level_checksum is declared with the other cache-flush state above.
+
+bool BotPortalIsBreakableGlass(int room_idx, int portal_idx) {
+  if (pf_glass_level_checksum != BOA_mine_checksum) {
+    memset(pf_glass_pane, -1, sizeof(pf_glass_pane));
+    memset(pf_glass_vertical, -1, sizeof(pf_glass_vertical));
+    pf_glass_level_checksum = BOA_mine_checksum;
+  }
+  if (room_idx < 0 || room_idx >= MAX_ROOMS || portal_idx < 0 || portal_idx >= MAX_PATH_PORTALS)
+    return false;
+  int8_t &cached = pf_glass_pane[room_idx][portal_idx];
+  if (cached >= 0)
+    return cached == 1;
+  cached = 0;
+  if (!Rooms[room_idx].used || Rooms[room_idx].flags & RF_EXTERNAL)
+    return false;
+  const portal &pt = Rooms[room_idx].portals[portal_idx];
+  int connected_room = pt.croom;
+  if (connected_room < 0 || connected_room > Highest_room_index || !Rooms[connected_room].used)
+    return false;
+  // Designer vetoes survive any glass authority: a portal the level marked blocked or too small,
+  // or a genuinely locked door, is not made crossable by shooting a pane beside it.
+  if (pt.flags & (PF_BLOCK | PF_TOO_SMALL_FOR_ROBOT))
+    return false;
+  doorway *dw = Rooms[room_idx].doorway_data ? Rooms[room_idx].doorway_data : Rooms[connected_room].doorway_data;
+  if (dw && (dw->flags & DF_LOCKED) && !(dw->flags & DF_GB_IGNORE_LOCKED))
+    return false;
+  // The breakable texture may live on either side's portal face (same both-sides rule the
+  // geocost glass branch uses).
+  for (int side = 0; side < 2 && cached == 0; side++) {
+    const room *rp = (side == 0) ? &Rooms[room_idx] : &Rooms[connected_room];
+    int pface = -1;
+    if (side == 0)
+      pface = pt.portal_face;
+    else if (pt.cportal >= 0 && pt.cportal < Rooms[connected_room].num_portals)
+      pface = Rooms[connected_room].portals[pt.cportal].portal_face;
+    if (pface < 0 || pface >= rp->num_faces)
+      continue;
+    int16_t tmap = rp->faces[pface].tmap;
+    if (tmap >= 0 && (GameTextures[tmap].flags & TF_BREAKABLE)) {
+      cached = 1;
+      // Orientation on THIS face's normal (Y is up in this engine). A ceiling/floor pane is the
+      // vent class the 2026-08-30 A/B pinned bots on; only vertical panes earn shortcut status.
+      const vector &n = rp->faces[pface].normal;
+      pf_glass_vertical[room_idx][portal_idx] = (n.y() >= -0.35f && n.y() <= 0.35f) ? 1 : 0;
+    }
+  }
+  return cached == 1;
+}
+
+bool BotPortalGlassShortcutEligible(int room_idx, int portal_idx) {
+  if (!BotPortalIsBreakableGlass(room_idx, portal_idx))
+    return false;
+  if (room_idx < 0 || room_idx >= MAX_ROOMS || portal_idx < 0 || portal_idx >= MAX_PATH_PORTALS)
+    return false;
+  return pf_glass_vertical[room_idx][portal_idx] == 1;
+}
+
+int BotGlassBudgetForBot(int bot_index) {
+  if (!Bot_glass_route_enabled)
+    return GLASS_ROUTE_OFF;
+  return BotCanBreakGlass(bot_index) ? GLASS_ROUTE_SHORTCUT : GLASS_ROUTE_OFF;
+}
+
+// An intact pane this caller may cross at `mode` (SHORTCUT = vertical only; SOLE = any). False
+// when the pane's own route cost is impassable — which is what $nav glass off produces — so the
+// toggle stays authoritative even for direct callers.
+static bool PanePortalUsable(int room_idx, int portal_idx, int mode) {
+  if (mode == GLASS_ROUTE_OFF || !BotPortalIsBreakableGlass(room_idx, portal_idx))
+    return false;
+  if (mode == GLASS_ROUTE_SHORTCUT && !BotPortalGlassShortcutEligible(room_idx, portal_idx))
+    return false;
+  if (BotPortalRouteCost(room_idx, portal_idx, /*allow_disagree=*/true) >= BOT_PORTAL_IMPASSABLE)
+    return false;
+  if (BotPortalWindDir(room_idx, portal_idx) < 0)
+    return false;
+  return true;
+}
+
+// The router's per-edge admission, shared with the aim layer (0.9.14). One predicate so the aim
+// and the router can never disagree about which edges exist: BOA must call the portal passable —
+// or, under `mode`, it must be an intact pane the bot may shoot open — the cost model must admit
+// it (union of the router's strict and DISAGREE passes), and wind must not forbid the traversal.
+static bool ExitPortalUsable(int room_idx, int portal_idx, int glass_mode = GLASS_ROUTE_OFF) {
+  const bool engine_ok = BOA_PassablePortal(room_idx, portal_idx);
+  if (!engine_ok && glass_mode != GLASS_ROUTE_OFF)
+    return PanePortalUsable(room_idx, portal_idx, glass_mode);
+  if (!engine_ok)
+    return false;
+  if (BotPortalRouteCost(room_idx, portal_idx, /*allow_disagree=*/true) >= BOT_PORTAL_IMPASSABLE)
+    return false;
+  if (BotPortalWindDir(room_idx, portal_idx) < 0)
+    return false;
+  return true;
+}
+
+// One exit set, four preferences, shared by the aim resolver and the chain builder so their first
+// hops can never diverge (the commit invariant): doors strict, doors with the DISAGREE last resort,
+// vertical panes (shortcut class), then any pane as a sole route. Panes only run when no door into
+// `dest_room` passed and the bot has glass authority at all.
+static uint32_t AimExitMask(int room_idx, int np, int dest_room, int glass_mode) {
+  const room &rm = Rooms[room_idx];
+  uint32_t mask = 0;
+  for (int i = 0; i < np; i++)
+    if (rm.portals[i].croom == dest_room && ExitPortalUsable(room_idx, i, GLASS_ROUTE_OFF))
+      mask |= (1u << i);
+  if (mask || glass_mode == GLASS_ROUTE_OFF)
+    return mask;
+  for (int i = 0; i < np; i++)
+    if (rm.portals[i].croom == dest_room && PanePortalUsable(room_idx, i, GLASS_ROUTE_SHORTCUT))
+      mask |= (1u << i);
+  if (mask)
+    return mask;
+  for (int i = 0; i < np; i++)
+    if (rm.portals[i].croom == dest_room && PanePortalUsable(room_idx, i, GLASS_ROUTE_SOLE))
+      mask |= (1u << i);
+  return mask;
+}
+
+// The glass mode for the bot flying this object (aim/delivery layers hold `obj`, not an index).
+// BotFindBySlot on the player object's id is the established recovery idiom (bot.cpp outdoor legs).
+static int AimGlassBudgetForObj(object *obj) {
+  if (!obj)
+    return GLASS_ROUTE_OFF;
+  if (obj->type != OBJ_PLAYER || obj->id < 0)
+    return GLASS_ROUTE_OFF;
+  int bi = BotFindBySlot(obj->id);
+  if (bi < 0)
+    return GLASS_ROUTE_OFF;
+  return BotGlassBudgetForBot(bi);
 }
 
 // --- Dynamic portal penalty (emergent obstacles, Phase 11) ---
@@ -768,17 +912,33 @@ int BotEntryPortalIndex(object *obj, int wp_room) {
   if (wp_room < 0 || wp_room > Highest_room_index || !Rooms[wp_room].used)
     return -1;
   room &crm = Rooms[cur];
+  const int glass_budget = AimGlassBudgetForObj(obj);
   int best_p = -1;
   float best_d = 1e30f;
-  for (int pass = 0; pass < 2 && best_p < 0; pass++) {
-    bool allow_disagree = (pass == 1);
+  // Doors-first: the strict pass admits only engine-agreeing portals, the fallback pass adds the
+  // router's DISAGREE class. Intact panes are a THIRD class, tried only when no door exists — the
+  // same sole-route discipline the router and the aim exit set apply.
+  for (int pass = 0; pass < 3 && best_p < 0; pass++) {
+    const bool allow_disagree = (pass >= 1);
+    const bool panes_only = (pass == 2);
+    if (panes_only && glass_budget == GLASS_ROUTE_OFF)
+      break;
     for (int p = 0; p < crm.num_portals; p++) {
       if (crm.portals[p].croom != wp_room)
         continue;
-      if (!BOA_PassablePortal(cur, p))
-        continue; // engine refuses this boundary — never the door to aim through
-      if (BotPortalRouteCost(cur, p, allow_disagree) >= BOT_PORTAL_IMPASSABLE)
+      const bool pane = !BOA_PassablePortal(cur, p) && BotPortalIsBreakableGlass(cur, p);
+      if (pane != panes_only)
         continue;
+      if (pane) {
+        // This pass runs only because no engine-agreeing door exists — the pane is a sole route,
+        // so even a horizontal vent is admissible here (rm1's only non-wall outlet is a ceiling
+        // vent; refusing it would leave the room with no aim at all).
+        if (!PanePortalUsable(cur, p, GLASS_ROUTE_SOLE))
+          continue;
+      } else {
+        if (BotPortalRouteCost(cur, p, allow_disagree) >= BOT_PORTAL_IMPASSABLE)
+          continue;
+      }
       if (BotPortalWindDir(cur, p) < 0)
         continue;
       float d = vm_VectorDistanceQuick(&obj->pos, &crm.portals[p].path_pnt);
@@ -826,24 +986,6 @@ static int SkelBfs(int room_idx, int n, uint32_t seed_mask, uint32_t stop_mask, 
     }
   }
   return -1;
-}
-
-// The router's per-edge admission, shared with the aim layer (0.9.14). The aim resolver used to build
-// its exit set from `portals[i].croom == next_room` alone, so a solid/window twin of a real door was
-// an aim candidate; the distance-nearest soft-hop could then send a bot at a wall it can never cross
-// while a usable door sat behind it (batteries rm33 -> room 31: twenty-four glass faces the ENGINE
-// refuses, one glass door it admits; rm12 -> room 3: walls beside the breakable doors). One predicate
-// so the aim and the router can never disagree about which doors exist: BOA must call the portal
-// passable, our cost model must admit it (union of the router's strict and DISAGREE passes — the same
-// policy BotRouteDijkstra applies at 1803/1806), and wind must not forbid the traversal.
-static bool ExitPortalUsable(int room_idx, int portal_idx) {
-  if (!BOA_PassablePortal(room_idx, portal_idx))
-    return false;
-  if (BotPortalRouteCost(room_idx, portal_idx, /*allow_disagree=*/true) >= BOT_PORTAL_IMPASSABLE)
-    return false;
-  if (BotPortalWindDir(room_idx, portal_idx) < 0)
-    return false;
-  return true;
 }
 
 // disagreeing at room-flap cadence. Branch order is deterministic and shared by all callers:
@@ -897,7 +1039,13 @@ bool BotResolveRoomAim(object *obj, const vector &target_pos, int target_room, f
   // only door cannot reach a point behind an in-room divider — and an impassable sole door stays
   // refused too: a sealed pocket is the stuck/escape machinery's problem, not an aim to manufacture.
   if (np == 1) {
-    if (target_room == room_idx || !ExitPortalUsable(room_idx, 0))
+    if (target_room == room_idx)
+      return false;
+    const int glass_mode = AimGlassBudgetForObj(obj);
+    bool usable = ExitPortalUsable(room_idx, 0, GLASS_ROUTE_OFF); // a real door?
+    if (!usable && glass_mode != GLASS_ROUTE_OFF)
+      usable = PanePortalUsable(room_idx, 0, GLASS_ROUTE_SOLE); // the sole outlet is a sole route
+    if (!usable)
       return false;
     if (!skel_built[room_idx])
       SkelBuild(room_idx);
@@ -911,34 +1059,21 @@ bool BotResolveRoomAim(object *obj, const vector &target_pos, int target_room, f
   int n = skel_node_count[room_idx]; // portal nodes [0,np), pseudo-bnodes [np,n)
 
   // (b) skeleton BFS first-hop. The exit set is PASSABILITY-FILTERED (0.9.14): the router admits an
-  // edge only after BOA_PassablePortal and its own geocost verdict (BotRouteDijkstra:1803/1806), so
-  // the aim layer must not manufacture an exit the router would never price. Multi-portal rooms
-  // routinely hold solid/window twins beside a real door (batteries rm12 -> room 3: two wall faces
-  // AND two breakable-glass doors; rm70 -> room 40: a wall twin of a glass door), and the old
-  // unfiltered distance-nearest pick could aim straight at a wall while a usable door sat behind the
-  // bot. The filter mirrors the router's union over both its passes: BOA must agree, and either the
-  // strict swept-hull cost is finite or the DISAGREE last-resort class applies.
+  // edge only after BOA_PassablePortal and its own geocost verdict, so the aim layer must not
+  // manufacture an exit the router would never price. Multi-portal rooms routinely hold solid/window
+  // twins beside a real door (batteries rm12 -> room 3: two wall faces AND two breakable-glass
+  // doors), and the old unfiltered distance-nearest pick could aim straight at a wall while a usable
+  // door sat behind the bot. $nav glass extends the same lockstep: doors first, vertical panes as
+  // shortcuts, any pane as a sole route — exactly the router's ladder.
   uint32_t exits = 0;
   if (target_room != room_idx) {
-    int next_room = (next_room_hint >= 0) ? next_room_hint : BotComputeRoute(room_idx, target_room);
+    int next_room = (next_room_hint >= 0) ? next_room_hint : BotComputeRoute(room_idx, target_room, BotFindBySlot(obj->id));
     if (next_room_hint < 0 && next_room < 0)
       next_room = target_room;
-    for (int i = 0; i < np; i++) {
-      if (rm.portals[i].croom != next_room)
-        continue;
-      if (!ExitPortalUsable(room_idx, i))
-        continue;
-      exits |= (1u << i);
-    }
-    if (!exits) { // router returned a non-adjacent hop (shouldn't happen) — direct fallback
-      for (int i = 0; i < np; i++) {
-        if (rm.portals[i].croom != target_room)
-          continue;
-        if (!ExitPortalUsable(room_idx, i))
-          continue;
-        exits |= (1u << i);
-      }
-    }
+    const int glass_mode = AimGlassBudgetForObj(obj);
+    exits = AimExitMask(room_idx, np, next_room, glass_mode);
+    if (!exits) // router returned a non-adjacent hop (shouldn't happen) — direct fallback
+      exits = AimExitMask(room_idx, np, target_room, glass_mode);
   } else {
     for (int i = 0; i < n; i++)
       if (BotSegmentClear(obj->roomnum, skel_node_pos[room_idx][i], target_pos, radius))
@@ -1037,21 +1172,18 @@ int BotSkelBuildChain(object *obj, int room_idx, int target_room, const vector &
   if (n < 2)
     return 0;
 
-  // Exit set — identical to BotResolveRoomAim's (passability-filtered; keep the two in lockstep or
-  // the chain's first hop stops matching the single-hop resolver and the commit invariant breaks).
+  // Exit set — identical to BotResolveRoomAim's (passability-filtered, doors-first/panes-fallback;
+  // keep the two in lockstep or the chain's first hop stops matching the single-hop resolver and
+  // the commit invariant breaks).
   uint32_t exits = 0;
   if (target_room != room_idx) {
-    int next_room = BotComputeRoute(room_idx, target_room);
+    int next_room = BotComputeRoute(room_idx, target_room, BotFindBySlot(obj->id));
     if (next_room < 0)
       next_room = target_room;
-    for (int i = 0; i < np; i++)
-      if (rm.portals[i].croom == next_room && ExitPortalUsable(room_idx, i))
-        exits |= (1u << i);
-    if (!exits) {
-      for (int i = 0; i < np; i++)
-        if (rm.portals[i].croom == target_room && ExitPortalUsable(room_idx, i))
-          exits |= (1u << i);
-    }
+    const int glass_mode = AimGlassBudgetForObj(obj);
+    exits = AimExitMask(room_idx, np, next_room, glass_mode);
+    if (!exits)
+      exits = AimExitMask(room_idx, np, target_room, glass_mode);
   } else {
     for (int i = 0; i < n; i++)
       if (BotSegmentClear(obj->roomnum, skel_node_pos[room_idx][i], target_pos, obj->size))
@@ -1814,7 +1946,17 @@ int BotPortalWindDir(int room_idx, int portal_idx) {
 // through the sky when it did). If from or goal is outdoor, returns -1 and the engine takes over.
 // No result cache — edge costs are dynamic, and one run over even the largest D3 map (~215 rooms)
 // is microseconds; it runs only on room-advance.
-static float BotRouteDijkstra(int from_room, int goal_room, int *first_hop_out, bool allow_disagree) {
+//
+// `glass_mode` (0.9.14 $nav glass, per-bot): how far this call may go through INTACT TF_BREAKABLE
+// panes the engine calls impassable. BotCanBreakGlass's verdict, threaded here rather than cached,
+// because routability now depends on the caller's loadout while BotPortalGeoCost stays
+// bot-independent. GLASS_ROUTE_OFF = doors only; GLASS_ROUTE_SHORTCUT = vertical panes may join a
+// door route on weighted terms; GLASS_ROUTE_SOLE = any pane joins as a last resort. BotComputeRoute
+// runs these as a ladder. The 2026-08-30 paired A/B (NAVIGATION.md §7.0) proved the free form a hard
+// regression — picks/rnd 1.94→0.56, stucks +131% — because 127 of Batteries' 207 panes are CEILING
+// vents and free routing aimed bots at horizontal openings they cannot thread. Hence the split.
+static float BotRouteDijkstra(int from_room, int goal_room, int *first_hop_out, bool allow_disagree,
+                              int glass_mode = GLASS_ROUTE_OFF) {
   if (first_hop_out)
     *first_hop_out = -1;
   if (from_room < 0 || from_room > Highest_room_index || !Rooms[from_room].used)
@@ -1864,7 +2006,22 @@ static float BotRouteDijkstra(int from_room, int goal_room, int *first_hop_out, 
         continue;
       if (nodes[nr].visited)
         continue;
-      if (!BOA_PassablePortal(r, p))
+
+      // Edge admission. Doors require engine agreement as always. An intact breakable pane is a
+      // wall to the engine, so it is admitted only under `glass_mode`: SHORTCUT admits VERTICAL
+      // panes (never ceiling/floor vents — the 2026-08-30 pin class) on their finite break cost;
+      // SOLE admits any pane, but the caller runs that mode only after a doors-only attempt failed.
+      // PanePortalUsable already rejected toggle-off panes, so `geo` below is the finite
+      // BOT_PORTAL_GLASS_PENALTY BotPortalGeoCost caches; a door wins any comparable route on price.
+      const bool engine_ok = BOA_PassablePortal(r, p);
+      bool pane = false;
+      if (!engine_ok && glass_mode != GLASS_ROUTE_OFF) {
+        if (glass_mode == GLASS_ROUTE_SHORTCUT)
+          pane = PanePortalUsable(r, p, GLASS_ROUTE_SHORTCUT);
+        else
+          pane = PanePortalUsable(r, p, GLASS_ROUTE_SOLE);
+      }
+      if (!engine_ok && !pane)
         continue;
 
       float geo = BotPortalRouteCost(r, p, allow_disagree);
@@ -1923,23 +2080,80 @@ static float BotRouteDijkstra(int from_room, int goal_room, int *first_hop_out, 
   return nodes[goal_room].cost;
 }
 
-int BotComputeRoute(int from_room, int goal_room) {
+// The router's pass ladder, shared by BotComputeRoute and the aim layers.
+//
+// A kinetic bot (SHORTCUT) admits VERTICAL panes into the FIRST pass beside the strict doors: the
+// operator's intent is that a pane is a usable shortcut (Batteries' conference-room glass walls),
+// and Dijkstra's price decides when it is genuinely better — every pane edge carries
+// BOT_PORTAL_GLASS_PENALTY (+120, ~3 hops), so a comparable door route still wins. Horizontal
+// ceiling/floor vents are NOT in that pass: they were the 2026-08-30 pin class (127 of 207 panes)
+// and enter only the final sole-route pass, after every door route (strict AND DISAGREE) failed.
+// The DISAGREE class keeps its legacy position — last resort, never co-equal with strict doors.
+//   kinetic:   A) strict doors + vertical panes   B) + DISAGREE   C) + any pane (no door route left)
+//   unkinetic: 1) strict doors                   2) + DISAGREE  (the unchanged legacy ladder)
+// Returns the hop of the first pass that found a route, or -1; out_cost carries that pass's cost.
+static int BotComputeRoutePasses(int from_room, int goal_room, int glass_mode, float *out_cost) {
   int hop = -1;
-  if (from_room == goal_room)
+  if (from_room == goal_room) {
+    if (out_cost)
+      *out_cost = 0.0f;
     return -1; // preserve the public contract: same-room = no hop
-  float cost = BotRouteDijkstra(from_room, goal_room, &hop, false);
-  if (cost >= 1e30f)
-    BotRouteDijkstra(from_room, goal_room, &hop, true);
+  }
+  float cost;
+  if (glass_mode == GLASS_ROUTE_SHORTCUT) {
+    cost = BotRouteDijkstra(from_room, goal_room, &hop, false, GLASS_ROUTE_SHORTCUT);
+    if (cost < 1e30f) {
+      if (out_cost)
+        *out_cost = cost;
+      return hop;
+    }
+    cost = BotRouteDijkstra(from_room, goal_room, &hop, true, GLASS_ROUTE_OFF);
+    if (cost < 1e30f) {
+      if (out_cost)
+        *out_cost = cost;
+      return hop;
+    }
+    cost = BotRouteDijkstra(from_room, goal_room, &hop, true, GLASS_ROUTE_SOLE);
+    if (cost < 1e30f) {
+      if (out_cost)
+        *out_cost = cost;
+      return hop;
+    }
+    if (out_cost)
+      *out_cost = 1e30f;
+    return hop;
+  }
+  // Unkinetic (or bot-independent): the unchanged doors-only ladder.
+  cost = BotRouteDijkstra(from_room, goal_room, &hop, false, GLASS_ROUTE_OFF);
+  if (cost < 1e30f) {
+    if (out_cost)
+      *out_cost = cost;
+    return hop;
+  }
+  cost = BotRouteDijkstra(from_room, goal_room, &hop, true, GLASS_ROUTE_OFF);
+  if (cost < 1e30f) {
+    if (out_cost)
+      *out_cost = cost;
+    return hop;
+  }
+  if (out_cost)
+    *out_cost = 1e30f;
   return hop;
+}
+
+int BotComputeRoute(int from_room, int goal_room, int bot_index) {
+  const int glass_mode = (bot_index >= 0) ? BotGlassBudgetForBot(bot_index) : GLASS_ROUTE_OFF;
+  return BotComputeRoutePasses(from_room, goal_room, glass_mode, nullptr);
 }
 
 // Full routed path cost under OUR cost model (BOA base + graded geometry + wind one-way gating +
 // dynamic penalties) — what BotEstimatePathCost pretends to be but isn't (the BOA-chain estimate
 // is wind/glass/penalty-blind, so on a wind-tunnel map it can price an unflyable route as cheap).
-// 1e30 = no finite route.
+// 1e30 = no finite route. Bot-independent form: no glass authority (geometry-only verdicts).
 float BotComputeRouteCost(int from_room, int goal_room) {
-  float cost = BotRouteDijkstra(from_room, goal_room, nullptr, false);
-  return (cost < 1e30f) ? cost : BotRouteDijkstra(from_room, goal_room, nullptr, true);
+  float cost = 0.0f;
+  BotComputeRoutePasses(from_room, goal_room, GLASS_ROUTE_OFF, &cost);
+  return cost;
 }
 
 // --- Path cost estimation via BOA chain ---

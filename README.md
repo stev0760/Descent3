@@ -34,10 +34,13 @@ unproven. QuadSomniac also has an unresolved Red return-navigation signal agains
 0.9.13 ships as that correctness release — the limitations above are documented, not solved. The
 interior-only window misroute (bots routing through unreachable window glass) and the flag-room
 arrival stalls are held for the 0.9.14 sprint, which traces failed and successful carrier crossings
-to identify the remaining fault. **The working tree is now 0.9.14-dev, a diagnostic-only build**: it
-adds navigation telemetry that names the face blocking a go-around, the objective item's distance at
-arrival, whether a committed doorway crossing succeeded, and whether item reachability agrees with
-line-of-sight. No bot behaviour changed.
+to identify the remaining fault. **The working tree is now 0.9.14-dev**: it fixes the single-exit
+room aim and doorway selection that made bots press solid windows (Batteries Included room 35's 460
+window-presses: gone in the first measured round), restores breakable-glass routing for bots that
+carry a glass-breaking weapon — office windows and partitions become priced shortcuts while ceiling
+vents stay a last resort — and adds navigation telemetry that names the face blocking a go-around,
+the flag's distance at arrival, and whether a committed doorway crossing succeeded. The 0.9.13
+release's `Batteries Included` limitations remain the open work.
 See [Known limitations](#known-limitations) and the [release notes](matcen-docs/CHANGELOG.md).
 
 ### Features

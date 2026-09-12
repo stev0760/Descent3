@@ -1,17 +1,19 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Matcen **0.9.14-dev (2026-09-11)** — telemetry plus the first guided fix on top of the
-0.9.13 release. The instruments: via-fail blocker identity + tier, objective-arrival item distance
-and aim, hop-commit crossed/not-crossed outcome, item-reach graph-vs-LOS pair. The fix:
-single-exit rooms aim at their sole door (batteries rm35 pressed a solid window 460 times with its
-one door one room over), and the multi-door aim/chain exit sets are filtered through the router's
-own admission policy so solid/window twins of a real door cannot become aim candidates. The
-window-misroute per-portal fix is re-landed (`5a94875e`) but not yet validated — it remains
-unfavorable standalone (batteries hard-stucks 190→607), and its sibling implementation gaps stay
-open. The interior-nav bugs it exposed (flag-room arrival stall, powerup-chase wall-press) are
-0.9.14 targets. The last stable release is **0.9.13** (0.9.11 preceded it; 0.9.12 was never
-promoted).
+**Status:** Matcen **0.9.14-dev (2026-09-12)** — telemetry, the aim-layer fixes, and glass routing
+on top of the 0.9.13 release. The instruments: via-fail blocker identity + tier, objective-arrival
+item distance and aim, hop-commit crossed/not-crossed, item-reach graph-vs-LOS. The aim fixes:
+single-exit rooms aim at their sole door, multi-door aim/chain exit sets are filtered through the
+router's admission, and the seam/hop-commit door picker now requires engine agreement — the batteries
+4-round verdict measured rm35 presses 222→4, rm33→31 glass commits 70→0, hard stucks flat, arrivals
+1→3 (first reach of the RED flag room). Glass routing ($nav glass) is restored for kinetic bots:
+vertical panes are priced shortcuts, horizontal vents only sole routes, with BotCanBreakGlass as the
+single loadout gate and a committed-glass-hop clear pass. The window-misroute per-portal fix is
+re-landed (`5a94875e`) but not yet validated — unfavorable standalone (batteries hard-stucks
+190→607) — and its sibling implementation gaps stay open. The remaining interior-nav targets are
+the flag-room arrival stall and the ~58% connectivity dead-ends. The last stable release is
+**0.9.13** (0.9.11 preceded it; 0.9.12 was never promoted).
 
 ### 2026-09-10: corrected handoff and release boundary
 

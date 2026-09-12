@@ -1599,7 +1599,7 @@ bool ComposeUnionRoute(RoadmapRoom *rr, object *obj, const vector &target_pos, i
   } else {
     int next_room = next_room_hint;
     if (next_room < 0) {
-      next_room = BotComputeRoute(room_idx, target_room);
+      next_room = BotComputeRoute(room_idx, target_room, BotFindBySlot(obj->id));
       if (next_room < 0)
         next_room = target_room;
     }
@@ -1900,7 +1900,7 @@ BotViaResult BotRoadmapFindVia(object *obj, const vector &target_pos, int target
   } else {
     int next_room = next_room_hint;
     if (next_room < 0) {
-      next_room = BotComputeRoute(room_idx, target_room);
+      next_room = BotComputeRoute(room_idx, target_room, BotFindBySlot(obj->id));
       if (next_room < 0)
         next_room = target_room;
     }

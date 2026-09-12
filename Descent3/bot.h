@@ -701,6 +701,12 @@ void BotRemoveAll();
 // Find the Bots[] index for a given player slot, or -1 if not a bot.
 int BotFindBySlot(int player_slot);
 
+// Does this bot carry a weapon that can shatter TF_BREAKABLE glass right now? Mirrors exactly
+// what BotClearObstacleSafely's glass branch fires (Vauss / Mass Driver, or the selected secondary
+// missile with ammo — concussions qualify, so this holds for nearly every loadout) so the router
+// and the shooting layer cannot disagree about whether a glass edge is crossable.
+bool BotCanBreakGlass(int bot_index);
+
 // Per-frame update: keep-alive, death detection, respawn. Called from MultiDoServerFrame().
 void BotDoFrame();
 

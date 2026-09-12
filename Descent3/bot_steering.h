@@ -348,10 +348,52 @@ bool BotTerrainConnectPassable(int room, int portal);
 // Delivery-side portal verdict matching the coarse router's strict-first, disagreement-last policy.
 float BotPortalRouteCost(int room_idx, int portal_idx, bool allow_disagree);
 
+// --- 0.9.14 glass routing ($nav glass): intact breakable panes as routable edges ---------------
+//
+// A TF_BREAKABLE pane is a wall until someone shoots it; the engine calls an intact one
+// impassable at runtime (BOA_PassablePortal's rendered-face reject), so a plain BOA gate prices
+// it as a wall and the router can never plan through one. BotPortalGeoCost already gives such a
+// pane a finite cost (BOT_PORTAL_GLASS_PENALTY) — it just needs an admission decision layered on
+// top, and that decision is PER-BOT (does this loadout carry a kinetic weapon?). The gates below
+// take a glass mode explicitly rather than caching it, so BotPortalGeoCost's bot-independent
+// level cache stays valid:
+//   GLASS_ROUTE_OFF      0 — doors only (no kinetic weapon, or the feature is off)
+//   GLASS_ROUTE_SHORTCUT 1 — VERTICAL panes may also be chosen over a longer door route
+//   GLASS_ROUTE_SOLE     2 — ANY pane joins, but only when no door-only route exists
+// The orientation split is not cosmetic: the 2026-08-30 paired A/B (NAVIGATION.md §7.0) measured
+// free pane routing as a hard regression — picks/round 1.94 -> 0.56, stucks +131% — because 127
+// of Batteries' 207 panes are CEILING vents, and bots aimed at horizontal openings they cannot
+// thread. Shortcut authority therefore stops at vertical (window/partition) faces; a horizontal
+// vent still counts as a sole route, where the alternative is not travelling at all.
+//
+// BotGlassBudgetForBot returns SHORTCUT for a kinetic bot, OFF otherwise. Every caller that tries
+// doors first then panes (the aim exit sets, the door picker, the chain builder) uses SOLE for its
+// last-resort pane attempt; the router runs the same ladder internally.
+#define GLASS_ROUTE_OFF 0
+#define GLASS_ROUTE_SHORTCUT 1
+#define GLASS_ROUTE_SOLE 2
+
+// True when this portal is an intact TF_BREAKABLE pane our router could open (either side's face
+// texture carries TF_BREAKABLE). Cached per level like the other geometry verdicts.
+bool BotPortalIsBreakableGlass(int room_idx, int portal_idx);
+
+// True when a VERTICAL breakable pane — the shortcut class (office partition/window), as opposed
+// to a ceiling/floor vent, which only ever qualifies as a sole route. Face normal on the Y axis
+// (Y is up in this engine); 0.35 dot band mirrors the wind axis test.
+bool BotPortalGlassShortcutEligible(int room_idx, int portal_idx);
+
+// The mode a bot's loadout earns: SHORTCUT with a kinetic breaker, OFF without. BotCanBreakGlass
+// (bot.cpp) is the single source of truth for "can open a pane", shared with the shooting layer.
+int BotGlassBudgetForBot(int bot_index);
+
 // Cost-aware next-hop router (Phase 11). Dijkstra over the interior room graph weighting
 // portals by BOA base cost + graded geometry cost + dynamic penalty. Returns the next room to
 // head toward, or -1 if no finite route exists (caller falls back to the engine's own pathing).
-int BotComputeRoute(int from_room, int goal_room);
+// `bot_index` (optional, -1 = bot-independent callers) lets the router admit intact breakable
+// panes per this bot's loadout under $nav glass: a kinetic bot gets the shortcut ladder (vertical
+// panes priced into the primary search, any pane as the sole route), an unkinetic one the unchanged
+// doors-only ladder. -1 behaves as no glass authority.
+int BotComputeRoute(int from_room, int goal_room, int bot_index = -1);
 
 // Dynamic portal penalty (emergent obstacles). A traversal failure bumps the portal's cost so
 // the router reroutes around it; the penalty decays over time. Soft and capped — never strands.

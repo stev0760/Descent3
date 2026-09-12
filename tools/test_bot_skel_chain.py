@@ -19,7 +19,14 @@ class SkeletonChainTests(unittest.TestCase):
     def test_production_chain_export(self):
         source = (ROOT / "Descent3/bot_steering.cpp").read_text()
         functions = []
-        for signature in ("static int SkelBfs(", "static bool ExitPortalUsable(", "int BotSkelBuildChain("):
+        for signature in (
+            "static int SkelBfs(",
+            "static bool PanePortalUsable(",
+            "static bool ExitPortalUsable(",
+            "static uint32_t AimExitMask(",
+            "static int AimGlassBudgetForObj(",
+            "int BotSkelBuildChain(",
+        ):
             start = source.index(signature)
             # Both production definitions end at an unindented closing brace.
             end = source.index("\n}", start) + 2
@@ -38,8 +45,12 @@ constexpr int SKEL_MAX_NODES = 32;
 constexpr int RF_EXTERNAL = 1;
 constexpr float BOT_VIA_ARRIVE_DIST = 15.0f;
 constexpr float BOT_PORTAL_IMPASSABLE = 1.0e6f;
+constexpr int GLASS_ROUTE_OFF = 0;
+constexpr int GLASS_ROUTE_SHORTCUT = 1;
+constexpr int GLASS_ROUTE_SOLE = 2;
+constexpr int OBJ_PLAYER = 4;
 struct vector { float x; };
-struct object { int roomnum; vector pos; float size; };
+struct object { int roomnum; vector pos; float size; int type; int id; };
 struct portal { int croom; };
 struct room { bool used; int flags; int num_portals; portal portals[32]; };
 room Rooms[2]{};
@@ -56,10 +67,16 @@ bool portal_rejected[32]{};
 bool BOA_PassablePortal(int, int portal) { return !portal_rejected[portal]; }
 float BotPortalRouteCost(int, int, bool) { return 0.0f; }
 int BotPortalWindDir(int, int) { return 0; }
+// No glass in this harness: the filter's pane branch stays inert (the glass ladder is covered by
+// the soak; this test's subject is export order/capacity and the door-only filter).
+bool BotPortalIsBreakableGlass(int, int) { return false; }
+bool BotPortalGlassShortcutEligible(int, int) { return false; }
+int BotGlassBudgetForBot(int) { return 0; }
+int BotFindBySlot(int botid) { return botid; }
 void SkelLevelReset() {}
 void SkelBuild(int) {}
 int SkelPortalCount(const room &rm) { return rm.num_portals; }
-int BotComputeRoute(int, int target_room) { return target_room; }
+int BotComputeRoute(int, int target_room, int) { return target_room; }
 float vm_VectorDistanceQuick(const vector *a, const vector *b) { return std::fabs(a->x - b->x); }
 bool BotSegmentClear(int, const vector &a, const vector &b, float) {
   // The bot can see only one node. Only the exit node sees the same-room final target.

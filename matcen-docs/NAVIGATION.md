@@ -706,7 +706,67 @@ overnight log. A full verbosity-tier + event-vocabulary consolidation is registe
 
 ## 7. Open problems (roadmap)
 
-### 7.0-CURRENT Mechanism telemetry + single-exit aim — 2026-09-11 (0.9.14-dev)
+### 7.0-CURRENT Glass routing restored + mechanism telemetry — 2026-09-12 (0.9.14-dev)
+
+0.9.13 shipped as the correctness checkpoint. 0.9.14-dev has three commits: telemetry, the
+aim-layer fixes, and glass routing.
+
+**Glass routing ($nav glass, restored per operator intent).** The 0.9.6 feature existed in the cost
+model (`BotPortalGeoCost` prices intact TF_BREAKABLE panes at BOT_PORTAL_GLASS_PENALTY) but was
+dead: `BOA_PassablePortal` rejects an intact pane at runtime — it only admits one while BOA is being
+built — and the Dijkstra's leading BOA gate short-circuited the finite cost before it was weighed
+(since 5e7ec697, 2026-08-30). The reverted 2026-08-30 arm had proved the FREE form a regression
+(1.94→0.56 picks/rnd, +131% stucks) because 127 of Batteries' 207 panes are ceiling VENTS and free
+routing aimed bots at horizontal openings they cannot thread. The restored design threads that
+needle with an explicit per-bot mode ladder (`BotRouteDijkstra`'s `glass_mode`, never cached — the
+geometry cache stays bot-independent):
+
+| mode | who | edges |
+|---|---|---|
+| OFF | no kinetic breaker, or `$nav glass` off | doors only (unchanged) |
+| SHORTCUT | BotCanBreakGlass: Vauss / Mass Driver / loaded missile | strict doors **+ vertical panes** priced at +120 (~3 hops, so a comparable door wins) |
+| SOLE | the ladder's last resort, after strict and DISAGREE door passes | any pane, including horizontal vents |
+
+`BotComputeRoute(from, goal, bot_index)` runs the ladder: strict+vertical-panes → +DISAGREE → any
+pane. A horizontal vent can only ever be a sole route (Batteries rm1→rm125 — its only non-wall
+outlet — still routes for a kinetic bot; before this it pressed forever). The aim layer shares the
+policy via `AimExitMask` (doors first, then vertical panes, then any pane) so aim and route cannot
+disagree, and `BotEntryPortalIndex` (the seam/hop-commit door picker) gained the same pane pass.
+The reactive clear gained pass 5 (`BotClearCommittedGlassHop`): a pane the router committed the bot
+to is shot at its own point, since the nose/aim passes miss an off-axis approach — the 2026-08-30
+finding that glass clears FELL in the routed arm. BotCanBreakGlass is the single source of truth for
+"can open a pane", mirrored by BotClearObstacleSafely's firing gate.
+
+**Aim-layer fixes (previously in this section): single-exit aim, passability-filtered exit sets,
+and the engine-agreement gate on BotEntryPortalIndex.** See the entries below; the batteries 4-round
+verdict (soak-20260912T090308 vs the fa5966ed telemetry run) measured rm35 presses 222→4, rm33→31
+glass NOT-CROSSED 70→0, hard stucks flat (467→479), crossings flat, and objective arrivals 1→3 —
+the first time a test arm reached the RED flag room at d_item=69.
+
+**Mechanism telemetry (log-only).** Four additive lines so failures can be diagnosed per episode
+instead of from aggregate counts:
+
+- **`via search failed`** — blocking face (`face=FR/F`), texture, breakable/force-field flags,
+  probe distance, and the tier that gave up (`stage=rings|rings-skipped|outdoor-lattice|
+  outdoor-graph|pass3`). The old line ended at `(target room N)`; both formats parse.
+- **`ARRIVED at objective room`** — objective item identity/objnum, `d_item`, and the aim flown.
+- **`hop outcome`** — `CROSSED` / `NOT-CROSSED ... via portal N` per committed crossing.
+- **`item-reach`** — graph verdict paired with raw hull-LOS (`los=0|1`) and distance.
+
+**First instrumented Batteries read (fa5966ed, 20 rounds, soak-20260911T212808).** 4018 via-fails
+(all pass3, 4013 non-breakable faces), 6288 hop outcomes (67% crossed), 2473 item-reach verdicts
+(87% raw-LOS clear), 4 objective arrivals at `d_item` 71-106u — the arrival-stall is a room-edge
+declaration that never closes. Independent reachability analysis of the run's navdump: ~42% of
+via-fails occur where a usable route exists (the aim fixes), ~58% are connectivity dead-ends (rm70,
+rm16, rm27, rm12→1/62) — a separate workstream. rm8's Red pinning is target-selection, not
+unreachability.
+
+**Window-misroute fix status:** re-landed in 0.9.14-dev commit `5a94875e` (held from 0.9.13 because
+unfavorable standalone: batteries hard stucks 190→607 while eliminating the misroute). Its sibling
+gaps from the implementation review (legacy resolver pass-1 eligibility, cached/memo/forced
+admission revalidation, helper reciprocal-face/crossing-cost) remain open.
+
+### 7.0-PREV Mechanism telemetry + single-exit aim — 2026-09-11 (0.9.14-dev)
 
 0.9.13 shipped as the correctness checkpoint (see the CHANGELOG). 0.9.14-dev is open: the first
 commit is diagnostic-only (below), and the second lands the first fix the telemetry pointed at.

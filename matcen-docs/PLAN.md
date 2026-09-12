@@ -106,18 +106,24 @@ complete navigation coverage. No speculative tuning or broad rewrite belongs in 
 
 These are decision rules, not authorization to commit, promote, rebuild or launch another test.
 
-#### 0.9.14-dev sprint — OPEN (2026-09-11)
+#### 0.9.14-dev sprint — OPEN (2026-09-12)
 
-0.9.13 shipped as the correctness checkpoint; 0.9.14-dev is now open. The first commit is
-**diagnostic-only telemetry** (no navigation behaviour change), because the frozen-log analysis of
-the Batteries A/B showed the remaining failures cannot be attributed to a mechanism without naming
-the blocker, the arrival geometry, and the crossing outcome. The four lines (via-fail blocker
-identity + tier, objective-arrival item distance and aim, hop-commit crossed/not-crossed,
-item-reach graph-vs-LOS) and their analyzer support are in place; the next step is an instrumented
-Batteries soak to capture rm8/rm35 episodes, then bounded fixes for the classes it names. The
-window-misroute admission fix is re-landed but not yet validated, and its implementation-review
-gaps (legacy resolver pass-1 eligibility, cached/memo/forced admission revalidation, helper
-reciprocal-face/crossing-cost) remain open.
+0.9.13 shipped as the correctness checkpoint; 0.9.14-dev is open with four landed commits:
+telemetry (fa5966ed), the aim-layer fixes (4c51e30d, 2df343c2), and glass routing. The 4-round
+batteries verdict (soak-20260912T090308) measured the aim fixes net-positive with no play
+regression: rm35 window presses 222→4, rm33→31 glass NOT-CROSSED 70→0, hard stucks flat (467→479),
+crossings flat, objective arrivals 1→3 — the first test-arm reach of the RED flag room (d_item=69).
+Glass routing is restored per operator intent: kinetic bots get vertical panes as priced shortcuts
+and any pane as a sole route, unkinetic bots unchanged; the reactive clear gained a
+committed-glass-hop pass. The window-misroute admission fix is re-landed but not yet validated, and
+its implementation-review gaps (legacy resolver pass-1 eligibility, cached/memo/forced admission
+revalidation, helper reciprocal-face/crossing-cost) remain open.
+
+The next instruments/verdicts owed: a glass-routing soak on Batteries (the operator's vent and
+conference-room cases) and the two remaining classes the telemetry surfaced — the flag-room arrival
+stall (bots reach the room and declare ARRIVED 71-106u short) and the ~58% connectivity dead-ends
+(rm70, rm16, rm27, rm12→1/62 — the router still sends bots at rooms with no passable route; the
+candidate direction is refusing to target unreachable rooms so the bot picks a reachable objective).
 
 The original 0.9.14 investigation direction below still applies to the arrival-stall class: start
 with one failed and one successful carrier crossing under comparable conditions, including hull,

@@ -7,20 +7,24 @@ Current implementation status is in `BOTS_DEVEL.md`. Physics model reference is 
 
 ## Current Status
 
-**0.9.14-dev** (2026-09-11): telemetry plus the first guided fix. Four additive debug lines exist
-for per-episode failure diagnosis: `via search failed` now carries the blocking face (`face=FR/F`),
-texture, breakable/forcefield flags, probe distance, and the tier that gave up (`stage=rings|
-rings-skipped|outdoor-lattice|outdoor-graph|pass3`); `ARRIVED at objective room` carries the
-objective item, `d_item`, and the aim flown; `hop outcome` resolves a committed crossing as
-`CROSSED`/`NOT-CROSSED ... via portal N`; `item-reach` pairs the graph verdict with raw hull-LOS.
+**0.9.14-dev** (2026-09-12): telemetry, aim-layer fixes, and glass routing. Four additive debug
+lines exist for per-episode failure diagnosis: `via search failed` now carries the blocking face
+(`face=FR/F`), texture, breakable/forcefield flags, probe distance, and the tier that gave up
+(`stage=rings|rings-skipped|outdoor-lattice|outdoor-graph|pass3`); `ARRIVED at objective room`
+carries the objective item, `d_item`, and the aim flown; `hop outcome` resolves a committed crossing
+as `CROSSED`/`NOT-CROSSED ... via portal N`; `item-reach` pairs the graph verdict with raw hull-LOS.
 `tools/analyze_bot_log.py` parses all four (the Mechanism Telemetry section prints only on
-instrumented logs; old-format lines still parse). The fix: `BotResolveRoomAim` no longer bails on
-single-exit rooms (they aim at their one door) and its multi-door exit set — plus
-`BotSkelBuildChain`'s — is filtered through `ExitPortalUsable` (BOA passable + `BotPortalRouteCost`
-with disagree + wind), the router's own admission policy, so solid/window twins of a real door can
-never be aim candidates. 0.9.13 shipped as the correctness checkpoint; the window-misroute admission
-fix is re-landed in 0.9.14-dev but NOT yet validated (unfavorable standalone), and its sibling
-implementation gaps remain open.
+instrumented logs; old-format lines still parse). The aim fixes: `BotResolveRoomAim` no longer bails
+on single-exit rooms, its multi-door exit set — plus `BotSkelBuildChain`'s and `BotEntryPortalIndex`'s
+— is filtered through the shared admission (`ExitPortalUsable` / `AimExitMask`: BOA + route cost +
+wind), and the door picker gained its missing `BOA_PassablePortal` gate. Glass routing: `$nav glass`
+admits intact TF_BREAKABLE panes per `BotCanBreakGlass(bot_index)` — vertical panes as priced
+shortcuts, any pane as a sole route (`GLASS_ROUTE_OFF/SHORTCUT/SOLE`, threaded through
+`BotComputeRoute(from, goal, bot_index)`); `BotClearCommittedGlassHop` (pass 5 of the proactive
+clear) shoots a pane the router committed the bot to. 0.9.13 shipped as the correctness checkpoint;
+the window-misroute admission fix is re-landed in 0.9.14-dev but NOT yet validated (unfavorable
+standalone), and its sibling implementation gaps remain open. Open targets: flag-room arrival stall,
+connectivity dead-ends (~58% of the frozen run's via-fails).
 
 Operator ruling (2026-09-10): abend2's remaining generated skeleton/arterial imbalance is accepted
 as a map-specific limitation. Keep the hierarchy and both corrections; no further abend2 fix or
