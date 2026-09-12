@@ -7,16 +7,20 @@ Current implementation status is in `BOTS_DEVEL.md`. Physics model reference is 
 
 ## Current Status
 
-**0.9.14-dev** (2026-09-11): diagnostic telemetry only — no navigation behaviour change. Four
-additive debug lines exist for per-episode failure diagnosis: `via search failed` now carries the
-blocking face (`face=FR/F`), texture, breakable/forcefield flags, probe distance, and the tier that
-gave up (`stage=rings|rings-skipped|outdoor-lattice|outdoor-graph|pass3`); `ARRIVED at objective
-room` carries the objective item, `d_item`, and the aim flown; `hop outcome` resolves a committed
-crossing as `CROSSED`/`NOT-CROSSED ... via portal N`; `item-reach` pairs the graph verdict with raw
-hull-LOS. `tools/analyze_bot_log.py` parses all four (the Mechanism Telemetry section prints only
-on instrumented logs; old-format lines still parse). 0.9.13 shipped as the correctness checkpoint;
-the window-misroute admission fix is re-landed in 0.9.14-dev but NOT yet validated (unfavorable
-standalone), and its sibling implementation gaps remain open.
+**0.9.14-dev** (2026-09-11): telemetry plus the first guided fix. Four additive debug lines exist
+for per-episode failure diagnosis: `via search failed` now carries the blocking face (`face=FR/F`),
+texture, breakable/forcefield flags, probe distance, and the tier that gave up (`stage=rings|
+rings-skipped|outdoor-lattice|outdoor-graph|pass3`); `ARRIVED at objective room` carries the
+objective item, `d_item`, and the aim flown; `hop outcome` resolves a committed crossing as
+`CROSSED`/`NOT-CROSSED ... via portal N`; `item-reach` pairs the graph verdict with raw hull-LOS.
+`tools/analyze_bot_log.py` parses all four (the Mechanism Telemetry section prints only on
+instrumented logs; old-format lines still parse). The fix: `BotResolveRoomAim` no longer bails on
+single-exit rooms (they aim at their one door) and its multi-door exit set — plus
+`BotSkelBuildChain`'s — is filtered through `ExitPortalUsable` (BOA passable + `BotPortalRouteCost`
+with disagree + wind), the router's own admission policy, so solid/window twins of a real door can
+never be aim candidates. 0.9.13 shipped as the correctness checkpoint; the window-misroute admission
+fix is re-landed in 0.9.14-dev but NOT yet validated (unfavorable standalone), and its sibling
+implementation gaps remain open.
 
 Operator ruling (2026-09-10): abend2's remaining generated skeleton/arterial imbalance is accepted
 as a map-specific limitation. Keep the hierarchy and both corrections; no further abend2 fix or
@@ -33,7 +37,10 @@ Pyro-GL/Hotshot loop completed a 20-round A/B on the frozen pair: the window fix
 misroute (815 terrain plans adopted → 0) but raised hard stucks 190→607; analysis showed the cost
 concentrates in two pre-existing failure classes (powerup-chase wall-press, no-route-fallback
 wall-press) plus a flag-room arrival stall present in the control arm too. No promotion or revert
-follows from that evidence; 0.9.14 owns the fix plus the interior-nav defects it exposed.
+follows from that evidence; 0.9.14 owns the fix plus the interior-nav defects it exposed. The first
+instrumented run (fa5966ed) confirmed the arrival stall (4 arrivals, d_item 71-106u), split the
+via-fails by mechanism (all pass3; 42% aim candidates vs 58% no-route dead-ends), and showed Red
+rm8 pinning is target-selection, not unreachability (87% raw-LOS clear).
 
 ### CTF Measurement Caveats
 

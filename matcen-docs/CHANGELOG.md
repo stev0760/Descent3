@@ -9,10 +9,20 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
 
 ## [0.9.14-dev] - in test
 
-*Development build — diagnostic only. It changes no navigation behaviour; the window-misroute
-admission fix and the interior-navigation defects it exposed are still being worked. Do not run this
+*Development build — diagnostic telemetry plus the first fix guided by it. The window-misroute
+admission fix and the remaining interior-navigation defects are still being worked. Do not run this
 as a release.*
 
+*   **Bots no longer press a window when the door is right there.** The in-room aim resolver refused
+    any room with fewer than two doorways, so a single-exit room got no aim at all — the bot's raw
+    goal direction pointed at whatever face stood between it and the goal, and it pressed a solid
+    window forever (Batteries Included room 35: one real door to room 33, goal seen through
+    bulletproof glass, 460 presses in one 20-round run). Single-exit rooms now aim at their one
+    door. In multi-door rooms the aim set is also filtered the same way the router prices routes:
+    a wall or window that merely shares a destination room with a real door can no longer be chosen
+    as the target, so a bot stops aiming at solid faces while a usable door sits behind it. The
+    go-around and chain builders share one admission rule with the router now, so they cannot
+    disagree about which doors exist.
 *   **The navigation failure reports now name what went wrong, not just that it did.** Four
     diagnostic additions, all log-only: (1) a blocked go-around search now names the face or object
     that blocked it, its texture, whether it is breakable glass or a force field, and which search

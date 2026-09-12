@@ -19,7 +19,7 @@ class SkeletonChainTests(unittest.TestCase):
     def test_production_chain_export(self):
         source = (ROOT / "Descent3/bot_steering.cpp").read_text()
         functions = []
-        for signature in ("static int SkelBfs(", "int BotSkelBuildChain("):
+        for signature in ("static int SkelBfs(", "static bool ExitPortalUsable(", "int BotSkelBuildChain("):
             start = source.index(signature)
             # Both production definitions end at an unindented closing brace.
             end = source.index("\n}", start) + 2
@@ -37,6 +37,7 @@ class SkeletonChainTests(unittest.TestCase):
 constexpr int SKEL_MAX_NODES = 32;
 constexpr int RF_EXTERNAL = 1;
 constexpr float BOT_VIA_ARRIVE_DIST = 15.0f;
+constexpr float BOT_PORTAL_IMPASSABLE = 1.0e6f;
 struct vector { float x; };
 struct object { int roomnum; vector pos; float size; };
 struct portal { int croom; };
@@ -49,6 +50,12 @@ vector skel_node_pos[2][32]{};
 uint32_t skel_edges[2][32]{};
 int visible_node = 0;
 
+// Every portal is admitted by default; `portal_rejected[i]` lets a check reject one portal so the
+// passability filter (ExitPortalUsable) can be exercised without the game's geometry.
+bool portal_rejected[32]{};
+bool BOA_PassablePortal(int, int portal) { return !portal_rejected[portal]; }
+float BotPortalRouteCost(int, int, bool) { return 0.0f; }
+int BotPortalWindDir(int, int) { return 0; }
 void SkelLevelReset() {}
 void SkelBuild(int) {}
 int SkelPortalCount(const room &rm) { return rm.num_portals; }
@@ -77,6 +84,11 @@ int main() {
   // the exit: the old [near, ..., exit, near] chain turned a corrected crossing back on itself.
   assert(BotSkelBuildChain(&bot, 0, 1, {0.0f}, output, 32) == 4);
   assert(output[0].x == 0.0f && output[3].x == 60.0f);
+  // Passability filter: an exit portal the router would not admit is not a chain candidate, even
+  // when the skeleton graph connects it. (This is the aim/router agreement the 0.9.14 fix added.)
+  portal_rejected[3] = true;
+  assert(BotSkelBuildChain(&bot, 0, 1, {0.0f}, output, 32) == 0);
+  portal_rejected[3] = false;
   for (int target_room : {0, 1}) {
     visible_node = 0;
     int n = BotSkelBuildChain(&bot, 0, target_room, {100.0f}, output, 32);

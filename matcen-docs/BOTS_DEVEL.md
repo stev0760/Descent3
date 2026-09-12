@@ -1,14 +1,17 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Matcen **0.9.14-dev (2026-09-11)** — diagnostic-only telemetry on top of the 0.9.13
-release. Four additive log lines (via-fail blocker identity + tier, objective-arrival item distance
-and aim, hop-commit crossed/not-crossed outcome, item-reach graph-vs-LOS pair) turn the remaining
-Batteries failures into per-episode evidence. No navigation behaviour changed. The window-misroute
-per-portal fix is re-landed (`5a94875e`) but not yet validated — it remains unfavorable standalone
-(batteries hard-stucks 190→607), and its sibling implementation gaps stay open. The interior-nav bugs
-it exposed (flag-room arrival stall, powerup-chase wall-press) are 0.9.14 targets.
-The last stable release is **0.9.13** (0.9.11 preceded it; 0.9.12 was never promoted).
+**Status:** Matcen **0.9.14-dev (2026-09-11)** — telemetry plus the first guided fix on top of the
+0.9.13 release. The instruments: via-fail blocker identity + tier, objective-arrival item distance
+and aim, hop-commit crossed/not-crossed outcome, item-reach graph-vs-LOS pair. The fix:
+single-exit rooms aim at their sole door (batteries rm35 pressed a solid window 460 times with its
+one door one room over), and the multi-door aim/chain exit sets are filtered through the router's
+own admission policy so solid/window twins of a real door cannot become aim candidates. The
+window-misroute per-portal fix is re-landed (`5a94875e`) but not yet validated — it remains
+unfavorable standalone (batteries hard-stucks 190→607), and its sibling implementation gaps stay
+open. The interior-nav bugs it exposed (flag-room arrival stall, powerup-chase wall-press) are
+0.9.14 targets. The last stable release is **0.9.13** (0.9.11 preceded it; 0.9.12 was never
+promoted).
 
 ### 2026-09-10: corrected handoff and release boundary
 

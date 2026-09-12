@@ -818,6 +818,24 @@ static int SkelBfs(int room_idx, int n, uint32_t seed_mask, uint32_t stop_mask, 
   return -1;
 }
 
+// The router's per-edge admission, shared with the aim layer (0.9.14). The aim resolver used to build
+// its exit set from `portals[i].croom == next_room` alone, so a solid/window twin of a real door was
+// an aim candidate; the distance-nearest soft-hop could then send a bot at a wall it can never cross
+// while a usable door sat behind it (batteries rm33 -> room 31: twenty-four glass faces the ENGINE
+// refuses, one glass door it admits; rm12 -> room 3: walls beside the breakable doors). One predicate
+// so the aim and the router can never disagree about which doors exist: BOA must call the portal
+// passable, our cost model must admit it (union of the router's strict and DISAGREE passes — the same
+// policy BotRouteDijkstra applies at 1803/1806), and wind must not forbid the traversal.
+static bool ExitPortalUsable(int room_idx, int portal_idx) {
+  if (!BOA_PassablePortal(room_idx, portal_idx))
+    return false;
+  if (BotPortalRouteCost(room_idx, portal_idx, /*allow_disagree=*/true) >= BOT_PORTAL_IMPASSABLE)
+    return false;
+  if (BotPortalWindDir(room_idx, portal_idx) < 0)
+    return false;
+  return true;
+}
+
 // disagreeing at room-flap cadence. Branch order is deterministic and shared by all callers:
 //   (a) in non-buried rooms, the 0.9.4 volumetric roadmap (Lazy Theta*) goes FIRST;
 //       buried rooms skip it because replacing their arterial/tray path with local-street hops
@@ -856,25 +874,60 @@ bool BotResolveRoomAim(object *obj, const vector &target_pos, int target_room, f
   }
 
   int np = SkelPortalCount(rm);
-  if (np < 2)
+  if (np < 1)
     return false;
+  // Single-exit room (0.9.14): the portal-PAIR machinery below (exit set, BFS, soft-hop) was gated on
+  // np<2, so a sole-portal room got NO aim resolution at all. The bot's raw goal direction then
+  // pointed at whatever interior face stood between it and an out-of-room goal, and it pressed that
+  // face forever (batteries rm35: one portal -> rm33, goal rm84 seen THROUGH a solid window, 460
+  // presses at d=0). The sole portal IS the route — no choice to make, and the router may not even
+  // produce a next hop here (rm35 logged NO-ROUTE against rm84 while the exit sat one room over), so
+  // keying the exit set on next_room can never fire. Aim straight at the portal's node and let the
+  // normal via/commit machinery fly and bound it. An in-room target stays refused — flying out the
+  // only door cannot reach a point behind an in-room divider — and an impassable sole door stays
+  // refused too: a sealed pocket is the stuck/escape machinery's problem, not an aim to manufacture.
+  if (np == 1) {
+    if (target_room == room_idx || !ExitPortalUsable(room_idx, 0))
+      return false;
+    if (!skel_built[room_idx])
+      SkelBuild(room_idx);
+    *out = skel_node_pos[room_idx][0]; // SkelBuild seeds node i from portals[i].path_pnt
+    if (source_out)
+      *source_out = BOT_ROOM_AIM_SKELETON;
+    return true;
+  }
   if (!skel_built[room_idx])
     SkelBuild(room_idx);
   int n = skel_node_count[room_idx]; // portal nodes [0,np), pseudo-bnodes [np,n)
 
-  // (b) skeleton BFS first-hop.
+  // (b) skeleton BFS first-hop. The exit set is PASSABILITY-FILTERED (0.9.14): the router admits an
+  // edge only after BOA_PassablePortal and its own geocost verdict (BotRouteDijkstra:1803/1806), so
+  // the aim layer must not manufacture an exit the router would never price. Multi-portal rooms
+  // routinely hold solid/window twins beside a real door (batteries rm12 -> room 3: two wall faces
+  // AND two breakable-glass doors; rm70 -> room 40: a wall twin of a glass door), and the old
+  // unfiltered distance-nearest pick could aim straight at a wall while a usable door sat behind the
+  // bot. The filter mirrors the router's union over both its passes: BOA must agree, and either the
+  // strict swept-hull cost is finite or the DISAGREE last-resort class applies.
   uint32_t exits = 0;
   if (target_room != room_idx) {
     int next_room = (next_room_hint >= 0) ? next_room_hint : BotComputeRoute(room_idx, target_room);
     if (next_room_hint < 0 && next_room < 0)
       next_room = target_room;
-    for (int i = 0; i < np; i++)
-      if (rm.portals[i].croom == next_room)
-        exits |= (1u << i);
+    for (int i = 0; i < np; i++) {
+      if (rm.portals[i].croom != next_room)
+        continue;
+      if (!ExitPortalUsable(room_idx, i))
+        continue;
+      exits |= (1u << i);
+    }
     if (!exits) { // router returned a non-adjacent hop (shouldn't happen) — direct fallback
-      for (int i = 0; i < np; i++)
-        if (rm.portals[i].croom == target_room)
-          exits |= (1u << i);
+      for (int i = 0; i < np; i++) {
+        if (rm.portals[i].croom != target_room)
+          continue;
+        if (!ExitPortalUsable(room_idx, i))
+          continue;
+        exits |= (1u << i);
+      }
     }
   } else {
     for (int i = 0; i < n; i++)
@@ -974,18 +1027,19 @@ int BotSkelBuildChain(object *obj, int room_idx, int target_room, const vector &
   if (n < 2)
     return 0;
 
-  // Exit set — identical to BotResolveRoomAim's (portals toward the next hop room, or the target).
+  // Exit set — identical to BotResolveRoomAim's (passability-filtered; keep the two in lockstep or
+  // the chain's first hop stops matching the single-hop resolver and the commit invariant breaks).
   uint32_t exits = 0;
   if (target_room != room_idx) {
     int next_room = BotComputeRoute(room_idx, target_room);
     if (next_room < 0)
       next_room = target_room;
     for (int i = 0; i < np; i++)
-      if (rm.portals[i].croom == next_room)
+      if (rm.portals[i].croom == next_room && ExitPortalUsable(room_idx, i))
         exits |= (1u << i);
     if (!exits) {
       for (int i = 0; i < np; i++)
-        if (rm.portals[i].croom == target_room)
+        if (rm.portals[i].croom == target_room && ExitPortalUsable(room_idx, i))
           exits |= (1u << i);
     }
   } else {

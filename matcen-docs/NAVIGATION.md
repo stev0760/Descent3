@@ -6,11 +6,12 @@
 > validated, and folded in as §3.5–§3.6 + §8 History; original in git history). Deep engine research
 > lives in `PATHFINDING_CODEBASE_EXPLORE.md`; per-frame field/constant detail in `BOT_DEV_REFERENCE.md`.
 
-**Status:** Matcen 0.9.14-dev (2026-09-11) — diagnostic-only build on top of the 0.9.13 release. Four
-new log lines name what blocked a go-around, what the objective arrival actually saw, whether a
-committed doorway was crossed, and whether item reachability agrees with raw line-of-sight. No
-navigation behaviour changed. The window-misroute admission fix is re-landed but not yet validated;
-the interior-navigation defects it exposed (flag-room arrival stall, powerup-chase wall-press) remain
+**Status:** Matcen 0.9.14-dev (2026-09-11) — telemetry plus the first guided fix. Four additive log
+lines name what blocked a go-around, what the objective arrival actually saw, whether a committed
+doorway was crossed, and whether item reachability agrees with raw line-of-sight; the fix makes
+single-exit rooms aim at their one door and filters the multi-door aim set through the router's own
+passability policy. The window-misroute admission fix is re-landed but not yet validated; the
+interior-navigation defects it exposed (flag-room arrival stall, powerup-chase wall-press) remain
 open. **For the live current-status snapshot (toggle states, open issues, the tried-and-reverted
 ledger) see §7.0**, kept current per soak. The narrative sections below are the design rationale;
 §7.0 is "what's true right now."
@@ -705,11 +706,23 @@ overnight log. A full verbosity-tier + event-vocabulary consolidation is registe
 
 ## 7. Open problems (roadmap)
 
-### 7.0-CURRENT Mechanism telemetry — 2026-09-11 (0.9.14-dev)
+### 7.0-CURRENT Mechanism telemetry + single-exit aim — 2026-09-11 (0.9.14-dev)
 
-0.9.13 shipped as the correctness checkpoint (see the CHANGELOG). 0.9.14-dev is open and its first
-commit is **diagnostic only** — no navigation behaviour changes. Four additive log lines exist so the
-Batteries failures can be diagnosed per episode instead of from aggregate counts:
+0.9.13 shipped as the correctness checkpoint (see the CHANGELOG). 0.9.14-dev is open: the first
+commit is diagnostic-only (below), and the second lands the first fix the telemetry pointed at.
+
+**Single-exit aim (the rm35 press).** `BotResolveRoomAim` bailed on `np < 2`, so a sole-portal room
+got no aim resolution: the bot's raw goal direction pointed at whatever face stood between it and an
+out-of-room goal, and it pressed that face forever (batteries rm35 → room 33 via its one door, goal
+rm84 seen THROUGH solid glass: 460 presses at d=0 in one run). It now aims at the sole portal's node
+when the target is elsewhere; an in-room target or an impassable sole door still returns false. The
+multi-portal exit set is also passability-filtered through the router's own admission (BOA passable +
+cost verdict + wind) so solid/window twins beside a real door can no longer be picked by distance —
+the same see-through≠passable principle as the terrain gate, one layer down. `BotSkelBuildChain`
+shares the predicate so aim and chain export stay in lockstep.
+
+**Mechanism telemetry (log-only).** Four additive lines exist so the Batteries failures can be
+diagnosed per episode instead of from aggregate counts:
 
 - **`via search failed`** now names the blocking face (`face=FR/F`), its texture, breakable/
   force-field flags, probe distance, and the tier that gave up (`stage=rings|rings-skipped|
@@ -723,12 +736,14 @@ Batteries failures can be diagnosed per episode instead of from aggregate counts
 - **`item-reach`** now pairs the graph verdict with raw hull-LOS (`los=0|1`) and distance. The
   contradiction pair to watch is UNREACHABLE-but-LOS-clear; reachable-but-occluded is legitimate.
 
-The four Batteries verdicts these lines were built to settle (from the frozen-log analysis, recorded
-on muster threads 26/30): the hard-stuck jump splits into two PRE-EXISTING classes (Red rm8
-powerup-chase wall-press, Blue rm35 no-route-fallback wall-press), the window-misroute mask removal
-is confirmed (815 ADOPTs → 0), and Red's 6→0 pickups decompose into an exposure drop plus a
-matched-pair flag-room arrival-stall that the control arm also exhibits (0/5 arrivals converted in
-both arms). None of those findings promote or revert the held window fix; 0.9.14 owns it next.
+**First instrumented Batteries read (fa5966ed, 20 rounds, soak-20260911T212808).** 4018 via-fails
+(all pass3, 4013 non-breakable faces), 6288 hop outcomes (67% crossed), 2473 item-reach verdicts
+(87% raw-LOS clear; 226 UNREACHABLE-but-LOS-clear), 4 objective arrivals with `d_item` 71-106u — the
+arrival-stall is confirmed as a room-edge declaration that never closes. Independent reachability
+analysis of the same navdump: of the 4018 via-fails, ~42% occur where a usable route EXISTS (aim
+candidates, the fix above), while ~58% are in rooms with NO passable route to the target at all
+(connectivity dead-ends — a separate workstream). rm8's Red pinning is target-selection (87% of
+item-reach verdicts are LOS-clear and reachable), not a navigation failure.
 
 **Window-misroute fix status:** re-landed in 0.9.14-dev commit `5a94875e` (held from 0.9.13 because
 it was unfavorable standalone: batteries hard stucks 190→607 while eliminating the misroute). Its
