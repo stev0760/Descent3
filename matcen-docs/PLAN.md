@@ -106,17 +106,27 @@ complete navigation coverage. No speculative tuning or broad rewrite belongs in 
 
 These are decision rules, not authorization to commit, promote, rebuild or launch another test.
 
-#### Proposed 0.9.14-dev investigation
+#### 0.9.14-dev sprint — OPEN (2026-09-11)
 
-Start with one failed and one successful Nysa room-69 carrier crossing under comparable conditions,
-including hull, entry and intended exit where possible. Follow the full sequence: actual position
-and intended exit, selected route, installed engine goal, movement, then recovery. Distinguish failure
-to construct a usable route, unsuitable local-target selection, and interruption or handoff of a
-usable route. The six live-via and five inactive-via carrier pins do not by themselves identify a cause.
+0.9.13 shipped as the correctness checkpoint; 0.9.14-dev is now open. The first commit is
+**diagnostic-only telemetry** (no navigation behaviour change), because the frozen-log analysis of
+the Batteries A/B showed the remaining failures cannot be attributed to a mechanism without naming
+the blocker, the arrival geometry, and the crossing outcome. The four lines (via-fail blocker
+identity + tier, objective-arrival item distance and aim, hop-commit crossed/not-crossed,
+item-reach graph-vs-LOS) and their analyzer support are in place; the next step is an instrumented
+Batteries soak to capture rm8/rm35 episodes, then bounded fixes for the classes it names. The
+window-misroute admission fix is re-landed but not yet validated, and its implementation-review
+gaps (legacy resolver pass-1 eligibility, cached/memo/forced admission revalidation, helper
+reciprocal-face/crossing-cost) remain open.
+
+The original 0.9.14 investigation direction below still applies to the arrival-stall class: start
+with one failed and one successful carrier crossing under comparable conditions, including hull,
+entry and intended exit where possible. Follow the full sequence: actual position and intended exit,
+selected route, installed engine goal, movement, then recovery. Distinguish failure to construct a
+usable route, unsuitable local-target selection, and interruption or handoff of a usable route.
 
 Use that evidence to change the smallest responsible component. Do not start with another graph
 rewrite, timer or tuning collection. Preserve hierarchical routing and engine-owned steering.
-This plan does not start the sprint or change the version; the current candidate remains 0.9.13-dev.
 
 ### 3.0.1 Candidate history (superseded task directions)
 

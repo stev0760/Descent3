@@ -146,6 +146,9 @@
   4                                 // 0.9.7 hop-commit: same-hop re-issues before the seam push-through fires
                                     // WITHOUT steer divergence (the 36->38 doorway-lip press: engine path is
                                     // direct and correct, the lip approach just never crosses)
+#define BOT_HOP_OUTCOME_TIMEOUT                                                                                        \
+  8.0f // 0.9.14: a committed crossing unresolved this long logs arrived-without-crossing
+       // (diagnostic bound only — the seam/escape machinery still owns the bot)
 #define BOT_GRATE_PORTAL_NEAR 30.0f // $nav grate pass 4: a destroyable object within this of a portal = in the doorway
 #define BOT_INDOOR_PROGRESS_DIST 50.0f // indoors, also count this much displacement as progress (big-room fix)
 
@@ -562,6 +565,14 @@ struct bot_info {
   float seam_next_time; // Gametime before which the guard stays quiet for that same waypoint
   int hop_press_wp;     // 0.9.7 hop-commit: waypoint room of consecutive same-hop goal re-issues
   uint8_t hop_press_n;  // count of consecutive re-issues at that hop (persistent doorway press)
+
+  // 0.9.14 hop-commit outcome telemetry (log-only): the portal a hop commit / seam push was issued
+  // through, so the crossing can be resolved as crossed / diverted / arrived-without-crossing in the
+  // soak log. hop_commit_wp < 0 = no pending commit; nothing steers by these.
+  int hop_commit_wp;     // waypoint room the pending crossing aimed at
+  int hop_commit_portal; // portal index committed to (valid in hop_commit_src)
+  int hop_commit_src;    // room the commit was issued from
+  float hop_commit_time; // Gametime at issue (BOT_HOP_OUTCOME_TIMEOUT bounds a pending one)
 
   // Intra-room via-point steering (Phase 12) — committed go-around waypoint state
   vector via_point;        // committed go-around waypoint (valid while Gametime < via_expires)

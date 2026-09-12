@@ -1480,11 +1480,21 @@ int BotOGraphDump(int region, vector *pos_out, uint64_t *edges_out, int *ent_cou
 }
 
 BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_room, vector *via_out,
-                             bool *skeleton_out, BotRoomAimSource *source_out) {
+                             bool *skeleton_out, BotRoomAimSource *source_out, BotViaDiag *diag_out) {
   if (skeleton_out)
     *skeleton_out = false;
   if (source_out)
     *source_out = BOT_ROOM_AIM_NONE;
+  if (diag_out) {
+    diag_out->hit_type = -1;
+    diag_out->hit_face_room = -1;
+    diag_out->hit_face = -1;
+    diag_out->tmap = -1;
+    diag_out->breakable = false;
+    diag_out->forcefield = false;
+    diag_out->hit_dist = 0.0f;
+    diag_out->stage = BOT_VIA_FAIL_NONE;
+  }
   if (!obj)
     return BOT_VIA_CLEAR;
   // 12.6: outdoors, run the SAME ring search (now ceiling-aware) to route laterally around structures
@@ -1505,6 +1515,25 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
   fvi_info block{};
   if (ViaSegmentClear(obj->roomnum, obj->pos, target_pos, radius, &block, is_outdoor))
     return BOT_VIA_CLEAR;
+
+  // 0.9.14 telemetry: the line IS blocked — record what the probe hit so a BOT_VIA_NONE verdict can
+  // name the obstacle (face/object identity + breakable/forcefield), not just the room.
+  if (diag_out && block.num_hits > 0) {
+    diag_out->hit_type = block.hit_type[0];
+    diag_out->hit_face_room = block.hit_face_room[0];
+    diag_out->hit_face = block.hit_face[0];
+    diag_out->hit_dist = block.hit_dist;
+    int fr = diag_out->hit_face_room;
+    int ff = diag_out->hit_face;
+    if (fr >= 0 && fr <= Highest_room_index && Rooms[fr].used && ff >= 0 && ff < Rooms[fr].num_faces) {
+      int tmap = Rooms[fr].faces[ff].tmap;
+      if (tmap >= 0 && tmap < Num_textures) {
+        diag_out->tmap = tmap;
+        diag_out->breakable = (GameTextures[tmap].flags & TF_BREAKABLE) != 0;
+        diag_out->forcefield = (GameTextures[tmap].flags & TF_FORCEFIELD) != 0;
+      }
+    }
+  }
 
   vector dir = target_pos - obj->pos;
   float dist = vm_GetMagnitude(&dir);
@@ -1561,6 +1590,10 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
         }
       }
     }
+    if (diag_out)
+      diag_out->stage = BOT_VIA_FAIL_RINGS; // indoor rings ran and found no candidate
+  } else if (diag_out) {
+    diag_out->stage = BOT_VIA_FAIL_RINGS_SKIPPED; // buried-centre: ring passes skipped by design
   }
 
   // --- Outdoor connecting graph (Stage B, 12.6): the outdoor analog of pass 3. When the reactive ring
@@ -1584,6 +1617,8 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
           *skeleton_out = true;
         return BOT_VIA_FOUND;
       }
+      if (diag_out)
+        diag_out->stage = BOT_VIA_FAIL_OUTDOOR_LATTICE;
     }
     if (Bot_outdoor_graph_enabled) {
       vector hop;
@@ -1594,6 +1629,8 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
           *skeleton_out = true;
         return BOT_VIA_FOUND;
       }
+      if (diag_out)
+        diag_out->stage = BOT_VIA_FAIL_OUTDOOR_GRAPH;
     }
     return BOT_VIA_NONE;
   }
@@ -1615,6 +1652,8 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
         *source_out = source;
       return BOT_VIA_FOUND;
     }
+    if (diag_out)
+      diag_out->stage = BOT_VIA_FAIL_PASS3; // last indoor tier also failed
   }
   return BOT_VIA_NONE;
 }

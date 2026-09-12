@@ -2538,16 +2538,27 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
   vector via;
   bool skeleton_hop = false;
   BotRoomAimSource aim_source = BOT_ROOM_AIM_NONE;
-  BotViaResult r = BotFindViaPoint(obj, target_pos, target_room, &via, &skeleton_hop, &aim_source);
+  BotViaDiag via_diag{};
+  BotViaResult r = BotFindViaPoint(obj, target_pos, target_room, &via, &skeleton_hop, &aim_source, &via_diag);
   if (verdict_out)
     *verdict_out = r;
   if (r != BOT_VIA_FOUND) {
     // 12.1: NONE was previously silent in the portal branch, which hid the navmapping9 finding
     // (17/19 hard presses had no via activity). Throttled so a pressed bot logs ~1 line / 5s.
+    // 0.9.14: name the blocking face/object and the tier that gave up (BotViaDiag) so a per-episode
+    // diagnosis can tell a glass panel from a solid divider from a buried-centre pass-3 miss.
     if (r == BOT_VIA_NONE && Gametime - Bots[bot_index].via_fail_last_log > 5.0f) {
       Bots[bot_index].via_fail_last_log = Gametime;
-      LOG_DEBUG.printf("BOT NAV: '%s' via search failed in room %d (target room %d)", Bots[bot_index].callsign,
-                       OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum, target_room);
+      static const char *fail_stage_names[] = {"none", "rings", "rings-skipped", "outdoor-lattice", "outdoor-graph",
+                                               "pass3"};
+      const int num_stages = (int)(sizeof(fail_stage_names) / sizeof(fail_stage_names[0]));
+      const char *stage_name =
+          (via_diag.stage >= 0 && via_diag.stage < num_stages) ? fail_stage_names[via_diag.stage] : "?";
+      LOG_DEBUG.printf("BOT NAV: '%s' via search failed in room %d (target room %d) — hit=%d face=%d/%d "
+                       "tmap=%d breakable=%d forcefield=%d d=%.0f stage=%s",
+                       Bots[bot_index].callsign, OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum, target_room,
+                       via_diag.hit_type, via_diag.hit_face_room, via_diag.hit_face, via_diag.tmap,
+                       via_diag.breakable ? 1 : 0, via_diag.forcefield ? 1 : 0, via_diag.hit_dist, stage_name);
     }
     return 0;
   }
@@ -3023,6 +3034,12 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
         Bots[bot_index].seam_wp_room = wp_room;
         Bots[bot_index].seam_next_time = Gametime + BOT_SEAM_RETRY_TIME;
         Bots[bot_index].hop_press_n = 0; // the push-through consumed the press evidence
+        // 0.9.14: record the committed crossing so the outcome (crossed / arrived-without-crossing)
+        // can be resolved against the bot's later room at the observer in BotDoFrame.
+        Bots[bot_index].hop_commit_wp = wp_room;
+        Bots[bot_index].hop_commit_portal = best_p;
+        Bots[bot_index].hop_commit_src = (int)obj->roomnum;
+        Bots[bot_index].hop_commit_time = Gametime;
         if (steer_divergent)
           LOG_DEBUG.printf("BOT NAV: '%s' seam guard: engine path detours via room %d — aiming through portal to %d",
                            Bots[bot_index].callsign, steer_room, wp_room);
@@ -3324,11 +3341,44 @@ static void BotDoExploreRoaming(int bot_index) {
       // Time-to-objective instrument: stamp the first arrival at each objective room (stored +1
       // so the zero-initialized static can't swallow a room-0 arrival). Gametime resets per
       // level, so the printed t is level-relative — exactly the metric wanted.
+      // 0.9.14: also log the objective ITEM (CTF flag) identity/position and the bot's distance to
+      // it plus the aim actually flown — the Batteries arrival-stall question is whether ARRIVED
+      // fires at d=20 (a near-miss interaction) or d=300 (a room-edge false arrival).
       static int Arrived_obj_room[MAX_BOTS];
       if (Arrived_obj_room[bot_index] != obj_room + 1) {
         Arrived_obj_room[bot_index] = obj_room + 1;
-        LOG_DEBUG.printf("BOT OBJ: '%s' ARRIVED at objective room %d (t=%.0fs)", Bots[bot_index].callsign, obj_room,
-                         Gametime);
+        int item_objnum = -1;
+        if (BotGetGameMode() == BGM_CTF) {
+          int my_team = Players[slot].team;
+          const int teams = Num_teams > BOT_MAX_TEAMS ? BOT_MAX_TEAMS : Num_teams;
+          // Own free flag first (carrier scoring / dropped-flag return), then any enemy free flag.
+          for (int pass = 0; pass < 2 && item_objnum < 0; pass++) {
+            for (int t = 0; t < teams; t++) {
+              bool want = (pass == 0) ? (t == my_team) : (t != my_team);
+              if (!want || Bot_objective.flag_objnum[t] < 0)
+                continue;
+              if ((int)Objects[Bot_objective.flag_objnum[t]].roomnum == obj_room) {
+                item_objnum = Bot_objective.flag_objnum[t];
+                break;
+              }
+            }
+          }
+        }
+        vector item_pos = Rooms[obj_room].path_pnt;
+        float d_item = -1.0f;
+        const char *item_name = "none";
+        if (item_objnum >= 0) {
+          item_pos = Objects[item_objnum].pos;
+          d_item = vm_VectorDistanceQuick(&obj->pos, &item_pos);
+          item_name = Object_info[Objects[item_objnum].id].name;
+        }
+        int steer_room = -1;
+        vector steer = BotGetActiveSteerPoint(obj, item_pos, obj_room, &steer_room);
+        float d_steer = vm_VectorDistanceQuick(&obj->pos, &steer);
+        LOG_DEBUG.printf("BOT OBJ: '%s' ARRIVED at objective room %d (t=%.0fs) — item='%s' obj=%d d_item=%.0f "
+                         "steer rm%d d=%.0f",
+                         Bots[bot_index].callsign, obj_room, Gametime, item_name, item_objnum, d_item, steer_room,
+                         d_steer);
       }
       // Score beeline: carrier at home base with home flag present — fly through it to score.
       if (BotIsCarryingEnemyFlag(bot_index)) {
@@ -4596,8 +4646,15 @@ static bool BotReachGateAllows(object *bot_obj, object *p) {
   if (free_slot >= 0 && cacheable && slot < 0) {
     Reach_handles[free_slot] = p->handle;
     Reach_verdicts[free_slot] = (int8_t)verdict;
-    LOG_DEBUG.printf("BOT NAV: item-reach '%s' (room %d): %s", Object_info[p->id].name, (int)p->roomnum,
-                     verdict ? "REACHABLE (graph-connected)" : "UNREACHABLE (no hull-clear graph link)");
+    // 0.9.14: pair the graph verdict with the raw hull-LOS answer for the same item — the graph
+    // says "deliverable through the mesh", LOS says "the bot can see it right now". A reachable-
+    // but-occluded item is the legitimate curved-grab class; an LOS-clear item the graph calls
+    // unreachable is the suspicious pair this line exists to expose.
+    float d_item = vm_VectorDistanceQuick(&bot_obj->pos, &p->pos);
+    bool los = BotHasLOS(bot_obj, p);
+    LOG_DEBUG.printf("BOT NAV: item-reach '%s' (room %d): %s los=%d d=%.0f", Object_info[p->id].name, (int)p->roomnum,
+                     verdict ? "REACHABLE (graph-connected)" : "UNREACHABLE (no hull-clear graph link)", los ? 1 : 0,
+                     d_item);
   }
   return verdict != 0;
 }
@@ -7568,6 +7625,10 @@ void BotInitAll() {
     Bots[i].via_arrivals_same_room = 0;
     Bots[i].via_suspend_until = 0.0f;
     Bots[i].via_suspend_room = -1;
+    Bots[i].hop_commit_wp = -1;
+    Bots[i].hop_commit_portal = -1;
+    Bots[i].hop_commit_src = -1;
+    Bots[i].hop_commit_time = 0.0f;
     BotClearViaChain(i);
     Bots[i].order_anchor_type = ORDER_ANCHOR_NONE;
     vm_MakeZero(&Bots[i].order_anchor_pos);
@@ -7742,6 +7803,10 @@ void BotReinitAll() {
     Bots[i].via_arrivals_same_room = 0;
     Bots[i].via_suspend_until = 0.0f;
     Bots[i].via_suspend_room = -1;
+    Bots[i].hop_commit_wp = -1;
+    Bots[i].hop_commit_portal = -1;
+    Bots[i].hop_commit_src = -1;
+    Bots[i].hop_commit_time = 0.0f;
     BotClearViaChain(i);
     Bots[i].order_anchor_type = ORDER_ANCHOR_NONE;
     vm_MakeZero(&Bots[i].order_anchor_pos);
@@ -8067,6 +8132,10 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   Bots[bot_index].via_arrivals_same_room = 0;
   Bots[bot_index].via_suspend_until = 0.0f;
   Bots[bot_index].via_suspend_room = -1;
+  Bots[bot_index].hop_commit_wp = -1;
+  Bots[bot_index].hop_commit_portal = -1;
+  Bots[bot_index].hop_commit_src = -1;
+  Bots[bot_index].hop_commit_time = 0.0f;
   BotClearViaChain(bot_index);
   // §7 contention instrumentation: a re-added bot in a reused slot must not inherit the previous
   // occupant's counts/latch (same reasoning as the via_* reset above).
@@ -8245,6 +8314,26 @@ void BotDoFrame() {
       continue;
     }
 
+    // 0.9.14 hop-commit outcome telemetry (log-only): resolve a pending committed crossing against
+    // the bot's room now. A room change is the crossing; staying put past the timeout is the
+    // arrived-without-crossing class the isengard doorway-lip press exhibited. Cleared on death
+    // below (the commit died with the life) and on level reinit.
+    if (Bots[i].hop_commit_wp >= 0) {
+      object *cobj = &Objects[Players[slot].objnum];
+      int cur = OBJECT_OUTSIDE(cobj) ? -1 : (int)cobj->roomnum;
+      if (cur == Bots[i].hop_commit_wp) {
+        LOG_DEBUG.printf("BOT NAV: '%s' hop outcome: CROSSED rm%d -> rm%d via portal %d (%.1fs)",
+                         Bots[i].callsign, Bots[i].hop_commit_src, Bots[i].hop_commit_wp,
+                         Bots[i].hop_commit_portal, Gametime - Bots[i].hop_commit_time);
+        Bots[i].hop_commit_wp = -1;
+      } else if (cur != Bots[i].hop_commit_src || Gametime - Bots[i].hop_commit_time > BOT_HOP_OUTCOME_TIMEOUT) {
+        LOG_DEBUG.printf("BOT NAV: '%s' hop outcome: NOT-CROSSED rm%d -> rm%d via portal %d (%.1fs, now rm%d)",
+                         Bots[i].callsign, Bots[i].hop_commit_src, Bots[i].hop_commit_wp,
+                         Bots[i].hop_commit_portal, Gametime - Bots[i].hop_commit_time, cur);
+        Bots[i].hop_commit_wp = -1;
+      }
+    }
+
     // Check if the bot just died
     if (Players[slot].flags & (PLAYER_FLAGS_DEAD | PLAYER_FLAGS_DYING)) {
       if (BotIsCarryingEnemyFlag(i)) {
@@ -8277,6 +8366,7 @@ void BotDoFrame() {
       Bots[i].explore_stuck_room = -1;
       Bots[i].explore_room_timer = 0.0f;
       BotClearTravelDest(i, TRAVEL_END_DEATH);
+      Bots[i].hop_commit_wp = -1; // a committed crossing dies with the life that made it
       Bots[i].last_progress_room = -1;
       Bots[i].room_progress_timer = 0.0f;
       for (int v = 0; v < BOT_VISITED_ROOM_COUNT; v++)

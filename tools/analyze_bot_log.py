@@ -49,7 +49,20 @@ RE_DYN_BUMP = re.compile(r"\[Nav\] dyn-penalty bump room (-?\d+) portal")  # eme
 RE_VIA_DETOUR = re.compile(r"via-point detour in room (-?\d+)")   # line blocked by interior face, go-around committed
 RE_VIA_REACHED = re.compile(r"via-point reached \(room (-?\d+)\)")  # committed via-point arrived at
 RE_PU_SEALED = re.compile(r"powerup sealed in room (-?\d+)")      # same-room powerup abandoned as sealed (troll)
-RE_VIA_FAIL = re.compile(r"via search failed in room (-?\d+)")   # line blocked, NO via found (throttled ~5s/bot)
+# 0.9.14 via telemetry: the old line ends at "(target room N)"; the new one appends
+# " — hit=H face=FR/F tmap=T breakable=B forcefield=FF d=D stage=S". Both parse; the suffix is optional.
+RE_VIA_FAIL = re.compile(r"via search failed in room (-?\d+) \(target room (-?\d+)\)")
+RE_VIA_FAIL_DIAG = re.compile(
+    r"hit=(-?\d+) face=(-?\d+)/(-?\d+) tmap=(-?\d+) breakable=(\d) forcefield=(\d) d=(-?[\d.]+) stage=(\S+)")
+# 0.9.14 hop-commit outcome: CROSSED = the committed crossing happened; NOT-CROSSED = gave up.
+RE_HOP_OUTCOME = re.compile(r"hop outcome: (CROSSED|NOT-CROSSED) rm(-?\d+) -> rm(-?\d+) via portal (-?\d+) "
+                            r"\(([\d.]+)s(?:, now rm(-?\d+))?\)")
+# 0.9.14 objective arrival telemetry: item identity + distance + the aim actually flown.
+RE_ARRIVED_OBJ = re.compile(r"ARRIVED at objective room (-?\d+) \(t=([\d.]+)s\) — item='([^']*)' obj=(-?\d+) "
+                            r"d_item=(-?[\d.]+) steer rm(-?\d+) d=(-?[\d.]+)")
+# 0.9.14 item-reach telemetry: graph verdict + raw hull-LOS + distance (los/d only on the new format).
+RE_ITEM_REACH = re.compile(r"item-reach '([^']*)' \(room (-?\d+)\): (REACHABLE|UNREACHABLE) \(([^)]+)\)"
+                           r"(?: los=(\d) d=(-?[\d.]+))?")
 # Step A (PLAN.md §3.4): the per-entry-portal aim replaced the raw room centre because the entry
 # door is blind to it (throttled 5s global). Firing rate + room concentration are the change's
 # own health metrics; the line is also the A/B arm marker for the Step A build.
@@ -362,6 +375,25 @@ def new_map_stats():
         "sealed_rooms": Counter(),
         "via_fails": 0,        # blocked-but-no-via verdicts (throttled ~5s/bot) — the funnel's stage-0 misses
         "via_fail_rooms": Counter(),
+        # 0.9.14 via-fail mechanism split (only on logs from the telemetry build): what blocked the
+        # leg and at which tier the search gave up. Old-build logs leave these empty.
+        "via_fail_stages": Counter(),        # rings | rings-skipped | outdoor-lattice | outdoor-graph | pass3
+        "via_fail_faces": Counter(),         # "room/face" -> count (the specific blocker)
+        "via_fail_breakable": 0,             # blocked by a TF_BREAKABLE face (matter weapon clears it)
+        "via_fail_forcefield": 0,            # blocked by a TF_FORCEFIELD face (state-dependent)
+        # 0.9.14 hop-commit outcomes: a committed crossing resolved against the bot's later room.
+        "hop_crossed": 0,                    # the bot reached the committed waypoint room
+        "hop_not_crossed": 0,                # timed out / diverted without reaching it
+        "hop_not_crossed_portals": Counter(), # "fromrm->wp" -> count (which door keeps failing)
+        # 0.9.14 objective-arrival telemetry: what the ARRIVED declaration actually observed.
+        "arrived_obj": 0,                    # enriched ARRIVED lines (new build only)
+        "arrived_rooms": Counter(),
+        "arrived_d_item": [],                # distance to the objective item at ARRIVED
+        # 0.9.14 item-reach: graph verdict paired with raw hull-LOS.
+        "item_reach_events": 0,
+        "item_reach_unreachable": 0,         # graph says no hull-clear link
+        "item_reach_los_yes": 0,             # subset: bot had raw LOS to it anyway (suspicious pair)
+        "item_reach_unreachable_los_yes": 0, # UNREACHABLE + los=1 = the contradiction to investigate
         "chains_built": 0,     # Step 3 committed multi-hop chains built (buried multi-hop crossings)
         "chains_done": 0,      # chains that completed (bot crossed out of the room — one mind flowed through)
         "chain_built_rooms": Counter(),
@@ -508,6 +540,44 @@ def parse_log(path):
             if m:
                 s["via_fails"] += 1
                 s["via_fail_rooms"][int(m.group(1))] += 1
+                md = RE_VIA_FAIL_DIAG.search(line)
+                if md:
+                    s["via_fail_stages"][md.group(8)] += 1
+                    fr, ff = int(md.group(2)), int(md.group(3))
+                    if fr >= 0 and ff >= 0:
+                        s["via_fail_faces"][(fr, ff)] += 1
+                    if md.group(5) == "1":
+                        s["via_fail_breakable"] += 1
+                    if md.group(6) == "1":
+                        s["via_fail_forcefield"] += 1
+                continue
+
+            m = RE_HOP_OUTCOME.search(line)
+            if m:
+                if m.group(1) == "CROSSED":
+                    s["hop_crossed"] += 1
+                else:
+                    s["hop_not_crossed"] += 1
+                    s["hop_not_crossed_portals"][(int(m.group(2)), int(m.group(3)))] += 1
+                continue
+
+            m = RE_ARRIVED_OBJ.search(line)
+            if m:
+                s["arrived_obj"] += 1
+                s["arrived_rooms"][int(m.group(1))] += 1
+                s["arrived_d_item"].append(float(m.group(5)))
+                continue
+
+            m = RE_ITEM_REACH.search(line)
+            if m:
+                s["item_reach_events"] += 1
+                unreachable = m.group(3) == "UNREACHABLE"
+                if unreachable:
+                    s["item_reach_unreachable"] += 1
+                if m.group(5) is not None and m.group(5) == "1":
+                    s["item_reach_los_yes"] += 1
+                    if unreachable:
+                        s["item_reach_unreachable_los_yes"] += 1
                 continue
 
             m = RE_ENTRY_AIM.search(line)
@@ -1470,6 +1540,76 @@ def print_report(stats, total_lines, log_path):
                   f"| {roadmap_str} "
                   f"| {skel_str} "
                   f"| {entry_str} |")
+        print()
+
+    # 0.9.14 mechanism telemetry — only present on logs from the instrumented build. These sections
+    # exist to answer WHY a failure happened, not just that it did: which face blocked a via search,
+    # which door a committed hop failed to cross, what the objective arrival actually saw, and
+    # whether the item-reach graph verdict contradicts raw line-of-sight.
+    has_via_mech = any(s["via_fail_stages"] or s["via_fail_breakable"] or s["via_fail_forcefield"]
+                       for s in stats.values())
+    has_hop = any(s["hop_crossed"] or s["hop_not_crossed"] for s in stats.values())
+    has_arrived = any(s["arrived_obj"] for s in stats.values())
+    has_item_reach = any(s["item_reach_events"] for s in stats.values())
+    if has_via_mech or has_hop or has_arrived or has_item_reach:
+        print(f"## Mechanism Telemetry (0.9.14)")
+        print()
+        print(f"Per-episode evidence for the navigation failures the aggregate tables only count. "
+              f"Absent sections mean the log predates the instrumented build.")
+        print()
+    if has_via_mech:
+        print(f"| Map | Via Fails | Stage (give-up tier) | Breakable-faced | Forcefield-faced | Top blocking face (room/face) |")
+        print(f"|---|---|---|---|---|---|")
+        for name in maps:
+            s = stats[name]
+            if not (s["via_fail_stages"] or s["via_fail_breakable"] or s["via_fail_forcefield"]):
+                continue
+            stages = ", ".join(f"{k}x{v}" for k, v in s["via_fail_stages"].most_common()) or "-"
+            faces = ", ".join(f"rm{r}/f{f}x{c}" for (r, f), c in s["via_fail_faces"].most_common(3)) or "-"
+            print(f"| {name} | {s['via_fails']} | {stages} | {s['via_fail_breakable']} "
+                  f"| {s['via_fail_forcefield']} | {faces} |")
+        print()
+    if has_hop:
+        print(f"| Map | Hops Crossed | Hops Not Crossed | Rate crossed | Top failed crossings |")
+        print(f"|---|---|---|---|---|")
+        for name in maps:
+            s = stats[name]
+            total_hop = s["hop_crossed"] + s["hop_not_crossed"]
+            if total_hop == 0:
+                continue
+            fails = ", ".join(f"rm{a}->rm{b}x{c}" for (a, b), c in s["hop_not_crossed_portals"].most_common(3)) or "-"
+            print(f"| {name} | {s['hop_crossed']} | {s['hop_not_crossed']} "
+                  f"| {fmt_pct(s['hop_crossed'], total_hop)} | {fails} |")
+        print()
+    if has_arrived:
+        print(f"| Map | Objective Arrivals | Rooms | Median d_item | Min d_item | Max d_item |")
+        print(f"|---|---|---|---|---|---|")
+        for name in maps:
+            s = stats[name]
+            if not s["arrived_obj"]:
+                continue
+            ds = sorted(s["arrived_d_item"])
+            rooms = ", ".join(f"rm{r}x{c}" for r, c in s["arrived_rooms"].most_common(4)) or "-"
+            median = ds[len(ds) // 2]
+            print(f"| {name} | {s['arrived_obj']} | {rooms} | {median:.0f} | {ds[0]:.0f} | {ds[-1]:.0f} |")
+        print()
+        print("d_item is the bot-to-objective-item distance at the moment of the ARRIVED declaration "
+              "(new build only). A small median means arrival genuinely tracks the item; a large one "
+              "means ARRIVED fires at the room edge and the close-in approach is where it stalls.")
+        print()
+    if has_item_reach:
+        print(f"| Map | Item-Reach Verdicts | UNREACHABLE | Raw LOS clear | UNREACHABLE but LOS clear |")
+        print(f"|---|---|---|---|---|")
+        for name in maps:
+            s = stats[name]
+            if not s["item_reach_events"]:
+                continue
+            print(f"| {name} | {s['item_reach_events']} | {s['item_reach_unreachable']} "
+                  f"| {s['item_reach_los_yes']} | {s['item_reach_unreachable_los_yes']} |")
+        print()
+        print("UNREACHABLE-but-LOS-clear is the contradiction pair: the graph says no hull-clear link "
+              "while the bot can see the item. Reachable-but-occluded is the legitimate curved-grab "
+              "class and is not flagged.")
         print()
 
     # Task 2 (0.9.11) — travel-intent churn. The Step 2b layer's owed metric: who decides where bots

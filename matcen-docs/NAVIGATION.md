@@ -6,13 +6,14 @@
 > validated, and folded in as §3.5–§3.6 + §8 History; original in git history). Deep engine research
 > lives in `PATHFINDING_CODEBASE_EXPLORE.md`; per-frame field/constant detail in `BOT_DEV_REFERENCE.md`.
 
-**Status:** Matcen 0.9.13-dev (2026-09-10), retained for wider validation. The operator accepts abend2's
-remaining generated skeleton/arterial imbalance as a map-specific limitation. Keep the hierarchy
-and both source corrections; no further abend2 fix or arm. Nysa and Batteries Included are next on
-the existing build. This is a scope decision, not a retrospective pass of the failed soak guard.
-**For the live current-status snapshot (toggle states, open issues, the tried-and-reverted ledger) see
-§7.0**, kept current per soak. The narrative sections below are the design rationale; §7.0 is "what's
-true right now."
+**Status:** Matcen 0.9.14-dev (2026-09-11) — diagnostic-only build on top of the 0.9.13 release. Four
+new log lines name what blocked a go-around, what the objective arrival actually saw, whether a
+committed doorway was crossed, and whether item reachability agrees with raw line-of-sight. No
+navigation behaviour changed. The window-misroute admission fix is re-landed but not yet validated;
+the interior-navigation defects it exposed (flag-room arrival stall, powerup-chase wall-press) remain
+open. **For the live current-status snapshot (toggle states, open issues, the tried-and-reverted
+ledger) see §7.0**, kept current per soak. The narrative sections below are the design rationale;
+§7.0 is "what's true right now."
 
 ---
 
@@ -704,7 +705,37 @@ overnight log. A full verbosity-tier + event-vocabulary consolidation is registe
 
 ## 7. Open problems (roadmap)
 
-### 7.0-CURRENT Wider validation - 2026-09-10 (0.9.13-dev)
+### 7.0-CURRENT Mechanism telemetry — 2026-09-11 (0.9.14-dev)
+
+0.9.13 shipped as the correctness checkpoint (see the CHANGELOG). 0.9.14-dev is open and its first
+commit is **diagnostic only** — no navigation behaviour changes. Four additive log lines exist so the
+Batteries failures can be diagnosed per episode instead of from aggregate counts:
+
+- **`via search failed`** now names the blocking face (`face=FR/F`), its texture, breakable/
+  force-field flags, probe distance, and the tier that gave up (`stage=rings|rings-skipped|
+  outdoor-lattice|outdoor-graph|pass3`). The old line ended at `(target room N)`; the analyzer
+  accepts both formats.
+- **`ARRIVED at objective room`** now includes the objective item's identity/objnum, the bot's
+  distance to it (`d_item`), and the aim actually flown (`steer rmN d=`). This answers whether the
+  arrival-stall fires close to the flag or at the room edge.
+- **`hop outcome`** resolves a committed doorway crossing against the bot's later room:
+  `CROSSED` or `NOT-CROSSED ... via portal N`. The isengard doorway-lip press is the class it names.
+- **`item-reach`** now pairs the graph verdict with raw hull-LOS (`los=0|1`) and distance. The
+  contradiction pair to watch is UNREACHABLE-but-LOS-clear; reachable-but-occluded is legitimate.
+
+The four Batteries verdicts these lines were built to settle (from the frozen-log analysis, recorded
+on muster threads 26/30): the hard-stuck jump splits into two PRE-EXISTING classes (Red rm8
+powerup-chase wall-press, Blue rm35 no-route-fallback wall-press), the window-misroute mask removal
+is confirmed (815 ADOPTs → 0), and Red's 6→0 pickups decompose into an exposure drop plus a
+matched-pair flag-room arrival-stall that the control arm also exhibits (0/5 arrivals converted in
+both arms). None of those findings promote or revert the held window fix; 0.9.14 owns it next.
+
+**Window-misroute fix status:** re-landed in 0.9.14-dev commit `5a94875e` (held from 0.9.13 because
+it was unfavorable standalone: batteries hard stucks 190→607 while eliminating the misroute). Its
+sibling gaps from the implementation review (legacy resolver pass-1 eligibility, cached/memo/forced
+admission revalidation, helper reciprocal-face/crossing-cost) are still open in 0.9.14.
+
+### 7.0-PREV Wider validation - 2026-09-10 (0.9.13-dev)
 
 The operator's acceptance tests are separate:
 

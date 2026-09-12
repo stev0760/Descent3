@@ -1,14 +1,14 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Matcen **0.9.13 (released 2026-09-11)** — a correctness checkpoint (skeleton-order +
-endpoint corrections on `c8566c37`) shipped with documented limitations; navigation is NOT solved on
-interior-only maps. The operator accepts abend2's residual generated-network imbalance for now. The
-single-level Batteries baseline completed (67-cap Nysa baseline + a 20-round Batteries A/B); the
-window-misroute per-portal fix was built and validated as source-correct + isengard-safe but is
-UNFAVORABLE STANDALONE (batteries hard-stucks 190→607), so it is HELD for 0.9.14 along with the
-interior-nav bugs it exposed (flag-room arrival stall, powerup-chase wall-press).
-The last stable release is now **0.9.13** (0.9.11 preceded it; 0.9.12 was never promoted).
+**Status:** Matcen **0.9.14-dev (2026-09-11)** — diagnostic-only telemetry on top of the 0.9.13
+release. Four additive log lines (via-fail blocker identity + tier, objective-arrival item distance
+and aim, hop-commit crossed/not-crossed outcome, item-reach graph-vs-LOS pair) turn the remaining
+Batteries failures into per-episode evidence. No navigation behaviour changed. The window-misroute
+per-portal fix is re-landed (`5a94875e`) but not yet validated — it remains unfavorable standalone
+(batteries hard-stucks 190→607), and its sibling implementation gaps stay open. The interior-nav bugs
+it exposed (flag-room arrival stall, powerup-chase wall-press) are 0.9.14 targets.
+The last stable release is **0.9.13** (0.9.11 preceded it; 0.9.12 was never promoted).
 
 ### 2026-09-10: corrected handoff and release boundary
 

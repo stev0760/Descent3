@@ -109,6 +109,32 @@ enum BotViaResult {
   BOT_VIA_NONE = 2,  // line blocked and no clear via-point exists — fall back / sealed-target evidence
 };
 
+// 0.9.14 via-search telemetry: WHERE the go-around search gave up. The stage name says whether the
+// candidate rings were tried and failed (RINGS) or skipped by design (RINGS_SKIPPED, buried-centre),
+// or an outdoor/lattice/pass-3 tier answered nothing. Diagnostic only — nothing reads this to steer.
+enum BotViaFailStage {
+  BOT_VIA_FAIL_NONE = 0,        // no failure recorded (search succeeded, or the line was clear)
+  BOT_VIA_FAIL_RINGS,           // indoor ring passes ran; no candidate cleared both legs
+  BOT_VIA_FAIL_RINGS_SKIPPED,   // buried-centre room: ring passes skipped, pass 3 is the only tier
+  BOT_VIA_FAIL_OUTDOOR_LATTICE, // outdoor: volumetric-roadmap via found nothing
+  BOT_VIA_FAIL_OUTDOOR_GRAPH,   // outdoor: connecting-graph hop found nothing (also wins over lattice)
+  BOT_VIA_FAIL_PASS3,           // indoor: pass-3 room-aim resolution failed (last tier tried)
+};
+
+// 0.9.14 via-search telemetry: WHAT blocked the leg. Filled from the same fvi hit ViaSegmentClear
+// already produces, at the moment of the first blocked probe; the failure stage is updated as the
+// search descends its tiers and the last tier to fail wins. Logged by the caller on BOT_VIA_NONE.
+struct BotViaDiag {
+  int hit_type;          // fvi hit type (HIT_WALL/HIT_BACKFACE/HIT_TERRAIN), -1 = none recorded
+  int hit_face_room;     // room holding the blocking face, -1 = unknown
+  int hit_face;          // face index within that room, -1 = unknown
+  int tmap;              // face texture index, -1 = unknown
+  bool breakable;        // TF_BREAKABLE on that texture (matter weapon shatters it)
+  bool forcefield;       // TF_FORCEFIELD on that texture
+  float hit_dist;        // probe hit distance
+  BotViaFailStage stage; // tier at which the search gave up
+};
+
 // Diagnostic source of an in-room graph aim. Kept separate from BotFindViaPoint's `skeleton_out`:
 // that flag also selects the existing generous chain governor, while this enum only reports which
 // fine substrate actually produced the waypoint.
@@ -142,8 +168,11 @@ float BotOutdoorCeilingCap();
 // face blocks it. target_room = the room target_pos is in (fvi start room for the via→target leg).
 // 12.3: when the ring passes fail, a portal-skeleton hop may be returned instead (an intermediate
 // node on the room's portal graph, no target LOS required) — *skeleton_out reports that case.
+// 0.9.14: diag_out (optional) is filled with the blocking face identity and the tier that gave up
+// when the result is BOT_VIA_NONE — diagnosis only, the caller decides whether to log it.
 BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_room, vector *via_out,
-                             bool *skeleton_out = nullptr, BotRoomAimSource *source_out = nullptr);
+                             bool *skeleton_out = nullptr, BotRoomAimSource *source_out = nullptr,
+                             BotViaDiag *diag_out = nullptr);
 
 // 12.3 diagnostic: is the room's path_pnt hull-reachable from at least one of its portals
 // (probed FROM the portal — trustworthy start point)? False = buried/void path_pnt (hollow-core

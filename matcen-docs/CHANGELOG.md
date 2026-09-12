@@ -7,6 +7,22 @@ live navigation status is in [NAVIGATION.md](NAVIGATION.md) §7.0.
 Versioning: `0.8.x` = feature releases; `0.9.x` = the navigation-milestone series.
 A `-dev` suffix marks an in-test build that has not yet passed its validation gate.
 
+## [0.9.14-dev] - in test
+
+*Development build — diagnostic only. It changes no navigation behaviour; the window-misroute
+admission fix and the interior-navigation defects it exposed are still being worked. Do not run this
+as a release.*
+
+*   **The navigation failure reports now name what went wrong, not just that it did.** Four
+    diagnostic additions, all log-only: (1) a blocked go-around search now names the face or object
+    that blocked it, its texture, whether it is breakable glass or a force field, and which search
+    tier gave up; (2) the objective-arrival report includes the flag's position, the bot's distance
+    to it, and the aim it was actually flying; (3) a committed doorway crossing reports whether the
+    bot made it through or timed out short of the door; (4) the item-reachability check reports
+    whether the bot could see the item as well as whether the navigation graph could deliver it.
+    Together these turn the remaining Batteries Included failures — where a bot reaches the flag
+    room but never grabs, or pins on a powerup it cannot reach — from counts into evidence.
+
 ## [0.9.13] - 2026-09-11
 
 *A correctness checkpoint — source-proven routing corrections plus much sharper navigation

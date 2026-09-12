@@ -50,6 +50,51 @@ class RouteDiagnosticTests(unittest.TestCase):
         self.assertIn("do not establish a route-completion rate", text)
         self.assertIn("| fixture | 0 | Red (log team=0) | preclear | stored | yes | 1 | 1 |", text)
 
+    def test_mechanism_telemetry_parsing(self):
+        """0.9.14 lines: via-fail mechanism, hop outcome, arrival item distance, item-reach LOS pair."""
+        lines = [
+            "Opening level 'mech.d3l'\n",
+            # New-format via fail with the mechanism suffix.
+            "BOT NAV: 'A[BOT]' via search failed in room 8 (target room 84) — hit=1 face=146/3 "
+            "tmap=207 breakable=1 forcefield=0 d=17 stage=rings\n",
+            # Old-format via fail (no suffix) must still count, with no stage.
+            "BOT NAV: 'A[BOT]' via search failed in room 12 (target room 6)\n",
+            "BOT NAV: 'A[BOT]' hop outcome: CROSSED rm3 -> rm6 via portal 1 (1.2s)\n",
+            "BOT NAV: 'A[BOT]' hop outcome: NOT-CROSSED rm35 -> rm84 via portal 2 (8.1s, now rm35)\n",
+            # ARRIVED now carries item identity/distance/aim; the em dash is the separator.
+            "BOT OBJ: 'A[BOT]' ARRIVED at objective room 6 (t=285s) — item='FlagBlue' obj=321 "
+            "d_item=20 steer rm44 d=20\n",
+            "BOT NAV: item-reach 'Shield' (room 8): REACHABLE (graph-connected) los=0 d=117\n",
+            "BOT NAV: item-reach 'Seeker3pack' (room 120): UNREACHABLE (no hull-clear graph link) los=1 d=44\n",
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "mech.log"
+            log.write_text("".join(lines))
+            stats, _ = analyzer.parse_log(log)
+        s = stats["mech"]
+        self.assertEqual(s["via_fails"], 2)
+        self.assertEqual(s["via_fail_stages"]["rings"], 1)
+        self.assertEqual(s["via_fail_faces"][(146, 3)], 1)  # keyed by FACE room/index, not the bot's room
+        self.assertEqual(s["via_fail_breakable"], 1)
+        self.assertEqual(s["via_fail_forcefield"], 0)
+        self.assertEqual(s["hop_crossed"], 1)
+        self.assertEqual(s["hop_not_crossed"], 1)
+        self.assertEqual(s["hop_not_crossed_portals"][(35, 84)], 1)
+        self.assertEqual(s["arrived_obj"], 1)
+        self.assertEqual(s["arrived_rooms"][6], 1)
+        self.assertEqual(s["arrived_d_item"], [20.0])
+        self.assertEqual(s["item_reach_events"], 2)
+        self.assertEqual(s["item_reach_unreachable"], 1)
+        self.assertEqual(s["item_reach_los_yes"], 1)
+        self.assertEqual(s["item_reach_unreachable_los_yes"], 1)
+        output = io.StringIO()
+        with redirect_stdout(output):
+            analyzer.print_report(stats, _ if False else 0, "mech.log")
+        text = output.getvalue()
+        self.assertIn("Mechanism Telemetry", text)
+        self.assertIn("Hops Crossed", text)
+        self.assertIn("UNREACHABLE but LOS clear", text)
+
 
 if __name__ == "__main__":
     unittest.main()

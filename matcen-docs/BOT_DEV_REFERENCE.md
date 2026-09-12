@@ -7,11 +7,16 @@ Current implementation status is in `BOTS_DEVEL.md`. Physics model reference is 
 
 ## Current Status
 
-**0.9.13-dev** (in progress): route-lifetime cleanup is implemented, but stable promotion awaits
-follow-up testing. Exit-rooted BFS parents run from the bot toward the exit and must not be reversed.
-Cross-room skeleton chains end at that portal: a caller's local aim must not be appended as a false
-destination beyond it. Same-room chains retain their target. `tools/test_bot_skel_chain.py` checks
-the production export with synthetic geometry. The stable release remains 0.9.11.
+**0.9.14-dev** (2026-09-11): diagnostic telemetry only — no navigation behaviour change. Four
+additive debug lines exist for per-episode failure diagnosis: `via search failed` now carries the
+blocking face (`face=FR/F`), texture, breakable/forcefield flags, probe distance, and the tier that
+gave up (`stage=rings|rings-skipped|outdoor-lattice|outdoor-graph|pass3`); `ARRIVED at objective
+room` carries the objective item, `d_item`, and the aim flown; `hop outcome` resolves a committed
+crossing as `CROSSED`/`NOT-CROSSED ... via portal N`; `item-reach` pairs the graph verdict with raw
+hull-LOS. `tools/analyze_bot_log.py` parses all four (the Mechanism Telemetry section prints only
+on instrumented logs; old-format lines still parse). 0.9.13 shipped as the correctness checkpoint;
+the window-misroute admission fix is re-landed in 0.9.14-dev but NOT yet validated (unfavorable
+standalone), and its sibling implementation gaps remain open.
 
 Operator ruling (2026-09-10): abend2's remaining generated skeleton/arterial imbalance is accepted
 as a map-specific limitation. Keep the hierarchy and both corrections; no further abend2 fix or
@@ -23,12 +28,12 @@ symmetric cases. Map asymmetry removes the even-scoring expectation, not the cov
 Nysa's 20-round baseline recorded 67 captures. All 16 hard stuck escalations occurred in room 69.
 Eleven are Red carriers: all lack a stored chain, but six have a live via commitment and five do
 not. This localizes the symptom without diagnosing its cause. Nysa's design symmetry is undeclared.
-Nysa and earlier abend2 tests used unequal hull mixes between teams. The rotating Batteries test
-stopped after one completed Batteries round. Its replacement is a single-level mission loop with
-eight Pyro-GL/Hotshot bots, a new baseline rather than a matched comparison with those rosters.
-The operator-endorsed release boundary is in `PLAN.md` section 3.0: freeze 0.9.13 pending review,
-consider stable with known limitations, and investigate comparable room-69 crossings in the next
-sprint. Neither a complete-coverage claim nor speculative tuning follows from the current evidence.
+Nysa and earlier abend2 tests used unequal hull mixes between teams. The Batteries single-level
+Pyro-GL/Hotshot loop completed a 20-round A/B on the frozen pair: the window fix eliminated the
+misroute (815 terrain plans adopted → 0) but raised hard stucks 190→607; analysis showed the cost
+concentrates in two pre-existing failure classes (powerup-chase wall-press, no-route-fallback
+wall-press) plus a flag-room arrival stall present in the control arm too. No promotion or revert
+follows from that evidence; 0.9.14 owns the fix plus the interior-nav defects it exposed.
 
 ### CTF Measurement Caveats
 
