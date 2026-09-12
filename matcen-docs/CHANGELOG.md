@@ -13,16 +13,19 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
 admission fix and the remaining interior-navigation defects are still being worked. Do not run this
 as a release.*
 
-*   **Bots no longer press a window when the door is right there.** The in-room aim resolver refused
-    any room with fewer than two doorways, so a single-exit room got no aim at all — the bot's raw
-    goal direction pointed at whatever face stood between it and the goal, and it pressed a solid
-    window forever (Batteries Included room 35: one real door to room 33, goal seen through
-    bulletproof glass, 460 presses in one 20-round run). Single-exit rooms now aim at their one
-    door. In multi-door rooms the aim set is also filtered the same way the router prices routes:
-    a wall or window that merely shares a destination room with a real door can no longer be chosen
-    as the target, so a bot stops aiming at solid faces while a usable door sits behind it. The
-    go-around and chain builders share one admission rule with the router now, so they cannot
-    disagree about which doors exist.
+*   **Bots no longer press a window when the door is right there.** Three aim-layer corrections, all
+    guided by the new telemetry. (1) The in-room aim resolver refused any room with fewer than two
+    doorways, so a single-exit room got no aim at all — the bot's raw goal direction pointed at
+    whatever face stood between it and the goal, pressing a solid window forever (Batteries Included
+    room 35: one real door to room 33, goal seen through bulletproof glass, 460 presses in one
+    20-round run). Single-exit rooms now aim at their one door. (2) In multi-door rooms the aim set
+    is filtered the same way the router prices routes: a wall or window sharing a destination room
+    with a real door can no longer be chosen, so bots stop aiming at solid faces while a usable door
+    sits behind them. (3) The doorway picker used when committing a crossing was the only selection
+    left that never asked the engine whether it could pass — on Batteries room 33 it committed 310
+    crossings through glass the engine refuses while the real door sat nearby. All three now share
+    one admission rule with the router, so aim, chain, and route can never disagree about which
+    doors exist.
 *   **The navigation failure reports now name what went wrong, not just that it did.** Four
     diagnostic additions, all log-only: (1) a blocked go-around search now names the face or object
     that blocked it, its texture, whether it is breakable glass or a force field, and which search

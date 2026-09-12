@@ -711,15 +711,28 @@ overnight log. A full verbosity-tier + event-vocabulary consolidation is registe
 0.9.13 shipped as the correctness checkpoint (see the CHANGELOG). 0.9.14-dev is open: the first
 commit is diagnostic-only (below), and the second lands the first fix the telemetry pointed at.
 
-**Single-exit aim (the rm35 press).** `BotResolveRoomAim` bailed on `np < 2`, so a sole-portal room
-got no aim resolution: the bot's raw goal direction pointed at whatever face stood between it and an
-out-of-room goal, and it pressed that face forever (batteries rm35 → room 33 via its one door, goal
-rm84 seen THROUGH solid glass: 460 presses at d=0 in one run). It now aims at the sole portal's node
-when the target is elsewhere; an in-room target or an impassable sole door still returns false. The
-multi-portal exit set is also passability-filtered through the router's own admission (BOA passable +
-cost verdict + wind) so solid/window twins beside a real door can no longer be picked by distance —
-the same see-through≠passable principle as the terrain gate, one layer down. `BotSkelBuildChain`
-shares the predicate so aim and chain export stay in lockstep.
+**Single-exit aim + engine-agreement door picks (the rm35 press and the rm33 glass commits).**
+Three aim-layer defects the instrumented run exposed, all the same shape — a selection layer that
+did not ask the router's admission question:
+
+1. `BotResolveRoomAim` bailed on `np < 2`, so a sole-portal room got no aim resolution: the bot's
+   raw goal direction pointed at whatever face stood between it and an out-of-room goal, and it
+   pressed that face forever (batteries rm35 → room 33 via its one door, goal rm84 seen THROUGH
+   solid glass: 460 presses at d=0 in one run). It now aims at the sole portal's node when the
+   target is elsewhere. An in-room target or an impassable sole door still returns false.
+2. The multi-portal exit set (and `BotSkelBuildChain`'s copy of it) was built from
+   `portals[i].croom == next_room` alone, so a wall/window twin beside a real door could win the
+   distance-nearest soft-hop (rm12 → rm3: two solid faces and two breakable-glass doors). Both now
+   filter through `ExitPortalUsable` — BOA passable + cost verdict (DISAGREE union) + wind.
+3. `BotEntryPortalIndex`, the seam guard and hop-commit's door picker, checked our cost and wind
+   but never `BOA_PassablePortal` — the one selection the router's own gate was not applied to.
+   rm33 → rm31 holds twenty-five engine-refused glass panes and one real door; the picker chose the
+   nearest pane and committed 310 crossings through it (NOT-CROSSED at 8.0s, bots firing at glass
+   that never opens). It now requires engine agreement in the same two passes as the router.
+
+All three now share the router's admission policy, so aim, chain export, and route edges cannot
+disagree about which doors exist. The destroyable-grate class is unaffected (all 28 isengard door
+portals read engine_passable=True).
 
 **Mechanism telemetry (log-only).** Four additive lines exist so the Batteries failures can be
 diagnosed per episode instead of from aggregate counts:
