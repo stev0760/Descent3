@@ -579,6 +579,7 @@ struct bot_info {
   float hop_commit_time; // Gametime at issue (BOT_HOP_OUTCOME_TIMEOUT bounds a pending one)
   vector hop_commit_pos; // bot position at issue (outcome telemetry)
   float unstick_reverse_until;
+  vector unstick_dir; // world direction of the burst: reverse, or the body direction with the most room
   int hunt_route_from, hunt_route_to; // hunt routability cache: (room, target room) -> ok, 1 s
   bool hunt_route_ok;
   float hunt_route_time; // Gametime until which a hard pin drives pure reverse thrust (0.9.14)

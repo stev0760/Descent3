@@ -376,8 +376,10 @@ keeps thrust pointed along the engine's path rather than locking `fvec` on a far
 - **Bridge search (`SkelBridge`):** fan rings are hull multiples (`BOT_SKEL_BRIDGE_RING_SCALE`), each
   lateral candidate also tried `BOT_SKEL_BRIDGE_DIAG_STEP` hulls forward; sweeps are `FQ_BACKFACE`.
   Any new bounded search around a blocker must scale its steps with the hull, not the room.
-- **Hard pin ⇒ reverse burst:** `unstick_reverse_until` (1s, `BOT_UNSTICK_REVERSE_TIME`) overrides
-  thrust with pure reverse in `BotApplyThrust`; set at the stuck escalation when `net_disp < 10`.
+- **Hard pin ⇒ directional burst:** `unstick_reverse_until` (1s, `BOT_UNSTICK_REVERSE_TIME`) overrides
+  thrust in `BotApplyThrust` along `unstick_dir` — chosen at the stuck escalation (`net_disp < 10`) as the
+  body direction (reverse/down/up/left/right) with the longest clear 16u sweep at hull radius; the glass
+  back-off uses straight reverse. `$nav sweep x y z room portal` shows what a spot's sweeps hit.
 - **Read `from=/aim=/now=` on a NOT-CROSSED line before blaming a door:** `from == now` for minutes
   means a pinned body, not a crossing failure.
 - **Objective items** (flags/orbs) are `BotTrollExempt` and get `BOT_OBJECTIVE_BLACKLIST_DURATION` (5s),

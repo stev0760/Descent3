@@ -27,6 +27,10 @@ touched and are the next sprint. Do not run this as a release yet.*
     include a forward-diagonal, and are honest about back faces. Batteries: 33 disconnected rooms down
     to 6 (the six floor-hatch rooms narrower than a Pyro). Abend2: the ring room that stayed in two
     pieces through every earlier attempt is now one connected network.
+*   **A pinned ship backs out in whichever direction has room.** The one-second escape burst was
+    always straight back, which does nothing for a ship wedged under a desk with the wall behind
+    it; it now probes the five body directions and thrusts along the clearest. A new console command,
+    `$nav sweep`, reports what a ship at a given spot would hit on its way to a door.
 *   **A bot backs away before shooting a pane it is standing against.** Glass only breaks from
     matter weapons, and a bot's missile is refused within its own splash radius; a bot that spawned
     directly under a ceiling vent used to sit there firing lasers at it for the whole round. It now

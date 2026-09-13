@@ -1106,6 +1106,17 @@ play-test build; if it does not beat the glass re-run on pins and captures, the 
 the 57aaa31f line and slices 9/9b wait for the pocket work — the trade being the operator's observed
 grid trap against the sealed complex's pocket.
 
+**Slice 9c — the hard-pin burst goes where there is room (2026-09-13 ~14:15).** A new console
+diagnostic, `$nav sweep x y z room portal` (hull sweeps from a point to a door's crossing points at
+both radii, plus a reverse leg, with the face each hits), read rm35's pocket bot-free: from the pin
+spot (1282,-151,2311) EVERY sweep is blocked at 0u by face 27, normal (0,-1,0) — the bot is wedged
+under a desk with the hull already against its underside — and the reverse leg is blocked at 0u by
+face 25. So the reverse burst, the escape goal, the composed drive's first leg and the skeleton via
+all fail from inside the wedge, by construction. The burst is now directional: at a hard pin the
+five body directions (reverse, down, up, left, right) are swept 16u at hull radius and the burst
+takes the longest clear one (reverse wins ties); the glass back-off keeps straight reverse. Legal
+thrust as before. Runtime-only; tests green. It rides the final play-test arm with 9 and 9b.
+
 **Committee state, measured (2026-09-13).** Per-level census, share of ACTIVE-held time: `via`
 54% -> 96% from the sprint's start to 57aaa31f; the engine-path fallback (`no-route`) 39% -> 0%;
 `stuck-escape` 4.5% -> 1.9%; the flicker members (`seam`, `path_pnt`, `gridroute`, `hop-commit`)

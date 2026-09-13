@@ -1703,6 +1703,7 @@ static void BotClearObstacleSafely(int bot_index, object *blocker, vector *targe
     int sec_wb = Players[slot].weapon[PW_SECONDARY].index;
     if (dist < BOT_SPLASH_SELF_GUARD && sec_wb >= 10 && sec_wb < 20 && Players[slot].weapon_ammo[sec_wb] > 0) {
       Bots[bot_index].unstick_reverse_until = Gametime + BOT_UNSTICK_REVERSE_TIME;
+      Bots[bot_index].unstick_dir = obj->orient.fvec * -1.0f;
       static float backoff_log_t[MAX_BOTS];
       if (Gametime - backoff_log_t[bot_index] > 5.0f || Gametime < backoff_log_t[bot_index]) {
         backoff_log_t[bot_index] = Gametime;
@@ -6080,7 +6081,10 @@ static void BotApplyThrust(int bot_index) {
   // latch from a previous level harmless.
   if (Gametime < Bots[bot_index].unstick_reverse_until &&
       Bots[bot_index].unstick_reverse_until - Gametime <= BOT_UNSTICK_REVERSE_TIME + 0.5f) {
-    obj->mtype.phys_info.thrust = obj->orient.fvec * (-Bots[bot_index].ship_full_thrust);
+    vector burst = Bots[bot_index].unstick_dir;
+    if (vm_GetMagnitude(&burst) < 0.5f)
+      burst = obj->orient.fvec * -1.0f; // a stale latch: straight back, as before
+    obj->mtype.phys_info.thrust = burst * Bots[bot_index].ship_full_thrust;
     obj->mtype.phys_info.flags |= PF_USES_THRUST;
     Players[slot].flags &= ~(PLAYER_FLAGS_AFTERBURN_ON | PLAYER_FLAGS_THRUSTED);
     return;
@@ -8838,9 +8842,33 @@ void BotDoFrame() {
             // every committed crossing, no lattice node within 18u). Legal thrust, engine-owned
             // steering resumes when the burst ends.
             if (net_disp < 10.0f) {
+              // The burst goes where there is ROOM. Straight back was enough for a pocket entered
+              // nose-first (rm8), not for a ship wedged under a desk (Batteries rm35: every sweep
+              // from (1282,-151,2311) blocked at 0u by the desk's underside, reverse blocked at 0u
+              // too, 43 escalations in one arm at that one spot). Sweep the five body directions
+              // at hull radius and take the longest clear one; reverse wins ties.
+              const vector dirs[5] = {obj->orient.fvec * -1.0f, obj->orient.uvec * -1.0f, obj->orient.uvec,
+                                      obj->orient.rvec * -1.0f, obj->orient.rvec};
+              static const char *dir_names[5] = {"reverse", "down", "up", "left", "right"};
+              int best = 0;
+              float best_room = -1.0f;
+              if (!OBJECT_OUTSIDE(obj)) {
+                for (int d = 0; d < 5; d++) {
+                  const vector probe = obj->pos + dirs[d] * 16.0f;
+                  fvi_info hit{};
+                  float room_u = 16.0f;
+                  if (!BotSegmentClear(obj->roomnum, obj->pos, probe, obj->size, &hit))
+                    room_u = vm_VectorDistanceQuick(&obj->pos, &hit.hit_pnt);
+                  if (room_u > best_room + 0.5f) {
+                    best_room = room_u;
+                    best = d;
+                  }
+                }
+              }
+              Bots[i].unstick_dir = dirs[best];
               Bots[i].unstick_reverse_until = Gametime + BOT_UNSTICK_REVERSE_TIME;
-              LOG_DEBUG.printf("BOT: '%s' hard pin — reverse burst %.1fs before escape", Bots[i].callsign,
-                               BOT_UNSTICK_REVERSE_TIME);
+              LOG_DEBUG.printf("BOT: '%s' hard pin — %s burst %.1fs before escape (%.0fu of room)", Bots[i].callsign,
+                               dir_names[best], BOT_UNSTICK_REVERSE_TIME, best_room < 0.0f ? 16.0f : best_room);
             }
             Bots[i].stuck_timer = BOT_STUCK_ABANDON_TIME + 0.1f;
             char tdiag[128];
