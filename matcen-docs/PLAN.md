@@ -112,10 +112,15 @@ These are decision rules, not authorization to commit, promote, rebuild or launc
 classification per portal, walls out of every in-room layer, 64-slot skeletons, two-phase lattice
 growth plus a door on-ramp for starved single-door rooms. Geometry gate passed on bot-free dumps
 (Batteries cells +7%, composer-eligible rooms 26→46, rm3 doors 2→1 components, abend2 rings
-unchanged); play gate = 4-round batteries vs the glass control, then abend2. Remaining slices in
-order: crossing segment + push along the normal; corner-bridge bound + backface; compose only when
-the direct line is blocked in any routable room; objective items never long-blacklisted. The room
-router is untouched by design.
+unchanged). **Slice 1 play gate passed on the thing that matters:** Blue 7 captures in 4 rounds
+against 0 in every earlier Batteries run, the red-flag-room exit press gone; hard pins doubled in
+rooms the change made composer-eligible (errands to unreachable rooms + the one-hop consumer).
+Slices 2 (validated door crossing point for the push-through; the network keeps its anchors — the
+alternative was measured and rejected; three-phase lattice growth) and 5 (explore sampler asks our
+router; objective items get a 5s back-off) landed the same night; their play gate runs against the
+slice-1 arm. Remaining: slice 3 (corner-bridge bound + backface), slice 4 (compose only when the
+direct line is blocked, in any routable room), then the rm3 hub for Red's approach. The room router
+is untouched by design.
 
 0.9.13 shipped as the correctness checkpoint; 0.9.14-dev is open with four landed commits:
 telemetry (fa5966ed), the aim-layer fixes (4c51e30d, 2df343c2), and glass routing. The 4-round

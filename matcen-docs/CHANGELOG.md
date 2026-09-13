@@ -13,6 +13,25 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
 admission fix and the remaining interior-navigation defects are still being worked. Do not run this
 as a release.*
 
+*   **Bots cross a doorway where it is actually open.** Each door now carries a validated crossing
+    point: the door polygon is sampled with the ship-hull sweep along its normal and the most open
+    point that sweeps clear, and how deep it clears, is remembered. The committed push-through a bot
+    flies when it crosses a door now goes through that point along the door's normal, no deeper than
+    the sweep proved, instead of from the polygon centre toward the next room's centre — a diagonal
+    a propped-open leaf can block. The nearest-door pick and the overlay's door markers use the same
+    point. On Batteries Included the red flag room's door point moves 10 units into the clear strip
+    beside the leaf. The network itself keeps its previous anchors: moving the skeleton nodes and
+    lattice seeds onto these points was measured to split rooms, so it was not done. Lattice growth
+    also gained a third candidate grid phase and keeps the fullest of three (+12% cells on Batteries,
+    +1% on abend2, no room worse).
+*   **Bots stop running errands to rooms they cannot reach, and stop abandoning the flag.** The
+    explore sampler validated destinations against the engine's routing table, which is built with
+    breakable glass passable and records skybox windows like doors, so it happily sent bots at glass-
+    sealed pockets and window rooms next door; each such errand ended as a no-route press and a
+    12-second timeout (131 no-route verdicts in the previous 4-round arm). It now asks our own router.
+    Objective items (flags, orbs) that a bot failed to close on were blacklisted for 60 seconds like an
+    unreachable powerup; they now get a 5-second back-off so the pilot re-plans from where it stands,
+    and the "sealed" diagnostic names the item.
 *   **Walls are no longer doors to the navigation network.** A Descent 3 level splits rooms with
     "portals" even through solid faces, and on an office map most of them are walls or windows (on
     Batteries Included, 248 of 1041 portals are solid and 207 are glass panes). The room-to-room router

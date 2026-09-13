@@ -172,6 +172,8 @@ static void NavDbgDrawRoomStatic(int room_idx) {
       NavDbgSphere(rm.portals[p].path_pnt, 0.8f, NAVDBG_PORTAL_NEVER); // a wall the level calls a portal
       continue;
     }
+    vector marker = rm.portals[p].path_pnt;
+    BotPortalCrossing(room_idx, p, &marker, nullptr); // the validated crossing point (slice 2)
     float cost = BotPortalGeoCost(room_idx, p);
     ddgr_color c;
     if (cost >= BOT_PORTAL_IMPASSABLE)
@@ -180,7 +182,7 @@ static void NavDbgDrawRoomStatic(int room_idx) {
       c = NAVDBG_PORTAL_TIGHT;
     else
       c = NAVDBG_PORTAL_OPEN;
-    NavDbgSphere(rm.portals[p].path_pnt, 1.6f, c);
+    NavDbgSphere(marker, 1.6f, c);
   }
 
   // Buried-center: the room path_pnt sits in void/core space (the "fly into the wall toward the

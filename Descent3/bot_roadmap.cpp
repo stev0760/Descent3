@@ -620,6 +620,13 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     vector o = mn;
     if (!phase_on_seeds)
       return o;
+    if (attempt == 2) { // a genuinely different grid: the seed phase shifted half a pitch on every axis
+      for (int a = 0; a < 3; a++) {
+        const float d = seed_c[a] + 0.5f * pitch - mn[a];
+        o[a] = mn[a] + (d - std::floor(d / pitch) * pitch);
+      }
+      return o;
+    }
     for (int a = 0; a < 3; a++) {
       auto anchored = [&](float at) {
         const float d = at - mn[a];
@@ -761,16 +768,24 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     return rr->lattice_cells;
   };
 
-  // Grow under both phases and keep the fuller lattice (ties keep the seed phase). Cell count is the
-  // honest proxy for how much of the room's free volume the grid managed to sample at this pitch;
-  // the extra growth costs a few thousand sweeps per room, once, on first use.
-  int cells0 = GrowAttempt(0);
+  // Grow under three phases and keep the fullest lattice (ties keep the earliest). Cell count is the
+  // honest proxy for how much of the room's free volume the grid managed to sample at this pitch; a
+  // room's coverage must not hinge on where its door seed happens to sit relative to a 20u grid (the
+  // same room read 123 or 6 cells depending on a 10u seed move). The extra growth costs a few
+  // thousand sweeps per room, once, on first use.
+  int best_attempt = 0, best_cells = GrowAttempt(0);
   if (phase_on_seeds) {
-    int cells1 = GrowAttempt(1);
-    if (cells1 <= cells0) // the seed phase was at least as good — rebuild it
-      GrowAttempt(0);
-    if (cells1 > cells0) {
-      LOG_DEBUG.printf("BOT: roadmap %s %d: centre phase kept, %d -> %d cells", kind, id, cells0, cells1);
+    for (int attempt = 1; attempt < 3; attempt++) {
+      int cells = GrowAttempt(attempt);
+      if (cells > best_cells) {
+        best_cells = cells;
+        best_attempt = attempt;
+      }
+    }
+    if (best_attempt != 2) // rebuild the winner (attempt 2 is the one standing)
+      GrowAttempt(best_attempt);
+    if (best_attempt != 0) {
+      LOG_DEBUG.printf("BOT: roadmap %s %d: phase %d kept, %d cells", kind, id, best_attempt, best_cells);
     }
   }
 

@@ -221,6 +221,9 @@
 #define BOT_POWERUP_INTERRUPT_COOLDOWN 6.0f
 #define BOT_POWERUP_CHASE_TIMEOUT 8.0f       // seconds chasing same powerup before giving up (Phase 4.03)
 #define BOT_POWERUP_BLACKLIST_DURATION 60.0f // seconds that a timed-out powerup stays blacklisted (Phase 7.4)
+// Objective items (flags, orbs) are never optional pickups: a failed approach earns a short back-off
+// so the pilot re-plans from where it stands, not a minute of ignoring the objective (0.9.14).
+#define BOT_OBJECTIVE_BLACKLIST_DURATION 5.0f
 #define BOT_POWERUP_THRUST_RADIUS 50.0f      // direct-thrust override distance for close visible powerups (Phase 4.06)
 #define BOT_POWERUP_STALE_CHASE 4.0f // seconds chasing without collecting before treating chase as stale (Phase 4.06)
 

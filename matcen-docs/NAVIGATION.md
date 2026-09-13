@@ -751,11 +751,41 @@ Pre-registered for the play gate (4-round batteries vs the glass control, then a
 NOT-CROSSED falls sharply, flag rooms produce roadmap/composed routes, Blue conversion above zero,
 HARD stucks not up.
 
-**Still open on this line:** slice 2 (the crossing segment + push along the normal), slice 3
-(corner-bridge room bound; the sweep never sets FQ_BACKFACE so a point outside the room re-enters
-through a wall as "clear"), slice 4 (compose only when the direct line is blocked, in any routable
-room — the consumer), slice 5 (objective items never long-blacklisted; the sealed line names the
-item). Deferred to the next dump: gap-directed lattice sampling, a trunk node per room.
+**Slice 1 play gate (4-round batteries, soak-20260912T211550 vs the 55a8d28f glass control):**
+Blue 8 grabs / 7 captures (88%) vs 1 / 0; Red 1 / 1 both arms; rm84→rm44 hop commits 1 crossed /
+0 failed vs 34 / 34; objective timeouts inside rm84 25 → 0; room 63 (the glass hotspot) 30 → 0.
+Cost: hard pins 70 → 143, guard FAIL on Hawk (29 of 29 pins in rm78, a pane-only pocket); the rise
+survives excluding him and has a shape — every new hotspot (78, 80, 28, 13, 8) is a room slice 1
+made composer-eligible, and the failure lines there are "picking new destination" (19 → 81) and
+no-route verdicts (48 → 131) at sealed/window rooms next door (78→79, 80→81, 28→30). That is the
+one-hop consumer plus errands to unreachable rooms, now exposed. Not reverted.
+
+**Slice 2 (landed, gated 2026-09-12 late).** `BotPortalCrossing(room, portal, &pnt, &depth)`:
+the door polygon sampled in its plane (inset-sorted grid, centroid first) with the hull sweep along
+the face normal at 24/16/8u either side; the most open clear point and its depth are cached per
+level and shared by both sides (computed on the lower room id). Consumers: the seam push-through
+(`seam_pnt = crossing - normal * clamp(depth, 16, 25)` — along the normal, not toward the next
+room's bbox centre), `BotEntryPortalIndex`'s nearest-door distance, the overlay marker, the navdump
+(`crossing`, `crossing_depth`, `crossing_ok`). **Measured and rejected:** using the point as the
+skeleton node and lattice seed — split rooms 37 → 44 and isolated doors 58 → 72 on Batteries, 5 → 8
+splits on abend2, rm84's lattice 123 → 6 cells (its seed moved 10u and the grid phase followed).
+The network keeps the engine point. Batteries: 592 of 792 live portals validated (all 200
+fallbacks are intact panes, a wall to the sweep by definition); rm84's door point moves 10u into
+the strip beside the leaf at full depth. Lattice growth now tries three phases (seed-centroid,
+centre-anchored, half-pitch shift) and keeps the fullest: cells 12749 → 14300 on Batteries, 4188 →
+4234 on abend2, skeleton byte-identical, no room worse.
+
+**Slice 5 (landed with slice 2).** The explore sampler validates candidates with `BotComputeRoute`
+(the engine's BOA admits intact glass and skybox windows); objective items get
+`BOT_OBJECTIVE_BLACKLIST_DURATION` (5s) instead of 60s on the sealed and chase-timeout paths; the
+sealed line names the item. Play gate: 4-round batteries vs the slice-1 arm
+(`batteries-portal-s125-4rnd.json`).
+
+**Still open on this line:** slice 3 (corner-bridge room bound; the sweep never sets FQ_BACKFACE so
+a point outside the room re-enters through a wall as "clear"), slice 4 (compose only when the
+direct line is blocked, in any routable room — the consumer). Deferred to the next dump:
+gap-directed lattice sampling, a trunk node per room, the rm3 hub (16 lattice components, not
+composer-eligible — Red's whole approach).
 
 ### 7.0-PREV Glass routing restored + mechanism telemetry — 2026-09-12 (0.9.14-dev)
 

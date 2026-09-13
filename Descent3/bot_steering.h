@@ -410,6 +410,20 @@ int BotPortalClass(int room_idx, int portal_idx);
 // never be a portal the router would not price (the wall-twin exit goal).
 uint64_t BotAimExitMask(object *obj, int room_idx, int dest_room);
 
+// Slice 2: a VALIDATED crossing point per portal. The engine's portal point is the vertex mean of
+// the door polygon and nothing ever checked that a hull can occupy it or sweep through it — a
+// propped leaf, a pillar or a lip that shadows the centre made every layer (skeleton node, lattice
+// seed, seam push, door pick) aim at a point the ship cannot fly while the gap beside it was open.
+// This samples the door polygon with the hull sweep along its normal and returns the most open
+// clear point plus the depth (units either side of the plane) that swept clear. A portal with no
+// clear sample returns the engine point with depth 0 (the router's own verdict still stands; the
+// fallback keeps today's behaviour). Both sides of a portal share one point. Cached per level.
+// It is the CROSSING geometry (seam push-through, door pick, overlay marker) — not the network
+// anchor: measured 2026-09-12, moving the skeleton nodes and lattice seeds onto it split rooms on
+// both test maps and starved the red flag room's lattice, so the network keeps the engine point.
+#define BOT_CROSS_DEPTH_MAX 24.0f // deepest sweep tried either side of the plane (a leaf, a lip, a frame)
+bool BotPortalCrossing(int room_idx, int portal_idx, vector *pnt_out, float *depth_out);
+
 // Cost-aware next-hop router (Phase 11). Dijkstra over the interior room graph weighting
 // portals by BOA base cost + graded geometry cost + dynamic penalty. Returns the next room to
 // head toward, or -1 if no finite route exists (caller falls back to the engine's own pathing).

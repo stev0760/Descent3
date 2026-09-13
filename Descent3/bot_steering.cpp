@@ -121,12 +121,14 @@ static bool ProbePortalClearance(int room_idx, int connected_room, const portal 
 // Flush the per-level portal geometry caches. A toggle that changes cached verdicts ($nav glass)
 // would otherwise be silently inert mid-level — the 0.9.5 $gridbridge false-A/B trap.
 static int pf_class_level_checksum = 0; // 0.9.14 portal-class cache (BotPortalClass)
+static int pf_cross_level_checksum = 0; // 0.9.14 crossing-point cache (BotPortalCrossing)
 
 void BotGeoCostInvalidate() {
   pf_geocost_level_checksum = 0;
   pf_passable_level_checksum = 0;
   pf_glass_level_checksum = 0;
   pf_class_level_checksum = 0;
+  pf_cross_level_checksum = 0;
 }
 
 bool BotCheckPortalPassable(int room_idx, int portal_idx) {
@@ -400,6 +402,178 @@ int BotPortalClass(int room_idx, int portal_idx) {
   return cached = BOT_PORTAL_CLASS_NEVER; // solid face, window, grate: never a doorway
 }
 
+// --- Slice 2: validated crossing point per portal (see bot_steering.h) ------------------------
+static bool ViaSegmentClear(int startroom, const vector &a, const vector &b, float radius, fvi_info *hit_out,
+                            bool check_ceiling = false); // defined with the via layer below
+static vector pf_cross_pnt[MAX_ROOMS][MAX_PATH_PORTALS];
+static float pf_cross_depth[MAX_ROOMS][MAX_PATH_PORTALS];
+static int8_t pf_cross_state[MAX_ROOMS][MAX_PATH_PORTALS]; // -1 unknown, 0 engine point, 1 validated
+// pf_cross_level_checksum is declared with the other cache-flush state above.
+
+// Sample the portal polygon (in its own plane) with the hull sweep along the face normal. Returns
+// true with the best clear point + depth; false when no sample clears at any depth.
+static bool PortalCrossingCompute(int room_idx, int portal_idx, vector *pnt, float *depth) {
+  const room &rm = Rooms[room_idx];
+  const portal &pt = rm.portals[portal_idx];
+  if (pt.portal_face < 0 || pt.portal_face >= rm.num_faces)
+    return false;
+  const face &fc = rm.faces[pt.portal_face];
+  constexpr int kMaxVerts = 64;
+  const int nv = fc.num_verts < kMaxVerts ? fc.num_verts : kMaxVerts;
+  if (nv < 3)
+    return false;
+  vector n = fc.normal;
+  if (vm_NormalizeVector(&n) < 0.5f)
+    return false;
+  vector C{};
+  for (int i = 0; i < nv; i++)
+    C += rm.verts[fc.face_verts[i]];
+  C /= (float)nv;
+  vector u = rm.verts[fc.face_verts[1]] - rm.verts[fc.face_verts[0]];
+  if (vm_NormalizeVector(&u) < 0.01f)
+    return false;
+  vector w = vm_Cross3Product(n, u);
+  vm_NormalizeVector(&w);
+  float px[kMaxVerts], py[kMaxVerts];
+  float bx0 = 1e30f, bx1 = -1e30f, by0 = 1e30f, by1 = -1e30f;
+  for (int i = 0; i < nv; i++) {
+    vector d = rm.verts[fc.face_verts[i]] - C;
+    px[i] = vm_DotProduct(&d, &u);
+    py[i] = vm_DotProduct(&d, &w);
+    bx0 = std::min(bx0, px[i]);
+    bx1 = std::max(bx1, px[i]);
+    by0 = std::min(by0, py[i]);
+    by1 = std::max(by1, py[i]);
+  }
+  auto inside = [&](float x, float y) { // crossing-number point-in-polygon, 2D
+    bool in = false;
+    for (int i = 0, j = nv - 1; i < nv; j = i++) {
+      if (((py[i] > y) != (py[j] > y)) && (x < (px[j] - px[i]) * (y - py[i]) / (py[j] - py[i]) + px[i]))
+        in = !in;
+    }
+    return in;
+  };
+  auto inset = [&](float x, float y) { // distance to the nearest polygon edge, 2D
+    float best = 1e30f;
+    for (int i = 0, j = nv - 1; i < nv; j = i++) {
+      float ex = px[i] - px[j], ey = py[i] - py[j];
+      float l2 = ex * ex + ey * ey;
+      float t = l2 > 1e-6f ? ((x - px[j]) * ex + (y - py[j]) * ey) / l2 : 0.0f;
+      t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+      float dx = x - (px[j] + ex * t), dy = y - (py[j] + ey * t);
+      best = std::min(best, sqrtf(dx * dx + dy * dy));
+    }
+    return best;
+  };
+  const float R = BOT_ROADMAP_CLEARANCE;
+  const float ext = std::max(bx1 - bx0, by1 - by0);
+  const float step = std::max(R * 0.5f, ext / 12.0f);
+  struct Cand {
+    float x, y, ins, dc;
+  };
+  constexpr int kMaxCand = 64;
+  Cand cand[kMaxCand];
+  int nc = 0;
+  cand[nc++] = {0.0f, 0.0f, inset(0.0f, 0.0f), 0.0f}; // the engine's point first
+  for (float y = by0 + step * 0.5f; y < by1 && nc < kMaxCand; y += step)
+    for (float x = bx0 + step * 0.5f; x < bx1 && nc < kMaxCand; x += step) {
+      if (fabsf(x) < step * 0.5f && fabsf(y) < step * 0.5f)
+        continue; // the centroid is already in
+      if (!inside(x, y))
+        continue;
+      cand[nc++] = {x, y, inset(x, y), sqrtf(x * x + y * y)};
+    }
+  // Most open first (a tie goes to the point nearest the centroid); fixed order → deterministic.
+  std::sort(cand, cand + nc, [](const Cand &a, const Cand &b) {
+    if (a.ins != b.ins)
+      return a.ins > b.ins;
+    return a.dc < b.dc;
+  });
+  const float depths[3] = {BOT_CROSS_DEPTH_MAX, BOT_CROSS_DEPTH_MAX * 2.0f / 3.0f, BOT_CROSS_DEPTH_MAX / 3.0f};
+  float best_depth = 0.0f, best_ins = -1.0f;
+  vector best_p{};
+  for (int ci = 0; ci < nc; ci++) {
+    const vector P = C + u * cand[ci].x + w * cand[ci].y;
+    for (float D : depths) {
+      if (D < best_depth)
+        break; // cannot beat the best on depth
+      const vector a = P + n * D; // inside this room (n points into it)
+      const vector b = P - n * D; // inside the other room
+      if (!ViaSegmentClear(room_idx, a, b, R, nullptr))
+        continue;
+      if (D > best_depth || (D == best_depth && cand[ci].ins > best_ins)) {
+        best_depth = D;
+        best_ins = cand[ci].ins;
+        best_p = P;
+      }
+      break;
+    }
+    if (best_depth >= BOT_CROSS_DEPTH_MAX && best_ins >= R)
+      break; // the maximum: fully open at full depth
+  }
+  if (best_depth <= 0.0f)
+    return false;
+  *pnt = best_p;
+  *depth = best_depth;
+  return true;
+}
+
+bool BotPortalCrossing(int room_idx, int portal_idx, vector *pnt_out, float *depth_out) {
+  if (pf_cross_level_checksum != BOA_mine_checksum) {
+    memset(pf_cross_state, -1, sizeof(pf_cross_state));
+    pf_cross_level_checksum = BOA_mine_checksum;
+  }
+  if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used || portal_idx < 0 ||
+      portal_idx >= Rooms[room_idx].num_portals || portal_idx >= MAX_PATH_PORTALS) {
+    if (pnt_out && room_idx >= 0 && room_idx <= Highest_room_index && portal_idx >= 0 &&
+        portal_idx < Rooms[room_idx].num_portals)
+      *pnt_out = Rooms[room_idx].portals[portal_idx].path_pnt;
+    if (depth_out)
+      *depth_out = 0.0f;
+    return false;
+  }
+  int8_t &state = pf_cross_state[room_idx][portal_idx];
+  if (state < 0) {
+    const portal &pt = Rooms[room_idx].portals[portal_idx];
+    const int cr = pt.croom, cp = pt.cportal;
+    const bool twin_ok = cr >= 0 && cr <= Highest_room_index && Rooms[cr].used && cp >= 0 &&
+                         cp < Rooms[cr].num_portals && cp < MAX_PATH_PORTALS;
+    // One point per portal, computed on the lower-numbered room's side so both sides agree and the
+    // result does not depend on which side asked first.
+    const bool canonical = !twin_ok || room_idx < cr;
+    vector p = pt.path_pnt;
+    float d = 0.0f;
+    bool ok = false;
+    if (BotPortalClass(room_idx, portal_idx) != BOT_PORTAL_CLASS_NEVER) {
+      if (canonical || (Rooms[cr].flags & RF_EXTERNAL))
+        ok = PortalCrossingCompute(room_idx, portal_idx, &p, &d);
+      else
+        ok = PortalCrossingCompute(cr, cp, &p, &d);
+      if (!ok) {
+        p = pt.path_pnt;
+        d = 0.0f;
+        if (BotPortalClass(room_idx, portal_idx) == BOT_PORTAL_CLASS_DOOR) {
+          LOG_DEBUG.printf("[Nav] Room %d portal %d: no hull-clear crossing sample — keeping the engine point",
+                           room_idx, portal_idx);
+        }
+      }
+    }
+    pf_cross_pnt[room_idx][portal_idx] = p;
+    pf_cross_depth[room_idx][portal_idx] = d;
+    state = ok ? 1 : 0;
+    if (twin_ok) { // mirror to the twin so the two sides share one point
+      pf_cross_pnt[cr][cp] = p;
+      pf_cross_depth[cr][cp] = d;
+      pf_cross_state[cr][cp] = state;
+    }
+  }
+  if (pnt_out)
+    *pnt_out = pf_cross_pnt[room_idx][portal_idx];
+  if (depth_out)
+    *depth_out = pf_cross_depth[room_idx][portal_idx];
+  return state == 1;
+}
+
 // An intact pane this caller may cross at `mode` (SHORTCUT = vertical only; SOLE = any). False
 // when the pane's own route cost is impassable — which is what $nav glass off produces — so the
 // toggle stays authoritative even for direct callers.
@@ -525,7 +699,7 @@ void BotBumpPortalPenalty(int room_idx, int portal_idx) {
 // above it; only the outdoor go-around passes true, so a leg that would route a bot OVER a structure
 // (above the low Bree ceiling) fails and the search picks a lateral detour instead.
 static bool ViaSegmentClear(int startroom, const vector &a, const vector &b, float radius, fvi_info *hit_out,
-                            bool check_ceiling = false) {
+                            bool check_ceiling) {
   vector p0 = a, p1 = b;
   fvi_query fq{};
   fvi_info hit{};
@@ -1009,7 +1183,9 @@ int BotEntryPortalIndex(object *obj, int wp_room) {
       }
       if (BotPortalWindDir(cur, p) < 0)
         continue;
-      float d = vm_VectorDistanceQuick(&obj->pos, &crm.portals[p].path_pnt);
+      vector cp = crm.portals[p].path_pnt;
+      BotPortalCrossing(cur, p, &cp, nullptr); // the validated point (slice 2)
+      float d = vm_VectorDistanceQuick(&obj->pos, &cp);
       if (d < best_d) {
         best_d = d;
         best_p = p;

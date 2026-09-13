@@ -316,6 +316,13 @@ keeps thrust pointed along the engine's path rather than locking `fvec` on a far
   nodes; `lattice_cells` counts sampled cells only.
 - **Dumps:** `$navdump` writes `class` per portal and `skel_live` per room; the overlay draws NEVER
   portals as small grey markers with no node.
+- **Crossing point:** `BotPortalCrossing(room, p, &pnt, &depth)` is the validated point a hull can
+  sweep through (depth = proven clearance either side of the plane, 0 = none found, engine point
+  returned). It is CROSSING geometry — seam push, door pick, marker — never the skeleton node or
+  lattice seed (measured to split rooms). Both sides share one point.
+- **Explore destinations** must pass `BotComputeRoute`; the engine's BOA table is glass/window-blind.
+- **Objective items** (flags/orbs) are `BotTrollExempt` and get `BOT_OBJECTIVE_BLACKLIST_DURATION` (5s),
+  never the 60s powerup blacklist.
 
 ### Cost-Aware Router (Phase 11)
 

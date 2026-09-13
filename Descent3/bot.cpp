@@ -3101,13 +3101,30 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
       int best_p = BotEntryPortalIndex(obj, wp_room);
       if (best_p >= 0) {
         const portal &pt = crm.portals[best_p];
-        vector through = wp_aim - pt.path_pnt;
-        float td = vm_GetMagnitude(&through);
-        if (td > 1.0f) {
-          float push = (td * 0.6f < BOT_SEAM_PUSH_DIST) ? td * 0.6f : BOT_SEAM_PUSH_DIST;
-          seam_pnt = pt.path_pnt + through * (push / td);
+        // Slice 2: push through the VALIDATED crossing point, along the door's normal, no deeper than
+        // the sweep proved clear. The old construction pushed from the polygon centre toward the next
+        // room's bbox centre — a diagonal through a doorway that a propped leaf can shadow (Batteries
+        // rm84 exit: 271 NOT-CROSSED in 20 rounds). Without a validated point, the old construction.
+        vector cross_pnt = pt.path_pnt;
+        float cross_depth = 0.0f;
+        BotPortalCrossing(obj->roomnum, best_p, &cross_pnt, &cross_depth);
+        vector nrm = crm.faces[pt.portal_face].normal; // points INTO the current room
+        if (cross_depth > 0.0f && vm_NormalizeVector(&nrm) > 0.5f) {
+          float push = cross_depth;
+          if (push > BOT_SEAM_PUSH_DIST)
+            push = BOT_SEAM_PUSH_DIST;
+          if (push < BOT_VIA_ARRIVE_DIST + 1.0f)
+            push = BOT_VIA_ARRIVE_DIST + 1.0f; // arrival must mean crossing
+          seam_pnt = cross_pnt - nrm * push;
         } else {
-          seam_pnt = wp_aim;
+          vector through = wp_aim - pt.path_pnt;
+          float td = vm_GetMagnitude(&through);
+          if (td > 1.0f) {
+            float push = (td * 0.6f < BOT_SEAM_PUSH_DIST) ? td * 0.6f : BOT_SEAM_PUSH_DIST;
+            seam_pnt = pt.path_pnt + through * (push / td);
+          } else {
+            seam_pnt = wp_aim;
+          }
         }
         seam_redirect = true;
         Bots[bot_index].seam_wp_room = wp_room;
@@ -3604,6 +3621,14 @@ static void BotDoExploreRoaming(int bot_index) {
 
       // Skip passages too small for the bot
       if (BOA_Array[bot_room_idx][BOA_INDEX(r)] & BOAF_TOO_SMALL_FOR_ROBOT)
+        continue;
+
+      // The engine's table admits routes through intact glass and through window "portals" onto the
+      // skybox (BOA is built with panes passable and terrain links recorded from the terrain side),
+      // so it cannot tell a room this bot can reach from one it can only see. Ask OUR router: an
+      // errand to a room it cannot price ends as a no-route press and a 12s timeout (0.9.14 slice-1
+      // arm: 131 no-route verdicts in 4 rounds, all at glass-sealed or window rooms next door).
+      if (!OBJECT_OUTSIDE(obj) && BotComputeRoute(obj->roomnum, r, bot_index) < 0)
         continue;
 
       // Avoid duplicates in candidates list
@@ -5360,8 +5385,14 @@ static void BotUpdateState(int bot_index) {
 
       if (Bots[bot_index].via_seal_count >= BOT_VIA_SEALED_TICKS) {
         // Sealed powerup — the runtime form of the navdump sealed_troll verdict.
+        // An objective item (flag, orb) is never a troll: the exemption below already keeps it off
+        // the strike table, but this per-bot blacklist still hid it for a minute — an attacker that
+        // reached the flag room and lost the via for 2s walked away from the flag (Batteries rm6:
+        // 16 sealed abandons in 20 rounds). A short back-off lets the pilot re-plan instead.
+        const bool objective_item = BotTrollExempt(tgt_handle);
+        const float blacklist_for = objective_item ? BOT_OBJECTIVE_BLACKLIST_DURATION : BOT_POWERUP_BLACKLIST_DURATION;
         Bots[bot_index].blacklisted_powerup_handle = tgt_handle;
-        Bots[bot_index].blacklisted_powerup_expires = Gametime + BOT_POWERUP_BLACKLIST_DURATION;
+        Bots[bot_index].blacklisted_powerup_expires = Gametime + blacklist_for;
         if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
           GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
         pgi = -1;
@@ -5369,8 +5400,9 @@ static void BotUpdateState(int bot_index) {
         Bots[bot_index].chasing_powerup_timer = 0.0f;
         Bots[bot_index].via_seal_count = 0;
         BotTrollStrike(tgt_handle, Bots[bot_index].callsign); // 12.2b
-        LOG_DEBUG.printf("BOT NAV: '%s' powerup sealed in room %d — abandoned + blacklisted %.0fs",
-                         Bots[bot_index].callsign, obj->roomnum, BOT_POWERUP_BLACKLIST_DURATION);
+        LOG_DEBUG.printf("BOT NAV: '%s' powerup sealed in room %d — '%s' abandoned + blacklisted %.0fs%s",
+                         Bots[bot_index].callsign, obj->roomnum, Object_info[pu->id].name, blacklist_for,
+                         objective_item ? " (objective: short back-off)" : "");
       } else if (!via_active) {
         // Refresh powerup pursuit goal each tick (powerup may disappear)
         if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
@@ -7014,6 +7046,11 @@ bool BotNavDump(const char *filename) {
         static const char *class_names[] = {"never", "door", "pane"};
         int pc = BotPortalClass(r, p);
         fprintf(fp, "\"class\": \"%s\", ", (pc >= 0 && pc <= 2) ? class_names[pc] : "?");
+        vector cpnt = po.path_pnt;
+        float cdepth = 0.0f;
+        bool cok = BotPortalCrossing(r, p, &cpnt, &cdepth);
+        fprintf(fp, "\"crossing\": [%.2f,%.2f,%.2f], \"crossing_depth\": %.1f, \"crossing_ok\": %s, ", cpnt.x(), cpnt.y(),
+                cpnt.z(), cdepth, cok ? "true" : "false");
       }
       fprintf(fp, "\"portal_path_pnt\": [%.2f,%.2f,%.2f], ", po.path_pnt.x(), po.path_pnt.y(), po.path_pnt.z());
       fprintf(fp, "\"boa_cost_fwd\": %.2f, \"boa_cost_rev\": %.2f, ", boa_fwd, boa_rev);
@@ -8522,7 +8559,10 @@ void BotDoFrame() {
         // the same unreachable powerup after BotClearActiveGoal wipes the short-term skip.
         if (Bots[i].chasing_powerup_handle != OBJECT_HANDLE_NONE) {
           Bots[i].blacklisted_powerup_handle = Bots[i].chasing_powerup_handle;
-          Bots[i].blacklisted_powerup_expires = Gametime + BOT_POWERUP_BLACKLIST_DURATION;
+          // Objective items get the short back-off (see the sealed path): the flag is the errand.
+          Bots[i].blacklisted_powerup_expires =
+              Gametime + (BotTrollExempt(Bots[i].chasing_powerup_handle) ? BOT_OBJECTIVE_BLACKLIST_DURATION
+                                                                          : BOT_POWERUP_BLACKLIST_DURATION);
           // Strike discipline (0.9.6): a timeout alone is NOT evidence of a troll item. On maze
           // maps a legitimate chase through glass/office detours routinely outlives the timer —
           // batteriesincluded retired 8 real items in 7 minutes this way. Strike only when the
