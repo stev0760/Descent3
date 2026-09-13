@@ -6367,6 +6367,11 @@ static void BotApplyThrust(int bot_index) {
           continue;
         if (!BotCheckPortalPassable(obj->roomnum, p))
           continue;
+        // A wall/window "portal" is not a way out: the fit probe alone passes a skybox window (it
+        // sweeps along the plane), and an external room is always "unvisited", so Batteries rm80's
+        // escapes went into skybox room 81 every time. Same classification every layer uses.
+        if (BotPortalClass(obj->roomnum, p) == BOT_PORTAL_CLASS_NEVER)
+          continue;
         // Skip the room we were trying to reach (it's the one that got us stuck)
         if (croom == Bots[bot_index].explore_dest_room)
           continue;

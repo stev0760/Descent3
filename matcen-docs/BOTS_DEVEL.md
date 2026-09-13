@@ -15,6 +15,23 @@ re-landed (`5a94875e`) but not yet validated — unfavorable standalone (batteri
 the flag-room arrival stall and the ~58% connectivity dead-ends. The last stable release is
 **0.9.13** (0.9.11 preceded it; 0.9.12 was never promoted).
 
+### 2026-09-13: Portal model, slices 2-5 — the crossing is a path, the composer is the consumer
+
+Four Batteries arms in one night, each against the previous build. Slice 1's play gate: Blue 7
+captures against 0 in every earlier run, the red-flag-room exit press gone, hard pins doubled in
+rooms the change made composer-eligible. Slices 2+5 (validated door crossing point for the push,
+sampler asks our router, objective items 5s back-off): stucks and no-route down, Blue conversion
+40% on mid-route interception, Red's own doors (rooms 8, 80) failing every committed crossing.
+Completion arm (8d50e9f5: crossing as a near/plane/far path handed out at every via/aim/chain/compose
+site, bent where a door has no straight column; composer drives wherever the hull sweep to the leg
+target is blocked, in any eligible room; goal aim reads a live chain anywhere): guard PASS, Blue 6
+captures / 75%, hard pins 122 → 98, no-route 61 → 36, room 8's door no longer needs commits, 1161
+composed routes with intents still ending in arrivals and timeouts. Rejected on evidence the same
+night: moving skeleton nodes/lattice seeds onto the crossing point (split rooms, starved rm84);
+bounding the corner-bridge vertex to the room box (broke abend2 rooms 4/20). Found and gated after:
+the doorway picker and the stuck-escape chooser admitted wall/window portals. Red has zero grabs in
+all four arms — the room-3 hub is next. Full record: NAVIGATION.md §7.0-CURRENT.
+
 ### 2026-09-12 (later): Portal model, slice 1 — walls are not doors (0.9.14-dev)
 
 Audit of the day (Fable) traced the Batteries flag-room failure to the portal model rather than to

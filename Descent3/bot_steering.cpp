@@ -1276,6 +1276,11 @@ int BotEntryPortalIndex(object *obj, int wp_room) {
     for (int p = 0; p < crm.num_portals; p++) {
       if (crm.portals[p].croom != wp_room)
         continue;
+      // A wall/window "portal" is never a door to pick: its geocost probe can read finite (the
+      // sweep runs along the plane toward a skybox room's centre), and without this gate the
+      // picker committed crossings through Batteries rm80's window portals into skybox room 81.
+      if (BotPortalClass(cur, p) == BOT_PORTAL_CLASS_NEVER)
+        continue;
       const bool pane = !BOA_PassablePortal(cur, p) && BotPortalIsBreakableGlass(cur, p);
       if (pane != panes_only)
         continue;

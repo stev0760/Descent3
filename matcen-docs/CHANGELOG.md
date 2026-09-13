@@ -29,8 +29,11 @@ as a release.*
     to the leg's target fails, so a bot with a clear line still flies straight; the two earlier
     attempts to widen it regressed because they composed in open halls too. The goal aim reads a live
     committed route in any room, so the goal layer and the via layer can no longer disagree in a
-    hallway. The explore sampler's neighbour fallback also passes the same admission as its random
-    loop, which stops skybox window rooms from winning as "unvisited".
+    hallway. The explore sampler's neighbour fallback, the doorway picker used for committed
+    crossings, and the stuck-escape chooser all pass the same admission as the router now, which
+    stops skybox window rooms from winning as "unvisited" and stops crossings being committed through
+    a window. Measured on Batteries Included against the previous in-test build: hard stuck pins
+    122 → 98, no-route verdicts 61 → 36, Blue 6 captures in 4 rounds.
 *   **Bots cross a doorway where it is actually open.** Each door now carries a validated crossing
     point: the door polygon is sampled with the ship-hull sweep along its normal and the most open
     point that sweeps clear, and how deep it clears, is remembered. The committed push-through a bot

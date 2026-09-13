@@ -814,7 +814,21 @@ when the straight line is blocked; `count >= 2`; the goal-issue ladder reads a l
 explore sampler's neighbour fallback filters NEVER portals and asks the router (rm80's four window
 portals onto skybox room 81 won that fallback as "unvisited": 11 errands in 1.5 rounds).
 
-**Still open on this line:** FQ_BACKFACE (the sweep still ignores back faces; bounded for now).
+**Completion arm (soak-20260912T233600, build 8d50e9f5, vs the 1+2+5 arm; guard PASS).** Blue 8
+grabs / 6 captures (75%) vs 10 / 4; carrier deaths 5 → 2; Red 0 / 0 both arms. Hard pins 122 → 98,
+no-route 61 → 36, "picking new destination" 46 → 14, chase timeouts 160 → 132. rm8 pins 61 → 25
+(its door: 0/69 → 0/17 committed crossings — bots now mostly cross without needing a commit), rm80
+25 → 13. Composed routes 1161 in 4 rounds (slice 4 live, previously 0 outside buried rooms);
+objective intents 63 death / 32 timeout / 69 arrival / 41 replacement — not the all-death stall of
+the earlier widenings. Remaining hotspots: rm12 (25), rm35 (24), rm8 (25), rm80 (13), rm63 (13).
+Two more gates found from the round-1 read and staged after: `BotEntryPortalIndex` and the
+stuck-escape chooser both admitted wall/window portals (the fit probe passes a skybox window; an
+external room is always "unvisited") — both now gate on `BotPortalClass`.
+**Red's zero grabs in four consecutive arms is the room-3 hub:** 16 lattice components, not
+composer-eligible, on Red's only approach to the blue flag. Next target.
+
+**Still open on this line:** FQ_BACKFACE (the sweep still ignores back faces). rm80's door has no
+crossing of either kind (needs the multi-step on-ramp search across the plane).
 Deferred to the next dump: gap-directed lattice sampling, a trunk node per room, the rm3 hub (16
 lattice components, not composer-eligible — Red's whole approach).
 

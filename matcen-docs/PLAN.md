@@ -125,7 +125,11 @@ committed crossings. Staged next: the crossing as a validated PATH handed out at
 composer as the consumer wherever the straight line is blocked (slice 4), the sampler fallback
 filter (5b), positions on failed-crossing lines. A corner-bridge room bound (slice 3) was tried and
 reverted the same night — it broke abend2's ring connectors; the back-face sweep fix is the real
-item. Then the rm3 hub for Red's approach. The room router is untouched by design.
+item. **Completion arm result (guard PASS):** Blue 6 captures / 75% conversion, hard pins 122 → 98,
+no-route 61 → 36, room 8's door no longer needs committed crossings. **Red's zero grabs across four
+arms is the room-3 hub** (16 lattice components on Red's only approach to the blue flag): the next
+target is gap-directed lattice sampling so that room becomes composer-eligible. abend2 regression gate
+runs on this build first. The room router is untouched by design.
 
 0.9.13 shipped as the correctness checkpoint; 0.9.14-dev is open with four landed commits:
 telemetry (fa5966ed), the aim-layer fixes (4c51e30d, 2df343c2), and glass routing. The 4-round
