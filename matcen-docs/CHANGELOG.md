@@ -12,13 +12,15 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
 *Development build, play-test candidate as of 2026-09-13. The navigation model was reworked around
 one idea — a door is a validated crossing, not a point, and a wall is never a door — and every layer
 now reads the same geometry. Measured on the two gate maps against the 0.9.13 line: on Batteries
-Included the bots' route failures went to zero, hard stuck pins fell from 126 to 57 per four rounds,
-and the best arm scored 17 flag grabs and 13 captures; on abend2, whose ring rooms defeated every
-earlier attempt, captures per round rose from 0.71 to 1.13 on both teams and the ring room's stuck
-episodes went from 80 to 1. Known limits: one propped office door and three floor hatches on
-Batteries are narrower than a Pyro and are treated as such; the team that grabs first tends to keep
-the other on defence for the round (a role-policy question, not navigation). Outdoor maps were not
-touched and are the next sprint. Do not run this as a release yet.*
+Included the bots' route failures went to zero, stuck escalations fell from 159 to 97 per four rounds
+(hard pins 126 to 71), the spawn-room traps the operator found in play are gone (vent rooms, the
+decorative pane grids), and arms scored between 8 and 13 captures; on abend2, whose ring rooms
+defeated every earlier attempt, captures per round rose from 0.71 to 1.13 on both teams over eight
+rounds and the ring room's stuck episodes went from 80 to 1. Known limits: one propped office door
+and three floor hatches on Batteries are narrower than a Pyro and are treated as such; a desk pocket
+in one office still wedges a ship now and then; the team that grabs first tends to keep the other on
+defence for the round (a role-policy question, not navigation). Outdoor maps were not touched and
+are the next sprint. Do not run this as a release yet.*
 
 *   **Bends are found in tight rooms too.** The search that adds bend waypoints between a room's doors
     stepped sideways by fixed 12-to-54-unit amounts, so it never found a way round a corner in a duct

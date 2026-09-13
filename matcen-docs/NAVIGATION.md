@@ -1141,6 +1141,18 @@ grids, no-route); rm35 19 vs 16, hard pins 71 vs 57, captures 8 vs 13 missed. Ju
 measured; the capture line is one arm inside a wide band. **Play-test build: c099220f**, subject to
 its abend2 gate.
 
+**abend2 gate for the candidate (soak-20260913T160240, c099220f, 4 rounds vs the 8-round
+confirmation; the guard's structural FAILs are the 4-vs-8 mismatch, read per round).** Bot-free the
+build changes nothing on abend2 (no portal reclassified, network identical), the glass back-off is
+inert there, and the directional burst fired once in the arm — so the runtime is the 57aaa31f line.
+Per round: escalations 4.7 -> 3.4, hard pins 0.4 -> 0.2, room 30 39 -> 17 for the arm, room 0 at 0,
+committed crossings 436 -> 375, carrier deaths 3.8 -> 3.6. Grabs healthy (Blue 12, Red 7 in four
+rounds) but captures 0 of 19 against 9 of 45: every episode ended in a return. Nothing in the diff can
+act on this map, so the capture count is recorded as one unsettled data point, not a regression; a
+four-round extension (`abend2-portal-9-ext-4rnd.json`) is queued for the next free lab slot.
+**Sprint close (2026-09-13 ~17:10): play-test build = c099220f** (slices 1-7, 6d, 9, 9b, 9c; slice
+8 reverted). Fallback if the extension disagrees: the 57aaa31f line.
+
 **Committee state, measured (2026-09-13).** Per-level census, share of ACTIVE-held time: `via`
 54% -> 96% from the sprint's start to 57aaa31f; the engine-path fallback (`no-route`) 39% -> 0%;
 `stuck-escape` 4.5% -> 1.9%; the flicker members (`seam`, `path_pnt`, `gridroute`, `hop-commit`)

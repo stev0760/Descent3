@@ -38,12 +38,13 @@ to identify the remaining fault. **The working tree is now 0.9.14-dev**, a play-
 sprint: a door is now a validated crossing rather than a point, walls are never doors to the route
 network, shattered glass becomes a doorway at runtime, a bot only hunts what it can reach, the bend
 search fits ducts and toroid tubes, and every layer reads the same geometry. Measured against the
-0.9.13 line: Batteries Included route failures went to zero, hard stuck pins fell from 126 to 57 per
-four rounds, and the best arm scored 17 grabs and 13 captures; abend2's ring room, which defeated
-every earlier attempt, went from 80 stuck episodes to 1 and captures per round rose from 0.71 to 1.13
-on both teams. Two Batteries doorways narrower than a Pyro hull are treated as such; the team that
-grabs first tends to keep the other on defence (a role-policy question, next). Outdoor maps are
-untouched and are the next sprint.
+0.9.13 line: Batteries Included route failures went to zero, stuck escalations fell from 159 to 97
+per four rounds, the spawn-room traps found in play are gone, and arms scored 8 to 13 captures;
+abend2's ring room, which defeated every earlier attempt, went from 80 stuck episodes to 1 and
+captures per round rose from 0.71 to 1.13 on both teams over eight rounds. Openings narrower than a
+Pyro hull (a propped door, pane grids, floor hatches) are treated as walls; the team that grabs first
+tends to keep the other on defence (a role-policy question, next). Outdoor maps are untouched and
+are the next sprint. The play-test build is `c099220f`.
 See [Known limitations](#known-limitations) and the [release notes](matcen-docs/CHANGELOG.md).
 
 ### Features
