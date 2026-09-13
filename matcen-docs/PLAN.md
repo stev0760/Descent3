@@ -141,7 +141,9 @@ room's escape uses its door — built from the hand-out arm's 27-minute rm35 epi
 hull-scaled skeleton bridge search (Batteries split rooms 33 -> 6; abend2 ring room 0 finally one
 component — the abend2 gate runs on this build), the router-side half of the shattered-pane rule
 (the engine's passability table is frozen at level load; the glass arm scored Blue 12/9, Red 3/2 but
-left rm1 with no route once its panes were gone), then the powerup-chase circling class. The room
+left rm1 with no route once its panes were gone), then the honest network sweep — TRIED AND REVERTED 2026-09-13 (bot-free it removed phantom
+lattice through walls; in play Batteries captures 13 -> 2 and hard pins 57 -> 81; retry as a
+build-time-only primitive), then the powerup-chase circling class. The room
 router is untouched by design.
 
 0.9.13 shipped as the correctness checkpoint; 0.9.14-dev is open with four landed commits:

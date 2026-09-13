@@ -1042,6 +1042,20 @@ toroid walls), rooms 0/30 223 -> 204/201 still one component at 100% pair covera
 routable, the 16u tray rm20 (30 cells) split into two components. Gates: a Batteries arm against
 the glass re-run and an abend2 arm against the 8-round confirmation, both pending.
 
+**Slice 8 — TRIED AND REVERTED (2026-09-13 ~12:10).** Bot-free it was the truth (above). In play it
+cost Batteries: the arm (soak-20260913T105757, 13611c33 vs the glass re-run 57aaa31f, guard PASS)
+scored Blue 5 grabs / 2 captures against 17 / 13, hard pins 57 -> 81, escalations 112 -> 124, rm35
+16 -> 29 with 59 errands toward the red flag dying there (29 before), composed routes 1308 -> 1546,
+one round with no flag episode at all. Mechanism NOT established: the rooms on the base-to-base path
+kept their lattice (rm47 392 -> 360 and rm6 170 -> 157 were the only changes), rm35's lattice and
+door were identical, and the bots pinned at one floor spot of rm35 with a skeleton via toward the
+door. The runtime callers of `BotSegmentClear` (composed-drive gate, skeleton aim, chain export) are
+the open suspect: a hull sweep that starts against a wall the bot is scraping may now read blocked,
+which engages the composed drive more (it did) and changes the aim ladder's choices. Reverted whole;
+the next attempt should make the sweep honest at BUILD time only (a separate primitive for lattice
+growth and probing) and leave the runtime tests as they were, gated the same way. This is the §7.0
+tried-and-reverted ledger's newest entry.
+
 **Committee state, measured (2026-09-13).** Per-level census, share of ACTIVE-held time: `via`
 54% -> 96% from the sprint's start to 57aaa31f; the engine-path fallback (`no-route`) 39% -> 0%;
 `stuck-escape` 4.5% -> 1.9%; the flicker members (`seam`, `path_pnt`, `gridroute`, `hop-commit`)
