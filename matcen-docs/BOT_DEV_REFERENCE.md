@@ -347,6 +347,8 @@ keeps thrust pointed along the engine's path rather than locking `fvec` on a far
 - **Composed drive:** any `BotRoadmapRoomRoutable` (or buried) room, only when the straight line to the
   leg target is blocked; the goal aim reads a live `via_chain` in any room.
 - **Explore destinations** must pass `BotComputeRoute`; the engine's BOA table is glass/window-blind.
+- **Glass clearing backs off:** inside `BOT_SPLASH_SELF_GUARD` with a missile and no matter primary,
+  `BotClearObstacleSafely` sets the reverse burst instead of firing; never spam lasers at glass.
 - **An opening narrower than the hull is never a route:** `PortalTooSmallForHull` (portal polygon's
   smaller in-plane extent < hull diameter x `BOT_CROSS_FIT_SCALE`) makes a portal NEVER, impassable
   with no DISAGREE admission, and not glass — pane grids, floor hatches, window slots. The 2.5u

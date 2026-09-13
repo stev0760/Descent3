@@ -27,6 +27,10 @@ touched and are the next sprint. Do not run this as a release yet.*
     include a forward-diagonal, and are honest about back faces. Batteries: 33 disconnected rooms down
     to 6 (the six floor-hatch rooms narrower than a Pyro). Abend2: the ring room that stayed in two
     pieces through every earlier attempt is now one connected network.
+*   **A bot backs away before shooting a pane it is standing against.** Glass only breaks from
+    matter weapons, and a bot's missile is refused within its own splash radius; a bot that spawned
+    directly under a ceiling vent used to sit there firing lasers at it for the whole round. It now
+    reverses for a second and fires from a safe distance.
 *   **A pane a ship cannot fit through is a grate, not a door.** Batteries Included has two walls
     of small decorative glass panes (each about 11 by 6 units against a 13-unit ship) and three
     narrow floor hatches; bots routed to the panes, shot them open, and then pressed a hole nothing

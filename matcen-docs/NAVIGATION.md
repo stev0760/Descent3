@@ -1079,6 +1079,17 @@ either base, and the conference complex is honestly sealed except through its 19
 nearly every bot can open, since the engine breaks glass with any matter weapon and the spawn
 concussions qualify. Gate: a Batteries arm against the glass re-run.
 
+**Slice 9b — a bot backs off to shoot glass it is too close to (2026-09-13 ~13:30).** The hull-width
+arm's first round showed the other half of the spawn-room trap: rm1 is a 170x90x213u room whose
+only exit is a 19x20u vent in the ceiling; a bot that spawned under it sat at the crossing's approach
+point 5u below the pane and fired "breaking glass obstacle" twenty times a second — with lasers,
+because the missile that opens glass is refused inside the 30u self-splash guard and nothing moved
+the bot back. `BotClearObstacleSafely` now, when the pane is inside the guard and the bot has a
+missile but no matter primary, applies the one-second legal reverse burst (the hard-pin escape's
+primitive) instead of firing, and the next reactive tick fires from the guard distance. The spammed
+log line is throttled to one per five seconds per bot. Runtime-only; no network change. It rides the
+final play-test arm together with slice 9.
+
 **Committee state, measured (2026-09-13).** Per-level census, share of ACTIVE-held time: `via`
 54% -> 96% from the sprint's start to 57aaa31f; the engine-path fallback (`no-route`) 39% -> 0%;
 `stuck-escape` 4.5% -> 1.9%; the flicker members (`seam`, `path_pnt`, `gridroute`, `hop-commit`)

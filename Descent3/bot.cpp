@@ -1694,6 +1694,24 @@ static void BotClearObstacleSafely(int bot_index, object *blocker, vector *targe
     LOG_DEBUG.printf("BOT: '%s' firing Mass Driver at glass obstacle", Bots[bot_index].callsign);
     return;
   }
+  // Too close for the missile and no matter primary: BACK OFF first — a second of legal reverse
+  // thrust, the primitive the hard-pin escape uses — and the next tick fires from the guard
+  // distance. Firing lasers here opened nothing: Batteries rm1 is a spawn room whose only exit is a
+  // 19x20u ceiling vent, and a bot that spawned under it sat 5u below the pane firing lasers twenty
+  // times a second for the round (the operator found his own team trapped there).
+  {
+    int sec_wb = Players[slot].weapon[PW_SECONDARY].index;
+    if (dist < BOT_SPLASH_SELF_GUARD && sec_wb >= 10 && sec_wb < 20 && Players[slot].weapon_ammo[sec_wb] > 0) {
+      Bots[bot_index].unstick_reverse_until = Gametime + BOT_UNSTICK_REVERSE_TIME;
+      static float backoff_log_t[MAX_BOTS];
+      if (Gametime - backoff_log_t[bot_index] > 5.0f || Gametime < backoff_log_t[bot_index]) {
+        backoff_log_t[bot_index] = Gametime;
+        LOG_DEBUG.printf("BOT: '%s' backing off to shoot glass (%.0fu, guard %.0fu)", Bots[bot_index].callsign, dist,
+                         BOT_SPLASH_SELF_GUARD);
+      }
+      return;
+    }
+  }
   // No matter weapon available — fire primary anyway (won't break glass but might unstick)
   BotFireAtPosition(bot_index, target_pos);
 }
@@ -1792,8 +1810,12 @@ static void BotDoStuckClear(int bot_index) {
       int16_t tmap = fp.tmap;
       if (tmap >= 0 && (GameTextures[tmap].flags & TF_BREAKABLE) && fp.portal_num >= 0) {
         BotClearObstacleSafely(bot_index, nullptr, &hit.hit_face_pnt[0], true);
+        static float glass_obstacle_log_t[MAX_BOTS];
+        if (Gametime - glass_obstacle_log_t[bot_index] > 5.0f || Gametime < glass_obstacle_log_t[bot_index]) {
+          glass_obstacle_log_t[bot_index] = Gametime;
         LOG_DEBUG.printf("BOT: '%s' breaking glass obstacle in room %d face %d", Bots[bot_index].callsign, face_room,
                          face_num);
+        }
         return;
       }
     }
