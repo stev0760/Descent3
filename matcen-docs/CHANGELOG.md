@@ -13,6 +13,24 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
 admission fix and the remaining interior-navigation defects are still being worked. Do not run this
 as a release.*
 
+*   **The point a bot is told to fly through a door is the validated one.** Every in-room layer
+    (skeleton aim, chain export, lattice via, composed route) still handed out a door's polygon centre
+    as the point to fly, even where that centre is shadowed by a propped leaf; Batteries Included has
+    at least two such doors (the red flag room's, and Red's supply room 8, whose only door produced 0
+    successful committed crossings in 41 attempts). The network keeps its nodes where they were, but
+    whenever a door node or a lattice seed is handed out as the next point to fly, the validated
+    crossing point is substituted — the approach point just inside the room for the door the bot is
+    heading to, and the validated push-through point beyond it when it commits the crossing. A door
+    with no straight clear column gets a bent crossing found by the same lateral search the door
+    on-ramp uses. No edge or grid changes; only what the pilot aims at. Failed committed crossings now
+    log where the bot stood, what it was told to fly, and where it ended up.
+*   **The route composer now plans wherever the straight line is blocked.** It used to drive only in
+    hollow-centre rooms. It now runs in any room it is eligible for, but only when the ship-hull sweep
+    to the leg's target fails, so a bot with a clear line still flies straight; the two earlier
+    attempts to widen it regressed because they composed in open halls too. The goal aim reads a live
+    committed route in any room, so the goal layer and the via layer can no longer disagree in a
+    hallway. The explore sampler's neighbour fallback also passes the same admission as its random
+    loop, which stops skybox window rooms from winning as "unvisited".
 *   **Bots cross a doorway where it is actually open.** Each door now carries a validated crossing
     point: the door polygon is sampled with the ship-hull sweep along its normal and the most open
     point that sweeps clear, and how deep it clears, is remembered. The committed push-through a bot

@@ -118,9 +118,14 @@ rooms the change made composer-eligible (errands to unreachable rooms + the one-
 Slices 2 (validated door crossing point for the push-through; the network keeps its anchors — the
 alternative was measured and rejected; three-phase lattice growth) and 5 (explore sampler asks our
 router; objective items get a 5s back-off) landed the same night; their play gate runs against the
-slice-1 arm. Remaining: slice 3 (corner-bridge bound + backface), slice 4 (compose only when the
-direct line is blocked, in any routable room), then the rm3 hub for Red's approach. The room router
-is untouched by design.
+slice-1 arm: stucks and no-route churn down, Blue conversion 88% → 40% on five mid-route carrier
+deaths (Red interception, not nav), Red still 0-1 grabs because its own doors (rooms 8 and 80) fail
+committed crossings. Staged next: the crossing as a validated PATH handed out at every site
+(approach point in, push-through point out, bent where a door has no straight column), the
+composer as the consumer wherever the straight line is blocked (slice 4), the sampler fallback
+filter (5b), positions on failed-crossing lines. A corner-bridge room bound (slice 3) was tried and
+reverted the same night — it broke abend2's ring connectors; the back-face sweep fix is the real
+item. Then the rm3 hub for Red's approach. The room router is untouched by design.
 
 0.9.13 shipped as the correctness checkpoint; 0.9.14-dev is open with four landed commits:
 telemetry (fa5966ed), the aim-layer fixes (4c51e30d, 2df343c2), and glass routing. The 4-round

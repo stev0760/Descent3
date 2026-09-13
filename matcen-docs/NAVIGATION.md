@@ -781,11 +781,42 @@ centre-anchored, half-pitch shift) and keeps the fullest: cells 12749 → 14300 
 sealed line names the item. Play gate: 4-round batteries vs the slice-1 arm
 (`batteries-portal-s125-4rnd.json`).
 
-**Still open on this line:** slice 3 (corner-bridge room bound; the sweep never sets FQ_BACKFACE so
-a point outside the room re-enters through a wall as "clear"), slice 4 (compose only when the
-direct line is blocked, in any routable room — the consumer). Deferred to the next dump:
-gap-directed lattice sampling, a trunk node per room, the rm3 hub (16 lattice components, not
-composer-eligible — Red's whole approach).
+**Slices 1+2+5 play gate (soak-20260912T222538 vs the slice-1 arm, 4 rounds each).** Blue 10
+grabs / 4 captures (40%) vs 8 / 7; Blue carrier deaths 5 vs 1, all 340-1093u from home in
+hallway rooms (44, 45, 241, 305, 43) with Red returning its flag five times — interception, i.e.
+Red's defenders now hold, not a navigation loss. Red grabs 0 vs 1. Hard pins 143 → 122 (guard
+FAIL on Hawk again, this time 47% of the DECREASE: his rm78 pins 29 → 0), no-route verdicts
+131 → 61, explore errands into skybox rooms 73 → 37 (the remainder was the sampler's neighbour
+fallback — slice 5b), sealed abandons 13 → 6. Red's side is the story: rm8 pins 44 → 61 with its
+only door at 0 crossed / 69 failed committed crossings, rm80 at 6 / 54. Both are shadowed-centre
+doors (rm8's validated point 10.5u aside at depth 16; rm80's has no straight column at all) and
+every hand-out site still aimed bots at the polygon centre — slice 2c below.
+
+**Slice 2c (staged).** The first slice-2 reading of rm8 (Red's supply room, 44 hard pins in the
+slice-1 arm) found its only door is a second shadowed-centre door: polygon centre blocked within 8u,
+validated point 10.5u to the side at depth 16, and its committed crossings ran 0 crossed / 34 failed
+under slice 1 (the glass arm barely needed a commit there). Every hand-out site still aimed bots at
+the centre: `BotResolveRoomAim` (np==1, BFS hop, soft hop), `BotSkelBuildChain`, `BotWaypointAimPos`
+(both forms), `QueryVia`, `ComposeUnionRoute`'s terminal. `SkelFlyPos` / `RoadmapFlyPos` substitute
+the crossing's NEAR point (the approach point just inside this room) at hand-out for a live portal
+node or seed; the seam push aims at the FAR point; graph and grid unchanged (the earlier node move
+split rooms). `BotPortalCrossingPath(room, portal, &near, &plane, &far, &bent)`: straight crossings
+have near/far on the normal (8u in, 16-24u through); a door with no straight column at any sample
+gets a BENT crossing — one lateral-fan step on each side of the plane (rm80's door still has none:
+its way in needs the multi-step on-ramp search, a follow-up). Failed committed crossings now log
+`from=`/`aim=`/`now=` positions. **Slice 3 — tried and REVERTED the same night:** bounding the
+corner-bridge vertex to the room box broke abend2's ring connectors 4 and 20 (a legitimate vertex
+sits just outside a small room through an open portal; room 20 fell to two components and lost
+eligibility). The correct fix is the sweep honouring back faces (FQ_BACKFACE), still open. **Slice 4 (staged):** the composed drive in `BotViaPointTick` runs in any
+`BotRoadmapRoomRoutable` room (or buried), gated on `!BotSegmentClear(bot, target)` — compose only
+when the straight line is blocked; `count >= 2`; the goal-issue ladder reads a live chain in ANY room
+(previously only buried), then the buried resolver, then the waypoint aim. **Slice 5b (staged):** the
+explore sampler's neighbour fallback filters NEVER portals and asks the router (rm80's four window
+portals onto skybox room 81 won that fallback as "unvisited": 11 errands in 1.5 rounds).
+
+**Still open on this line:** FQ_BACKFACE (the sweep still ignores back faces; bounded for now).
+Deferred to the next dump: gap-directed lattice sampling, a trunk node per room, the rm3 hub (16
+lattice components, not composer-eligible — Red's whole approach).
 
 ### 7.0-PREV Glass routing restored + mechanism telemetry — 2026-09-12 (0.9.14-dev)
 

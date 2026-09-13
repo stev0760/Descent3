@@ -143,6 +143,7 @@ struct RoadmapRoom {
   std::vector<int> comp;             // connected-component id per node (0..comp_count-1)
   std::vector<float> tweight;        // tactical weight — flanking hook (Stage 5), unused now
   std::vector<int> portal_seed;      // portal index -> node index of its seam seed (indoor; size = num_portals)
+  std::vector<int> seed_portal;      // node index -> portal index for the seeds (indoor; size = n_seed)
   int comp_count = 0;
   int orig_comp_count = 0; // components BEFORE the bridges merged them (>1 = non-convex / multi-level)
   bool routable = false;   // route-ownership gate: this room HAS a usable local-street network
@@ -242,6 +243,15 @@ bool RoadmapLOS(const RoadmapRoom *rr, const vector &a, const vector &b) {
 // The outdoor roadmap never enters that pass.
 bool RoadmapTrace(const RoadmapRoom *rr, const vector &a, const vector &b, fvi_info *hit_out) {
   return !rr->outdoor && BotSegmentClear(rr->probe_room, a, b, BOT_ROADMAP_CLEARANCE, hit_out);
+}
+
+// The point a bot is told to fly for roadmap node `node`: a portal seed hands out the portal's
+// validated crossing point (slice 2, see SkelFlyPos in bot_steering.cpp); graph unchanged.
+vector RoadmapFlyPos(const RoadmapRoom *rr, int node) {
+  vector p = rr->node[node];
+  if (!rr->outdoor && node < (int)rr->seed_portal.size() && rr->probe_room >= 0)
+    BotPortalCrossingPath(rr->probe_room, rr->seed_portal[node], &p, nullptr, nullptr, nullptr); // approach point
+  return p;
 }
 
 vector RoadmapSideAxis(const vector &dir, const vector &wallnorm) {
@@ -1062,6 +1072,12 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
           for (int ax = 0; ax < 2 && !found; ax++)
             for (int sg = 0; sg < 2 && !found; sg++) {
               vector cm = mid + axes[ax] * (off * signs[sg]);
+              // NOTE (0.9.14): a room-bbox bound on this vertex was tried and reverted the same night —
+              // a corner vertex legitimately sits just outside a small room's box when the go-around
+              // runs through an open portal (abend2's ring connectors 4 and 20 lost their bridge and
+              // room 20 fell to two components). The real hole is that the sweep ignores back faces,
+              // so a vertex placed beyond a WALL can read clear on the way back in (Batteries rm84's
+              // old wall-seed vertex); that is an FQ_BACKFACE question for the sweep, not a bound.
               if (RoadmapLOS(rr, A, cm) && RoadmapLOS(rr, cm, B)) {
                 M = cm;
                 found = true;
@@ -1329,6 +1345,7 @@ RoadmapRoom *Build(int room_idx) {
     rr->tweight.push_back(0.0f);
     uf.push_back(idx);
     rr->portal_seed[p] = idx;
+    rr->seed_portal.push_back(p);
   }
   const int n_seed = (int)rr->node.size();
   if (n_seed == 0) {
@@ -1682,7 +1699,7 @@ BotViaResult QueryVia(RoadmapRoom *rr, object *obj, int goal, vector *via_out) {
       Dist(obj->pos, rr->node[via_node]) < BOT_VIA_ARRIVE_DIST + BOT_ROADMAP_CLEARANCE)
     via_node = path[1];
   if (via_out)
-    *via_out = rr->node[via_node];
+    *via_out = RoadmapFlyPos(rr, via_node);
   return BOT_VIA_FOUND;
 }
 
@@ -1987,6 +2004,13 @@ bool ComposeUnionRoute(RoadmapRoom *rr, object *obj, const vector &target_pos, i
   route_out->count = (int)waypoint.size();
   for (int i = 0; i < route_out->count; i++)
     route_out->point[i] = waypoint[i];
+  // A waypoint that is a portal seed is flown at the portal's validated crossing (slice 2).
+  for (int i = 0; i < route_out->count; i++)
+    for (int sn = 0; sn < (int)rr->seed_portal.size(); sn++)
+      if (Dist(route_out->point[i], rr->node[sn]) < 0.01f) {
+        route_out->point[i] = RoadmapFlyPos(rr, sn);
+        break;
+      }
   route_out->terminal = terminal;
   route_out->terminal_pos = terminal_pos;
   route_out->terminal_room = terminal_room;
@@ -2204,6 +2228,12 @@ int BotRoadmapDumpRoomCached(int room_idx, vector *pos_out, int *comp_out, int m
   if (degenerate_out)
     *degenerate_out = rr->degenerate;
   return n;
+}
+
+// Slice 4: the composer's eligibility for a room (builds the roadmap on first use, like Get()).
+bool BotRoadmapRoomRoutable(int room_idx) {
+  RoadmapRoom *rr = Get(room_idx);
+  return rr && !rr->degenerate && rr->routable;
 }
 
 bool BotRoadmapCoverage(int room_idx, int *cells_out, int *connector_out, int *local_pair_pct_out,

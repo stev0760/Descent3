@@ -576,6 +576,8 @@ struct bot_info {
   int hop_commit_portal; // portal index committed to (valid in hop_commit_src)
   int hop_commit_src;    // room the commit was issued from
   float hop_commit_time; // Gametime at issue (BOT_HOP_OUTCOME_TIMEOUT bounds a pending one)
+  vector hop_commit_pos; // bot position at issue (outcome telemetry)
+  vector hop_commit_aim; // the push-through point issued (outcome telemetry)
 
   // Intra-room via-point steering (Phase 12) — committed go-around waypoint state
   vector via_point;        // committed go-around waypoint (valid while Gametime < via_expires)

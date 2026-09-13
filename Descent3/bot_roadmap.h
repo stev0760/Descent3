@@ -233,6 +233,8 @@ int BotRoadmapDumpRoomEdges(int room_idx, int *a_out, int *b_out, int max_edges,
 //   local_pair — %% of portal-seed pairs joined without a direct seed-to-seed sight line (-1 = n/a).
 // Keep these apart when reading them: a room can look well-populated on `connector` alone while the
 // sampler found nothing, which is precisely how the abend2 ring passed inspection.
+// True when the room holds a lattice the composer may plan over (`routable`): built on first use.
+bool BotRoadmapRoomRoutable(int room_idx);
 bool BotRoadmapCoverage(int room_idx, int *cells_out, int *connector_out, int *local_pair_pct_out,
                         bool *routable_out = nullptr);
 

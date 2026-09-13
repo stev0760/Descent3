@@ -423,6 +423,14 @@ uint64_t BotAimExitMask(object *obj, int room_idx, int dest_room);
 // both test maps and starved the red flag room's lattice, so the network keeps the engine point.
 #define BOT_CROSS_DEPTH_MAX 24.0f // deepest sweep tried either side of the plane (a leaf, a lip, a frame)
 bool BotPortalCrossing(int room_idx, int portal_idx, vector *pnt_out, float *depth_out);
+// The crossing as a PATH seen from room_idx: `near` is the approach point just inside this room,
+// `plane` the point on the portal, `far` the point inside the other room the push-through aims at.
+// A door with a straight clear column has near/far on the normal; a door whose column is blocked at
+// every sample (Batteries rm80: a leaf right behind the plane) gets a BENT crossing found by the
+// tangent fan on each side — the same search the door on-ramp uses. Returns false (engine point,
+// near == far == plane) only when no crossing of either kind exists.
+bool BotPortalCrossingPath(int room_idx, int portal_idx, vector *near_out, vector *plane_out, vector *far_out,
+                           bool *bent_out);
 
 // Cost-aware next-hop router (Phase 11). Dijkstra over the interior room graph weighting
 // portals by BOA base cost + graded geometry cost + dynamic penalty. Returns the next room to

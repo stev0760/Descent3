@@ -320,6 +320,11 @@ keeps thrust pointed along the engine's path rather than locking `fvec` on a far
   sweep through (depth = proven clearance either side of the plane, 0 = none found, engine point
   returned). It is CROSSING geometry — seam push, door pick, marker — never the skeleton node or
   lattice seed (measured to split rooms). Both sides share one point.
+- **Hand-out rule:** a live portal node / lattice seed handed out as a point to FLY goes through
+  `SkelFlyPos` / `RoadmapFlyPos` (the validated crossing); the stored node/seed position is the graph
+  anchor and never moves. Add the substitution to any new hand-out site.
+- **Composed drive:** any `BotRoadmapRoomRoutable` (or buried) room, only when the straight line to the
+  leg target is blocked; the goal aim reads a live `via_chain` in any room.
 - **Explore destinations** must pass `BotComputeRoute`; the engine's BOA table is glass/window-blind.
 - **Objective items** (flags/orbs) are `BotTrollExempt` and get `BOT_OBJECTIVE_BLACKLIST_DURATION` (5s),
   never the 60s powerup blacklist.

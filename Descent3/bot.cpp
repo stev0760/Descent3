@@ -2555,8 +2555,14 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
   // FOUND on). If the stall vanishes here, per-tick A* was the cost. If it persists, the drive itself
   // is broken in a way this hypothesis cannot see and we revert this block (comment-only) and move to
   // the pilot — the committee collapse. One variable at a time.
+  // Slice 4 (0.9.14 portal model): the composed route is the pilot's answer whenever the STRAIGHT LINE
+  // to this leg's target is blocked, in any room the composer may plan over — not only buried rooms.
+  // The earlier widening (c32ee964/f3b393d7) regressed because it fired in open halls where the bot
+  // could fly straight at the target: pinning a bot to a chain for the commit window there is wrong.
+  // The gate is the hull sweep, the same probe BotFindViaPoint starts with. A clear line flies straight.
   if (!OBJECT_OUTSIDE(obj) && !ROOMNUM_OUTSIDE(target_room) && Bots[bot_index].via_chain_len == 0 &&
-      BotRoomIsBuried(obj->roomnum)) {
+      (BotRoomIsBuried(obj->roomnum) || BotRoadmapRoomRoutable(obj->roomnum)) &&
+      !BotSegmentClear(obj->roomnum, obj->pos, target_pos, obj->size)) {
     static bool Drive_seen[MAX_BOTS];
     static float Drive_last[MAX_BOTS];
     static int Drive_room[MAX_BOTS], Drive_target[MAX_BOTS];
@@ -2568,7 +2574,9 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
       Drive_room[bot_index] = obj->roomnum;
       Drive_target[bot_index] = target_room;
       BotComposedRoute croute{};
-      if (BotComposeRoomRoute(obj, target_pos, target_room, -1, &croute, /*cached_only=*/true) && croute.count >= 3) {
+      // A two-point route (the visible lattice node, then the exit) is a real go-around once the
+      // straight line is known blocked; the old count>=3 floor only mattered while open halls composed.
+      if (BotComposeRoomRoute(obj, target_pos, target_room, -1, &croute, /*cached_only=*/true) && croute.count >= 2) {
         for (int i = 0; i < croute.count; i++)
           Bots[bot_index].via_chain[i] = croute.point[i];
         Bots[bot_index].via_chain_len = croute.count;
@@ -3010,57 +3018,39 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
     // goal self-clears without descent (the 0->38 re-issue loop). Aim THROUGH the seam instead;
     // arrival then can only fire inside the tray. Issued claim-room stays wp_room.
     unified_aim = true; // skip the buried-parent resolver — this hop IS the descent
-  } else if (buried_room) {
+  } else if (Bots[bot_index].via_chain_len > 0 && Bots[bot_index].via_expires > Gametime &&
+             (int)obj->roomnum == Bots[bot_index].via_chain_room &&
+             wp_room == Bots[bot_index].via_chain_target_room && Bots[bot_index].via_chain_cursor >= 0 &&
+             Bots[bot_index].via_chain_cursor < Bots[bot_index].via_chain_len) {
     // ONE MIND ON A COMMITTED CROSSING. When the composer has already answered this crossing — a
     // via_chain committed for this exact (room, target room) — the routed goal reads THAT answer
-    // instead of deriving an independent skeleton one. Two graphs were answering the same question
-    // every tick: BotResolveRoomAim resolved wp_aim over the skeleton (its roadmap branch is
-    // unreachable here, gated on !RoomBuriedCenter at bot_steering.cpp:848), while the via layer
-    // flew a union-graph route. Logged splits were 80-245u apart. The old AIMSPLIT throttle fell
-    // silent across level resets, so its 165 events are not a comparable full-run count.
-    //
-    // This is the same lesson as cddde48c, one layer further out: there the engine's BOA node was a
-    // second planning vote, here the skeleton resolver is. Subtraction, not new machinery — no new
-    // commit site, no new compose call. Composition stays in BotViaPointTick, which serves eight
-    // callers; only the AIM changes, and only when a chain is already held.
-    //
-    // Side effect that is the actual point: on this path a buried room's issued destination becomes
-    // union-graph derived (arterials + lattice) instead of skeleton-only. Buried rooms had no other
-    // consumer of the lattice — the goal-issue gridroute branch below never fires here either.
-    // LIVE commitment only, not merely a held chain. A lapsed commitment is retired with the chain
-    // at the via tick, but the timer test below still guards this earlier aim read against a route
-    // whose commitment may have elapsed mid-tick; no live chain, no override.
-    if (Bots[bot_index].via_chain_len > 0 && Bots[bot_index].via_expires > Gametime &&
-        (int)obj->roomnum == Bots[bot_index].via_chain_room &&
-        wp_room == Bots[bot_index].via_chain_target_room && Bots[bot_index].via_chain_cursor >= 0 &&
-        Bots[bot_index].via_chain_cursor < Bots[bot_index].via_chain_len) {
-      wp_aim = Bots[bot_index].via_chain[Bots[bot_index].via_chain_cursor];
-      unified_aim = true;
-      aim_source = BOT_ROOM_AIM_ROADMAP;
-      // Direct mechanism counter. The two obvious proxies both lie about this branch: AIMSPLIT is
-      // gated on unified_aim, which this branch sets, so it measures its own trigger population; and
-      // the "roadmap route in room" line at goal issue is unreachable whenever BotViaPointTick
-      // succeeds, because that path returns early — i.e. it is blind on exactly the ticks this fires.
-      // Count the branch itself, throttled per bot so a held chain does not flood the log.
-      {
-        static float Chainaim_log_t[MAX_BOTS];
-        // `Gametime < stored` is the LEVEL-RESET guard, not redundancy: Gametime restarts each round,
-        // so a timestamp banked in the previous round reads as far in the future and the plain
-        // elapsed test stays false for the rest of the level. Omitting it silenced this counter after
-        // round 1 and undercounted the branch ~20x — the Shadow_time latch above carries the same
-        // term for the same reason.
-        if (Gametime < Chainaim_log_t[bot_index] || Gametime - Chainaim_log_t[bot_index] > 5.0f) {
-          Chainaim_log_t[bot_index] = Gametime;
-          LOG_DEBUG.printf("BOT NAV: '%s' CHAINAIM rm%d hop %d/%d (target room %d)", Bots[bot_index].callsign,
-                           (int)obj->roomnum, Bots[bot_index].via_chain_cursor + 1, Bots[bot_index].via_chain_len,
-                           wp_room);
-        }
+    // instead of deriving an independent one. Two graphs were answering the same question every
+    // tick: BotResolveRoomAim resolved wp_aim over the skeleton while the via layer flew a
+    // union-graph route; logged splits were 80-245u apart. This is the same lesson as cddde48c, one
+    // layer further out: there the engine's BOA node was a second planning vote, here the resolver
+    // is. Slice 4 reads the live chain in ANY room (the composed drive now runs wherever the room is
+    // composer-eligible and the straight line is blocked), so the goal aim and the via layer cannot
+    // disagree in a hallway either. LIVE commitment only, not merely a held chain.
+    wp_aim = Bots[bot_index].via_chain[Bots[bot_index].via_chain_cursor];
+    unified_aim = true;
+    aim_source = BOT_ROOM_AIM_ROADMAP;
+    // Direct mechanism counter (AIMSPLIT is gated on unified_aim, which this branch sets, and the
+    // "roadmap route in room" line is unreachable whenever BotViaPointTick succeeds). Throttled per
+    // bot; `Gametime < stored` is the level-reset guard.
+    {
+      static float Chainaim_log_t[MAX_BOTS];
+      if (Gametime < Chainaim_log_t[bot_index] || Gametime - Chainaim_log_t[bot_index] > 5.0f) {
+        Chainaim_log_t[bot_index] = Gametime;
+        LOG_DEBUG.printf("BOT NAV: '%s' CHAINAIM rm%d hop %d/%d (target room %d)", Bots[bot_index].callsign,
+                         (int)obj->roomnum, Bots[bot_index].via_chain_cursor + 1, Bots[bot_index].via_chain_len,
+                         wp_room);
       }
-    } else {
-      unified_aim = BotResolveRoomAim(obj, routed_pos, goal_room, obj->size, &wp_aim, wp_room, &aim_source);
-      if (!unified_aim)
-        wp_aim = (wp_room == goal_room) ? routed_pos : BotWaypointAimPos(wp_room, routed_pos, obj);
     }
+  } else if (buried_room) {
+    // The buried-room resolver (skeleton BFS / soft hop): one aim point per room, the d6efc603 lesson.
+    unified_aim = BotResolveRoomAim(obj, routed_pos, goal_room, obj->size, &wp_aim, wp_room, &aim_source);
+    if (!unified_aim)
+      wp_aim = (wp_room == goal_room) ? routed_pos : BotWaypointAimPos(wp_room, routed_pos, obj);
   } else {
     wp_aim = (wp_room == goal_room) ? routed_pos : BotWaypointAimPos(wp_room, routed_pos, obj);
   }
@@ -3105,17 +3095,13 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
         // the sweep proved clear. The old construction pushed from the polygon centre toward the next
         // room's bbox centre — a diagonal through a doorway that a propped leaf can shadow (Batteries
         // rm84 exit: 271 NOT-CROSSED in 20 rounds). Without a validated point, the old construction.
-        vector cross_pnt = pt.path_pnt;
-        float cross_depth = 0.0f;
-        BotPortalCrossing(obj->roomnum, best_p, &cross_pnt, &cross_depth);
-        vector nrm = crm.faces[pt.portal_face].normal; // points INTO the current room
-        if (cross_depth > 0.0f && vm_NormalizeVector(&nrm) > 0.5f) {
-          float push = cross_depth;
-          if (push > BOT_SEAM_PUSH_DIST)
-            push = BOT_SEAM_PUSH_DIST;
-          if (push < BOT_VIA_ARRIVE_DIST + 1.0f)
-            push = BOT_VIA_ARRIVE_DIST + 1.0f; // arrival must mean crossing
-          seam_pnt = cross_pnt - nrm * push;
+        vector cross_near{}, cross_plane{}, cross_far{};
+        bool cross_bent = false;
+        if (BotPortalCrossingPath(obj->roomnum, best_p, &cross_near, &cross_plane, &cross_far, &cross_bent)) {
+          // The validated push-through point inside the next room (straight: on the door's normal,
+          // 16-24u past the plane; bent: the lateral entry point the fan found). Arrival there is a
+          // crossing by construction.
+          seam_pnt = cross_far;
         } else {
           vector through = wp_aim - pt.path_pnt;
           float td = vm_GetMagnitude(&through);
@@ -3136,6 +3122,8 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
         Bots[bot_index].hop_commit_portal = best_p;
         Bots[bot_index].hop_commit_src = (int)obj->roomnum;
         Bots[bot_index].hop_commit_time = Gametime;
+        Bots[bot_index].hop_commit_pos = obj->pos; // where the bot stood when it committed (outcome line)
+        Bots[bot_index].hop_commit_aim = seam_pnt; // what it was told to fly
         if (steer_divergent)
           LOG_DEBUG.printf("BOT NAV: '%s' seam guard: engine path detours via room %d — aiming through portal to %d",
                            Bots[bot_index].callsign, steer_room, wp_room);
@@ -3654,6 +3642,20 @@ static void BotDoExploreRoaming(int bot_index) {
         if (cur.portals[p].flags & PF_TOO_SMALL_FOR_ROBOT)
           continue;
         if (r1 == Bots[bot_index].explore_stuck_room)
+          continue;
+        // Same admission as the random loop: a neighbour behind a wall/window "portal" is not a
+        // destination (Batteries rm80's four window portals onto skybox room 81 won this fallback
+        // every time, and an unvisited room outscores everything). The engine's neighbour list is
+        // not a doorway list — see BotPortalClass.
+        if (BotPortalClass(obj->roomnum, p) == BOT_PORTAL_CLASS_NEVER)
+          continue;
+        if (BotComputeRoute(obj->roomnum, r1, bot_index) < 0)
+          continue;
+        bool dup1 = false;
+        for (int c = 0; c < num_candidates; c++)
+          if (candidates[c] == r1)
+            dup1 = true;
+        if (dup1)
           continue;
         candidates[num_candidates++] = r1;
       }
@@ -7046,11 +7048,16 @@ bool BotNavDump(const char *filename) {
         static const char *class_names[] = {"never", "door", "pane"};
         int pc = BotPortalClass(r, p);
         fprintf(fp, "\"class\": \"%s\", ", (pc >= 0 && pc <= 2) ? class_names[pc] : "?");
-        vector cpnt = po.path_pnt;
+        vector cpnt = po.path_pnt, cnear = po.path_pnt, cfar = po.path_pnt;
         float cdepth = 0.0f;
+        bool cbent = false;
         bool cok = BotPortalCrossing(r, p, &cpnt, &cdepth);
-        fprintf(fp, "\"crossing\": [%.2f,%.2f,%.2f], \"crossing_depth\": %.1f, \"crossing_ok\": %s, ", cpnt.x(), cpnt.y(),
-                cpnt.z(), cdepth, cok ? "true" : "false");
+        BotPortalCrossingPath(r, p, &cnear, nullptr, &cfar, &cbent);
+        fprintf(fp,
+                "\"crossing\": [%.2f,%.2f,%.2f], \"crossing_depth\": %.1f, \"crossing_ok\": %s, \"crossing_bent\": %s, "
+                "\"crossing_near\": [%.2f,%.2f,%.2f], \"crossing_far\": [%.2f,%.2f,%.2f], ",
+                cpnt.x(), cpnt.y(), cpnt.z(), cdepth, cok ? "true" : "false", cbent ? "true" : "false", cnear.x(),
+                cnear.y(), cnear.z(), cfar.x(), cfar.y(), cfar.z());
       }
       fprintf(fp, "\"portal_path_pnt\": [%.2f,%.2f,%.2f], ", po.path_pnt.x(), po.path_pnt.y(), po.path_pnt.z());
       fprintf(fp, "\"boa_cost_fwd\": %.2f, \"boa_cost_rev\": %.2f, ", boa_fwd, boa_rev);
@@ -8451,9 +8458,13 @@ void BotDoFrame() {
                          Bots[i].hop_commit_portal, Gametime - Bots[i].hop_commit_time);
         Bots[i].hop_commit_wp = -1;
       } else if (cur != Bots[i].hop_commit_src || Gametime - Bots[i].hop_commit_time > BOT_HOP_OUTCOME_TIMEOUT) {
-        LOG_DEBUG.printf("BOT NAV: '%s' hop outcome: NOT-CROSSED rm%d -> rm%d via portal %d (%.1fs, now rm%d)",
+        LOG_DEBUG.printf("BOT NAV: '%s' hop outcome: NOT-CROSSED rm%d -> rm%d via portal %d (%.1fs, now rm%d) "
+                         "from=(%.0f,%.0f,%.0f) aim=(%.0f,%.0f,%.0f) now=(%.0f,%.0f,%.0f)",
                          Bots[i].callsign, Bots[i].hop_commit_src, Bots[i].hop_commit_wp,
-                         Bots[i].hop_commit_portal, Gametime - Bots[i].hop_commit_time, cur);
+                         Bots[i].hop_commit_portal, Gametime - Bots[i].hop_commit_time, cur,
+                         Bots[i].hop_commit_pos.x(), Bots[i].hop_commit_pos.y(), Bots[i].hop_commit_pos.z(),
+                         Bots[i].hop_commit_aim.x(), Bots[i].hop_commit_aim.y(), Bots[i].hop_commit_aim.z(),
+                         cobj->pos.x(), cobj->pos.y(), cobj->pos.z());
         Bots[i].hop_commit_wp = -1;
       }
     }
