@@ -1130,6 +1130,17 @@ sealed complex funnels bots into rm35's pocket at about the rate the vents used 
 the final candidate (c099220f, with the directional burst) is the arm that decides between the
 9-line and the 57aaa31f line.
 
+**Final candidate arm (soak-20260913T150110, c099220f = 9 + 9b + 9c, vs the glass re-run; GUARD
+PASS).** The sprint's lowest-churn Batteries arm: escalations 97 (112; 118 without the directional
+burst), rm35 37 -> 19 (the burst halves the pocket cost — 55 reverse, 7 down, 3 each up/left/right),
+rm80 8 (36), rm1/rm68 absent (15 back-offs), grid crossings 0 (19), NO-ROUTE 0, committed crossings
+1982 (1692). Cost: hard pins 71 (57), Blue 11 grabs / 8 captures (17 / 13 — inside the sprint's
+4-13 band), Red 0 / 0 (1 / 0); rm8 14 (5). Four of seven pre-registered terms met (vents, rm80,
+grids, no-route); rm35 19 vs 16, hard pins 71 vs 57, captures 8 vs 13 missed. Judged whole
+(holistic rule): the traps the operator saw with his own eyes are gone and the churn is the lowest
+measured; the capture line is one arm inside a wide band. **Play-test build: c099220f**, subject to
+its abend2 gate.
+
 **Committee state, measured (2026-09-13).** Per-level census, share of ACTIVE-held time: `via`
 54% -> 96% from the sprint's start to 57aaa31f; the engine-path fallback (`no-route`) 39% -> 0%;
 `stuck-escape` 4.5% -> 1.9%; the flicker members (`seam`, `path_pnt`, `gridroute`, `hop-commit`)
