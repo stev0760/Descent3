@@ -578,7 +578,10 @@ struct bot_info {
   int hop_commit_src;    // room the commit was issued from
   float hop_commit_time; // Gametime at issue (BOT_HOP_OUTCOME_TIMEOUT bounds a pending one)
   vector hop_commit_pos; // bot position at issue (outcome telemetry)
-  float unstick_reverse_until; // Gametime until which a hard pin drives pure reverse thrust (0.9.14)
+  float unstick_reverse_until;
+  int hunt_route_from, hunt_route_to; // hunt routability cache: (room, target room) -> ok, 1 s
+  bool hunt_route_ok;
+  float hunt_route_time; // Gametime until which a hard pin drives pure reverse thrust (0.9.14)
   vector hop_commit_aim; // the push-through point issued (outcome telemetry)
 
   // Intra-room via-point steering (Phase 12) — committed go-around waypoint state

@@ -915,6 +915,15 @@ static void BotSetPursuitGoal(int bot_index, vector *portal_pos = nullptr, int p
                      target->roomnum);
     return;
   }
+  // And OUR router, under this bot's glass authority: the engine's table calls intact glass passable,
+  // so the goal it would build drives an unkinetic bot at a conference-room pane (or the furniture in
+  // front of it) for as long as the target stays behind it.
+  if (target->roomnum != obj->roomnum && !OBJECT_OUTSIDE(obj) && !OBJECT_OUTSIDE(target) &&
+      BotComputeRoute(obj->roomnum, target->roomnum, bot_index) < 0) {
+    LOG_DEBUG.printf("BOT: '%s' HUNT — no flyable route to target room %d, skipping goal", Bots[bot_index].callsign,
+                     target->roomnum);
+    return;
+  }
 
   int gi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&target_handle, 2, 1.0f, GF_SPEED_ATTACK | GF_OBJ_IS_TARGET);
   Bots[bot_index].pursuit_goal_index = gi;
@@ -5136,6 +5145,24 @@ static void BotUpdateState(int bot_index) {
   // Cloak breaks LOS — bot can't see where to shoot, but target is retained so the engine's
   // AIN_HEAR_NOISE pipeline can still refresh positional tracking when the target fires/AB's.
   bool has_los = has_target && BotCanSeeTarget(obj, target) && BotHasLOS(obj, target);
+  // A hunt needs a route the bot can fly. The engine's path table calls intact glass passable, so a
+  // bot with no kinetic weapon would chase a target it can see through a pane for the rest of the
+  // round (Batteries rm35: one bot 27 minutes pressing a cubicle wall in a glass-sealed closet, the
+  // target one room over). Same room or a clear close shot needs no route; otherwise OUR router under
+  // this bot's own glass authority, cached per (room, target room) for a second.
+  bool target_routable = has_target;
+  if (has_target && target->roomnum != obj->roomnum && !(has_los && dist < BOT_CLOSERANGE_DIST) &&
+      !OBJECT_OUTSIDE(obj) && !OBJECT_OUTSIDE(target)) {
+    bot_info &tb = Bots[bot_index];
+    if (tb.hunt_route_from != (int)obj->roomnum || tb.hunt_route_to != (int)target->roomnum ||
+        Gametime - tb.hunt_route_time > 1.0f) {
+      tb.hunt_route_from = obj->roomnum;
+      tb.hunt_route_to = target->roomnum;
+      tb.hunt_route_time = Gametime;
+      tb.hunt_route_ok = BotComputeRoute(obj->roomnum, target->roomnum, bot_index) >= 0;
+    }
+    target_routable = tb.hunt_route_ok;
+  }
   bool shields_recovered = (shields > max_shields * BOT_FLEE_RECOVER_PCT);
   bool low_energy = (Players[slot].energy < BOT_LOW_ENERGY);
 
@@ -5499,7 +5526,7 @@ static void BotUpdateState(int bot_index) {
       if (obj_room >= 0 && Rooms[obj_room].used && obj_room != (int)obj->roomnum)
         objective_active = true;
     }
-    bool hunt_blind_ok = !objective_active && dist < BOT_HUNT_BLIND_MAX_DIST;
+    bool hunt_blind_ok = !objective_active && dist < BOT_HUNT_BLIND_MAX_DIST && target_routable;
     if (has_target && !holding_for_weapon && (!chasing_powerup || ha_carrier) && !hoard_collecting && !ctf_pushing &&
         (has_los || hunt_blind_ok))
       new_state = BOT_STATE_HUNT;
@@ -5540,8 +5567,9 @@ static void BotUpdateState(int bot_index) {
         // instead of immediately re-acquiring the same unreachable enemy next tick.
         Bots[bot_index].retarget_cooldown = BOT_RETARGET_COOLDOWN;
       }
-    } else if (Bots[bot_index].hunt_no_los_timer > BOT_HUNT_NO_LOS_TIMEOUT) {
-      // Chased this target for too long without getting closer — unreachable.
+    } else if (Bots[bot_index].hunt_no_los_timer > BOT_HUNT_NO_LOS_TIMEOUT || (!has_los && !target_routable)) {
+      // Chased this target for too long without getting closer — unreachable. Or no flyable route
+      // to it at all (glass this bot cannot open): same verdict, without waiting for the timeout.
       // Blacklist the player slot to prevent re-selecting during retarget cooldown.
       // (uses outer `target` from line 1433 — same handle, no shadow)
       if (target && target->type == OBJ_PLAYER && target->id >= 0 && target->id < MAX_NET_PLAYERS) {
@@ -6374,6 +6402,7 @@ static void BotApplyThrust(int bot_index) {
       // Try to find a portal leading to a room we haven't visited recently
       int best_portal = -1;
       bool best_is_unvisited = false;
+      int only_way_in = -1; // the excluded portal, kept in case it is the room's only door
       for (int p = 0; p < cur.num_portals; p++) {
         int croom = cur.portals[p].croom;
         if (croom < 0 || !Rooms[croom].used)
@@ -6387,9 +6416,13 @@ static void BotApplyThrust(int bot_index) {
         // escapes went into skybox room 81 every time. Same classification every layer uses.
         if (BotPortalClass(obj->roomnum, p) == BOT_PORTAL_CLASS_NEVER)
           continue;
-        // Skip the room we were trying to reach (it's the one that got us stuck)
-        if (croom == Bots[bot_index].explore_dest_room)
+        // Skip the room we were trying to reach (it's the one that got us stuck) — unless it turns
+        // out to be the only door: a one-door closet's way out is the way in (Batteries rm35 read
+        // "no portal" and took a random lateral escape into the same cubicle wall, 24 times).
+        if (croom == Bots[bot_index].explore_dest_room) {
+          only_way_in = p;
           continue;
+        }
 
         bool unvisited = !BotHasVisitedRoom(bot_index, croom);
         // Prefer unvisited over visited; among same category, pick randomly
@@ -6399,6 +6432,8 @@ static void BotApplyThrust(int bot_index) {
         }
       }
 
+      if (best_portal < 0 && only_way_in >= 0)
+        best_portal = only_way_in;
       if (best_portal >= 0) {
         vector dest_pos = cur.portals[best_portal].path_pnt;
         int dest_room = cur.portals[best_portal].croom;
@@ -8745,13 +8780,17 @@ void BotDoFrame() {
           // Snapshot before goal cleanup retires the via commitment. A stored chain does not by
           // itself identify its source or prove that the bot was following it.
           if (Bots[i].room_progress_stuck_count >= 2) {
+            static const char *stuck_state_names[] = {"EXPLORE", "HUNT", "COMBAT", "FLEE", "EVADE"};
+            const int st_i = (Bots[i].state >= 0 && Bots[i].state < 5) ? Bots[i].state : 0;
             LOG_DEBUG.printf("BOT: '%s' STUCKSTATE room %d chain=%s len=%d cursor=%d chain_room=%d "
-                             "chain_target=%d via_live=%s carrier=%s phase=preclear team=%d net_disp=%.0f",
+                             "chain_target=%d via_live=%s carrier=%s phase=preclear team=%d net_disp=%.0f "
+                             "state=%s pos=(%.0f,%.0f,%.0f)",
                              Bots[i].callsign, cur_room, Bots[i].via_chain_len > 0 ? "stored" : "none",
                              Bots[i].via_chain_len, Bots[i].via_chain_cursor, Bots[i].via_chain_room,
                              Bots[i].via_chain_target_room, Bots[i].via_expires > Gametime ? "yes" : "no",
                              (BotIsCarryingEnemyFlag(i) || BotIsCarryingHyperOrb(i)) ? "yes" : "no",
-                             Players[slot].team, net_disp);
+                             Players[slot].team, net_disp, stuck_state_names[st_i], obj->pos.x(), obj->pos.y(),
+                             obj->pos.z());
           }
           BotClearActiveGoal(i);
           Bots[i].explore_stuck_room = cur_room;

@@ -874,6 +874,23 @@ capture (33%) — Red's first capture in six arms on this map; Blue 6 / 4 (67%) 
 circling), rm35 7 → 25 (the approach-point arrival loop — fix staged above). Objective intents
 71 death / 29 timeout / 75 arrival / 27 replacement (arrivals 41 → 75).
 
+**Hand-out arm, full (soak-20260913T035125, c24d0c21, vs the burst arm; guard FAIL as a unit
+story — Shadow alone is 59% of the escalation delta).** Play: Blue 8 grabs / 8 captures (100%), Red
+1 / 1 — the best capture line of the sprint (burst arm 6/4 and 3/1); NO-ROUTE 0; composed routes
+1426 (1049); committed crossings 1559 / 525 not crossed (1521 / 499). Cost: hard pins 85 (71),
+escalations 159 (132). Rooms: rm35 43 (25), rm80 40 (40), rm33 17 (6), rm12 8 (38 — the chase
+circling class fell), rm8 8 (6). rm35 is ONE bot for 27 minutes (Phantom, 03:54 -> 04:21, net_disp
+6-7 the whole time): a dead-end closet with one clean 24u door, the bot in combat PURSUIT of an enemy
+in the next room, pressing a cubicle wall at speed 0.6-1.0 with the engine path active
+(`goal=pursuit ... path=1 steer rm35 d=55`) — pursuit does not ride the nav layer, and on a
+BNode-less map the engine path is a straight line into furniture. Every 25 s the stuck ladder fires
+(reverse burst, then `stuck escape — no portal`: the escape chooser excludes the portal toward the
+explore destination, which in a one-door room is the only door), hands the objective back, the
+composer says `troute REJECT — no door pair reaches goal` for the one-door room, the skeleton via
+takes over, and pursuit takes it back. So the hand-out rule was not what rm35 needed; the rm35
+class is pursuit steering plus two one-door-room gaps (escape exclusion, composer rejection). Wall
+presses in this arm by goal: pursuit 251, powerup 39, none 25.
+
 **Slice 6a — the crossing search is honest and complete (2026-09-13, after the hand-out arm was
 launched).** Read from a new `$navdump` field, `crossing_trace` (every sweep the sampler tried, what it
 hit, and the polygons of the faces that stopped it — see BOT_DEV_REFERENCE), taken on a SECOND server
@@ -898,6 +915,26 @@ path); depth histogram 24u 248 / 16u 362 / 8u 140 / 4u 28; network metrics ident
 build. Room 80 also turned out NOT to be a spawn closet: bots squeeze in through that 13u channel at
 speed and could not get out because their aim was the leaf's middle. The 4u lip is the general answer
 to that class; whether it converts rm80's 40 pins is the next arm's question.
+
+**Slice 6b — a broken pane is a door; a hunt needs a route; the only door is a way out (2026-09-13,
+built from the hand-out arm's rm35 story).** Three general rules. (1) `BreakGlassFace` clears
+`PF_RENDER_FACES` on the portal when a pane shatters; every nav cache (class, geocost, passability,
+glass, crossing) had priced or synthesized the INTACT pane for the whole level, so an unkinetic bot
+kept treating the open hole as a wall — and Batteries rooms 33-38 (the conference-room complex,
+reachable without glass from only twelve rooms) read as sealed: no route home, objective dropped as
+"unreach". A cached PANE is now re-checked against the live flag on every query and flipped to DOOR
+for both sides, retiring the dependent caches (`PortalPaneShatteredFlip`, logged once per pane).
+(2) HUNT rode the engine's path table, which calls intact glass passable; a bot could chase a target
+seen through a pane for the rest of the round (Phantom: 27 minutes pressing a cubicle wall, the target
+one room over). A hunt of a target in another room now needs OUR router to find a route under this
+bot's glass authority (cached per room pair for a second): no route means no blind hunt, and an
+in-progress blind hunt ends as "unreachable" (the existing blacklist path) instead of waiting for
+the no-LOS timeout; `BotSetPursuitGoal` pre-validates the same way. (3) The stuck-escape chooser
+skipped the portal toward the explore destination ("the room that got us stuck") — in a one-door
+room that is the only door, so it took a random lateral escape into the same wall 24 times; the
+excluded door is now the fallback. Telemetry: STUCKSTATE lines carry `state=` and `pos=`. Bot-free
+dump identical to slice 6a (the pane flip is a runtime event). Gate: the arm after the crossing
+arm — rm35/rm33 escalations, `pane ... shattered — now a door` lines, and captures.
 
 **Still open on this line:** the powerup-chase circling class (rm12); a corridor (multi-point)
 hand-out for bent crossings — not needed by any Batteries door after the lip/fit rungs, so deferred;

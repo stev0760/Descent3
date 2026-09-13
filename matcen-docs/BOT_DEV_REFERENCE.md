@@ -346,6 +346,17 @@ keeps thrust pointed along the engine's path rather than locking `fvec` on a far
 - **Composed drive:** any `BotRoadmapRoomRoutable` (or buried) room, only when the straight line to the
   leg target is blocked; the goal aim reads a live `via_chain` in any room.
 - **Explore destinations** must pass `BotComputeRoute`; the engine's BOA table is glass/window-blind.
+- **A shattered pane is a door:** `PF_RENDER_FACES` cleared on the portal = broken (BreakGlassFace's own
+  test). `BotPortalClass` / `BotPortalIsBreakableGlass` re-check a cached PANE on every query and
+  `PortalPaneShatteredFlip` retires class/geocost/passable/glass/crossing for both sides. Never cache a
+  pane verdict anywhere else without the same re-check.
+- **A hunt needs a route:** `target_routable` in the FSM (same room, or a clear close shot, or
+  `BotComputeRoute(room, target room, bot)` under the bot's glass authority; cached 1 s per room pair in
+  `hunt_route_*`) gates blind hunts and ends one already running; `BotSetPursuitGoal` pre-validates
+  with the same router. The engine's BOA path calls intact glass passable — never trust it alone.
+- **Stuck escape in a one-door room:** the portal toward `explore_dest_room` is excluded, but kept as
+  `only_way_in` and used when nothing else passes.
+- **STUCKSTATE** lines carry `state=` (FSM) and `pos=`.
 - **Hard pin ⇒ reverse burst:** `unstick_reverse_until` (1s, `BOT_UNSTICK_REVERSE_TIME`) overrides
   thrust with pure reverse in `BotApplyThrust`; set at the stuck escalation when `net_disp < 10`.
 - **Read `from=/aim=/now=` on a NOT-CROSSED line before blaming a door:** `from == now` for minutes

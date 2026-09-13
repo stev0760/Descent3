@@ -136,7 +136,9 @@ reverse burst on a hard pin fixed it (rm8 67 → 6 pins) and Red scored its firs
 Next: the approach/push hand-out rule (rm35) — built, in soak; then the crossing-search completeness
 slice (built from the new `crossing_trace` dump field: back faces, full polygon coverage, hull-scaled
 search, 4u lip and door-fit radius — Batteries doors without a crossing 20 -> 6, network unchanged);
-then the powerup-chase circling class. The room router is untouched by design.
+then the glass/hunt slice (a shattered pane is a door; a hunt needs a flyable route; a one-door
+room's escape uses its door — built from the hand-out arm's 27-minute rm35 episode), then the
+powerup-chase circling class. The room router is untouched by design.
 
 0.9.13 shipped as the correctness checkpoint; 0.9.14-dev is open with four landed commits:
 telemetry (fa5966ed), the aim-layer fixes (4c51e30d, 2df343c2), and glass routing. The 4-round

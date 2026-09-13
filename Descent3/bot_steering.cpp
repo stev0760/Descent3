@@ -307,6 +307,9 @@ static int8_t pf_glass_pane[MAX_ROOMS][MAX_PATH_PORTALS];       // 1 = breakable
 static int8_t pf_glass_vertical[MAX_ROOMS][MAX_PATH_PORTALS];   // 1 = vertical (shortcut class)
 // pf_glass_level_checksum is declared with the other cache-flush state above.
 
+static bool PortalShattered(int room_idx, int portal_idx);
+static void PortalPaneShatteredFlip(int room_idx, int portal_idx);
+
 bool BotPortalIsBreakableGlass(int room_idx, int portal_idx) {
   if (pf_glass_level_checksum != BOA_mine_checksum) {
     memset(pf_glass_pane, -1, sizeof(pf_glass_pane));
@@ -316,6 +319,8 @@ bool BotPortalIsBreakableGlass(int room_idx, int portal_idx) {
   if (room_idx < 0 || room_idx >= MAX_ROOMS || portal_idx < 0 || portal_idx >= MAX_PATH_PORTALS)
     return false;
   int8_t &cached = pf_glass_pane[room_idx][portal_idx];
+  if (cached == 1 && Rooms[room_idx].used && PortalShattered(room_idx, portal_idx))
+    PortalPaneShatteredFlip(room_idx, portal_idx); // an open hole is not glass any more
   if (cached >= 0)
     return cached == 1;
   cached = 0;
@@ -375,6 +380,16 @@ int BotGlassBudgetForBot(int bot_index) {
 static int8_t pf_portal_class[MAX_ROOMS][MAX_PATH_PORTALS];
 // pf_class_level_checksum is declared with the other cache-flush state above.
 
+// A shattered pane is a door. BreakGlassFace clears PF_RENDER_FACES on the portal (its own "already
+// broken" test), so the flag is the live truth; every cache that priced or synthesized the INTACT pane
+// — class, geocost, passability, glass, crossing — is retired for both sides (they are one portal) the
+// first time a query sees the break. Without this an unkinetic bot kept treating the open hole as a
+// wall for the rest of the level and read a glass-walled office complex as sealed (Batteries rm33-38:
+// one bot 27 minutes in a closet with a clean door, no route home).
+static bool PortalShattered(int room_idx, int portal_idx) {
+  const portal &pt = Rooms[room_idx].portals[portal_idx];
+  return !(pt.flags & PF_RENDER_FACES);
+}
 int BotPortalClass(int room_idx, int portal_idx) {
   if (pf_class_level_checksum != BOA_mine_checksum) {
     memset(pf_portal_class, -1, sizeof(pf_portal_class));
@@ -384,6 +399,8 @@ int BotPortalClass(int room_idx, int portal_idx) {
       portal_idx >= Rooms[room_idx].num_portals || portal_idx >= MAX_PATH_PORTALS)
     return BOT_PORTAL_CLASS_NEVER;
   int8_t &cached = pf_portal_class[room_idx][portal_idx];
+  if (cached == BOT_PORTAL_CLASS_PANE && PortalShattered(room_idx, portal_idx))
+    PortalPaneShatteredFlip(room_idx, portal_idx);
   if (cached >= 0)
     return cached;
   const portal &pt = Rooms[room_idx].portals[portal_idx];
@@ -424,6 +441,26 @@ static vector pf_cross_near[MAX_ROOMS][MAX_PATH_PORTALS]; // approach point insi
 static vector pf_cross_far[MAX_ROOMS][MAX_PATH_PORTALS];  // push-through point inside the OTHER room
 static int8_t pf_cross_bent[MAX_ROOMS][MAX_PATH_PORTALS]; // 1 = found by the lateral fan, 0 = straight column
 static int8_t pf_cross_tight[MAX_ROOMS][MAX_PATH_PORTALS]; // 1 = found only at the door-fit radius
+
+static void PortalPaneShatteredFlip(int room_idx, int portal_idx) {
+  const portal &pt = Rooms[room_idx].portals[portal_idx];
+  const int cr = pt.croom, cp = pt.cportal;
+  const bool twin_ok = cr >= 0 && cr <= Highest_room_index && Rooms[cr].used && cp >= 0 && cp < MAX_PATH_PORTALS &&
+                       cp < Rooms[cr].num_portals;
+  pf_portal_class[room_idx][portal_idx] = BOT_PORTAL_CLASS_DOOR;
+  pf_portal_geocost[room_idx][portal_idx] = -1.0f;
+  pf_portal_passable[room_idx][portal_idx] = -1;
+  pf_glass_pane[room_idx][portal_idx] = 0;
+  pf_cross_state[room_idx][portal_idx] = -1;
+  if (twin_ok) {
+    pf_portal_class[cr][cp] = BOT_PORTAL_CLASS_DOOR;
+    pf_portal_geocost[cr][cp] = -1.0f;
+    pf_portal_passable[cr][cp] = -1;
+    pf_glass_pane[cr][cp] = 0;
+    pf_cross_state[cr][cp] = -1;
+  }
+  LOG_DEBUG.printf("BOT NAV: pane rm%d p%d (-> rm%d) shattered — now a door", room_idx, portal_idx, cr);
+}
 // pf_cross_level_checksum is declared with the other cache-flush state above.
 
 // Sample the portal polygon (in its own plane) with the hull sweep along the face normal. Returns

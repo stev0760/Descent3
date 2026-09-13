@@ -13,6 +13,20 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
 admission fix and the remaining interior-navigation defects are still being worked. Do not run this
 as a release.*
 
+*   **A shattered pane counts as a door, and a bot stops chasing what it cannot reach.** Once a
+    breakable pane was shot out, the bots' route planner kept treating the hole as glass for the rest
+    of the level, so a bot without a glass-breaking weapon would read a glass-walled office complex
+    as sealed and drop its objective. Broken panes now become ordinary doorways the moment any bot
+    looks at them. Separately, a bot only pursues an enemy in another room when it has a route it can
+    actually fly there (the engine's own path table counts intact glass as passable, which had one
+    bot pressing a cubicle wall for 27 minutes with its target one room over), and a bot stuck in a
+    one-door room now escapes through that door instead of picking a random direction.
+*   **A bot approaches a door from afar and pushes through it from beside it.** The point a door
+    hands out to fly was its approach point 8 units in front of the plane, inside the "arrived"
+    sphere, so a bot standing next to a door kept arriving without ever being told to cross. Now a
+    door hands out the approach point while the bot is far and the push-through point once it is
+    beside the door; a committed chain's exit and a composed route's exit always push. Measured on
+    Batteries Included: Blue 8 grabs / 8 captures in four rounds, Red 1 / 1, no route failures.
 *   **The door search sees what a pilot sees.** The sweep that validates a doorway ignored back
     faces (a test column that started inside a propped door leaf walked out through it and called
     the door clear from one side), sampled only part of a wide doorway (a 69-unit office door with a
