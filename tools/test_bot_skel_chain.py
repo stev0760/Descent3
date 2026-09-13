@@ -60,8 +60,9 @@ int skel_node_count[2]{};
 vector skel_node_pos[2][64]{};
 uint64_t skel_edges[2][64]{};
 uint64_t skel_live[2]{~0ull, ~0ull}; // every portal slot live in this harness (no walls modelled)
-// The hand-out substitution (validated crossing point) is geometry; the harness flies stored nodes.
-vector SkelFlyPos(int room, int node) { return skel_node_pos[room][node]; }
+// The hand-out substitution (validated crossing point; approach from afar, push-through beside the
+// door) is geometry; the harness flies stored nodes whatever the bot position or terminal flag.
+vector SkelFlyPos(int room, int node, const vector * = nullptr, bool = false) { return skel_node_pos[room][node]; }
 int visible_node = 0;
 
 // Every portal is admitted by default; `portal_rejected[i]` lets a check reject one portal so the
