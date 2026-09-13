@@ -367,9 +367,6 @@ keeps thrust pointed along the engine's path rather than locking `fvec` on a far
 - **Committee collapse order:** PLAN.md §3.0 "The committee collapse from here" — one in-room planner
   (union graph, committed plan) first; every other member is retired as subtraction, gated by the
   census (`tools/analyze_bot_log.py`) showing it silent. Do not add a member.
-- **Every nav sweep is back-face honest:** `BotSegmentClear` (roadmap growth/probe/LOS, runtime
-  gates), `CrossSweep` (crossings), `SkelBridge`. A sweep that starts inside geometry is blocked. Do
-  not add a sweep without `FQ_BACKFACE`.
 - **Bridge search (`SkelBridge`):** fan rings are hull multiples (`BOT_SKEL_BRIDGE_RING_SCALE`), each
   lateral candidate also tried `BOT_SKEL_BRIDGE_DIAG_STEP` hulls forward; sweeps are `FQ_BACKFACE`.
   Any new bounded search around a blocker must scale its steps with the hull, not the room.

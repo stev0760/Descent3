@@ -141,10 +141,7 @@ room's escape uses its door — built from the hand-out arm's 27-minute rm35 epi
 hull-scaled skeleton bridge search (Batteries split rooms 33 -> 6; abend2 ring room 0 finally one
 component — the abend2 gate runs on this build), the router-side half of the shattered-pane rule
 (the engine's passability table is frozen at level load; the glass arm scored Blue 12/9, Red 3/2 but
-left rm1 with no route once its panes were gone — the re-run on 57aaa31f: Blue 17/13, no route
-failures, hard pins 100 -> 57, the sprint's first population-level guard pass), then the honest
-network sweep (back faces for the lattice's own primitive: rm80's 239-cell lattice was through the
-door leaf), then the powerup-chase circling class. The room
+left rm1 with no route once its panes were gone), then the powerup-chase circling class. The room
 router is untouched by design.
 
 0.9.13 shipped as the correctness checkpoint; 0.9.14-dev is open with four landed commits:

@@ -13,12 +13,6 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
 admission fix and the remaining interior-navigation defects are still being worked. Do not run this
 as a release.*
 
-*   **The route network no longer connects through walls.** The sweep that grows and checks the
-    in-room route lattice ignored the back of a face, so a lattice point that happened to land inside
-    a door leaf or a slab could connect to points on both sides of it. On Batteries Included the
-    whole lattice of the propped-door office hung off its door through the leaf; the network now
-    says that room cannot be driven by the route planner, which is the truth, and about three
-    percent of lattice points map-wide were phantoms inside geometry.
 *   **Bends are found in tight rooms too.** The search that adds bend waypoints between a room's doors
     stepped sideways by fixed 12-to-54-unit amounts, so it never found a way round a corner in a duct
     junction box; Batteries Included's ventilation network had 33 such boxes with no in-room path, and
