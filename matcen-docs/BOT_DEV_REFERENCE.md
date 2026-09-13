@@ -7,6 +7,15 @@ Current implementation status is in `BOTS_DEVEL.md`. Physics model reference is 
 
 ## Current Status
 
+**0.9.14-dev, portal model slice 1** (2026-09-12, later): `BotPortalClass(room, portal)` is the one
+classification every in-room layer consumes — NEVER (solid/window/too-small/locked), DOOR
+(engine-passable), PANE (intact breakable glass). Wall "portals" keep their skeleton slot (index ==
+portal index is an invariant) but carry no edges (`BotSkelLivePortalMask`), never seed the lattice,
+never bridge, never count, and can no longer be a roadmap exit goal (`BotAimExitMask`). Skeleton
+masks are `uint64_t` (`BOT_SKEL_MAX_NODES` 64). `GrowFromSeeds` grows under two phases and keeps the
+fuller one, then runs a door on-ramp for a room still under the routable cell floor. See
+NAVIGATION.md §7.0-CURRENT.
+
 **0.9.14-dev** (2026-09-12): telemetry, aim-layer fixes, and glass routing. Four additive debug
 lines exist for per-episode failure diagnosis: `via search failed` now carries the blocking face
 (`face=FR/F`), texture, breakable/forcefield flags, probe distance, and the tier that gave up
@@ -295,6 +304,19 @@ keeps thrust pointed along the engine's path rather than locking `fvec` on a far
   gracefully in `aipath.cpp`. (Logs were checked across 20h soaks — exhaustion does **not** fire in
   practice; the router's short hops are for route control, not pool relief.)
 
+### Portal classes and the in-room network (0.9.14)
+
+- **Every `portal` is not a doorway.** D3 splits rooms with portals even through solid faces. Ask
+  `BotPortalClass(room, p)` before treating a portal as a node, seed, goal or denominator; the router
+  (`BotRouteDijkstra`) makes the same decision through `BOA_PassablePortal` + geocost.
+- **Skeleton:** `skel_node_pos[room][i]` for portal i always exists; `skel_live[room]` bit i says
+  whether it is a real node. Bend nodes occupy `[num_portals, skel_node_count)`. Edge masks are 64-bit.
+- **Lattice:** `rr->portal_seed[p] == -1` for a NEVER portal. `local_pair_coverage == -1` for a
+  single-seed room and does not fail `routable`. `connector_nodes` counts traced repair/on-ramp
+  nodes; `lattice_cells` counts sampled cells only.
+- **Dumps:** `$navdump` writes `class` per portal and `skel_live` per room; the overlay draws NEVER
+  portals as small grey markers with no node.
+
 ### Cost-Aware Router (Phase 11)
 
 `bot_steering.cpp` provides a routing-only layer that complements the engine path-follower: it
@@ -576,6 +598,9 @@ Both COMBAT interrupt and HUNT divert set `powerup_interrupt_cooldown` to preven
 - A `dist=0` target indicates a stale or recycled handle (object at same position as bot). Clear the target immediately; do not transition to HUNT or fire.
 
 ### Pathfinding
+- **A room's `portals[]` include solid walls.** Anything that iterates portals as doorways must gate on
+  `BotPortalClass` (or the router's admission). Three months of "baffling missing edges" and the
+  flag-room composer refusals were walls being counted as doors.
 - `AIPathGetDPathSlot` can exhaust `MAX_DYNAMIC_PATHS` (200 in `aistruct.h`) with many bots — graceful failure in `aipath.cpp` (no more ASSERT). In practice 20h soaks show it never exhausts.
 - `BOA_mine_checksum == 0` means pathfinding data is absent — `MakeBOA()` is called in `MultiStartNewLevel()` to rebuild it.
 

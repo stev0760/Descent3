@@ -706,7 +706,58 @@ overnight log. A full verbosity-tier + event-vocabulary consolidation is registe
 
 ## 7. Open problems (roadmap)
 
-### 7.0-CURRENT Glass routing restored + mechanism telemetry — 2026-09-12 (0.9.14-dev)
+### 7.0-CURRENT The portal model, slice 1 — 2026-09-12 (0.9.14-dev)
+
+**Finding (cockpit + logs + a fresh navdump, same day).** The red flag room's door (rm84 p0 ↔ rm44
+p8) is the worst crossing on Batteries: 20-round telemetry run, hop-commit outcomes 417 crossed /
+158 not-crossed entering and 273 / 271 leaving; the operator watched a Blue teammate grab the flag and
+ram the door on the way out. From the red door's centre the room centre is not hull-visible; from the
+blue door it is — the whole Red/Blue asymmetry on a designed-symmetric map. Two general defects sit
+under it, and neither is a Batteries special case:
+
+1. **A portal is one unvalidated point** (`ComputePortalCenter` = vertex mean). Skeleton node,
+   lattice seed, the fit probe, the seam push (+25u toward the NEXT room's bbox centre, not along the
+   normal) and the hop-commit target all use it. A propped leaf that shadows the centre makes the
+   committed line unflyable while the gap beside it is open. Slice 2 (validated crossing segment)
+   owns this.
+2. **Solid walls are portals.** 248 of 1041 Batteries portals are walls/too-small, plus 207 panes.
+   The router filtered them; nothing else did. They ate the 32-node skeleton cap (rm3: 30 portals +
+   2 bends, its four usable doors in two components), polluted pair coverage (one never-connecting
+   wall seed put both flag rooms at 60% < 75% → composer refused), were legal roadmap exit goals
+   (nearest seed to next_room, no passability filter — from most of rm84 the wall twin is nearer
+   than the door), and made the LOS matrix / component census meaningless. **This is slice 1.**
+
+**What landed.** `BotPortalClass(room, portal)` — NEVER / DOOR (engine-passable, incl. the
+DISAGREE class) / PANE (intact breakable glass) — cached per level, flushed with the geometry
+caches. Consumers: `SkelBuild` (NEVER slots keep their index but carry no edges, are never bridged
+or counted; bridge pairs must include a DOOR; masks widened to 64 bits so hub rooms have bend
+budget), roadmap `Build()` (NEVER portals do not seed), `BotRoadmapFindVia` (exit goal from
+`BotAimExitMask`, the aim layer's admission), `routable` (a single-seed room has no pair to cover),
+the navdump (`class`, `skel_live`), the overlay (dead portals drawn grey). Two lattice repairs the
+change exposed: growth is rooted at the seeds, so a lone door seed ON the room's bounding face put
+a sample plane in the wall (rm84 123 → 3 cells under one phase, rm70/rm80 under the other) —
+`GrowFromSeeds` now grows under both the seed-centroid and a centre-anchored phase and keeps the
+fuller lattice; and a room still below the routable floor runs a **door on-ramp**: a bounded
+best-first search along the portal normal with the tangent fan on blocks (the SkelBridge frame),
+committing the string-pulled chain only if it gets 24u inside, then growing from it (rm80: 3 → 239
+cells).
+
+**Geometry gate (bot-free dumps, clean 971aa414 binary vs this build):** Batteries lattice cells
+11914 → 12749, repair connectors 2256 → 540, composer-eligible rooms 26 → 46, rooms with a split
+lattice 101 → 71, rooms whose usable doors are skeleton-disconnected 38 → 37 (rm3 fixed), no room
+lost eligibility, 3 rooms lost >25% cells while going from 2–6 components to 1. abend2: ring rooms
+0/30 byte-identical; the 1-cell vestibules 48/51 reach 8 cells and become routable (watch).
+Pre-registered for the play gate (4-round batteries vs the glass control, then abend2): rm84 → rm44
+NOT-CROSSED falls sharply, flag rooms produce roadmap/composed routes, Blue conversion above zero,
+HARD stucks not up.
+
+**Still open on this line:** slice 2 (the crossing segment + push along the normal), slice 3
+(corner-bridge room bound; the sweep never sets FQ_BACKFACE so a point outside the room re-enters
+through a wall as "clear"), slice 4 (compose only when the direct line is blocked, in any routable
+room — the consumer), slice 5 (objective items never long-blacklisted; the sealed line names the
+item). Deferred to the next dump: gap-directed lattice sampling, a trunk node per room.
+
+### 7.0-PREV Glass routing restored + mechanism telemetry — 2026-09-12 (0.9.14-dev)
 
 0.9.13 shipped as the correctness checkpoint. 0.9.14-dev has three commits: telemetry, the
 aim-layer fixes, and glass routing.

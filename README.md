@@ -39,8 +39,11 @@ room aim and doorway selection that made bots press solid windows (Batteries Inc
 window-presses: gone in the first measured round), restores breakable-glass routing for bots that
 carry a glass-breaking weapon — office windows and partitions become priced shortcuts while ceiling
 vents stay a last resort — and adds navigation telemetry that names the face blocking a go-around,
-the flag's distance at arrival, and whether a committed doorway crossing succeeded. The 0.9.13
-release's `Batteries Included` limitations remain the open work.
+the flag's distance at arrival, and whether a committed doorway crossing succeeded. The latest
+in-test change stops treating a level's solid-wall "portals" as doorways when building the in-room
+navigation network, which frees the hub rooms' skeleton budget and lets the route planner work inside
+the flag rooms; its play effect is being measured. The 0.9.13 release's `Batteries Included`
+limitations remain the open work.
 See [Known limitations](#known-limitations) and the [release notes](matcen-docs/CHANGELOG.md).
 
 ### Features

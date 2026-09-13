@@ -6875,17 +6875,20 @@ bool BotNavDump(const char *filename) {
     // Reflects the live $pseudobnodes state. See NAVIGATION.md §4.2.
     if (!BNode_allocated) {
       vector spos[BOT_SKEL_MAX_NODES];
-      uint32_t sedges[BOT_SKEL_MAX_NODES];
+      uint64_t sedges[BOT_SKEL_MAX_NODES];
       int sportals = 0;
       int sn = BotSkelDumpRoom(r, spos, sedges, &sportals);
-      fprintf(fp, "      \"skel_portal_count\": %d, \"skel_node_count\": %d,\n", sportals, sn);
+      // skel_live: bit i set = portals[i] is a DOOR/PANE node (0.9.14 portal model); a clear bit is a
+      // wall/window slot that carries no edges and must not be counted as a component.
+      fprintf(fp, "      \"skel_portal_count\": %d, \"skel_node_count\": %d, \"skel_live\": %llu,\n", sportals, sn,
+              (unsigned long long)BotSkelLivePortalMask(r));
       fprintf(fp, "      \"skel_nodes\": [");
       for (int i = 0; i < sn; i++)
         fprintf(fp, "%s[%.2f,%.2f,%.2f]", i ? "," : "", spos[i].x(), spos[i].y(), spos[i].z());
       fprintf(fp, "],\n");
       fprintf(fp, "      \"skel_edges\": [");
       for (int i = 0; i < sn; i++)
-        fprintf(fp, "%s%u", i ? "," : "", (unsigned)sedges[i]);
+        fprintf(fp, "%s%llu", i ? "," : "", (unsigned long long)sedges[i]);
       fprintf(fp, "],\n");
     }
 
@@ -7007,6 +7010,11 @@ bool BotNavDump(const char *filename) {
               "\"tf_breakable\": %d, \"tf_forcefield\": %d, \"tf_destroyable\": %d, \"tf_flythru\": %d, "
               "\"pf_too_small\": %d, \"pf_block\": %d, \"type\": \"%s\", ",
               tf_break, tf_ff, tf_destroy, tf_fly, pf_small_f ? 1 : 0, pf_block_f ? 1 : 0, ptype);
+      {
+        static const char *class_names[] = {"never", "door", "pane"};
+        int pc = BotPortalClass(r, p);
+        fprintf(fp, "\"class\": \"%s\", ", (pc >= 0 && pc <= 2) ? class_names[pc] : "?");
+      }
       fprintf(fp, "\"portal_path_pnt\": [%.2f,%.2f,%.2f], ", po.path_pnt.x(), po.path_pnt.y(), po.path_pnt.z());
       fprintf(fp, "\"boa_cost_fwd\": %.2f, \"boa_cost_rev\": %.2f, ", boa_fwd, boa_rev);
       fprintf(fp, "\"engine_passable\": %s, \"our_geocost\": %.1f, \"our_impassable\": %s, \"DISAGREE\": %s, ",

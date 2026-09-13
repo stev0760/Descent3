@@ -61,7 +61,11 @@ def skel_portal_components(r):
                     comp[v] = cid
                     stack.append(v)
         cid += 1
-    pcomps = {comp[i] for i in range(min(np, n))}
+    # 0.9.14 portal model: a wall/window portal keeps a dead node slot; count components over LIVE
+    # portal slots only (older dumps have no skel_live and count every portal as before).
+    live = r.get("skel_live")
+    idxs = [i for i in range(min(np, n)) if live is None or (live >> i) & 1]
+    pcomps = {comp[i] for i in idxs}
     return (n - np, len(pcomps))
 
 

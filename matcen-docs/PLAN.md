@@ -108,6 +108,15 @@ These are decision rules, not authorization to commit, promote, rebuild or launc
 
 #### 0.9.14-dev sprint — OPEN (2026-09-12)
 
+**Later on 2026-09-12 — the portal model (see NAVIGATION.md §7.0-CURRENT).** Slice 1 landed: one
+classification per portal, walls out of every in-room layer, 64-slot skeletons, two-phase lattice
+growth plus a door on-ramp for starved single-door rooms. Geometry gate passed on bot-free dumps
+(Batteries cells +7%, composer-eligible rooms 26→46, rm3 doors 2→1 components, abend2 rings
+unchanged); play gate = 4-round batteries vs the glass control, then abend2. Remaining slices in
+order: crossing segment + push along the normal; corner-bridge bound + backface; compose only when
+the direct line is blocked in any routable room; objective items never long-blacklisted. The room
+router is untouched by design.
+
 0.9.13 shipped as the correctness checkpoint; 0.9.14-dev is open with four landed commits:
 telemetry (fa5966ed), the aim-layer fixes (4c51e30d, 2df343c2), and glass routing. The 4-round
 batteries verdict (soak-20260912T090308) measured the aim fixes net-positive with no play

@@ -608,14 +608,42 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
       seed_c = seed_c + rr->node[i];
     seed_c = seed_c * (1.0f / (float)n_seed);
   }
+  const vector bbc = (mn + mx) * 0.5f;
 
-  for (;;) {
-    if (phase_on_seeds) {
-      for (int a = 0; a < 3; a++) {
-        const float d = seed_c[a] - mn[a];
-        org[a] = mn[a] + (d - std::floor(d / sp) * sp); // positive fmod: org in [mn, mn+sp)
+  // Phase candidates. Attempt 0 is the validated seed-centroid phase. Attempt 1 re-anchors, per
+  // axis, on the room centre wherever the seed phase would put a sample plane within hull radius of
+  // a wall — a lone door seed lies ON the room's bounding face in its normal axis (0.9.14 portal
+  // model: walls no longer seed, so single-door rooms are common), and either phase can starve a
+  // room whose doorway geometry sits at the 20u scale (Batteries rm84/rm70/rm80 each starved under
+  // one phase and not the other). A starved first attempt earns the second; the better graph stays.
+  auto PhaseOrg = [&](int attempt, float pitch) {
+    vector o = mn;
+    if (!phase_on_seeds)
+      return o;
+    for (int a = 0; a < 3; a++) {
+      auto anchored = [&](float at) {
+        const float d = at - mn[a];
+        return mn[a] + (d - std::floor(d / pitch) * pitch); // positive fmod: org in [mn, mn+pitch)
+      };
+      auto wall_margin = [&](float oo) { // distance from the nearest sample plane to either face
+        const float last = oo + std::floor((mx[a] - oo) / pitch) * pitch;
+        return std::min(oo - mn[a], mx[a] - last);
+      };
+      const float o_seed = anchored(seed_c[a]);
+      if (attempt == 0 || wall_margin(o_seed) >= BOT_ROADMAP_CLEARANCE) {
+        o[a] = o_seed;
+      } else {
+        const float o_ctr = anchored(bbc[a]);
+        o[a] = (wall_margin(o_ctr) > wall_margin(o_seed)) ? o_ctr : o_seed;
       }
     }
+    return o;
+  };
+
+  // Spacing: auto-coarsen if the cell count would blow past the cap (huge rooms / wide terrain
+  // regions). Decided once on the seed phase; every attempt shares it.
+  for (;;) {
+    org = PhaseOrg(0, sp);
     Nx = (int)std::floor((mx.x() - org.x()) / sp) + 1;
     Ny = (int)std::floor((mx.y() - org.y()) / sp) + 1;
     Nz = (int)std::floor((mx.z() - org.z()) / sp) + 1;
@@ -629,6 +657,7 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
       break;
     sp *= 1.5f;
   }
+  const long candidates = (long)Nx * Ny * Nz;
   auto CellPos = [&](int ix, int iy, int iz) {
     vector v;
     v.x() = org.x() + ix * sp;
@@ -643,73 +672,236 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
   std::unordered_map<int64_t, int> cell_node;
   cell_node.reserve(1024);
 
-  // BFS queue of accepted nodes; seeds start it. Seed positions are OFF-lattice, so they reach lattice
-  // cells by a radius scan + swept-edge probe.
-  std::queue<int> q;
-  for (int i = 0; i < n_seed; i++)
-    q.push(i);
-
-  // Seed<->seed edges (the portal graph the skeleton already had) — off-lattice, so done explicitly.
-  for (int i = 0; i < n_seed; i++)
-    for (int j = i + 1; j < n_seed; j++)
-      if (RoadmapLOS(rr, rr->node[i], rr->node[j])) {
-        rr->adj[i].push_back(j);
-        rr->adj[j].push_back(i);
-        UFUnion(uf, i, j);
-      }
-
   const float nr = sp * 1.8f; // neighbourhood radius: covers the 26-cell lattice ring (+ seed reach)
 
-  while (!q.empty()) {
-    int u = q.front();
-    q.pop();
-    const vector pu = rr->node[u];
-
-    // Lattice cells within the neighbourhood of u.
-    int lx = (int)std::floor((pu.x() - nr - org.x()) / sp), hx = (int)std::ceil((pu.x() + nr - org.x()) / sp);
-    int ly = (int)std::floor((pu.y() - nr - org.y()) / sp), hy = (int)std::ceil((pu.y() + nr - org.y()) / sp);
-    int lz = (int)std::floor((pu.z() - nr - org.z()) / sp), hz = (int)std::ceil((pu.z() + nr - org.z()) / sp);
-    lx = std::max(lx, 0);
-    ly = std::max(ly, 0);
-    lz = std::max(lz, 0);
-    hx = std::min(hx, Nx - 1);
-    hy = std::min(hy, Ny - 1);
-    hz = std::min(hz, Nz - 1);
-
-    for (int ix = lx; ix <= hx; ix++)
-      for (int iy = ly; iy <= hy; iy++)
-        for (int iz = lz; iz <= hz; iz++) {
-          vector vp = CellPos(ix, iy, iz);
-          if (Dist(pu, vp) > nr)
-            continue;
-          int64_t key = CellKey(ix, iy, iz);
-          auto it = cell_node.find(key);
-          if (it != cell_node.end()) {
-            int w = it->second;
-            if (w == u || HasEdge(rr->adj[u], w))
-              continue; // edge already probed from the other endpoint
-            if (RoadmapLOS(rr, pu, vp)) {
-              rr->adj[u].push_back(w);
-              rr->adj[w].push_back(u);
-              UFUnion(uf, u, w);
-            }
-            continue;
-          }
-          // Un-accepted candidate: accept it iff a hull-clear swept edge reaches it from u.
-          if (!RoadmapLOS(rr, pu, vp))
-            continue;
-          int w = (int)rr->node.size();
-          rr->node.push_back(vp);
-          rr->adj.emplace_back();
-          rr->tweight.push_back(0.0f);
-          uf.push_back(w);
-          cell_node[key] = w;
-          rr->adj[u].push_back(w);
-          rr->adj[w].push_back(u);
-          UFUnion(uf, u, w);
-          rr->lattice_cells++; // the ONE true lattice writer
-          q.push(w);
+  // Reset the graph to its seeds so an attempt can be re-run from scratch.
+  auto ResetToSeeds = [&]() {
+    rr->node.resize(n_seed);
+    rr->adj.assign(n_seed, {});
+    rr->tweight.assign(n_seed, 0.0f);
+    uf.assign(n_seed, 0);
+    for (int i = 0; i < n_seed; i++)
+      uf[i] = i;
+    rr->lattice_cells = 0;
+    rr->connector_nodes = 0;
+    cell_node.clear();
+    // Seed<->seed edges (the portal graph the skeleton already had) — off-lattice, so done explicitly.
+    for (int i = 0; i < n_seed; i++)
+      for (int j = i + 1; j < n_seed; j++)
+        if (RoadmapLOS(rr, rr->node[i], rr->node[j])) {
+          rr->adj[i].push_back(j);
+          rr->adj[j].push_back(i);
+          UFUnion(uf, i, j);
         }
+  };
+
+  // BFS growth from whatever is in the queue: accept a lattice cell iff a hull-clear swept edge reaches
+  // it from an accepted node; link already-accepted neighbours the same way.
+  auto GrowBfs = [&](std::queue<int> &q) {
+    while (!q.empty()) {
+      int u = q.front();
+      q.pop();
+      const vector pu = rr->node[u];
+
+      // Lattice cells within the neighbourhood of u.
+      int lx = (int)std::floor((pu.x() - nr - org.x()) / sp), hx = (int)std::ceil((pu.x() + nr - org.x()) / sp);
+      int ly = (int)std::floor((pu.y() - nr - org.y()) / sp), hy = (int)std::ceil((pu.y() + nr - org.y()) / sp);
+      int lz = (int)std::floor((pu.z() - nr - org.z()) / sp), hz = (int)std::ceil((pu.z() + nr - org.z()) / sp);
+      lx = std::max(lx, 0);
+      ly = std::max(ly, 0);
+      lz = std::max(lz, 0);
+      hx = std::min(hx, Nx - 1);
+      hy = std::min(hy, Ny - 1);
+      hz = std::min(hz, Nz - 1);
+
+      for (int ix = lx; ix <= hx; ix++)
+        for (int iy = ly; iy <= hy; iy++)
+          for (int iz = lz; iz <= hz; iz++) {
+            vector vp = CellPos(ix, iy, iz);
+            if (Dist(pu, vp) > nr)
+              continue;
+            int64_t key = CellKey(ix, iy, iz);
+            auto it = cell_node.find(key);
+            if (it != cell_node.end()) {
+              int w = it->second;
+              if (w == u || HasEdge(rr->adj[u], w))
+                continue; // edge already probed from the other endpoint
+              if (RoadmapLOS(rr, pu, vp)) {
+                rr->adj[u].push_back(w);
+                rr->adj[w].push_back(u);
+                UFUnion(uf, u, w);
+              }
+              continue;
+            }
+            // Un-accepted candidate: accept it iff a hull-clear swept edge reaches it from u.
+            if (!RoadmapLOS(rr, pu, vp))
+              continue;
+            int w = (int)rr->node.size();
+            rr->node.push_back(vp);
+            rr->adj.emplace_back();
+            rr->tweight.push_back(0.0f);
+            uf.push_back(w);
+            cell_node[key] = w;
+            rr->adj[u].push_back(w);
+            rr->adj[w].push_back(u);
+            UFUnion(uf, u, w);
+            rr->lattice_cells++; // the ONE true lattice writer
+            q.push(w);
+          }
+    }
+  };
+
+  auto GrowAttempt = [&](int attempt) {
+    org = PhaseOrg(attempt, sp);
+    ResetToSeeds();
+    std::queue<int> q;
+    for (int i = 0; i < n_seed; i++)
+      q.push(i);
+    GrowBfs(q);
+    return rr->lattice_cells;
+  };
+
+  // Grow under both phases and keep the fuller lattice (ties keep the seed phase). Cell count is the
+  // honest proxy for how much of the room's free volume the grid managed to sample at this pitch;
+  // the extra growth costs a few thousand sweeps per room, once, on first use.
+  int cells0 = GrowAttempt(0);
+  if (phase_on_seeds) {
+    int cells1 = GrowAttempt(1);
+    if (cells1 <= cells0) // the seed phase was at least as good — rebuild it
+      GrowAttempt(0);
+    if (cells1 > cells0) {
+      LOG_DEBUG.printf("BOT: roadmap %s %d: centre phase kept, %d -> %d cells", kind, id, cells0, cells1);
+    }
+  }
+
+  // DOOR ON-RAMP. Growth is rooted at the seeds, so a doorway whose first hop is blocked (a propped
+  // leaf, a frame lip, a short vestibule) loses the WHOLE room, whichever phase is tried. For each
+  // seed, run a bounded best-first search into the room along the portal normal: expand the reached
+  // point that has advanced farthest inward; a blocked step spawns a tangent fan around the blocking
+  // face (the same frame BotFindViaPoint and SkelBridge use); a candidate is admitted only if its
+  // swept leg from the expanded point is clear. Success = a point BOT_ROADMAP_RAMP_DEPTH inside the
+  // door plane; then the chain seed..goal is committed as connector nodes and growth resumes from it.
+  // Fail-closed: no chain is committed unless the search got in, so a genuinely sealed doorway adds
+  // nothing. Only rooms that starved (below the routable cell floor) pay for this.
+  if (!rr->outdoor && rr->lattice_cells < BOT_ROADMAP_ROUTABLE_MIN_CELLS &&
+      candidates >= 2 * BOT_ROADMAP_ROUTABLE_MIN_CELLS && rr->probe_room >= 0) {
+    const room &rm = Rooms[rr->probe_room];
+    std::vector<int> seed_portal(n_seed, -1);
+    for (int pi = 0; pi < (int)rr->portal_seed.size(); pi++)
+      if (rr->portal_seed[pi] >= 0 && rr->portal_seed[pi] < n_seed)
+        seed_portal[rr->portal_seed[pi]] = pi;
+    const float step = sp * 0.4f;                      // 8u at the 20u pitch — hull scale
+    const float margin = BOT_ROADMAP_CLEARANCE * 2.0f; // bbox guard, as the multi-bend repair
+    const float depth_goal = 3.0f * step;              // 24u in: past a leaf, a lip, a frame
+    const float fan_off[3] = {12.0f, 26.0f, 40.0f};    // SkelBridge's lateral rings
+    std::queue<int> q;
+    int ramp_nodes = 0, ramped_seeds = 0;
+    for (int sidx = 0; sidx < n_seed; sidx++) {
+      int pi = seed_portal[sidx];
+      if (pi < 0 || pi >= rm.num_portals)
+        continue;
+      const face &pf = rm.faces[rm.portals[pi].portal_face];
+      vector dir = pf.normal; // points INTO the room (PortalSweepOpen's contract)
+      if (vm_NormalizeVector(&dir) < 0.5f)
+        continue;
+      const vector seed_pos = rr->node[sidx];
+
+      struct RP {
+        vector pos;
+        int pred;
+        float adv;
+        bool done;
+      };
+      constexpr int kMaxPts = 40;
+      RP rp[kMaxPts];
+      int rpn = 0;
+      rp[rpn++] = {seed_pos, -1, 0.0f, false};
+      int goal = -1;
+      auto InRoom = [&](const vector &c) {
+        return !(c.x() < mn.x() - margin || c.x() > mx.x() + margin || c.y() < mn.y() - margin ||
+                 c.y() > mx.y() + margin || c.z() < mn.z() - margin || c.z() > mx.z() + margin);
+      };
+      auto Admit = [&](const vector &c, int pred) {
+        if (rpn >= kMaxPts || !InRoom(c))
+          return false;
+        for (int i = 0; i < rpn; i++)
+          if (Dist(c, rp[i].pos) < 6.0f)
+            return false; // already reached here
+        if (!RoadmapLOS(rr, rp[pred].pos, c))
+          return false;
+        vector rel = c - seed_pos;
+        rp[rpn] = {c, pred, vm_DotProduct(&rel, &dir), false};
+        if (rp[rpn].adv >= depth_goal)
+          goal = rpn;
+        rpn++;
+        return true;
+      };
+      for (int iter = 0; iter < 24 && goal < 0; iter++) {
+        int best = -1;
+        for (int i = 0; i < rpn; i++)
+          if (!rp[i].done && (best < 0 || rp[i].adv > rp[best].adv))
+            best = i;
+        if (best < 0)
+          break;
+        rp[best].done = true;
+        const vector from = rp[best].pos;
+        vector cand = from + dir * step;
+        fvi_info hit{};
+        if (RoadmapTrace(rr, from, cand, &hit)) {
+          Admit(cand, best);
+          continue;
+        }
+        // Blocked: fan around the blocking face, anchored just short of the hit.
+        vector side = RoadmapSideAxis(dir, hit.hit_wallnorm[0]);
+        vector up = vm_Cross3Product(side, dir);
+        vm_NormalizeVector(&up);
+        vector anchor = hit.hit_pnt - dir * (BOT_ROADMAP_CLEARANCE * 0.9f);
+        for (int oi = 0; oi < 3 && goal < 0; oi++) {
+          const vector cands[4] = {anchor + side * fan_off[oi], anchor - side * fan_off[oi], anchor + up * fan_off[oi],
+                                   anchor - up * fan_off[oi]};
+          for (const vector &c : cands)
+            Admit(c, best);
+        }
+      }
+      if (goal < 0)
+        continue; // fail closed: this seed cannot be walked in
+      // Commit the chain seed -> goal (parent walk), string-pulled so only the bends survive.
+      std::vector<vector> chain;
+      for (int c = goal; c >= 0; c = rp[c].pred)
+        chain.push_back(rp[c].pos);
+      std::reverse(chain.begin(), chain.end()); // chain[0] == seed_pos
+      std::vector<vector> pulled;
+      pulled.push_back(chain.front());
+      size_t anchor_i = 0;
+      for (size_t i = 1; i + 1 < chain.size(); i++)
+        if (!RoadmapLOS(rr, chain[anchor_i], chain[i + 1])) {
+          pulled.push_back(chain[i]);
+          anchor_i = i;
+        }
+      pulled.push_back(chain.back());
+      int prev = sidx;
+      for (size_t i = 1; i < pulled.size(); i++) {
+        int w = (int)rr->node.size();
+        rr->node.push_back(pulled[i]);
+        rr->adj.emplace_back();
+        rr->tweight.push_back(0.0f);
+        uf.push_back(w);
+        rr->adj[prev].push_back(w);
+        rr->adj[w].push_back(prev);
+        UFUnion(uf, prev, w);
+        rr->connector_nodes++; // a traced on-ramp node, not sampled coverage
+        ramp_nodes++;
+        q.push(w);
+        prev = w;
+      }
+      ramped_seeds++;
+    }
+    if (ramp_nodes > 0) {
+      const int before = rr->lattice_cells;
+      GrowBfs(q);
+      LOG_DEBUG.printf("BOT: roadmap %s %d: door on-ramp %d seed(s) +%d nodes, cells %d -> %d", kind, id, ramped_seeds,
+                       ramp_nodes, before, rr->lattice_cells);
+    }
   }
 
   // Capture the PRE-BRIDGE component count (the room-complexity signal the proactive router gates on): how
@@ -1021,8 +1213,10 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
   // vias against 195 skeleton vias, because both had just lost the flag. The snapshot also existed to
   // stop the multibend repair widening eligibility; the cell floor does that directly now, since a
   // room whose connectivity comes from traced connectors has few real cells and fails on its own.
+  // A room with one seed (a dead-end office, a flag pocket) has no pair to cover: coverage is -1 and
+  // must not fail the gate — the cell floor is its whole eligibility test.
   rr->routable = !rr->degenerate && rr->lattice_cells >= BOT_ROADMAP_ROUTABLE_MIN_CELLS &&
-                 rr->local_pair_coverage >= BOT_ROADMAP_ROUTABLE_MIN_PAIRPCT;
+                 (rr->local_pair_coverage < 0 || rr->local_pair_coverage >= BOT_ROADMAP_ROUTABLE_MIN_PAIRPCT);
 
   LOG_DEBUG.printf("BOT: roadmap %s %d: %d nodes (%d seeds + %d cells + %d connector), %d comps, localpair=%d%%, "
                    "sp=%.0f%s%s",
@@ -1101,12 +1295,18 @@ RoadmapRoom *Build(int room_idx) {
   }
 
   // Portal seeds — guaranteed-playable points (a ship entered through each). Each starts its own component;
-  // growth/seam edges union them where open air actually connects.
+  // growth/seam edges union them where open air actually connects. 0.9.14 portal model: only DOOR/PANE
+  // portals seed. A solid-wall "portal" is not a playable point — as a seed it grew cells from a point on
+  // a wall, was a legal exit goal for a bot leaving the room (the wall-twin press beside a real door),
+  // and as a pair-coverage denominator it failed the routable gate in exactly the single-door rooms
+  // whose lattice was in fact connected door-to-item (Batteries flag rooms).
   std::vector<int> uf;
   rr->portal_seed.assign(npc, -1);
   for (int p = 0; p < npc; p++) {
     int nr = rm.portals[p].croom;
     if (nr < 0 || nr > Highest_room_index || !Rooms[nr].used)
+      continue;
+    if (BotPortalClass(room_idx, p) == BOT_PORTAL_CLASS_NEVER)
       continue;
     int idx = (int)rr->node.size();
     rr->node.push_back(rm.portals[p].path_pnt);
@@ -1501,7 +1701,7 @@ bool EnsureUnionGraph(RoadmapRoom *rr, int room_idx, bool cached_only) {
   }
 
   vector skel_pos[BOT_SKEL_MAX_NODES];
-  uint32_t skel_edges[BOT_SKEL_MAX_NODES]{};
+  uint64_t skel_edges[BOT_SKEL_MAX_NODES]{};
   int portal_count = 0;
   int skel_n = cached_only ? BotSkelDumpRoomCached(room_idx, skel_pos, skel_edges, &portal_count)
                            : BotSkelDumpRoom(room_idx, skel_pos, skel_edges, &portal_count);
@@ -1522,7 +1722,7 @@ bool EnsureUnionGraph(RoadmapRoom *rr, int room_idx, bool cached_only) {
   // arterial at the real 6.7 hull; only pseudo edges that still clear enter the union network.
   for (int i = 0; i < skel_n; i++)
     for (int j = i + 1; j < skel_n; j++) {
-      if (!(skel_edges[i] & (1u << j)) || map[i] < 0 || map[j] < 0)
+      if (!(skel_edges[i] & (1ull << j)) || map[i] < 0 || map[j] < 0)
         continue;
       if (RoadmapLOS(rr, graph[map[i]].pos, graph[map[j]].pos))
         AddUnionEdge(graph, map[i], map[j], UNION_ARTERIAL);
@@ -1904,9 +2104,13 @@ BotViaResult BotRoadmapFindVia(object *obj, const vector &target_pos, int target
       if (next_room < 0)
         next_room = target_room;
     }
+    // The exit goal is chosen from the aim layer's admitted exit set (doors first, then panes per this
+    // bot's glass authority) — never from "any portal into next_room": a wall twin beside the real door
+    // was the nearest seed from most of Batteries rm84 and the lattice routed carriers onto the wall.
+    const uint64_t exits = BotAimExitMask(obj, room_idx, next_room);
     float best_d = FLT_MAX;
     for (int p = 0; p < Rooms[room_idx].num_portals; p++) {
-      if (Rooms[room_idx].portals[p].croom != next_room)
+      if (Rooms[room_idx].portals[p].croom != next_room || p >= 64 || !(exits & (1ull << p)))
         continue;
       int sn = rr->portal_seed[p];
       if (sn < 0)

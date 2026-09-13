@@ -596,7 +596,7 @@ struct bot_info {
   // via_chain_cursor on each arrival — so a bot commits to LEAVING the room (one mind) instead of
   // re-deriving a single hop per arrival (the abend2 ring orbit). Valid only while roomnum ==
   // via_chain_room; any room change clears it. BOT_CHAIN_MAX = BOT_SKEL_MAX_NODES (bot_steering.h).
-  static constexpr int BOT_CHAIN_MAX = 32;
+  static constexpr int BOT_CHAIN_MAX = 64;
   vector via_chain[BOT_CHAIN_MAX]; // ordered node positions [bot-adjacent ... exit portal, target]
   int via_chain_len;               // valid entries in via_chain, 0 = no active chain
   int via_chain_cursor;            // index of the node currently being flown toward

@@ -15,6 +15,24 @@ re-landed (`5a94875e`) but not yet validated — unfavorable standalone (batteri
 the flag-room arrival stall and the ~58% connectivity dead-ends. The last stable release is
 **0.9.13** (0.9.11 preceded it; 0.9.12 was never promoted).
 
+### 2026-09-12 (later): Portal model, slice 1 — walls are not doors (0.9.14-dev)
+
+Audit of the day (Fable) traced the Batteries flag-room failure to the portal model rather than to
+any aim or arbitration layer: the red flag door is the map's worst crossing (rm84→rm44 271
+not-crossed in 20 rounds) and the in-room layers treated every solid-wall "portal" as a doorway.
+Slice 1 classifies portals once (`BotPortalClass`: NEVER/DOOR/PANE) and removes NEVER portals from
+the skeleton (dead slots, 64-bit masks), the lattice seeds, the bridge/repair targets, the coverage
+denominators and the roadmap exit goal; single-seed rooms are routable on the cell floor. The change
+exposed that lattice growth is seed-rooted, so a lone door seed on the room's bounding face starves a
+room: growth now runs under two phases and keeps the fuller one, and a still-starved room walks its
+door seed in with a bounded best-first on-ramp. Bot-free dump gate vs the clean 971aa414 build:
+Batteries cells 11914→12749, connectors 2256→540, composer-eligible rooms 26→46, split lattices
+101→71, rm3's four doors 2→1 components, rm80 3→239 cells via the on-ramp; abend2 rings unchanged.
+Play gate: 4-round batteries vs the glass control (manifest
+`batteries-portal-model-4rnd.json`), then abend2. Full record: NAVIGATION.md §7.0-CURRENT; the
+design and remaining slices (crossing segment, backface/bounds, compose-when-blocked, objective
+blacklist) are listed there.
+
 ### 2026-09-10: corrected handoff and release boundary
 
 The operator manually stopped `soak-20260910T193204.log` when it moved to Nightmarecastle.

@@ -13,6 +13,22 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
 admission fix and the remaining interior-navigation defects are still being worked. Do not run this
 as a release.*
 
+*   **Walls are no longer doors to the navigation network.** A Descent 3 level splits rooms with
+    "portals" even through solid faces, and on an office map most of them are walls or windows (on
+    Batteries Included, 248 of 1041 portals are solid and 207 are glass panes). The room-to-room router
+    always filtered those out; the in-room layers did not, and treated every one as a doorway — a
+    skeleton node, a lattice seed, a repair target, a coverage denominator, even a legal exit goal
+    beside the real door. Every portal now carries one classification (door, breakable pane, or never),
+    and the in-room network is built from doors and panes only. On Batteries Included this frees the
+    skeleton budget in the 30-portal hub rooms (Blue's approach room 3 now has its four doors in one
+    connected skeleton instead of two), turns both flag rooms into rooms the route composer is allowed
+    to plan in, and removes about 1,700 repair waypoints that only ever joined walls to walls. Two
+    lattice repairs came with it: a room tries a second sample phase when its door seed sits on the
+    wall, and a starved single-door room walks its seed into the room around the doorway geometry
+    before growing — the red flag room and two office rooms that previously lost their lattice entirely
+    now fill normally. Measured on bot-free geometry dumps against the previous build: lattice cells
+    +7%, rooms the composer may plan in 26 → 46, rooms with a split lattice 101 → 71, no room lost
+    eligibility, abend2 unchanged in its ring rooms. Play impact is under test.
 *   **Breakable glass is a route again — for bots that can shoot it open.** The engine treats an
     intact breakable pane as a wall at runtime, so a plain pathfinding gate priced every pane as
     impassable and bots stopped planning through glass at all. Now a bot carrying a weapon that can

@@ -51,7 +51,7 @@ struct fvi_info;
 // simply doesn't form (fail-closed) rather than routing a bot into a gap it jams in.
 #define BOT_PSEUDO_BNODE_RADIUS 6.7f // hull-fit clearance radius for pseudo-bnode edges (== BOT_ROADMAP_CLEARANCE)
 #define BOT_PSEUDO_BNODE_OFFSET 8.0f // push portal offset-nodes this far off the portal face into the room
-#define BOT_SKEL_MAX_NODES 32        // skeleton node cap per room (portal nodes + pseudo-bnodes)
+#define BOT_SKEL_MAX_NODES 64        // skeleton node cap per room (portal nodes + pseudo-bnodes); 64-bit edge masks
 
 // Collision-guided bridge search (0.9.12 skeleton rework — SKELETON_REWORK.md). Replaces the old
 // all-portal-centroid pseudo-bnode with a bounded best-first search that traces BENT flyable paths:
@@ -239,10 +239,14 @@ bool BotStackedTrayAim(int wp_room, int prev_room, vector *out);
 // [0,*portal_count_out), then pseudo-bnodes) and the per-node hull-clear edge bitmask. Builds the
 // skeleton lazily; returns the total node count (0 if the room is external/invalid). Caller arrays
 // must hold BOT_SKEL_MAX_NODES entries.
-int BotSkelDumpRoom(int room_idx, vector *pos_out, uint32_t *edges_out, int *portal_count_out);
+int BotSkelDumpRoom(int room_idx, vector *pos_out, uint64_t *edges_out, int *portal_count_out);
 // Cached-only form for shadow diagnostics: never builds the skeleton and returns 0 when the room
 // has not already been used by live navigation.
-int BotSkelDumpRoomCached(int room_idx, vector *pos_out, uint32_t *edges_out, int *portal_count_out);
+int BotSkelDumpRoomCached(int room_idx, vector *pos_out, uint64_t *edges_out, int *portal_count_out);
+// Which portal nodes of the room's skeleton are LIVE (class DOOR or PANE, see BotPortalClass): bit i
+// set for portals[i]. A NEVER portal keeps its node slot (index invariant) but carries no edges and
+// is never bridged, seeded, or counted. Builds the skeleton lazily.
+uint64_t BotSkelLivePortalMask(int room_idx);
 
 // $navdump diagnostic (12.6 Stage B): dump a terrain region's outdoor connecting graph — node positions
 // (entrance approach nodes [0,*ent_count_out), then perimeter anchors) and per-node hull-clear edge
@@ -385,6 +389,26 @@ bool BotPortalGlassShortcutEligible(int room_idx, int portal_idx);
 // The mode a bot's loadout earns: SHORTCUT with a kinetic breaker, OFF without. BotCanBreakGlass
 // (bot.cpp) is the single source of truth for "can open a pane", shared with the shooting layer.
 int BotGlassBudgetForBot(int bot_index);
+
+// --- Portal classification (0.9.14 portal model) ------------------------------------------------
+// D3 splits rooms with portals even through SOLID faces, so a level's `portal` array is mostly
+// not doorways: on Batteries 248 of 1041 portals are walls/windows/too-small and 207 are panes.
+// The router always filtered them (BOA_PassablePortal + geocost); the in-room layers did not, and
+// every one of them treated a wall as a doorway — a skeleton node, a lattice seed, a bridge
+// target, a coverage denominator, an exit goal. One cached verdict per portal, consumed by all:
+//   NEVER — a ship can never cross it: solid wall/window face, designer-blocked, too small, locked
+//   DOOR  — engine-passable (includes the tight/DISAGREE class the router admits last-resort)
+//   PANE  — an intact breakable pane a kinetic bot may open ($nav glass; a wall to the engine)
+#define BOT_PORTAL_CLASS_NEVER 0
+#define BOT_PORTAL_CLASS_DOOR 1
+#define BOT_PORTAL_CLASS_PANE 2
+int BotPortalClass(int room_idx, int portal_idx);
+
+// The aim layer's exit set for `obj` leaving room_idx toward dest_room (the adjacent next room):
+// bit i set for portals[i] this bot may use, doors first, then vertical panes, then any pane as a
+// sole route — the router's own ladder. Shared with bot_roadmap.cpp so the lattice's exit goal can
+// never be a portal the router would not price (the wall-twin exit goal).
+uint64_t BotAimExitMask(object *obj, int room_idx, int dest_room);
 
 // Cost-aware next-hop router (Phase 11). Dijkstra over the interior room graph weighting
 // portals by BOA base cost + graded geometry cost + dynamic penalty. Returns the next room to
