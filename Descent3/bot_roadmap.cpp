@@ -247,10 +247,18 @@ bool RoadmapTrace(const RoadmapRoom *rr, const vector &a, const vector &b, fvi_i
 
 // The point a bot is told to fly for roadmap node `node`: a portal seed hands out the portal's
 // validated crossing point (slice 2, see SkelFlyPos in bot_steering.cpp); graph unchanged.
-vector RoadmapFlyPos(const RoadmapRoom *rr, int node) {
+// A portal seed hands out the door's APPROACH point while the bot is on its way and its PUSH-THROUGH
+// point once beside the door (see SkelFlyPos in bot_steering.cpp for the arrival-sphere reason);
+// `force_far` marks a composed route's exit terminal, whose arrival must be a crossing.
+vector RoadmapFlyPos(const RoadmapRoom *rr, int node, const vector *from = nullptr, bool force_far = false) {
   vector p = rr->node[node];
-  if (!rr->outdoor && node < (int)rr->seed_portal.size() && rr->probe_room >= 0)
-    BotPortalCrossingPath(rr->probe_room, rr->seed_portal[node], &p, nullptr, nullptr, nullptr); // approach point
+  if (!rr->outdoor && node < (int)rr->seed_portal.size() && rr->probe_room >= 0) {
+    vector near_p = p, plane = p, far_p = p;
+    if (BotPortalCrossingPath(rr->probe_room, rr->seed_portal[node], &near_p, &plane, &far_p, nullptr)) {
+      const bool beside = from && Dist(*from, plane) < BOT_VIA_ARRIVE_DIST + 8.0f;
+      p = (force_far || beside) ? far_p : near_p;
+    }
+  }
   return p;
 }
 
@@ -1722,7 +1730,7 @@ BotViaResult QueryVia(RoadmapRoom *rr, object *obj, int goal, vector *via_out) {
       Dist(obj->pos, rr->node[via_node]) < BOT_VIA_ARRIVE_DIST + BOT_ROADMAP_CLEARANCE)
     via_node = path[1];
   if (via_out)
-    *via_out = RoadmapFlyPos(rr, via_node);
+    *via_out = RoadmapFlyPos(rr, via_node, &obj->pos);
   return BOT_VIA_FOUND;
 }
 
@@ -2027,11 +2035,14 @@ bool ComposeUnionRoute(RoadmapRoom *rr, object *obj, const vector &target_pos, i
   route_out->count = (int)waypoint.size();
   for (int i = 0; i < route_out->count; i++)
     route_out->point[i] = waypoint[i];
-  // A waypoint that is a portal seed is flown at the portal's validated crossing (slice 2).
+  // A waypoint that is a portal seed is flown at the portal's validated crossing (slice 2): the
+  // exit terminal (last point of a cross-room route) at its push-through, any other seed at its
+  // approach point.
   for (int i = 0; i < route_out->count; i++)
     for (int sn = 0; sn < (int)rr->seed_portal.size(); sn++)
       if (Dist(route_out->point[i], rr->node[sn]) < 0.01f) {
-        route_out->point[i] = RoadmapFlyPos(rr, sn);
+        const bool exit_terminal = terminal != BOT_COMPOSE_TERMINAL_SAME_ROOM && i == route_out->count - 1;
+        route_out->point[i] = RoadmapFlyPos(rr, sn, &obj->pos, exit_terminal);
         break;
       }
   route_out->terminal = terminal;

@@ -975,13 +975,20 @@ static int SkelPortalCount(const room &rm) { return rm.num_portals < SKEL_MAX_NO
 // hand-out changes no edge. A door whose centre is shadowed (Batteries rm84, rm8: the polygon centre
 // blocked within 8u, the clear column 10u to the side) is otherwise flown at the shadowed centre by
 // every via layer no matter how the route was planned.
-static vector SkelFlyPos(int room_idx, int node) {
+// `from` = the bot's position when known. A door node hands out its APPROACH point while the bot is
+// still on its way (on the validated column, or the lateral entry for a bent crossing), and its
+// PUSH-THROUGH point once the bot is beside the door: the approach point sits 8u in front of the
+// plane, inside the via layer's 15u arrival sphere, so a bot next to the door "arrived" there over
+// and over and was never told to cross (Batteries rm35: 21 escalations in two rounds, net_disp 7).
+// `force_far` is for the last node of a committed chain — the exit — whose arrival must be a crossing.
+static vector SkelFlyPos(int room_idx, int node, const vector *from = nullptr, bool force_far = false) {
   vector p = skel_node_pos[room_idx][node];
   if (node < SkelPortalCount(Rooms[room_idx]) && (skel_live[room_idx] & (1ull << node))) {
-    // The approach point just inside this room: on the validated column for a straight crossing, or
-    // the lateral entry point for a bent one (rm80's door, where the plane point is not approachable
-    // head-on). The crossing itself is the push-through's job (far point).
-    BotPortalCrossingPath(room_idx, node, &p, nullptr, nullptr, nullptr);
+    vector near_p = p, plane = p, far_p = p;
+    if (BotPortalCrossingPath(room_idx, node, &near_p, &plane, &far_p, nullptr)) {
+      const bool beside = from && vm_VectorDistanceQuick(from, &plane) < BOT_VIA_ARRIVE_DIST + 8.0f;
+      p = (force_far || beside) ? far_p : near_p;
+    }
   }
   return p;
 }
@@ -1487,7 +1494,7 @@ bool BotResolveRoomAim(object *obj, const vector &target_pos, int target_room, f
       return false;
     if (!skel_built[room_idx])
       SkelBuild(room_idx);
-    *out = SkelFlyPos(room_idx, 0); // node i mirrors portals[i]; a door hands out its validated crossing
+    *out = SkelFlyPos(room_idx, 0, &obj->pos); // node i mirrors portals[i]; approach, then push-through
     if (source_out)
       *source_out = BOT_ROOM_AIM_SKELETON;
     return true;
@@ -1553,7 +1560,7 @@ bool BotResolveRoomAim(object *obj, const vector &target_pos, int target_room, f
     }
 
     if (hop >= 0) {
-      *out = SkelFlyPos(room_idx, hop);
+      *out = SkelFlyPos(room_idx, hop, &obj->pos);
       if (source_out)
         *source_out = BOT_ROOM_AIM_SKELETON;
       return true;
@@ -1574,7 +1581,7 @@ bool BotResolveRoomAim(object *obj, const vector &target_pos, int target_room, f
         }
       }
       if (best >= 0) {
-        *out = SkelFlyPos(room_idx, best);
+        *out = SkelFlyPos(room_idx, best, &obj->pos);
         if (source_out)
           *source_out = BOT_ROOM_AIM_SKELETON;
         return true;
@@ -1678,7 +1685,7 @@ int BotSkelBuildChain(object *obj, int room_idx, int target_room, const vector &
     return 0; // a truncated chain must not jump across omitted legs to the final target
   int out_n = 0;
   for (int i = 0; i < k; i++)
-    pos_out[out_n++] = SkelFlyPos(room_idx, nodes[i]);
+    pos_out[out_n++] = SkelFlyPos(room_idx, nodes[i], &obj->pos, /*force_far=*/!same_room && i == k - 1);
   // A routed cross-room query may supply its first local aim as target_pos, not a point beyond
   // the exit. Appending it would close the chain back onto its start. End at the portal and let
   // the routed caller issue the crossing/tray goal, as it already does for composed routes.

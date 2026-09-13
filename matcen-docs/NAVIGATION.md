@@ -856,7 +856,26 @@ intact panes get a synthesized square-on crossing (near a hull radius in front, 
 so the nose-on reactive clear fires; the bent search is the multi-step on-ramp primitive on each
 side (rm80's door still has none — its far side is blocked within reach; needs the overlay).
 
-**Still open on this line:** FQ_BACKFACE (the sweep still ignores back faces); rm80's door.
+**Burst arm, first two rounds (soak-20260913T024954, 0fc659a0, vs the hub arm's first two):** hard
+pins 57 → 35, rm8 23 → 4 (the pocket episodes now end in seconds: burst → escape → composed route →
+via points reached), but rm35 7 → 21 and rm12 7 → 22, and Blue pickups 7 → 1. rm35's episodes are
+`net_disp 7` beside its door with no crossing commit at all: the door hand-out was the APPROACH point
+8u in front of the plane, inside the via layer's 15u arrival sphere, so a bot beside the door
+"arrived" there over and over and was never told to cross (then the reverse burst fired on a body
+that was not wedged). rm12's are `net_disp 38` chases — circling, the powerup class. Staged: a door
+node or seed hands out its approach point while the bot is on its way and its push-through point once
+beside the door (`SkelFlyPos`/`RoadmapFlyPos` take the bot position; a committed chain's exit node and a
+composed route's exit terminal always take the push-through).
+
+**Burst arm, full (soak-20260913T024954, 0fc659a0, vs the hub arm; guard PASS).** Red 3 grabs / 1
+capture (33%) — Red's first capture in six arms on this map; Blue 6 / 4 (67%) vs 9 / 5. Hard pins
+126 → 69, soft 23 → 63 (bots move more), 71 reverse bursts, rm8 67 → 6. Cost moved: rm80 10 → 40
+(its door still has no crossing, so its bursts re-enter the same approach), rm12 25 → 38 (chase
+circling), rm35 7 → 25 (the approach-point arrival loop — fix staged above). Objective intents
+71 death / 29 timeout / 75 arrival / 27 replacement (arrivals 41 → 75).
+
+**Still open on this line:** FQ_BACKFACE (the sweep still ignores back faces); rm80's door; the
+powerup-chase circling class (rm12).
 Deferred to the next dump: gap-directed lattice sampling, a trunk node per room, the rm3 hub (16
 lattice components, not composer-eligible — Red's whole approach).
 

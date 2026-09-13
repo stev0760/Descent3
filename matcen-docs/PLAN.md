@@ -129,7 +129,12 @@ item. **Completion arm result (guard PASS):** Blue 6 captures / 75% conversion, 
 no-route 61 → 36, room 8's door no longer needs committed crossings. **Red's zero grabs across four
 arms is the room-3 hub** (16 lattice components on Red's only approach to the blue flag): the next
 target is gap-directed lattice sampling so that room becomes composer-eligible. abend2 regression gate
-runs on this build first. The room router is untouched by design.
+runs on this build first. **Update, 2026-09-13 early morning:** the hub was a seeding artifact (pane
+seeds embedded in glass), fixed; the abend2 gate passed on its terms; the real Red blocker was a
+furniture pocket in its supply room that the forward-only escape could not leave — a one-second
+reverse burst on a hard pin fixed it (rm8 67 → 6 pins) and Red scored its first capture in six arms.
+Next: the approach/push hand-out rule (rm35), then room 80's door with the overlay, then the
+powerup-chase circling class. The room router is untouched by design.
 
 0.9.13 shipped as the correctness checkpoint; 0.9.14-dev is open with four landed commits:
 telemetry (fa5966ed), the aim-layer fixes (4c51e30d, 2df343c2), and glass routing. The 4-round
