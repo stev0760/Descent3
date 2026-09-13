@@ -1122,6 +1122,14 @@ furniture behind: wedged between the two, the burst has to go up or sideways; rm
 and rm1 (2009,-75,2176) — both AT their vent's approach point, plane and push-through blocked at 0u
 by the intact pane above, which is 9b's case (back straight off, then shoot).
 
+**Arm 9 + 9b, full (soak-20260913T140023, 958a6d5d, vs the glass re-run; GUARD PASS).** The vent
+rooms are solved: rm1 and rm68 are gone from the list (12 back-offs fired), rm80 36 -> 7, grid
+crossings 0. Blue 9 grabs / 8 captures (89%), Red 0 / 0. Cost: hard pins 57 -> 94, escalations
+112 -> 118 — and rm35 37 (16): the desk pocket, which 9c targets. rm12 19 (=), rm13 12. So the
+sealed complex funnels bots into rm35's pocket at about the rate the vents used to eat them, and
+the final candidate (c099220f, with the directional burst) is the arm that decides between the
+9-line and the 57aaa31f line.
+
 **Committee state, measured (2026-09-13).** Per-level census, share of ACTIVE-held time: `via`
 54% -> 96% from the sprint's start to 57aaa31f; the engine-path fallback (`no-route`) 39% -> 0%;
 `stuck-escape` 4.5% -> 1.9%; the flicker members (`seam`, `path_pnt`, `gridroute`, `hop-commit`)
