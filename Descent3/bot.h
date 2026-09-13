@@ -224,6 +224,7 @@
 // Objective items (flags, orbs) are never optional pickups: a failed approach earns a short back-off
 // so the pilot re-plans from where it stands, not a minute of ignoring the objective (0.9.14).
 #define BOT_OBJECTIVE_BLACKLIST_DURATION 5.0f
+#define BOT_UNSTICK_REVERSE_TIME 1.0f // seconds of pure reverse thrust after a hard (net_disp<10) pin
 #define BOT_POWERUP_THRUST_RADIUS 50.0f      // direct-thrust override distance for close visible powerups (Phase 4.06)
 #define BOT_POWERUP_STALE_CHASE 4.0f // seconds chasing without collecting before treating chase as stale (Phase 4.06)
 
@@ -577,6 +578,7 @@ struct bot_info {
   int hop_commit_src;    // room the commit was issued from
   float hop_commit_time; // Gametime at issue (BOT_HOP_OUTCOME_TIMEOUT bounds a pending one)
   vector hop_commit_pos; // bot position at issue (outcome telemetry)
+  float unstick_reverse_until; // Gametime until which a hard pin drives pure reverse thrust (0.9.14)
   vector hop_commit_aim; // the push-through point issued (outcome telemetry)
 
   // Intra-room via-point steering (Phase 12) — committed go-around waypoint state

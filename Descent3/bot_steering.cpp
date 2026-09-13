@@ -416,34 +416,80 @@ static int8_t pf_cross_bent[MAX_ROOMS][MAX_PATH_PORTALS]; // 1 = found by the la
 
 // Sample the portal polygon (in its own plane) with the hull sweep along the face normal. Returns
 // true with the best clear point + depth; false when no sample clears at any depth.
-// Lateral entry on one side of the plane: from P, admit the first fan candidate `step` inside the
-// side (dir_in points into it) that the hull sweep from P reaches and that lies in that room's box.
+// Entry on one side of the plane by a bounded best-first search (the door on-ramp's primitive): from
+// P, expand the reached point that has advanced farthest into the side; a clear straight step admits
+// a point `step` farther in; a blocked step fans candidates around the blocking face (12/26/40u,
+// ±side/±up); every admitted point is hull-swept from its predecessor and lies in that side's room.
+// Success = a point `depth_goal` inside the plane; `out` gets it. One lateral step was not enough for
+// Batteries rm80's door (a leaf right behind the plane); this is what got its on-ramp in.
 static bool PortalCrossingSide(int probe_room, const vector &P, const vector &dir_in, const room &side_rm,
-                               float step, vector *out) {
+                               float step, float depth_goal, vector *out) {
   const float margin = BOT_ROADMAP_CLEARANCE * 2.0f;
-  vector fwd = P + dir_in * step;
-  fvi_info hit{};
-  if (ViaSegmentClear(probe_room, P, fwd, BOT_ROADMAP_CLEARANCE, &hit)) {
-    *out = fwd;
-    return true;
-  }
-  vector side = SkelSideAxis(dir_in, hit.hit_wallnorm[0]);
-  vm_NormalizeVector(&side);
-  vector up = vm_Cross3Product(side, dir_in);
-  vm_NormalizeVector(&up);
+  struct RP {
+    vector pos;
+    float adv;
+    bool done;
+  };
+  constexpr int kMax = 32;
+  RP rp[kMax];
+  int rpn = 0;
+  rp[rpn++] = {P, 0.0f, false};
+  auto InRoom = [&](const vector &c) {
+    return !(c.x() < side_rm.min_xyz.x() - margin || c.x() > side_rm.max_xyz.x() + margin ||
+             c.y() < side_rm.min_xyz.y() - margin || c.y() > side_rm.max_xyz.y() + margin ||
+             c.z() < side_rm.min_xyz.z() - margin || c.z() > side_rm.max_xyz.z() + margin);
+  };
+  auto Admit = [&](const vector &c, int pred) {
+    if (rpn >= kMax || !InRoom(c))
+      return -1;
+    for (int i = 0; i < rpn; i++)
+      if (vm_VectorDistanceQuick(&c, &rp[i].pos) < 6.0f)
+        return -1;
+    if (!ViaSegmentClear(probe_room, rp[pred].pos, c, BOT_ROADMAP_CLEARANCE, nullptr))
+      return -1;
+    vector rel = c - P;
+    rp[rpn] = {c, vm_DotProduct(&rel, &dir_in), false};
+    return rpn++;
+  };
   const float offs[3] = {12.0f, 26.0f, 40.0f};
-  for (float off : offs) {
-    const vector cands[4] = {fwd + side * off, fwd - side * off, fwd + up * off, fwd - up * off};
-    for (const vector &c : cands) {
-      if (c.x() < side_rm.min_xyz.x() - margin || c.x() > side_rm.max_xyz.x() + margin ||
-          c.y() < side_rm.min_xyz.y() - margin || c.y() > side_rm.max_xyz.y() + margin ||
-          c.z() < side_rm.min_xyz.z() - margin || c.z() > side_rm.max_xyz.z() + margin)
-        continue;
-      if (ViaSegmentClear(probe_room, P, c, BOT_ROADMAP_CLEARANCE, nullptr)) {
-        *out = c;
-        return true;
-      }
+  for (int iter = 0; iter < 20; iter++) {
+    int best = -1;
+    for (int i = 0; i < rpn; i++)
+      if (!rp[i].done && (best < 0 || rp[i].adv > rp[best].adv))
+        best = i;
+    if (best < 0)
+      break;
+    rp[best].done = true;
+    if (rp[best].adv >= depth_goal) {
+      *out = rp[best].pos;
+      return true;
     }
+    const vector from = rp[best].pos;
+    vector cand = from + dir_in * step;
+    fvi_info hit{};
+    if (ViaSegmentClear(probe_room, from, cand, BOT_ROADMAP_CLEARANCE, &hit)) {
+      Admit(cand, best);
+      continue;
+    }
+    vector side = SkelSideAxis(dir_in, hit.hit_wallnorm[0]);
+    vm_NormalizeVector(&side);
+    vector up = vm_Cross3Product(side, dir_in);
+    vm_NormalizeVector(&up);
+    const vector anchor = hit.hit_pnt - dir_in * (BOT_ROADMAP_CLEARANCE * 0.9f);
+    for (float off : offs) {
+      const vector cands[4] = {anchor + side * off, anchor - side * off, anchor + up * off, anchor - up * off};
+      for (const vector &c : cands)
+        Admit(c, best);
+    }
+  }
+  // Budget exhausted: the farthest point reached still counts if it is meaningfully inside.
+  int best = -1;
+  for (int i = 0; i < rpn; i++)
+    if (best < 0 || rp[i].adv > rp[best].adv)
+      best = i;
+  if (best >= 0 && rp[best].adv >= step) {
+    *out = rp[best].pos;
+    return true;
   }
   return false;
 }
@@ -567,9 +613,9 @@ static bool PortalCrossingCompute(int room_idx, int portal_idx, vector *pnt, flo
   for (int ci = 0; ci < nc && ci < 4; ci++) {
     const vector P = C + u * cand[ci].x + w * cand[ci].y;
     vector A{}, B{};
-    if (!PortalCrossingSide(room_idx, P, n, rm, bstep, &A))
+    if (!PortalCrossingSide(room_idx, P, n, rm, bstep, 2.0f * bstep, &A))
       continue;
-    if (!PortalCrossingSide(room_idx, P, n * -1.0f, Rooms[cr], bstep, &B))
+    if (!PortalCrossingSide(room_idx, P, n * -1.0f, Rooms[cr], bstep, 2.0f * bstep, &B))
       continue;
     *pnt = P;
     *depth = bstep;
@@ -605,24 +651,59 @@ bool BotPortalCrossing(int room_idx, int portal_idx, vector *pnt_out, float *dep
     // result does not depend on which side asked first.
     const bool canonical = !twin_ok || room_idx < cr;
     vector p = pt.path_pnt, near_here = pt.path_pnt, far_there = pt.path_pnt;
+    vector near_twin = pt.path_pnt, far_twin = pt.path_pnt;
     float d = 0.0f;
     bool ok = false, bent = false;
     if (BotPortalClass(room_idx, portal_idx) != BOT_PORTAL_CLASS_NEVER) {
-      // Computed from the canonical side; `near` is inside the computing room, `far` inside its twin.
+      // Computed from the canonical side; the computing room's normal n_c points into it.
       const bool here = canonical || (Rooms[cr].flags & RF_EXTERNAL);
       vector cnear{}, cfar{};
       ok = here ? PortalCrossingCompute(room_idx, portal_idx, &p, &d, &cnear, &cfar, &bent)
                 : PortalCrossingCompute(cr, cp, &p, &d, &cnear, &cfar, &bent);
-      if (ok) {
+      if (ok && bent) {
+        // Bent: A and B are the found entry points, each ~16u inside its side — symmetric by construction.
         near_here = here ? cnear : cfar;
         far_there = here ? cfar : cnear;
+        near_twin = far_there;
+        far_twin = near_here;
+      } else if (ok) {
+        // Straight: build BOTH sides from the plane point and the computing side's normal. Each side
+        // approaches 8u in front of the plane and pushes max(depth, 16u) through it — never the
+        // other side's 8u approach point (a push only 8u past the plane sits inside the 15u arrival
+        // sphere and "arrives" without crossing: the doorway-lip re-issue class).
+        const room &crm = here ? Rooms[room_idx] : Rooms[cr];
+        const portal &cpt = here ? pt : Rooms[cr].portals[cp];
+        vector n_c = crm.faces[cpt.portal_face].normal; // into the computing room
+        vm_NormalizeVector(&n_c);
+        const float push = d < 16.0f ? 16.0f : d;
+        const vector approach_c = p + n_c * (BOT_CROSS_DEPTH_MAX / 3.0f), approach_t = p - n_c * (BOT_CROSS_DEPTH_MAX / 3.0f);
+        const vector push_into_t = p - n_c * push, push_into_c = p + n_c * push;
+        near_here = here ? approach_c : approach_t;
+        far_there = here ? push_into_t : push_into_c;
+        near_twin = here ? approach_t : approach_c;
+        far_twin = here ? push_into_c : push_into_t;
+      } else if (BotPortalClass(room_idx, portal_idx) == BOT_PORTAL_CLASS_PANE) {
+        // An intact pane blocks every sweep by definition, so its crossing is synthesized on the
+        // face normal: approach a hull radius in front of the glass, push 16u through it. The bot
+        // then faces the pane squarely, which is what the nose-on reactive clear needs to fire —
+        // an angled approach (old construction: toward the next room's centre) pressed the glass
+        // off-axis and timed out (Batteries rm12 -> rm3, Red's route to the hub).
+        const face &pf = Rooms[room_idx].faces[pt.portal_face];
+        vector n = pf.normal; // points INTO this room
+        if (vm_NormalizeVector(&n) > 0.5f) {
+          p = pt.path_pnt;
+          d = BOT_CROSS_DEPTH_MAX * 2.0f / 3.0f;
+          near_here = p + n * BOT_ROADMAP_CLEARANCE;
+          far_there = p - n * d;
+          near_twin = p - n * BOT_ROADMAP_CLEARANCE;
+          far_twin = p + n * d;
+          ok = true;
+        }
       } else {
         p = pt.path_pnt;
         d = 0.0f;
-        if (BotPortalClass(room_idx, portal_idx) == BOT_PORTAL_CLASS_DOOR) {
-          LOG_DEBUG.printf("[Nav] Room %d portal %d: no hull-clear crossing (straight or bent) — keeping the engine point",
-                           room_idx, portal_idx);
-        }
+        LOG_DEBUG.printf("[Nav] Room %d portal %d: no hull-clear crossing (straight or bent) — keeping the engine point",
+                         room_idx, portal_idx);
       }
     }
     pf_cross_pnt[room_idx][portal_idx] = p;
@@ -631,11 +712,11 @@ bool BotPortalCrossing(int room_idx, int portal_idx, vector *pnt_out, float *dep
     pf_cross_far[room_idx][portal_idx] = far_there;
     pf_cross_bent[room_idx][portal_idx] = bent ? 1 : 0;
     state = ok ? 1 : 0;
-    if (twin_ok) { // mirror to the twin so the two sides share one crossing (near/far swap sides)
+    if (twin_ok) { // the twin shares the plane point; its near/far are built for its own side
       pf_cross_pnt[cr][cp] = p;
       pf_cross_depth[cr][cp] = d;
-      pf_cross_near[cr][cp] = far_there;
-      pf_cross_far[cr][cp] = near_here;
+      pf_cross_near[cr][cp] = near_twin;
+      pf_cross_far[cr][cp] = far_twin;
       pf_cross_bent[cr][cp] = bent ? 1 : 0;
       pf_cross_state[cr][cp] = state;
     }

@@ -13,6 +13,19 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
 admission fix and the remaining interior-navigation defects are still being worked. Do not run this
 as a release.*
 
+*   **A pinned ship backs out before it tries again.** When a bot has genuinely stopped moving (the
+    hard-pin signature), it now applies one second of pure reverse thrust before flying its escape
+    goal. The forward-only escape kept driving pinned ships back into the same pocket: on Batteries
+    Included one Red bot at a time sat in a furniture pocket of its supply room for minutes, its
+    position identical on every logged crossing attempt, while every committed crossing at that
+    room's door was blamed on the door. Legal thrust only; the engine's steering resumes after.
+*   **Door crossings are built for both sides and for glass.** Each side of a door now gets its own
+    approach point 8 units in front of the plane and its own push-through 16 to 24 units beyond it
+    (one side previously inherited the other's approach point as its push, which sat inside the
+    arrival sphere and produced doorway-lip re-issues). An intact pane, which no sweep can pass, gets
+    a synthesized square-on path so the bot faces the glass for the reactive shatter instead of
+    pressing it at an angle. A door with no straight column is searched with the same bounded
+    multi-step lateral search the door on-ramp uses, on each side.
 *   **A glass wall no longer disqualifies the room behind it from route planning.** An intact pane is
     a solid face, so a lattice seed placed on it never joined the room's network; a hub with fifteen
     conference-room panes on one wall read as "7% covered" with every one of its four doors connected,

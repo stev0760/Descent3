@@ -6025,6 +6025,17 @@ static void BotApplyThrust(int bot_index) {
     return;
   }
 
+  // Hard-pin reverse burst (see the stuck escalation): back straight out of the pocket for a
+  // moment, then hand steering back to the engine. `Gametime <` plus the window bound make a stale
+  // latch from a previous level harmless.
+  if (Gametime < Bots[bot_index].unstick_reverse_until &&
+      Bots[bot_index].unstick_reverse_until - Gametime <= BOT_UNSTICK_REVERSE_TIME + 0.5f) {
+    obj->mtype.phys_info.thrust = obj->orient.fvec * (-Bots[bot_index].ship_full_thrust);
+    obj->mtype.phys_info.flags |= PF_USES_THRUST;
+    Players[slot].flags &= ~(PLAYER_FLAGS_AFTERBURN_ON | PLAYER_FLAGS_THRUSTED);
+    return;
+  }
+
   // Read movement_dir from previous frame's AIDoFrame() — world-space normalized direction
   vector &mdir = obj->ai_info->movement_dir;
   float mdir_mag = vm_GetMagnitude(&mdir);
@@ -8699,6 +8710,16 @@ void BotDoFrame() {
             // arrivals, and never convicted itself. Both failure currencies now count.
             if (!OBJECT_OUTSIDE(obj))
               BotRoadmapMarkHardRoom(cur_room);
+            // A HARD pin (the ship has not moved) gets one second of pure reverse thrust before the
+            // escape goal: the forward-only escape kept driving pinned ships into the same pocket
+            // (Batteries rm8: one bot at a time held at (1586,-126,2158) for minutes, from == now on
+            // every committed crossing, no lattice node within 18u). Legal thrust, engine-owned
+            // steering resumes when the burst ends.
+            if (net_disp < 10.0f) {
+              Bots[i].unstick_reverse_until = Gametime + BOT_UNSTICK_REVERSE_TIME;
+              LOG_DEBUG.printf("BOT: '%s' hard pin — reverse burst %.1fs before escape", Bots[i].callsign,
+                               BOT_UNSTICK_REVERSE_TIME);
+            }
             Bots[i].stuck_timer = BOT_STUCK_ABANDON_TIME + 0.1f;
             char tdiag[128];
             LOG_DEBUG.printf("BOT: '%s' stuck escalation (room %d, %d consecutive timeouts, net_disp=%.0f) — "

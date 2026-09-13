@@ -326,6 +326,10 @@ keeps thrust pointed along the engine's path rather than locking `fvec` on a far
 - **Composed drive:** any `BotRoadmapRoomRoutable` (or buried) room, only when the straight line to the
   leg target is blocked; the goal aim reads a live `via_chain` in any room.
 - **Explore destinations** must pass `BotComputeRoute`; the engine's BOA table is glass/window-blind.
+- **Hard pin ⇒ reverse burst:** `unstick_reverse_until` (1s, `BOT_UNSTICK_REVERSE_TIME`) overrides
+  thrust with pure reverse in `BotApplyThrust`; set at the stuck escalation when `net_disp < 10`.
+- **Read `from=/aim=/now=` on a NOT-CROSSED line before blaming a door:** `from == now` for minutes
+  means a pinned body, not a crossing failure.
 - **Objective items** (flags/orbs) are `BotTrollExempt` and get `BOT_OBJECTIVE_BLACKLIST_DURATION` (5s),
   never the 60s powerup blacklist.
 

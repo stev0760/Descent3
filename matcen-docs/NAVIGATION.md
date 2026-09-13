@@ -841,8 +841,22 @@ never verdicts). Read: slice 4's two-point routes in the buried rings end withou
 re-pick. Response: the composed-route floor is `count >= 3` in buried rooms again (the form the
 0.9.13 line validated) and `>= 2` only where the blocked-line gate admits open rooms.
 
-**Still open on this line:** FQ_BACKFACE (the sweep still ignores back faces). rm80's door has no
-crossing of either kind (needs the multi-step on-ramp search across the plane).
+**Hub arm (soak-20260913T014208, 1e22895e, vs the completion arm; guard PASS).** Blue 9 grabs /
+5 captures (56%) vs 8 / 6; Red 0 / 0 again; no-route verdicts 36 → 0 (the three class gates);
+the hub composes (rm3 73 routes vs 0); hard pins 98 → 126, of which rm8 25 → 67. The new
+`from=/aim=/now=` field on failed crossings settled rm8 in one read: every failed commit at its door
+had the bot at (1586,-126,2158), 84u from the door, `from == now` for minutes — one bot at a time
+(Shadow 02:04, Zed 02:07, Reaper 02:25 and 02:35), no lattice node within 18u, no item there. A
+geometry pocket the forward-only escape cannot leave; the door was never the problem (its 0/44
+committed crossings were artifacts of a body that never moved). Room 12 shows the identical
+signature at (2217,-126,2187) on Red's route to the hub. Staged: a one-second pure reverse burst on
+a hard pin before the escape goal; the crossing cache builds each side's approach/push from the
+plane point (the mirror had given the non-canonical side an 8u push — inside the arrival sphere);
+intact panes get a synthesized square-on crossing (near a hull radius in front, push 16u through)
+so the nose-on reactive clear fires; the bent search is the multi-step on-ramp primitive on each
+side (rm80's door still has none — its far side is blocked within reach; needs the overlay).
+
+**Still open on this line:** FQ_BACKFACE (the sweep still ignores back faces); rm80's door.
 Deferred to the next dump: gap-directed lattice sampling, a trunk node per room, the rm3 hub (16
 lattice components, not composer-eligible — Red's whole approach).
 
