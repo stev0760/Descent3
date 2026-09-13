@@ -13,6 +13,18 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
 admission fix and the remaining interior-navigation defects are still being worked. Do not run this
 as a release.*
 
+*   **The door search sees what a pilot sees.** The sweep that validates a doorway ignored back
+    faces (a test column that started inside a propped door leaf walked out through it and called
+    the door clear from one side), sampled only part of a wide doorway (a 69-unit office door with a
+    slab in the middle never had its open 17-unit side gap tried), and searched around obstacles with
+    steps too big to fit a ceiling duct. All four are fixed generally: back faces count, the whole
+    polygon is sampled with a fine pass when the coarse one finds nothing, the search steps scale with
+    the ship, and two shorter rungs were added — a 4-unit "lip" column and a door-fit radius a few
+    percent under the hull, which is how ships actually get through a gap a hair narrower than
+    themselves. On Batteries Included the doorways without a validated crossing went from twenty to
+    the three floor hatches that genuinely are narrower than a Pyro. The route network itself is
+    unchanged. `$navdump` now records, for any door still without a crossing, every sweep tried and
+    the faces that stopped it.
 *   **A pinned ship backs out before it tries again.** When a bot has genuinely stopped moving (the
     hard-pin signature), it now applies one second of pure reverse thrust before flying its escape
     goal. The forward-only escape kept driving pinned ships back into the same pocket: on Batteries

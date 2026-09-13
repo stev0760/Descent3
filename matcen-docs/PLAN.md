@@ -133,8 +133,10 @@ runs on this build first. **Update, 2026-09-13 early morning:** the hub was a se
 seeds embedded in glass), fixed; the abend2 gate passed on its terms; the real Red blocker was a
 furniture pocket in its supply room that the forward-only escape could not leave — a one-second
 reverse burst on a hard pin fixed it (rm8 67 → 6 pins) and Red scored its first capture in six arms.
-Next: the approach/push hand-out rule (rm35), then room 80's door with the overlay, then the
-powerup-chase circling class. The room router is untouched by design.
+Next: the approach/push hand-out rule (rm35) — built, in soak; then the crossing-search completeness
+slice (built from the new `crossing_trace` dump field: back faces, full polygon coverage, hull-scaled
+search, 4u lip and door-fit radius — Batteries doors without a crossing 20 -> 6, network unchanged);
+then the powerup-chase circling class. The room router is untouched by design.
 
 0.9.13 shipped as the correctness checkpoint; 0.9.14-dev is open with four landed commits:
 telemetry (fa5966ed), the aim-layer fixes (4c51e30d, 2df343c2), and glass routing. The 4-round

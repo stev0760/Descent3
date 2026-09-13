@@ -315,11 +315,28 @@ keeps thrust pointed along the engine's path rather than locking `fvec` on a far
   single-seed room and does not fail `routable`. `connector_nodes` counts traced repair/on-ramp
   nodes; `lattice_cells` counts sampled cells only.
 - **Dumps:** `$navdump` writes `class` per portal and `skel_live` per room; the overlay draws NEVER
-  portals as small grey markers with no node.
+  portals as small grey markers with no node. Every portal carries `face_verts` (its polygon), and a
+  DOOR with no validated crossing carries `crossing_trace` — the sampler's replay from that room's
+  side: each straight column tried (`kind` 0: plane sample `p`, `depth`, `clear`, the `hit` point,
+  `hit_norm`, `hit_face`, `hit_room`) and each bent-side search (`kind` 1 into this room, 2 into the
+  other; `hit` = the entry point found) — plus `hit_faces`, the polygons of the faces that stopped the
+  sweeps. `BotPortalCrossingTrace()` produces it; nothing is cached. Read it before theorising about
+  a door: it shows the obstacle, not a count.
 - **Crossing point:** `BotPortalCrossing(room, p, &pnt, &depth)` is the validated point a hull can
   sweep through (depth = proven clearance either side of the plane, 0 = none found, engine point
   returned). It is CROSSING geometry — seam push, door pick, marker — never the skeleton node or
-  lattice seed (measured to split rooms). Both sides share one point.
+  lattice seed (measured to split rooms). Both sides share one point. The sampler: coarse grid sized
+  to its budget, fine pass at half a hull over the hull-occupiable polygon, depths 24/16/8/**4** (a
+  lip), then the bent search (hull-scaled diagonal fan, chain recorded); all of it first at the hull
+  radius, then at the DOOR-FIT radius (`BOT_CROSS_FIT_SCALE` 0.92 — `BotPortalCrossingTight()` says
+  which). Sweeps are `CrossSweep`: `FQ_BACKFACE`, both directions — a column that starts inside a
+  leaf is blocked, from either side. Do not use the fit radius for network legs.
+- **Second server instance for bot-free dumps while a soak runs:** a cfg copy with
+  `RemoteConsolePort=2093`, launched with `-useport 2094 -gamespyport 20143 -tempdir <dir>` (without
+  its own gamespy port the second server blocks forever in a blocking `recvfrom` on the socket whose
+  bind failed — the console accepts the TCP connection and never answers); `$nav dump` then lands in
+  the usual user-data dir. Wait for the JSON to PARSE before moving it (the writer is still running),
+  and kill the server by cmdline pattern — the exe re-execs, so `killpg` on the launcher misses it.
 - **Hand-out rule:** a live portal node / lattice seed handed out as a point to FLY goes through
   `SkelFlyPos` / `RoadmapFlyPos` with the bot position: the door's APPROACH point while the bot is
   farther than `BOT_VIA_ARRIVE_DIST + 8` from the plane, its PUSH-THROUGH point once beside it (the

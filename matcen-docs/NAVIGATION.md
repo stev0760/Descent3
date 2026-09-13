@@ -874,8 +874,36 @@ capture (33%) — Red's first capture in six arms on this map; Blue 6 / 4 (67%) 
 circling), rm35 7 → 25 (the approach-point arrival loop — fix staged above). Objective intents
 71 death / 29 timeout / 75 arrival / 27 replacement (arrivals 41 → 75).
 
-**Still open on this line:** FQ_BACKFACE (the sweep still ignores back faces); rm80's door; the
-powerup-chase circling class (rm12).
+**Slice 6a — the crossing search is honest and complete (2026-09-13, after the hand-out arm was
+launched).** Read from a new `$navdump` field, `crossing_trace` (every sweep the sampler tried, what it
+hit, and the polygons of the faces that stopped it — see BOT_DEV_REFERENCE), taken on a SECOND server
+instance while the soak ran. Four defects in the sampler, each general: (1) the sweep ignored back
+faces, so a column that STARTED inside a leaf walked out through it unseen — rm80's door read "clear"
+from inside the room and "blocked" from the hallway, a duct read clear from one end only; the
+crossing sweep now uses `FQ_BACKFACE` and runs both directions (`CrossSweep`). (2) The fixed grid step
+plus a 64-candidate cap sampled the RIGHT HALF of a 69u doorway and never saw the open 17u gap beside a
+slab (rm46 -> rm55, the "small edge gap" class); the grid is now sized to its budget, with a fine pass
+(half a hull apart over the polygon a hull can occupy) when the coarse pass finds nothing. (3) The
+bent search's fan was a fixed 12/26/40u — no candidate ever fit inside a 17u ceiling duct; the fan now
+scales with the hull (0.6/1.25/2/3.5 R) and every lateral candidate is also tried one step forward (a
+diagonal). (4) Two more rungs below the 8u column: a 4u LIP (rm45 -> rm80: the propped leaf and a
+chamfered post leave one nose-first line at the leaf's free edge — the old hand-out, the polygon
+centre, sat BEHIND the leaf) and a DOOR-FIT radius (`BOT_CROSS_FIT_SCALE` 0.92: the engine's contact
+response slides a hull through a gap a few percent narrower than itself — that channel measures 13.0u
+against a 13.35u Pyro, and bots and pilots go through it); a crossing found only at the fit radius is
+reported `crossing_tight`. The network is untouched (lattice/skeleton legs keep the full hull).
+Batteries, bot-free: doors without a crossing 20 -> 6 (three 11u floor hatches — genuinely narrower
+than the hull, never crossed in any log — plus the four intact panes, which have their synthesized
+path); depth histogram 24u 248 / 16u 362 / 8u 140 / 4u 28; network metrics identical to the burst
+build. Room 80 also turned out NOT to be a spawn closet: bots squeeze in through that 13u channel at
+speed and could not get out because their aim was the leaf's middle. The 4u lip is the general answer
+to that class; whether it converts rm80's 40 pins is the next arm's question.
+
+**Still open on this line:** the powerup-chase circling class (rm12); a corridor (multi-point)
+hand-out for bent crossings — not needed by any Batteries door after the lip/fit rungs, so deferred;
+the portal class is computed per side (a sky room's window reads as a door from the sky side);
+the door on-ramp admits points a bbox margin outside the room (two of rm80's lattice nodes sit in the
+hallway); the Phoenix hull is 8.0u against a 6.7u clearance (rosters are all-Pyro by ruling).
 Deferred to the next dump: gap-directed lattice sampling, a trunk node per room, the rm3 hub (16
 lattice components, not composer-eligible — Red's whole approach).
 

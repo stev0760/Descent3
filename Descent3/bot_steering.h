@@ -422,6 +422,13 @@ uint64_t BotAimExitMask(object *obj, int room_idx, int dest_room);
 // anchor: measured 2026-09-12, moving the skeleton nodes and lattice seeds onto it split rooms on
 // both test maps and starved the red flag room's lattice, so the network keeps the engine point.
 #define BOT_CROSS_DEPTH_MAX 24.0f // deepest sweep tried either side of the plane (a leaf, a lip, a frame)
+// The door-fit radius as a fraction of the hull: the engine's contact response slides a ship through a
+// gap a few percent narrower than its hull (measured: Batteries rm45 -> rm80, a 13.0u channel past a
+// propped leaf, Pyro hull 13.35u, crossed by bots and pilots). A crossing found only at this radius is
+// reported TIGHT. Not applied to the network (lattice/skeleton legs keep the full hull).
+#define BOT_CROSS_FIT_SCALE 0.92f
+// Whether the cached crossing was found only at the door-fit radius.
+bool BotPortalCrossingTight(int room_idx, int portal_idx);
 bool BotPortalCrossing(int room_idx, int portal_idx, vector *pnt_out, float *depth_out);
 // The crossing as a PATH seen from room_idx: `near` is the approach point just inside this room,
 // `plane` the point on the portal, `far` the point inside the other room the push-through aims at.
@@ -431,6 +438,22 @@ bool BotPortalCrossing(int room_idx, int portal_idx, vector *pnt_out, float *dep
 // near == far == plane) only when no crossing of either kind exists.
 bool BotPortalCrossingPath(int room_idx, int portal_idx, vector *near_out, vector *plane_out, vector *far_out,
                            bool *bent_out);
+// $nav dump diagnostic: replay the crossing sampler on this portal from THIS room's side and record what
+// every sweep saw. kind 0 = a straight column (p on the plane, swept `depth` either side; hit = where
+// the hull sweep stopped, with that face and its room); kind 1 / 2 = the bent search into this room /
+// into the other room (p = the plane sample, clear = an entry point was found, hit = that point).
+// Reads the level only; nothing is cached. Returns the entries written, most open sample first.
+struct BotCrossTrace {
+  int kind;
+  vector p;
+  float depth;
+  bool clear;
+  vector hit_pnt;
+  vector hit_norm;
+  int hit_face;
+  int hit_room;
+};
+int BotPortalCrossingTrace(int room_idx, int portal_idx, BotCrossTrace *out, int max_out);
 
 // Cost-aware next-hop router (Phase 11). Dijkstra over the interior room graph weighting
 // portals by BOA base cost + graded geometry cost + dynamic penalty. Returns the next room to

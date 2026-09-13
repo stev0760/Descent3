@@ -6874,6 +6874,16 @@ bool BotNavDump(const char *filename) {
   fprintf(fp, "  \"highest_room_index\": %d,\n", Highest_room_index);
   fprintf(fp, "  \"boa_mine_checksum\": %d,\n", BOA_mine_checksum);
   fprintf(fp, "  \"probe_radius\": %.3f,\n", rad);
+  // The hull the engine collides ships with (physics sweeps at obj->size = the ship page's size), so a
+  // dump reader can check the nav clearance constant against the real ships.
+  fprintf(fp, "  \"ships\": [");
+  for (int si = 0, first = 1; si < MAX_SHIPS; si++) {
+    if (!Ships[si].used)
+      continue;
+    fprintf(fp, "%s{\"name\": \"%s\", \"size\": %.3f}", first ? "" : ", ", Ships[si].name, Ships[si].size);
+    first = 0;
+  }
+  fprintf(fp, "],\n");
   // BNode availability — the engine's in-room waypoints are BAKED into the level file only (no
   // runtime generator). false here = old custom map without the BNODE chunk → the engine falls back
   // to sparse room-center+portal paths and can't thread complex rooms (see NAVIGATION.md / the
@@ -7075,9 +7085,60 @@ bool BotNavDump(const char *filename) {
         BotPortalCrossingPath(r, p, &cnear, nullptr, &cfar, &cbent);
         fprintf(fp,
                 "\"crossing\": [%.2f,%.2f,%.2f], \"crossing_depth\": %.1f, \"crossing_ok\": %s, \"crossing_bent\": %s, "
-                "\"crossing_near\": [%.2f,%.2f,%.2f], \"crossing_far\": [%.2f,%.2f,%.2f], ",
-                cpnt.x(), cpnt.y(), cpnt.z(), cdepth, cok ? "true" : "false", cbent ? "true" : "false", cnear.x(),
-                cnear.y(), cnear.z(), cfar.x(), cfar.y(), cfar.z());
+                "\"crossing_tight\": %s, \"crossing_near\": [%.2f,%.2f,%.2f], \"crossing_far\": [%.2f,%.2f,%.2f], ",
+                cpnt.x(), cpnt.y(), cpnt.z(), cdepth, cok ? "true" : "false", cbent ? "true" : "false",
+                BotPortalCrossingTight(r, p) ? "true" : "false", cnear.x(), cnear.y(), cnear.z(), cfar.x(), cfar.y(),
+                cfar.z());
+        // The portal polygon itself, and for a door with no crossing the sampler's replay: what each
+        // hull sweep hit, plus the polygons of the faces that stopped it — the obstacle, not a count.
+        fprintf(fp, "\"face_verts\": [");
+        if (fi >= 0 && fi < rm.num_faces) {
+          const face &fv = rm.faces[fi];
+          for (int k = 0; k < fv.num_verts; k++) {
+            const vector &v = rm.verts[fv.face_verts[k]];
+            fprintf(fp, "%s[%.2f,%.2f,%.2f]", k ? "," : "", v.x(), v.y(), v.z());
+          }
+        }
+        fprintf(fp, "], ");
+        if (!cok && pc == BOT_PORTAL_CLASS_DOOR) {
+          static BotCrossTrace tr[1400]; // 400 samples x 3 depths + the bent phase's steps
+          const int tn = BotPortalCrossingTrace(r, p, tr, 1400);
+          fprintf(fp, "\"crossing_trace\": [");
+          for (int k = 0; k < tn; k++)
+            fprintf(fp,
+                    "%s{\"kind\": %d, \"p\": [%.2f,%.2f,%.2f], \"depth\": %.1f, \"clear\": %s, "
+                    "\"hit\": [%.2f,%.2f,%.2f], \"hit_norm\": [%.2f,%.2f,%.2f], \"hit_face\": %d, \"hit_room\": %d}",
+                    k ? "," : "", tr[k].kind, tr[k].p.x(), tr[k].p.y(), tr[k].p.z(), tr[k].depth,
+                    tr[k].clear ? "true" : "false", tr[k].hit_pnt.x(), tr[k].hit_pnt.y(), tr[k].hit_pnt.z(),
+                    tr[k].hit_norm.x(), tr[k].hit_norm.y(), tr[k].hit_norm.z(), tr[k].hit_face, tr[k].hit_room);
+          fprintf(fp, "], \"hit_faces\": [");
+          int seen_room[64], seen_face[64], nseen = 0;
+          for (int k = 0; k < tn; k++) {
+            if ((tr[k].kind != 0 && tr[k].kind != 4) || tr[k].clear || tr[k].hit_face < 0 || tr[k].hit_room < 0 ||
+                tr[k].hit_room > Highest_room_index || !Rooms[tr[k].hit_room].used)
+              continue;
+            const room &hr = Rooms[tr[k].hit_room];
+            if (tr[k].hit_face >= hr.num_faces)
+              continue;
+            bool dup = false;
+            for (int s = 0; s < nseen && !dup; s++)
+              dup = seen_room[s] == tr[k].hit_room && seen_face[s] == tr[k].hit_face;
+            if (dup || nseen >= 64)
+              continue;
+            seen_room[nseen] = tr[k].hit_room;
+            seen_face[nseen] = tr[k].hit_face;
+            const face &hf = hr.faces[tr[k].hit_face];
+            fprintf(fp, "%s{\"room\": %d, \"face\": %d, \"normal\": [%.2f,%.2f,%.2f], \"verts\": [", nseen ? "," : "",
+                    tr[k].hit_room, tr[k].hit_face, hf.normal.x(), hf.normal.y(), hf.normal.z());
+            for (int v = 0; v < hf.num_verts; v++) {
+              const vector &vv = hr.verts[hf.face_verts[v]];
+              fprintf(fp, "%s[%.2f,%.2f,%.2f]", v ? "," : "", vv.x(), vv.y(), vv.z());
+            }
+            fprintf(fp, "]}");
+            nseen++;
+          }
+          fprintf(fp, "], ");
+        }
       }
       fprintf(fp, "\"portal_path_pnt\": [%.2f,%.2f,%.2f], ", po.path_pnt.x(), po.path_pnt.y(), po.path_pnt.z());
       fprintf(fp, "\"boa_cost_fwd\": %.2f, \"boa_cost_rev\": %.2f, ", boa_fwd, boa_rev);
