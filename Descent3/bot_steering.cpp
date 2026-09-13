@@ -872,6 +872,57 @@ static bool PortalCrossingCompute(int room_idx, int portal_idx, vector *pnt, flo
   return false;
 }
 
+int BotNavSweepReport(const vector *from, int room_idx, int portal_idx, char *buf, int buflen) {
+  int n = 0;
+  auto put = [&](const char *fmt, auto... args) {
+    if (n < buflen - 1)
+      n += snprintf(buf + n, buflen - n, fmt, args...);
+  };
+  if (!from || room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used || portal_idx < 0 ||
+      portal_idx >= Rooms[room_idx].num_portals) {
+    put("sweep: bad room/portal\n");
+    return n;
+  }
+  vector near_p{}, plane{}, far_p{};
+  bool bent = false;
+  const bool has = BotPortalCrossingPath(room_idx, portal_idx, &near_p, &plane, &far_p, &bent);
+  put("sweep from (%.0f,%.0f,%.0f) in rm%d to portal %d -> rm%d: crossing %s%s, near (%.0f,%.0f,%.0f) plane "
+      "(%.0f,%.0f,%.0f) far (%.0f,%.0f,%.0f)\n",
+      from->x(), from->y(), from->z(), room_idx, portal_idx, Rooms[room_idx].portals[portal_idx].croom,
+      has ? "yes" : "NONE", bent ? " (bent)" : "", near_p.x(), near_p.y(), near_p.z(), plane.x(), plane.y(), plane.z(),
+      far_p.x(), far_p.y(), far_p.z());
+  const float radii[2] = {BOT_ROADMAP_CLEARANCE, BOT_ROADMAP_CLEARANCE * BOT_CROSS_FIT_SCALE};
+  const char *names[3] = {"near", "plane", "far"};
+  const vector *targets[3] = {&near_p, &plane, &far_p};
+  for (int ri = 0; ri < 2; ri++) {
+    for (int t = 0; t < 3; t++) {
+      fvi_info hit{};
+      const bool ok = ViaSegmentClear(room_idx, *from, *targets[t], radii[ri], &hit, false, FQ_BACKFACE);
+      if (ok)
+        put("  r=%.1f -> %-5s CLEAR (%.0fu)\n", radii[ri], names[t], vm_VectorDistanceQuick(from, targets[t]));
+      else
+        put("  r=%.1f -> %-5s blocked at (%.0f,%.0f,%.0f) after %.0fu: rm%d face %d n=(%.2f,%.2f,%.2f)\n", radii[ri],
+            names[t], hit.hit_pnt.x(), hit.hit_pnt.y(), hit.hit_pnt.z(), vm_VectorDistanceQuick(from, &hit.hit_pnt),
+            hit.num_hits > 0 ? hit.hit_face_room[0] : -1, hit.num_hits > 0 ? hit.hit_face[0] : -1,
+            hit.num_hits > 0 ? hit.hit_wallnorm[0].x() : 0.0f, hit.num_hits > 0 ? hit.hit_wallnorm[0].y() : 0.0f,
+            hit.num_hits > 0 ? hit.hit_wallnorm[0].z() : 0.0f);
+    }
+  }
+  // Room to back out: sweep away from the near point (the direction a reverse burst would take).
+  vector away = *from - near_p;
+  if (vm_NormalizeVector(&away) > 0.01f) {
+    const vector back = *from + away * 20.0f;
+    fvi_info hit{};
+    const bool ok = ViaSegmentClear(room_idx, *from, back, BOT_ROADMAP_CLEARANCE, &hit, false, FQ_BACKFACE);
+    if (ok)
+      put("  reverse 20u away from near: CLEAR\n");
+    else
+      put("  reverse 20u away from near: blocked after %.0fu: rm%d face %d\n", vm_VectorDistanceQuick(from, &hit.hit_pnt),
+          hit.num_hits > 0 ? hit.hit_face_room[0] : -1, hit.num_hits > 0 ? hit.hit_face[0] : -1);
+  }
+  return n;
+}
+
 bool BotPortalCrossingTight(int room_idx, int portal_idx) {
   if (room_idx < 0 || room_idx >= MAX_ROOMS || portal_idx < 0 || portal_idx >= MAX_PATH_PORTALS)
     return false;

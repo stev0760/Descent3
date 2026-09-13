@@ -463,6 +463,11 @@ struct BotCrossTrace {
   int hit_room;
 };
 int BotPortalCrossingTrace(int room_idx, int portal_idx, BotCrossTrace *out, int max_out);
+// $nav sweep diagnostic: from a point in `room_idx` (a bot's pinned position, say), hull-sweep to the
+// portal's crossing approach / plane / push-through points at the hull and door-fit radii, plus a
+// short reverse leg (does the reverse burst have room?), and report what each sweep hit. Writes a
+// multi-line report into buf; returns its length. Reads the level only.
+int BotNavSweepReport(const vector *from, int room_idx, int portal_idx, char *buf, int buflen);
 
 // Cost-aware next-hop router (Phase 11). Dijkstra over the interior room graph weighting
 // portals by BOA base cost + graded geometry cost + dynamic penalty. Returns the next room to

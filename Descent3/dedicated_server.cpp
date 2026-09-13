@@ -1001,12 +1001,33 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
       PrintDedicatedMessage("  %-13s %.0fs  Monsterball role commitment period: $nav mtenure <seconds>\n", "mtenure",
                             Bot_mball_role_tenure);
       PrintDedicatedMessage("  %-13s      dump nav geometry to JSON: $nav dump [file]\n", "dump");
+      PrintDedicatedMessage("  %-13s      hull sweeps from a point to a door's crossing: $nav sweep <x> <y> <z> <room> <portal>\n",
+                            "sweep");
       PrintDedicatedMessage(
           "  %-13s      §7 committee contention counts (NAVIGATION.md §6.9): $nav contend [index|all]\n", "contend");
       return true;
     }
     if (stricmp(sub, "dump") == 0)
       return DedicatedNavDump(value);
+    if (stricmp(sub, "sweep") == 0) {
+      float x = 0, y = 0, z = 0;
+      int room = -1, portal = -1;
+      if (sscanf(value, "%f %f %f %d %d", &x, &y, &z, &room, &portal) != 5) {
+        PrintDedicatedMessage("usage: $nav sweep <x> <y> <z> <room> <portal>\n");
+        return true;
+      }
+      static char report[4096];
+      vector from{x, y, z};
+      BotNavSweepReport(&from, room, portal, report, sizeof(report));
+      for (char *line = report; line && *line;) { // one line per print: the console buffer is CON_MAX_STRINGLEN
+        char *nl = strchr(line, '\n');
+        if (nl)
+          *nl = '\0';
+        PrintDedicatedMessage("%s\n", line);
+        line = nl ? nl + 1 : nullptr;
+      }
+      return true;
+    }
     if (stricmp(sub, "contend") == 0) {
       // §7 contention instrumentation dump: per-bot nav-committee win-count histogram + contention
       // total (BotNavMemberWin in bot.cpp). Diagnostic-only, same do_all/single_idx shape as $botstat.
