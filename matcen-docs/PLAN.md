@@ -377,6 +377,22 @@ would fill.
 
 ### 3.5 Open, unfixed, lower priority
 
+- **NEXT SPRINT — the outdoor pass (agreed 2026-09-13, after the operator flies the play-test build).**
+  Nothing outdoor was touched by the portal-model sprint, by construction: the crossing sampler skips
+  external rooms (computes an entrance from the indoor side), the engine applies FQ_BACKFACE only in
+  non-external rooms, the outdoor sweep primitive is unchanged, the hunt-route gate skips anything
+  outside, pane flips need an indoor face, the bend search is per indoor room. Outstanding, from the
+  record: the Polaris regression (2026-08-31: 7 caps -> 0, 28 hard stucks, 114 entrance misses; two
+  un-isolated candidates — the tight-connector DISAGREE admission, and the wind gate whose single-round
+  pairs showed carrier nav ticks 22 on vs 865 off with captures 0 in both — plus a geometry component:
+  a wind room reachable only through doors the engine calls impassable); isengard/bree at 0 captures on
+  every build (pre-existing, unexplained); QuadSomniac's wind-20 hypothesis; the entrance-miss class
+  generally ("routed INTO a structure rather than through its mouth"), which reads like the portal-is-a-
+  point defect at the external/indoor boundary. Sequence: (1) baseline arms on Polaris and bedlam on
+  the play-test build (turn "indoor-scoped by construction" into a measurement); (2) the one-hour
+  admission A/B; (3) extend the crossing model to entrances, sweeping from the indoor side outward;
+  (4) a longer paired wind run. Same discipline: bot-free dumps first, then arms with pre-registered
+  terms, per map.
 - **CTF role balance (operator, 2026-09-13; navigation-independent).** On Batteries the team that grabs
   first keeps the other team on defence for the round: the objective layer flips flex bots to DEFEND
   when their flag is stolen (16 flips in four rounds; Red issued 21 attack errands to Blue's ~100),
