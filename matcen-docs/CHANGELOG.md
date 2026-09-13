@@ -13,6 +13,11 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
 admission fix and the remaining interior-navigation defects are still being worked. Do not run this
 as a release.*
 
+*   **A floor grate is not glass.** Four floor openings on Batteries Included carry a breakable-glass
+    texture on a face the level never renders, with bars behind it; the route planner priced them as
+    glass, so armed bots kept trying to shoot and fly through bars (one grate: 21 attempts, 0
+    crossings). A pane now has to actually be present to count as glass; those openings are
+    impassable, as the bars make them. The tracked navdump analyzer gained a door-crossings section.
 *   **A shattered pane counts as a door, and a bot stops chasing what it cannot reach.** Once a
     breakable pane was shot out, the bots' route planner kept treating the hole as glass for the rest
     of the level, so a bot without a glass-breaking weapon would read a glass-walled office complex

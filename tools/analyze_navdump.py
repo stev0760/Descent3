@@ -276,6 +276,49 @@ def flag_approach(rooms, flag_rooms):
     print()
 
 
+def crossings(rooms, ships=None):
+    """Validated door crossings (the portal-model sampler): how many doors a hull can be swept through,
+    at what depth, which needed the door-fit radius, and which have none — with the blocking faces
+    when the dump carries a `crossing_trace` for them."""
+    live = [(r, p) for r in rooms if not r.get("external") for p in r.get("portals", [])
+            if p.get("class") in ("door", "pane")]
+    if not live or "crossing_ok" not in live[0][1]:
+        print("## Door crossings\n  (dump predates the `crossing_*` fields — re-dump with the current build)\n")
+        return
+    doors = [(r, p) for r, p in live if p["class"] == "door"]
+    ok = [(r, p) for r, p in doors if p.get("crossing_ok")]
+    depths = {}
+    for _, p in ok:
+        depths[p.get("crossing_depth")] = depths.get(p.get("crossing_depth"), 0) + 1
+    tight = [(r, p) for r, p in ok if p.get("crossing_tight")]
+    bent = [(r, p) for r, p in ok if p.get("crossing_bent")]
+    none = [(r, p) for r, p in doors if not p.get("crossing_ok")]
+    hull = ""
+    if ships:
+        hull = "  hulls: " + ", ".join(f"{sh.get('name')} {sh.get('size')}" for sh in ships)
+    print("## Door crossings (portal model — a door a hull can be swept through, both sides)")
+    print(f"  doors {len(doors)}  with crossing {len(ok)}  none {len(none)}  bent {len(bent)}  "
+          f"tight (door-fit radius only) {len(tight)}{hull}")
+    print("  depth histogram: " + ", ".join(f"{d:.0f}u x{n}" for d, n in sorted(depths.items(), reverse=True)))
+    if none:
+        print("  doors WITHOUT a crossing (the hull does not fit, or the search failed — read the trace):")
+        for r, p in none[:20]:
+            fv = p.get("face_verts") or []
+            ext = ""
+            if fv:
+                xs = [v[0] for v in fv]; ys = [v[1] for v in fv]; zs = [v[2] for v in fv]
+                ext = f" opening {max(xs)-min(xs):.0f}x{max(ys)-min(ys):.0f}x{max(zs)-min(zs):.0f}u"
+            blockers = p.get("hit_faces") or []
+            bl = ""
+            if blockers:
+                bl = "  blockers: " + "; ".join(f"rm{h['room']} f{h['face']} n={tuple(round(x, 2) for x in h['normal'])}"
+                                                for h in blockers[:4])
+            print(f"    room {r['id']} portal {p['idx']} -> room {p['croom']} ({p.get('type')}, geocost {p.get('our_geocost')}){ext}{bl}")
+    if tight:
+        print("  tight crossings: " + ", ".join(f"{r['id']}:{p['idx']}->{p['croom']}" for r, p in tight[:24]))
+    print()
+
+
 def analyze(path, data, flag_rooms=None):
     rooms = data.get("rooms", [])
     summary = data.get("summary", {})
@@ -373,6 +416,9 @@ def analyze(path, data, flag_rooms=None):
         for rm, pidx, croom in forcefield[:20]:
             print(f"  room {rm} portal {pidx} -> room {croom}")
         print()
+
+    # --- Door crossings (portal model) ---------------------------------------
+    crossings(rooms, data.get("ships"))
 
     # --- Non-convex rooms (wall-press predictor) ----------------------------
     ranked = sorted(rooms, key=lambda r: r.get("portal_los_blocked_count", 0), reverse=True)

@@ -346,8 +346,11 @@ keeps thrust pointed along the engine's path rather than locking `fvec` on a far
 - **Composed drive:** any `BotRoadmapRoomRoutable` (or buried) room, only when the straight line to the
   leg target is blocked; the goal aim reads a live `via_chain` in any room.
 - **Explore destinations** must pass `BotComputeRoute`; the engine's BOA table is glass/window-blind.
-- **A shattered pane is a door:** `PF_RENDER_FACES` cleared on the portal = broken (BreakGlassFace's own
-  test). `BotPortalClass` / `BotPortalIsBreakableGlass` re-check a cached PANE on every query and
+- **Glass needs a rendered pane:** a breakable texture on an UNRENDERED portal face is a grate's portal,
+  not glass (Batteries' floor grates: bars behind an open face). Both glass verdicts require
+  `PF_RENDER_FACES` on the side that carries the breakable face; the probe failure then means impassable.
+- **A shattered pane is a door:** `PF_RENDER_FACES` cleared on BOTH sides = broken (BreakGlassFace's own
+  test; the pane may live on either side). `BotPortalClass` / `BotPortalIsBreakableGlass` re-check a cached PANE on every query and
   `PortalPaneShatteredFlip` retires class/geocost/passable/glass/crossing for both sides. Never cache a
   pane verdict anywhere else without the same re-check.
 - **A hunt needs a route:** `target_routable` in the FSM (same room, or a clear close shot, or

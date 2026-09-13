@@ -231,16 +231,24 @@ float BotPortalGeoCost(int room_idx, int portal_idx) {
     // shatter — the engine's BOA routes through it. Finite break cost instead of IMPASSABLE, so
     // the router takes glass when it's the best (or only) route and the clearing logic opens it.
     // Check the portal face on BOTH sides — the breakable texture may live on either room's face.
+    // A pane that is not RENDERED is not there: Batteries' floor grates carry a breakable texture on
+    // an unrendered portal face with bars behind it — nothing to break, the probe fails on the bars.
+    // Pricing them as glass sent bots to shoot at bars (rm116 -> rm247: 21 committed crossings, 0
+    // crossed). The rendered flag is the engine's own "pane present" bit (BreakGlassFace clears it).
     if (Bot_glass_route_enabled) {
       bool glass = false;
       for (int side = 0; side < 2 && !glass; side++) {
         const room *rp = (side == 0) ? &Rooms[room_idx] : &Rooms[connected_room];
         int pface = -1;
-        if (side == 0)
+        bool rendered = false;
+        if (side == 0) {
           pface = pt.portal_face;
-        else if (pt.cportal >= 0 && pt.cportal < Rooms[connected_room].num_portals)
+          rendered = (pt.flags & PF_RENDER_FACES) != 0;
+        } else if (pt.cportal >= 0 && pt.cportal < Rooms[connected_room].num_portals) {
           pface = Rooms[connected_room].portals[pt.cportal].portal_face;
-        if (pface >= 0 && pface < rp->num_faces) {
+          rendered = (Rooms[connected_room].portals[pt.cportal].flags & PF_RENDER_FACES) != 0;
+        }
+        if (rendered && pface >= 0 && pface < rp->num_faces) {
           int16_t tmap = rp->faces[pface].tmap;
           if (tmap >= 0 && (GameTextures[tmap].flags & TF_BREAKABLE))
             glass = true;
@@ -342,11 +350,15 @@ bool BotPortalIsBreakableGlass(int room_idx, int portal_idx) {
   for (int side = 0; side < 2 && cached == 0; side++) {
     const room *rp = (side == 0) ? &Rooms[room_idx] : &Rooms[connected_room];
     int pface = -1;
-    if (side == 0)
+    bool rendered = false; // an unrendered breakable face is a grate's portal, not a pane (see geocost)
+    if (side == 0) {
       pface = pt.portal_face;
-    else if (pt.cportal >= 0 && pt.cportal < Rooms[connected_room].num_portals)
+      rendered = (pt.flags & PF_RENDER_FACES) != 0;
+    } else if (pt.cportal >= 0 && pt.cportal < Rooms[connected_room].num_portals) {
       pface = Rooms[connected_room].portals[pt.cportal].portal_face;
-    if (pface < 0 || pface >= rp->num_faces)
+      rendered = (Rooms[connected_room].portals[pt.cportal].flags & PF_RENDER_FACES) != 0;
+    }
+    if (!rendered || pface < 0 || pface >= rp->num_faces)
       continue;
     int16_t tmap = rp->faces[pface].tmap;
     if (tmap >= 0 && (GameTextures[tmap].flags & TF_BREAKABLE)) {
@@ -388,7 +400,13 @@ static int8_t pf_portal_class[MAX_ROOMS][MAX_PATH_PORTALS];
 // one bot 27 minutes in a closet with a clean door, no route home).
 static bool PortalShattered(int room_idx, int portal_idx) {
   const portal &pt = Rooms[room_idx].portals[portal_idx];
-  return !(pt.flags & PF_RENDER_FACES);
+  if (pt.flags & PF_RENDER_FACES)
+    return false;
+  const int cr = pt.croom, cp = pt.cportal;
+  if (cr >= 0 && cr <= Highest_room_index && Rooms[cr].used && cp >= 0 && cp < Rooms[cr].num_portals &&
+      (Rooms[cr].portals[cp].flags & PF_RENDER_FACES))
+    return false; // the pane lives on the other side and still stands
+  return true;
 }
 int BotPortalClass(int room_idx, int portal_idx) {
   if (pf_class_level_checksum != BOA_mine_checksum) {

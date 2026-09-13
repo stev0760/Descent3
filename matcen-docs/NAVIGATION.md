@@ -936,6 +936,19 @@ excluded door is now the fallback. Telemetry: STUCKSTATE lines carry `state=` an
 dump identical to slice 6a (the pane flip is a runtime event). Gate: the arm after the crossing
 arm — rm35/rm33 escalations, `pane ... shattered — now a door` lines, and captures.
 
+**Slice 6c — a pane that is not rendered is not there (2026-09-13).** The new analyzer section listed
+four "breakable glass" door pairs with no crossing (95/169, 116/247, 118/236, 119/206): 19x20u floor
+openings whose portal face carries a breakable texture but is NOT rendered (`PF_RENDER_FACES` clear on
+both sides at level load), with 2u-spaced bar faces behind it — floor GRATES. The geocost's glass
+branch priced them as glass (120) because the probe failed and the texture was breakable, so kinetic
+bots routed through them and committed crossings at bars (rm116 -> rm247: 21 committed, 0 crossed in
+the hand-out arm). Both glass verdicts (`BotPortalGeoCost`, `BotPortalIsBreakableGlass`) now require
+the breakable face to be on a side that renders it — the engine's own "pane present" bit, the one
+`BreakGlassFace` clears — and the shattered test looks at both sides. Bot-free: those eight portals
+went 120 -> impassable (the router's DISAGREE class, engine passable / hull not), disagreements 4 ->
+12, network identical. `tools/analyze_navdump.py` gained the "Door crossings" section (counts, depth
+histogram, tight, the doors without a crossing with their blockers, and the ship hulls).
+
 **Still open on this line:** the powerup-chase circling class (rm12); a corridor (multi-point)
 hand-out for bent crossings — not needed by any Batteries door after the lip/fit rungs, so deferred;
 the portal class is computed per side (a sky room's window reads as a door from the sky side);
