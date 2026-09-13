@@ -1009,6 +1009,28 @@ fell while Red's captures fell from two to none in four rounds — inside abend2
 home. Verdict: pins and connectivity PASS, play INCONCLUSIVE at four rounds; a longer abend2
 confirmation (8 rounds, per-team) is queued after the Batteries re-run.
 
+**Glass re-run, full (soak-20260913T075524, 57aaa31f, vs the crossing arm; GUARD PASS — the sprint's
+first population-level pass).** Blue 17 grabs / 13 captures (76%) — a new best; Red 1 / 0. Hard pins
+100 -> 57, escalations 127 -> 112, NO-ROUTE 0 (299 in the c199e1fc arm: the router-side fix holds),
+rm1 gone from the list, rm35 37 -> 16, rm12 30 -> 19, 49 pane flips. Cost: rm80 back to 36 (0 in the
+crossing arm, 18 in the glass arm) — Reaper 35 — the next diagnosis, with the new `state=`/`pos=`
+telemetry; suspect the one-door escape fallback (slice 6b), which aims the escape at the door's
+engine point, the polygon centre behind the leaf, instead of the lip crossing.
+
+**Slice 8 — the network's sweep is honest (2026-09-13 ~09:20).** The glass re-run's rm80 pins (36,
+one bot at the same floor spot in front of the leaf, aiming at the lip) sent me back to the
+lattice: `BotSegmentClear`, the one indoor primitive the roadmap grows, probes and string-pulls
+with, was blind to back faces, so a cell that landed inside a slab connected "through" it. rm80's
+whole 239-cell lattice hung off the door seed through the door leaf. `BotSegmentClear` now sweeps
+with `FQ_BACKFACE` (a sweep from open space is unchanged — the engine's front test already reports a
+sphere that starts overlapping a face's front). Bot-free: Batteries cells 13859 -> 13449, rm80 239
+-> 3 cells and NOT routable (honest: the 13.0u channel is narrower than the hull, the composer must
+not drive there), rm55 9 -> 3 (its lattice was through the slab), rm9 216 -> 147, rm16 became
+routable; split rooms and bends unchanged. abend2: cells 4234 -> 3864 (phantom cells inside the
+toroid walls), rooms 0/30 223 -> 204/201 still one component at 100% pair coverage, rm49 became
+routable, the 16u tray rm20 (30 cells) split into two components. Gates: a Batteries arm against
+the glass re-run and an abend2 arm against the 8-round confirmation, both pending.
+
 **Committee state, measured (2026-09-13).** Per-level census, share of ACTIVE-held time: `via`
 54% -> 96% from the sprint's start to 57aaa31f; the engine-path fallback (`no-route`) 39% -> 0%;
 `stuck-escape` 4.5% -> 1.9%; the flicker members (`seam`, `path_pnt`, `gridroute`, `hop-commit`)
