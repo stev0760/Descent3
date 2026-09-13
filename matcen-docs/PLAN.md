@@ -395,6 +395,15 @@ would fill.
   admission A/B; (3) extend the crossing model to entrances, sweeping from the indoor side outward;
   (4) a longer paired wind run. Same discipline: bot-free dumps first, then arms with pre-registered
   terms, per map.
+- **Items the hull cannot reach are never chased (next sprint, small).** The operator found a rapid-fire
+  powerup under a table on Batteries (room 27, dump verdict "review": approaches blocked by same-room
+  geometry; 49 items carry that verdict on the map). The chase retires an item only after three failed
+  eight-second chases — three chances to wedge. Rule: an item with no hull-clear sweep from any lattice
+  node or skeleton node is `unreachable` at level load and never chased; bot-free count first.
+- **A nook the hull cannot occupy is never entered (next sprint).** Batteries rm35: bots wedge under a
+  desk on their way through (every body direction 1-4u of room at hull radius; the directional burst
+  cannot free them, physics holds them). Not item-driven, not a respawn. The `$nav sweep` diagnostic
+  reads such spots; the fix is upstream of the burst — in what the aim hands out near furniture.
 - **CTF role balance (operator, 2026-09-13; navigation-independent).** On Batteries the team that grabs
   first keeps the other team on defence for the round: the objective layer flips flex bots to DEFEND
   when their flag is stolen (16 flips in four rounds; Red issued 21 attack errands to Blue's ~100),
