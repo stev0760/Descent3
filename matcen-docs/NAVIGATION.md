@@ -1017,6 +1017,17 @@ crossing arm, 18 in the glass arm) — Reaper 35 — the next diagnosis, with th
 telemetry; suspect the one-door escape fallback (slice 6b), which aims the escape at the door's
 engine point, the polygon centre behind the leaf, instead of the lip crossing.
 
+**abend2 8-round confirmation (soak-20260913T085615, 57aaa31f = slices 6a-7+6d, vs the 20-round
+endpoint arm soak-20260910T072205; the guard's structural FAILs are the 8-vs-20 round mismatch, read
+PER ROUND and PER TEAM as the manifest says).** Per round: captures 0.71 -> 1.13 (Red 0.57 -> 0.75
+on FEWER grabs, conversion 17% -> 35%; Blue 0.14 -> 0.38 on 2.5x the grabs, conversion 10% -> 11%);
+escalations 8.5 -> 4.8; **ring room 0: 80 -> 1 in the arm** (rm30 39, one Red bot for most of it);
+carrier deaths 3.9 -> 4.4 per round; committed crossings 436 per round. The 4-round gate's "Red 3
+grabs / 0 captures" was noise: over eight rounds Red captures more per round than the control while
+Blue reaches the red flag two and a half times as often. Every pre-registered term met. The flag
+timeline shows the standoff shape the operator wants appearing on this map with eight bots: both
+flags out in four of eight rounds (4-33 s), five standoff grabs.
+
 **Slice 8 — the network's sweep is honest (2026-09-13 ~09:20).** The glass re-run's rm80 pins (36,
 one bot at the same floor spot in front of the leaf, aiming at the lip) sent me back to the
 lattice: `BotSegmentClear`, the one indoor primitive the roadmap grows, probes and string-pulls
