@@ -177,7 +177,7 @@ static void NavDbgDrawRoomStatic(int room_idx) {
     float cost = BotPortalGeoCost(room_idx, p);
     ddgr_color c;
     if (cost >= BOT_PORTAL_IMPASSABLE)
-      c = BOA_PassablePortal(room_idx, p) ? NAVDBG_PORTAL_DISAGREE : NAVDBG_PORTAL_BLOCKED;
+      c = BotPortalEnginePassable(room_idx, p) ? NAVDBG_PORTAL_DISAGREE : NAVDBG_PORTAL_BLOCKED;
     else if (cost > 1.0f)
       c = NAVDBG_PORTAL_TIGHT;
     else

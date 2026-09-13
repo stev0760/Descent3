@@ -350,7 +350,10 @@ keeps thrust pointed along the engine's path rather than locking `fvec` on a far
   not glass (Batteries' floor grates: bars behind an open face). Both glass verdicts require
   `PF_RENDER_FACES` on the side that carries the breakable face; the probe failure then means impassable.
 - **A shattered pane is a door:** `PF_RENDER_FACES` cleared on BOTH sides = broken (BreakGlassFace's own
-  test; the pane may live on either side). `BotPortalClass` / `BotPortalIsBreakableGlass` re-check a cached PANE on every query and
+  test; the pane may live on either side). **Never call `BOA_PassablePortal` for an admission decision** —
+  its cost table is frozen at level load, so it calls a broken pane impassable forever; use
+  `BotPortalEnginePassable()` (engine verdict OR a flipped pane). The navdump's `engine_passable` field
+  is the raw engine table on purpose. `BotPortalClass` / `BotPortalIsBreakableGlass` re-check a cached PANE on every query and
   `PortalPaneShatteredFlip` retires class/geocost/passable/glass/crossing for both sides. Never cache a
   pane verdict anywhere else without the same re-check.
 - **A hunt needs a route:** `target_routable` in the FSM (same room, or a clear close shot, or

@@ -2062,7 +2062,7 @@ static void BotClearCommittedGlassHop(int bot_index) {
   for (int p = 0; p < crm.num_portals; p++) {
     if (crm.portals[p].croom != wp)
       continue;
-    if (BOA_PassablePortal(obj->roomnum, p) || !BotPortalIsBreakableGlass(obj->roomnum, p))
+    if (BotPortalEnginePassable(obj->roomnum, p) || !BotPortalIsBreakableGlass(obj->roomnum, p))
       continue; // already-open door or not a pane — nothing to shoot
     if (BotPortalRouteCost(obj->roomnum, p, true) < BOT_PORTAL_IMPASSABLE)
       continue; // the pane is already shattered (probe clears) — fly through

@@ -29,7 +29,8 @@ as a release.*
     breakable pane was shot out, the bots' route planner kept treating the hole as glass for the rest
     of the level, so a bot without a glass-breaking weapon would read a glass-walled office complex
     as sealed and drop its objective. Broken panes now become ordinary doorways the moment any bot
-    looks at them. Separately, a bot only pursues an enemy in another room when it has a route it can
+    looks at them — including for the route planner, whose engine-side passability table is frozen
+    at level load and would otherwise have called the broken pane a wall for everyone. Separately, a bot only pursues an enemy in another room when it has a route it can
     actually fly there (the engine's own path table counts intact glass as passable, which had one
     bot pressing a cubicle wall for 27 minutes with its target one room over), and a bot stuck in a
     one-door room now escapes through that door instead of picking a random direction.

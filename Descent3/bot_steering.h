@@ -433,6 +433,11 @@ uint64_t BotAimExitMask(object *obj, int room_idx, int dest_room);
 #define BOT_CROSS_FIT_SCALE 0.92f
 // Whether the cached crossing was found only at the door-fit radius.
 bool BotPortalCrossingTight(int room_idx, int portal_idx);
+// The engine's passability verdict as OUR layers must read it. BOA_PassablePortal consults a cost
+// table frozen at level load, so a pane that shattered mid-level stays "impassable" to the engine
+// for the rest of the level; a pane this code has seen shatter (PortalPaneShatteredFlip) is a door
+// here. Use this, never BOA_PassablePortal directly, for any admission decision.
+bool BotPortalEnginePassable(int room_idx, int portal_idx);
 bool BotPortalCrossing(int room_idx, int portal_idx, vector *pnt_out, float *depth_out);
 // The crossing as a PATH seen from room_idx: `near` is the approach point just inside this room,
 // `plane` the point on the portal, `far` the point inside the other room the push-through aims at.

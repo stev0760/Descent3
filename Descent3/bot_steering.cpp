@@ -299,12 +299,12 @@ float BotPortalRouteCost(int room_idx, int portal_idx, bool allow_disagree) {
   for (int p = 0; p < Rooms[room_idx].num_portals && p < MAX_PATH_PORTALS; p++) {
     if (p == portal_idx || Rooms[room_idx].portals[p].croom != connected_room)
       continue;
-    if (BotPortalGeoCost(room_idx, p) < BOT_PORTAL_IMPASSABLE && BOA_PassablePortal(room_idx, p) &&
+    if (BotPortalGeoCost(room_idx, p) < BOT_PORTAL_IMPASSABLE && BotPortalEnginePassable(room_idx, p) &&
         BotPortalWindDir(room_idx, p) >= 0)
       return cost;
   }
 
-  return BOA_PassablePortal(room_idx, portal_idx) ? BOT_PORTAL_DISAGREE_PENALTY : cost;
+  return BotPortalEnginePassable(room_idx, portal_idx) ? BOT_PORTAL_DISAGREE_PENALTY : cost;
 }
 
 // --- 0.9.14 glass routing ($nav glass): intact breakable panes as routable edges ---------------
@@ -317,6 +317,15 @@ static int8_t pf_glass_vertical[MAX_ROOMS][MAX_PATH_PORTALS];   // 1 = vertical 
 
 static bool PortalShattered(int room_idx, int portal_idx);
 static void PortalPaneShatteredFlip(int room_idx, int portal_idx);
+static int8_t pf_glass_flipped[MAX_ROOMS][MAX_PATH_PORTALS]; // 1 = a pane this level that has since shattered
+
+bool BotPortalEnginePassable(int room_idx, int portal_idx) {
+  if (room_idx < 0 || room_idx >= MAX_ROOMS || portal_idx < 0 || portal_idx >= MAX_PATH_PORTALS)
+    return false;
+  if (pf_class_level_checksum == BOA_mine_checksum && pf_glass_flipped[room_idx][portal_idx] == 1)
+    return true; // the engine's table still says glass; the glass is gone
+  return BOA_PassablePortal(room_idx, portal_idx);
+}
 
 bool BotPortalIsBreakableGlass(int room_idx, int portal_idx) {
   if (pf_glass_level_checksum != BOA_mine_checksum) {
@@ -411,6 +420,7 @@ static bool PortalShattered(int room_idx, int portal_idx) {
 int BotPortalClass(int room_idx, int portal_idx) {
   if (pf_class_level_checksum != BOA_mine_checksum) {
     memset(pf_portal_class, -1, sizeof(pf_portal_class));
+    memset(pf_glass_flipped, 0, sizeof(pf_glass_flipped));
     pf_class_level_checksum = BOA_mine_checksum;
   }
   if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used || portal_idx < 0 ||
@@ -430,7 +440,7 @@ int BotPortalClass(int room_idx, int portal_idx) {
   doorway *dw = Rooms[room_idx].doorway_data ? Rooms[room_idx].doorway_data : Rooms[cr].doorway_data;
   if (dw && (dw->flags & DF_LOCKED) && !(dw->flags & DF_GB_IGNORE_LOCKED))
     return cached = BOT_PORTAL_CLASS_NEVER; // locked door (same verdict as the router's geocost)
-  if (BOA_PassablePortal(room_idx, portal_idx))
+  if (BotPortalEnginePassable(room_idx, portal_idx))
     return cached = BOT_PORTAL_CLASS_DOOR; // engine agreement — the router's own admission
   if (BotPortalIsBreakableGlass(room_idx, portal_idx))
     return cached = BOT_PORTAL_CLASS_PANE; // a wall until shot; a route for a kinetic bot
@@ -469,8 +479,10 @@ static void PortalPaneShatteredFlip(int room_idx, int portal_idx) {
   pf_portal_geocost[room_idx][portal_idx] = -1.0f;
   pf_portal_passable[room_idx][portal_idx] = -1;
   pf_glass_pane[room_idx][portal_idx] = 0;
+  pf_glass_flipped[room_idx][portal_idx] = 1;
   pf_cross_state[room_idx][portal_idx] = -1;
   if (twin_ok) {
+    pf_glass_flipped[cr][cp] = 1;
     pf_portal_class[cr][cp] = BOT_PORTAL_CLASS_DOOR;
     pf_portal_geocost[cr][cp] = -1.0f;
     pf_portal_passable[cr][cp] = -1;
@@ -971,7 +983,7 @@ static bool PanePortalUsable(int room_idx, int portal_idx, int mode) {
 // or, under `mode`, it must be an intact pane the bot may shoot open — the cost model must admit
 // it (union of the router's strict and DISAGREE passes), and wind must not forbid the traversal.
 static bool ExitPortalUsable(int room_idx, int portal_idx, int glass_mode = GLASS_ROUTE_OFF) {
-  const bool engine_ok = BOA_PassablePortal(room_idx, portal_idx);
+  const bool engine_ok = BotPortalEnginePassable(room_idx, portal_idx);
   if (!engine_ok && glass_mode != GLASS_ROUTE_OFF)
     return PanePortalUsable(room_idx, portal_idx, glass_mode);
   if (!engine_ok)
@@ -1579,7 +1591,7 @@ int BotEntryPortalIndex(object *obj, int wp_room) {
       // picker committed crossings through Batteries rm80's window portals into skybox room 81.
       if (BotPortalClass(cur, p) == BOT_PORTAL_CLASS_NEVER)
         continue;
-      const bool pane = !BOA_PassablePortal(cur, p) && BotPortalIsBreakableGlass(cur, p);
+      const bool pane = !BotPortalEnginePassable(cur, p) && BotPortalIsBreakableGlass(cur, p);
       if (pane != panes_only)
         continue;
       if (pane) {
@@ -2691,7 +2703,7 @@ static float BotRouteDijkstra(int from_room, int goal_room, int *first_hop_out, 
       // SOLE admits any pane, but the caller runs that mode only after a doors-only attempt failed.
       // PanePortalUsable already rejected toggle-off panes, so `geo` below is the finite
       // BOT_PORTAL_GLASS_PENALTY BotPortalGeoCost caches; a door wins any comparable route on price.
-      const bool engine_ok = BOA_PassablePortal(r, p);
+      const bool engine_ok = BotPortalEnginePassable(r, p);
       bool pane = false;
       if (!engine_ok && glass_mode != GLASS_ROUTE_OFF) {
         if (glass_mode == GLASS_ROUTE_SHORTCUT)
@@ -2901,7 +2913,7 @@ bool BotTerrainConnectPassable(int room, int portal) {
     return false;
   if (portal < 0 || portal >= Rooms[room].num_portals)
     return false;
-  return BOA_PassablePortal(room, portal) && BotPortalGeoCost(room, portal) < BOT_PORTAL_IMPASSABLE;
+  return BotPortalEnginePassable(room, portal) && BotPortalGeoCost(room, portal) < BOT_PORTAL_IMPASSABLE;
 }
 
 bool BotResolveOutdoorEntrance(const object *obj, int objective_room, int *out_room, int *out_portal) {

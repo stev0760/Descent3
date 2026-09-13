@@ -959,6 +959,28 @@ went 120 -> impassable (the router's DISAGREE class, engine passable / hull not)
 12, network identical. `tools/analyze_navdump.py` gained the "Door crossings" section (counts, depth
 histogram, tight, the doors without a crossing with their blockers, and the ship hulls).
 
+**Glass/hunt arm, full (soak-20260913T055350, c199e1fc, vs the crossing arm; guard FAIL as a unit
+story — Ninja 53% of the delta).** Play: Blue 12 grabs / 9 captures (75%), Red 3 / 2 (67%) — the best
+capture line of the sprint on both teams (Red's second and third captures ever on this map). Hard
+pins 100 -> 82; rm35 37 -> 30 (with Gregg/Phantom/Ninja sharing it, no 27-minute unit); the grate
+rm116 -> rm247 committed crossings 12 -> 0; 62 pane flips logged, 6 hunts skipped for lack of a
+route. And a REGRESSION the flip introduced: NO-ROUTE 1 -> 299 (rm1 -> rm84 109, rm1 -> rm6 105,
+rm68 -> rm6 69), soft escalations 29 -> 150 with rm1 at 90 — bots in room 1 wandering on the engine
+path with no route to either flag. Mechanism: `BOA_PassablePortal` consults `BOA_cost_array`, which
+is frozen at level load, so a shattered pane stays "impassable" to the ENGINE for the rest of the
+level; our ladder admitted it as glass before the flip (kinetic bots) and, after the flip, as
+neither glass nor an engine-passable door — nobody could route through a broken pane. Slice 6d
+(below) is the fix; the arm's captures came before the map's panes were mostly gone.
+
+**Slice 6d — a shattered pane is a door for the router too (2026-09-13 ~07:05).** Every admission
+decision in our layers now reads `BotPortalEnginePassable()` — the engine's verdict, or true for a
+pane this level that this code has seen shatter (`pf_glass_flipped`, set by the flip for both sides).
+Seven sites in the router/ladder/class/aim, the glass-clear helper in bot.cpp, and the overlay's
+DISAGREE colour. The navdump's `engine_passable` still reports the raw engine table. Bot-free dump
+identical to slice 7 (no flips without bots); harness green. Gate: the glass arm re-run on this
+build after the abend2 gate (`batteries-portal-glassdoor2-4rnd.json`, control = the crossing arm):
+NO-ROUTE back near zero, rm1 back to single digits, captures at the glass arm's level.
+
 **Slice 7 — the skeleton's bridge search scales with the hull (2026-09-13 ~06:15).** The crossing
 arm moved rm12's cost to bots chasing items INTO Batteries' ventilation network: some 230 rooms of
 18u ducts and 25-33u junction boxes, 33 of which were "split" (no skeleton edge between their

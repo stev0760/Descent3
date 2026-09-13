@@ -139,7 +139,9 @@ search, 4u lip and door-fit radius — Batteries doors without a crossing 20 -> 
 then the glass/hunt slice (a shattered pane is a door; a hunt needs a flyable route; a one-door
 room's escape uses its door — built from the hand-out arm's 27-minute rm35 episode), then the
 hull-scaled skeleton bridge search (Batteries split rooms 33 -> 6; abend2 ring room 0 finally one
-component — the abend2 gate runs on this build), then the powerup-chase circling class. The room
+component — the abend2 gate runs on this build), the router-side half of the shattered-pane rule
+(the engine's passability table is frozen at level load; the glass arm scored Blue 12/9, Red 3/2 but
+left rm1 with no route once its panes were gone), then the powerup-chase circling class. The room
 router is untouched by design.
 
 0.9.13 shipped as the correctness checkpoint; 0.9.14-dev is open with four landed commits:

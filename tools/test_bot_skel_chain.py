@@ -69,6 +69,7 @@ int visible_node = 0;
 // passability filter (ExitPortalUsable) can be exercised without the game's geometry.
 bool portal_rejected[32]{};
 bool BOA_PassablePortal(int, int portal) { return !portal_rejected[portal]; }
+bool BotPortalEnginePassable(int r, int portal) { return BOA_PassablePortal(r, portal); } // no glass in the harness
 float BotPortalRouteCost(int, int, bool) { return 0.0f; }
 int BotPortalWindDir(int, int) { return 0; }
 // No glass in this harness: the filter's pane branch stays inert (the glass ladder is covered by
