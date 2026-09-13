@@ -824,8 +824,22 @@ the earlier widenings. Remaining hotspots: rm12 (25), rm35 (24), rm8 (25), rm80 
 Two more gates found from the round-1 read and staged after: `BotEntryPortalIndex` and the
 stuck-escape chooser both admitted wall/window portals (the fit probe passes a skybox window; an
 external room is always "unvisited") — both now gate on `BotPortalClass`.
-**Red's zero grabs in four consecutive arms is the room-3 hub:** 16 lattice components, not
-composer-eligible, on Red's only approach to the blue flag. Next target.
+**Red's zero grabs in four consecutive arms is the room-3 hub — and its "16 components" were a
+seeding artifact.** The bot-free dump shows ONE component of 290 nodes (all four doors, both rm12
+panes, every cell and connector) plus 15 singletons: the conference-room panes on the outer wall at
+x=2407, whose seeds sit IN the glass face and can never reach a cell. Pair coverage counted them
+(7% → not routable → the composer refused Red's approach). Staged: pane seeds offset one hull radius
+into the room; `RoadmapLocalPairCoverage` counts DOOR seeds only. Expected: rm3 (and rm33/rm31, the
+Red-side glass hubs) become composer-eligible; Red grabs appear.
+
+**abend2 regression gate (f20c050a, soak-20260913T003807, 4 rounds vs the endpoint arm's first
+four, same 8-bot roster).** Captures 2 vs 2, hard pins 7 vs 6, carrier deaths 10 vs 11, no hotspot
+outside rooms 30/0 — the pre-registered terms pass. Flags: soft (circling) escalations 47 vs 10 in
+the ring rooms, composed routes 1404 vs 373, via suspensions 209 vs 106, Blue pickups 1 vs 6
+(Phantom 57% of the delta; the driver's guard also fails on the 4-vs-20 level sequence, so it
+never verdicts). Read: slice 4's two-point routes in the buried rings end without a crossing and
+re-pick. Response: the composed-route floor is `count >= 3` in buried rooms again (the form the
+0.9.13 line validated) and `>= 2` only where the blocked-line gate admits open rooms.
 
 **Still open on this line:** FQ_BACKFACE (the sweep still ignores back faces). rm80's door has no
 crossing of either kind (needs the multi-step on-ramp search across the plane).

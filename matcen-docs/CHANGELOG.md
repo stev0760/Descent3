@@ -13,6 +13,12 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
 admission fix and the remaining interior-navigation defects are still being worked. Do not run this
 as a release.*
 
+*   **A glass wall no longer disqualifies the room behind it from route planning.** An intact pane is
+    a solid face, so a lattice seed placed on it never joined the room's network; a hub with fifteen
+    conference-room panes on one wall read as "7% covered" with every one of its four doors connected,
+    and the route composer refused it — that hub is Red's only approach to the blue flag on Batteries
+    Included. Pane seeds now sit one hull radius inside the room (where a bot stands to shoot the
+    pane), and the coverage measure that gates the composer counts door seeds only.
 *   **The point a bot is told to fly through a door is the validated one.** Every in-room layer
     (skeleton aim, chain export, lattice via, composed route) still handed out a door's polygon centre
     as the point to fly, even where that centre is shadowed by a propped leaf; Batteries Included has

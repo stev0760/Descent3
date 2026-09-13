@@ -2575,8 +2575,12 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
       Drive_target[bot_index] = target_room;
       BotComposedRoute croute{};
       // A two-point route (the visible lattice node, then the exit) is a real go-around once the
-      // straight line is known blocked; the old count>=3 floor only mattered while open halls composed.
-      if (BotComposeRoomRoute(obj, target_pos, target_room, -1, &croute, /*cached_only=*/true) && croute.count >= 2) {
+      // straight line is known blocked. Buried (ring) rooms keep the validated three-point floor: the
+      // abend2 gate on the two-point form quadrupled soft circling in rooms 30/0 (composed 373 -> 1404,
+      // via suspensions 106 -> 209) — short chains there end without a crossing and re-pick.
+      const int route_floor = BotRoomIsBuried(obj->roomnum) ? 3 : 2;
+      if (BotComposeRoomRoute(obj, target_pos, target_room, -1, &croute, /*cached_only=*/true) &&
+          croute.count >= route_floor) {
         for (int i = 0; i < croute.count; i++)
           Bots[bot_index].via_chain[i] = croute.point[i];
         Bots[bot_index].via_chain_len = croute.count;

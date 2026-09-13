@@ -568,9 +568,18 @@ int RoadmapLocalPairCoverage(const RoadmapRoom *rr, int n_seed) {
   if (n_seed < 2)
     return -1; // undefined: nothing to join
   const int N = (int)rr->node.size();
+  // Only DOOR seeds are coverage pairs: a pane is a conditional exit (kinetic bots only) whose seed
+  // sits against a solid face, and counting it made a hub whose doors were all connected read as
+  // "7% covered" and lose composer eligibility (Batteries rm3, 4 doors + 17 panes).
+  std::vector<char> is_door(n_seed, 1);
+  if (!rr->outdoor && rr->probe_room >= 0)
+    for (int s = 0; s < n_seed && s < (int)rr->seed_portal.size(); s++)
+      is_door[s] = BotPortalClass(rr->probe_room, rr->seed_portal[s]) == BOT_PORTAL_CLASS_DOOR ? 1 : 0;
   std::vector<int> seen;
   int joined = 0, pairs = 0;
   for (int s = 0; s < n_seed; s++) {
+    if (!is_door[s])
+      continue;
     seen.assign(N, 0);
     std::queue<int> q;
     seen[s] = 1;
@@ -586,6 +595,8 @@ int RoadmapLocalPairCoverage(const RoadmapRoom *rr, int n_seed) {
       }
     }
     for (int t = s + 1; t < n_seed; t++) {
+      if (!is_door[t])
+        continue;
       pairs++;
       if (seen[t])
         joined++;
@@ -1337,10 +1348,22 @@ RoadmapRoom *Build(int room_idx) {
     int nr = rm.portals[p].croom;
     if (nr < 0 || nr > Highest_room_index || !Rooms[nr].used)
       continue;
-    if (BotPortalClass(room_idx, p) == BOT_PORTAL_CLASS_NEVER)
+    const int pclass = BotPortalClass(room_idx, p);
+    if (pclass == BOT_PORTAL_CLASS_NEVER)
       continue;
     int idx = (int)rr->node.size();
-    rr->node.push_back(rm.portals[p].path_pnt);
+    vector seed = rm.portals[p].path_pnt;
+    if (pclass == BOT_PORTAL_CLASS_PANE) {
+      // An intact pane is a solid face: a seed ON it has its hull sphere embedded in the glass and
+      // never reaches a cell (Batteries rm3: fifteen conference-room panes on the outer wall, each a
+      // one-node component, failing the routable gate on Red's whole approach). Seed a hull radius
+      // inside the room instead — the point a bot stands at before shooting the pane.
+      const face &pf = rm.faces[rm.portals[p].portal_face];
+      vector n = pf.normal; // points INTO the room
+      if (vm_NormalizeVector(&n) > 0.5f)
+        seed += n * BOT_ROADMAP_CLEARANCE;
+    }
+    rr->node.push_back(seed);
     rr->adj.emplace_back();
     rr->tweight.push_back(0.0f);
     uf.push_back(idx);
