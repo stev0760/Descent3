@@ -13,6 +13,7 @@ humans are split (bot names carry the "[BOT]" suffix — no space, callsigns are
 the optional whitespace below also matches older logs that used " [BOT]" with a space).
 
 Usage: flag_conversion.py <server.log> [more logs...]
+       flag_conversion.py --timeline <server.log>   (per-round flag timeline: episodes, both-out time, standoff grabs)
 """
 
 import collections
@@ -20,6 +21,9 @@ import re
 import sys
 
 LEVEL_RE = re.compile(r"Opening level '([^'.]+)\.d3l'", re.IGNORECASE)
+# HUD echo lines (picks/caps/returns) carry no timestamp; the nearest preceding logger line does.
+TS_RE = re.compile(r"^\S+ (\d+):(\d+):(\d+)\.(\d+) ")
+FLAG_TIMEOUT_S = 120.0  # ctf.cpp FLAG_TIMEOUT_VALUE: a loose flag auto-returns silently after this
 # Two pickup wordings from the CTF DLL: the home-stand steal ("picks up the X Flag") and the
 # dropped/in-field grab ("finds the X Flag among some debris"). Some maps (metropol_gt,
 # 2026-07-18 overnight) emit ONLY the debris variant for the whole session — counting just
@@ -30,6 +34,100 @@ LEVEL_RE = re.compile(r"Opening level '([^'.]+)\.d3l'", re.IGNORECASE)
 PICK_RE = re.compile(r"\*?(\S+?)(\s?\[BOT\])? \((\w+)\) (?:picks up the|finds the) (\w+) Flag")
 CAP_RE = re.compile(r"\*?(\S+?)(\s?\[BOT\])? \((\w+)\) captures the (.+?) Flags?\b")
 RET_RE = re.compile(r"\*?(\S+?)(\s?\[BOT\])? \((\w+)\) returns the (\w+) Flag")
+
+
+
+def flag_timeline(path):
+    """Per-round FLAG TIMELINE (2026-09-13, for the CTF role-balance question): each flag's OUT
+    episodes (grab -> capture / announced return / assumed silent 120s return), the seconds both
+    flags were out at once, and how many grabs happened while the grabbing team's own flag was
+    already out (a "standoff grab"). Capture totals flip with the seating; this shows the SHAPE of
+    play: whether both flags get taken and how the standoffs resolve. Times are seconds into the
+    round, from the nearest preceding timestamped line."""
+    def ts(line):
+        m = TS_RE.match(line)
+        if not m:
+            return None
+        h, mi, se, ms = (int(x) for x in m.groups())
+        return h * 3600 + mi * 60 + se + ms / 1000.0
+
+    rounds = []  # list of dicts: level, t0, episodes[], grabs[]
+    cur = None
+    last_t = None
+    out = {}  # colour -> (t_start, team_of_grabber)
+    def close_round():
+        if cur is None:
+            return
+        # any flag still out at level end: assumed silent return / level reset
+        for colour, (t_s, by) in list(out.items()):
+            cur["episodes"].append((colour, t_s, min(t_s + FLAG_TIMEOUT_S, last_t or t_s), "level-end", by))
+        out.clear()
+        rounds.append(cur)
+    with open(path, errors="replace") as f:
+        for line in f:
+            t = ts(line)
+            if t is not None:
+                last_t = t
+                # silent auto-return: a flag out longer than the timeout with no announcement
+                for colour, (t_s, by) in list(out.items()):
+                    if cur is not None and t - t_s > FLAG_TIMEOUT_S:
+                        cur["episodes"].append((colour, t_s, t_s + FLAG_TIMEOUT_S, "silent-return", by))
+                        del out[colour]
+            m = LEVEL_RE.search(line)
+            if m:
+                close_round()
+                cur = {"level": m.group(1), "t0": last_t or 0.0, "episodes": [], "grabs": []}
+                continue
+            if cur is None or last_t is None:
+                continue
+            m = PICK_RE.search(line)
+            if m:
+                team, colour = m.group(3), m.group(4)
+                own_out = any(c != colour for c in out)  # the other colour is out => the grabber's own flag is out
+                cur["grabs"].append((last_t, team, colour, own_out))
+                if colour not in out:
+                    out[colour] = (last_t, team)
+                continue
+            m = CAP_RE.search(line)
+            if m:
+                for colour in re.findall(r"\b\w+\b", m.group(4)):
+                    if colour.lower() == "and":
+                        continue
+                    if colour in out:
+                        t_s, by = out.pop(colour)
+                        cur["episodes"].append((colour, t_s, last_t, "capture", by))
+                continue
+            m = RET_RE.search(line)
+            if m:
+                colour = m.group(4)
+                if colour in out:
+                    t_s, by = out.pop(colour)
+                    cur["episodes"].append((colour, t_s, last_t, "returned", by))
+                continue
+    close_round()
+
+    print("# flag timeline — %s" % path)
+    for i, r in enumerate(rounds, 1):
+        eps = sorted(r["episodes"], key=lambda e: e[1])
+        if not eps and not r["grabs"]:
+            continue
+        t0 = r["t0"]
+        # both-out seconds: overlap of OUT intervals of different colours
+        both = 0.0
+        for a_i, a in enumerate(eps):
+            for b in eps[a_i + 1:]:
+                if a[0] == b[0]:
+                    continue
+                lo, hi = max(a[1], b[1]), min(a[2], b[2])
+                if hi > lo:
+                    both += hi - lo
+        kinds = collections.Counter(e[3] for e in eps)
+        standoff = sum(1 for g in r["grabs"] if g[3])
+        print("== round %d (%s): flag episodes %d  [%s]  both-flags-out %.0fs  standoff grabs %d/%d" % (
+            i, r["level"], len(eps), ", ".join("%s %d" % kv for kv in sorted(kinds.items())), both, standoff, len(r["grabs"])))
+        for colour, t_s, t_e, kind, by in eps:
+            print("   %-6s out %6.0fs -> %6.0fs (%4.0fs)  %-14s taken by %s" % (colour, t_s - t0, t_e - t0, t_e - t_s, kind, by))
+    print()
 
 
 def analyze(path):
@@ -107,6 +205,10 @@ def analyze(path):
 
 
 if __name__ == "__main__":
+    if "--timeline" in sys.argv:
+        for p in [x for x in sys.argv[1:] if x != "--timeline"]:
+            flag_timeline(p)
+        sys.exit(0)
     if len(sys.argv) < 2:
         print(__doc__)
         sys.exit(2)

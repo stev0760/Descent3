@@ -331,7 +331,8 @@ keeps thrust pointed along the engine's path rather than locking `fvec` on a far
   radius, then at the DOOR-FIT radius (`BOT_CROSS_FIT_SCALE` 0.92 — `BotPortalCrossingTight()` says
   which). Sweeps are `CrossSweep`: `FQ_BACKFACE`, both directions — a column that starts inside a
   leaf is blocked, from either side. Do not use the fit radius for network legs.
-- **Second server instance for bot-free dumps while a soak runs:** a cfg copy with
+- **Second server instance for bot-free dumps while a soak runs:** `tools/navdump_geometry.py` does it
+  (`--console/--useport/--gamespyport/--tempdir`); compare with `tools/compare_navdumps.py`. Background: a cfg copy with
   `RemoteConsolePort=2093`, launched with `-useport 2094 -gamespyport 20143 -tempdir <dir>` (without
   its own gamespy port the second server blocks forever in a blocking `recvfrom` on the socket whose
   bind failed — the console accepts the TCP connection and never answers); `$nav dump` then lands in
