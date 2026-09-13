@@ -27,6 +27,12 @@ touched and are the next sprint. Do not run this as a release yet.*
     include a forward-diagonal, and are honest about back faces. Batteries: 33 disconnected rooms down
     to 6 (the six floor-hatch rooms narrower than a Pyro). Abend2: the ring room that stayed in two
     pieces through every earlier attempt is now one connected network.
+*   **A pane a ship cannot fit through is a grate, not a door.** Batteries Included has two walls
+    of small decorative glass panes (each about 11 by 6 units against a 13-unit ship) and three
+    narrow floor hatches; bots routed to the panes, shot them open, and then pressed a hole nothing
+    can pass — a spawn room's whole team could end up pinned there, its real exit being up a vent.
+    Any opening narrower than the ship in either direction is now treated as a wall for routing,
+    whatever the engine's own table says. Ships still shoot through it.
 *   **A floor grate is not glass.** Four floor openings on Batteries Included carry a breakable-glass
     texture on a face the level never renders, with bars behind it; the route planner priced them as
     glass, so armed bots kept trying to shoot and fly through bars (one grate: 21 attempts, 0

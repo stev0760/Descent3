@@ -123,7 +123,10 @@ static bool ProbePortalClearance(int room_idx, int connected_room, const portal 
 static int pf_class_level_checksum = 0; // 0.9.14 portal-class cache (BotPortalClass)
 static int pf_cross_level_checksum = 0; // 0.9.14 crossing-point cache (BotPortalCrossing)
 
+static int pf_small_level_checksum = 0;
+static bool PortalTooSmallForHull(int room_idx, int portal_idx); // defined with the class helpers below
 void BotGeoCostInvalidate() {
+  pf_small_level_checksum = 0;
   pf_geocost_level_checksum = 0;
   pf_passable_level_checksum = 0;
   pf_glass_level_checksum = 0;
@@ -212,6 +215,9 @@ float BotPortalGeoCost(int room_idx, int portal_idx) {
   // Designer flags: explicitly blocked or marked too small for a robot → impassable.
   if (pt.flags & (PF_BLOCK | PF_TOO_SMALL_FOR_ROBOT))
     return cached = BOT_PORTAL_IMPASSABLE;
+  // Geometry: an opening the hull cannot pass in either direction (pane grids, 11u hatches).
+  if (PortalTooSmallForHull(room_idx, portal_idx))
+    return cached = BOT_PORTAL_IMPASSABLE;
 
   int connected_room = pt.croom;
   if (connected_room < 0 || connected_room > Highest_room_index || !Rooms[connected_room].used)
@@ -283,8 +289,8 @@ float BotPortalRouteCost(int room_idx, int portal_idx, bool allow_disagree) {
     return cost;
 
   const portal &pt = Rooms[room_idx].portals[portal_idx];
-  if (pt.flags & (PF_BLOCK | PF_TOO_SMALL_FOR_ROBOT))
-    return cost;
+  if (pt.flags & (PF_BLOCK | PF_TOO_SMALL_FOR_ROBOT) || PortalTooSmallForHull(room_idx, portal_idx))
+    return cost; // no last-resort admission through an opening the hull cannot pass
   int connected_room = pt.croom;
   if (connected_room < 0 || connected_room > Highest_room_index || !Rooms[connected_room].used)
     return cost;
@@ -319,6 +325,56 @@ static bool PortalShattered(int room_idx, int portal_idx);
 static void PortalPaneShatteredFlip(int room_idx, int portal_idx);
 static int8_t pf_glass_flipped[MAX_ROOMS][MAX_PATH_PORTALS]; // 1 = a pane this level that has since shattered
 
+// An opening narrower than the hull in either direction is not a route for ANY class of portal,
+// however the engine's table or the 2.5u passability probe reads it: Batteries' decorative pane
+// grids (fifteen 11x6u panes between the blue base and the room behind it, fifteen more at the
+// conference hub) and its 11u floor hatches. Shoot-through is not fly-through — bots that routed to
+// those panes shot them open and then pressed a hole nothing can pass (a spawn room's only real exit
+// is up a 19x20u vent). Extents are the portal polygon's in its own plane; the threshold is the hull
+// diameter at the door-fit scale (BOT_CROSS_FIT_SCALE). Cached per level.
+static int8_t pf_portal_small[MAX_ROOMS][MAX_PATH_PORTALS]; // -1 unknown, 1 too small for the hull, 0 fits
+static bool PortalTooSmallForHull(int room_idx, int portal_idx) {
+  if (pf_small_level_checksum != BOA_mine_checksum) {
+    memset(pf_portal_small, -1, sizeof(pf_portal_small));
+    pf_small_level_checksum = BOA_mine_checksum;
+  }
+  if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used || portal_idx < 0 ||
+      portal_idx >= Rooms[room_idx].num_portals || portal_idx >= MAX_PATH_PORTALS)
+    return false;
+  int8_t &cached = pf_portal_small[room_idx][portal_idx];
+  if (cached >= 0)
+    return cached == 1;
+  cached = 0;
+  const room &rm = Rooms[room_idx];
+  const portal &pt = rm.portals[portal_idx];
+  if (pt.portal_face < 0 || pt.portal_face >= rm.num_faces)
+    return false;
+  const face &fc = rm.faces[pt.portal_face];
+  if (fc.num_verts < 3)
+    return false;
+  vector n = fc.normal;
+  if (vm_NormalizeVector(&n) < 0.5f)
+    return false;
+  vector u = rm.verts[fc.face_verts[1]] - rm.verts[fc.face_verts[0]];
+  if (vm_NormalizeVector(&u) < 0.01f)
+    return false;
+  vector w = vm_Cross3Product(n, u);
+  vm_NormalizeVector(&w);
+  float u0 = 1e30f, u1 = -1e30f, w0 = 1e30f, w1 = -1e30f;
+  const vector &o = rm.verts[fc.face_verts[0]];
+  for (int i = 0; i < fc.num_verts; i++) {
+    vector d = rm.verts[fc.face_verts[i]] - o;
+    const float du = vm_DotProduct(&d, &u), dw = vm_DotProduct(&d, &w);
+    u0 = std::min(u0, du);
+    u1 = std::max(u1, du);
+    w0 = std::min(w0, dw);
+    w1 = std::max(w1, dw);
+  }
+  const float min_extent = std::min(u1 - u0, w1 - w0);
+  cached = (min_extent < 2.0f * BOT_ROADMAP_CLEARANCE * BOT_CROSS_FIT_SCALE) ? 1 : 0;
+  return cached == 1;
+}
+
 bool BotPortalEnginePassable(int room_idx, int portal_idx) {
   if (room_idx < 0 || room_idx >= MAX_ROOMS || portal_idx < 0 || portal_idx >= MAX_PATH_PORTALS)
     return false;
@@ -348,8 +404,9 @@ bool BotPortalIsBreakableGlass(int room_idx, int portal_idx) {
   if (connected_room < 0 || connected_room > Highest_room_index || !Rooms[connected_room].used)
     return false;
   // Designer vetoes survive any glass authority: a portal the level marked blocked or too small,
-  // or a genuinely locked door, is not made crossable by shooting a pane beside it.
-  if (pt.flags & (PF_BLOCK | PF_TOO_SMALL_FOR_ROBOT))
+  // or a genuinely locked door, is not made crossable by shooting a pane beside it. Nor is a pane
+  // the hull could not pass once shattered (a decorative grid): shoot-through, never a route.
+  if (pt.flags & (PF_BLOCK | PF_TOO_SMALL_FOR_ROBOT) || PortalTooSmallForHull(room_idx, portal_idx))
     return false;
   doorway *dw = Rooms[room_idx].doorway_data ? Rooms[room_idx].doorway_data : Rooms[connected_room].doorway_data;
   if (dw && (dw->flags & DF_LOCKED) && !(dw->flags & DF_GB_IGNORE_LOCKED))
@@ -437,6 +494,8 @@ int BotPortalClass(int room_idx, int portal_idx) {
     return cached = BOT_PORTAL_CLASS_NEVER; // not a room-to-room portal
   if (pt.flags & (PF_BLOCK | PF_TOO_SMALL_FOR_ROBOT))
     return cached = BOT_PORTAL_CLASS_NEVER; // designer veto
+  if (PortalTooSmallForHull(room_idx, portal_idx))
+    return cached = BOT_PORTAL_CLASS_NEVER; // narrower than the hull: a grate, a pane grid, a hatch
   doorway *dw = Rooms[room_idx].doorway_data ? Rooms[room_idx].doorway_data : Rooms[cr].doorway_data;
   if (dw && (dw->flags & DF_LOCKED) && !(dw->flags & DF_GB_IGNORE_LOCKED))
     return cached = BOT_PORTAL_CLASS_NEVER; // locked door (same verdict as the router's geocost)

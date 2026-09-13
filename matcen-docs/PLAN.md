@@ -144,7 +144,9 @@ component — the abend2 gate runs on this build), the router-side half of the s
 left rm1 with no route once its panes were gone — the re-run on 57aaa31f: Blue 17/13, no route
 failures, hard pins 100 -> 57, the sprint's first population-level guard pass), then the honest network sweep — TRIED AND REVERTED 2026-09-13 (bot-free it removed phantom
 lattice through walls; in play Batteries captures 13 -> 2 and hard pins 57 -> 81; retry as a
-build-time-only primitive), then the powerup-chase circling class. The room
+build-time-only primitive), then the hull-width rule (an opening narrower than the hull is never a
+route: the decorative pane grids and floor hatches, from the operator's flight — spawn-room trap),
+then the powerup-chase circling class. The room
 router is untouched by design.
 
 0.9.13 shipped as the correctness checkpoint; 0.9.14-dev is open with four landed commits:

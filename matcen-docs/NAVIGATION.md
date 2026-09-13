@@ -1056,6 +1056,24 @@ the next attempt should make the sweep honest at BUILD time only (a separate pri
 growth and probing) and leave the runtime tests as they were, gated the same way. This is the §7.0
 tried-and-reverted ledger's newest entry.
 
+**Slice 9 — an opening narrower than the hull is not a route (2026-09-13 ~12:50, from the
+operator's flight).** He found his own team's respawns trapped in a spawn room whose "glass door"
+is a grid of small decorative panes: shatterable with matter weapons, never flyable, the room's real
+exit being up a vent into the ducts. The dump confirms the class: 62 pane portals on Batteries are
+11x6u (fifteen between the blue base rm3 and rm22, fifteen at the conference hub rm31/rm33, one at
+rm74/rm76), plus the three 11u floor hatches and two dozen 9u window slots the engine calls open —
+all narrower than a 13.35u Pyro. The router priced each pane as glass because its passability probe
+is a 2.5u sphere; kinetic bots routed to them, shot them, and the runtime flip then made them doors
+for everyone: a hole nothing can pass. One geometric rule now sits under every verdict
+(`PortalTooSmallForHull`: the portal polygon's smaller extent in its own plane against the hull
+diameter at the door-fit scale): class NEVER, geocost impassable with no DISAGREE last resort, not
+glass, no runtime flip. Bot-free: 98 portal sides reclassified (62 pane -> never, 30 door -> never),
+split rooms 6 -> 4, isolated doors 11 -> 7, routable 51 -> 52, cells 13859 -> 13651 (the closets
+behind the slots lose their seeds); the main map is still fully connected through doors alone from
+either base, and the conference complex is honestly sealed except through its 19x20u vent — which
+nearly every bot can open, since the engine breaks glass with any matter weapon and the spawn
+concussions qualify. Gate: a Batteries arm against the glass re-run.
+
 **Committee state, measured (2026-09-13).** Per-level census, share of ACTIVE-held time: `via`
 54% -> 96% from the sprint's start to 57aaa31f; the engine-path fallback (`no-route`) 39% -> 0%;
 `stuck-escape` 4.5% -> 1.9%; the flicker members (`seam`, `path_pnt`, `gridroute`, `hop-commit`)

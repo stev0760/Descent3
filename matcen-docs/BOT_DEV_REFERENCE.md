@@ -347,6 +347,10 @@ keeps thrust pointed along the engine's path rather than locking `fvec` on a far
 - **Composed drive:** any `BotRoadmapRoomRoutable` (or buried) room, only when the straight line to the
   leg target is blocked; the goal aim reads a live `via_chain` in any room.
 - **Explore destinations** must pass `BotComputeRoute`; the engine's BOA table is glass/window-blind.
+- **An opening narrower than the hull is never a route:** `PortalTooSmallForHull` (portal polygon's
+  smaller in-plane extent < hull diameter x `BOT_CROSS_FIT_SCALE`) makes a portal NEVER, impassable
+  with no DISAGREE admission, and not glass — pane grids, floor hatches, window slots. The 2.5u
+  passability probe is engine agreement, not a fit test; this is the fit test.
 - **Glass needs a rendered pane:** a breakable texture on an UNRENDERED portal face is a grate's portal,
   not glass (Batteries' floor grates: bars behind an open face). Both glass verdicts require
   `PF_RENDER_FACES` on the side that carries the breakable face; the probe failure then means impassable.
