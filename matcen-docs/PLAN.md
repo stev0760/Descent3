@@ -377,6 +377,18 @@ would fill.
 
 ### 3.5 Open, unfixed, lower priority
 
+- **CTF role balance (operator, 2026-09-13; navigation-independent).** On Batteries the team that grabs
+  first keeps the other team on defence for the round: the objective layer flips flex bots to DEFEND
+  when their flag is stolen (16 flips in four rounds; Red issued 21 attack errands to Blue's ~100),
+  and the shortest base-to-base routes are symmetric (7 door hops each way). Desired play on long-trip
+  maps: both flags out, a standoff resolved by a carrier kill and return — which KegD3 produces by
+  proximity and long maps need by design (someone keeps the attack errand while the home flag is out;
+  defenders hunt the carrier). Depends on roster size (with two per side "defend" is everyone) and
+  probably trip length. Instrument first: a per-round flag timeline from the pickup/capture/return
+  lines (both-out intervals, standoff resolution kind, attack errands kept alive while the home flag is
+  out), then change the split and read the shape. Operator wants real flights on the current build
+  before deciding.
+
 - The explore/objective destination sampler picks `RF_EXTERNAL` window rooms as goals — after the
   glass fix every surviving `NO-ROUTE` pair was one (`rm84→rm85`, `rm80→rm81`).
 - `BotPortalGeoCost` calls many solid faces free (geodomes 504/596 portals); the navdump's
