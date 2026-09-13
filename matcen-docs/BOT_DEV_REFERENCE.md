@@ -360,6 +360,9 @@ keeps thrust pointed along the engine's path rather than locking `fvec` on a far
 - **Stuck escape in a one-door room:** the portal toward `explore_dest_room` is excluded, but kept as
   `only_way_in` and used when nothing else passes.
 - **STUCKSTATE** lines carry `state=` (FSM) and `pos=`.
+- **Bridge search (`SkelBridge`):** fan rings are hull multiples (`BOT_SKEL_BRIDGE_RING_SCALE`), each
+  lateral candidate also tried `BOT_SKEL_BRIDGE_DIAG_STEP` hulls forward; sweeps are `FQ_BACKFACE`.
+  Any new bounded search around a blocker must scale its steps with the hull, not the room.
 - **Hard pin ⇒ reverse burst:** `unstick_reverse_until` (1s, `BOT_UNSTICK_REVERSE_TIME`) overrides
   thrust with pure reverse in `BotApplyThrust`; set at the stuck escalation when `net_disp < 10`.
 - **Read `from=/aim=/now=` on a NOT-CROSSED line before blaming a door:** `from == now` for minutes

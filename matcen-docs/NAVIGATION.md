@@ -916,6 +916,16 @@ build. Room 80 also turned out NOT to be a spawn closet: bots squeeze in through
 speed and could not get out because their aim was the leaf's middle. The 4u lip is the general answer
 to that class; whether it converts rm80's 40 pins is the next arm's question.
 
+**Crossing arm, full (soak-20260913T045240, a6c3fc5b, vs the hand-out arm; guard FAIL as a unit
+story — Reaper is 69% of the delta, improving).** The pre-registered rm80 term PASSED outright:
+escalations 40 -> 0, committed crossings at its door 13 not-crossed -> 0 not-crossed — the 4u lip at
+the leaf's free edge is what that door needed. Escalations 159 -> 127 (2.63 -> 2.10/min), NO-ROUTE 1,
+glass shots 1381 -> 820. Not won: hard pins 85 -> 100 (soft 76 -> 29 — the escalations that remain are
+the pinned kind), rm35 37 (43; slice 6b was not in this build), rm12 8 -> 30 (the chase-circling class
+is back), rm33 10; Blue 5 grabs / 4 captures (80%) vs 8 / 8, Red 0 / 0 vs 1 / 1 — inside the sprint's
+Blue band (4-8 captures per arm) but the hand-out arm's 8/8 did not repeat. The grate rm116 -> rm247
+still drew 12 committed crossings (slice 6c was not in this build).
+
 **Slice 6b — a broken pane is a door; a hunt needs a route; the only door is a way out (2026-09-13,
 built from the hand-out arm's rm35 story).** Three general rules. (1) `BreakGlassFace` clears
 `PF_RENDER_FACES` on the portal when a pane shatters; every nav cache (class, geocost, passability,
@@ -948,6 +958,22 @@ the breakable face to be on a side that renders it — the engine's own "pane pr
 went 120 -> impassable (the router's DISAGREE class, engine passable / hull not), disagreements 4 ->
 12, network identical. `tools/analyze_navdump.py` gained the "Door crossings" section (counts, depth
 histogram, tight, the doors without a crossing with their blockers, and the ship hulls).
+
+**Slice 7 — the skeleton's bridge search scales with the hull (2026-09-13 ~06:15).** The crossing
+arm moved rm12's cost to bots chasing items INTO Batteries' ventilation network: some 230 rooms of
+18u ducts and 25-33u junction boxes, 33 of which were "split" (no skeleton edge between their
+portals), so a bot that entered an elbow had no in-room path to the next portal. `SkelBridge` (the
+0.9.12 rework's collision-guided bridge) had the same two defects the crossing search had: a fixed
+12/26/40/54u lateral fan — no candidate ever fit a 25u box — and no forward-diagonal candidate, plus
+sweeps blind to back faces. Its fan is now hull-scaled (0.6/1.25/2/3.5/6/8 R — the small rings fit a
+duct junction, the large ones still span a 40u toroid tube), every lateral candidate is also tried
+1.5 R forward, the budget is 64 reached points, and the search and its string-pull commit sweep with
+`FQ_BACKFACE`. Bot-free: Batteries split rooms 33 -> 6 (the six left are the 11u hatch rooms 37, 86,
+87, 88, 90, 91 — narrower than the hull), isolated doors 53 -> 11, bend nodes 15 -> 53, lattice
+unchanged. **abend2: ring room 0 — two components through every previous skeleton attempt (the 1d52aa7f
+rework got one bend only; "the bounded tangent-fan can't trace the curved tube") — is ONE component
+(7 -> 9 nodes, two bends); split rooms 5 -> 4, the rest unchanged.** Gate: the abend2 regression arm
+runs on this build.
 
 **Still open on this line:** the powerup-chase circling class (rm12); a corridor (multi-point)
 hand-out for bent crossings — not needed by any Batteries door after the lip/fit rungs, so deferred;

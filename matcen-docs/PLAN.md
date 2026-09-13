@@ -138,7 +138,9 @@ slice (built from the new `crossing_trace` dump field: back faces, full polygon 
 search, 4u lip and door-fit radius — Batteries doors without a crossing 20 -> 6, network unchanged);
 then the glass/hunt slice (a shattered pane is a door; a hunt needs a flyable route; a one-door
 room's escape uses its door — built from the hand-out arm's 27-minute rm35 episode), then the
-powerup-chase circling class. The room router is untouched by design.
+hull-scaled skeleton bridge search (Batteries split rooms 33 -> 6; abend2 ring room 0 finally one
+component — the abend2 gate runs on this build), then the powerup-chase circling class. The room
+router is untouched by design.
 
 0.9.13 shipped as the correctness checkpoint; 0.9.14-dev is open with four landed commits:
 telemetry (fa5966ed), the aim-layer fixes (4c51e30d, 2df343c2), and glass routing. The 4-round

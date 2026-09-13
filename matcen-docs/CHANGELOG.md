@@ -13,6 +13,13 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
 admission fix and the remaining interior-navigation defects are still being worked. Do not run this
 as a release.*
 
+*   **Bends are found in tight rooms too.** The search that adds bend waypoints between a room's doors
+    stepped sideways by fixed 12-to-54-unit amounts, so it never found a way round a corner in a duct
+    junction box; Batteries Included's ventilation network had 33 such boxes with no in-room path, and
+    bots that chased items into it got stuck at the first elbow. The steps now scale with the ship,
+    include a forward-diagonal, and are honest about back faces. Batteries: 33 disconnected rooms down
+    to 6 (the six floor-hatch rooms narrower than a Pyro). Abend2: the ring room that stayed in two
+    pieces through every earlier attempt is now one connected network.
 *   **A floor grate is not glass.** Four floor openings on Batteries Included carry a breakable-glass
     texture on a face the level never renders, with bars behind it; the route planner priced them as
     glass, so armed bots kept trying to shoot and fly through bars (one grate: 21 attempts, 0

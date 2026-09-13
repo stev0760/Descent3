@@ -59,10 +59,14 @@ struct fvi_info;
 // tangent frame) and expands until it reaches the goal, then string-pulls the polyline into explicit
 // bend nodes. Never adds an edge that fails ViaSegmentClear; fails closed on budget/geometry.
 #define BOT_SKEL_BRIDGE_BACKOFF 6.0f   // bend candidates sit this far on the near side of the blocking face
-#define BOT_SKEL_BRIDGE_OFF_BASE 12.0f // first lateral candidate offset from the blocked line (units)
-#define BOT_SKEL_BRIDGE_OFF_STEP 14.0f // offset increment per ring (12 / 26 / 40 / 54)
-#define BOT_SKEL_BRIDGE_RINGS 4        // lateral candidate rings tried per side
-#define BOT_SKEL_BRIDGE_MAX_EXPAND 40  // best-first expansion budget (scratch reached-points) per bridge
+// Lateral candidate rings as multiples of the hull: the first ones fit an 18u duct junction (a 12u
+// sidestep never did — Batteries' ventilation network has 33 elbow/tee boxes with no bend edge), the
+// last ones still span a 40u toroid tube. Every lateral candidate is also tried one hull-and-a-half
+// forward (a diagonal), the only way round a corner in a tight box.
+#define BOT_SKEL_BRIDGE_RINGS 6
+#define BOT_SKEL_BRIDGE_RING_SCALE {0.6f, 1.25f, 2.0f, 3.5f, 6.0f, 8.0f}
+#define BOT_SKEL_BRIDGE_DIAG_STEP 1.5f // forward step of the diagonal candidate, in hull radii
+#define BOT_SKEL_BRIDGE_MAX_EXPAND 64  // best-first expansion budget (scratch reached-points) per bridge
 #define BOT_SKEL_BRIDGE_MAX_BENDS 5    // max bend nodes committed per chain (post string-pull)
 #define BOT_SKEL_BRIDGE_DEDUP 6.0f     // candidates closer than this to an existing reached point are merged
 

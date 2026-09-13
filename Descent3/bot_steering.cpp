@@ -1265,7 +1265,7 @@ static bool SkelCommitChain(int room_idx, int a_idx, int b_idx, const vector *pt
   keep[kn++] = 0; // a
   int anchor = 0;
   for (int i = 1; i < npts - 1; i++) {
-    if (!ViaSegmentClear(room_idx, pts[anchor], pts[i + 1], BOT_PSEUDO_BNODE_RADIUS, nullptr)) {
+    if (!ViaSegmentClear(room_idx, pts[anchor], pts[i + 1], BOT_PSEUDO_BNODE_RADIUS, nullptr, false, FQ_BACKFACE)) {
       if (kn >= BOT_SKEL_BRIDGE_MAX_BENDS + 1)
         return false; // too many bends for one chain — fail closed
       keep[kn++] = i;
@@ -1333,9 +1333,11 @@ static bool SkelBridge(int room_idx, int a_idx, int b_idx, int *pn) {
       break;
     rp[best].done = true;
 
-    // Reached the goal? Reconstruct root..best, append b, commit.
+    // Reached the goal? Reconstruct root..best, append b, commit. Sweeps here are back-face honest:
+    // a bend candidate that landed inside a wall must not read as a clear leg (the old sweep walked
+    // out through the face unseen).
     fvi_info hit{};
-    if (ViaSegmentClear(room_idx, rp[best].pos, b_pos, R, &hit)) {
+    if (ViaSegmentClear(room_idx, rp[best].pos, b_pos, R, &hit, false, FQ_BACKFACE)) {
       vector chain[BOT_SKEL_BRIDGE_MAX_EXPAND + 2];
       int order[BOT_SKEL_BRIDGE_MAX_EXPAND + 2];
       int on = 0;
@@ -1359,9 +1361,12 @@ static bool SkelBridge(int room_idx, int a_idx, int b_idx, int *pn) {
     vm_NormalizeVector(&up);
     vector anchor = hit.hit_pnt - dir * BOT_SKEL_BRIDGE_BACKOFF;
 
+    static const float ring_scale[BOT_SKEL_BRIDGE_RINGS] = BOT_SKEL_BRIDGE_RING_SCALE;
+    const vector diag = dir * (R * BOT_SKEL_BRIDGE_DIAG_STEP);
     for (int ring = 0; ring < BOT_SKEL_BRIDGE_RINGS && rpn < BOT_SKEL_BRIDGE_MAX_EXPAND; ring++) {
-      float off = BOT_SKEL_BRIDGE_OFF_BASE + ring * BOT_SKEL_BRIDGE_OFF_STEP;
-      const vector cands[4] = {anchor + side * off, anchor - side * off, anchor + up * off, anchor - up * off};
+      float off = R * ring_scale[ring];
+      const vector lat[4] = {anchor + side * off, anchor - side * off, anchor + up * off, anchor - up * off};
+      const vector cands[8] = {lat[0], lat[1], lat[2], lat[3], lat[0] + diag, lat[1] + diag, lat[2] + diag, lat[3] + diag};
       for (const vector &c : cands) {
         if (rpn >= BOT_SKEL_BRIDGE_MAX_EXPAND)
           break;
@@ -1375,7 +1380,7 @@ static bool SkelBridge(int room_idx, int a_idx, int b_idx, int *pn) {
             dup = true;
         if (dup)
           continue;
-        if (ViaSegmentClear(room_idx, rp[best].pos, c, R, nullptr))
+        if (ViaSegmentClear(room_idx, rp[best].pos, c, R, nullptr, false, FQ_BACKFACE))
           rp[rpn++] = {c, best, false};
       }
     }
