@@ -514,11 +514,32 @@ static bool ViaSegmentClear(int startroom, const vector &a, const vector &b, flo
 // out through it unseen, which is how Batteries rm80's door read "clear" from inside the room and
 // "blocked" from the hallway (the canonical side), and a duct read clear from one end only. Checked in
 // both directions, because the engine's sweep is directional.
+// fvi cannot start in an RF_EXTERNAL room (a structure's exterior shell — findintersection.cpp asserts on it, and
+// a Release build would sweep the shell's faces as if they were a room). A leg that starts on the outdoor side of a
+// terrain-facing portal starts in the terrain cell under its point instead, the same start BotSegmentClearOutdoor
+// uses. This is the reverse leg of every column the sampler tries on such a portal: Nightmare Castle's hatches open
+// onto the castle exterior, and the first bot aimed at one took the server down. Off the terrain grid there is no
+// valid start at all — the sweep reports blocked, so the portal keeps the engine point.
+static bool SweepStartRoom(int room, const vector &p, int *out) {
+  *out = room;
+  if (ROOMNUM_OUTSIDE(room) || room < 0 || room > Highest_room_index || !Rooms[room].used ||
+      !(Rooms[room].flags & RF_EXTERNAL))
+    return true; // a terrain cell or an interior room: a valid start as-is
+  vector q = p; // GetTerrainCellFromPos takes a mutable vector*
+  const int cell = GetTerrainCellFromPos(&q);
+  if (cell < 0)
+    return false;
+  *out = MAKE_ROOMNUM(cell);
+  return true;
+}
 static bool CrossSweep(int startroom_a, const vector &a, int startroom_b, const vector &b, float radius,
                        fvi_info *hit_out) {
-  if (!ViaSegmentClear(startroom_a, a, b, radius, hit_out, false, FQ_BACKFACE))
+  int sa = -1, sb = -1;
+  if (!SweepStartRoom(startroom_a, a, &sa) || !SweepStartRoom(startroom_b, b, &sb))
     return false;
-  return ViaSegmentClear(startroom_b, b, a, radius, nullptr, false, FQ_BACKFACE);
+  if (!ViaSegmentClear(sa, a, b, radius, hit_out, false, FQ_BACKFACE))
+    return false;
+  return ViaSegmentClear(sb, b, a, radius, nullptr, false, FQ_BACKFACE);
 }
 static vector SkelSideAxis(const vector &dir, const vector &wallnorm); // defined with the skeleton below
 static vector pf_cross_pnt[MAX_ROOMS][MAX_PATH_PORTALS];

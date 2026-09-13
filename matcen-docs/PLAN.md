@@ -380,9 +380,14 @@ would fill.
 ### 3.5 Open, unfixed, lower priority
 
 - **NEXT SPRINT — the outdoor pass (agreed 2026-09-13, after the operator flies the play-test build).**
-  Nothing outdoor was touched by the portal-model sprint, by construction: the crossing sampler skips
-  external rooms (computes an entrance from the indoor side), the engine applies FQ_BACKFACE only in
-  non-external rooms, the outdoor sweep primitive is unchanged, the hunt-route gate skips anything
+  The sprint's "nothing outdoor was touched, by construction" claim was wrong in one place, found the
+  day the operator flew the play-test build: the crossing sampler computes a terrain-facing door from
+  the indoor side, but the reverse leg of every column it tries started its sweep in the door's
+  connected room — the structure's exterior shell — which fvi refuses (`findintersection.cpp:2801`).
+  Nightmare Castle took the server down twice within a minute of load; fixed the same day (an
+  exterior start room becomes the terrain cell under its point, `SweepStartRoom` in bot_steering.cpp),
+  verified on Nightmare Castle and Isengard. The rest of the claim holds: the engine applies
+  FQ_BACKFACE only in non-external rooms, the outdoor sweep primitive is unchanged, the hunt-route gate skips anything
   outside, pane flips need an indoor face, the bend search is per indoor room. Outstanding, from the
   record: the Polaris regression (2026-08-31: 7 caps -> 0, 28 hard stucks, 114 entrance misses; two
   un-isolated candidates — the tight-connector DISAGREE admission, and the wind gate whose single-round

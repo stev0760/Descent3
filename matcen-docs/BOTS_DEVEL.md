@@ -15,6 +15,20 @@ re-landed (`5a94875e`) but not yet validated — unfavorable standalone (batteri
 the flag-room arrival stall and the ~58% connectivity dead-ends. The last stable release is
 **0.9.13** (0.9.11 preceded it; 0.9.12 was never promoted).
 
+### 2026-09-13 (evening): the play-test build crashed on terrain doors — the sampler's outdoor start
+
+The operator flew the play-test build (`c099220f`) for a day — Batteries 6v6, abend2 — and it held; the
+rotation into Nightmare Castle then aborted the server twice within a minute of load. Reproduced in the lab
+under gdb in 66 s: `fvi_FindIntersection` asserts on an `RF_EXTERNAL` start room, called from
+`CrossSweep`'s reverse leg inside `PortalCrossingCompute` — a bot's explore hop aimed at a castle hatch
+whose connected room is the castle's exterior shell. The sampler already computed such doors from the
+indoor side; nobody had asked where the *reverse* sweep starts. Fix: `SweepStartRoom` maps an exterior
+start room to the terrain cell under its point (the outdoor sweep primitive's own start). Verified with
+`SDL_ASSERT=abort` runs, twelve bots, Nightmare Castle and Isengard in parallel (see CHANGELOG), then by the
+operator: two 20-minute cockpit matches on Nightmare Castle and Mysterious Isle, 0 aborts, "working great". Lesson
+for the outdoor pass: the sprint's "indoor-scoped by construction" claim had a hole a single flight
+found; the first outdoor arm must be a bot-populated crash gate on a terrain-door map, not a metric.
+
 ### 2026-09-13: Portal model, slices 2-5 — the crossing is a path, the composer is the consumer
 
 Four Batteries arms in one night, each against the previous build. Slice 1's play gate: Blue 7

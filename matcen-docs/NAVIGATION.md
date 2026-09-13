@@ -908,7 +908,14 @@ chamfered post leave one nose-first line at the leaf's free edge — the old han
 centre, sat BEHIND the leaf) and a DOOR-FIT radius (`BOT_CROSS_FIT_SCALE` 0.92: the engine's contact
 response slides a hull through a gap a few percent narrower than itself — that channel measures 13.0u
 against a 13.35u Pyro, and bots and pilots go through it); a crossing found only at the fit radius is
-reported `crossing_tight`. The network is untouched (lattice/skeleton legs keep the full hull).
+reported `crossing_tight`. (5) Found 2026-09-13 in the operator's play test, not in any soak (Batteries
+and abend2 have no flyable terrain door): the reverse leg of each column started its sweep in the
+connected room, which for a terrain-facing door is the structure's `RF_EXTERNAL` shell — fvi asserts on
+that start (`findintersection.cpp:2801`; a Release build would sweep the shell's faces as a room).
+Nightmare Castle's hatches open onto the exterior; the first bot aimed at one aborted the server within a
+minute of load, twice. `SweepStartRoom` now maps an exterior start room to the terrain cell under the
+point — the start `BotSegmentClearOutdoor` already used — and a point off the terrain grid reports
+blocked (the door keeps the engine point). The network is untouched (lattice/skeleton legs keep the full hull).
 Batteries, bot-free: doors without a crossing 20 -> 6 (three 11u floor hatches — genuinely narrower
 than the hull, never crossed in any log — plus the four intact panes, which have their synthesized
 path); depth histogram 24u 248 / 16u 362 / 8u 140 / 4u 28; network metrics identical to the burst

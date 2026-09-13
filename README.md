@@ -43,8 +43,10 @@ per four rounds, the spawn-room traps found in play are gone, and arms scored 8 
 abend2's ring room, which defeated every earlier attempt, went from 80 stuck episodes to 1 and
 captures per round rose from 0.71 to 1.13 on both teams over eight rounds. Openings narrower than a
 Pyro hull (a propped door, pane grids, floor hatches) are treated as walls; the team that grabs first
-tends to keep the other on defence (a role-policy question, next). Outdoor maps are untouched and
-are the next sprint. The play-test build is `c099220f`.
+tends to keep the other on defence (a role-policy question, next). Outdoor maps are the next sprint;
+the play-test build `c099220f` crashed on maps whose doors open onto terrain (found on Nightmare
+Castle: the new door-crossing check started an outdoor-side sweep inside the building's exterior
+shell), and the fix on top of it is verified on Nightmare Castle and Isengard.
 See [Known limitations](#known-limitations) and the [release notes](matcen-docs/CHANGELOG.md).
 
 ### Features

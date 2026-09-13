@@ -19,8 +19,22 @@ defeated every earlier attempt, captures per round rose from 0.71 to 1.13 on bot
 rounds and the ring room's stuck episodes went from 80 to 1. Known limits: one propped office door
 and three floor hatches on Batteries are narrower than a Pyro and are treated as such; a desk pocket
 in one office still wedges a ship now and then; the team that grabs first tends to keep the other on
-defence for the round (a role-policy question, not navigation). Outdoor maps were not touched and
-are the next sprint. Do not run this as a release yet.*
+defence for the round (a role-policy question, not navigation). Outdoor maps are the next sprint;
+the one outdoor defect the play test found, a server crash on maps whose doors open onto terrain, is
+fixed below. Do not run this as a release yet.*
+
+*   **A door that opens onto the outdoors no longer takes the server down.** The new door-crossing
+    check sweeps each candidate line through a door from both sides. On the outdoor side of a
+    terrain-facing door it started that sweep inside the building's exterior shell, which the engine's
+    collision code refuses: a debug build aborts on the spot, and a release build would have treated
+    the shell's faces as a room. Nightmare Castle's hatches open onto the castle exterior, so the first
+    bot that aimed at one ended the game within a minute of the level loading, twice in one evening's
+    play test. The outdoor side of the sweep now starts from the terrain under the door, as the outdoor
+    route checks always have. Verified on the same build with twelve bots: eight minutes each on
+    Nightmare Castle and Isengard with assertions set to abort, plus a full-map `$nav dump` on both
+    (which computes every door's crossing) — no abort, and all 47 of Isengard's terrain doors got a
+    validated crossing point (46 clear, one none). The operator then flew two twenty-minute matches
+    on the fixed build, Nightmare Castle and Mysterious Isle, without incident.
 
 *   **Bends are found in tight rooms too.** The search that adds bend waypoints between a room's doors
     stepped sideways by fixed 12-to-54-unit amounts, so it never found a way round a corner in a duct
