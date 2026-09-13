@@ -170,6 +170,51 @@ usable route, unsuitable local-target selection, and interruption or handoff of 
 Use that evidence to change the smallest responsible component. Do not start with another graph
 rewrite, timer or tuning collection. Preserve hierarchical routing and engine-owned steering.
 
+#### The committee collapse from here (2026-09-13, 0.9.14-dev at 57aaa31f)
+
+**Where it stands, measured.** Per-level `NAVCONTEND` census (`tools/analyze_bot_log.py`, the
+"committee census" section; or sum the `[level-end]` dump lines), share of the bots' ACTIVE-held time
+by member, sprint start against the current build on Batteries:
+
+| member | 971aa414 (sprint start) | 57aaa31f (now) |
+|---|---|---|
+| `via` — our resolved aim, the one mind | 54% | 96% |
+| `no-route` — engine path takes over | 39% | 0% |
+| `stuck-escape` | 4.5% | 1.9% |
+| `seam`, `path_pnt`, `gridroute`, `hop-commit` together | 2.6% | 2.5% |
+
+One voice drives the ship 96% of the time. The portal-model sprint (NAVIGATION 7.0, slices 1-7)
+was not arbitration work: it made every member agree on the FACTS — portal class, the validated
+crossing, the hand-out point, shattered panes, grates, hull-scaled searches — so the remaining
+disagreements are about policy, not geometry. Collapsing the ladder before that would have collapsed
+it onto wrong geometry, which is the 2026-09-01 wall.
+
+**What remains is small in time and large in code.** The flicker members (`seam`, `path_pnt`,
+`gridroute`, `hop-commit`) hold under 3% of the time but take ~40% of the episodes — thousands of
+grabs a round, each a chance to disagree. The collapse proceeds by SUBTRACTION, one member per
+slice, each gated by the bot-free dumps and both soak maps, in this order:
+
+1. **One in-room planner.** Inside `via` there are still three sub-voices — skeleton via, roadmap
+   via, the composed route — chosen by room type and a line-blocked test. They become one query on
+   the union graph (skeleton nodes and bends, lattice, crossings), with the straight line as
+   string-pulling inside the plan, not a separate branch. This retires one-ladder-many-graphs.
+   Plan caching is the first design question (the composed drive once stalled errands on an
+   unthrottled per-tick search): a plan is computed once and re-planned only on invalidation.
+2. **Seam push and hop commit become the plan's commitment rule.** They exist to stop re-picks at a
+   door; a committed plan that re-plans only on invalidation (room changed, leg blocked, goal moved)
+   does not re-pick.
+3. **Waypoint aim (`path_pnt`) and grid route are the same graph queried from another branch**;
+   they fold into step 1.
+4. **Stuck escape becomes an invalidation signal** plus the physical reverse burst, instead of an
+   actor with its own portal chooser.
+5. **Combat pursuit and powerup chase request destinations from the planner** instead of driving
+   the engine path; the hunt-needs-a-route gate (slice 6b) is the first half of this.
+
+After these the ladder is one function — goal, route, plan, next waypoint — and the census shows one
+member at ~100% with the flicker members gone. Success is measured as fewer committed-but-not-crossed
+hops and no rise in pins, per map, per team; not as substrate usage. The room router stays untouched.
+Nothing here is a `$nav` toggle, and nothing is a per-map fix.
+
 ### 3.0.1 Candidate history (superseded task directions)
 
 **Read this before treating the historical steps below as outstanding work.** Per-entry aim has
@@ -297,6 +342,12 @@ roadmap is a uniform lattice. Nothing privileges the ring corridor over a chord 
 and nothing says "get on the artery, stay on it, branch late."
 
 ### 3.4 Proposed work, in dependency order
+
+**Current order (2026-09-13): the five subtractive steps of "The committee collapse from here" in
+§3.0 — one in-room planner, then commitment, then the waypoint/grid branches, then stuck as
+invalidation, then combat and chase through the planner.** Steps A-D below are the 2026-08-29
+order and are kept for the record: A landed (the 0.9.14 aim-layer fixes); B and C are absorbed by
+step 1 (an arterial preference is a weight on the union graph, not a classifier); D is written off.
 
 **Step A — per-entry-portal aim (prerequisite, do this first).**
 Replace the room-level `RoomBuriedCenter` boolean with a per-entry-portal question: *from the portal

@@ -363,6 +363,9 @@ keeps thrust pointed along the engine's path rather than locking `fvec` on a far
 - **Stuck escape in a one-door room:** the portal toward `explore_dest_room` is excluded, but kept as
   `only_way_in` and used when nothing else passes.
 - **STUCKSTATE** lines carry `state=` (FSM) and `pos=`.
+- **Committee collapse order:** PLAN.md §3.0 "The committee collapse from here" — one in-room planner
+  (union graph, committed plan) first; every other member is retired as subtraction, gated by the
+  census (`tools/analyze_bot_log.py`) showing it silent. Do not add a member.
 - **Bridge search (`SkelBridge`):** fan rings are hull multiples (`BOT_SKEL_BRIDGE_RING_SCALE`), each
   lateral candidate also tried `BOT_SKEL_BRIDGE_DIAG_STEP` hulls forward; sweeps are `FQ_BACKFACE`.
   Any new bounded search around a blocker must scale its steps with the hull, not the room.

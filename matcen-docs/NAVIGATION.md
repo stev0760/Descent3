@@ -997,6 +997,28 @@ rework got one bend only; "the bounded tangent-fan can't trace the curved tube")
 (7 -> 9 nodes, two bends); split rooms 5 -> 4, the rest unchanged.** Gate: the abend2 regression arm
 runs on this build.
 
+**abend2 gate on slice 7 (soak-20260913T065439, 6c17d9bd, 4 rounds vs the f20c050a gate; guard FAIL
+as a unit story — Ninja 68% of the delta, improving).** Escalations 54 -> 29 (0.90 -> 0.48/min), hard
+7 -> 2; **ring room 0: 12 -> 0** (the slice's target — the room is one skeleton component and the
+bots no longer pin in it); rm30 38 -> 26 (24 of them one Red bot, Phantom); committed crossings 1593
+-> 1955. Per team: Blue 14 grabs / 1 capture (1 / 0 in the control) — Blue reaches the red flag
+fourteen times where it used to reach it once, and converts once; Red 3 grabs / 0 captures (11 / 2).
+So the slice moved the map's dynamics rather than one number: Blue's approach is open, Red's grabs
+fell while Red's captures fell from two to none in four rounds — inside abend2's per-arm noise
+(~0.5-0.75 captures per round) but the wrong direction, and 13 of Blue's 14 carriers did not get
+home. Verdict: pins and connectivity PASS, play INCONCLUSIVE at four rounds; a longer abend2
+confirmation (8 rounds, per-team) is queued after the Batteries re-run.
+
+**Committee state, measured (2026-09-13).** Per-level census, share of ACTIVE-held time: `via`
+54% -> 96% from the sprint's start to 57aaa31f; the engine-path fallback (`no-route`) 39% -> 0%;
+`stuck-escape` 4.5% -> 1.9%; the flicker members (`seam`, `path_pnt`, `gridroute`, `hop-commit`)
+2.6% -> 2.5% of the time while taking ~40% of the episodes. The sprint made the members agree on the
+facts; what is left is arbitration, and it goes by subtraction in the order written in PLAN.md §3.0
+("The committee collapse from here"): one in-room planner over the union graph with a committed
+plan, then seam/hop-commit as that plan's commitment rule, then the waypoint/grid branches, then
+stuck as invalidation, then combat pursuit and powerup chase requesting destinations from the
+planner. Measured as fewer committed-but-not-crossed hops with no rise in pins, per map and per team.
+
 **Still open on this line:** the powerup-chase circling class (rm12); a corridor (multi-point)
 hand-out for bent crossings — not needed by any Batteries door after the lip/fit rungs, so deferred;
 the portal class is computed per side (a sky room's window reads as a door from the sky side);
