@@ -1115,7 +1115,12 @@ face 25. So the reverse burst, the escape goal, the composed drive's first leg a
 all fail from inside the wedge, by construction. The burst is now directional: at a hard pin the
 five body directions (reverse, down, up, left, right) are swept 16u at hull radius and the burst
 takes the longest clear one (reverse wins ties); the glass back-off keeps straight reverse. Legal
-thrust as before. Runtime-only; tests green. It rides the final play-test arm with 9 and 9b.
+thrust as before. Runtime-only; tests green. It rides the final play-test arm with 9 and 9b. The
+same command on the other three pin spots: rm80 (1995,-154,2914) — the sweeps toward its door stop
+after 9-14u on the leaf's front (faces 951/1001) and the reverse leg is blocked at 0u by face 1063,
+furniture behind: wedged between the two, the burst has to go up or sideways; rm68 (2445,-75,2540)
+and rm1 (2009,-75,2176) — both AT their vent's approach point, plane and push-through blocked at 0u
+by the intact pane above, which is 9b's case (back straight off, then shoot).
 
 **Committee state, measured (2026-09-13).** Per-level census, share of ACTIVE-held time: `via`
 54% -> 96% from the sprint's start to 57aaa31f; the engine-path fallback (`no-route`) 39% -> 0%;
