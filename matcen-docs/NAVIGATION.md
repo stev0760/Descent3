@@ -1090,6 +1090,22 @@ primitive) instead of firing, and the next reactive tick fires from the guard di
 log line is throttled to one per five seconds per bot. Runtime-only; no network change. It rides the
 final play-test arm together with slice 9.
 
+**Hull-width arm, full (soak-20260913T125938, 43a6fa2a = slice 9 alone, vs the glass re-run; guard
+FAIL as a unit story — Phantom 79%).** The pre-registered grid term passed outright: committed
+crossings at the two pane grids 19 -> 0. Everything else went the wrong way: hard pins 57 -> 81,
+escalations 112 -> 202 (soft 56 -> 124), Blue 9 grabs / 7 captures (17 / 13), Red 1 / 1. Where the
+cost went: rm80 45 (36), rm35 43 (16; three bots, one floor pocket at (1282,-151,2311) that the
+reverse burst returns them to), rm68 30 (new: a 1349-face spawn room whose only exit is a 19x20u
+CEILING VENT — 28 of its 30 pins are 5u under the pane, the rm1 pattern), rm1 26 (one bot under its
+vent), rm12 15. Reading: sealing the decoy grids is right and measurable, but the map's three
+vent-only spawn rooms (rm1, rm68, the conference complex through rm37/rm33's vents) then depend on
+a bot opening a ceiling pane from 5u below, which 9b addresses, and the conference complex funnels
+into rm35's floor pocket, which is a pocket-class problem the burst does not solve (a "sweep from
+here" console trace is the diagnostic to build for it). The candidate arm (9 + 9b) decides the
+play-test build; if it does not beat the glass re-run on pins and captures, the play-test build is
+the 57aaa31f line and slices 9/9b wait for the pocket work — the trade being the operator's observed
+grid trap against the sealed complex's pocket.
+
 **Committee state, measured (2026-09-13).** Per-level census, share of ACTIVE-held time: `via`
 54% -> 96% from the sprint's start to 57aaa31f; the engine-path fallback (`no-route`) 39% -> 0%;
 `stuck-escape` 4.5% -> 1.9%; the flicker members (`seam`, `path_pnt`, `gridroute`, `hop-commit`)
