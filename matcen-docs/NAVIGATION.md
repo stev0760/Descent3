@@ -1054,7 +1054,12 @@ the open suspect: a hull sweep that starts against a wall the bot is scraping ma
 which engages the composed drive more (it did) and changes the aim ladder's choices. Reverted whole;
 the next attempt should make the sweep honest at BUILD time only (a separate primitive for lattice
 growth and probing) and leave the runtime tests as they were, gated the same way. This is the §7.0
-tried-and-reverted ledger's newest entry.
+tried-and-reverted ledger's newest entry. **Its abend2 gate, run for the record after the revert
+(soak-20260913T115850, 4 rounds vs the 8-round confirmation): escalations per level 4.7 -> 0.8, the
+via room 30 from 39 to 2 for the arm, captures Blue 12 / 1 and Red 7 / 2 (0.75 per round against
+1.13, four rounds).** So the honest sweep removed abend2's remaining pin cost while breaking
+Batteries — the opposite signs make the build-time-only retry a high-value first item for the next
+navigation sprint, with the runtime callers examined one at a time.
 
 **Slice 9 — an opening narrower than the hull is not a route (2026-09-13 ~12:50, from the
 operator's flight).** He found his own team's respawns trapped in a spawn room whose "glass door"
