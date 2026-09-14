@@ -15,6 +15,68 @@ re-landed (`5a94875e`) but not yet validated — unfavorable standalone (batteri
 the flag-room arrival stall and the ~58% connectivity dead-ends. The last stable release is
 **0.9.13** (0.9.11 preceded it; 0.9.12 was never promoted).
 
+### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
+
+8 bots hotshot, PPS 40, one round per map (15-min CTF, 10-min anarchy), fellowship all 9 levels first. Logs
+`soak-20260913T194725` … `soak-20260914T033955`; analysis in `<lab>/overnight-20260913/analysis/`. No segfault,
+no core (the game's `fatal_signal_handler` catches the assert trap, so `SDL_ASSERT=break` never reaches
+systemd-coredump — use gdb for stacks). **Four soaks died on engine ASSERTs, none of them nav:**
+`bump_two_objects` zero mass (Testing Complex, 7 min in — clamped one line later, so Release is unaffected),
+`check_hit_obj` zero-size hit object (Pacbox, 1.5 min — Release divides by zero into the hit normal: real
+corruption risk), `do_physics_sim` thrust-with-zero-drag (Subway Dancer, 30 s — Release runs on), and Centroid's
+archive missing its own `centroidmain.wav` (sound-page assert at load; Release plays silence). Stacks (gdb chain,
+`<lab>/overnight-20260913/gdb-*.out`), all three reproduced: Testing Complex = engine `collide_player_and_weapon`
+→ `bump_two_objects` with the WEAPON's mass 0 (m1 24, m2 0; the engine clamps it on the next line — Debug-only
+nuisance, no bot code on the stack); Pacbox = engine `do_physics_sim` → `fvi_FindIntersection` → `check_hit_obj`
+hit object 133 with size 0 at the identical position (Release divides by zero into `hit_wallnorm`; no bot code
+on the stack; the size-0 object is unidentified — a bot-free dump lists no objects); Subway Dancer = a ship
+object with `PF_USES_THRUST` and drag 0 four seconds after load — its modded physics tables. **Operator rulings
+(2026-09-14): modded-weapon maps (Subway Dancer crashes PiccuEngine and upstream too) and custom single-player
+missions are OUT OF SCOPE for crash chasing and out of the map pools; the stacks stay on record.**
+
+| map | mode | caps | kills | stucks (hard) | conv B / R | read |
+|---|---|---|---|---|---|---|
+| Shire / Isengard / Bree / Moria | CTF | 3 / 0 / 0 / 3 | 4 / 0 / 5 / 3 | 7(0) / 22(5) / 9(4) / 11(4) | R 3/6; B 0/1; B 0/4; B 3/7 | outdoor baseline, §3.7 |
+| Dark Journey / Gollum / Dwarrowdelf / Leap / Khazad | CTF | 0 / 4 / 4 / 0 / 1 | 11 / 9 / 5 / 13 / 3 | 1 / 0 / 3(1) / 0 / 11(2) | 0/4; 4/11; 4/19; 0/3; 1/5 | reach fine, conversion mixed |
+| KegD3 | CTF | 16 | 13 | 0 | B 4/17, R 12/29 | regression tier healthy |
+| Skybox | CTF | 7 | 15 | 0 | B 3/16, R 4/18 | clean, even |
+| Xemedia | CTF | 48 | 11 | 0 | B 39/47, R 9/12 | capture fest, lopsided (map?) |
+| Metropolis | CTF | 3 | 1 | 13(3) | B 1/2, R 2/5 | low action |
+| Testing Complex | CTF | 2 in 7 min | 0 | 0 | B 2/5 | ABORT (bump_two_objects) |
+| Pacbox | CTF | 0 in 1.5 min | 2 | 0 | 0/5 | ABORT (check_hit_obj) |
+| Facing Worlds | CTF | 0 | 3 | 0 | — | void-room class (§3.7 registered) |
+| Two Worlds | CTF | 0 | 0 | 125(7) | — | RETIRED by operator (scripted, huge) |
+| Ascent / Kata / Pillars / Zeta / Uxmal / Tri-Pod / Indika / Minerva | anarchy | — | 9/11/25/8/8/10/8/13 | ≤1 | — | all clean |
+| Subway Dancer | anarchy | — | 1 in 30 s | 0 | — | ABORT (do_physics_sim) |
+| Centroid | anarchy | — | — | — | — | never loaded (missing .wav) |
+| bedlam team / hyper / robo / anarchy | modes | — | 3+3 / 39+38 / 2+29 / 9+6 | ≤4 | — | clean |
+| Dementia (Entropy, 20 min) | entropy | 0 takeovers | 52 | 0 | 25 virus pickups, 37 lost in 13 deaths | collects, never takes |
+| Frenzy PowerHouse / Veins | monsterball | 5 / 0 goals | — | 0 / 1 | — | arena scores, corridor not |
+
+**Daytime pairing (2026-09-14, fellowship 30-min rounds, `soak-20260914T082446.log`, vs the 15-min baseline
+above; caps / grabs / kills / stucks(hard) / entrance-miss):** Shire 3/6/4/7(0)/33 → **12/19/13/11(0)/62** (both
+teams convert, 18 flag episodes, 50 s of both-flags-out standoffs — the healthy outdoor comparator); Isengard
+0/1/0/22(5)/42 → **0/2/2/62(4)/172** (time changes nothing: bots still never meet); Bree 0/4/5/9(4)/23 →
+**0/6/5/22(6)/104, 97 ground-pinned** and all 5 episodes silent returns again — 10 grabs across both runs, zero
+conversions, every one a dropped flag nobody recovered: the outdoor return trip fails; Moria 3/7/3/11(4)/60 →
+0/7/6/24(4)/84 with 6 of 7 episodes announced returns (interception, not nav); Dark Journey 0/4/11/1 → 3/12/20/1;
+Gollum 4/11/9/0 → 8/24/13/0; Dwarrowdelf 4/19/5/3 → 3/36/15/0 with **Red 0 of 24 grabs across both runs**;
+Leap of Faith 0/3/13/0 → 0/8/14/0 (carriers die ~950u from home, both runs zero); Khazad 1/5/3/11 → 2/5/6/21(5).
+Capture rate is flat at ~6/h across both round lengths. Verdict: Isengard and Bree are structural, exactly the
+two deep-dig loops; Shire proves the outdoor stack can work when the doors are honest.
+Rest of the daytime block (all clean, block ended 15:51): **Havoc** 15-min — Orbital 23 caps (B 14/20, R 9/20),
+RudeAwakening 3 (B 3/3), SewerRat 1, SlavePit 0 (12 kills, 45 objective arrivals, ZERO grabs — arrival-stall
+class), CanyonsCTF 0/3, DownTown 0 caps 0 kills (no contact, DEST_CHURN); **Skybox** 2x20 — 15 caps (B 7/50, R
+8/31), 33 kills, 0 stucks, 63 carrier deaths at 278u (contested, even); **Entropy** Dementia 45 min, 12 bots — 0
+takeovers, 122 kills, 59 virus pickups, 76 viruses lost in 27 deaths, 25 invade-nav legs, 4 room picks, 0 stucks
+(bots run the economy and the invasion leg and die before a hold completes). Phase 0 binary (836f2f75-dirty)
+deployed to the lab at 17:55, lockstep verified.
+
+Operator rulings from the night: Two Worlds retired; Nightmare Castle captures 1v1/2v2 only; fellowship 15-min is
+the outdoor-pass baseline, the 30-min daytime rotation pairs with it; Bree + Isengard standalone missions are the
+deep-dig loops. Facing Worlds characterised bot-free: no terrain, no external rooms — two 650x1250u interior rooms
+(room 0: 31 portals, skeleton 9 components, lattice one routable component); an indoor-planner case.
+
 ### 2026-09-13 (evening): the play-test build crashed on terrain doors — the sampler's outdoor start
 
 The operator flew the play-test build (`c099220f`) for a day — Batteries 6v6, abend2 — and it held; the

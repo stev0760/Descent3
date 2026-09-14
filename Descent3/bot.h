@@ -584,6 +584,14 @@ struct bot_info {
   bool hunt_route_ok;
   float hunt_route_time; // Gametime until which a hard pin drives pure reverse thrust (0.9.14)
   vector hop_commit_aim; // the push-through point issued (outcome telemetry)
+  // 0.9.14 outdoor pass, Phase 0 (PLAN.md 3.7): the entrance twin of the hop-commit observer. Set when an
+  // outdoor bot commits THROUGH a terrain-facing door (the ENTRY stage); resolved in BotDoFrame when its
+  // roomnum flips indoors (CROSSED) or the timeout passes still outside (NOT-CROSSED). Log-only.
+  int entry_commit_room;   // door room committed to; < 0 = no pending entry commit
+  int entry_commit_portal; // that room's terrain-facing portal index
+  float entry_commit_time; // Gametime at commit
+  vector entry_commit_pos; // bot position at commit
+  vector entry_commit_aim; // the push-through point issued
 
   // Intra-room via-point steering (Phase 12) — committed go-around waypoint state
   vector via_point;        // committed go-around waypoint (valid while Gametime < via_expires)

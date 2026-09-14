@@ -47,7 +47,7 @@ not part of the latest validation. Config-file rosters, five difficulty levels, 
 `$nav` diagnostics, `$servercaps`, and the in-client Bot Settings menu have shipped.
 
 **The one thing standing between here and done is navigation.** Everything else is either finished
-or small. Bots fight well and travel badly, and travel has consumed roughly three months.
+or small. (2026-09-14 sweep on `836f2f75`, 33 maps: interior classics, bedlam modes, Entropy and Monsterball run clean; the outdoor fellowship set is the open front (§3.7); four Debug-build engine asserts on Testing Complex, Pacbox, Subway Dancer and Centroid are registered in BOTS_DEVEL — one of them, a zero-size hit object, is a Release-build division by zero and needs a stack before R1.) Bots fight well and travel badly, and travel has consumed roughly three months.
 
 ### Honest status of the remaining work
 
@@ -399,7 +399,7 @@ would fill.
   the play-test build (turn "indoor-scoped by construction" into a measurement); (2) the one-hour
   admission A/B; (3) extend the crossing model to entrances, sweeping from the indoor side outward;
   (4) a longer paired wind run. Same discipline: bot-free dumps first, then arms with pre-registered
-  terms, per map.
+  terms, per map. **Preliminary strategy for the sprint: §3.7.**
 - **Items the hull cannot reach are never chased (next sprint, small).** The operator found a rapid-fire
   powerup under a table on Batteries (room 27, dump verdict "review": approaches blocked by same-room
   geometry; 49 items carry that verdict on the map). The chase retires an item only after three failed
@@ -464,6 +464,110 @@ so far (one-mind aim, seam-gate, next-hop commit) was designed and validated by 
 turns that into design-and-verify **by eye** — the operator watches the exact path a bot commits to
 and where it breaks, live — which de-risks every future nav change and is the tool that lets us stop
 guessing. That is why it moves ahead of the lower-priority items above.
+
+### 3.7 Outdoor terrain nav unification — preliminary strategy (2026-09-13, written during the overnight sweep)
+
+**Scope.** The next sprint after the portal model. Read together with §3.5's outdoor item (the sequence there
+stands and is folded in below) and NAVIGATION §3.7 / §4.1 / §4.3. Nothing here is built; the operator directs.
+
+**What the code is today (read 2026-09-13, build 836f2f75).** Outdoors is the indoor committee's twin, with
+three copies of the same dispatch and three graphs answering one question:
+
+| Site | What it does outdoors | Graph it consults |
+|---|---|---|
+| `BotSetRoutedGoal` outdoor branch (bot.cpp ~3236) | `BotTrouteRedirect` (door-pair composer, v2 cost-compare) → `BotOutdoorEntranceStage` (standoff 12u out, then push 25u in) → `BotOutdoorRouteLeg` (lattice waypoint toward the standoff) | `BOA_connect` doors + region lattice |
+| `BotViaPointTick` → `BotFindViaPoint` outdoor branch (bot_steering.cpp ~2615) | reactive rings (±side/±up, ceiling-aware) → `BotRoadmapFindViaOutdoor` → `BotOutdoorGraphHop` (entrance nodes + perimeter anchors, soft hop) | region lattice (goal = **Euclidean**-nearest node) / OGraph |
+| `BotDoExploreRoaming` outdoor branch (bot.cpp ~3525) | its own entrance stage + via tick + lattice leg, and explore candidates from `BOA_connect` | same as row 1, copied |
+
+Every one of them aims at a door through **one unvalidated point** — `path_pnt ± normal·k` — the exact
+portal-is-a-point defect the indoor sprint just retired. The crossing sampler already computes a validated
+crossing for terrain-facing doors (Isengard: 46 of 47 after the 2026-09-13 crash fix); **nothing outdoors
+reads it.** Engine facts that bound the design: `BOA_connect` holds at most 40 doors per region (Isengard has
+47 — the engine drops 7 with an editor-only warning, and its own terrain AI never sees them); at most 8
+regions; fellowship levels use two (Shire/Isengard/Moria show bots in regions 0 and 1), and the composer has
+no region↔region edge; `BotRoadmapFindViaOutdoor` attaches the goal to the Euclidean-nearest lattice node while
+the indoor query insists on a hull-visible one (a documented wrong-side-of-a-wall trap).
+
+**What the baseline says (fellowship 15-min 4v4, `soak-20260913T194725.log`, the outdoor-pass baseline).**
+- Outdoor stucks are the entrance-miss class on every outdoor level: 33/33 Shire, 42/43 Isengard, 23/32 Bree,
+  60/62 Moria "routed into a structure"; ground-pinned 14 / 26 / 20 / 29.
+- The census outdoors: `via` holds 86-98% of time; `outdoor-entry` and `outdoor-leg` take hundreds of
+  episodes and hold ~0 s (Bree: 312 and 274 episodes, 1 s and 0 s) — the reactive via overwrites the planned
+  destination on the same tick. `troute` composes 18-21 plans per level but completes 0-4; it "keeps interior"
+  188-360 times per level (the comparison runs on nearly every issue and loses). Outdoor via detours 330-562
+  per level are the actual outdoor pilot.
+- Isengard: 0 captures, **0 kills**, 89 of ~140 travel intents end `unreach` — which is the stuck-escape /
+  progress-timeout ending, not a router verdict; 13 escalations in room 36 (the concave magnet-item room).
+  Bots never reach each other, so no fight; a longer round will not change that.
+- Bree: 4 grabs, 0 captures, all four Red-flag episodes ended as silent 120 s returns — the carrier died and
+  no bot recovered the dropped flag. Return-nav failure is NOT established by this round (dropped-flag
+  recovery is a role question; register it). The 30-min daytime rerun decides.
+- Shire 3 caps (50% conv.) and Moria 3 caps (43%) are the healthy comparators.
+
+**Principle.** Outdoors is not a separate navigation problem; it is the same network with one more tier, and
+it gets the same treatment that worked indoors, in the same order: (1) make every layer agree on the FACTS at
+the boundary (the door is a validated crossing), (2) one network per region (arterials + local streets in one
+graph), (3) one route across the boundary, (4) then collapse the dispatch by subtraction. Not the reverse
+order — collapsing onto wrong geometry is the 2026-09-01 wall. No new `$nav` toggles; no per-map fixes; the
+engine steers; the 40-door cap is accepted.
+
+**Phase 0 — baselines and instruments (no behaviour change).** Pair tonight's 15-min fellowship with
+tomorrow's 30-min rotation per level; take bedlam/Polaris on 836f2f75 (§3.5 step 1) and run the one-hour
+DISAGREE-admission A/B so bedlam's baseline is not carrying a known regression. Add to `analyze_navdump.py` a
+terrain-door section (doors per region, dropped past 40, crossing_ok, approach point hull-clear from the
+lattice) and to `analyze_bot_log.py` an entrance-commit outcome (ENTRY commits → crossed / not-crossed, the
+indoor hop-commit observer extended to entrances). Pre-registered metric set per outdoor level: entrance-miss
+share of outdoor stucks, ground pins, ENTRY commits crossed, carrier outdoor seconds per grab, grabs and
+conversion. Symmetry is not judged on fellowship (user-made, asymmetric).
+**Phase 0 landed 2026-09-14 (tools + a log-only observer, build 836f2f75-dirty, deployed after the daytime block):**
+`analyze_navdump.py` "Terrain doors" section (doors vs windows onto the exterior, the engine's 40/region table,
+crossing verdicts, legacy-approach seed check, validated-vs-legacy approach delta) and `analyze_bot_log.py`
+"Entrance Commits" section + `ENTRANCE_COMMIT_FAIL` tag (server observer line `entrance outcome:` on new builds;
+an inferred outcome on older logs). First readings: **Isengard's room 18 has six terrain doors and all six sit
+beyond the engine's 40-door table** — that structure is invisible to every outdoor layer and to the engine's own
+terrain AI; **Nightmare Castle's region lattice is seeds-only (6 nodes) — growth produced no cells**; the sampler's
+validated approach point sits a mean **20u** (Isengard, all 47 doors) / **46u** (Nightmare) from the legacy point
+every consumer aims at — Phase 1 moves the aim at every door. Entrance-commit baseline (inferred, both fellowship
+runs): Shire 11/11 crossed, Moria 2/2, **Isengard 5/19 (rm7 fails 8x, rm3 3x)**, **Bree 0/5 (bot stays outdoors,
+doors rm57/rm62)**; commits are rare next to misses (Isengard 16 commits vs 172 miss-stucks in 30 min), so the
+standoff point itself is where most entrances die — Phase 1's prediction is measured at both stages.
+
+**Phase 1 — the door at the boundary is a validated crossing (§3.5 item 3, made concrete).** Its substrate is a bot-side terrain-door table (`bot_steering.cpp`: the same exterior-room portal walk `MakeBOA` does, UNCAPPED, keyed by the region under the door's approach point) that replaces `BOA_connect` in every outdoor consumer — the operator's answer to the engine's 40-door cap (2026-09-14): route around engine limits in our files, never raise `MAX_PATH_PORTALS` (it is baked into the level-file BOA chunk). Verify no outdoor leg still asks the BOA for reachability, since the BOA says "no path" into any door past its table. The entrance
+stage's standoff and push-through become the sampler's approach and push-through points for that door
+(computed from the indoor side, which is already the canonical side); `BotTerrainConnectPassable` gains the
+portal class (hull-width rule, windows out); OGraph entrance nodes, lattice seeds and the troute door approach
+all read the same point. One slice, gated bot-free on the terrain-door section, then paired arms on
+Isengard/Moria/Shire and bedlam. Prediction: entrance-miss share and not-crossed ENTRY commits fall on all
+four; if Isengard's stucks do not move, its blocker is inside (room 36 class), not at the door.
+
+**Phase 2 — one outdoor network per region.** `EnsureUnionGraph` for `rr->outdoor`: OGraph nodes as
+arterials, the region lattice as local streets, ramps as indoors; the outdoor via query attaches to the
+hull-visible nearest node (parity with indoor). Lift `BotComposeRoomRoute`'s `OBJECT_OUTSIDE` guard so the
+composer plans the terrain leg to the validated door crossing; rings remain the reactive rescue. Gate: region
+union components on the bot-free dump, then the paired arms. Prediction: `outdoor-leg`/`gridroute` episodes
+fall into the composed route; ground pins fall on Bree (facade presses).
+
+**Phase 3 — one route across the boundary.** troute's 3-segment plan becomes the planner's cross-tier
+route: interior union route → door crossing → outdoor union route → door crossing → interior. Its door-pair
+scorer (interior cost + Theta* lattice cost + interior cost) stays; its executor (seg0/seg1, the monotone
+watermark, the forced entry door) becomes the plan's commitment rule, exactly as seam/hop-commit do indoors
+(§3.0 step 2). Region↔region edges only if Phase 0 shows cross-region legs on fellowship. Prediction: troute
+completions rise from 0-4 per level toward the adoption count; carrier outdoor seconds per grab fall on Bree.
+
+**Phase 4 — collapse the outdoor dispatch.** The ladder's outdoor branch, the explore outdoor branch and the
+via's outdoor branch fold into the one planner; `outdoor-entry`, `outdoor-leg` and `troute` stop being census
+members and become plan segments. Success is the census reading one member outdoors with entrance-miss and
+ground pins not rising — never substrate usage.
+
+**Sequencing against the indoor collapse (§3.0 steps 1-5).** Phases 1-2 are independent of the indoor step 1
+and can go first (they are fact-alignment, the cheap kind). Phases 3-4 are the outdoor half of steps 2-5 and
+should land with them, not before.
+
+**Registered, not in this sprint:** dropped-flag recovery (Bree: four uncollected drops in one round);
+Isengard room 36 (the concave item room, 13 escalations — the reach gate's item-reach verdict said REACHABLE
+for the Superlaser there on Nightmare Castle's twin class; re-check the same-room approach on Isengard);
+Nightmare Castle captures (choke points, 1v1/2v2 only — operator ruling); the engine's 40-door cap; **Facing Worlds** (first flight 2026-09-13: 0 caps, no pins) is NOT an outdoor case — its "void" is two giant interior rooms (650x1250u, no terrain, no external rooms; room 0's skeleton is 9 components, lattice one routable component, rings cannot round a 135u tower): the void-room class belongs to the indoor planner (§3.0 step 1) — DownTown (Havoc; rooms up to 1581x819x611u, one sealed sky box, bots never met in 15 min) and Kartoon Kanyon's canyon rooms (RF_TOUCHES_TERRAIN, 257x59x144u) are the same class. **Kartoon Kanyon also breaks the engine's 40-portals-per-room cap (45 each in rooms 1 and 14): our per-portal caches treat portals >= 40 as out-of-range (impassable) — size the bot-side caches past 40 as part of the door-table work; the engine's own `BOA_cost_array` row overrun there is an engine defect we route around, not fix.** The door-table cap bites Isengard (47), Canyons and DownTown (both full at 40). Two Worlds retired by the operator (scripted, very large).
+
 
 ---
 

@@ -3214,6 +3214,7 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   // the path_pnt (today's behavior). Indoor only — outdoors the region roadmap already runs via the reactive
   // BotViaPointTick above. Carriers share this function, so this is also the "escape out of the structure" fix.
   bool nav_dest_overridden = seam_redirect; // §7: seam already counted at assertion time, above
+  int entry_room_c = -1, entry_portal_c = -1; // Phase 0 entrance observer: which door the ENTRY stage committed to
   if (seam_redirect) {
     // 0.9.7 seam guard: aim just past the direct portal, claimed in the CURRENT room — a
     // same-room goal gives the engine nothing to BOA-path (and detour) on; it steers straight
@@ -3235,7 +3236,7 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
       BotNavMemberWin(bot_index, NAV_MEMBER_GRIDROUTE); // §7
     }
   } else if (bool entry_commit = false;
-             BotOutdoorEntranceStage(obj, goal_room, &dest, &dest_room, nullptr, nullptr, &entry_commit,
+             BotOutdoorEntranceStage(obj, goal_room, &dest, &dest_room, &entry_room_c, &entry_portal_c, &entry_commit,
                                      troute_active ? Bots[bot_index].troute_entry_room : -1,
                                      troute_active ? Bots[bot_index].troute_entry_portal : -1)) {
     // Phase 8.2: outdoor leg to an INTERIOR goal — carrier home run, escort/order anchor. These
@@ -3254,6 +3255,13 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
     else
       LOG_DEBUG.printf("BOT NAV: '%s' outdoor entrance %s -> room %d (goal %d)", Bots[bot_index].callsign,
                        entry_commit ? "ENTRY" : "approach", dest_room, goal_room);
+    if (entry_commit && Bots[bot_index].entry_commit_room < 0) {
+      Bots[bot_index].entry_commit_room = entry_room_c;
+      Bots[bot_index].entry_commit_portal = entry_portal_c;
+      Bots[bot_index].entry_commit_time = Gametime;
+      Bots[bot_index].entry_commit_pos = obj->pos;
+      Bots[bot_index].entry_commit_aim = dest;
+    }
   } else if (BotOutdoorRouteLeg(obj, dest, dest_room, &dest, &dest_room)) {
     // Terrain track piece 2: the outdoor analog of the branch above — the leg to the goal is
     // terrain-blocked, so aim at the region lattice's next waypoint instead of the beeline.
@@ -3563,10 +3571,17 @@ static void BotDoExploreRoaming(int bot_index) {
           Bots[bot_index].explore_dest_room = ent_room;
           Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
           BotSetTravelDest(bot_index, ent_room, TRAVEL_OWNER_EXPLORE, TRAVEL_END_REPLACEMENT);
-          if (entry_commit)
+          if (entry_commit) {
             LOG_DEBUG.printf("BOT NAV: '%s' entrance ENTRY commit -> room %d portal %d (obj %d)",
                              Bots[bot_index].callsign, ent_room, ent_portal, obj_room);
-          else if (routed)
+            if (Bots[bot_index].entry_commit_room < 0) { // Phase 0 entrance observer (see BotDoFrame)
+              Bots[bot_index].entry_commit_room = ent_room;
+              Bots[bot_index].entry_commit_portal = ent_portal;
+              Bots[bot_index].entry_commit_time = Gametime;
+              Bots[bot_index].entry_commit_pos = obj->pos;
+              Bots[bot_index].entry_commit_aim = gi_info.pos;
+            }
+          } else if (routed)
             LOG_DEBUG.printf("BOT NAV: '%s' outdoor-route wp (entrance room %d, %.0fu leg)", Bots[bot_index].callsign,
                              ent_room, vm_VectorDistanceQuick(&obj->pos, &ent_pos));
           else
@@ -7902,6 +7917,9 @@ void BotInitAll() {
     Bots[i].hop_commit_portal = -1;
     Bots[i].hop_commit_src = -1;
     Bots[i].hop_commit_time = 0.0f;
+    Bots[i].entry_commit_room = -1;
+    Bots[i].entry_commit_portal = -1;
+    Bots[i].entry_commit_time = 0.0f;
     BotClearViaChain(i);
     Bots[i].order_anchor_type = ORDER_ANCHOR_NONE;
     vm_MakeZero(&Bots[i].order_anchor_pos);
@@ -8080,6 +8098,9 @@ void BotReinitAll() {
     Bots[i].hop_commit_portal = -1;
     Bots[i].hop_commit_src = -1;
     Bots[i].hop_commit_time = 0.0f;
+    Bots[i].entry_commit_room = -1;
+    Bots[i].entry_commit_portal = -1;
+    Bots[i].entry_commit_time = 0.0f;
     BotClearViaChain(i);
     Bots[i].order_anchor_type = ORDER_ANCHOR_NONE;
     vm_MakeZero(&Bots[i].order_anchor_pos);
@@ -8344,6 +8365,9 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
 
   // --- Populate bot_info fields needed by BotConfigureAI (reads player_slot, difficulty) ---
   Bots[bot_index].active = true;
+  // Observers idle for a bot added mid-game (the level reinit is what normally clears them).
+  Bots[bot_index].hop_commit_wp = -1;
+  Bots[bot_index].entry_commit_room = -1;
   Bots[bot_index].player_slot = slot;
   Bots[bot_index].difficulty = difficulty;
 
@@ -8585,6 +8609,28 @@ void BotDoFrame() {
         BotRespawn(i);
       }
       continue;
+    }
+
+    // Outdoor pass Phase 0: entrance-commit outcome (log-only), the terrain-door twin of the block
+    // below. CROSSED = the bot's roomnum flipped indoors (into the committed door room or a neighbour —
+    // both are recorded); NOT-CROSSED = still outdoors past the hop timeout. Cleared on death/reinit.
+    if (Bots[i].entry_commit_room >= 0) {
+      object *eobj = &Objects[Players[slot].objnum];
+      if (!OBJECT_OUTSIDE(eobj)) {
+        LOG_DEBUG.printf("BOT NAV: '%s' entrance outcome: CROSSED rm%d portal %d (%.1fs, into rm%d)", Bots[i].callsign,
+                         Bots[i].entry_commit_room, Bots[i].entry_commit_portal, Gametime - Bots[i].entry_commit_time,
+                         (int)eobj->roomnum);
+        Bots[i].entry_commit_room = -1;
+      } else if (Gametime - Bots[i].entry_commit_time > BOT_HOP_OUTCOME_TIMEOUT) {
+        LOG_DEBUG.printf("BOT NAV: '%s' entrance outcome: NOT-CROSSED rm%d portal %d (%.1fs, still outdoors) "
+                         "from=(%.0f,%.0f,%.0f) aim=(%.0f,%.0f,%.0f) now=(%.0f,%.0f,%.0f)",
+                         Bots[i].callsign, Bots[i].entry_commit_room, Bots[i].entry_commit_portal,
+                         Gametime - Bots[i].entry_commit_time, Bots[i].entry_commit_pos.x(),
+                         Bots[i].entry_commit_pos.y(), Bots[i].entry_commit_pos.z(), Bots[i].entry_commit_aim.x(),
+                         Bots[i].entry_commit_aim.y(), Bots[i].entry_commit_aim.z(), eobj->pos.x(), eobj->pos.y(),
+                         eobj->pos.z());
+        Bots[i].entry_commit_room = -1;
+      }
     }
 
     // 0.9.14 hop-commit outcome telemetry (log-only): resolve a pending committed crossing against

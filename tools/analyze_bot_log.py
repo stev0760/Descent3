@@ -57,6 +57,39 @@ RE_VIA_FAIL_DIAG = re.compile(
 # 0.9.14 hop-commit outcome: CROSSED = the committed crossing happened; NOT-CROSSED = gave up.
 RE_HOP_OUTCOME = re.compile(r"hop outcome: (CROSSED|NOT-CROSSED) rm(-?\d+) -> rm(-?\d+) via portal (-?\d+) "
                             r"\(([\d.]+)s(?:, now rm(-?\d+))?\)")
+# Outdoor pass Phase 0 (PLAN.md 3.7): entrance commits — an outdoor bot committing THROUGH a terrain door.
+# Two commit lines exist (the goal ladder's outdoor branch and the explore entrance-seek); the observer
+# line is the server-side outcome (builds after 836f2f75). Older logs get an INFERRED outcome instead:
+# the bot's next room-revealing line within ENTRY_INFER_WINDOW seconds decides crossed (interior room)
+# or not (still room -1 / timeout / a re-commit).
+RE_ENTRY_COMMIT = re.compile(r"(?:entrance ENTRY commit -> room (-?\d+) portal (-?\d+)|outdoor entrance ENTRY -> room (-?\d+) \(goal)")
+RE_ENTRY_OUTCOME = re.compile(r"entrance outcome: (CROSSED|NOT-CROSSED) rm(-?\d+) portal (-?\d+) \(([\d.]+)s")
+RE_ROOM_EVIDENCE = [re.compile(x) for x in (
+    r"via-point reached \(room (-?\d+)\)", r"roadmap route in room (-?\d+)", r"skeleton via in room (-?\d+)",
+    r"roadmap via in room (-?\d+)", r"via-point detour in room (-?\d+)", r"carrier nav room (-?\d+)",
+    r"chain built rm(-?\d+)", r"composed route rm(-?\d+)", r"stuck escalation \(room (-?\d+)",
+    r"BOT PRESS: '[^']+' rm(-?\d+)", r"hop outcome: (?:CROSSED|NOT-CROSSED) rm(-?\d+)")]
+ENTRY_INFER_WINDOW = 20.0
+RE_TS_HMS = re.compile(r"(\d\d):(\d\d):(\d\d)\.(\d+)")
+
+
+def _ts_seconds(ts):
+    m = RE_TS_HMS.search(ts or "")
+    if not m:
+        return None
+    return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3)) + float("0." + m.group(4))
+
+
+def _entry_resolve(s, bot, why, elapsed):
+    """Close a pending inferred entry commit for `bot` as NOT-CROSSED (why = recommit/timeout/outdoors)."""
+    pend = s["entry_pending"].pop(bot, None)
+    if pend is None:
+        return
+    s["entry_not_crossed"] += 1
+    s["entry_rooms_failed"][pend[0]] += 1
+    s["entry_fail_why"][why] += 1
+
+
 # 0.9.14 objective arrival telemetry: item identity + distance + the aim actually flown.
 RE_ARRIVED_OBJ = re.compile(r"ARRIVED at objective room (-?\d+) \(t=([\d.]+)s\) — item='([^']*)' obj=(-?\d+) "
                             r"d_item=(-?[\d.]+) steer rm(-?\d+) d=(-?[\d.]+)")
@@ -385,6 +418,14 @@ def new_map_stats():
         "hop_crossed": 0,                    # the bot reached the committed waypoint room
         "hop_not_crossed": 0,                # timed out / diverted without reaching it
         "hop_not_crossed_portals": Counter(), # "fromrm->wp" -> count (which door keeps failing)
+        # Outdoor pass Phase 0: entrance commits (terrain doors) and their outcome.
+        "entry_commits": 0,
+        "entry_crossed": 0,
+        "entry_not_crossed": 0,
+        "entry_rooms_failed": Counter(),     # door room -> not-crossed count
+        "entry_fail_why": Counter(),         # recommit / timeout / outdoors (inferred only)
+        "entry_pending": {},                 # bot -> (door room, commit time) while inferring
+        "entry_src": "inferred",             # "observer" once a server outcome line is seen
         # 0.9.14 objective-arrival telemetry: what the ARRIVED declaration actually observed.
         "arrived_obj": 0,                    # enriched ARRIVED lines (new build only)
         "arrived_rooms": Counter(),
@@ -551,6 +592,51 @@ def parse_log(path):
                     if md.group(6) == "1":
                         s["via_fail_forcefield"] += 1
                 continue
+
+            m = RE_ENTRY_OUTCOME.search(line)
+            if m:
+                if s["entry_src"] != "observer":
+                    s["entry_src"] = "observer"
+                    s["entry_crossed"] = s["entry_not_crossed"] = 0   # drop any inferred counts: the server knows
+                    s["entry_rooms_failed"].clear(); s["entry_fail_why"].clear(); s["entry_pending"].clear()
+                if m.group(1) == "CROSSED":
+                    s["entry_crossed"] += 1
+                else:
+                    s["entry_not_crossed"] += 1
+                    s["entry_rooms_failed"][int(m.group(2))] += 1
+                continue
+
+            m = RE_ENTRY_COMMIT.search(line)
+            if m:
+                s["entry_commits"] += 1
+                if s["entry_src"] != "observer":
+                    mb = RE_BOT_NAME.search(line)
+                    t = _ts_seconds(last_ts)
+                    if mb and t is not None:
+                        _entry_resolve(s, mb.group(1), "recommit", 0.0)
+                        s["entry_pending"][mb.group(1)] = (int(m.group(1) or m.group(3)), t)
+                # not consumed: the terrain-stuck accumulators below may read this line too
+
+            if s["entry_pending"] and s["entry_src"] != "observer":
+                mb = RE_BOT_NAME.search(line)
+                if mb and mb.group(1) in s["entry_pending"]:
+                    bot = mb.group(1)
+                    t = _ts_seconds(last_ts)
+                    room = None
+                    for rx in RE_ROOM_EVIDENCE:
+                        me = rx.search(line)
+                        if me:
+                            room = int(me.group(1))
+                            break
+                    if room is not None and t is not None:
+                        elapsed = t - s["entry_pending"][bot][1]
+                        if room >= 0 and elapsed <= ENTRY_INFER_WINDOW:
+                            s["entry_pending"].pop(bot, None)
+                            s["entry_crossed"] += 1
+                        elif room >= 0:
+                            _entry_resolve(s, bot, "timeout", elapsed)
+                        elif elapsed > ENTRY_INFER_WINDOW:
+                            _entry_resolve(s, bot, "outdoors", elapsed)
 
             m = RE_HOP_OUTCOME.search(line)
             if m:
@@ -1016,6 +1102,13 @@ def parse_log(path):
 
 def detect_anomalies(stats):
     anomalies = []
+    for name, s in stats.items():
+        res = s["entry_crossed"] + s["entry_not_crossed"]
+        if res >= 5 and s["entry_crossed"] * 2 < res:
+            rooms = ", ".join(f"rm{r} ({c})" for r, c in s["entry_rooms_failed"].most_common(3))
+            anomalies.append((name, "ENTRANCE_COMMIT_FAIL",
+                              f"{s['entry_crossed']}/{res} entrance commits crossed ({s['entry_src']}) — bots told "
+                              f"to push through a terrain door mostly do not get in. Top doors: {rooms}"))
     for name, s in stats.items():
         rounds = max(s["rounds"], 1)
         bot_caps = s["captures"] - s["human_caps"]
@@ -1546,6 +1639,29 @@ def print_report(stats, total_lines, log_path):
     # exist to answer WHY a failure happened, not just that it did: which face blocked a via search,
     # which door a committed hop failed to cross, what the objective arrival actually saw, and
     # whether the item-reach graph verdict contradicts raw line-of-sight.
+    if any(s["entry_commits"] for s in stats.values()):
+        print(f"## Entrance Commits (outdoor pass Phase 0)")
+        print()
+        print(f"A commit = an outdoor bot told to push THROUGH a terrain door (the ENTRY stage). Crossed = its room "
+              f"flipped indoors. `observer` = the server resolved it (builds after 836f2f75); `inferred` = read "
+              f"from the bot's next room line within {ENTRY_INFER_WINDOW:.0f}s (older logs; a floor, not a census).")
+        print()
+        print(f"| Map | Commits | Crossed | Not crossed | Rate | Source | Top failed door rooms | Why (inferred) |")
+        print(f"|---|---|---|---|---|---|---|---|")
+        for name in maps:
+            s = stats[name]
+            if not s["entry_commits"]:
+                continue
+            for bot in list(s["entry_pending"]):
+                _entry_resolve(s, bot, "unresolved", 0.0)
+            res = s["entry_crossed"] + s["entry_not_crossed"]
+            rate = f"{100.0 * s['entry_crossed'] / res:.0f}%" if res else "n/a"
+            rooms = ", ".join(f"rm{r}x{c}" for r, c in s["entry_rooms_failed"].most_common(3)) or "-"
+            why = ", ".join(f"{k}x{v}" for k, v in s["entry_fail_why"].most_common()) or "-"
+            print(f"| {name} | {s['entry_commits']} | {s['entry_crossed']} | {s['entry_not_crossed']} | {rate} "
+                  f"| {s['entry_src']} | {rooms} | {why} |")
+        print()
+
     has_via_mech = any(s["via_fail_stages"] or s["via_fail_breakable"] or s["via_fail_forcefield"]
                        for s in stats.values())
     has_hop = any(s["hop_crossed"] or s["hop_not_crossed"] for s in stats.values())

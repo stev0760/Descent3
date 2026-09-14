@@ -319,6 +319,93 @@ def crossings(rooms, ships=None):
     print()
 
 
+def terrain_doors(data):
+    """Outdoor pass Phase 0 (PLAN.md 3.7): the terrain-facing doors — every portal an interior room opens onto an
+    RF_EXTERNAL shell — with the engine's own door-table cap, the sampler's crossing verdict, and whether the
+    region lattice was seeded at the door's approach point. The offline gate for the boundary slices: after
+    Phase 1 every consumer reads the crossing, so `no crossing` doors must be windows/hull-narrow, never doors."""
+    rooms = data.get("rooms", [])
+    ext = {r["id"] for r in rooms if r.get("external")}
+    if not ext:
+        print("## Terrain doors — none (no external rooms: interior-only level)\n")
+        return
+    all_doors = [(r, p) for r in rooms if not r.get("external") for p in r.get("portals", [])
+                 if p.get("croom") in ext]
+    if not all_doors:
+        print(f"## Terrain doors — {len(ext)} external rooms but no interior portal opens onto them\n")
+        return
+    have_class = "class" in all_doors[0][1]
+    doors = [(r, p) for r, p in all_doors if (p.get("class") == "door" if have_class else portal_traversable(p))]
+    windows = len(all_doors) - len(doors)
+    graphs = data.get("outdoor_graph", [])
+    ent = sum(g.get("ent_count", 0) for g in graphs)
+    lattice = [n for g in data.get("outdoor_roadmap", []) for n in g.get("nodes", [])]
+    ok = [(r, p) for r, p in doors if p.get("crossing_ok")]
+    tight = [(r, p) for r, p in ok if p.get("crossing_tight")]
+    none = [(r, p) for r, p in doors if have_class and "crossing_ok" in p and not p.get("crossing_ok")]
+
+    def approach(p):
+        # The LEGACY approach point every outdoor consumer aims at today (entrance stage, OGraph node, lattice
+        # seed, troute door approach): path_pnt pushed 12u OUT of the face (face_normal points into the room).
+        pp, n = p.get("portal_path_pnt"), p.get("face_normal")
+        if pp and n:
+            return [pp[i] - n[i] * 12.0 for i in range(3)]
+        return None
+
+    def nearest(pt):
+        best = None
+        for q in lattice:
+            d = ((pt[0]-q[0])**2 + (pt[1]-q[1])**2 + (pt[2]-q[2])**2) ** 0.5
+            if best is None or d < best:
+                best = d
+        return best
+
+    print("## Terrain doors (outdoor pass Phase 0 — the indoor/outdoor boundary)")
+    print(f"  external rooms {len(ext)}  regions {len(graphs)}  portals onto the exterior {len(all_doors)}  "
+          f"doors {len(doors)}  windows/walls {windows}")
+    if graphs:
+        cap = "" if len(doors) <= ent else f"  ** {len(doors) - ent} doors beyond the engine's 40/region table (BOA_connect) — invisible to every outdoor layer AND the engine's own terrain AI"
+        print(f"  engine door table (BOA_connect entrance nodes): {ent}{cap}")
+    if have_class and doors and "crossing_ok" in doors[0][1]:
+        print(f"  crossings: {len(ok)} of {len(doors)} doors validated  tight {len(tight)}  none {len(none)}")
+    unseeded = []
+    if lattice:
+        for r, p in doors:
+            a = approach(p)
+            if a is None:
+                continue
+            d = nearest(a)
+            if d is not None and d > 1.0:
+                unseeded.append((r, p, d))
+        print(f"  lattice ({len(lattice)} nodes): {len(doors) - len(unseeded)} legacy approach points (path_pnt - 12u) are "
+              f"lattice seeds, {len(unseeded)} are NOT (nearest node > 1u)")
+        # Phase 1 delta: how far the sampler's VALIDATED approach point sits from the legacy point the
+        # consumers aim at. Zero would mean the crossing model changes nothing at this door.
+        deltas = []
+        for r, p in doors:
+            near, a = p.get("crossing_near"), approach(p)
+            if near and a:
+                deltas.append(((near[0]-a[0])**2 + (near[1]-a[1])**2 + (near[2]-a[2])**2) ** 0.5)
+        if deltas:
+            moved = sum(1 for d in deltas if d > 2.0)
+            print(f"  validated crossing approach vs legacy point: mean {sum(deltas)/len(deltas):.1f}u  max {max(deltas):.0f}u  "
+                  f"moved > 2u at {moved}/{len(deltas)} doors  (Phase 1 changes the aim at these)")
+        if len(lattice) <= len(doors):
+            print(f"  ** region lattice is seeds-only ({len(lattice)} nodes): growth produced no cells — outdoor routing "
+                  f"has no local streets here")
+    else:
+        print("  lattice: no outdoor_roadmap in the dump (take the dump AFTER bots fly outdoors, or bot-free with the build that dumps regions)")
+    if none:
+        print("  doors WITHOUT a crossing:")
+        for r, p in none[:20]:
+            print(f"    room {r['id']} portal {p['idx']} -> ext {p['croom']} ({p.get('type')}, geocost {p.get('our_geocost')})")
+    if unseeded:
+        print("  doors whose approach point has no lattice node (beyond the table, or off the region bbox):")
+        for r, p, d in sorted(unseeded, key=lambda x: -x[2])[:20]:
+            print(f"    room {r['id']} portal {p['idx']} -> ext {p['croom']}  nearest node {d:.0f}u  crossing_ok={p.get('crossing_ok')}")
+    print()
+
+
 def analyze(path, data, flag_rooms=None):
     rooms = data.get("rooms", [])
     summary = data.get("summary", {})
@@ -419,6 +506,7 @@ def analyze(path, data, flag_rooms=None):
 
     # --- Door crossings (portal model) ---------------------------------------
     crossings(rooms, data.get("ships"))
+    terrain_doors(data)
 
     # --- Non-convex rooms (wall-press predictor) ----------------------------
     ranked = sorted(rooms, key=lambda r: r.get("portal_los_blocked_count", 0), reverse=True)
