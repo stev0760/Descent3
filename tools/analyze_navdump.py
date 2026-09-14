@@ -362,23 +362,60 @@ def terrain_doors(data):
 
     print("## Terrain doors (outdoor pass Phase 0 — the indoor/outdoor boundary)")
     print(f"  external rooms {len(ext)}  regions {len(graphs)}  portals onto the exterior {len(all_doors)}  "
-          f"doors {len(doors)}  windows/walls {windows}")
+          f"doors {len(doors)}  not doors {windows}")
+    # What the non-doors are: designer-flagged, our hull verdict (type), and their orientation — an "outdoor"
+    # map's exterior portals are often open CEILINGS (Kartoon Kanyon: all 48), never windows in the wall sense.
+    vertical = sum(1 for _, p in all_doors if abs((p.get("face_normal") or [0, 0, 0])[1]) > 0.9)
+    print(f"  orientation: {vertical} of {len(all_doors)} exterior portals are ceilings/floors (face normal vertical)")
+    door_keys = {(r["id"], p["idx"]) for r, p in doors}
+    nond = [(r, p) for r, p in all_doors if (r["id"], p["idx"]) not in door_keys]
+    if nond:
+        def why(p):
+            if p.get("pf_too_small") or p.get("pf_block"):
+                return "designer-flag"
+            return f"hull-verdict:{p.get('type')}"
+        print("  not doors, by reason: " + ", ".join(f"rm{r['id']}:{p['idx']} ({why(p)})" for r, p in nond[:12]))
+    table = data.get("terrain_door_table")
+    if table:
+        # Phase 1 build: the bot-side table (uncapped) beside the engine's capped one; the outdoor layers read ours.
+        ours = sum(t.get("doors", 0) for t in table)
+        eng = sum(t.get("engine_table", 0) for t in table)
+        per = ", ".join(f"region {t['region']}: {t['doors']} (engine {t['engine_table']})" for t in table)
+        gap = "" if ours <= eng else f"  ** {ours - eng} doors the engine's table drops are in ours"
+        print(f"  bot-side door table: {ours} doors — {per}{gap}")
+        if ours < len(doors):
+            print(f"  ** {len(doors) - ours} classed doors are NOT in the bot table (portal index >= 40, or no terrain cell under the approach)")
     if graphs:
-        cap = "" if len(doors) <= ent else f"  ** {len(doors) - ent} doors beyond the engine's 40/region table (BOA_connect) — invisible to every outdoor layer AND the engine's own terrain AI"
+        cap = "" if len(doors) <= ent else f"  ** {len(doors) - ent} doors beyond the engine's 40/region table (BOA_connect)" + ("" if table else " — invisible to every outdoor layer AND the engine's own terrain AI")
         print(f"  engine door table (BOA_connect entrance nodes): {ent}{cap}")
     if have_class and doors and "crossing_ok" in doors[0][1]:
         print(f"  crossings: {len(ok)} of {len(doors)} doors validated  tight {len(tight)}  none {len(none)}")
+    # The validated OUTSIDE approach = the exterior twin portal's crossing_near (the sampler builds both sides).
+    twin = {}
+    for r in rooms:
+        for q in r.get("portals", []):
+            twin[(r["id"], q.get("idx"))] = q
+
+    def validated_outside(p):
+        t = twin.get((p.get("croom"), p.get("cportal")))
+        return t.get("crossing_near") if t and p.get("crossing_ok") else None
+
     unseeded = []
+    seeded_valid = seeded_legacy = 0
     if lattice:
         for r, p in doors:
             a = approach(p)
-            if a is None:
-                continue
-            d = nearest(a)
-            if d is not None and d > 1.0:
-                unseeded.append((r, p, d))
-        print(f"  lattice ({len(lattice)} nodes): {len(doors) - len(unseeded)} legacy approach points (path_pnt - 12u) are "
-              f"lattice seeds, {len(unseeded)} are NOT (nearest node > 1u)")
+            v = validated_outside(p)
+            dl = nearest(a) if a else None
+            dv = nearest(v) if v else None
+            if dv is not None and dv <= 1.0:
+                seeded_valid += 1
+            elif dl is not None and dl <= 1.0:
+                seeded_legacy += 1
+            else:
+                unseeded.append((r, p, min(x for x in (dl, dv) if x is not None) if (dl is not None or dv is not None) else 0.0))
+        print(f"  lattice ({len(lattice)} nodes): seeds at the VALIDATED outside approach {seeded_valid}, at the legacy "
+              f"point (path_pnt - 12u) {seeded_legacy}, unseeded {len(unseeded)} (nearest node > 1u)")
         # Phase 1 delta: how far the sampler's VALIDATED approach point sits from the legacy point the
         # consumers aim at. Zero would mean the crossing model changes nothing at this door.
         deltas = []

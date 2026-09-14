@@ -74,12 +74,12 @@ bool Bot_outdoor_tier_enabled =
 
 // Per-level portal passability cache. Catches geometry-based blockage (bunker slits,
 // barred openings) that portal flags miss. -1=unchecked, 0=blocked, 1=passable.
-static int8_t pf_portal_passable[MAX_ROOMS][MAX_PATH_PORTALS];
+static int8_t pf_portal_passable[MAX_ROOMS][BOT_MAX_PORTALS];
 static int pf_passable_level_checksum = 0;
 
 // Per-level graded traversal-cost cache (Phase 11 router). -1=unchecked, else the cost
 // (BOT_PORTAL_IMPASSABLE for grates/slits, 0 for wide open, BOT_PORTAL_TIGHT_PENALTY for tight).
-static float pf_portal_geocost[MAX_ROOMS][MAX_PATH_PORTALS];
+static float pf_portal_geocost[MAX_ROOMS][BOT_MAX_PORTALS];
 static int pf_geocost_level_checksum = 0;
 
 // Per-level breakable-pane cache ($nav glass, defined with the glass helpers below): whether each
@@ -96,6 +96,12 @@ static int pf_glass_level_checksum;
 // Shared by the binary passability test and the graded traversal-cost probe.
 static bool ProbePortalClearance(int room_idx, int connected_room, const portal &pt, float radius) {
   vector through_dir = Rooms[connected_room].path_pnt - pt.path_pnt;
+  if (Rooms[connected_room].flags & RF_EXTERNAL) {
+    // Phase 1: a portal onto the exterior shell has no room centre to aim the sweep at — the shell's path_pnt
+    // can sit anywhere (Kartoon Kanyon's 58x90u open ceiling read "tight", DownTown's 19x316u slots too).
+    // Sweep straight OUT through the opening: the face normal points into this room, so negate it.
+    through_dir = Rooms[room_idx].faces[pt.portal_face].normal * -1.0f;
+  }
   float through_dist = vm_GetMagnitude(&through_dir);
   if (through_dist < 0.1f)
     return true;
@@ -135,7 +141,7 @@ void BotGeoCostInvalidate() {
 }
 
 bool BotCheckPortalPassable(int room_idx, int portal_idx) {
-  if (room_idx < 0 || room_idx >= MAX_ROOMS || portal_idx < 0 || portal_idx >= MAX_PATH_PORTALS)
+  if (room_idx < 0 || room_idx >= MAX_ROOMS || portal_idx < 0 || portal_idx >= BOT_MAX_PORTALS)
     return false; // out of cache range — matches BotPortalGeoCost's guard
 
   if (pf_passable_level_checksum != BOA_mine_checksum) {
@@ -195,11 +201,11 @@ bool BotCheckPortalPassable(int room_idx, int portal_idx) {
 // engine's own pathing, so a bad verdict can lengthen a route but never strand a bot.
 float BotPortalGeoCost(int room_idx, int portal_idx) {
   if (pf_geocost_level_checksum != BOA_mine_checksum) {
-    std::fill_n(&pf_portal_geocost[0][0], MAX_ROOMS * MAX_PATH_PORTALS, -1.0f);
+    std::fill_n(&pf_portal_geocost[0][0], MAX_ROOMS * BOT_MAX_PORTALS, -1.0f);
     pf_geocost_level_checksum = BOA_mine_checksum;
   }
 
-  if (room_idx < 0 || room_idx >= MAX_ROOMS || portal_idx < 0 || portal_idx >= MAX_PATH_PORTALS)
+  if (room_idx < 0 || room_idx >= MAX_ROOMS || portal_idx < 0 || portal_idx >= BOT_MAX_PORTALS)
     return BOT_PORTAL_IMPASSABLE;
 
   float &cached = pf_portal_geocost[room_idx][portal_idx];
@@ -285,7 +291,7 @@ float BotPortalRouteCost(int room_idx, int portal_idx, bool allow_disagree) {
   float cost = BotPortalGeoCost(room_idx, portal_idx);
   if (cost < BOT_PORTAL_IMPASSABLE || !allow_disagree || room_idx < 0 || room_idx > Highest_room_index ||
       !Rooms[room_idx].used || portal_idx < 0 || portal_idx >= Rooms[room_idx].num_portals ||
-      portal_idx >= MAX_PATH_PORTALS)
+      portal_idx >= BOT_MAX_PORTALS)
     return cost;
 
   const portal &pt = Rooms[room_idx].portals[portal_idx];
@@ -302,7 +308,7 @@ float BotPortalRouteCost(int room_idx, int portal_idx, bool allow_disagree) {
   // The router returns a next room, not a specific portal. If a strict, downwind-usable parallel
   // portal reaches that same room, keep the disagreement excluded so delivery cannot choose a
   // different physical edge than Dijkstra priced after dynamic penalties are applied.
-  for (int p = 0; p < Rooms[room_idx].num_portals && p < MAX_PATH_PORTALS; p++) {
+  for (int p = 0; p < Rooms[room_idx].num_portals && p < BOT_MAX_PORTALS; p++) {
     if (p == portal_idx || Rooms[room_idx].portals[p].croom != connected_room)
       continue;
     if (BotPortalGeoCost(room_idx, p) < BOT_PORTAL_IMPASSABLE && BotPortalEnginePassable(room_idx, p) &&
@@ -317,13 +323,13 @@ float BotPortalRouteCost(int room_idx, int portal_idx, bool allow_disagree) {
 // The admission decision for an intact pane is per-BOT (kinetic weapon or not) while the geometry
 // verdict is per-LEVEL, so these helpers answer the bot-independent questions and BotRouteDijkstra
 // takes the budget as a parameter. See bot_steering.h for the three budgets.
-static int8_t pf_glass_pane[MAX_ROOMS][MAX_PATH_PORTALS];       // 1 = breakable pane, 0 = not
-static int8_t pf_glass_vertical[MAX_ROOMS][MAX_PATH_PORTALS];   // 1 = vertical (shortcut class)
+static int8_t pf_glass_pane[MAX_ROOMS][BOT_MAX_PORTALS];     // 1 = breakable pane, 0 = not
+static int8_t pf_glass_vertical[MAX_ROOMS][BOT_MAX_PORTALS]; // 1 = vertical (shortcut class)
 // pf_glass_level_checksum is declared with the other cache-flush state above.
 
 static bool PortalShattered(int room_idx, int portal_idx);
 static void PortalPaneShatteredFlip(int room_idx, int portal_idx);
-static int8_t pf_glass_flipped[MAX_ROOMS][MAX_PATH_PORTALS]; // 1 = a pane this level that has since shattered
+static int8_t pf_glass_flipped[MAX_ROOMS][BOT_MAX_PORTALS]; // 1 = a pane this level that has since shattered
 
 // An opening narrower than the hull in either direction is not a route for ANY class of portal,
 // however the engine's table or the 2.5u passability probe reads it: Batteries' decorative pane
@@ -332,14 +338,14 @@ static int8_t pf_glass_flipped[MAX_ROOMS][MAX_PATH_PORTALS]; // 1 = a pane this 
 // those panes shot them open and then pressed a hole nothing can pass (a spawn room's only real exit
 // is up a 19x20u vent). Extents are the portal polygon's in its own plane; the threshold is the hull
 // diameter at the door-fit scale (BOT_CROSS_FIT_SCALE). Cached per level.
-static int8_t pf_portal_small[MAX_ROOMS][MAX_PATH_PORTALS]; // -1 unknown, 1 too small for the hull, 0 fits
+static int8_t pf_portal_small[MAX_ROOMS][BOT_MAX_PORTALS]; // -1 unknown, 1 too small for the hull, 0 fits
 static bool PortalTooSmallForHull(int room_idx, int portal_idx) {
   if (pf_small_level_checksum != BOA_mine_checksum) {
     memset(pf_portal_small, -1, sizeof(pf_portal_small));
     pf_small_level_checksum = BOA_mine_checksum;
   }
   if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used || portal_idx < 0 ||
-      portal_idx >= Rooms[room_idx].num_portals || portal_idx >= MAX_PATH_PORTALS)
+      portal_idx >= Rooms[room_idx].num_portals || portal_idx >= BOT_MAX_PORTALS)
     return false;
   int8_t &cached = pf_portal_small[room_idx][portal_idx];
   if (cached >= 0)
@@ -376,8 +382,10 @@ static bool PortalTooSmallForHull(int room_idx, int portal_idx) {
 }
 
 bool BotPortalEnginePassable(int room_idx, int portal_idx) {
-  if (room_idx < 0 || room_idx >= MAX_ROOMS || portal_idx < 0 || portal_idx >= MAX_PATH_PORTALS)
+  if (room_idx < 0 || room_idx >= MAX_ROOMS || portal_idx < 0 || portal_idx >= BOT_MAX_PORTALS)
     return false;
+  if (portal_idx >= MAX_PATH_PORTALS) // past the engine's BOA table: only the designer flags can speak
+    return !(Rooms[room_idx].portals[portal_idx].flags & (PF_BLOCK | PF_TOO_SMALL_FOR_ROBOT));
   if (pf_class_level_checksum == BOA_mine_checksum && pf_glass_flipped[room_idx][portal_idx] == 1)
     return true; // the engine's table still says glass; the glass is gone
   return BOA_PassablePortal(room_idx, portal_idx);
@@ -389,7 +397,7 @@ bool BotPortalIsBreakableGlass(int room_idx, int portal_idx) {
     memset(pf_glass_vertical, -1, sizeof(pf_glass_vertical));
     pf_glass_level_checksum = BOA_mine_checksum;
   }
-  if (room_idx < 0 || room_idx >= MAX_ROOMS || portal_idx < 0 || portal_idx >= MAX_PATH_PORTALS)
+  if (room_idx < 0 || room_idx >= MAX_ROOMS || portal_idx < 0 || portal_idx >= BOT_MAX_PORTALS)
     return false;
   int8_t &cached = pf_glass_pane[room_idx][portal_idx];
   if (cached == 1 && Rooms[room_idx].used && PortalShattered(room_idx, portal_idx))
@@ -441,7 +449,7 @@ bool BotPortalIsBreakableGlass(int room_idx, int portal_idx) {
 bool BotPortalGlassShortcutEligible(int room_idx, int portal_idx) {
   if (!BotPortalIsBreakableGlass(room_idx, portal_idx))
     return false;
-  if (room_idx < 0 || room_idx >= MAX_ROOMS || portal_idx < 0 || portal_idx >= MAX_PATH_PORTALS)
+  if (room_idx < 0 || room_idx >= MAX_ROOMS || portal_idx < 0 || portal_idx >= BOT_MAX_PORTALS)
     return false;
   return pf_glass_vertical[room_idx][portal_idx] == 1;
 }
@@ -455,7 +463,7 @@ int BotGlassBudgetForBot(int bot_index) {
 // --- 0.9.14 portal model: one classification per portal, consumed by every in-room layer -----
 // See bot_steering.h. Cached per level beside the other geometry verdicts; BotGeoCostInvalidate
 // flushes it with them so a $nav glass flip re-derives the PANE class.
-static int8_t pf_portal_class[MAX_ROOMS][MAX_PATH_PORTALS];
+static int8_t pf_portal_class[MAX_ROOMS][BOT_MAX_PORTALS];
 // pf_class_level_checksum is declared with the other cache-flush state above.
 
 // A shattered pane is a door. BreakGlassFace clears PF_RENDER_FACES on the portal (its own "already
@@ -481,7 +489,7 @@ int BotPortalClass(int room_idx, int portal_idx) {
     pf_class_level_checksum = BOA_mine_checksum;
   }
   if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used || portal_idx < 0 ||
-      portal_idx >= Rooms[room_idx].num_portals || portal_idx >= MAX_PATH_PORTALS)
+      portal_idx >= Rooms[room_idx].num_portals || portal_idx >= BOT_MAX_PORTALS)
     return BOT_PORTAL_CLASS_NEVER;
   int8_t &cached = pf_portal_class[room_idx][portal_idx];
   if (cached == BOT_PORTAL_CLASS_PANE && PortalShattered(room_idx, portal_idx))
@@ -542,18 +550,18 @@ static bool CrossSweep(int startroom_a, const vector &a, int startroom_b, const 
   return ViaSegmentClear(sb, b, a, radius, nullptr, false, FQ_BACKFACE);
 }
 static vector SkelSideAxis(const vector &dir, const vector &wallnorm); // defined with the skeleton below
-static vector pf_cross_pnt[MAX_ROOMS][MAX_PATH_PORTALS];
-static float pf_cross_depth[MAX_ROOMS][MAX_PATH_PORTALS];
-static int8_t pf_cross_state[MAX_ROOMS][MAX_PATH_PORTALS]; // -1 unknown, 0 engine point, 1 validated
-static vector pf_cross_near[MAX_ROOMS][MAX_PATH_PORTALS]; // approach point inside THIS room
-static vector pf_cross_far[MAX_ROOMS][MAX_PATH_PORTALS];  // push-through point inside the OTHER room
-static int8_t pf_cross_bent[MAX_ROOMS][MAX_PATH_PORTALS]; // 1 = found by the lateral fan, 0 = straight column
-static int8_t pf_cross_tight[MAX_ROOMS][MAX_PATH_PORTALS]; // 1 = found only at the door-fit radius
+static vector pf_cross_pnt[MAX_ROOMS][BOT_MAX_PORTALS];
+static float pf_cross_depth[MAX_ROOMS][BOT_MAX_PORTALS];
+static int8_t pf_cross_state[MAX_ROOMS][BOT_MAX_PORTALS]; // -1 unknown, 0 engine point, 1 validated
+static vector pf_cross_near[MAX_ROOMS][BOT_MAX_PORTALS];  // approach point inside THIS room
+static vector pf_cross_far[MAX_ROOMS][BOT_MAX_PORTALS];   // push-through point inside the OTHER room
+static int8_t pf_cross_bent[MAX_ROOMS][BOT_MAX_PORTALS];  // 1 = found by the lateral fan, 0 = straight column
+static int8_t pf_cross_tight[MAX_ROOMS][BOT_MAX_PORTALS]; // 1 = found only at the door-fit radius
 
 static void PortalPaneShatteredFlip(int room_idx, int portal_idx) {
   const portal &pt = Rooms[room_idx].portals[portal_idx];
   const int cr = pt.croom, cp = pt.cportal;
-  const bool twin_ok = cr >= 0 && cr <= Highest_room_index && Rooms[cr].used && cp >= 0 && cp < MAX_PATH_PORTALS &&
+  const bool twin_ok = cr >= 0 && cr <= Highest_room_index && Rooms[cr].used && cp >= 0 && cp < BOT_MAX_PORTALS &&
                        cp < Rooms[cr].num_portals;
   pf_portal_class[room_idx][portal_idx] = BOT_PORTAL_CLASS_DOOR;
   pf_portal_geocost[room_idx][portal_idx] = -1.0f;
@@ -945,7 +953,7 @@ int BotNavSweepReport(const vector *from, int room_idx, int portal_idx, char *bu
 }
 
 bool BotPortalCrossingTight(int room_idx, int portal_idx) {
-  if (room_idx < 0 || room_idx >= MAX_ROOMS || portal_idx < 0 || portal_idx >= MAX_PATH_PORTALS)
+  if (room_idx < 0 || room_idx >= MAX_ROOMS || portal_idx < 0 || portal_idx >= BOT_MAX_PORTALS)
     return false;
   vector p{};
   float d = 0.0f;
@@ -976,7 +984,7 @@ bool BotPortalCrossing(int room_idx, int portal_idx, vector *pnt_out, float *dep
     pf_cross_level_checksum = BOA_mine_checksum;
   }
   if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used || portal_idx < 0 ||
-      portal_idx >= Rooms[room_idx].num_portals || portal_idx >= MAX_PATH_PORTALS) {
+      portal_idx >= Rooms[room_idx].num_portals || portal_idx >= BOT_MAX_PORTALS) {
     if (pnt_out && room_idx >= 0 && room_idx <= Highest_room_index && portal_idx >= 0 &&
         portal_idx < Rooms[room_idx].num_portals)
       *pnt_out = Rooms[room_idx].portals[portal_idx].path_pnt;
@@ -989,7 +997,7 @@ bool BotPortalCrossing(int room_idx, int portal_idx, vector *pnt_out, float *dep
     const portal &pt = Rooms[room_idx].portals[portal_idx];
     const int cr = pt.croom, cp = pt.cportal;
     const bool twin_ok = cr >= 0 && cr <= Highest_room_index && Rooms[cr].used && cp >= 0 &&
-                         cp < Rooms[cr].num_portals && cp < MAX_PATH_PORTALS;
+                         cp < Rooms[cr].num_portals && cp < BOT_MAX_PORTALS;
     // One point per portal, computed on the lower-numbered room's side so both sides agree and the
     // result does not depend on which side asked first.
     const bool canonical = !twin_ok || room_idx < cr;
@@ -1083,8 +1091,8 @@ bool BotPortalCrossingPath(int room_idx, int portal_idx, vector *near_out, vecto
   const bool ok = BotPortalCrossing(room_idx, portal_idx, &p, &d);
   if (plane_out)
     *plane_out = p;
-  const bool valid = ok && room_idx >= 0 && room_idx <= Highest_room_index && portal_idx >= 0 &&
-                     portal_idx < MAX_PATH_PORTALS;
+  const bool valid =
+      ok && room_idx >= 0 && room_idx <= Highest_room_index && portal_idx >= 0 && portal_idx < BOT_MAX_PORTALS;
   if (near_out)
     *near_out = valid ? pf_cross_near[room_idx][portal_idx] : p;
   if (far_out)
@@ -1169,20 +1177,20 @@ static int AimGlassBudgetForObj(object *obj) {
 // Capped well below BOT_PORTAL_IMPASSABLE — a heavily-penalized portal is still used if it is the
 // only route, so this can never strand a bot. This is the cost-signal form of "don't flee backward
 // when stuck": the failed edge gets expensive and Dijkstra picks the next-best *forward* route.
-static float pf_portal_dyn_pen[MAX_ROOMS][MAX_PATH_PORTALS];
-static float pf_portal_dyn_time[MAX_ROOMS][MAX_PATH_PORTALS];
+static float pf_portal_dyn_pen[MAX_ROOMS][BOT_MAX_PORTALS];
+static float pf_portal_dyn_time[MAX_ROOMS][BOT_MAX_PORTALS];
 static int pf_dyn_level_checksum = 0;
 
 static void BotDynPenaltyMaybeReset() {
   if (pf_dyn_level_checksum != BOA_mine_checksum) {
-    std::fill_n(&pf_portal_dyn_pen[0][0], MAX_ROOMS * MAX_PATH_PORTALS, 0.0f);
-    std::fill_n(&pf_portal_dyn_time[0][0], MAX_ROOMS * MAX_PATH_PORTALS, 0.0f);
+    std::fill_n(&pf_portal_dyn_pen[0][0], MAX_ROOMS * BOT_MAX_PORTALS, 0.0f);
+    std::fill_n(&pf_portal_dyn_time[0][0], MAX_ROOMS * BOT_MAX_PORTALS, 0.0f);
     pf_dyn_level_checksum = BOA_mine_checksum;
   }
 }
 
 float BotPortalDynPenalty(int room_idx, int portal_idx) {
-  if (room_idx < 0 || room_idx >= MAX_ROOMS || portal_idx < 0 || portal_idx >= MAX_PATH_PORTALS)
+  if (room_idx < 0 || room_idx >= MAX_ROOMS || portal_idx < 0 || portal_idx >= BOT_MAX_PORTALS)
     return 0.0f;
   BotDynPenaltyMaybeReset();
   float pen = pf_portal_dyn_pen[room_idx][portal_idx];
@@ -1196,7 +1204,7 @@ float BotPortalDynPenalty(int room_idx, int portal_idx) {
 }
 
 void BotBumpPortalPenalty(int room_idx, int portal_idx) {
-  if (room_idx < 0 || room_idx >= MAX_ROOMS || portal_idx < 0 || portal_idx >= MAX_PATH_PORTALS)
+  if (room_idx < 0 || room_idx >= MAX_ROOMS || portal_idx < 0 || portal_idx >= BOT_MAX_PORTALS)
     return;
   BotDynPenaltyMaybeReset();
   float nv = BotPortalDynPenalty(room_idx, portal_idx) + BOT_PORTAL_DYN_BUMP; // decayed current + bump
@@ -2293,22 +2301,23 @@ static void OGraphLevelReset() {
 static void OGraphBuild(int region) {
   OGraphLevelReset();
   int n = 0;
-  int nconn = BOA_num_connect[region];
-  if (nconn > MAX_PATH_PORTALS)
-    nconn = MAX_PATH_PORTALS;
+  int nconn = BotTerrainDoorCount(region); // Phase 1: our table, not BOA_connect
+  int dr[BOT_TDOOR_MAX], dp[BOT_TDOOR_MAX];
+  for (int c = 0; c < nconn; c++)
+    if (!BotTerrainDoorAt(region, c, &dr[c], &dp[c]))
+      dr[c] = dp[c] = -1;
 
   // (1) Entrance approach nodes — one per terrain-facing door, offset OUT of the face into airspace
   // (the same approach point Stage A aims at; the face normal points INTO the room, so subtract it).
   // Guaranteed-good airspace just outside a real door; these are the BFS targets.
   for (int c = 0; c < nconn && n < BOT_OGRAPH_MAX_NODES; c++) {
-    int er = BOA_connect[region][c].roomnum;
-    int ep = BOA_connect[region][c].portal;
+    int er = dr[c];
+    int ep = dp[c];
     if (er < 0 || er > Highest_room_index || !Rooms[er].used)
       continue;
     if (ep < 0 || ep >= Rooms[er].num_portals)
       continue;
-    portal &po = Rooms[er].portals[ep];
-    ograph_node[region][n].pos = po.path_pnt - Rooms[er].faces[po.portal_face].normal * BOT_OUTDOOR_APPROACH_OFFSET;
+    BotTerrainDoorPoints(er, ep, &ograph_node[region][n].pos, nullptr); // Phase 1: the validated outside approach
     ograph_node[region][n].ent_room = er;
     ograph_node[region][n].ent_portal = ep;
     n++;
@@ -2320,12 +2329,12 @@ static void OGraphBuild(int region) {
   // AROUND a footprint to a door on the far side. A corner buried in a hill / wall / above the ceiling
   // simply gets no clear edge and is ignored (self-cleaning, like pseudo-bnode synthesis).
   for (int c = 0; c < nconn && n < BOT_OGRAPH_MAX_NODES; c++) {
-    int er = BOA_connect[region][c].roomnum;
+    int er = dr[c];
     if (er < 0 || er > Highest_room_index || !Rooms[er].used)
       continue;
     bool dup = false;
     for (int k = 0; k < c; k++)
-      if (BOA_connect[region][k].roomnum == er) {
+      if (dr[k] == er) {
         dup = true;
         break;
       }
@@ -2859,12 +2868,16 @@ static float BotRouteDijkstra(int from_room, int goal_room, int *first_hop_out, 
       // This makes the router reproduce BOA_GetNextRoom when geo and dynamic costs are zero, so it
       // only diverges where geometry or a runtime penalty genuinely differs — it complements BOA's
       // routing rather than silently replacing it with an uncontrolled variant.
-      float base = BOA_cost_array[r][p];
+      // Past the engine's table (portal >= 40) BOA has no cost: the path_pnt-to-door distance stands in.
+      float base = (p < MAX_PATH_PORTALS) ? BOA_cost_array[r][p]
+                                          : vm_VectorDistanceQuick(&Rooms[r].path_pnt, &Rooms[r].portals[p].path_pnt);
       if (base < 0.0f)
         base = 50.0f; // unknown portal cost -> nominal hop
       int cportal = rm.portals[p].cportal;
-      if (cportal >= 0 && cportal < MAX_PATH_PORTALS) {
-        float rev = BOA_cost_array[nr][cportal];
+      if (cportal >= 0 && cportal < BOT_MAX_PORTALS) {
+        float rev = (cportal < MAX_PATH_PORTALS)
+                        ? BOA_cost_array[nr][cportal]
+                        : vm_VectorDistanceQuick(&Rooms[nr].path_pnt, &Rooms[nr].portals[cportal].path_pnt);
         if (rev > 0.0f)
           base += rev;
       }
@@ -2999,8 +3012,10 @@ float BotEstimatePathCost(int from_room, int goal_room) {
       return 1e30f;
 
     int portal = BOA_DetermineStartRoomPortal(current, nullptr, next, nullptr);
-    if (portal >= 0 && portal < MAX_PATH_PORTALS)
-      total_cost += BOA_cost_array[current][portal];
+    if (portal >= 0 && portal < BOT_MAX_PORTALS)
+      total_cost += (portal < MAX_PATH_PORTALS)
+                        ? BOA_cost_array[current][portal]
+                        : vm_VectorDistanceQuick(&Rooms[current].path_pnt, &Rooms[current].portals[portal].path_pnt);
     else
       total_cost += 50.0f;
 
@@ -3039,12 +3054,123 @@ static int Troute_resolve_rr = 0;
 // if BOA_PassablePortal admits the interior face AND our swept-hull geocost is finite. Measured no false
 // negatives across 7 maps (OBSTACLE_GEOMETRY §4b): isengard 47/47 pass (its grate-DOORS are OBJ_DOOR,
 // read as passable doors), batteries 0/51 (all windows rejected). Per-portal, NOT a per-map classifier.
+// --- Outdoor pass Phase 1: the bot-side terrain-door table (bot_steering.h) ---------------------------
+struct BotTerrainDoor {
+  int room, portal;
+};
+static BotTerrainDoor tdoor[MAX_BOA_TERRAIN_REGIONS][BOT_TDOOR_MAX];
+static int tdoor_n[MAX_BOA_TERRAIN_REGIONS];
+static int tdoor_level_checksum = 0;
+static bool tdoor_built = false;
+
+// The same walk MakeBOA does for BOA_connect (an exterior shell's portals into interior rooms), taken from
+// the interior side, with no per-region cap and the portal CLASS as the admission (a window onto the sky
+// is recorded like a hangar door by the engine — OBSTACLE_GEOMETRY 4b). Region = the terrain cell under
+// the legacy approach point, exactly where the engine's own table keys it.
+static void TdoorBuild() {
+  if (tdoor_built && tdoor_level_checksum == BOA_mine_checksum)
+    return;
+  memset(tdoor_n, 0, sizeof(tdoor_n));
+  tdoor_level_checksum = BOA_mine_checksum;
+  tdoor_built = true;
+  int windows = 0, dropped = 0;
+  for (int r = 0; r <= Highest_room_index; r++) {
+    if (!Rooms[r].used || (Rooms[r].flags & RF_EXTERNAL))
+      continue;
+    for (int p = 0; p < Rooms[r].num_portals; p++) {
+      const int cr = Rooms[r].portals[p].croom;
+      if (cr < 0 || cr > Highest_room_index || !Rooms[cr].used || !(Rooms[cr].flags & RF_EXTERNAL))
+        continue;
+      if (p >= BOT_MAX_PORTALS) { // our per-portal caches stop at 40 (Kanyon rm1/rm14 have 45) — slice 1b
+        dropped++;
+        continue;
+      }
+      if (BotPortalClass(r, p) == BOT_PORTAL_CLASS_NEVER) { // window / wall / narrower than the hull
+        windows++;
+        continue;
+      }
+      const portal &po = Rooms[r].portals[p];
+      vector appr = po.path_pnt - Rooms[r].faces[po.portal_face].normal * BOT_OUTDOOR_APPROACH_OFFSET;
+      const int cell = GetTerrainCellFromPos(&appr);
+      if (cell < 0) {
+        dropped++;
+        continue;
+      }
+      const int region = TERRAIN_REGION(cell);
+      if (region < 0 || region >= MAX_BOA_TERRAIN_REGIONS || tdoor_n[region] >= BOT_TDOOR_MAX) {
+        dropped++;
+        continue;
+      }
+      tdoor[region][tdoor_n[region]++] = {r, p};
+    }
+  }
+  for (int rg = 0; rg < MAX_BOA_TERRAIN_REGIONS; rg++)
+    if (tdoor_n[rg] > 0)
+      LOG_DEBUG.printf("BOT: terrain doors: region %d: %d doors (engine table %d)", rg, tdoor_n[rg],
+                       BOA_num_connect[rg]);
+  if (windows || dropped)
+    LOG_DEBUG.printf("BOT: terrain doors: %d windows/walls excluded, %d dropped (no cell / past the caches)", windows,
+                     dropped);
+}
+
+int BotTerrainDoorCount(int region) {
+  if (region < 0 || region >= MAX_BOA_TERRAIN_REGIONS)
+    return 0;
+  TdoorBuild();
+  return tdoor_n[region];
+}
+
+bool BotTerrainDoorAt(int region, int i, int *room_out, int *portal_out) {
+  if (region < 0 || region >= MAX_BOA_TERRAIN_REGIONS)
+    return false;
+  TdoorBuild();
+  if (i < 0 || i >= tdoor_n[region])
+    return false;
+  if (room_out)
+    *room_out = tdoor[region][i].room;
+  if (portal_out)
+    *portal_out = tdoor[region][i].portal;
+  return true;
+}
+
+bool BotTerrainDoorPoints(int room, int portal, vector *outside_out, vector *inside_out) {
+  if (room < 0 || room > Highest_room_index || !Rooms[room].used || portal < 0 || portal >= Rooms[room].num_portals)
+    return false;
+  const struct portal &po = Rooms[room].portals[portal];     // `portal` the parameter shadows the type here
+  const vector n = Rooms[room].faces[po.portal_face].normal; // points INTO the room
+  // Legacy points: the 12u standoff outside, and the seam-style push toward the room's path_pnt inside.
+  vector outside = po.path_pnt - n * BOT_OUTDOOR_APPROACH_OFFSET;
+  vector through = Rooms[room].path_pnt - po.path_pnt;
+  const float td = vm_GetMagnitude(&through);
+  vector inside = Rooms[room].path_pnt;
+  if (td > 1.0f) {
+    const float push = (td * 0.6f < BOT_ENTRY_PUSH_DIST) ? td * 0.6f : BOT_ENTRY_PUSH_DIST;
+    inside = po.path_pnt + through * (push / td);
+  }
+  bool validated = false;
+  const int cr = po.croom, cp = po.cportal;
+  vector p;
+  float d;
+  if (portal < BOT_MAX_PORTALS && BotPortalCrossing(room, portal, &p, &d) && cr >= 0 && cr <= Highest_room_index &&
+      cp >= 0 && cp < BOT_MAX_PORTALS && pf_cross_state[cr][cp] == 1) {
+    outside = pf_cross_near[cr][cp]; // the twin's approach: outside the door, on the validated column
+    inside = pf_cross_far[cr][cp];   // the twin's push-through: into this room, past the arrival sphere
+    validated = true;
+  }
+  if (outside_out)
+    *outside_out = outside;
+  if (inside_out)
+    *inside_out = inside;
+  return validated;
+}
+
 bool BotTerrainConnectPassable(int room, int portal) {
   if (room < 0 || room > Highest_room_index || !Rooms[room].used)
     return false;
   if (portal < 0 || portal >= Rooms[room].num_portals)
     return false;
-  return BotPortalEnginePassable(room, portal) && BotPortalGeoCost(room, portal) < BOT_PORTAL_IMPASSABLE;
+  return BotPortalEnginePassable(room, portal) && BotPortalGeoCost(room, portal) < BOT_PORTAL_IMPASSABLE &&
+         BotPortalClass(room, portal) != BOT_PORTAL_CLASS_NEVER; // Phase 1: a window is never a door
 }
 
 bool BotResolveOutdoorEntrance(const object *obj, int objective_room, int *out_room, int *out_portal) {
@@ -3080,11 +3206,13 @@ bool BotResolveOutdoorEntrance(const object *obj, int objective_room, int *out_r
   int region = TERRAIN_REGION(CELLNUM(obj->roomnum));
   if (region < 0 || region >= MAX_BOA_TERRAIN_REGIONS)
     return false;
-  int nconn = BOA_num_connect[region];
+  int nconn = BotTerrainDoorCount(region); // Phase 1: our table, not BOA_connect
   if (nconn <= 0)
     return false;
-  if (nconn > MAX_PATH_PORTALS)
-    nconn = MAX_PATH_PORTALS;
+  int dr[BOT_TDOOR_MAX], dp[BOT_TDOOR_MAX];
+  for (int c = 0; c < nconn; c++)
+    if (!BotTerrainDoorAt(region, c, &dr[c], &dp[c]))
+      dr[c] = dp[c] = -1;
 
   // 0.9.7 terrain-track piece 1 ($nav outtier): choose entrance ROOM and DOOR jointly by the full
   // routed cost — outdoor approach distance (bot -> door) + OUR router's interior cost from the
@@ -3097,10 +3225,10 @@ bool BotResolveOutdoorEntrance(const object *obj, int objective_room, int *out_r
     int best_room = -1, best_door = -1;
     float best_total = 1e30f;
     for (int c = 0; c < nconn; c++) {
-      int er = BOA_connect[region][c].roomnum;
+      int er = dr[c];
       if (er < 0 || er > Highest_room_index || !Rooms[er].used)
         continue;
-      int ep = BOA_connect[region][c].portal;
+      int ep = dp[c];
       if (ep < 0 || ep >= Rooms[er].num_portals)
         continue;
       if (!BotTerrainConnectPassable(er, ep))
@@ -3115,8 +3243,8 @@ bool BotResolveOutdoorEntrance(const object *obj, int objective_room, int *out_r
       float appr;
       vector diff = Rooms[er].portals[ep].path_pnt - obj->pos;
       if (Bot_troute_enabled) {
-        vector door_appr = Rooms[er].portals[ep].path_pnt -
-                           Rooms[er].faces[Rooms[er].portals[ep].portal_face].normal * BOT_OUTDOOR_APPROACH_OFFSET;
+        vector door_appr;
+        BotTerrainDoorPoints(er, ep, &door_appr, nullptr); // the validated outside approach (Phase 1)
         appr = BotRoadmapOutdoorPathCost(region, obj->pos, door_appr);
         if (appr < 0.0f)
           appr = vm_GetMagnitude(&diff) * 1.5f;
@@ -3157,7 +3285,7 @@ bool BotResolveOutdoorEntrance(const object *obj, int objective_room, int *out_r
   bool direct = false;
   float best_cost = 1e30f;
   for (int c = 0; c < nconn; c++) {
-    int er = BOA_connect[region][c].roomnum;
+    int er = dr[c];
     if (er < 0 || er > Highest_room_index || !Rooms[er].used)
       continue;
     if (er == objective_room) {
@@ -3180,14 +3308,16 @@ bool BotResolveOutdoorEntrance(const object *obj, int objective_room, int *out_r
   int best_portal = -1;
   float best_dist = 1e30f;
   for (int c = 0; c < nconn; c++) {
-    if (BOA_connect[region][c].roomnum != ent_room)
+    if (dr[c] != ent_room)
       continue;
-    int ep = BOA_connect[region][c].portal;
+    int ep = dp[c];
     if (ep < 0 || ep >= Rooms[ent_room].num_portals)
       continue;
     if (!BotTerrainConnectPassable(ent_room, ep))
       continue; // skip window doors when picking the near entrance door
-    vector diff = Rooms[ent_room].portals[ep].path_pnt - obj->pos;
+    vector dpt;
+    BotTerrainDoorPoints(ent_room, ep, &dpt, nullptr);
+    vector diff = dpt - obj->pos;
     float d = vm_GetMagnitude(&diff);
     if (d < best_dist) {
       best_dist = d;
@@ -3214,13 +3344,14 @@ bool Bot_troute_compare_enabled = true;
 // Door-pair lattice-cost cache: BOA_connect entries are static per level; the region roadmap is
 // static per build. Costs cached by connect INDEX pair, keyed to the roadmap serial. -2 = not yet
 // computed, -1 = computed-no-path, >= 0 = Theta* path length between the two door approach points.
-#define TROUTE_CACHE_DOORS 24
+#define TROUTE_CACHE_DOORS 64 // Phase 1: the bot-side table can exceed the engine's 40
 static float Troute_pair_cost[MAX_BOA_TERRAIN_REGIONS][TROUTE_CACHE_DOORS][TROUTE_CACHE_DOORS];
 static int Troute_cache_serial = -1;
 
 static vector TrouteDoorApproach(int room, int portal) {
-  const struct portal &po = Rooms[room].portals[portal];
-  return po.path_pnt - Rooms[room].faces[po.portal_face].normal * BOT_OUTDOOR_APPROACH_OFFSET;
+  vector outside;
+  BotTerrainDoorPoints(room, portal, &outside, nullptr); // Phase 1: the validated outside approach
+  return outside;
 }
 
 static float TroutePairCost(int region, int ci, int cj, const vector &a, const vector &b) {
@@ -3254,17 +3385,19 @@ bool BotTrouteCompose(const object *obj, int goal_room, int *out_exit_room, int 
   float best_total = 1e30f;
   int b_er = -1, b_ep = -1, b_br = -1, b_bp = -1, b_reg = -1;
   for (int r = 0; r < MAX_BOA_TERRAIN_REGIONS; r++) {
-    int nconn = BOA_num_connect[r];
+    int nconn = BotTerrainDoorCount(r); // Phase 1: our table, not BOA_connect
     if (nconn <= 0)
       continue;
-    if (nconn > MAX_PATH_PORTALS)
-      nconn = MAX_PATH_PORTALS;
+    int dr[BOT_TDOOR_MAX], dp[BOT_TDOOR_MAX];
+    for (int c = 0; c < nconn; c++)
+      if (!BotTerrainDoorAt(r, c, &dr[c], &dp[c]))
+        dr[c] = dp[c] = -1;
     // Per-region candidate arrays: interior costs computed once per side (each is a Dijkstra).
-    float in_a[MAX_PATH_PORTALS], in_b[MAX_PATH_PORTALS];
+    float in_a[BOT_TDOOR_MAX], in_b[BOT_TDOOR_MAX];
     for (int c = 0; c < nconn; c++) {
       in_a[c] = in_b[c] = 1e30f;
-      int er = BOA_connect[r][c].roomnum;
-      int ep = BOA_connect[r][c].portal;
+      int er = dr[c];
+      int ep = dp[c];
       if (er < 0 || er > Highest_room_index || !Rooms[er].used || ep < 0 || ep >= Rooms[er].num_portals)
         continue;
       if (!BotTerrainConnectPassable(er, ep))
@@ -3280,18 +3413,18 @@ bool BotTrouteCompose(const object *obj, int goal_room, int *out_exit_room, int 
           continue;
         if (in_a[ci] + in_b[cj] >= best_total)
           continue; // can't win even with a zero lattice term — skip the Theta*
-        vector ea = TrouteDoorApproach(BOA_connect[r][ci].roomnum, BOA_connect[r][ci].portal);
-        vector ba = TrouteDoorApproach(BOA_connect[r][cj].roomnum, BOA_connect[r][cj].portal);
+        vector ea = TrouteDoorApproach(dr[ci], dp[ci]);
+        vector ba = TrouteDoorApproach(dr[cj], dp[cj]);
         float lat = TroutePairCost(r, ci, cj, ea, ba);
         if (lat < 0.0f)
           continue; // no lattice path — rule 1: not a plan
         float total = in_a[ci] + lat + in_b[cj];
         if (total < best_total) {
           best_total = total;
-          b_er = BOA_connect[r][ci].roomnum;
-          b_ep = BOA_connect[r][ci].portal;
-          b_br = BOA_connect[r][cj].roomnum;
-          b_bp = BOA_connect[r][cj].portal;
+          b_er = dr[ci];
+          b_ep = dp[ci];
+          b_br = dr[cj];
+          b_bp = dp[cj];
           b_reg = r;
         }
       }

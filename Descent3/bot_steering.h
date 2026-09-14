@@ -353,6 +353,25 @@ float BotPortalGeoCost(int room_idx, int portal_idx);
 // Rejects windows (batteries) while admitting real doors and blastable grate-DOORS (isengard). Definition
 // in bot_steering.cpp; used by the terrain composer, the outdoor-entrance resolver, and outdoor explore.
 bool BotTerrainConnectPassable(int room, int portal);
+
+// --- Outdoor pass Phase 1 (PLAN.md 3.7): the bot-side terrain-door table --------------------------
+// Every interior portal that opens onto an RF_EXTERNAL shell and is classed a DOOR (windows, walls and
+// hull-narrow openings out), keyed by the terrain region under its approach point. Uncapped where the
+// engine's BOA_connect stops at 40 per region (Isengard has 47; Kartoon Kanyon and DownTown fill the
+// engine table). Built lazily per level. Every outdoor consumer reads this table, never BOA_connect —
+// the operator's ruling on engine limits: route around them in our files, never raise MAX_PATH_PORTALS.
+#define BOT_TDOOR_MAX 96 // doors per region our table holds
+// Slice 1b: the width of OUR per-portal caches. The engine's BOA arrays stop at MAX_PATH_PORTALS (40) and a
+// room may have more portals than that (Kartoon Kanyon's canyon rooms have 45, their open ceilings among
+// them); our caches carry 64 so those portals exist to the router, and the engine's own tables are read
+// only for portals it knows (a portal past 40 gets the designer flags as its engine verdict).
+#define BOT_MAX_PORTALS 64
+int BotTerrainDoorCount(int region);
+bool BotTerrainDoorAt(int region, int i, int *room_out, int *portal_out);
+// The two points an entering bot flies for a terrain door: the validated crossing's OUTSIDE approach and
+// its INSIDE push-through (the sampler's twin-side points, computed from the indoor side); the legacy
+// path_pnt +/- offsets when the door has no validated crossing. Returns true when validated.
+bool BotTerrainDoorPoints(int room, int portal, vector *outside_out, vector *inside_out);
 // Delivery-side portal verdict matching the coarse router's strict-first, disagreement-last policy.
 float BotPortalRouteCost(int room_idx, int portal_idx, bool allow_disagree);
 

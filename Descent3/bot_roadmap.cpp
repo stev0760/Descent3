@@ -1396,23 +1396,22 @@ RoadmapRoom *Build(int room_idx) {
 RoadmapRoom *BuildOutdoor(int region) {
   RoadmapRoom *rr = new RoadmapRoom();
   rr->outdoor = true;
-  int nconn = BOA_num_connect[region];
-  if (nconn > MAX_PATH_PORTALS)
-    nconn = MAX_PATH_PORTALS;
+  int nconn = BotTerrainDoorCount(region); // Phase 1: our table, not BOA_connect
 
   std::vector<int> uf;
   vector mn{}, mx{};
   bool have_bbox = false;
   for (int c = 0; c < nconn; c++) {
-    int er = BOA_connect[region][c].roomnum;
-    int ep = BOA_connect[region][c].portal;
+    int er = -1, ep = -1;
+    if (!BotTerrainDoorAt(region, c, &er, &ep))
+      continue;
     if (er < 0 || er > Highest_room_index || !Rooms[er].used)
       continue;
     if (ep < 0 || ep >= Rooms[er].num_portals)
       continue;
-    portal &po = Rooms[er].portals[ep];
-    // Door approach point: offset OUT of the face into airspace (the face normal points INTO the room).
-    vector seed = po.path_pnt - Rooms[er].faces[po.portal_face].normal * BOT_OUTDOOR_APPROACH_OFFSET;
+    // Door approach point: the validated crossing's outside approach (Phase 1), legacy offset when none.
+    vector seed;
+    BotTerrainDoorPoints(er, ep, &seed, nullptr);
     int idx = (int)rr->node.size();
     rr->node.push_back(seed);
     rr->adj.emplace_back();

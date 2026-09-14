@@ -71,6 +71,13 @@ class), CanyonsCTF 0/3, DownTown 0 caps 0 kills (no contact, DEST_CHURN); **Skyb
 takeovers, 122 kills, 59 virus pickups, 76 viruses lost in 27 deaths, 25 invade-nav legs, 4 room picks, 0 stucks
 (bots run the economy and the invasion leg and die before a hold completes). Phase 0 binary (836f2f75-dirty)
 deployed to the lab at 17:55, lockstep verified.
+**Phase 1 slice 1 built the same evening (PLAN 3.7):** the bot-side terrain-door table (uncapped, class-filtered,
+region-keyed) replaces `BOA_connect` in every outdoor consumer, and every consumer aims at the sampler's validated
+outside-approach / inside-push points. Bot-free gate passed on Isengard (47 doors, 7 recovered), Bree, Nightmare,
+Canyons and DownTown; three of those have seed-only region lattices (Phase 2). Slice 1b (caches to 64 portals;
+engine reads bounded at 40) and an exterior-probe direction fix followed the operator's question about Canyons'
+"windows": all 48 of its exterior portals are open ceilings, 47 are doors after the fixes, the one reject a sliver
+triangle. Play arms staged: Isengard 12x20 then Bree 20x15.
 
 Operator rulings from the night: Two Worlds retired; Nightmare Castle captures 1v1/2v2 only; fellowship 15-min is
 the outdoor-pass baseline, the 30-min daytime rotation pairs with it; Bree + Isengard standalone missions are the

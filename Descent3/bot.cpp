@@ -2748,20 +2748,15 @@ static bool BotOutdoorEntranceStage(object *obj, int goal_room, vector *dest, in
     ent_portal = forced_portal;
   } else if (!BotResolveOutdoorEntrance(obj, goal_room, &ent_room, &ent_portal))
     return false;
-  portal &ep = Rooms[ent_room].portals[ent_portal];
-  // Stage 1: the 12.6 standoff — the face normal points INTO the room, so subtract to push outward.
-  vector out_pos = ep.path_pnt - Rooms[ent_room].faces[ep.portal_face].normal * BOT_OUTDOOR_APPROACH_OFFSET;
+  // Phase 1 (PLAN.md 3.7): both stage points come from the door's VALIDATED crossing — the outside approach
+  // (stage 1 standoff) and the inside push-through (stage 2 commit) the sampler swept at hull radius; the
+  // legacy path_pnt offsets only where the door has no crossing. Same points the lattice seed, the outdoor
+  // graph node and the composer read, so every outdoor consumer aims at one door point.
+  vector out_pos, in_pos;
+  BotTerrainDoorPoints(ent_room, ent_portal, &out_pos, &in_pos);
   bool entry = false;
   if (vm_VectorDistanceQuick(&obj->pos, &out_pos) < BOT_ENTRY_COMMIT_DIST) {
-    // Stage 2: commit through the door (same push-through construction as the $nav seam guard).
-    vector through = Rooms[ent_room].path_pnt - ep.path_pnt;
-    float td = vm_GetMagnitude(&through);
-    if (td > 1.0f) {
-      float push = (td * 0.6f < BOT_ENTRY_PUSH_DIST) ? td * 0.6f : BOT_ENTRY_PUSH_DIST;
-      *dest = ep.path_pnt + through * (push / td);
-    } else {
-      *dest = Rooms[ent_room].path_pnt;
-    }
+    *dest = in_pos;
     entry = true;
   } else {
     *dest = out_pos;
@@ -3618,13 +3613,15 @@ static void BotDoExploreRoaming(int bot_index) {
     int cellnum = CELLNUM(obj->roomnum);
     int region = TERRAIN_REGION(cellnum);
     if (region >= 0 && region < MAX_BOA_TERRAIN_REGIONS) {
-      for (int c = 0; c < BOA_num_connect[region] && num_candidates < BOT_EXPLORE_MAX_CANDIDATES; c++) {
-        int dest = BOA_connect[region][c].roomnum;
+      const int ndoor = BotTerrainDoorCount(region); // Phase 1: our table, not BOA_connect
+      for (int c = 0; c < ndoor && num_candidates < BOT_EXPLORE_MAX_CANDIDATES; c++) {
+        int dest = -1, dep = -1;
+        if (!BotTerrainDoorAt(region, c, &dest, &dep))
+          continue;
         if (dest < 0 || dest > Highest_room_index || !Rooms[dest].used)
           continue;
         if (dest == Bots[bot_index].explore_stuck_room)
           continue;
-        int dep = BOA_connect[region][c].portal;
         if (!BotTerrainConnectPassable(dest, dep))
           continue; // outside bot: don't target a room reachable only through a window
         candidates[num_candidates++] = dest;
@@ -3755,11 +3752,12 @@ static void BotDoExploreRoaming(int bot_index) {
   if (is_outdoor) {
     int cellnum = CELLNUM(obj->roomnum);
     int region = TERRAIN_REGION(cellnum);
-    for (int c = 0; c < BOA_num_connect[region]; c++) {
-      if (BOA_connect[region][c].roomnum == dest_room) {
-        int pidx = BOA_connect[region][c].portal;
+    const int ndoor = BotTerrainDoorCount(region); // Phase 1: our table, not BOA_connect
+    for (int c = 0; c < ndoor; c++) {
+      int droom = -1, pidx = -1;
+      if (BotTerrainDoorAt(region, c, &droom, &pidx) && droom == dest_room) {
         if (pidx >= 0 && pidx < Rooms[dest_room].num_portals)
-          dest_pos = Rooms[dest_room].portals[pidx].path_pnt;
+          BotTerrainDoorPoints(dest_room, pidx, &dest_pos, nullptr); // the validated outside approach
         break;
       }
     }
@@ -7068,7 +7066,8 @@ bool BotNavDump(const char *filename) {
       int cr = po.croom;
       float gcost = BotPortalGeoCost(r, p);
       bool our_impass = (gcost >= BOT_PORTAL_IMPASSABLE);
-      bool eng_pass = BOA_PassablePortal(r, p);
+      // Past the engine's BOA table (portal >= 40) its lookup would read past the row: designer flags only.
+      bool eng_pass = (p < MAX_PATH_PORTALS) ? BOA_PassablePortal(r, p) : !(po.flags & (PF_BLOCK | PF_TOO_SMALL_FOR_ROBOT));
       bool disagree = eng_pass && our_impass;
       if (disagree)
         disagree_total++;
@@ -7412,6 +7411,20 @@ bool BotNavDump(const char *filename) {
   // Nodes [0,ent_count) are entrance approach points (doors); the rest are structure-perimeter anchors.
   // edges[i] = bitmask of hull-clear, ceiling-capped legs from node i. Lets visualize_navdump.py draw the
   // outdoor route mesh the external rooms otherwise omit. Reflects the live $outdoorgraph state.
+  // Phase 1: the bot-side terrain-door table beside the engine's capped one (analyze_navdump.py "Terrain doors").
+  fprintf(fp, "  \"terrain_door_table\": [");
+  {
+    bool first_t = true;
+    for (int rg = 0; rg < MAX_BOA_TERRAIN_REGIONS; rg++) {
+      const int nd = BotTerrainDoorCount(rg);
+      if (nd <= 0)
+        continue;
+      fprintf(fp, "%s{\"region\": %d, \"doors\": %d, \"engine_table\": %d}", first_t ? "" : ", ", rg, nd,
+              BOA_num_connect[rg]);
+      first_t = false;
+    }
+  }
+  fprintf(fp, "],\n");
   fprintf(fp, "  \"outdoor_graph\": [\n");
   {
     int n_regions = BOA_num_terrain_regions;

@@ -540,6 +540,26 @@ all read the same point. One slice, gated bot-free on the terrain-door section, 
 Isengard/Moria/Shire and bedlam. Prediction: entrance-miss share and not-crossed ENTRY commits fall on all
 four; if Isengard's stucks do not move, its blocker is inside (room 36 class), not at the door.
 
+**Phase 1 slice 1 BUILT 2026-09-14 evening (uncommitted; lab + cockpit binaries md5 57b3137f, on top of the staged
+Phase 0).** `BotTerrainDoorCount/At/Points` in bot_steering.cpp; `BotTerrainConnectPassable` gains the class; the
+entrance stage, the resolver (all three loops), the composer, the outdoor graph, the lattice seeds and both explore
+sites read the table; the navdump emits `terrain_door_table`. **Bot-free gate PASSED on all five maps** (dumps
+`<user-data>/<map>-p1.json`): Isengard table 47 (engine 40 — the seven dropped doors, room 18's six among them, are
+back), 46 lattice seeds on the validated approach, 0 unseeded (was 7); Bree 13/13; Nightmare 6/6; Canyons 37 doors of
+48 exterior portals (11 windows now excluded), 37/37 seeded; DownTown 36 of 41 (5 windows), 33 validated + 3 legacy.
+The validated aim moved every door by 20-47u mean (one DownTown door by 291u). **Phase 2 finding from the gate: the
+region lattice is SEEDS-ONLY on Nightmare, Canyons and DownTown** (growth produced no cells — the structure-bbox +
+60u extent under the ceiling cap collapses there); Isengard/Bree grow fine. **Slice 1b landed the same evening** (`BOT_MAX_PORTALS` 64: our per-portal caches, with the engine's four BOA
+reads kept at its 40 and a designer-flag verdict past it) **plus a probe fix**: a portal onto the exterior is now
+swept straight OUT through the opening (face normal) instead of toward the shell room's centre. Re-dumped: Canyons
+47 doors of 48 exterior portals — ALL 48 are open CEILINGS of canyon segments (face normal vertical), none are
+windows; the 10 portals past index 40 are back, the one reject (rm3:33) is a needle-thin triangle, a leftover face
+split the engine calls passable because BOA never tests width; DownTown 36 of 41 (four 19x316u cracks between
+building tops read tight at hull radius, one wall). Analyzer now prints orientation + per-portal reasons instead
+of "windows". Play arms: the Isengard 12x20 and Bree 20x15 loops
+(`<lab>/phase1-20260914/run.sh`, staged) against the 2026-09-14 baselines, read on entrance-commit outcomes
+(observer), entrance-miss share, ground pins, grabs and conversion.
+
 **Phase 2 — one outdoor network per region.** `EnsureUnionGraph` for `rr->outdoor`: OGraph nodes as
 arterials, the region lattice as local streets, ramps as indoors; the outdoor via query attaches to the
 hull-visible nearest node (parity with indoor). Lift `BotComposeRoomRoute`'s `OBJECT_OUTSIDE` guard so the
