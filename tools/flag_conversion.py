@@ -54,13 +54,20 @@ def flag_timeline(path):
     rounds = []  # list of dicts: level, t0, episodes[], grabs[]
     cur = None
     last_t = None
-    out = {}  # colour -> (t_start, team_of_grabber)
+    # colour -> [t_start, team_of_grabber, grabber_name, t_carrier_died]. 2026-09-15: a flag out longer than the
+    # timeout with no announcement used to be labelled "silent-return" — but the CTF timer (ctf.cpp:591) only runs
+    # while NOBODY carries the flag. On Town of Bree 11 of 11 such episodes were carriers still ALIVE and pinned
+    # (rm59 -> rm58); the label hid the map's real bottleneck. Now: the episode stays open while the carrier
+    # lives; a carrier death starts the 120 s drop timer; no announcement by then = "drop-timeout".
+    out = {}
+    RESPAWN_RE = re.compile(r"'([^']+)' respawned in slot")
     def close_round():
         if cur is None:
             return
-        # any flag still out at level end: assumed silent return / level reset
-        for colour, (t_s, by) in list(out.items()):
-            cur["episodes"].append((colour, t_s, min(t_s + FLAG_TIMEOUT_S, last_t or t_s), "level-end", by))
+        # any flag still out at level end: carried to the end, or a drop still on the ground
+        for colour, (t_s, by, who, t_died) in list(out.items()):
+            kind = "level-end (drop)" if t_died is not None else "level-end (carrier alive)"
+            cur["episodes"].append((colour, t_s, last_t or t_s, kind, by))
         out.clear()
         rounds.append(cur)
     with open(path, errors="replace") as f:
@@ -68,10 +75,11 @@ def flag_timeline(path):
             t = ts(line)
             if t is not None:
                 last_t = t
-                # silent auto-return: a flag out longer than the timeout with no announcement
-                for colour, (t_s, by) in list(out.items()):
-                    if cur is not None and t - t_s > FLAG_TIMEOUT_S:
-                        cur["episodes"].append((colour, t_s, t_s + FLAG_TIMEOUT_S, "silent-return", by))
+                # drop timeout: the carrier died and nobody touched the flag for FLAG_TIMEOUT_S — the CTF
+                # module returned it silently (only a DROPPED flag times out; a carried one never does)
+                for colour, (t_s, by, who, t_died) in list(out.items()):
+                    if cur is not None and t_died is not None and t - t_died > FLAG_TIMEOUT_S:
+                        cur["episodes"].append((colour, t_s, t_died + FLAG_TIMEOUT_S, "drop-timeout", by))
                         del out[colour]
             m = LEVEL_RE.search(line)
             if m:
@@ -80,13 +88,23 @@ def flag_timeline(path):
                 continue
             if cur is None or last_t is None:
                 continue
+            m = RESPAWN_RE.search(line)
+            if m:
+                for colour, rec in out.items():
+                    if rec[2] == m.group(1) and rec[3] is None:
+                        rec[3] = last_t  # the carrier died: the flag is on the ground from here
+                continue
             m = PICK_RE.search(line)
             if m:
                 team, colour = m.group(3), m.group(4)
                 own_out = any(c != colour for c in out)  # the other colour is out => the grabber's own flag is out
                 cur["grabs"].append((last_t, team, colour, own_out))
+                who = (m.group(1) or "") + (m.group(2) or "").strip()  # callsign as the respawn line spells it
                 if colour not in out:
-                    out[colour] = (last_t, team)
+                    out[colour] = [last_t, team, who, None]
+                else:
+                    out[colour][2] = who  # a dropped flag picked up again: new carrier, alive
+                    out[colour][3] = None
                 continue
             m = CAP_RE.search(line)
             if m:
@@ -94,14 +112,14 @@ def flag_timeline(path):
                     if colour.lower() == "and":
                         continue
                     if colour in out:
-                        t_s, by = out.pop(colour)
+                        t_s, by = out.pop(colour)[:2]
                         cur["episodes"].append((colour, t_s, last_t, "capture", by))
                 continue
             m = RET_RE.search(line)
             if m:
                 colour = m.group(4)
                 if colour in out:
-                    t_s, by = out.pop(colour)
+                    t_s, by = out.pop(colour)[:2]
                     cur["episodes"].append((colour, t_s, last_t, "returned", by))
                 continue
     close_round()
