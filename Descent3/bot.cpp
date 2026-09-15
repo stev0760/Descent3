@@ -3441,15 +3441,33 @@ static void BotDoExploreRoaming(int bot_index) {
         // entrance (same as the indoor interior press), so the lateral go-around has to run here, not
         // just at entrance-seek time. The carried approach point must be for the current dest (an
         // entrance the hook resolved), else a stale target would mis-detour. Detour around structures.
+        // 2026-09-15: this ticked the via toward the approach point every tick — the "skeleton via" hop over the
+        // door graph — and overrode the lattice waypoint the ladder had just issued (Isengard, the platform under
+        // the rm20 pipe mouth: the ladder's `outdoor-route wp` line, then `skeleton via (target room 20)` every
+        // 4 s, then the pin). Same order as the ladder now: a live ENTRY commit is left alone; a lattice leg keeps
+        // the wheel (its waypoint goal is re-issued only once the previous one has completed); the graph hop only
+        // when there is no leg.
         vector appr = Bots[bot_index].oa_steer_pos;
         int aroom = Bots[bot_index].oa_steer_room;
         int &pgi = Bots[bot_index].pursuit_goal_index;
-        if (!BotViaPointTick(bot_index, appr, aroom, pgi, nullptr) &&
-            !(pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)) {
-          goal_info gi_info{};
-          gi_info.pos = appr;
-          gi_info.roomnum = aroom;
-          pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
+        const bool goal_live = (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used);
+        if (Bots[bot_index].entry_commit_room < 0) { // a push through a door in flight: no detour, no re-aim
+          vector leg{};
+          int leg_room = -1;
+          const bool lattice_leg = BotOutdoorRouteLeg(obj, appr, aroom, &leg, &leg_room);
+          if (lattice_leg) {
+            if (!goal_live) {
+              goal_info gi_info{};
+              gi_info.pos = leg;
+              gi_info.roomnum = leg_room;
+              pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
+            }
+          } else if (!BotViaPointTick(bot_index, appr, aroom, pgi, nullptr) && !goal_live) {
+            goal_info gi_info{};
+            gi_info.pos = appr;
+            gi_info.roomnum = aroom;
+            pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
+          }
         }
       }
       return; // still en route
@@ -3674,8 +3692,11 @@ static void BotDoExploreRoaming(int bot_index) {
               Bots[bot_index].entry_commit_aim = gi_info.pos;
             }
           } else if (routed)
-            LOG_DEBUG.printf("BOT NAV: '%s' outdoor-route wp (entrance room %d, %.0fu leg)", Bots[bot_index].callsign,
-                             ent_room, vm_VectorDistanceQuick(&obj->pos, &ent_pos));
+            LOG_DEBUG.printf("BOT NAV: '%s' outdoor-route wp (entrance room %d, %.0fu leg) wp (%.0f,%.0f,%.0f) from "
+                             "(%.0f,%.0f,%.0f)",
+                             Bots[bot_index].callsign, ent_room, vm_VectorDistanceQuick(&obj->pos, &ent_pos),
+                             gi_info.pos.x(), gi_info.pos.y(), gi_info.pos.z(), obj->pos.x(), obj->pos.y(),
+                             obj->pos.z());
           else
             LOG_DEBUG.printf("BOT: '%s' outdoor entrance-seek -> room %d portal %d (obj %d)", Bots[bot_index].callsign,
                              ent_room, ent_portal, obj_room);
