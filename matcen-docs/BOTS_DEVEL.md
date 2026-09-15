@@ -300,6 +300,14 @@ leg first (as the routed path already did), the graph hop only when there is no 
 tw arm, two Isengard rounds in full: 2 captures, 7 flag episodes, both flags out 31 s, 25 stucks (21 outdoors, 2 in
 the sewer), entrances 10/18 — against the bfo arm's 0 captures and 79 stucks on the same two rounds. The lattice-first
 ladder (`81c4c8fb`) went in at the round-2 boundary as `<lab>/lat-20260915/` (Isengard 6 → Bree 12).
+It was not enough on its own: the lat arm's round 1 still pinned bots bound for rm20 at the platform (18 outdoor
+stucks), and the trace showed why — the ladder's `outdoor-route wp (entrance room 20, 143u leg)` was followed by
+`skeleton via (target room 20)` every 4 s from a SECOND site, the en-route upkeep of an outdoor entrance errand in
+`BotDoExploreRoaming`, which ticked the via toward the approach point every tick and overrode the lattice waypoint.
+`8c41e292` gives the upkeep the ladder's order (ENTRY commit left alone; lattice leg keeps the wheel, its next
+waypoint issued only once the previous goal completes; graph hop only without a leg) and puts the waypoint position
+on the ladder's line too. Deployed at the lat arm's round-1 boundary as `<lab>/lat2-20260915/` — Isengard 3 rounds
+(the verify manifest) then Bree 12, so Bree's second sample starts ~15:40.
 
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 
