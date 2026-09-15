@@ -158,6 +158,24 @@ sessions included. Fix: `BotPollObjectiveState` assigns leans the first poll it 
 BALANCED in a lean mode (CTF/Entropy), logged per bot. Deployed at the budget arm's round-3 boundary as
 `<lab>/leans-20260915/`.
 
+**The tavern pin, second layer: the LATTICE ran through the partition (`fix(roadmap)`, back-face honest probe).**
+With the wall-push refused, the budget arm's round 2 still had Gregg carrying for 574 s at rm59's centre
+(2343,155,2678): `roadmap route in room 59 (target room 58)` → `roadmap via` → `via-point reached` every second
+(551 re-issues, 93 refused commits, 23 via suspensions). The lattice (20 u spacing) had nodes on BOTH sides of the
+partition — (2350,156,2685) beside the bot and (2330,156,2685) 7 u BEHIND face 757 — and an edge between them: the
+roadmap's one geometry probe (`RoadmapLOSr`) swept without FQ_BACKFACE, D3 walls are one-sided, so a leg starting
+behind the wall read clear; the Theta* route to the door went through the wall, and the via handed out was the
+node beside the bot (reached instantly, re-planned, repeat). The steering sweeps (crossing sampler, pseudo-bnodes,
+the door search) were already back-face honest; the roadmap was the odd one out (its own 0.9.14 note at the corner
+bridge said as much). Fix: `BotSegmentClear` takes extra fvi flags; the indoor roadmap probe and trace pass
+FQ_BACKFACE. **Bot-free geometry gate** (second instance, geom-bree.cfg; control = the same lab binary 61fffc6b):
+lattice nodes level-wide 1440 → 1194 (the nodes behind walls), rm59 151 → 119 with the behind-the-wall node gone
+and the x=2330 column surviving only at the partition's end (z=2645 — the go-around), rm58 454 → 372, rm56 83 → 67;
+component counts and routability unchanged in every room (13 routable; rm69 the only multi-component room in both);
+zero portal verdicts changed (rm57 ↔ rm24 reads `tight` on both — a pre-existing change of an unused exit; 0 uses in
+20 rounds). Deployed at the leans arm's round-2 boundary as `<lab>/backface-20260915/`. Read: carriers cross
+rm59 → rm58 by the lattice (chain/route around the partition), no 500 s carrier episodes at (2343,155,2678).
+
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 
 8 bots hotshot, PPS 40, one round per map (15-min CTF, 10-min anarchy), fellowship all 9 levels first. Logs

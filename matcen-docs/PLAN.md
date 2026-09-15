@@ -590,6 +590,11 @@ Built as `39058770` (the routed path skips the via outdoors when the goal room i
 in `37eef03b`) — the read is chain `t2s-20260915/`. Pickup instrument read: 35% of chase starts end in a pickup; chase
 timeouts are not closing on the item (mean distance ratio 1.18), so no timeout extension; indoor-item chases fail at
 rm60 (the sealed-item pocket, pre-existing).
+Then two more first-order defects fell out of the reads: (a) **objective leans were never assigned on a session's
+first level** (BotAdd runs before the mode is known) — fixed in `BotPollObjectiveState`; every earlier round-1 read
+was on BALANCED leans; (b) **the roadmap lattice grew edges through one-sided walls** (its probe ignored back faces)
+— the second layer of the tavern pin under the hop-commit refusal; fixed with FQ_BACKFACE on the indoor probe,
+geometry-gated bot-free (1440 → 1194 nodes, connectivity unchanged).
 
 **Phase 2 — one outdoor network per region.** `EnsureUnionGraph` for `rr->outdoor`: OGraph nodes as
 arterials, the region lattice as local streets, ramps as indoors; the outdoor via query attaches to the

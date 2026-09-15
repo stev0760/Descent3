@@ -23,6 +23,13 @@ defence for the round (a role-policy question, not navigation). Outdoor maps are
 the one outdoor defect the play test found, a server crash on maps whose doors open onto terrain, is
 fixed below. Do not run this as a release yet.*
 
+*   **Routes no longer pass through one-sided walls.** Descent 3 walls have one visible side, and the in-room
+    route network tested its links without regard to which side it was looking from, so a link could start behind
+    a partition and read as clear. In the Town of Bree tavern that put a route straight through the bar's partition
+    wall: a flag carrier sat pressed against it at the room's centre for nine and a half minutes of a fifteen-minute
+    round, told every second to fly to the point beside it. Links now respect the back of a wall, which removes
+    about a sixth of the network's points on that map (the ones that were inside walls) and leaves every room as
+    connected as before.
 *   **CTF roles apply from the first level, not the second.** Bots were assigned their flag roles (runner,
     attacker, flex, defender) before the server knew which game it was running, so on the first level of a session
     every bot played as an unassigned generalist: nobody was the runner, and attackers left the flag run to chase
