@@ -297,6 +297,9 @@ at cell 132,123 (pos (2127,272,1976), agl 17) — UNDER a platform: the probe st
 leg to the door node at 0 u; the explore ladder's outdoor branch ran the via tick first, whose "skeleton via" is a
 straight hop over the 64-node door graph and went through the slab. `fix(nav)`: the ladder asks the region lattice
 leg first (as the routed path already did), the graph hop only when there is no leg.
+tw arm, two Isengard rounds in full: 2 captures, 7 flag episodes, both flags out 31 s, 25 stucks (21 outdoors, 2 in
+the sewer), entrances 10/18 — against the bfo arm's 0 captures and 79 stucks on the same two rounds. The lattice-first
+ladder (`81c4c8fb`) went in at the round-2 boundary as `<lab>/lat-20260915/` (Isengard 6 → Bree 12).
 
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 
