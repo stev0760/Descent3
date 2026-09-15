@@ -8722,10 +8722,15 @@ void BotDoFrame() {
     if (Bots[i].hop_commit_wp >= 0) {
       object *cobj = &Objects[Players[slot].objnum];
       int cur = OBJECT_OUTSIDE(cobj) ? -1 : (int)cobj->roomnum;
-      if (cur == Bots[i].hop_commit_wp) {
-        LOG_DEBUG.printf("BOT NAV: '%s' hop outcome: CROSSED rm%d -> rm%d via portal %d (%.1fs)",
-                         Bots[i].callsign, Bots[i].hop_commit_src, Bots[i].hop_commit_wp,
-                         Bots[i].hop_commit_portal, Gametime - Bots[i].hop_commit_time);
+      // A hop INTO an exterior shell room (RF_EXTERNAL) is an exit: the bot's room never reads as
+      // that shell, it reads outdoors — count outdoors as the crossing (Bree rm60 -> rm17 read
+      // NOT-CROSSED "now rm-1" after 3 s, i.e. it was outside, which is what the hop wanted).
+      const int hw = Bots[i].hop_commit_wp;
+      const bool hop_exit = hw >= 0 && hw <= Highest_room_index && Rooms[hw].used && (Rooms[hw].flags & RF_EXTERNAL);
+      if (cur == hw || (hop_exit && cur == -1)) {
+        LOG_DEBUG.printf("BOT NAV: '%s' hop outcome: CROSSED rm%d -> rm%d via portal %d (%.1fs%s)", Bots[i].callsign,
+                         Bots[i].hop_commit_src, Bots[i].hop_commit_wp, Bots[i].hop_commit_portal,
+                         Gametime - Bots[i].hop_commit_time, (hop_exit && cur == -1) ? ", outdoors" : "");
         Bots[i].hop_commit_wp = -1;
       } else if (cur != Bots[i].hop_commit_src || Gametime - Bots[i].hop_commit_time > BOT_HOP_OUTCOME_TIMEOUT) {
         LOG_DEBUG.printf("BOT NAV: '%s' hop outcome: NOT-CROSSED rm%d -> rm%d via portal %d (%.1fs, now rm%d) "
