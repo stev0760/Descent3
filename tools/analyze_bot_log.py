@@ -180,6 +180,8 @@ RE_RESPAWN = re.compile(r"'([^']+)\[BOT\]' respawned in slot")
 RE_BOTNAME = re.compile(r"'([^']+)\[BOT\]'")
 RE_CHASE_TIMEOUT = re.compile(r"powerup chase timeout \([\d.]+s, disp=(-?\d+) (HARD|mobile)\)"
                               r"(?:.*\[d_item (-?[\d.]+) was ([\d.]+)\])?")  # progress at timeout: builds after 2026-09-15
+PRIMARY_PICKUPS = {"vauss", "plasmacannon", "fusioncannon", "superlaser", "massdriver", "napalm", "emdlauncher",
+                   "microwave", "omegacannon"}
 RE_PICKUP = re.compile(r"'([^']+)\[BOT\]' powerup collected '([^']+)' \(([\d.]+)s chase, from ([\d.]+)u\)")
 RE_CHASE_TIMEOUT_LEGACY = re.compile(r"powerup chase timeout \([\d.]+s\) — blacklisting")
 RE_GLASS_CLEAR = re.compile(r"proactive-clearing breakable glass \(room (-?\d+)")
@@ -996,8 +998,8 @@ def parse_log(path):
                     life["chases"] += 1
                     if m.group(1):
                         life["gear"] += 1
-                    elif life["armed"] is None:
-                        life["armed"] = _ts_seconds(last_ts)  # first non-gear-up detour = a primary in hand
+                    elif life["armed"] is None and not s["pickups"]:
+                        life["armed"] = _ts_seconds(last_ts)  # legacy inference (no pickup lines in this log)
                         if life["armed"] is not None and life["spawn"] is not None and life["armed"] < life["spawn"]:
                             life["armed"] += 86400.0
                 continue
@@ -1012,7 +1014,8 @@ def parse_log(path):
                     s["lives"].append((now - prev["spawn"],
                                        (prev["armed"] - prev["spawn"]) if prev["armed"] is not None else None,
                                        prev["chases"], prev["gear"], prev["pickups"]))
-                s["life_open"][m.group(1)] = {"spawn": now, "armed": None, "chases": 0, "gear": 0, "pickups": 0}
+                s["life_open"][m.group(1)] = {"spawn": now, "armed": None, "armed_src": None, "chases": 0, "gear": 0,
+                                              "pickups": 0}
                 continue
 
             m = RE_CHASE_TIMEOUT.search(line)
@@ -1032,6 +1035,11 @@ def parse_log(path):
                 life = s["life_open"].get(m.group(1))
                 if life is not None:
                     life["pickups"] += 1
+                    # A primary in hand: the pickup names it (builds from 2026-09-15). Preferred over the detour
+                    # inference below, which the gear-up budget breaks (a post-budget detour is not "armed").
+                    if life["armed"] is None and m.group(2).lower() in PRIMARY_PICKUPS:
+                        life["armed"] = _ts_seconds(last_ts)
+                        life["armed_src"] = "pickup"
                 continue
 
             m = RE_CHASE_TIMEOUT_LEGACY.search(line)
