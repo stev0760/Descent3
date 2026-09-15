@@ -1556,15 +1556,20 @@ static int BotGetObjectiveRoom_CTF(int bot_index) {
       if (fumble_room >= 0)
         return fumble_room;
     }
-    // If our flag is carried, let target selection handle the carrier — no nav override
-    if (Bot_objective.flag_state[my_team] == FLAG_CARRIED)
+    // If our flag is carried, let target selection handle the carrier — no nav override — EXCEPT the
+    // dedicated RUNNER, which keeps its attack errand (2026-09-15 role fix, operator intent: "someone keeps
+    // the attack errand while the home flag is out; defenders hunt the carrier"). Before this every
+    // freelance bot dropped offence the moment its flag was taken: on Town of Bree Blue's early grab put all
+    // four Red bots on defence for the rest of the round, 20 rounds running, Red 0 grabs.
+    if (Bot_objective.flag_state[my_team] == FLAG_CARRIED && Bots[bot_index].objective_lean != BOT_LEAN_RUNNER)
       return -1;
     effective = (Bots[bot_index].objective_lean == BOT_LEAN_DEFEND) ? SQUAD_DEFEND : SQUAD_ATTACK;
   }
 
   if (effective == SQUAD_ATTACK) {
-    // Own flag stolen — drop offensive nav, let -400 targeting bias drive toward carrier
-    if (Bot_objective.flag_state[my_team] == FLAG_CARRIED)
+    // Own flag stolen — drop offensive nav, let -400 targeting bias drive toward carrier (the RUNNER
+    // lean is exempt: it presses the enemy flag while the home flag is out — the standoff the operator wants)
+    if (Bot_objective.flag_state[my_team] == FLAG_CARRIED && Bots[bot_index].objective_lean != BOT_LEAN_RUNNER)
       return -1;
     // Find nearest available enemy flag by BOA path cost (not Euclidean)
     object *obj = &Objects[Players[slot].objnum];
