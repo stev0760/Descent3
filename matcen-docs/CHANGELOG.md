@@ -27,6 +27,17 @@ attack runs the length of the Blue building's interior under fire and rarely com
 Blue's flag sits deep in the tavern, Red's two rooms from a door); Tower of Isengard's tower interior
 still pins ships at its hatches. Do not run this as a release yet.*
 
+*   **The outdoor route network stays outdoors, and out of the walls.** Town of Bree is a sunken town, and the
+    outdoor network had followed the tavern doors down into the buildings: eleven thousand of its thirteen thousand
+    points were indoors, and the map's two outdoor halves were joined through the tavern. On Tower of Isengard the
+    network reached into the base of a tower column through its open arcade and then drew links straight out
+    through the column's wall, so a flag carrier outside was sent to a point sixteen units away through stone and
+    sat against it for six minutes. Outdoor points now have to be reached across open ground, and a link that
+    touches a building has to be clear in both directions.
+*   **Outdoor detours follow the route network, not a straight hop between doors.** Bots exploring outdoors used
+    a coarse door-to-door graph for their detours and only fell back to the fine route network when that failed;
+    on Isengard a straight hop toward the pipe entrance ran up through a platform the bot was underneath, fifteen
+    times a round at the same spot. The fine network is asked first now, on every outdoor leg.
 *   **A room's route network stays inside the room.** The in-room network was grown by sweeping a ship-sized
     probe outward from each door, and the probe follows open doors into the next room, so a room's network quietly
     spread into its neighbours: on Tower of Isengard 85% of it lay in other rooms, and a bot in the tower could be
