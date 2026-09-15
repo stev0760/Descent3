@@ -901,6 +901,55 @@ static bool PortalCrossingCompute(int room_idx, int portal_idx, vector *pnt, flo
   return false;
 }
 
+int BotNavProbeReport(const vector *a, const vector *b, char *buf, int buflen) {
+  int n = 0;
+  auto put = [&](const char *fmt, auto... args) {
+    if (n < buflen - 1)
+      n += snprintf(buf + n, buflen - n, fmt, args...);
+  };
+  if (!a || !b) {
+    put("probe: bad points\n");
+    return n;
+  }
+  auto room_of = [](const vector &p) {
+    vector q = p;
+    const int cell = GetTerrainCellFromPos(&q);
+    return cell < 0 ? -1 : MAKE_ROOMNUM(cell);
+  };
+  const int ra = room_of(*a), rb = room_of(*b);
+  put("probe (%.0f,%.0f,%.0f) -> (%.0f,%.0f,%.0f): start cells %d / %d\n", a->x(), a->y(), a->z(), b->x(), b->y(),
+      b->z(), ra, rb);
+  const float radii[3] = {0.5f, BOT_ROADMAP_CLEARANCE, BOT_ROADMAP_CLEARANCE * BOT_CROSS_FIT_SCALE};
+  for (int dir = 0; dir < 2; dir++) {
+    const vector &p = dir ? *b : *a;
+    const vector &q = dir ? *a : *b;
+    const int sr = dir ? rb : ra;
+    for (int bf = 0; bf < 2; bf++) {
+      for (int ri = 0; ri < 3; ri++) {
+        fvi_info hit{};
+        const bool ok = ViaSegmentClear(sr, p, q, radii[ri], &hit, true, bf ? FQ_BACKFACE : 0);
+        const int ht = hit.num_hits > 0 ? hit.hit_type[0] : HIT_NONE;
+        put("  %s r=%.1f%s: %s", dir ? "b->a" : "a->b", radii[ri], bf ? " +backface" : "", ok ? "CLEAR" : "BLOCKED");
+        if (!ok || ht != HIT_NONE) {
+          put(" hit_type=%d at (%.0f,%.0f,%.0f) after %.0fu end_room=%d", ht, hit.hit_pnt.x(), hit.hit_pnt.y(),
+              hit.hit_pnt.z(), hit.hit_dist, hit.hit_room);
+          if (ht == HIT_WALL || ht == HIT_BACKFACE)
+            put(" face rm%d/%d n=(%.2f,%.2f,%.2f)", hit.hit_face_room[0], hit.hit_face[0], hit.hit_wallnorm[0].x(),
+                hit.hit_wallnorm[0].y(), hit.hit_wallnorm[0].z());
+          if (ht == HIT_OBJECT || ht == HIT_SPHERE_2_POLY_OBJECT)
+            put(" object %d type %d", hit.hit_object[0],
+                (hit.hit_object[0] >= 0 && hit.hit_object[0] <= Highest_object_index) ? Objects[hit.hit_object[0]].type
+                                                                                      : -1);
+        } else {
+          put(" end_room=%d", hit.hit_room);
+        }
+        put("\n");
+      }
+    }
+  }
+  return n;
+}
+
 int BotNavSweepReport(const vector *from, int room_idx, int portal_idx, char *buf, int buflen) {
   int n = 0;
   auto put = [&](const char *fmt, auto... args) {

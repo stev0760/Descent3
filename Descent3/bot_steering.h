@@ -492,6 +492,10 @@ int BotPortalCrossingTrace(int room_idx, int portal_idx, BotCrossTrace *out, int
 // short reverse leg (does the reverse burst have room?), and report what each sweep hit. Writes a
 // multi-line report into buf; returns its length. Reads the level only.
 int BotNavSweepReport(const vector *from, int room_idx, int portal_idx, char *buf, int buflen);
+// $nav probe: hull sweeps along an arbitrary segment (both directions, with and without FQ_BACKFACE, at the
+// hull and the roadmap clearance), reporting the face/room/object each one hits — the "why is THIS leg blocked"
+// instrument for lattice edges and via legs (2026-09-15).
+int BotNavProbeReport(const vector *a, const vector *b, char *buf, int buflen);
 
 // Cost-aware next-hop router (Phase 11). Dijkstra over the interior room graph weighting
 // portals by BOA base cost + graded geometry cost + dynamic penalty. Returns the next room to

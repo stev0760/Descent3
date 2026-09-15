@@ -54,6 +54,15 @@ python3 tools/render_room.py "~/.local/share/Outrage Entertainment/Descent 3/<ma
 - **Hatches**: a portal whose face normal is ±y is a floor/ceiling hatch; the route must approach from
   above/below, which the top view hides — use the side view.
 
+## When the render says "there is a wall" and the lattice says "there is an edge"
+
+`$nav probe <x> <y> <z> <x2> <y2> <z2>` (console, builds from 2026-09-15) sweeps the segment in BOTH directions,
+with and without FQ_BACKFACE, at three radii, and prints what each sweep hits (face room/index and normal, object,
+end room). On Tower of Isengard it showed the shell face rm2/38 blocking (2007,294,2192) -> (2037,294,2222) at 4 u
+in one direction and the reverse leg CLEAR at every radius — an edge the lattice had probed from the inside out.
+Run it on the second instance with `--cmd '$nav probe ...'` (several `--cmd` are fine); the report lands in the
+`<out>.json.server.log` the driver writes next to the dump.
+
 ## Traps
 
 - The dump is cheap; a room with thousands of faces renders fine. Do not filter faces.

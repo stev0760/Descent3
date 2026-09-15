@@ -1004,6 +1004,9 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
       PrintDedicatedMessage("  %-13s      one room's faces/portals/lattice to JSON (tools/render_room.py): $nav "
                             "roomfaces <room> [file]\n",
                             "roomfaces");
+      PrintDedicatedMessage(
+          "  %-13s      hull sweeps along a segment, both ways, +/- backface: $nav probe <x> <y> <z> <x2> <y2> <z2>\n",
+          "probe");
       PrintDedicatedMessage("  %-13s      hull sweeps from a point to a door's crossing: $nav sweep <x> <y> <z> <room> <portal>\n",
                             "sweep");
       PrintDedicatedMessage(
@@ -1012,6 +1015,24 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     }
     if (stricmp(sub, "dump") == 0)
       return DedicatedNavDump(value);
+    if (stricmp(sub, "probe") == 0) {
+      float x0 = 0, y0 = 0, z0 = 0, x1 = 0, y1 = 0, z1 = 0;
+      if (sscanf(value, "%f %f %f %f %f %f", &x0, &y0, &z0, &x1, &y1, &z1) != 6) {
+        PrintDedicatedMessage("usage: $nav probe <x> <y> <z> <x2> <y2> <z2>\n");
+        return true;
+      }
+      static char report[4096];
+      vector a{x0, y0, z0}, b{x1, y1, z1};
+      BotNavProbeReport(&a, &b, report, sizeof(report));
+      for (char *line = report; line && *line;) {
+        char *nl = strchr(line, '\n');
+        if (nl)
+          *nl = '\0';
+        PrintDedicatedMessage("%s\n", line);
+        line = nl ? nl + 1 : nullptr;
+      }
+      return true;
+    }
     if (stricmp(sub, "roomfaces") == 0) {
       int room = -1;
       char fname[128] = "";
