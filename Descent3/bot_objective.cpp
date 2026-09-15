@@ -1288,6 +1288,27 @@ static int BotGetObjectiveRoom_Coop(int bot_index) {
 // ---------------------------------------------------------------------------
 
 void BotPollObjectiveState() {
+  // First-round leans (2026-09-15): BotAdd assigns leans before the game mode is known, so every bot started a
+  // session's FIRST level as BALANCED — no runner, no attacker exemption from hunting (ctf_pushing), the chooser's
+  // ATTACK default for all — and only got real leans at the next level (an accidental re-assign on the level-start
+  // flag transition). Measured on Town of Bree: the runner hunted from EXPLORE 20 times at median 275 u in round 1,
+  // once at 26 u in rounds 2-3. Assign as soon as the mode is known and a freelance team bot is still BALANCED.
+  {
+    const BotGameMode mode = BotGetGameMode();
+    if (mode == BGM_CTF || mode == BGM_ENTROPY) {
+      for (int i = 0; i < MAX_BOTS; i++) {
+        if (!Bots[i].active || Bots[i].squad_role != SQUAD_FREELANCE || Bots[i].objective_lean != BOT_LEAN_BALANCED)
+          continue;
+        const int team = Players[Bots[i].player_slot].team;
+        if (team < 0 || team >= BOT_MAX_TEAMS)
+          continue;
+        LOG_DEBUG.printf("BOT OBJ: '%s' has no objective lean yet (%s) — assigning", Bots[i].callsign,
+                         BotGameModeName(mode));
+        BotAssignObjectiveLeans();
+        break;
+      }
+    }
+  }
   switch (BotGetGameMode()) {
   case BGM_CTF:
     BotPollCTF();
