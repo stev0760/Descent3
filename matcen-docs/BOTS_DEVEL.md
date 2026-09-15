@@ -218,7 +218,7 @@ crossing sampler's best column. The Bree tavern (rm59) rendered too: two rooms �
 cask room — joined by two 24 u openings in the partition, the rm58 corridor leaving the bar's top edge; the pinned
 carrier's X sits in the cask room's top corner, one wall from that corridor.
 
-**In-room arm, Bree A/B at 4 rounds (11:54): captures 1, 2, 0, 3 = 6 against the backface arm's 3, 2, 5, 7 = 17 on
+**In-room arm, Bree A/B at 4 rounds (11:54): captures 1, 2, 0, 4 = 7 (7 picks, 100% conversion) against the backface arm's 3, 2, 5, 7 = 17 on
 the same rotation.** Carrier episodes are as fast (22-25 s) and the tavern door is crossed the same way; the
 difference is upstream — fewer Blue grabs (round 3: Blue 339 s in FLEE and 242 s in COMBAT against 17 s and 79 s;
 Blue never reached rm73; Red deaths 24 vs 12 — a brawl round), and more HARD chase pins in rm60 (8 vs 1). Not enough
