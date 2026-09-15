@@ -132,7 +132,7 @@ per life, armed-after/never-armed unchanged or better, chases/life down, Red obj
 **Isengard room 36 re-read (from the Phase 1 Isengard log, while the Bree arms run).** The "122 item chases" label was
 wrong: of the 342 wall presses logged in rm36, 306 carry `goal=pursuit` (a routed/explore leg toward an adjacent room:
 rm35 110, rm39 75, rm41 46, rm40 40, rm38 31) and 5 a powerup; item chases there are 28 room-progress timeouts (Shield
-16, NapalmRocket 9) and 26 sealed abandons. rm36 is the tower interior: 685 x 201 x 476 u, 1035 faces, seven portals —
+16, NapalmRocket 9) and 26 sealed abandons. rm36 (the sewer, per the operator) is 685 x 201 x 476 u, 1035 faces, seven portals —
 three side doors to rm39, two CEILING hatches (rm40, rm41 at y=182, normal 0,-1,0) and two FLOOR hatches (rm35, rm38
 at y=0); path_pnt unreachable, portal LOS blocked 36/42, roadmap 2048 nodes / 8124 lattice cells / ONE routable
 component, six items all `review` with 0/8 approaches clear. The pin trace (Hawk, 02:54): at (2212,37,1678) wanting
@@ -186,7 +186,7 @@ Rounds 1-3 on `8b6ee205`: **9 captures** (3, 2, 4) plus one return — Bree's tw
 **The lattice grew into neighbouring rooms (`fix(roadmap)`: in-room admission) — found by RENDERING Isengard rm36.**
 New instrument: `$nav roomfaces <room> [file]` (bot files + one console hook) writes a room's faces, portal crossing
 points, skeleton and lattice; `tools/render_room.py` draws top/side PNGs (`navdump_geometry.py --cmd` takes the dump
-bot-free on a second instance). rm36 is not "a tower interior": two long halls one above the other joined at an
+bot-free on a second instance). rm36 is not "a tower interior" — it is the SEWER (the operator recognised the render at once: "the exact map geometry for the sewer section … that we had trouble with months ago"): two long halls one above the other joined at an
 elbow, ceiling hatches to rm40/rm41 over the upper hall, floor hatches to rm35/rm38 under the lower one, three side
 doors to rm39 — and the lattice (2048 nodes, the cap) filled the space BETWEEN the halls and the area past the lower
 hall's outline: other rooms' interiors, reached because the hull sweep follows portals and the growth admitted any
