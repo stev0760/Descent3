@@ -176,6 +176,12 @@ zero portal verdicts changed (rm57 ↔ rm24 reads `tight` on both — a pre-exis
 20 rounds). Deployed at the leans arm's round-2 boundary as `<lab>/backface-20260915/`. Read: carriers cross
 rm59 → rm58 by the lattice (chain/route around the partition), no 500 s carrier episodes at (2343,155,2678).
 
+**Backface arm, first minutes (`8b6ee205`, `<lab>/backface-20260915/`, 09:54): two captures in the first four minutes
+of round 1** — Blue grabbed at 125 s and scored at 148 s, grabbed again at 204 s and scored at 236 s: 23 s and 32 s
+from grab to capture, carrier legs rm71 → 73 → … → 59 → 58 → 72 with THREE carrier-nav re-issues at the tavern door
+(the pinned episode had 556). The timeline tool now prints each episode's carrier legs and refused commits
+(`flag_conversion.py --timeline`), so a pin reads as "rm59->58 x556" on the episode line.
+
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 
 8 bots hotshot, PPS 40, one round per map (15-min CTF, 10-min anarchy), fellowship all 9 levels first. Logs
