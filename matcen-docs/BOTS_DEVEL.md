@@ -284,6 +284,11 @@ room's bounding box (the column base is rm24's volume), so the reverse leg is de
 Bree unchanged; indoor lattices untouched. The bfo arm's Isengard round 1 (with only the back-face sweep): 0
 captures, 43 outdoor stucks, entrances 4/8 — one round, high variance, but no improvement, as the probe predicts.
 Deployed at the bfo arm's Isengard round-2 boundary as `<lab>/tw-20260915/` (Isengard 6 → Bree 12).
+The bfo arm's two Isengard rounds in full: 0 captures, 3 flag episodes (all returned), 79 stucks (78 outdoors),
+entrances 9/14. Against the outdoor arm's round 1 (2 captures, 14 stucks) that is a step back, but the inroom2 arm
+swung 19 → 70 stucks between its own rounds 1 and 2, so one arm of two rounds cannot convict the back-face outdoor
+sweep; if the tw arm's outdoor stucks stay at this level, `c1d34f0a` (FQ_BACKFACE on the outdoor sweeps — no effect on
+the shell faces per the probe, only on interior rooms' back faces seen from outside) is the first thing to revert.
 
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 
