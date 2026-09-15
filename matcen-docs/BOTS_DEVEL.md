@@ -60,6 +60,27 @@ terrain-door ENTRY commit (the Isengard rm20/rm21 "occluded → detour → press
 running chain. Chain `<lab>/refusal-20260915/` on `7e2747a2` (Bree 12 → Isengard 6) is the read for the batch; the
 first three refusals fired within a minute of the level loading (rm61 → rm25, rm69 → rm15, rm60 → rm17).
 
+**Early read of the refusal arm (rounds 1-2) and the finding it surfaced — powerup chase churn (`fe1dc474`).**
+Round 2: Gregg grabbed at 711 s and CAPTURED at 827 s — carrier nav rm59 → rm58 → rm72 straight through the tavern
+door; the indoor hop outcomes read 52 CROSSED / 17 NOT-CROSSED over two rounds against 33 / 76 for the two rounds
+before the refusal (rm58 → rm59: 37 crossed, 3 not). The refusals themselves land where the previous arm's
+NOT-CROSSED pushes started (rm58 → rm59 from (2116,215,2646) ≈ the old failures at (2116,213,2647)); the ones at
+rm60 → rm17 are a terrain EXIT the observer mis-scored (the bot lands outdoors, never "in" the RF_EXTERNAL shell —
+`6bcef37b` counts outdoors as crossed for an exit hop). Round 1 had no grab at all, and reading why found the
+larger class: **every bot on Bree spends one to three minutes of every life chasing powerups instead of its
+errand.** 1080 "objective detour" chase starts in one 15-min round (a new chase every ~2.5 s per bot); per life,
+30-60 chases before a primary was in hand (Gregg 147 s, Reaper 164 s, Hawk 98 s of gear-up), lives of 6-420 s
+(~6 deaths per bot per round, mostly not bot kills), so the gear-up phase never ends; Red's four bots issued 768
+chases and zero objective errands in round 1 and never entered the tavern complex. The mechanism is the pick
+itself: `BotFindBestPowerup` re-scored every item from scratch each tick with a 10x LOS multiplier, so a target
+occluded for one tick, or any fresh item coming into view, took the chase away before the bot arrived (Hawk:
+rooms 63 → 72 → 56 → 58 → 72 → 56 → 58 in seven consecutive ticks). Fix: the chase in hand keeps its LOS term and
+a 1.5x margin while live (present, not timed out, not blacklisted); a clearly better item still takes over; the
+detour line names the item and whether the previous chase was abandoned live ("switched after N s"), which the
+analyzer now counts. Registered behind it, not built: a gear-up BUDGET per life (after ~30 s with no primary, fight
+with lasers and press the errand — humans do), and the outdoor-leg labelling (an objective errand's entrance seek
+is logged owner=explore, so "objective" intents under-count outdoors).
+
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 
 8 bots hotshot, PPS 40, one round per map (15-min CTF, 10-min anarchy), fellowship all 9 levels first. Logs

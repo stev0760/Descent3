@@ -23,6 +23,12 @@ defence for the round (a role-policy question, not navigation). Outdoor maps are
 the one outdoor defect the play test found, a server crash on maps whose doors open onto terrain, is
 fixed below. Do not run this as a release yet.*
 
+*   **Bots finish the powerup run they started instead of flitting between items.** The item to chase was
+    re-chosen from scratch every half second, and "can I see it" counted ten times over, so a target that slipped
+    behind a lamppost for one tick, or any other item that came into view, stole the chase before the bot got
+    there. On Town of Bree that was a new chase every couple of seconds and a minute or three of every life spent
+    "gearing up" with the flag errand on hold; the Red team never reached the Blue flag room in a round. The item
+    already being chased now keeps priority unless something clearly better appears or the chase times out.
 *   **A bot no longer shoves itself through a wall next to a door it was routing around.** Inside the Town of Bree
     tavern, a partition wall separates the bar from the door the route wanted. The route re-issued the same door every
     couple of seconds while steering around the partition, the door push counted those re-issues as failed attempts,

@@ -578,6 +578,10 @@ fix (`b84eff2d`) plus an observer (`db7d9c46`); the entry-commit gate (`37eef03b
 is chain `refusal-20260915/` on `7e2747a2`. Registered from the batch: whether the lattice's ~2 s re-issue while
 routing around a partition is itself the defect (the commit was its symptom); Red captures on Bree (the operator's
 watch item); (4) room 36 untouched.
+Early read (rounds 1-2): a capture through the tavern door in round 2 and hop outcomes 52 crossed / 17 not (was
+33 / 76). The read also surfaced the general class under Bree's role problem — **powerup chase churn**: one to three
+minutes of every life chasing a new item every ~2.5 s, the errand suspended throughout; fixed by hysteresis in the
+pick (`fe1dc474`), with a per-life gear-up budget registered behind it.
 
 **Phase 2 — one outdoor network per region.** `EnsureUnionGraph` for `rr->outdoor`: OGraph nodes as
 arterials, the region lattice as local streets, ramps as indoors; the outdoor via query attaches to the
