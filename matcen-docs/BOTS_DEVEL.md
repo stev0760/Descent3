@@ -81,6 +81,25 @@ analyzer now counts. Registered behind it, not built: a gear-up BUDGET per life 
 with lasers and press the errand — humans do), and the outdoor-leg labelling (an objective errand's entrance seek
 is logged owner=explore, so "objective" intents under-count outdoors).
 
+**Refusal arm closed after 3 rounds (08:07) and the hysteresis arm's round 1 read (`<lab>/hysteresis-20260915/`,
+`6e6e10bf`).** Refusal arm, 3 Bree rounds: 1 capture (round 2), round 3 three grabs — two returned by Red, one carrier
+(Gregg) alive at level end but NOT at the tavern: pinned OUTDOORS at terrain cell 138,168 (region 1, `agl=-47`,
+net_disp 7-9, "stuck escape — no portal, random lateral escape") while the outdoor via kept issuing `skeleton via in
+room <cell> (target room 72)` every 4 s beside the entrance leg's `outdoor-route wp (entrance leg, goal 72)` — the
+via layer aiming at the GOAL room through the wall while the entrance leg had a waypoint: the same two-member
+override as Isengard rm20/rm21, one stage earlier (Phase 4 dispatch item). Hop outcomes over the 3 rounds 127
+CROSSED / 36 NOT; outdoor stucks per round FLAT across the last four arms (3.5 / 3.3 / 3.5 / 3.3), so none of the
+batch regressed the outdoors. **Hysteresis round 1 vs the refusal arm's round 1 (same cfg, same roster):** chase
+starts 605 vs 1080 (−44%), of which 229 still "switched" (mean 1.2 s in — a better-priority item coming into view:
+Shield → QuadLaser/Fusion/Homing, a legitimate upgrade, not flicker); chase timeouts 207 vs 101 (the chase now runs
+to its 8 s instead of being abandoned — and most "mobile" timeouts moved < 200 u, i.e. dithering at a via detour,
+not closing on a far item); **armed-after median 29 s vs 60 s, never-armed lives 39% vs 50%, gear-up chases per
+life 3.8 vs 9.1** (analyzer "Lives and Gear-up" section, new). No grab in round 1 of either arm. Instrument commit
+`4aa542ac` (log-only, deployed at the round-2 boundary as `<lab>/pickup-20260915/`): "powerup collected" when a chased
+item vanishes within 25 u, and `[d_item now was start]` on every chase timeout, so the next read can say how many
+chases END in a pickup and how many timeouts were closing on the item (candidate: a progress-based timeout
+extension) versus dithering (the outdoor via's problem, not the chase's).
+
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 
 8 bots hotshot, PPS 40, one round per map (15-min CTF, 10-min anarchy), fellowship all 9 levels first. Logs

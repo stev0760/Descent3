@@ -582,6 +582,11 @@ Early read (rounds 1-2): a capture through the tavern door in round 2 and hop ou
 33 / 76). The read also surfaced the general class under Bree's role problem — **powerup chase churn**: one to three
 minutes of every life chasing a new item every ~2.5 s, the errand suspended throughout; fixed by hysteresis in the
 pick (`fe1dc474`), with a per-life gear-up budget registered behind it.
+Hysteresis round 1: chase starts −44%, armed-after median 60 → 29 s, never-armed lives 50% → 39%. New nav item from the
+refusal arm's round 3: a carrier pinned OUTDOORS at the structure (cell 138,168) with the via aiming at the goal room
+through the wall beside a live entrance-leg waypoint — the Phase 4 two-member override, one stage before the ENTRY
+commit; it is the outdoor twin of Isengard rm20/rm21 and should be fixed as one rule (the entrance leg's waypoint owns
+the aim while it is live).
 
 **Phase 2 — one outdoor network per region.** `EnsureUnionGraph` for `rr->outdoor`: OGraph nodes as
 arterials, the region lattice as local streets, ramps as indoors; the outdoor via query attaches to the
