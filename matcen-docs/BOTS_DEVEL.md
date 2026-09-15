@@ -266,6 +266,9 @@ on the outdoor sweeps does. Gate: node counts unchanged to within 3 (edges are n
 soak. Also: the entrance-leg waypoint line now carries the door room and the waypoint/bot positions, so the next
 such pin can be placed on a render without reconstruction. Deployed at the Isengard round-1 boundary of the
 outdoor arm as `<lab>/bfo-20260915/` (Isengard 6 → Bree 12).
+The outdoor arm's one full Isengard round before the swap (`25053e22`, the in-room + outdoor-cell rules): **2
+captures, 6 flag episodes, entrance commits 7 crossed / 0 not, 14 stucks — all outdoors, none in the sewer.** Phase 1's
+six rounds on the same map: 1 capture, 301 stucks.
 
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 
