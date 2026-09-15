@@ -311,6 +311,19 @@ Isengard manifest runs TWO-MINUTE rounds (a smoke config), so its three rounds w
 waypoint lines against 6 graph hops — the order holds — but nothing comparable); Bree's second sample therefore
 started at 14:43 on `a830ecd2`, and a six-round Isengard leg was appended to the chain to follow it (~17:45).
 
+**Bree's second sample, first rounds (`a830ecd2`): captures 1, 2 — the same level as the in-room arm (1, 2, 0, 4)
+and below the backface arm (3, 2, 5, 7).** Round by round, Blue heads for Red's building as often (`dest 62`
+errands 23/21 vs 25-31), enters it MORE (rm62 crossings 3 vs 1), pins outdoors less (lattice legs 103 vs 22,
+graph hops 520 vs 1612, `unreach` endings 11 vs 38) — and still reaches rooms 73/71 less (0, 2 vs 3, 1, 6, 6) and
+dies on the way about as often (35 errands ended by death vs 38). Nothing in Red's building changed under the
+in-room rule (rooms 62/73/71 kept their lattices); the rooms that lost nodes are Blue's own (58, 59, 67, 72 and the
+now non-routable 55/65). The mechanism is not visible in these numbers, and four rounds of high-variance capture
+counts cannot separate "the rule" from "the day". **A/B arm planned for the round-4 boundary (15:43):** the same build
+with only the indoor in-room admission switched off (`Descent3-noinroom`, a labelled binary built from a one-line
+variant, not committed), four Bree rounds on the same rotation; then the full build resumes with Isengard 6 and
+Bree. If captures return to ~4 a round the rule costs Bree and needs the door-transition refinement; if not, the
+backface arm was the outlier.
+
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 
 8 bots hotshot, PPS 40, one round per map (15-min CTF, 10-min anarchy), fellowship all 9 levels first. Logs
