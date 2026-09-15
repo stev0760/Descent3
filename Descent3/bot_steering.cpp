@@ -3154,7 +3154,19 @@ bool BotTerrainDoorPoints(int room, int portal, vector *outside_out, vector *ins
   if (portal < BOT_MAX_PORTALS && BotPortalCrossing(room, portal, &p, &d) && cr >= 0 && cr <= Highest_room_index &&
       cp >= 0 && cp < BOT_MAX_PORTALS && pf_cross_state[cr][cp] == 1) {
     outside = pf_cross_near[cr][cp]; // the twin's approach: outside the door, on the validated column
-    inside = pf_cross_far[cr][cp];   // the twin's push-through: into this room, past the arrival sphere
+    // The twin's push-through lands up to 24u inside — past the back wall of a thin entrance room (Isengard's
+    // room 3 is a 13u-deep vestibule: the point sat 11u beyond it, the goal was claimed in room 3, and every
+    // committed bot stood still until the observer timed it out — 6 of 6 commits NOT-CROSSED, 2026-09-14).
+    // The engine goal must lie INSIDE the room it is claimed in: keep the validated push only while the
+    // room's box (inset by the hull) contains it; otherwise the legacy seam-style push toward path_pnt,
+    // which is inside by construction.
+    const vector &bmn = Rooms[room].min_xyz, &bmx = Rooms[room].max_xyz;
+    const vector vp = pf_cross_far[cr][cp];
+    const float in = BOT_ROADMAP_CLEARANCE;
+    const bool contained = vp.x() >= bmn.x() + in && vp.x() <= bmx.x() - in && vp.y() >= bmn.y() + in &&
+                           vp.y() <= bmx.y() - in && vp.z() >= bmn.z() + in && vp.z() <= bmx.z() - in;
+    if (contained)
+      inside = vp;
     validated = true;
   }
   if (outside_out)
