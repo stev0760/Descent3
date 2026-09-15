@@ -325,6 +325,17 @@ Bree. If captures return to ~4 a round the rule costs Bree and needs the door-tr
 backface arm was the outlier.
 Bree's second sample closed at four rounds: 1, 2, 0, 2 = 5 captures (the in-room arm: 7; the backface arm: 17).
 The A/B arm (`<lab>/ab-noinroom-20260915/`, the variant binary) started 15:43 on the same rotation.
+Its first round: **4 captures in the first ten minutes** with only the indoor in-room admission switched off — the
+rule costs Bree. Two things follow. (1) A door-transition refinement was built and gated (cells in an adjacent
+room within 48 u of the door, admitted as growth LEAVES — admitted as ordinary nodes they regrew the whole void grid,
+because a sweep that starts inside the neighbour with this room as its start room never crosses a portal and reads
+as "this room"): it restores only 24 cells on Bree (rm58 69 → 74) and 75 on Isengard, so it is not what Bree needs.
+(2) The sewer's cure is not attributed either: the in-room rule and the back-face lattice probe (`8b6ee205`)
+landed on Isengard in the same build, and the rm36 pin trace was a SKELETON-via first hop with the roadmap not
+driving at all (chain=none) — the back-face probe alone may be the cure. So the A/B variant (in-room OFF, everything
+else on) runs Bree for four rounds and then Isengard for two: if the sewer stays quiet without the rule, the rule is
+dropped and the roadmap's cross-room continuity (routes that run THROUGH a door, which the foreign cells gave for
+free) is left to Phase 3 rather than approximated.
 
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 
