@@ -290,6 +290,14 @@ swung 19 → 70 stucks between its own rounds 1 and 2, so one arm of two rounds 
 sweep; if the tw arm's outdoor stucks stay at this level, `c1d34f0a` (FQ_BACKFACE on the outdoor sweeps — no effect on
 the shell faces per the probe, only on interior rooms' back faces seen from outside) is the first thing to revert.
 
+**tw arm, Isengard round 1 (`acc834e4`, 12 min in): the column pin is gone.** 7 stucks (3 outdoors, none at the
+notch), 1 capture — a Blue carrier that had five `rm-1->49` entrance-leg re-issues came home; entrances 3/9. The
+next outdoor pin, read with the render + `$nav probe`: bots bound for the rm20 pipe mouth pinned fifteen times a round
+at cell 132,123 (pos (2127,272,1976), agl 17) — UNDER a platform: the probe straight up is blocked at y 277 and the
+leg to the door node at 0 u; the explore ladder's outdoor branch ran the via tick first, whose "skeleton via" is a
+straight hop over the 64-node door graph and went through the slab. `fix(nav)`: the ladder asks the region lattice
+leg first (as the routed path already did), the graph hop only when there is no leg.
+
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 
 8 bots hotshot, PPS 40, one round per map (15-min CTF, 10-min anarchy), fellowship all 9 levels first. Logs
