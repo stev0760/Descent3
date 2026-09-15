@@ -207,6 +207,16 @@ watch item (Red captures) has its first entry. The sewer, from the operator: rm3
 shortcut tunnel — and the arterial/lattice roadmap was conceived as the better answer to it; the render found the
 same section from the logs and the geometry alone. The in-room arm (`eb3cd7fe`, `<lab>/inroom-20260915/`, Bree 12 →
 Isengard 6 from 10:54) is the A/B against 4.25 captures/round, and its Isengard leg (~13:55) is the sewer's read.
+Rendered while waiting: Isengard rm20 and rm21 (the entrances whose ENTRY commits failed 5/7 and 4/8 in Phase 1) are
+22 x 22 x 20 u OCTAGONAL PIPE MOUTHS (70 faces, two portals each — the exterior rm2 and the hatch rooms rm40/rm41
+above the sewer's upper hall), flat-to-flat 22 u for a 13.4 u hull. The failed entries' traces read "from (2148,319,
+1795) → now (2157,302,1790)": the bot drifted 12 u sideways and 13 u DOWN — below the pipe's floor lip at y=304 — in
+the 8 s after the commit, i.e. a competing steer pulled it off the aim (the pre-gate build; both the ladder gate
+37eef03b and the routed-path gate 39058770 came after this data). Read on the Isengard leg before touching the
+entrance stage; a pipe mouth this tight may also want its approach point set on the pipe's axis rather than the
+crossing sampler's best column. The Bree tavern (rm59) rendered too: two rooms — the bar with its barrels and the
+cask room — joined by two 24 u openings in the partition, the rm58 corridor leaving the bar's top edge; the pinned
+carrier's X sits in the cask room's top corner, one wall from that corridor.
 
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 
