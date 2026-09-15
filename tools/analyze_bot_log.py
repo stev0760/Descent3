@@ -1833,7 +1833,7 @@ def print_report(stats, total_lines, log_path):
               f"clears = proactive shots that opened a route.")
         print()
         print(f"| Map | Committed grabs | Gear-up grabs | Switched (mean s) | Chase timeouts (HARD/mobile) | Stall replans (via/chase/route/circle) | Glass clears (top rooms) | Grate clears |")
-        |---|---|---|---|---|---|---|---|
+        print("|---|---|---|---|---|---|---|---|")
         for name, s in sorted(stats.items()):
             timeouts = s["chase_to_hard"] + s["chase_to_mobile"]
             to_str = f"{timeouts} ({s['chase_to_hard']}/{s['chase_to_mobile']})"
