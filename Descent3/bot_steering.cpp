@@ -1253,8 +1253,9 @@ static bool ViaSegmentClear(int startroom, const vector &a, const vector &b, flo
 // Public wrapper (declared in bot_steering.h) — the nav substrate's shared indoor hull-sweep primitive.
 // Indoor use: no ceiling check (the global ceiling plane could false-hit a room above it). Used by the
 // 0.9.4 volumetric roadmap (bot_roadmap.cpp) for node growth, edge probing, and Theta* line-of-sight.
-bool BotSegmentClear(int startroom, const vector &a, const vector &b, float radius, fvi_info *hit_out) {
-  return ViaSegmentClear(startroom, a, b, radius, hit_out, false);
+bool BotSegmentClear(int startroom, const vector &a, const vector &b, float radius, fvi_info *hit_out,
+                     int extra_fq_flags) {
+  return ViaSegmentClear(startroom, a, b, radius, hit_out, false, extra_fq_flags);
 }
 
 // Outdoor segment-clearance (0.9.4 Stage 3, declared in bot_steering.h). The terrain cell under `a` is a

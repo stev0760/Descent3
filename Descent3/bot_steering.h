@@ -152,7 +152,10 @@ enum BotRoomAimSource {
 // the via search, the pseudo-bnode skeleton, AND the 0.9.4 volumetric roadmap for node growth, edge
 // probing, and Theta* line-of-sight). True when a sphere of `radius` sweeps a→b without hitting wall/
 // terrain. Indoor use only (no ceiling check); `startroom` is the fvi start room (the bot's room for a→b).
-bool BotSegmentClear(int startroom, const vector &a, const vector &b, float radius, fvi_info *hit_out = nullptr);
+// extra_fq_flags: FQ_BACKFACE makes the sweep honest about one-sided walls (a leg that starts behind a wall's
+// back face no longer reads clear on the way through) — the roadmap's edge probe uses it (2026-09-15).
+bool BotSegmentClear(int startroom, const vector &a, const vector &b, float radius, fvi_info *hit_out = nullptr,
+                     int extra_fq_flags = 0);
 
 // Outdoor variant (0.9.4 Stage 3): resolves the terrain cell under `a` as the fvi start room (an
 // RF_EXTERNAL room can't start an fvi trace, but the terrain cell can) and enables the ceiling check,

@@ -232,8 +232,16 @@ bool HasEdge(const std::vector<int> &al, int v) {
 // The roadmap's one geometry probe, dispatched by build kind. Indoor hull-sweeps from the room (no ceiling
 // check); outdoor resolves the terrain cell under the start point and ceiling-caps. Used for node growth,
 // edge probing, the component bridge, AND Theta* LOS — one primitive, so the graph and the query agree.
+// Back-face honest indoors (2026-09-15): D3 walls are one-sided, so a probe that starts on the far side of a
+// partition passed straight through it and the lattice grew an edge THROUGH the wall. Town of Bree rm59: nodes
+// 20 u apart on both sides of the tavern partition (face 757, n=+x, no face on the other side), the Theta* route
+// to the door ran through it, and a carrier sat pressed against the wall at the room centre for 574 s while the
+// via it was handed was the node beside it ("via-point reached" every second, 93 refused commits). The steering
+// sweeps (crossing sampler, pseudo-bnodes, the door search) were already FQ_BACKFACE; the roadmap was the one probe
+// that was not, and every layer must agree on what a wall is.
 bool RoadmapLOSr(const RoadmapRoom *rr, const vector &a, const vector &b, float radius) {
-  return rr->outdoor ? BotSegmentClearOutdoor(a, b, radius) : BotSegmentClear(rr->probe_room, a, b, radius);
+  return rr->outdoor ? BotSegmentClearOutdoor(a, b, radius)
+                     : BotSegmentClear(rr->probe_room, a, b, radius, nullptr, FQ_BACKFACE);
 }
 bool RoadmapLOS(const RoadmapRoom *rr, const vector &a, const vector &b) {
   return RoadmapLOSr(rr, a, b, BOT_ROADMAP_CLEARANCE);
@@ -242,7 +250,7 @@ bool RoadmapLOS(const RoadmapRoom *rr, const vector &a, const vector &b) {
 // Indoor collision trace with blocker detail for the bounded multi-bend component repair below.
 // The outdoor roadmap never enters that pass.
 bool RoadmapTrace(const RoadmapRoom *rr, const vector &a, const vector &b, fvi_info *hit_out) {
-  return !rr->outdoor && BotSegmentClear(rr->probe_room, a, b, BOT_ROADMAP_CLEARANCE, hit_out);
+  return !rr->outdoor && BotSegmentClear(rr->probe_room, a, b, BOT_ROADMAP_CLEARANCE, hit_out, FQ_BACKFACE);
 }
 
 // The point a bot is told to fly for roadmap node `node`: a portal seed hands out the portal's
