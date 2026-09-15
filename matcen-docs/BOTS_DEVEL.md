@@ -143,6 +143,21 @@ node" behind a non-breakable face), pressed for 8 s, then the hard-pin escape; c
 one routable component is never driving the leg. This is the in-room threading class (PLAN §3.0 step 1, the indoor
 planner), not the outdoor pass: register, and read it with the overlay or a room render before building.
 
+**The first level of every session ran with NO objective leans (fixed, `BotPollObjectiveState`).** Reading why the
+Red attackers spent half of round 1 in HUNT/COMBAT found that `lean=` lines appear only at the START OF ROUND 2 in
+every arm today (07:37, 08:22, 08:49, 09:08, 09:23 — the level-change time), never in round 1: `BotAdd` assigns leans
+before `Bot_game_mode` is set, so all bots start the session's first level BALANCED — no runner, `ctf_pushing` false
+(no attacker exemption from hunting), the chooser's ATTACK default for everyone — and real leans arrive only through an
+accidental re-assign on the level-start flag transition of the NEXT level. Measured (refusal arm): the runner Reaper
+entered HUNT from EXPLORE 20 times at median 275 u in round 1, once at 26 u in rounds 2-3; Zed (attack) 34 vs 4; Hawk
+(flex) 43 vs 8; Shadow (defend) 16 vs 46 (a defender hunts either way — expected). Consequences: (a) EVERY round-1
+read in this session (and every earlier single-round or first-round read) was on the wrong policy — the
+round-1-vs-round-1 comparisons above still hold (both arms were BALANCED) but their absolute numbers are not the
+game's; (b) a player's dedicated server on a single level plays its whole match this way — the operator's cockpit
+sessions included. Fix: `BotPollObjectiveState` assigns leans the first poll it finds a freelance team bot still
+BALANCED in a lean mode (CTF/Entropy), logged per bot. Deployed at the budget arm's round-3 boundary as
+`<lab>/leans-20260915/`.
+
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 
 8 bots hotshot, PPS 40, one round per map (15-min CTF, 10-min anarchy), fellowship all 9 levels first. Logs

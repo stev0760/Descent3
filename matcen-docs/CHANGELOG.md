@@ -23,6 +23,11 @@ defence for the round (a role-policy question, not navigation). Outdoor maps are
 the one outdoor defect the play test found, a server crash on maps whose doors open onto terrain, is
 fixed below. Do not run this as a release yet.*
 
+*   **CTF roles apply from the first level, not the second.** Bots were assigned their flag roles (runner,
+    attacker, flex, defender) before the server knew which game it was running, so on the first level of a session
+    every bot played as an unassigned generalist: nobody was the runner, and attackers left the flag run to chase
+    any enemy in sight. Roles only took effect when the mission rotated to its next level. On a server that plays
+    one level, that was the whole match. Roles are now assigned the moment the mode is known.
 *   **A bot on default lasers stops shopping after half a minute.** A freshly spawned bot was allowed to chase any
     weapon it could see, at any range, for as long as it stayed unarmed — on an item-rich outdoor map that was most
     of a short life, with the flag errand on hold. Thirty seconds of gearing up per life is now the limit; after
