@@ -270,6 +270,21 @@ The outdoor arm's one full Isengard round before the swap (`25053e22`, the in-ro
 captures, 6 flag episodes, entrance commits 7 crossed / 0 not, 14 stucks — all outdoors, none in the sewer.** Phase 1's
 six rounds on the same map: 1 capture, 301 stucks.
 
+**The column pin, third pass — and a new instrument (`$nav probe`).** The back-face outdoor sweep did NOT clear it:
+the bfo arm's first Isengard round still had a carrier at the notch with `wp (entrance leg, goal 49) door rm3 wp
+(2037,294,2222) from (2010,294,2196)` — the waypoint is INSIDE the column, 16 u through its wall. `$nav probe` (new:
+hull sweeps along any segment, both directions, three radii, with and without FQ_BACKFACE, reporting the face each
+one hits) settled the mechanism in one run: from outside, the exterior shell's face rm2/38 blocks the leg at 4 u;
+from inside the column the reverse leg is CLEAR at every radius, back faces or not — the shell's faces simply are not
+there for a sweep that starts inside it. The lattice had probed that edge from the inside out. Two-way for every
+outdoor leg was too blunt (Isengard's region lattice 6917 → 964 nodes, unroutable: the growth dies around the door
+seeds, whose reverse legs clip the door frames); the wall-through edges all have an endpoint inside an interior
+room's bounding box (the column base is rm24's volume), so the reverse leg is demanded only there. Gate: Isengard
+6917 → 6860 nodes, one routable component, the column's inside nodes 15 → 9 (the arcade-reachable ones stay);
+Bree unchanged; indoor lattices untouched. The bfo arm's Isengard round 1 (with only the back-face sweep): 0
+captures, 43 outdoor stucks, entrances 4/8 — one round, high variance, but no improvement, as the probe predicts.
+Deployed at the bfo arm's Isengard round-2 boundary as `<lab>/tw-20260915/` (Isengard 6 → Bree 12).
+
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 
 8 bots hotshot, PPS 40, one round per map (15-min CTF, 10-min anarchy), fellowship all 9 levels first. Logs
