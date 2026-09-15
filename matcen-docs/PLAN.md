@@ -595,6 +595,12 @@ first level** (BotAdd runs before the mode is known) — fixed in `BotPollObject
 was on BALANCED leans; (b) **the roadmap lattice grew edges through one-sided walls** (its probe ignored back faces)
 — the second layer of the tavern pin under the hop-commit refusal; fixed with FQ_BACKFACE on the indoor probe,
 geometry-gated bot-free (1440 → 1194 nodes, connectivity unchanged).
+**Result (backface arm, `8b6ee205`): Bree 3 captures in round 1, 2 more by mid round 2 — carriers home in 23-32 s
+through the tavern (3 re-issues at the door vs 556). The carrier-return bottleneck is closed. Red still 0 grabs: not
+nav — Red's attack runs the Blue building's interior corridor (62 → 73 → 70 → 53 → 67 → 61 → 59 → 58 → 72) under fire
+and dies or flees inside it, while Blue's target (71) is two rooms from a door. Map asymmetry; a tactical item (an
+outdoor approach to the tavern's courtyard hatch rm25 → rm61 is four rooms, but troute's interior-vs-terrain cost
+prefers the corridor), registered, not built.**
 
 **Phase 2 — one outdoor network per region.** `EnsureUnionGraph` for `rr->outdoor`: OGraph nodes as
 arterials, the region lattice as local streets, ramps as indoors; the outdoor via query attaches to the
