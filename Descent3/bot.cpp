@@ -3623,7 +3623,16 @@ static void BotDoExploreRoaming(int bot_index) {
         // Not at the ENTRY stage (2026-09-15): the push through the door is a 16-25u hull-validated leg and a
         // detour there is the committee overwriting a commit — Isengard rm20/rm21: "target occluded" 0.5 s
         // after every ENTRY commit, then a press, then NOT-CROSSED. The observer resolves the commit instead.
-        if (!entry_commit && BotViaPointTick(bot_index, ent_pos, ent_room, pgi, nullptr)) {
+        // One outdoor network (2026-09-15): the region lattice leg is asked FIRST and the OGraph "skeleton via" hop
+        // serves only when there is no lattice leg. On Isengard the explore ladder's skeleton hops toward the rm20
+        // pipe mouth ran straight up through a platform the bot was under ($nav probe from the pin (2127,272,1976)
+        // to the door node: blocked at 0 u; the space is 30 u high between terrain and slab), fifteen pins a round
+        // at one cell; the lattice has nodes beside and above the platform and threads it. The routed path
+        // (BotSetRoutedGoal) already prefers the lattice leg; this is the same order for the ladder.
+        vector leg_pos{};
+        int leg_room = -1;
+        const bool lattice_leg = !entry_commit && BotOutdoorRouteLeg(obj, ent_pos, ent_room, &leg_pos, &leg_room);
+        if (!lattice_leg && !entry_commit && BotViaPointTick(bot_index, ent_pos, ent_room, pgi, nullptr)) {
           Bots[bot_index].explore_dest_room = ent_room;
           Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
           BotSetTravelDest(bot_index, ent_room, TRAVEL_OWNER_EXPLORE, TRAVEL_END_REPLACEMENT);
@@ -3645,7 +3654,11 @@ static void BotDoExploreRoaming(int bot_index) {
           // follow the region lattice toward it (waypoint advances on goal completion, en_route
           // holds between waypoints). troute owns this follower for all entrance legs (the
           // piece-1-proper prescription). Skipped on the entry commit — that's a ~25u door push.
-          bool routed = !entry_commit && BotOutdoorRouteLeg(obj, ent_pos, ent_room, &gi_info.pos, &gi_info.roomnum);
+          bool routed = lattice_leg;
+          if (lattice_leg) {
+            gi_info.pos = leg_pos;
+            gi_info.roomnum = leg_room;
+          }
           pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
           Bots[bot_index].explore_dest_room = ent_room;
           Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
