@@ -1262,16 +1262,20 @@ bool BotSegmentClear(int startroom, const vector &a, const vector &b, float radi
 // valid fvi start (an RF_EXTERNAL room is not); check_ceiling rejects legs up over the outdoor ceiling.
 // This is the one geometry primitive the roadmap's terrain-region build + query run on (mirrors how
 // OGraphBuild starts its edge probes — GetTerrainRoomFromPos + ceiling-capped ViaSegmentClear).
+// Back-face honest outdoors too (2026-09-15): a building's base can be an INTERIOR room with no exterior shell over
+// it (Tower of Isengard's corner column rm24: no portal to the outside, its walls face inward), so an outdoor sweep
+// met only the backs of those walls, passed, and the region lattice put 15 nodes inside the column — a carrier on
+// its entrance leg was handed one 16 u away through the wall and sat pressed against the column for 397 s.
 bool BotSegmentClearOutdoor(const vector &a, const vector &b, float radius) {
   vector start = a; // GetTerrainRoomFromPos takes a mutable vector*
   int sr = GetTerrainRoomFromPos(&start);
-  return ViaSegmentClear(sr, a, b, radius, nullptr, true);
+  return ViaSegmentClear(sr, a, b, radius, nullptr, true, FQ_BACKFACE);
 }
 
 bool BotSegmentClearOutdoorHit(const vector &a, const vector &b, float radius, fvi_info *hit_out) {
   vector start = a;
   int sr = GetTerrainRoomFromPos(&start);
-  return ViaSegmentClear(sr, a, b, radius, hit_out, true);
+  return ViaSegmentClear(sr, a, b, radius, hit_out, true, FQ_BACKFACE);
 }
 
 int BotOutdoorRegion(int roomnum) {
