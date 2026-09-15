@@ -737,10 +737,40 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
   // lattice bridged the map through the tavern's interior). The surviving lattice spans the same x/z extent at
   // terrain level (y 238..309). Isengard's region lattice was unchanged (its buildings stand on the ground).
   int od_reject_blocked = 0, od_reject_interior = 0, od_ok_terrain = 0, od_ok_shell = 0, od_ok_none = 0;
+  // Two-way outdoors (2026-09-15, $nav probe): the exterior shell's faces are FRONT faces from outside and
+  // nothing at all from inside (Isengard rm2 face 38 blocks (2007,294,2192) -> (2037,294,2222) at 4 u; the reverse
+  // leg is CLEAR at every radius, with or without FQ_BACKFACE), so an edge probed from the node INSIDE the tower
+  // column to the node outside passed, and the carrier outside was handed the inside node through the wall.
+  // An outdoor lattice edge exists only if both directions are clear — the crossing sampler's twin-side rule.
+  // ...but only where it matters: two-way for every leg cut the Isengard region lattice from 6917 nodes to 964
+  // (the growth dies around the door seeds, whose reverse legs clip the door frames). The wall-through edges all
+  // have an endpoint INSIDE an interior room's box (the column base is rm24's volume), so the reverse leg is
+  // demanded only when either endpoint lies in an interior room's bounding box.
+  std::vector<int> interior_boxes;
+  if (rr->outdoor)
+    for (int r = 0; r <= Highest_room_index; r++)
+      if (Rooms[r].used && !(Rooms[r].flags & RF_EXTERNAL))
+        interior_boxes.push_back(r);
+  auto InInteriorBox = [&](const vector &p) {
+    for (int r : interior_boxes) {
+      const room &rm = Rooms[r];
+      if (p.x() >= rm.min_xyz.x() && p.x() <= rm.max_xyz.x() && p.y() >= rm.min_xyz.y() && p.y() <= rm.max_xyz.y() &&
+          p.z() >= rm.min_xyz.z() && p.z() <= rm.max_xyz.z())
+        return true;
+    }
+    return false;
+  };
+  auto OutdoorLeg2 = [&](const vector &a, const vector &b, fvi_info *hit) {
+    if (!BotSegmentClearOutdoorHit(a, b, BOT_ROADMAP_CLEARANCE, hit))
+      return false;
+    if (InInteriorBox(a) || InInteriorBox(b))
+      return BotSegmentClearOutdoor(b, a, BOT_ROADMAP_CLEARANCE);
+    return true;
+  };
   auto CellInRoom = [&](const vector &from, const vector &cell) {
     if (rr->outdoor) {
       fvi_info hit{};
-      if (!BotSegmentClearOutdoorHit(from, cell, BOT_ROADMAP_CLEARANCE, &hit)) {
+      if (!OutdoorLeg2(from, cell, &hit)) {
         od_reject_blocked++;
         return false;
       }
@@ -778,7 +808,7 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     // Seed<->seed edges (the portal graph the skeleton already had) — off-lattice, so done explicitly.
     for (int i = 0; i < n_seed; i++)
       for (int j = i + 1; j < n_seed; j++)
-        if (RoadmapLOS(rr, rr->node[i], rr->node[j])) {
+        if (rr->outdoor ? OutdoorLeg2(rr->node[i], rr->node[j], nullptr) : RoadmapLOS(rr, rr->node[i], rr->node[j])) {
           rr->adj[i].push_back(j);
           rr->adj[j].push_back(i);
           UFUnion(uf, i, j);
@@ -816,7 +846,7 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
               int w = it->second;
               if (w == u || HasEdge(rr->adj[u], w))
                 continue; // edge already probed from the other endpoint
-              if (RoadmapLOS(rr, pu, vp)) {
+              if (rr->outdoor ? OutdoorLeg2(pu, vp, nullptr) : RoadmapLOS(rr, pu, vp)) {
                 rr->adj[u].push_back(w);
                 rr->adj[w].push_back(u);
                 UFUnion(uf, u, w);
