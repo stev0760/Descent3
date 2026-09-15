@@ -3190,7 +3190,19 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
         } // door_in_view
       }
     }
-    if (BotViaPointTick(bot_index, via_pos, via_room, Bots[bot_index].pursuit_goal_index, nullptr)) {
+    // Terrain -> structure (2026-09-15): the via's target on this leg is the GOAL room's aim — a point inside a
+    // building the bot is outside of — so its skeleton hop over the terrain graph pulls toward the wall, and it
+    // takes the tick before the entrance stage below can name a door. Town of Bree carriers above the tavern
+    // (Gregg 302 s, Phantom 280 s outdoors with the flag): "skeleton via (target room 72)" alternating with
+    // "outdoor entrance approach" every few seconds, NOT-CROSSED at each door the stage picked. The ladder's
+    // outdoor branch already gates its via behind the entrance stage (37eef03b); this is the same rule for the
+    // routed path every errand and the carrier use: the entrance stage owns the aim, the outdoor route leg serves
+    // it, and the via does not compete.
+    const bool terrain_to_structure = Bot_terrain_steering_enabled && OBJECT_OUTSIDE(obj) &&
+                                      !ROOMNUM_OUTSIDE(goal_room) && goal_room >= 0 &&
+                                      goal_room <= Highest_room_index && Rooms[goal_room].used;
+    if (!terrain_to_structure &&
+        BotViaPointTick(bot_index, via_pos, via_room, Bots[bot_index].pursuit_goal_index, nullptr)) {
       // AIMSPLIT (paired-log diagnostic, filtered): with resolution unified, a skeleton-flagged
       // via commit (the helper's own output) must coincide with this routed goal's aim. Any
       // split beyond one hop distance = a REAL leftover voice, not a probe target mismatch.
