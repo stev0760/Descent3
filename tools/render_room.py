@@ -2,6 +2,8 @@
 """render_room.py — draw one room's geometry from a `$nav roomfaces <room> [file]` JSON as PNG (via SVG).
 
     render_room.py <roomfaces.json> [--out room.png] [--pin x,y,z ...] [--view top|side|both] [--width 1600]
+                   [--overlay navdump.json --region N]   # draw the OUTDOOR region lattice + OGraph nodes on top
+                   [--center x,y,z --radius R]           # crop the view to a box around a point (exterior shells are huge)
 
 Two projections: top (x right, z down) and side (x right, y UP). Faces: floors (normal.y > 0.5) filled green,
 ceilings (normal.y < -0.5) filled blue, walls drawn as their outline; portal faces red; transparent (grate/glass)
@@ -25,10 +27,22 @@ def main():
     pins = []
     view = "both"
     width = 1600
+    overlay = None
+    region = 0
+    center = None
+    radius = 0.0
     i = 1
     while i < len(args):
         if args[i] == "--out":
             out = args[i + 1]; i += 2
+        elif args[i] == "--overlay":
+            overlay = args[i + 1]; i += 2
+        elif args[i] == "--region":
+            region = int(args[i + 1]); i += 2
+        elif args[i] == "--center":
+            center = tuple(float(v) for v in args[i + 1].split(",")); i += 2
+        elif args[i] == "--radius":
+            radius = float(args[i + 1]); i += 2
         elif args[i] == "--pin":
             pins.append(tuple(float(v) for v in args[i + 1].split(","))); i += 2
         elif args[i] == "--view":
@@ -40,6 +54,22 @@ def main():
     d = json.load(open(path))
     out = out or os.path.splitext(path)[0] + ".png"
     mn, mx = d["bbox_min"], d["bbox_max"]
+    if center and radius > 0:
+        mn = [c - radius for c in center]
+        mx = [c + radius for c in center]
+    onodes, ocomp, gnodes = [], [], []
+    if overlay:
+        nd = json.load(open(overlay))
+        for e in nd.get("outdoor_roadmap", []):
+            if e.get("region") == region:
+                onodes, ocomp = e.get("nodes", []), e.get("comp", [])
+        for e in nd.get("outdoor_graph", []):
+            if e.get("region") == region:
+                gnodes = e.get("nodes", [])
+        inbox = lambda n: all(mn[k] - 1 <= n[k] <= mx[k] + 1 for k in range(3))
+        keep = [k for k, n in enumerate(onodes) if inbox(n)]
+        onodes, ocomp = [onodes[k] for k in keep], [ocomp[k] for k in keep] if ocomp else []
+        gnodes = [n for n in gnodes if inbox(n)]
     pad = 20.0
     views = ["top", "side"] if view == "both" else [view]
     panels = []
@@ -63,6 +93,8 @@ def main():
         # fills first (floors/ceilings), then walls, then portals on top
         order = sorted(d["faces"], key=lambda f: (0 if abs(f["n"][1]) > 0.5 else 1, f["portal"] >= 0))
         for f in order:
+            if center and radius > 0 and not any(all(mn[k] - 40 <= v[k] <= mx[k] + 40 for k in range(3)) for v in f["v"]):
+                continue
             pts = " ".join(P(v) for v in f["v"])
             ny = f["n"][1]
             dash = ' stroke-dasharray="4,3"' if f.get("transparent") else ""
@@ -74,6 +106,13 @@ def main():
                 parts.append(f'<polygon points="{pts}" fill="#1f77b410" stroke="#1f77b4" stroke-width="0.5"/>')
             else:
                 parts.append(f'<polygon points="{pts}" fill="none" stroke="#333" stroke-width="0.8"{dash}/>')
+        for k, n in enumerate(onodes):  # outdoor region lattice (overlay): hollow dots by component
+            c = PALETTE[ocomp[k] % len(PALETTE)] if ocomp else "#555"
+            x, y = P(n).split(",")
+            parts.append(f'<circle cx="{x}" cy="{y}" r="2.6" fill="none" stroke="{c}" stroke-width="1.2"/>')
+        for n in gnodes:  # OGraph (door/connector) nodes: black diamonds
+            x, y = P(n).split(",")
+            parts.append(f'<path d="M{float(x)},{float(y)-6} L{float(x)+6},{y} L{x},{float(y)+6} L{float(x)-6},{y} Z" fill="#000" fill-opacity="0.7"/>')
         for k, n in enumerate(d.get("roadmap_nodes", [])):
             c = PALETTE[d["roadmap_comp"][k] % len(PALETTE)] if d.get("roadmap_comp") else PALETTE[0]
             x, y = P(n).split(",")
