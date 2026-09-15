@@ -230,6 +230,7 @@
 #define BOT_UNSTICK_REVERSE_TIME 1.0f // seconds of pure reverse thrust after a hard (net_disp<10) pin
 #define BOT_POWERUP_THRUST_RADIUS 50.0f      // direct-thrust override distance for close visible powerups (Phase 4.06)
 #define BOT_POWERUP_STALE_CHASE 4.0f // seconds chasing without collecting before treating chase as stale (Phase 4.06)
+#define BOT_GEARUP_BUDGET 30.0f      // seconds per life a default-laser bot may gear up wide before pressing its errand
 
 // Intra-room via-point steering (Phase 12) — go around free-standing interior obstacles
 // (glass covers, pillars, ledges) that the engine path-follower presses into (NAVIGATION.md §7).
@@ -596,6 +597,8 @@ struct bot_info {
   int entry_commit_room;   // door room committed to; < 0 = no pending entry commit
   int entry_commit_portal; // that room's terrain-facing portal index
   float entry_commit_time; // Gametime at commit
+  float life_start_time;   // Gametime this life began (spawn / level start) — the gear-up budget clock
+  bool gearup_budget_logged; // the once-per-life "budget spent" line
   vector entry_commit_pos; // bot position at commit
   vector entry_commit_aim; // the push-through point issued
 

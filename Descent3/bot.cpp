@@ -5471,7 +5471,19 @@ static void BotUpdateState(int bot_index) {
     // else on objective (chase only what it can SEE; unseen-item beelines through maze walls
     // were the fresh-spawn wall-slamming). Nothing visible → no powerup goal → explore-roam's
     // visited-room curiosity moves it to a new room and new sightlines. Commit once armed.
-    bool gear_up = BotHasOnlyDefaultPrimary(bot_index);
+    // Gear-up BUDGET (2026-09-15): the exemption is per life, not open-ended. On Town of Bree the gear-up phase
+    // ran 30-160 s per life (median 34 s even after chase hysteresis) and a third of all lives never found a
+    // primary at all — the errand suspended the whole time. After BOT_GEARUP_BUDGET seconds of a life a bot still on
+    // default lasers presses its errand like an armed one (on-path radius, LOS-gated grabs in passing); a human on
+    // lasers still goes for the flag.
+    const float life_age = Gametime - Bots[bot_index].life_start_time;
+    const bool default_laser = BotHasOnlyDefaultPrimary(bot_index);
+    bool gear_up = default_laser && (life_age < BOT_GEARUP_BUDGET || life_age < 0.0f);
+    if (default_laser && !gear_up && on_objective && !Bots[bot_index].gearup_budget_logged) {
+      Bots[bot_index].gearup_budget_logged = true;
+      LOG_DEBUG.printf("BOT: '%s' gear-up budget spent (%.0fs, still on lasers) — pressing the errand",
+                       Bots[bot_index].callsign, life_age);
+    }
     // 0.9.8 dedicated runner ($nav runner): the team's designated flag-getter commits to the enemy
     // flag and does NOT detour for powerups — the discipline that separates it from a distractible
     // attack-lean bot (the batteries room-118 powerup trap that ate Red's offense). It still gears
@@ -7966,6 +7978,8 @@ static void BotRespawn(int bot_index) {
   Bots[bot_index].powerup_goal_index = -1;
   Bots[bot_index].chasing_powerup_handle = OBJECT_HANDLE_NONE;
   Bots[bot_index].chasing_powerup_timer = 0.0f;
+  Bots[bot_index].life_start_time = Gametime;
+  Bots[bot_index].gearup_budget_logged = false;
   Bots[bot_index].troute_goal_room = -1; // $nav troute: respawn position invalidates any terrain plan
   Bots[bot_index].troute_reject_until = 0.0f;
   Bots[bot_index].via_expires = 0.0f; // respawn position invalidates any via commitment too
@@ -8060,6 +8074,8 @@ void BotInitAll() {
     Bots[i].hop_commit_src = -1;
     Bots[i].hop_commit_time = 0.0f;
     Bots[i].entry_commit_room = -1;
+    Bots[i].life_start_time = Gametime;
+    Bots[i].gearup_budget_logged = false;
     Bots[i].entry_commit_portal = -1;
     Bots[i].entry_commit_time = 0.0f;
     BotClearViaChain(i);
@@ -8241,6 +8257,8 @@ void BotReinitAll() {
     Bots[i].hop_commit_src = -1;
     Bots[i].hop_commit_time = 0.0f;
     Bots[i].entry_commit_room = -1;
+    Bots[i].life_start_time = Gametime;
+    Bots[i].gearup_budget_logged = false;
     Bots[i].entry_commit_portal = -1;
     Bots[i].entry_commit_time = 0.0f;
     BotClearViaChain(i);
@@ -8510,6 +8528,8 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   // Observers idle for a bot added mid-game (the level reinit is what normally clears them).
   Bots[bot_index].hop_commit_wp = -1;
   Bots[bot_index].entry_commit_room = -1;
+  Bots[bot_index].life_start_time = Gametime;
+  Bots[bot_index].gearup_budget_logged = false;
   Bots[bot_index].player_slot = slot;
   Bots[bot_index].difficulty = difficulty;
 
@@ -8763,6 +8783,8 @@ void BotDoFrame() {
                          Bots[i].entry_commit_room, Bots[i].entry_commit_portal, Gametime - Bots[i].entry_commit_time,
                          (int)eobj->roomnum);
         Bots[i].entry_commit_room = -1;
+        Bots[i].life_start_time = Gametime;
+        Bots[i].gearup_budget_logged = false;
       } else if (Gametime - Bots[i].entry_commit_time > BOT_HOP_OUTCOME_TIMEOUT) {
         LOG_DEBUG.printf("BOT NAV: '%s' entrance outcome: NOT-CROSSED rm%d portal %d (%.1fs, still outdoors) "
                          "from=(%.0f,%.0f,%.0f) aim=(%.0f,%.0f,%.0f) now=(%.0f,%.0f,%.0f)",
@@ -8772,6 +8794,8 @@ void BotDoFrame() {
                          Bots[i].entry_commit_aim.y(), Bots[i].entry_commit_aim.z(), eobj->pos.x(), eobj->pos.y(),
                          eobj->pos.z());
         Bots[i].entry_commit_room = -1;
+        Bots[i].life_start_time = Gametime;
+        Bots[i].gearup_budget_logged = false;
       }
     }
 
