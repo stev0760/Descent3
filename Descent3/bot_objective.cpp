@@ -58,6 +58,7 @@ static_assert(sizeof(Bot_objective.mball_role) == MAX_BOTS,
               "mball_role is sized with a literal 16 in bot_objective.h (bot.h not visible there)");
 
 static void BotAssignMonsterballRoles(); // defined below (needs BotEstimatePathCost's section)
+static const char *BotObjectiveLeanName(BotObjectiveLean lean); // defined with the lean assignment below
 
 // Server-side MP kill/death tallies (multi.cpp:MultiSendPlayerDead — the death chokepoint,
 // killer-attributed, suicides count deaths only). These are the ONLY per-slot kill counters
@@ -1591,6 +1592,22 @@ static int BotGetObjectiveRoom_CTF(int bot_index) {
       if (cost < best_cost) {
         best_cost = cost;
         best_room = room;
+      }
+    }
+    // Role-fix observer (2026-09-15): what the attack branch answers while our flag is out. The Bree
+    // runner kept issuing explore errands inside carried windows and the log could not say why.
+    if (Bot_objective.flag_state[my_team] != FLAG_AT_HOME) {
+      static float Attack_log_t[MAX_BOTS];
+      static int Attack_log_room[MAX_BOTS];
+      float &al = Attack_log_t[bot_index];
+      if (Attack_log_room[bot_index] != best_room + 2 || Gametime < al || Gametime - al > 10.0f) {
+        al = Gametime;
+        Attack_log_room[bot_index] = best_room + 2;
+        LOG_DEBUG.printf("BOT OBJ: '%s' attack while own flag %s (lean %s, %s): enemy flag room %d, cost %.0f",
+                         Bots[bot_index].callsign,
+                         Bot_objective.flag_state[my_team] == FLAG_CARRIED ? "CARRIED" : "DROPPED",
+                         BotObjectiveLeanName(Bots[bot_index].objective_lean), bot_room >= 0 ? "indoors" : "outdoors",
+                         best_room, best_cost < 1e30f ? best_cost : -1.0f);
       }
     }
     return best_room;
