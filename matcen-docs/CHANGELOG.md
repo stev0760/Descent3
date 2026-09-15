@@ -38,12 +38,13 @@ still pins ships at its hatches. Do not run this as a release yet.*
     a coarse door-to-door graph for their detours and only fell back to the fine route network when that failed;
     on Isengard a straight hop toward the pipe entrance ran up through a platform the bot was underneath, fifteen
     times a round at the same spot. The fine network is asked first now, on every outdoor leg.
-*   **A room's route network stays inside the room.** The in-room network was grown by sweeping a ship-sized
-    probe outward from each door, and the probe follows open doors into the next room, so a room's network quietly
-    spread into its neighbours: on Tower of Isengard 85% of it lay in other rooms, and a bot in the tower could be
-    told to fly to a point in a room it was not in. A point now joins a room's network only if the probe ends inside
-    that room. Rooms too small to hold a network of their own use the older door-to-door skeleton, as they did
-    before.
+*   **A room's route network no longer bridges rooms through solid walls.** The in-room network is grown by
+    sweeping a ship-sized probe outward from each door; it ignored the back of one-sided walls, so on Tower of
+    Isengard the sewer's two halls were joined by "route" points in the rock between them, and bots were sent
+    into the wall at the hatches — the section the project fought longest. With the probe honest about back faces
+    the sewer pins are gone (from about twenty a round to none) and every hatch hop crosses. (A stricter rule that
+    also kept a room's network out of its neighbours was tried and withdrawn: it cost Town of Bree most of its
+    captures, because the points a network grows through an open door are what let a route run through it.)
 *   **Routes no longer pass through one-sided walls.** Descent 3 walls have one visible side, and the in-room
     route network tested its links without regard to which side it was looking from, so a link could start behind
     a partition and read as clear. In the Town of Bree tavern that put a route straight through the bar's partition

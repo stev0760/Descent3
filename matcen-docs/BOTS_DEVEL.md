@@ -338,6 +338,14 @@ dropped and the roadmap's cross-room continuity (routes that run THROUGH a door,
 free) is left to Phase 3 rather than approximated.
 A/B Bree, two rounds in full: **5 and 5 captures** (rule on, same rotation: 1, 2, 0, 2 and 1, 2, 0, 4). The variant
 went to Isengard at 16:13 for two rounds.
+**Isengard on the variant, first ten minutes: the sewer is still quiet without the in-room rule** — rm36 0 stucks, 12
+presses, every hatch hop CROSSED (rm36 → 41 ×2, → 40, → 39, → 38), 11 chain completions, 13 stucks all outdoors, 1
+capture. So the sewer's cure was the back-face lattice probe (`8b6ee205`), not the in-room rule. **Decision:** the
+indoor in-room admission is OFF (`fix(roadmap)`: the indoor in-room admission is off); the outdoor admission (terrain
+or shell, two-way where a leg touches an interior room's box) stays; the door-transition zone is not shipped; the
+cross-room continuity the foreign cells provide for free is Phase 3's to do properly. The lesson for the ledger: a
+change bundled with another cannot claim the other's result — the sewer read and the in-room rule landed in one
+build, and the attribution took a day's A/B to untangle.
 
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 
