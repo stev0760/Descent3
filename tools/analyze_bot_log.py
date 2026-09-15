@@ -174,7 +174,8 @@ RE_NET_DISP = re.compile(r"net_disp=(-?\d+)")  # carried by stuck-escalation + r
 # 0.9.6 objective arbitration ($nav commit) + strike discipline + proactive obstacle clearing.
 # The 8s chase-timeout wording changed in 0.9.6 (carries disp= + a HARD|mobile strike verdict);
 # the legacy pattern is kept so pre-0.9.6 logs still count.
-RE_OBJ_DETOUR = re.compile(r"objective detour( \(gear-up\))? — chasing powerup in room (-?\d+)")
+RE_OBJ_DETOUR = re.compile(r"objective detour( \(gear-up\))? — chasing powerup(?: '([^']+)')? in room (-?\d+)"
+                           r"(?: \((switched after|fresh) ([\d.]+)s\))?")  # name + switched/fresh: builds after 2026-09-15
 RE_CHASE_TIMEOUT = re.compile(r"powerup chase timeout \([\d.]+s, disp=(-?\d+) (HARD|mobile)\)")
 RE_CHASE_TIMEOUT_LEGACY = re.compile(r"powerup chase timeout \([\d.]+s\) — blacklisting")
 RE_GLASS_CLEAR = re.compile(r"proactive-clearing breakable glass \(room (-?\d+)")
@@ -480,6 +481,8 @@ def new_map_stats():
         # 0.9.6 objective arbitration + dynamic-obstacle response
         "obj_detours_committed": 0,  # on-objective opportunistic grabs (120u + same/adjacent room + LOS)
         "obj_detours_gearup": 0,     # default-laser bots: wide-radius but LOS-gated grabs
+        "obj_detours_switched": 0,   # chase abandoned for another item while still live (chase churn)
+        "obj_detours_switch_t": 0.0, # seconds the abandoned chases had run (sum)
         "chase_to_hard": 0,          # 8s chase timeouts convicted (net disp < 25u = hard-pin) -> troll strike
         "chase_to_mobile": 0,        # 8s chase timeouts spared (mobile) -> personal blacklist only
         "chase_to_legacy": 0,        # pre-0.9.6 timeout lines (no verdict recorded)
@@ -976,6 +979,9 @@ def parse_log(path):
                     s["obj_detours_gearup"] += 1
                 else:
                     s["obj_detours_committed"] += 1
+                if m.group(4) == "switched after":
+                    s["obj_detours_switched"] += 1
+                    s["obj_detours_switch_t"] += float(m.group(5))
                 continue
 
             m = RE_CHASE_TIMEOUT.search(line)
@@ -1826,8 +1832,8 @@ def print_report(stats, total_lines, log_path):
               f"they can't physically finish — a threading/approach problem, not arbitration. Glass/grate "
               f"clears = proactive shots that opened a route.")
         print()
-        print(f"| Map | Committed grabs | Gear-up grabs | Chase timeouts (HARD/mobile) | Stall replans (via/chase/route/circle) | Glass clears (top rooms) | Grate clears |")
-        print(f"|---|---|---|---|---|---|---|")
+        print(f"| Map | Committed grabs | Gear-up grabs | Switched (mean s) | Chase timeouts (HARD/mobile) | Stall replans (via/chase/route/circle) | Glass clears (top rooms) | Grate clears |")
+        |---|---|---|---|---|---|---|---|
         for name, s in sorted(stats.items()):
             timeouts = s["chase_to_hard"] + s["chase_to_mobile"]
             to_str = f"{timeouts} ({s['chase_to_hard']}/{s['chase_to_mobile']})"
@@ -1839,7 +1845,9 @@ def print_report(stats, total_lines, log_path):
             stall_total = s["stall_via"] + s["stall_chase"] + s["stall_route"] + s["stall_circle"]
             stall_str = (f"{stall_total} ({s['stall_via']}/{s['stall_chase']}/{s['stall_route']}"
                          f"/{s['stall_circle']}c)")
-            print(f"| {name} | {s['obj_detours_committed']} | {s['obj_detours_gearup']} "
+            sw = s["obj_detours_switched"]
+            sw_str = f"{sw} ({s['obj_detours_switch_t'] / sw:.1f}s)" if sw else "0"
+            print(f"| {name} | {s['obj_detours_committed']} | {s['obj_detours_gearup']} | {sw_str} "
                   f"| {to_str} | {stall_str} | {glass_str} | {s['grate_clears']} |")
         print()
 

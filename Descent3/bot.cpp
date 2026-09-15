@@ -4914,6 +4914,20 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
   if (Gametime < Bots[bot_index].blacklisted_powerup_expires)
     lt_blacklisted_handle = Bots[bot_index].blacklisted_powerup_handle;
 
+  // Chase hysteresis (2026-09-15): the pick was re-evaluated from scratch every tick, and the LOS term is a
+  // 10x swing — a target occluded for one tick, or any fresh item coming into view at a similar range, took
+  // the chase away before the bot arrived. Town of Bree round 1: a new chase every ~2.5 s, 30-60 chases per
+  // life before a primary was in hand, one to three minutes of every life spent "gearing up" and the objective
+  // errand suspended the whole time. The item already being chased keeps its LOS term and gets a margin; a
+  // genuinely better item (2x the score) still takes the chase, and the chase timeout still ends a stale one.
+  int sticky_handle = OBJECT_HANDLE_NONE;
+  {
+    const int ch = Bots[bot_index].chasing_powerup_handle;
+    if (ch != OBJECT_HANDLE_NONE && ch != blacklisted_handle && ch != lt_blacklisted_handle &&
+        Bots[bot_index].chasing_powerup_timer <= BOT_POWERUP_CHASE_TIMEOUT && ObjGet(ch))
+      sticky_handle = ch;
+  }
+
   for (int i = 0; i <= Highest_object_index; i++) {
     object *p = &Objects[i];
     if (p->type != OBJ_POWERUP)
@@ -4946,8 +4960,9 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
     if (!OBJECT_OUTSIDE(obj) && !OBJECT_OUTSIDE(p) && p->roomnum != obj->roomnum && BotRoomSealedForShip(p->roomnum))
       continue;
 
+    const bool sticky = (p->handle == sticky_handle);
     float dist = vm_VectorDistanceQuick(&obj->pos, &p->pos);
-    if (dist > seek_radius)
+    if (dist > seek_radius && !sticky)
       continue;
 
     // Objective commitment (0.9.6, $nav commit): the on-path radius is Euclidean and reaches
@@ -4976,7 +4991,7 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
       // Gear-up bots pass require_los WITHOUT the radius/adjacency shrink: wide reach for
       // anything visible, and when nothing is visible the explore-roam visited-room curiosity
       // moves them to a fresh room with fresh sightlines — the emergent room-sweep.
-      if (!BotHasLOS(obj, p))
+      if (!sticky && !BotHasLOS(obj, p))
         continue;
     }
 
@@ -5118,16 +5133,19 @@ static int BotFindBestPowerup(int bot_index, bool need_shields, bool need_energy
     // Phase 4.03: LOS-weighted composite scoring. Visible powerups are strongly preferred
     // over invisible ones — a visible low-priority item beats an invisible high-priority one.
     // This prevents bots from chasing powerups behind walls they can never reach.
-    bool has_los = BotCanSeePos(obj, &p->pos);
+    bool has_los = sticky || BotCanSeePos(obj, &p->pos);
 
     // Composite score: priority * LOS_bonus / distance_factor
     // Visible items: score = priority * 10 / (1 + dist/100)
     // Invisible items: score = priority * 1 / (1 + dist/100), only within 150u
+    // The chase in hand keeps its LOS term (a one-tick occlusion is not a reason to drop it) and a margin.
     if (!has_los && dist > 150.0f)
       continue; // too far and can't see it — skip entirely
     float los_mult = has_los ? 10.0f : 1.0f;
     float dist_factor = 1.0f + dist / 100.0f;
     float score = (float)priority * los_mult / dist_factor;
+    if (sticky)
+      score *= BOT_POWERUP_STICKY_MULT;
 
     if (score > best_score) {
       best_score = score;
@@ -5476,14 +5494,21 @@ static void BotUpdateState(int bot_index) {
       int tgt_handle = Objects[pu_obj].handle;
       // Track which powerup we're chasing for timeout detection
       if (Bots[bot_index].chasing_powerup_handle != tgt_handle) {
+        // A switch away from a chase that was still live (item present, not timed out) is the churn the
+        // hysteresis in BotFindBestPowerup exists to stop — name it so the log can count what remains.
+        const int prev = Bots[bot_index].chasing_powerup_handle;
+        const bool switched = prev != OBJECT_HANDLE_NONE && ObjGet(prev) &&
+                              Bots[bot_index].chasing_powerup_timer <= BOT_POWERUP_CHASE_TIMEOUT;
+        const float prev_t = Bots[bot_index].chasing_powerup_timer;
         Bots[bot_index].chasing_powerup_handle = tgt_handle;
         Bots[bot_index].chasing_powerup_timer = 0.0f;
         Bots[bot_index].via_seal_count = 0;
         Bots[bot_index].chase_start_pos = obj->pos; // strike discipline: net displacement measured from here
         if (on_objective)
-          LOG_DEBUG.printf("BOT NAV: '%s' objective detour%s — chasing powerup in room %d", Bots[bot_index].callsign,
-                           gear_up ? " (gear-up)" : "",
-                           OBJECT_OUTSIDE(&Objects[pu_obj]) ? -1 : Objects[pu_obj].roomnum);
+          LOG_DEBUG.printf("BOT NAV: '%s' objective detour%s — chasing powerup '%s' in room %d (%s%.1fs)",
+                           Bots[bot_index].callsign, gear_up ? " (gear-up)" : "", Object_info[Objects[pu_obj].id].name,
+                           OBJECT_OUTSIDE(&Objects[pu_obj]) ? -1 : Objects[pu_obj].roomnum,
+                           switched ? "switched after " : "fresh ", switched ? prev_t : 0.0f);
       }
 
       // Phase 12: interior-obstacle handling on the powerup line. GLOBAL — powerups are chased in
