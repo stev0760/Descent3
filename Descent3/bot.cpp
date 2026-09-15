@@ -3128,7 +3128,9 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
         // rm84 exit: 271 NOT-CROSSED in 20 rounds). Without a validated point, the old construction.
         vector cross_near{}, cross_plane{}, cross_far{};
         bool cross_bent = false;
+        bool cross_ok = false;
         if (BotPortalCrossingPath(obj->roomnum, best_p, &cross_near, &cross_plane, &cross_far, &cross_bent)) {
+          cross_ok = true;
           // The validated push-through point inside the next room (straight: on the door's normal,
           // 16-24u past the plane; bent: the lateral entry point the fan found). Arrival there is a
           // crossing by construction.
@@ -3143,28 +3145,49 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
             seam_pnt = wp_aim;
           }
         }
-        seam_redirect = true;
-        Bots[bot_index].seam_wp_room = wp_room;
-        Bots[bot_index].seam_next_time = Gametime + BOT_SEAM_RETRY_TIME;
-        Bots[bot_index].hop_press_n = 0; // the push-through consumed the press evidence
-        // 0.9.14: record the committed crossing so the outcome (crossed / arrived-without-crossing)
-        // can be resolved against the bot's later room at the observer in BotDoFrame.
-        Bots[bot_index].hop_commit_wp = wp_room;
-        Bots[bot_index].hop_commit_portal = best_p;
-        Bots[bot_index].hop_commit_src = (int)obj->roomnum;
-        Bots[bot_index].hop_commit_time = Gametime;
-        Bots[bot_index].hop_commit_pos = obj->pos; // where the bot stood when it committed (outcome line)
-        Bots[bot_index].hop_commit_aim = seam_pnt; // what it was told to fly
-        if (steer_divergent)
-          LOG_DEBUG.printf("BOT NAV: '%s' seam guard: engine path detours via room %d — aiming through portal to %d",
-                           Bots[bot_index].callsign, steer_room, wp_room);
-        else
-          LOG_DEBUG.printf("BOT NAV: '%s' hop commit: %d same-hop presses — aiming through portal to %d",
-                           Bots[bot_index].callsign, BOT_HOP_PRESS_TRIGGER, wp_room);
-        BotNavMemberWin(bot_index, steer_divergent ? NAV_MEMBER_SEAM : NAV_MEMBER_HOP_COMMIT); // §7
-        // The via probe should cover our bot->door line, not the engine's detour target.
-        via_pos = seam_pnt;
-        via_room = wp_room;
+        // A commit is a push THROUGH a door the bot can reach: the door's approach point must be in hull view.
+        // Bree tavern (rm59 -> rm58, 2026-09-15): the lattice route re-issued the same hop every ~2 s while
+        // routing AROUND an interior partition, the re-issues counted as "presses", and after four the commit
+        // aimed the push straight through the partition wall — a carrier pinned there for a whole round
+        // (147 carrier ticks, 9 NOT-CROSSED, the flag never came home). A push aimed at a wall is refused,
+        // the press count starts over, and the route that was working keeps the wheel.
+        const vector approach_pt = cross_ok ? cross_near : pt.path_pnt;
+        const bool door_in_view = BotSegmentClear(obj->roomnum, obj->pos, approach_pt, obj->size);
+        if (!door_in_view) {
+          Bots[bot_index].hop_press_n = 0;
+          static float Refuse_log_t[MAX_BOTS];
+          float &rl = Refuse_log_t[bot_index];
+          if (Gametime < rl || Gametime - rl > 5.0f) {
+            rl = Gametime;
+            LOG_DEBUG.printf("BOT NAV: '%s' hop commit REFUSED rm%d -> rm%d: door approach not in hull view from "
+                             "(%.0f,%.0f,%.0f)",
+                             Bots[bot_index].callsign, (int)obj->roomnum, wp_room, obj->pos.x(), obj->pos.y(),
+                             obj->pos.z());
+          }
+        } else {
+          seam_redirect = true;
+          Bots[bot_index].seam_wp_room = wp_room;
+          Bots[bot_index].seam_next_time = Gametime + BOT_SEAM_RETRY_TIME;
+          Bots[bot_index].hop_press_n = 0; // the push-through consumed the press evidence
+          // 0.9.14: record the committed crossing so the outcome (crossed / arrived-without-crossing)
+          // can be resolved against the bot's later room at the observer in BotDoFrame.
+          Bots[bot_index].hop_commit_wp = wp_room;
+          Bots[bot_index].hop_commit_portal = best_p;
+          Bots[bot_index].hop_commit_src = (int)obj->roomnum;
+          Bots[bot_index].hop_commit_time = Gametime;
+          Bots[bot_index].hop_commit_pos = obj->pos; // where the bot stood when it committed (outcome line)
+          Bots[bot_index].hop_commit_aim = seam_pnt; // what it was told to fly
+          if (steer_divergent)
+            LOG_DEBUG.printf("BOT NAV: '%s' seam guard: engine path detours via room %d — aiming through portal to %d",
+                             Bots[bot_index].callsign, steer_room, wp_room);
+          else
+            LOG_DEBUG.printf("BOT NAV: '%s' hop commit: %d same-hop presses — aiming through portal to %d",
+                             Bots[bot_index].callsign, BOT_HOP_PRESS_TRIGGER, wp_room);
+          BotNavMemberWin(bot_index, steer_divergent ? NAV_MEMBER_SEAM : NAV_MEMBER_HOP_COMMIT); // §7
+          // The via probe should cover our bot->door line, not the engine's detour target.
+          via_pos = seam_pnt;
+          via_room = wp_room;
+        } // door_in_view
       }
     }
     if (BotViaPointTick(bot_index, via_pos, via_room, Bots[bot_index].pursuit_goal_index, nullptr)) {
