@@ -587,6 +587,10 @@ refusal arm's round 3: a carrier pinned OUTDOORS at the structure (cell 138,168)
 through the wall beside a live entrance-leg waypoint — the Phase 4 two-member override, one stage before the ENTRY
 commit; it is the outdoor twin of Isengard rm20/rm21 and should be fixed as one rule (the entrance leg's waypoint owns
 the aim while it is live).
+Built as `39058770` (the routed path skips the via outdoors when the goal room is indoors; the ladder path was gated
+in `37eef03b`) — the read is chain `t2s-20260915/`. Pickup instrument read: 35% of chase starts end in a pickup; chase
+timeouts are not closing on the item (mean distance ratio 1.18), so no timeout extension; indoor-item chases fail at
+rm60 (the sealed-item pocket, pre-existing).
 
 **Phase 2 — one outdoor network per region.** `EnsureUnionGraph` for `rr->outdoor`: OGraph nodes as
 arterials, the region lattice as local streets, ramps as indoors; the outdoor via query attaches to the

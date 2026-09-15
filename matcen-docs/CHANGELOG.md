@@ -23,6 +23,11 @@ defence for the round (a role-policy question, not navigation). Outdoor maps are
 the one outdoor defect the play test found, a server crash on maps whose doors open onto terrain, is
 fixed below. Do not run this as a release yet.*
 
+*   **A flag carrier outside a building heads for its door, not its wall.** Once outdoors, a bot bound for a room
+    inside a building was steered two ways at once: the door-finding stage named an entrance, and the obstacle
+    detour aimed straight at the destination room through the wall, and the detour spoke first. On Town of Bree the
+    carriers that never came home were sitting on the tavern roof for minutes, alternating between the two. With an
+    indoor destination the door-finding stage now has the only say outdoors.
 *   **Bots finish the powerup run they started instead of flitting between items.** The item to chase was
     re-chosen from scratch every half second, and "can I see it" counted ten times over, so a target that slipped
     behind a lamppost for one tick, or any other item that came into view, stole the chase before the bot got

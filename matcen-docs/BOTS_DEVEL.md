@@ -100,6 +100,25 @@ item vanishes within 25 u, and `[d_item now was start]` on every chase timeout, 
 chases END in a pickup and how many timeouts were closing on the item (candidate: a progress-based timeout
 extension) versus dithering (the outdoor via's problem, not the chase's).
 
+**Pickup arm round 1 (`4aa542ac`, `<lab>/pickup-20260915/`, 08:38-08:53) and the carrier's outdoor override
+(`39058770`).** With the pickup instrument: 35% of chase starts END IN A PICKUP (79 of 225 in the first 7 min; mean
+chase 3.0 s from 98 u), pickups/life 3.5, armed-after median 34 s, never-armed 31% (was 50% before hysteresis),
+gear-up chases/life 2.1 (was 9.1). Chase timeouts are NOT closing on the item: mean distance-at-timeout / distance-at-
+start = 1.18 (farther than when the chase began), only 20% under half — so a progress-based timeout extension has
+nothing to extend; the timeouts are chases the steering never delivers (indoor items 77 timeouts vs 21 pickups; outdoor
+items 42 vs 54), the rm60 pocket class. Round 1 also produced a capture (Blue, 189 s). The other carrier class was then
+run down: Phantom (hysteresis arm round 2, 280 s outdoors above the tavern) and Gregg (refusal arm round 3, 302 s)
+show the SAME trace — `outdoor entrance approach -> room 65 (goal 72)` … `skeleton via in room <cell> (target room
+72)` … `entrance outcome: NOT-CROSSED rm65 portal 1 (8.0s, still outdoors)` … `approach -> room 63` … — and the
+cause is in `BotSetRoutedGoal`, the path every errand and the carrier use: it ran the via tick BEFORE its outdoor
+entrance stage, and for a bot outdoors whose goal room is indoors the via's target is the goal room's aim, a point
+inside the building; its skeleton hop over the terrain graph pulled toward the wall and took the tick, so the entrance
+stage only spoke when the via failed. The ladder's outdoor branch had been gated behind the entrance stage in
+`37eef03b`; `39058770` applies the same rule on the routed path (outdoors + indoor goal ⇒ skip the via; the entrance
+stage owns the aim and the outdoor route leg serves it). Deployed at the round-1 boundary as `<lab>/t2s-20260915/`
+(Bree 12 → Isengard 6). Read: `skeleton via … (target room <indoor>)` from outdoor bots should vanish; carriers
+above the tavern should reach a door; watch for outdoor idling where the entrance stage fails and no via remains.
+
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 
 8 bots hotshot, PPS 40, one round per map (15-min CTF, 10-min anarchy), fellowship all 9 levels first. Logs
