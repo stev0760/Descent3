@@ -726,9 +726,40 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
   // handed vias in rooms it was not in. A lattice cell belongs to this room only if the sweep ENDS in this room
   // (fvi's hit_room is the room the end point is in). Seeds sit on the portals and are exempt; edges between
   // already-admitted nodes keep the plain probe.
+  // The outdoor twin (same day): the region lattice grew INTO buildings through their doors — Tower of Isengard's
+  // base rendered with the outdoor lattice overlaid had nodes throughout the tower's interior footprint, and a
+  // carrier on its entrance leg sat 75 u up against the tower's north face for 397 s while the leg's waypoint lay
+  // through the wall. An outdoor cell is outdoors only if the sweep ends on a terrain cell or inside an exterior
+  // shell room (RF_EXTERNAL — Bree's sunken tavern courtyard rm25 is one; bots fly there as "outside"), never in an
+  // interior room. Gate on Town of Bree (a sunken town): the region lattice went from 12912 nodes to 1904 — the
+  // 11000 it lost were INSIDE the buildings, down to y=58 under a terrain at y~240 (only 2 cells were rejected by
+  // the room test itself; the rest were only reachable THROUGH those two doorway cells, i.e. the old outdoor
+  // lattice bridged the map through the tavern's interior). The surviving lattice spans the same x/z extent at
+  // terrain level (y 238..309). Isengard's region lattice was unchanged (its buildings stand on the ground).
+  int od_reject_blocked = 0, od_reject_interior = 0, od_ok_terrain = 0, od_ok_shell = 0, od_ok_none = 0;
   auto CellInRoom = [&](const vector &from, const vector &cell) {
-    if (rr->outdoor)
-      return RoadmapLOS(rr, from, cell);
+    if (rr->outdoor) {
+      fvi_info hit{};
+      if (!BotSegmentClearOutdoorHit(from, cell, BOT_ROADMAP_CLEARANCE, &hit)) {
+        od_reject_blocked++;
+        return false;
+      }
+      const int hr = hit.hit_room;
+      if (ROOMNUM_OUTSIDE(hr)) {
+        od_ok_terrain++;
+        return true;
+      }
+      if (hr < 0 || hr > Highest_room_index || !Rooms[hr].used) {
+        od_ok_none++;
+        return true;
+      }
+      if (Rooms[hr].flags & RF_EXTERNAL) {
+        od_ok_shell++;
+        return true;
+      }
+      od_reject_interior++;
+      return false;
+    }
     fvi_info hit{};
     if (!BotSegmentClear(rr->probe_room, from, cell, BOT_ROADMAP_CLEARANCE, &hit, FQ_BACKFACE))
       return false;
@@ -819,6 +850,13 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     GrowBfs(q);
     return rr->lattice_cells;
   };
+  auto LogOutdoorAdmission = [&]() {
+    if (rr->outdoor)
+      LOG_INFO.printf(
+          "[Roadmap] outdoor region lattice admission: terrain %d, shell %d, none %d | rejected blocked %d, "
+          "interior %d (nodes %d)",
+          od_ok_terrain, od_ok_shell, od_ok_none, od_reject_blocked, od_reject_interior, (int)rr->node.size());
+  };
 
   // Grow under three phases and keep the fullest lattice (ties keep the earliest). Cell count is the
   // honest proxy for how much of the room's free volume the grid managed to sample at this pitch; a
@@ -840,6 +878,7 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
       LOG_DEBUG.printf("BOT: roadmap %s %d: phase %d kept, %d cells", kind, id, best_attempt, best_cells);
     }
   }
+  LogOutdoorAdmission();
 
   // DOOR ON-RAMP. Growth is rooted at the seeds, so a doorway whose first hop is blocked (a propped
   // leaf, a frame lip, a short vestibule) loses the WHOLE room, whichever phase is tried. For each

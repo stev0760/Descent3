@@ -162,6 +162,8 @@ bool BotSegmentClear(int startroom, const vector &a, const vector &b, float radi
 // so it rejects legs into the ground, into a structure, OR up over the invisible outdoor ceiling.
 // The volumetric roadmap uses this for terrain-region node growth, edge probing, and Theta* LOS.
 bool BotSegmentClearOutdoor(const vector &a, const vector &b, float radius);
+// Same sweep with the hit record (hit_out->hit_room = the room the END point is in, or a terrain cell).
+bool BotSegmentClearOutdoorHit(const vector &a, const vector &b, float radius, fvi_info *hit_out);
 
 // The terrain region a roomnum belongs to (0..MAX_BOA_TERRAIN_REGIONS-1), or -1 when it is not an
 // outdoor/terrain roomnum. The roadmap keys its per-region outdoor graph by this.

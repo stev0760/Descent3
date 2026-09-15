@@ -1268,6 +1268,12 @@ bool BotSegmentClearOutdoor(const vector &a, const vector &b, float radius) {
   return ViaSegmentClear(sr, a, b, radius, nullptr, true);
 }
 
+bool BotSegmentClearOutdoorHit(const vector &a, const vector &b, float radius, fvi_info *hit_out) {
+  vector start = a;
+  int sr = GetTerrainRoomFromPos(&start);
+  return ViaSegmentClear(sr, a, b, radius, hit_out, true);
+}
+
 int BotOutdoorRegion(int roomnum) {
   if (!ROOMNUM_OUTSIDE(roomnum))
     return -1;
