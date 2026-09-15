@@ -218,6 +218,16 @@ crossing sampler's best column. The Bree tavern (rm59) rendered too: two rooms �
 cask room — joined by two 24 u openings in the partition, the rm58 corridor leaving the bar's top edge; the pinned
 carrier's X sits in the cask room's top corner, one wall from that corridor.
 
+**In-room arm, Bree A/B at 4 rounds (11:54): captures 1, 2, 0, 3 = 6 against the backface arm's 3, 2, 5, 7 = 17 on
+the same rotation.** Carrier episodes are as fast (22-25 s) and the tavern door is crossed the same way; the
+difference is upstream — fewer Blue grabs (round 3: Blue 339 s in FLEE and 242 s in COMBAT against 17 s and 79 s;
+Blue never reached rm73; Red deaths 24 vs 12 — a brawl round), and more HARD chase pins in rm60 (8 vs 1). Not enough
+to attribute to the rule, not enough to clear it: the rule changed rooms 52/53/55/56/58/59/65/67/68/72 on Bree and
+made 55, 65 and 72 non-routable. The chain was re-sequenced Isengard FIRST on the same build
+(`<lab>/inroom2-20260915/`, isengard-loop-6rnd → bree-loop-12rnd from 11:55) so the sewer — the rule's reason —
+is read by ~14:00, and Bree gets its second 4+ rounds after. Candidate refinement if Bree stays down: admit foreign
+cells only within two lattice steps of a portal seed (the door transition zone), in-room elsewhere.
+
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 
 8 bots hotshot, PPS 40, one round per map (15-min CTF, 10-min anarchy), fellowship all 9 levels first. Logs
