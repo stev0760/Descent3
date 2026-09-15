@@ -61,13 +61,17 @@ def flag_timeline(path):
     # lives; a carrier death starts the 120 s drop timer; no announcement by then = "drop-timeout".
     out = {}
     RESPAWN_RE = re.compile(r"'([^']+)' respawned in slot")
+    # 2026-09-15: where the carrier spent the episode — its carrier-nav re-issues by (room -> wp) and refused
+    # hop commits, so a pinned carrier reads as "rm59->58 x556" on the episode line instead of needing a trace.
+    CARRIER_NAV_RE = re.compile(r"'([^']+)' carrier nav room (-?\d+) -> wp (-?\d+)")
+    REFUSED_RE = re.compile(r"'([^']+)' hop commit REFUSED rm(\d+) -> rm(\d+)")
     def close_round():
         if cur is None:
             return
         # any flag still out at level end: carried to the end, or a drop still on the ground
-        for colour, (t_s, by, who, t_died) in list(out.items()):
+        for colour, (t_s, by, who, t_died, _nav) in list(out.items()):
             kind = "level-end (drop)" if t_died is not None else "level-end (carrier alive)"
-            cur["episodes"].append((colour, t_s, last_t or t_s, kind, by))
+            cur["episodes"].append((colour, t_s, last_t or t_s, kind, by, out[colour][4]))
         out.clear()
         rounds.append(cur)
     with open(path, errors="replace") as f:
@@ -77,9 +81,9 @@ def flag_timeline(path):
                 last_t = t
                 # drop timeout: the carrier died and nobody touched the flag for FLAG_TIMEOUT_S — the CTF
                 # module returned it silently (only a DROPPED flag times out; a carried one never does)
-                for colour, (t_s, by, who, t_died) in list(out.items()):
+                for colour, (t_s, by, who, t_died, nav) in list(out.items()):
                     if cur is not None and t_died is not None and t - t_died > FLAG_TIMEOUT_S:
-                        cur["episodes"].append((colour, t_s, t_died + FLAG_TIMEOUT_S, "drop-timeout", by))
+                        cur["episodes"].append((colour, t_s, t_died + FLAG_TIMEOUT_S, "drop-timeout", by, nav))
                         del out[colour]
             m = LEVEL_RE.search(line)
             if m:
@@ -101,10 +105,22 @@ def flag_timeline(path):
                 cur["grabs"].append((last_t, team, colour, own_out))
                 who = (m.group(1) or "") + (m.group(2) or "").strip()  # callsign as the respawn line spells it
                 if colour not in out:
-                    out[colour] = [last_t, team, who, None]
+                    out[colour] = [last_t, team, who, None, collections.Counter()]
                 else:
                     out[colour][2] = who  # a dropped flag picked up again: new carrier, alive
                     out[colour][3] = None
+                continue
+            m = CARRIER_NAV_RE.search(line)
+            if m:
+                for rec in out.values():
+                    if rec[2] == m.group(1) and rec[3] is None:
+                        rec[4]["rm%s->%s" % (m.group(2), m.group(3))] += 1
+                continue
+            m = REFUSED_RE.search(line)
+            if m:
+                for rec in out.values():
+                    if rec[2] == m.group(1) and rec[3] is None:
+                        rec[4]["refused"] += 1
                 continue
             m = CAP_RE.search(line)
             if m:
@@ -112,15 +128,15 @@ def flag_timeline(path):
                     if colour.lower() == "and":
                         continue
                     if colour in out:
-                        t_s, by = out.pop(colour)[:2]
-                        cur["episodes"].append((colour, t_s, last_t, "capture", by))
+                        rec = out.pop(colour)
+                        cur["episodes"].append((colour, rec[0], last_t, "capture", rec[1], rec[4]))
                 continue
             m = RET_RE.search(line)
             if m:
                 colour = m.group(4)
                 if colour in out:
-                    t_s, by = out.pop(colour)[:2]
-                    cur["episodes"].append((colour, t_s, last_t, "returned", by))
+                    rec = out.pop(colour)
+                    cur["episodes"].append((colour, rec[0], last_t, "returned", rec[1], rec[4]))
                 continue
     close_round()
 
@@ -143,8 +159,13 @@ def flag_timeline(path):
         standoff = sum(1 for g in r["grabs"] if g[3])
         print("== round %d (%s): flag episodes %d  [%s]  both-flags-out %.0fs  standoff grabs %d/%d" % (
             i, r["level"], len(eps), ", ".join("%s %d" % kv for kv in sorted(kinds.items())), both, standoff, len(r["grabs"])))
-        for colour, t_s, t_e, kind, by in eps:
+        for colour, t_s, t_e, kind, by, nav in eps:
             print("   %-6s out %6.0fs -> %6.0fs (%4.0fs)  %-14s taken by %s" % (colour, t_s - t0, t_e - t0, t_e - t_s, kind, by))
+            legs = [(k, v) for k, v in nav.most_common() if k != "refused"]
+            if legs:
+                tot = sum(v for _, v in legs)
+                top = ", ".join("%s x%d" % kv for kv in legs[:3])
+                print("          carrier legs %d: %s%s" % (tot, top, ("  refused %d" % nav["refused"]) if nav["refused"] else ""))
     print()
 
 
