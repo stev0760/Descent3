@@ -23,6 +23,21 @@ defence for the round (a role-policy question, not navigation). Outdoor maps are
 the one outdoor defect the play test found, a server crash on maps whose doors open onto terrain, is
 fixed below. Do not run this as a release yet.*
 
+*   **A bot no longer shoves itself through a wall next to a door it was routing around.** Inside the Town of Bree
+    tavern, a partition wall separates the bar from the door the route wanted. The route re-issued the same door every
+    couple of seconds while steering around the partition, the door push counted those re-issues as failed attempts,
+    and after four it committed to a straight push through the wall — eight seconds pinned, reset, repeat until the
+    round ended. Ten of the eleven flag carriers that never came home in a twenty-round test sat exactly there. A
+    push is now only committed when the bot can actually see the doorway it is pushing through; otherwise the route
+    that was working keeps control.
+*   **Dropped flags get picked up, and the team keeps attacking while its flag is out.** A flag dropped on the
+    ground was left there until the game returned it: nobody on either team went for it. Bots now go for their own
+    dropped flag (or a dropped enemy flag when theirs is home), fly straight to it when it is in view, and route to it
+    otherwise; on Town of Bree every outdoor drop was recovered within half a minute. Separately, the first enemy
+    grab used to put the WHOLE defending team on its own flag room for the rest of the round — Red on Town of Bree
+    recorded zero grabs in five hours for that reason. Only the runner stays on the home flag now; the rest keep
+    attacking. And a bot told to push through a door to the outdoors is no longer talked out of it half a second
+    later by the outdoor route planner.
 *   **Bots find every door to the outdoors, and aim at the part of it they can fly through.** The engine's own
     table of terrain doors stops at 40 per region and drops the rest without a word; Tower of Isengard has 47, so
     one whole structure was invisible to the bots. The server now keeps its own complete list, filters out windows

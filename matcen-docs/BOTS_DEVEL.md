@@ -35,6 +35,31 @@ never chased" item, PLAN 3.5); outdoor entrance-miss 501/505 unchanged. **1 capt
 on Tower of Isengard in the record.** Verdict: Phase 1 did what it claimed at the boundary; the next blockers are named
 and none of them is a door point.
 
+**Follow-up batch, 2026-09-15 (five commits, one soak chain each; the operator's direction: "bots should be trying
+harder to pick up a dropped flag ... then the role fixes ... continue working through these problems").**
+*Reframe first (`7e2747a2`, `tools/flag_conversion.py --timeline`):* the CTF module's 120 s timeout runs only while
+NOBODY holds the flag (ctf.cpp:591); a carried flag never times out. The timeline had labelled every grab+120 s with no
+capture a "silent return" — on Bree that hid the real class: of the Phase 1 arm's 19 Blue episodes, **11 were carriers
+still ALIVE at level end, pinned** (5 returned by Red, 2 captures, 1 true drop-timeout). Ten of the eleven pins were at
+one door, the tavern partition rm59 → rm58 (29 refused crossings); `$nav sweep` from the pin: every leg to the door
+blocked within 5-7 u by rm59 face 757, reverse leg clear. Mechanism (`BotSetRoutedGoal`): the lattice route re-issued
+the same hop every ~2 s while routing AROUND the partition, the hop-commit counted the re-issues as presses, and after
+four it committed a push straight through the wall — NOT-CROSSED 8 s later, reset, repeat for the rest of the round.
+*Fix (`09c40a72`):* a commit is a push THROUGH a door the bot can reach — the crossing's approach point must be in hull
+view (`BotSegmentClear`) or the commit is REFUSED, the press count restarts and the route that was working keeps the
+wheel (log: `hop commit REFUSED rm%d -> rm%d`). *Dropped-flag recovery (`74103737`, `BotGetObjectiveItem`):* the
+objective branch now chases the team's own dropped flag (unless the runner is pressing) or the nearest dropped enemy
+flag when its own is home; within `BOT_FLAG_TOUCH_DIST` (150 u) and hull-clear it is an engine `AIG_GET_TO_OBJ`, else a
+routed goal. Read on `recover-20260915/` (Bree): 3 of 3 outdoor drops recovered in ~25 s — it works, and it is the
+1-in-19 class, not the bottleneck. *Runner fix (`b84eff2d`):* the FREELANCE and ATTACK branches return no objective
+while the team's own flag is CARRIED unless the bot's lean is RUNNER — the whole team no longer camps its own flag room
+after the first enemy grab. The recover arm still showed Reaper issuing explore errands inside carried windows with no
+line to say why, so `db7d9c46` logs what the attack branch answers (lean, indoors/outdoors, enemy flag room, cost).
+*Entry-commit gate (`37eef03b`):* the ladder's outdoor branch no longer lets `BotViaPointTick` overwrite a fresh
+terrain-door ENTRY commit (the Isengard rm20/rm21 "occluded → detour → press" trace); read on the Isengard leg of the
+running chain. Chain `<lab>/refusal-20260915/` on `7e2747a2` (Bree 12 → Isengard 6) is the read for the batch; the
+first three refusals fired within a minute of the level loading (rm61 → rm25, rm69 → rm15, rm60 → rm17).
+
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 
 8 bots hotshot, PPS 40, one round per map (15-min CTF, 10-min anarchy), fellowship all 9 levels first. Logs

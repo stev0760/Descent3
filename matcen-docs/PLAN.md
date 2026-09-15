@@ -569,6 +569,16 @@ the outdoor via within a second** (Isengard rm20/rm21: "target occluded" → det
 window as the indoor hop-commit does, or fold it into the plan (Phase 4); (4) **Isengard room 36**: 134 pins, 122 item
 chases — the unreachable-items item (§3.5). Phases 2-3 stay as written; none of (1)-(4) is a door point.
 
+**(1)-(3) built 2026-09-15 (BOTS_DEVEL 2026-09-15, follow-up batch) — and the Bree bottleneck was misread.** The
+timeline's "silent 120 s return" label was wrong (a carried flag never times out): 11 of the 19 Blue episodes were
+carriers ALIVE and pinned, ten of them at the tavern partition door rm59 → rm58, where the indoor hop-commit counted the
+lattice's re-issued hops as presses and pushed through the wall (`09c40a72`: a commit needs the door approach in hull
+view or it is refused). Dropped-flag recovery (`74103737`) works (3/3 in ~25 s) and is the minor class. The runner
+fix (`b84eff2d`) plus an observer (`db7d9c46`); the entry-commit gate (`37eef03b`) for Isengard rm20/rm21. The read
+is chain `refusal-20260915/` on `7e2747a2`. Registered from the batch: whether the lattice's ~2 s re-issue while
+routing around a partition is itself the defect (the commit was its symptom); Red captures on Bree (the operator's
+watch item); (4) room 36 untouched.
+
 **Phase 2 — one outdoor network per region.** `EnsureUnionGraph` for `rr->outdoor`: OGraph nodes as
 arterials, the region lattice as local streets, ramps as indoors; the outdoor via query attaches to the
 hull-visible nearest node (parity with indoor). Lift `BotComposeRoomRoute`'s `OBJECT_OUTSIDE` guard so the
