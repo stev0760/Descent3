@@ -994,12 +994,16 @@ def parse_log(path):
                         life["gear"] += 1
                     elif life["armed"] is None:
                         life["armed"] = _ts_seconds(last_ts)  # first non-gear-up detour = a primary in hand
+                        if life["armed"] is not None and life["spawn"] is not None and life["armed"] < life["spawn"]:
+                            life["armed"] += 86400.0
                 continue
 
             m = RE_RESPAWN.search(line)
             if m:
                 now = _ts_seconds(last_ts)
                 prev = s["life_open"].get(m.group(1))
+                if prev is not None and now is not None and prev["spawn"] is not None and now < prev["spawn"]:
+                    now += 86400.0  # the log crossed midnight (HH:MM:SS timestamps only)
                 if prev is not None and now is not None and prev["spawn"] is not None:
                     s["lives"].append((now - prev["spawn"],
                                        (prev["armed"] - prev["spawn"]) if prev["armed"] is not None else None,
