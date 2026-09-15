@@ -790,10 +790,14 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
       od_reject_interior++;
       return false;
     }
-    fvi_info hit{};
-    if (!BotSegmentClear(rr->probe_room, from, cell, BOT_ROADMAP_CLEARANCE, &hit, FQ_BACKFACE))
-      return false;
-    return hit.hit_room == rr->probe_room;
+    // INDOOR: the in-room test is OFF (A/B 2026-09-15). With it, Town of Bree scored 5 and 7 captures in four rounds
+    // against 17 without it, and the same rotation with only this test switched off scored 5 and 4 in its first two
+    // rounds. The foreign cells a room's lattice grows through its doors are what lets a route run THROUGH a door
+    // instead of ending at it; taking them away costs more than the void grids cost, now that the back-face probe
+    // (no edges through one-sided walls) keeps those grids from bridging rooms through solid. A door-transition
+    // zone (cells within 48 u of the door, admitted as leaves) was tried and restores too little (Bree +24 cells).
+    // The principled replacement — one route across the boundary — is Phase 3.
+    return RoadmapLOS(rr, from, cell);
   };
   auto ResetToSeeds = [&]() {
     rr->node.resize(n_seed);
