@@ -336,6 +336,8 @@ driving at all (chain=none) — the back-face probe alone may be the cure. So th
 else on) runs Bree for four rounds and then Isengard for two: if the sewer stays quiet without the rule, the rule is
 dropped and the roadmap's cross-room continuity (routes that run THROUGH a door, which the foreign cells gave for
 free) is left to Phase 3 rather than approximated.
+A/B Bree, two rounds in full: **5 and 5 captures** (rule on, same rotation: 1, 2, 0, 2 and 1, 2, 0, 4). The variant
+went to Isengard at 16:13 for two rounds.
 
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 
