@@ -17,10 +17,12 @@ Included the bots' route failures went to zero, stuck escalations fell from 159 
 between 8 and 13 captures; on abend2, whose ring rooms defeated every earlier attempt, captures per
 round rose from 0.71 to 1.13 on both teams over eight rounds and the ring room's stuck episodes went
 from 80 to 1. The outdoor sprint (September 14-15) then took the hardest outdoor map, Town of Bree, from
-two bot captures in twenty rounds to five in the first two: bots keep a complete list of doors to the
+two bot captures in twenty rounds to four or five a round, and Tower of Isengard from one capture in six rounds to
+one or two a round with its sewer no longer pinning anyone: bots keep a complete list of doors to the
 outdoors, aim at the part of a door they fit through, no longer push through a wall beside a door or
-route through a one-sided partition, finish the powerup run they started, stop gearing up after half a
-minute, and play their CTF roles from the first level rather than the second. Known limits: one
+route through a one-sided partition, keep their outdoor route network above ground and out of the walls,
+finish the powerup run they started, stop gearing up after half a minute, and play their CTF roles from
+the first level rather than the second. Known limits: one
 propped office door and three floor hatches on Batteries are narrower than a Pyro and are treated as
 such; a desk pocket in one office still wedges a ship now and then; on Town of Bree the Red team's
 attack runs the length of the Blue building's interior under fire and rarely completes (map asymmetry —

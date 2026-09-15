@@ -346,6 +346,15 @@ or shell, two-way where a leg touches an interior room's box) stays; the door-tr
 cross-room continuity the foreign cells provide for free is Phase 3's to do properly. The lesson for the ledger: a
 change bundled with another cannot claim the other's result — the sewer read and the in-room rule landed in one
 build, and the attribution took a day's A/B to untangle.
+The variant's Isengard round in full: 2 captures, 56 stucks (54 outdoors), rm36 0. **Overnight chain** `<lab>/overnight-
+20260915b/` on `f687c46b` (the decided build: everything of the day minus the in-room admission), Bree 12 → Isengard 6
+→ Bree 12, from 16:34. **The remaining outdoor class on Isengard, for tomorrow:** entrance-leg pins by Red bots bound
+for the tower vestibule rm3 and by Blue bots bound for the pipe mouth rm20 at cells 136-142,112-120 — the area
+between the pipe mouth (2145,315,1823) and the platform (2127,272,1976); 30-50 escalations in a bad round, 3-13 in a
+good one. Read it with the new log line (`… door rmN wp (x,y,z) from (x,y,z)`), the render (`render_room.py
+isengard-rm2.json --overlay <navdump> --center 2150,300,1880 --radius 160`) and `$nav probe` on the leg before
+touching code. Also still open: the rm20 pipe mouth's own entry (0/N crossed in most rounds — 22 u octagon, hull 13.4),
+the long carries on Isengard (a capture took 697 s once), and Bree's Red attack (map asymmetry).
 
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 
