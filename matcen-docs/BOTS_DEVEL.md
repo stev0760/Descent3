@@ -228,6 +228,13 @@ made 55, 65 and 72 non-routable. The chain was re-sequenced Isengard FIRST on th
 is read by ~14:00, and Bree gets its second 4+ rounds after. Candidate refinement if Bree stays down: admit foreign
 cells only within two lattice steps of a portal seed (the door transition zone), in-room elsewhere.
 
+**Isengard on the in-room build, first ten minutes (12:05): the sewer stops pinning.** Stuck escalations 4 in the
+whole level (Phase 1: 301 in six rounds, ~50 per round), rm36: 1 (was ~22 per round), 8 presses (was ~57 per round),
+`chain complete rm36` 15 — the lattice inside the halls now drives the legs; hop outcomes rm36 → rm41 1 crossed / 3
+not, rm36 → rm39 2 / 1. Two Red grabs of the Blue flag in the first ten minutes (Phase 1 Isengard: Red's first-ever
+capture was the whole six-round haul); one carrier died outdoors after 99 s of `rm-1->48 x14` entrance approaches
+(rm48/rm3 = the Red-side entrances — the next trace). Entrances: rm21 3 crossed, rm20 0/2.
+
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 
 8 bots hotshot, PPS 40, one round per map (15-min CTF, 10-min anarchy), fellowship all 9 levels first. Logs
