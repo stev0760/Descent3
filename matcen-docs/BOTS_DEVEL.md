@@ -200,6 +200,14 @@ everywhere; rooms too small for a lattice of their own read non-routable (Bree 1
 skeleton/via layers as before 0.9.4; nodes outside their room's box 175 → 0 / 61 → 0. Deployed at the backface arm's
 round-4 boundary as `<lab>/inroom-20260915/` — the A/B against 9 captures in 3 rounds is the read; Isengard follows.
 
+**Backface arm closed at 4 rounds (10:54): 17 captures (3, 2, 5, 7) — Blue 16 of 17 picks (94% conversion), and
+Red's FIRST capture on Town of Bree (2 picks, 1 capture, round 4).** Twenty rounds the day before: 2. The operator's
+watch item (Red captures) has its first entry. The sewer, from the operator: rm36 is exactly the section his
+"chord-cutting" hypothesis came from months ago — bots pinning the wall instead of rounding the bend or taking the
+shortcut tunnel — and the arterial/lattice roadmap was conceived as the better answer to it; the render found the
+same section from the logs and the geometry alone. The in-room arm (`eb3cd7fe`, `<lab>/inroom-20260915/`, Bree 12 →
+Isengard 6 from 10:54) is the A/B against 4.25 captures/round, and its Isengard leg (~13:55) is the sewer's read.
+
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 
 8 bots hotshot, PPS 40, one round per map (15-min CTF, 10-min anarchy), fellowship all 9 levels first. Logs
