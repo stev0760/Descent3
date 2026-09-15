@@ -119,6 +119,16 @@ stage owns the aim and the outdoor route leg serves it). Deployed at the round-1
 (Bree 12 → Isengard 6). Read: `skeleton via … (target room <indoor>)` from outdoor bots should vanish; carriers
 above the tavern should reach a door; watch for outdoor idling where the entrance stage fails and no via remains.
 
+**Gear-up budget (`06aaeeac`).** The t2s arm's first 10 min showed the outdoor `skeleton via … (target room N)`
+lines are almost all the entrance stage's OWN steering toward door rooms (62, 73, 63, 65 — the ladder path's via that
+serves the entrance point), not the goal-room override; that one only shows in carrier episodes, so the gate's read
+waits for grabs. Meanwhile the registered budget went in: the default-laser exemption is now 30 s per life
+(`BOT_GEARUP_BUDGET`); after that a bot still on lasers presses its errand like an armed one (on-path radius,
+LOS-gated grabs in passing), logged once per life. Motivation from the pickup arm: median 34 s of gear-up per life
+even after hysteresis and a third of lives never armed — a quarter of every life with the errand suspended. Deployed
+at the t2s arm's round-1 boundary as `<lab>/budget-20260915/` (Bree 12 → Isengard 6). Read: "gear-up budget spent"
+per life, armed-after/never-armed unchanged or better, chases/life down, Red objective time up.
+
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 
 8 bots hotshot, PPS 40, one round per map (15-min CTF, 10-min anarchy), fellowship all 9 levels first. Logs

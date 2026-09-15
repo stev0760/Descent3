@@ -23,6 +23,10 @@ defence for the round (a role-policy question, not navigation). Outdoor maps are
 the one outdoor defect the play test found, a server crash on maps whose doors open onto terrain, is
 fixed below. Do not run this as a release yet.*
 
+*   **A bot on default lasers stops shopping after half a minute.** A freshly spawned bot was allowed to chase any
+    weapon it could see, at any range, for as long as it stayed unarmed — on an item-rich outdoor map that was most
+    of a short life, with the flag errand on hold. Thirty seconds of gearing up per life is now the limit; after
+    that the bot presses its errand on lasers and takes only what lies on its path, as a human would.
 *   **A flag carrier outside a building heads for its door, not its wall.** Once outdoors, a bot bound for a room
     inside a building was steered two ways at once: the door-finding stage named an entrance, and the obstacle
     detour aimed straight at the destination room through the wall, and the detour spoke first. On Town of Bree the
