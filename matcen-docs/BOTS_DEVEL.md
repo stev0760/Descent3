@@ -306,8 +306,10 @@ stucks), and the trace showed why — the ladder's `outdoor-route wp (entrance r
 `BotDoExploreRoaming`, which ticked the via toward the approach point every tick and overrode the lattice waypoint.
 `8c41e292` gives the upkeep the ladder's order (ENTRY commit left alone; lattice leg keeps the wheel, its next
 waypoint issued only once the previous goal completes; graph hop only without a leg) and puts the waypoint position
-on the ladder's line too. Deployed at the lat arm's round-1 boundary as `<lab>/lat2-20260915/` — Isengard 3 rounds
-(the verify manifest) then Bree 12, so Bree's second sample starts ~15:40.
+on the ladder's line too. Deployed at the lat arm's round-1 boundary as `<lab>/lat2-20260915/`. A harness mistake there: the "verify"
+Isengard manifest runs TWO-MINUTE rounds (a smoke config), so its three rounds were over in six minutes (34 lattice
+waypoint lines against 6 graph hops — the order holds — but nothing comparable); Bree's second sample therefore
+started at 14:43 on `a830ecd2`, and a six-round Isengard leg was appended to the chain to follow it (~17:45).
 
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 
