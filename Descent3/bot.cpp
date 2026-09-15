@@ -3582,7 +3582,10 @@ static void BotDoExploreRoaming(int bot_index) {
         int &pgi = Bots[bot_index].pursuit_goal_index;
         // Outdoor go-around: if a structure blocks the straight line to the approach point, commit to a
         // lateral via (around the footprint, under the ceiling) instead of beelining into the wall.
-        if (BotViaPointTick(bot_index, ent_pos, ent_room, pgi, nullptr)) {
+        // Not at the ENTRY stage (2026-09-15): the push through the door is a 16-25u hull-validated leg and a
+        // detour there is the committee overwriting a commit — Isengard rm20/rm21: "target occluded" 0.5 s
+        // after every ENTRY commit, then a press, then NOT-CROSSED. The observer resolves the commit instead.
+        if (!entry_commit && BotViaPointTick(bot_index, ent_pos, ent_room, pgi, nullptr)) {
           Bots[bot_index].explore_dest_room = ent_room;
           Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
           BotSetTravelDest(bot_index, ent_room, TRAVEL_OWNER_EXPLORE, TRAVEL_END_REPLACEMENT);
