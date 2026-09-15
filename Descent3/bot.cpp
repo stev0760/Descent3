@@ -7065,6 +7065,88 @@ static const char *BotClassifyFaceType(room *rp, int facenum) {
   return "open";
 }
 
+// $nav roomfaces <room> [file] (2026-09-15): one room's geometry for tools/render_room.py — every face's
+// vertices, normal, portal number, texture and physics class, plus the portals' crossing points, the skeleton
+// nodes and the roadmap lattice. The in-room threading class (Isengard rm36's tower hatches) cannot be read from
+// bboxes; this is the render-before-building instrument for it. Bot files only; the console hook is one line.
+bool BotNavRoomFacesDump(int room_idx, const char *filename) {
+  if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used)
+    return false;
+  char path[256];
+  snprintf(path, sizeof(path), "%s", (filename && filename[0]) ? filename : "roomfaces.json");
+  FILE *fp = fopen(path, "w");
+  if (!fp) {
+    LOG_WARNING.printf("[NavDump] could not open '%s' for writing", path);
+    return false;
+  }
+  room &rm = Rooms[room_idx];
+  fprintf(fp, "{\n  \"room\": %d, \"external\": %s, \"num_faces\": %d, \"num_portals\": %d,\n", room_idx,
+          (rm.flags & RF_EXTERNAL) ? "true" : "false", rm.num_faces, rm.num_portals);
+  fprintf(fp,
+          "  \"bbox_min\": [%.2f, %.2f, %.2f], \"bbox_max\": [%.2f, %.2f, %.2f], \"path_pnt\": [%.2f, %.2f, %.2f],\n",
+          rm.min_xyz.x(), rm.min_xyz.y(), rm.min_xyz.z(), rm.max_xyz.x(), rm.max_xyz.y(), rm.max_xyz.z(),
+          rm.path_pnt.x(), rm.path_pnt.y(), rm.path_pnt.z());
+  fprintf(fp, "  \"faces\": [\n");
+  for (int f = 0; f < rm.num_faces; f++) {
+    const face &fa = rm.faces[f];
+    const int pf = GetFacePhysicsFlags(&rm, &fa);
+    fprintf(fp,
+            "    {\"i\": %d, \"portal\": %d, \"tmap\": %d, \"flags\": %u, \"solid\": %d, \"transparent\": %d, "
+            "\"n\": [%.3f, %.3f, %.3f], \"v\": [",
+            f, (int)fa.portal_num, (int)fa.tmap, (unsigned)fa.flags, (pf & FPF_SOLID) ? 1 : 0,
+            (pf & FPF_TRANSPARENT) ? 1 : 0, fa.normal.x(), fa.normal.y(), fa.normal.z());
+    for (int k = 0; k < fa.num_verts; k++) {
+      const vector &v = rm.verts[fa.face_verts[k]];
+      fprintf(fp, "%s[%.2f, %.2f, %.2f]", k ? ", " : "", v.x(), v.y(), v.z());
+    }
+    fprintf(fp, "]}%s\n", (f + 1 < rm.num_faces) ? "," : "");
+  }
+  fprintf(fp, "  ],\n  \"portals\": [\n");
+  for (int p = 0; p < rm.num_portals; p++) {
+    const portal &po = rm.portals[p];
+    vector near_p{}, plane{}, far_p{};
+    bool bent = false;
+    const bool has = BotPortalCrossingPath(room_idx, p, &near_p, &plane, &far_p, &bent);
+    fprintf(fp,
+            "    {\"idx\": %d, \"croom\": %d, \"face\": %d, \"path_pnt\": [%.2f, %.2f, %.2f], \"crossing_ok\": %s, "
+            "\"near\": [%.2f, %.2f, %.2f], \"far\": [%.2f, %.2f, %.2f]}%s\n",
+            p, po.croom, po.portal_face, po.path_pnt.x(), po.path_pnt.y(), po.path_pnt.z(), has ? "true" : "false",
+            near_p.x(), near_p.y(), near_p.z(), far_p.x(), far_p.y(), far_p.z(), (p + 1 < rm.num_portals) ? "," : "");
+  }
+  fprintf(fp, "  ],\n");
+  {
+    static vector spos[BOT_SKEL_MAX_NODES];
+    static uint64_t sedges[BOT_SKEL_MAX_NODES];
+    int sportals = 0;
+    const int sn = BotSkelDumpRoom(room_idx, spos, sedges, &sportals);
+    fprintf(fp, "  \"skel_nodes\": [");
+    for (int i = 0; i < sn; i++)
+      fprintf(fp, "%s[%.2f, %.2f, %.2f]", i ? ", " : "", spos[i].x(), spos[i].y(), spos[i].z());
+    fprintf(fp, "],\n  \"skel_edges\": [");
+    for (int i = 0; i < sn; i++)
+      fprintf(fp, "%s%llu", i ? ", " : "", (unsigned long long)sedges[i]);
+    fprintf(fp, "],\n");
+  }
+  {
+    static vector rpos[2048];
+    static int rcomp[2048];
+    int rcc = 0;
+    bool rdegen = false;
+    const int rn = BotRoadmapDumpRoom(room_idx, rpos, rcomp, 2048, &rcc, &rdegen);
+    fprintf(fp, "  \"roadmap_nodes\": [");
+    for (int i = 0; i < rn; i++)
+      fprintf(fp, "%s[%.2f, %.2f, %.2f]", i ? ", " : "", rpos[i].x(), rpos[i].y(), rpos[i].z());
+    fprintf(fp, "],\n  \"roadmap_comp\": [");
+    for (int i = 0; i < rn; i++)
+      fprintf(fp, "%s%d", i ? ", " : "", rcomp[i]);
+    fprintf(fp, "],\n  \"roadmap_comp_count\": %d\n}\n", rcc);
+  }
+  fclose(fp);
+  LOG_INFO.printf("[NavDump] room %d faces written to '%s' (%d faces, %d portals)", room_idx, path, rm.num_faces,
+                  rm.num_portals);
+  return true;
+}
+
 bool BotNavDump(const char *filename) {
   char path[256];
   if (filename && filename[0])

@@ -824,6 +824,7 @@ void BotNavContendDumpAll(const char *reason, bool reset = true);
 // portal passability, portal-LOS matrix) to a JSON file for offline analysis.
 // Diagnostic only — changes no game state. Returns false if the file can't be written.
 bool BotNavDump(const char *filename);
+bool BotNavRoomFacesDump(int room_idx, const char *filename); // $nav roomfaces <room> [file]
 
 // Classify this bot's primary weapon loadout into BOT_EQUIP_TIER_WEAK/GOOD/ELITE.
 // Used by bot_objective.cpp to prefer well-armed bots for the DEFEND lean assignment.

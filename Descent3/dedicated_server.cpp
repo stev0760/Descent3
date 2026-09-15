@@ -1001,6 +1001,9 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
       PrintDedicatedMessage("  %-13s %.0fs  Monsterball role commitment period: $nav mtenure <seconds>\n", "mtenure",
                             Bot_mball_role_tenure);
       PrintDedicatedMessage("  %-13s      dump nav geometry to JSON: $nav dump [file]\n", "dump");
+      PrintDedicatedMessage("  %-13s      one room's faces/portals/lattice to JSON (tools/render_room.py): $nav "
+                            "roomfaces <room> [file]\n",
+                            "roomfaces");
       PrintDedicatedMessage("  %-13s      hull sweeps from a point to a door's crossing: $nav sweep <x> <y> <z> <room> <portal>\n",
                             "sweep");
       PrintDedicatedMessage(
@@ -1009,6 +1012,19 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     }
     if (stricmp(sub, "dump") == 0)
       return DedicatedNavDump(value);
+    if (stricmp(sub, "roomfaces") == 0) {
+      int room = -1;
+      char fname[128] = "";
+      if (sscanf(value, "%d %127s", &room, fname) < 1) {
+        PrintDedicatedMessage("usage: $nav roomfaces <room> [file]\n");
+        return true;
+      }
+      if (BotNavRoomFacesDump(room, fname))
+        PrintDedicatedMessage("Room %d faces dumped to '%s'\n", room, fname[0] ? fname : "roomfaces.json");
+      else
+        PrintDedicatedMessage("Room faces dump FAILED (bad room %d or file)\n", room);
+      return true;
+    }
     if (stricmp(sub, "sweep") == 0) {
       float x = 0, y = 0, z = 0;
       int room = -1, portal = -1;

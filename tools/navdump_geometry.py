@@ -41,6 +41,8 @@ def main():
     ap.add_argument("--binary", default="Descent3", help="server binary name inside the server dir")
     ap.add_argument("--console", type=int, default=2092, help="RemoteConsolePort of THIS instance's cfg")
     ap.add_argument("--password", default="test")
+    ap.add_argument("--cmd", action="append", default=[],
+                    help="extra console command(s) to send after the dump, e.g. '$nav roomfaces 36 rm36.json'")
     ap.add_argument("--useport", type=int, help="game UDP port (-useport) for a second instance")
     ap.add_argument("--gamespyport", type=int, help="gamespy UDP port (-gamespyport) for a second instance")
     ap.add_argument("--tempdir", help="-tempdir for a second instance")
@@ -87,6 +89,9 @@ def main():
         if not reply.strip():
             print("console connected but did not answer — a stale instance may hold port %d" % a.console, flush=True)
         con.send("$nav dump %s" % short, settle=20.0)
+        for extra in a.cmd:
+            print("sending", extra, flush=True)
+            con.send(extra, settle=8.0)
         cands = [os.path.join(USER_DATA, short)] + ([os.path.join(a.tempdir, short)] if a.tempdir else [])
         src = None
         for _ in range(48):
