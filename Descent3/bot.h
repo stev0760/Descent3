@@ -223,6 +223,7 @@
 #define BOT_POWERUP_CHASE_TIMEOUT 8.0f       // seconds chasing same powerup before giving up (Phase 4.03)
 #define BOT_POWERUP_BLACKLIST_DURATION 60.0f // seconds that a timed-out powerup stays blacklisted (Phase 7.4)
 #define BOT_POWERUP_STICKY_MULT 1.5f         // the chase in hand keeps its LOS term and this margin (chase hysteresis)
+#define BOT_PICKUP_LOG_DIST 25.0f            // a chased item that vanishes within this range was collected (log only)
 // Objective items (flags, orbs) are never optional pickups: a failed approach earns a short back-off
 // so the pilot re-plans from where it stands, not a minute of ignoring the objective (0.9.14).
 #define BOT_OBJECTIVE_BLACKLIST_DURATION 5.0f
@@ -520,6 +521,9 @@ struct bot_info {
   int chasing_powerup_handle;  // handle of powerup being pursued, or OBJECT_HANDLE_NONE
   float chasing_powerup_timer; // seconds spent chasing current powerup without collecting it
   vector chase_start_pos;      // bot position when this chase began — strike discipline (0.9.6)
+  float chase_start_dist;      // bot-to-item distance when this chase began (progress at timeout, 2026-09-15)
+  float chase_last_dist;       // bot-to-item distance on the last chase tick (a vanished item this close = collected)
+  int chase_last_id;           // Object_info id of the item last chased (its name after the object is gone)
 
   // $nav troute (piece 1, NAVIGATION.md 3.7) — cross-terrain 3-segment plan state
   int troute_goal_room;      // the plan's real goal room; -1 = no active plan

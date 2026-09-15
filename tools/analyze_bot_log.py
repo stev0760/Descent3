@@ -178,7 +178,9 @@ RE_OBJ_DETOUR = re.compile(r"objective detour( \(gear-up\))? — chasing powerup
                            r"(?: \((switched after|fresh) ([\d.]+)s\))?")  # name + switched/fresh: builds after 2026-09-15
 RE_RESPAWN = re.compile(r"'([^']+)\[BOT\]' respawned in slot")
 RE_BOTNAME = re.compile(r"'([^']+)\[BOT\]'")
-RE_CHASE_TIMEOUT = re.compile(r"powerup chase timeout \([\d.]+s, disp=(-?\d+) (HARD|mobile)\)")
+RE_CHASE_TIMEOUT = re.compile(r"powerup chase timeout \([\d.]+s, disp=(-?\d+) (HARD|mobile)\)"
+                              r"(?:.*\[d_item (-?[\d.]+) was ([\d.]+)\])?")  # progress at timeout: builds after 2026-09-15
+RE_PICKUP = re.compile(r"'([^']+)\[BOT\]' powerup collected '([^']+)' \(([\d.]+)s chase, from ([\d.]+)u\)")
 RE_CHASE_TIMEOUT_LEGACY = re.compile(r"powerup chase timeout \([\d.]+s\) — blacklisting")
 RE_GLASS_CLEAR = re.compile(r"proactive-clearing breakable glass \(room (-?\d+)")
 RE_GRATE_CLEAR = re.compile(r"proactive-clearing destroyable obstacle \(type=\d+ objnum=\d+ room (-?\d+)\)")
@@ -485,7 +487,9 @@ def new_map_stats():
         "obj_detours_gearup": 0,     # default-laser bots: wide-radius but LOS-gated grabs
         "obj_detours_switched": 0,   # chase abandoned for another item while still live (chase churn)
         "obj_detours_switch_t": 0.0, # seconds the abandoned chases had run (sum)
-        "lives": [],                 # closed lives: (len_s, armed_after_s|None, chases, gearup_chases)
+        "lives": [],                 # closed lives: (len_s, armed_after_s|None, chases, gearup_chases, pickups)
+        "pickups": 0,                # chased items collected (logged from 2026-09-15 builds)
+        "chase_to_closing": 0,       # mobile timeouts where the item was < half its start distance (real progress)
         "life_open": {},             # callsign -> open life dict (spawn ts, armed ts, chase counts)
         "chase_to_hard": 0,          # 8s chase timeouts convicted (net disp < 25u = hard-pin) -> troll strike
         "chase_to_mobile": 0,        # 8s chase timeouts spared (mobile) -> personal blacklist only
@@ -1007,8 +1011,8 @@ def parse_log(path):
                 if prev is not None and now is not None and prev["spawn"] is not None:
                     s["lives"].append((now - prev["spawn"],
                                        (prev["armed"] - prev["spawn"]) if prev["armed"] is not None else None,
-                                       prev["chases"], prev["gear"]))
-                s["life_open"][m.group(1)] = {"spawn": now, "armed": None, "chases": 0, "gear": 0}
+                                       prev["chases"], prev["gear"], prev["pickups"]))
+                s["life_open"][m.group(1)] = {"spawn": now, "armed": None, "chases": 0, "gear": 0, "pickups": 0}
                 continue
 
             m = RE_CHASE_TIMEOUT.search(line)
@@ -1017,6 +1021,17 @@ def parse_log(path):
                     s["chase_to_hard"] += 1
                 else:
                     s["chase_to_mobile"] += 1
+                    if m.group(3) is not None and float(m.group(3)) >= 0 and float(m.group(4)) > 0 \
+                            and float(m.group(3)) < 0.5 * float(m.group(4)):
+                        s["chase_to_closing"] += 1
+                continue
+
+            m = RE_PICKUP.search(line)
+            if m:
+                s["pickups"] += 1
+                life = s["life_open"].get(m.group(1))
+                if life is not None:
+                    life["pickups"] += 1
                 continue
 
             m = RE_CHASE_TIMEOUT_LEGACY.search(line)
@@ -1885,21 +1900,21 @@ def print_report(stats, total_lines, log_path):
               "detour that was NOT gear-up (a primary in hand); `never` = the life ended still on default lasers. "
               "Chases = on-objective detour starts per life. The gear-up phase is time the errand is suspended.")
         print()
-        print("| Map | Lives | Mean life (s) | Armed (median s) | Never armed | Chases/life | Gear-up chases/life |")
-        print("|---|---|---|---|---|---|---|")
+        print("| Map | Lives | Mean life (s) | Armed (median s) | Never armed | Chases/life | Gear-up chases/life | Pickups/life | Mobile timeouts closing |")
+        print("|---|---|---|---|---|---|---|---|---|")
         for name in sorted(stats):
-            lv = stats[name]["lives"]
+            st = stats[name]
+            lv = st["lives"]
             if not lv:
                 continue
-            armed = sorted(a for _, a, _, _ in lv if a is not None)
-            med = armed[len(armed) // 2] if armed else None
-            never = sum(1 for _, a, _, _ in lv if a is None)
-            print(f"| {name} | {len(lv)} | {sum(l for l, _, _, _ in lv) / len(lv):.0f} "
-                  f"| {med:.0f} | {never} ({100 * never / len(lv):.0f}%) "
-                  f"| {sum(c for _, _, c, _ in lv) / len(lv):.1f} | {sum(g for _, _, _, g in lv) / len(lv):.1f} |"
-                  if med is not None else
-                  f"| {name} | {len(lv)} | {sum(l for l, _, _, _ in lv) / len(lv):.0f} | - | {never} (100%) "
-                  f"| {sum(c for _, _, c, _ in lv) / len(lv):.1f} | {sum(g for _, _, _, g in lv) / len(lv):.1f} |")
+            n = len(lv)
+            armed = sorted(a for _, a, _, _, _ in lv if a is not None)
+            med = f"{armed[len(armed) // 2]:.0f}" if armed else "-"
+            never = sum(1 for _, a, _, _, _ in lv if a is None)
+            closing = (f"{st['chase_to_closing']}/{st['chase_to_mobile']}" if st["chase_to_mobile"] else "-")
+            print(f"| {name} | {n} | {sum(l for l, _, _, _, _ in lv) / n:.0f} | {med} | {never} ({100 * never / n:.0f}%) "
+                  f"| {sum(c for _, _, c, _, _ in lv) / n:.1f} | {sum(g for _, _, _, g, _ in lv) / n:.1f} "
+                  f"| {sum(k for _, _, _, _, k in lv) / n:.1f} | {closing} |")
         print()
 
     # Both builders share the room-exit diagnostic. It does not identify a route or its intended exit.

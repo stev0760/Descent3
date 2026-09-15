@@ -5500,10 +5500,19 @@ static void BotUpdateState(int bot_index) {
         const bool switched = prev != OBJECT_HANDLE_NONE && ObjGet(prev) &&
                               Bots[bot_index].chasing_powerup_timer <= BOT_POWERUP_CHASE_TIMEOUT;
         const float prev_t = Bots[bot_index].chasing_powerup_timer;
+        // The item chased last tick is gone and the bot was on top of it: that is a pickup — the one chase
+        // ending the log could not name (timeouts, seals and deaths are all logged; pickups were inferred).
+        if (prev != OBJECT_HANDLE_NONE && !ObjGet(prev) && Bots[bot_index].chase_last_dist < BOT_PICKUP_LOG_DIST &&
+            Bots[bot_index].chase_last_id >= 0)
+          LOG_DEBUG.printf("BOT: '%s' powerup collected '%s' (%.1fs chase, from %.0fu)", Bots[bot_index].callsign,
+                           Object_info[Bots[bot_index].chase_last_id].name, prev_t, Bots[bot_index].chase_start_dist);
         Bots[bot_index].chasing_powerup_handle = tgt_handle;
         Bots[bot_index].chasing_powerup_timer = 0.0f;
         Bots[bot_index].via_seal_count = 0;
         Bots[bot_index].chase_start_pos = obj->pos; // strike discipline: net displacement measured from here
+        Bots[bot_index].chase_start_dist = vm_VectorDistanceQuick(&obj->pos, &Objects[pu_obj].pos);
+        Bots[bot_index].chase_last_dist = Bots[bot_index].chase_start_dist;
+        Bots[bot_index].chase_last_id = Objects[pu_obj].id;
         if (on_objective)
           LOG_DEBUG.printf("BOT NAV: '%s' objective detour%s — chasing powerup '%s' in room %d (%s%.1fs)",
                            Bots[bot_index].callsign, gear_up ? " (gear-up)" : "", Object_info[Objects[pu_obj].id].name,
@@ -5517,6 +5526,7 @@ static void BotUpdateState(int bot_index) {
       // via-point sub-goal. Same-room item with NO clear via for several ticks → sealed (glass
       // box / grate pocket): abandon + blacklist NOW instead of wedging until the 8s chase timeout.
       object *pu = &Objects[pu_obj];
+      Bots[bot_index].chase_last_dist = vm_VectorDistanceQuick(&obj->pos, &pu->pos);
       bool pu_same_room = !OBJECT_OUTSIDE(pu) && pu->roomnum == obj->roomnum;
       // 12.2b: adjacent-room sealed targets (glass-pocket alcoves, pyroplace Mega/Blackshark)
       // produce the same every-tick no-via signal as same-room ones — the old pu_same_room-only
@@ -5605,6 +5615,19 @@ static void BotUpdateState(int bot_index) {
       if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info && obj->ai_info->goals[pgi].used)
         GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
       pgi = -1;
+      {
+        // The chased item is gone and nothing else is worth a chase: if the bot was on top of it, that was
+        // a pickup (the twin of the log in the switch branch above, for the last item in view).
+        const int ch = Bots[bot_index].chasing_powerup_handle;
+        if (ch != OBJECT_HANDLE_NONE && !ObjGet(ch)) {
+          if (Bots[bot_index].chase_last_dist < BOT_PICKUP_LOG_DIST && Bots[bot_index].chase_last_id >= 0)
+            LOG_DEBUG.printf("BOT: '%s' powerup collected '%s' (%.1fs chase, from %.0fu)", Bots[bot_index].callsign,
+                             Object_info[Bots[bot_index].chase_last_id].name, Bots[bot_index].chasing_powerup_timer,
+                             Bots[bot_index].chase_start_dist);
+          Bots[bot_index].chasing_powerup_handle = OBJECT_HANDLE_NONE;
+          Bots[bot_index].chasing_powerup_timer = 0.0f;
+        }
+      }
       BotDoExploreRoaming(bot_index);
     }
     // Transition to HUNT only when the target is reachable and we're not busy collecting.
@@ -8881,15 +8904,22 @@ void BotDoFrame() {
           // criterion); a mobile bot just gets its personal 60s blacklist and moves on. Genuine
           // seals still strike immediately via the via-seal path (geometric evidence).
           float chase_disp = vm_VectorDistanceQuick(&obj->pos, &Bots[i].chase_start_pos);
+          // Progress at timeout (2026-09-15): the item's distance now vs at chase start. "mobile" alone cannot
+          // tell a bot closing on a far item from one dithering at a via detour (Bree: most mobile timeouts had
+          // moved < 200 u in 8 s).
+          const object *pu_now = ObjGet(Bots[i].chasing_powerup_handle);
+          const float d_now = pu_now ? vm_VectorDistanceQuick(&obj->pos, &pu_now->pos) : -1.0f;
           if (chase_disp < BOT_CHASE_STRIKE_MAX_DISP) {
-            LOG_DEBUG.printf("BOT: '%s' powerup chase timeout (%.1fs, disp=%.0f HARD) — blacklist %.0fs + strike",
+            LOG_DEBUG.printf("BOT: '%s' powerup chase timeout (%.1fs, disp=%.0f HARD) — blacklist %.0fs + strike "
+                             "[d_item %.0f was %.0f]",
                              Bots[i].callsign, Bots[i].chasing_powerup_timer, chase_disp,
-                             BOT_POWERUP_BLACKLIST_DURATION);
+                             BOT_POWERUP_BLACKLIST_DURATION, d_now, Bots[i].chase_start_dist);
             BotTrollStrike(Bots[i].chasing_powerup_handle, Bots[i].callsign);
           } else {
-            LOG_DEBUG.printf("BOT: '%s' powerup chase timeout (%.1fs, disp=%.0f mobile) — blacklist %.0fs, no strike",
+            LOG_DEBUG.printf("BOT: '%s' powerup chase timeout (%.1fs, disp=%.0f mobile) — blacklist %.0fs, no strike "
+                             "[d_item %.0f was %.0f]",
                              Bots[i].callsign, Bots[i].chasing_powerup_timer, chase_disp,
-                             BOT_POWERUP_BLACKLIST_DURATION);
+                             BOT_POWERUP_BLACKLIST_DURATION, d_now, Bots[i].chase_start_dist);
             // $nav strike: mobile, but timing out while IN the item's room = circling next to it —
             // soft evidence at half weight (cross-room mobile timeouts still count for nothing)
             BotTrollSoftStrike(Bots[i].chasing_powerup_handle, obj, Bots[i].callsign);
