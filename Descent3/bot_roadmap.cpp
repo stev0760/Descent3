@@ -719,6 +719,21 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
   const float nr = sp * 1.8f; // neighbourhood radius: covers the 26-cell lattice ring (+ seed reach)
 
   // Reset the graph to its seeds so an attempt can be re-run from scratch.
+  // In-room admission (2026-09-15): the sweep follows portals, so a clear leg from a node beside an open door
+  // reached cells INSIDE THE NEIGHBOURING ROOM and the lattice grew there — Isengard rm36 (the tower's two halls):
+  // 2048 nodes at the cap with a full grid in the space between the halls and past the lower hall's outline, all
+  // of it other rooms' interiors reached through the hatches and side doors; one component "routable", and a bot
+  // handed vias in rooms it was not in. A lattice cell belongs to this room only if the sweep ENDS in this room
+  // (fvi's hit_room is the room the end point is in). Seeds sit on the portals and are exempt; edges between
+  // already-admitted nodes keep the plain probe.
+  auto CellInRoom = [&](const vector &from, const vector &cell) {
+    if (rr->outdoor)
+      return RoadmapLOS(rr, from, cell);
+    fvi_info hit{};
+    if (!BotSegmentClear(rr->probe_room, from, cell, BOT_ROADMAP_CLEARANCE, &hit, FQ_BACKFACE))
+      return false;
+    return hit.hit_room == rr->probe_room;
+  };
   auto ResetToSeeds = [&]() {
     rr->node.resize(n_seed);
     rr->adj.assign(n_seed, {});
@@ -777,8 +792,8 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
               }
               continue;
             }
-            // Un-accepted candidate: accept it iff a hull-clear swept edge reaches it from u.
-            if (!RoadmapLOS(rr, pu, vp))
+            // Un-accepted candidate: accept it iff a hull-clear swept edge reaches it from u AND it lies in this room.
+            if (!CellInRoom(pu, vp))
               continue;
             int w = (int)rr->node.size();
             rr->node.push_back(vp);
