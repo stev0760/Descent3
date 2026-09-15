@@ -323,6 +323,8 @@ with only the indoor in-room admission switched off (`Descent3-noinroom`, a labe
 variant, not committed), four Bree rounds on the same rotation; then the full build resumes with Isengard 6 and
 Bree. If captures return to ~4 a round the rule costs Bree and needs the door-transition refinement; if not, the
 backface arm was the outlier.
+Bree's second sample closed at four rounds: 1, 2, 0, 2 = 5 captures (the in-room arm: 7; the backface arm: 17).
+The A/B arm (`<lab>/ab-noinroom-20260915/`, the variant binary) started 15:43 on the same rotation.
 
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 
