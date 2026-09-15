@@ -560,6 +560,15 @@ of "windows". Play arms: the Isengard 12x20 and Bree 20x15 loops
 (`<lab>/phase1-20260914/run.sh`, staged) against the 2026-09-14 baselines, read on entrance-commit outcomes
 (observer), entrance-miss share, ground pins, grabs and conversion.
 
+**Phase 1 arms read 2026-09-15 (BOTS_DEVEL 2026-09-15): the boundary is fixed — Bree entrance commits 85% crossed
+(from 0%), outdoor stucks down 4x, first-ever bot captures on Bree (2) and Isengard (1). What the arms surfaced, in
+priority order:** (1) **Bree Red is on defence all round** — policy, not nav (Red targets its own flag room; Blue's
+early grab keeps it there): the CTF role-balance item is now the Bree bottleneck; (2) **dropped flags are never
+recovered** — 11 of Blue's 19 episodes ended as silent 120 s returns; (3) **an outdoor ENTRY commit is overwritten by
+the outdoor via within a second** (Isengard rm20/rm21: "target occluded" → detour → press): honour the commit for its
+window as the indoor hop-commit does, or fold it into the plan (Phase 4); (4) **Isengard room 36**: 134 pins, 122 item
+chases — the unreachable-items item (§3.5). Phases 2-3 stay as written; none of (1)-(4) is a door point.
+
 **Phase 2 — one outdoor network per region.** `EnsureUnionGraph` for `rr->outdoor`: OGraph nodes as
 arterials, the region lattice as local streets, ramps as indoors; the outdoor via query attaches to the
 hull-visible nearest node (parity with indoor). Lift `BotComposeRoomRoute`'s `OBJECT_OUTSIDE` guard so the

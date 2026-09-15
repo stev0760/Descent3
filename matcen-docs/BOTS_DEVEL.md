@@ -15,6 +15,26 @@ re-landed (`5a94875e`) but not yet validated — unfavorable standalone (batteri
 the flag-room arrival stall and the ~58% connectivity dead-ends. The last stable release is
 **0.9.13** (0.9.11 preceded it; 0.9.12 was never promoted).
 
+### 2026-09-15: Phase 1 arms — first bot captures ever on Bree and Isengard; the door is no longer the failure
+
+Chain `<lab>/phase1b-20260914/` on `14e421db` (Phase 1 + the vestibule fix), guard PASS both, 0 asserts:
+**Bree 20x15 min** — entrance commits 46/56 CROSSED (85%; baseline 0/5), outdoor stucks 74 (9 hard) = 3.7/round
+(baseline 19 per 30 min), all stucks 140 (27 hard), kills 50, **2 captures (Gregg, Blue) — the first bot captures on
+Town of Bree in the record** (baseline 0 of 10 grabs). Blue 26 grabs → 2 caps (8%): 11 of 19 episodes were silent
+120 s returns (the carrier died and NOBODY recovered the drop), 6 returned by Red defenders. **Red 0 grabs in 5 h —
+and it is POLICY, not geometry:** Red crossed 41 of 44 door commits and ended 53 objective errands by ARRIVAL, but
+its objective was room 71, its OWN flag room (Shadow 34x, Hawk 14x, Zed 6x; only Reaper ever targeted the Blue flag
+room 72). Blue grabs the Red flag early every round and Red's role logic keeps the whole team on defence — the
+[[ctf-role-balance]] pattern; both-flags-out was 0 s in all 20 rounds. Remaining door failures: rm60 0/4, rm51 12/14.
+**Isengard 6x20 min** — rm3 (the vestibule) 2/3 CROSSED (was 0/6: the fix holds); overall 8/20 crossed, the failures
+now rm20 (2/7) and rm21 (4/8) and the bots MOVE instead of pinning: the trace shows the ENTRY push overwritten 0.5 s
+later by the outdoor via ("target room 20 occluded" → detour → press → NOT-CROSSED), i.e. the outdoor committee
+overriding a commit — the Phase 4 dispatch item, or a commit-honoured window like the indoor hop-commit. 301 stucks
+(51 hard), 134 in room 36 with 122 item chases there (the concave item room — the "items the hull cannot reach are
+never chased" item, PLAN 3.5); outdoor entrance-miss 501/505 unchanged. **1 capture (Zed, Red) — the first bot capture
+on Tower of Isengard in the record.** Verdict: Phase 1 did what it claimed at the boundary; the next blockers are named
+and none of them is a door point.
+
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 
 8 bots hotshot, PPS 40, one round per map (15-min CTF, 10-min anarchy), fellowship all 9 levels first. Logs

@@ -23,6 +23,14 @@ defence for the round (a role-policy question, not navigation). Outdoor maps are
 the one outdoor defect the play test found, a server crash on maps whose doors open onto terrain, is
 fixed below. Do not run this as a release yet.*
 
+*   **Bots find every door to the outdoors, and aim at the part of it they can fly through.** The engine's own
+    table of terrain doors stops at 40 per region and drops the rest without a word; Tower of Isengard has 47, so
+    one whole structure was invisible to the bots. The server now keeps its own complete list, filters out windows
+    and openings narrower than a ship, and aims every outdoor approach at a hull-swept crossing point rather than
+    the door's centre. Measured on Town of Bree over twenty rounds: bots told to push through a door got in 85% of
+    the time, up from never; outdoor stucks fell four-fold; and Town of Bree and Tower of Isengard recorded their
+    first bot captures ever. Not fixed by this: a team that loses its flag early stays on defence (a role question),
+    and dropped flags are not recovered.
 *   **A door that opens onto the outdoors no longer takes the server down.** The new door-crossing
     check sweeps each candidate line through a door from both sides. On the outdoor side of a
     terrain-facing door it started that sweep inside the building's exterior shell, which the engine's
