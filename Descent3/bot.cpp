@@ -3280,8 +3280,11 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
     // (BotOutdoorEntranceStage/BotOutdoorRouteLeg self-report their own §7 member win.)
     nav_dest_overridden = true;
     if (!entry_commit && BotOutdoorRouteLeg(obj, dest, dest_room, &dest, &dest_room))
-      LOG_DEBUG.printf("BOT NAV: '%s' %s wp (entrance leg, goal %d)", Bots[bot_index].callsign,
-                       troute_active ? "troute seg1" : "outdoor-route", goal_room);
+      // 2026-09-15: the waypoint and the door it serves, so a pinned entrance leg can be placed on a render
+      LOG_DEBUG.printf(
+          "BOT NAV: '%s' %s wp (entrance leg, goal %d) door rm%d wp (%.0f,%.0f,%.0f) from (%.0f,%.0f,%.0f)",
+          Bots[bot_index].callsign, troute_active ? "troute seg1" : "outdoor-route", goal_room, entry_room_c, dest.x(),
+          dest.y(), dest.z(), obj->pos.x(), obj->pos.y(), obj->pos.z());
     else
       LOG_DEBUG.printf("BOT NAV: '%s' outdoor entrance %s -> room %d (goal %d)", Bots[bot_index].callsign,
                        entry_commit ? "ENTRY" : "approach", dest_room, goal_room);
