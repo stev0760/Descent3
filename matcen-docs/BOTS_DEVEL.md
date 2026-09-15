@@ -255,6 +255,18 @@ x/z extent, y 238..309; Isengard 6923 → 6920. Deployed at the Isengard round-2
 second sample. Still open on Isengard: the entrance-leg waypoint around the tower's wings (the pin above), the
 rm20 pipe mouth (0/5 crossed), and the long carries.
 
+**The tower-column pin, read on a render of rm24 with the outdoor lattice overlaid (`fix(nav)`: outdoor sweeps
+back-face honest).** rm24 — the tower's north-east corner column, a diamond footprint, an interior room (portals
+only to rm4/26/46/47, none to the outside) standing on the ground with an open arcade at its base — has 15 region
+lattice nodes INSIDE it; the pinned carrier's X sits just outside the column's north-west wall and the node it was
+handed, (2007,294,2222), 16 u away just inside it. The nodes are reachable (through the arcade), the EDGE through the
+wall is not: the column's walls face inward, so the outdoor sweep met their backs and passed. Neither the end-room
+rule (fvi reads terrain for a point inside an unportalled shell-less room) nor a two-way probe catches that; FQ_BACKFACE
+on the outdoor sweeps does. Gate: node counts unchanged to within 3 (edges are not in the dump); the read is the
+soak. Also: the entrance-leg waypoint line now carries the door room and the waypoint/bot positions, so the next
+such pin can be placed on a render without reconstruction. Deployed at the Isengard round-1 boundary of the
+outdoor arm as `<lab>/bfo-20260915/` (Isengard 6 → Bree 12).
+
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 
 8 bots hotshot, PPS 40, one round per map (15-min CTF, 10-min anarchy), fellowship all 9 levels first. Logs
