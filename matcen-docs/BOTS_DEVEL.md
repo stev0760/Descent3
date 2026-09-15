@@ -181,6 +181,24 @@ of round 1** — Blue grabbed at 125 s and scored at 148 s, grabbed again at 204
 from grab to capture, carrier legs rm71 → 73 → … → 59 → 58 → 72 with THREE carrier-nav re-issues at the tavern door
 (the pinned episode had 556). The timeline tool now prints each episode's carrier legs and refused commits
 (`flag_conversion.py --timeline`), so a pin reads as "rm59->58 x556" on the episode line.
+Rounds 1-3 on `8b6ee205`: **9 captures** (3, 2, 4) plus one return — Bree's twenty-round total was 2 the day before.
+
+**The lattice grew into neighbouring rooms (`fix(roadmap)`: in-room admission) — found by RENDERING Isengard rm36.**
+New instrument: `$nav roomfaces <room> [file]` (bot files + one console hook) writes a room's faces, portal crossing
+points, skeleton and lattice; `tools/render_room.py` draws top/side PNGs (`navdump_geometry.py --cmd` takes the dump
+bot-free on a second instance). rm36 is not "a tower interior": two long halls one above the other joined at an
+elbow, ceiling hatches to rm40/rm41 over the upper hall, floor hatches to rm35/rm38 under the lower one, three side
+doors to rm39 — and the lattice (2048 nodes, the cap) filled the space BETWEEN the halls and the area past the lower
+hall's outline: other rooms' interiors, reached because the hull sweep follows portals and the growth admitted any
+cell a clear sweep reached. One "routable" component through solid; the pinned bot's via was a node in a room it was
+not in. Two hypotheses were tried and measured first: the back-face rule alone (no change in rm36) and a two-way
+probe (8 of 59031 cells — reverted). The rule that fits the render: a cell is admitted only if the sweep ENDS in this
+room (fvi `hit_room`). Geometry gate (second instance, same binary without the rule): Isengard 59031 → 8938 cells
+(**85% of the lattice was other rooms**), rm36 2048 → 635 and the render clean; Bree 1130 → 667 (rm58 372 → 69, the
+flag room rm72 17 → 5: twelve of its seventeen nodes were outside its own box); component counts unchanged
+everywhere; rooms too small for a lattice of their own read non-routable (Bree 13 → 10, Isengard 20 → 19) and use the
+skeleton/via layers as before 0.9.4; nodes outside their room's box 175 → 0 / 61 → 0. Deployed at the backface arm's
+round-4 boundary as `<lab>/inroom-20260915/` — the A/B against 9 captures in 3 rounds is the read; Isengard follows.
 
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 

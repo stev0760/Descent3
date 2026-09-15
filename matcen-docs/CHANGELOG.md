@@ -27,6 +27,12 @@ attack runs the length of the Blue building's interior under fire and rarely com
 Blue's flag sits deep in the tavern, Red's two rooms from a door); Tower of Isengard's tower interior
 still pins ships at its hatches. Do not run this as a release yet.*
 
+*   **A room's route network stays inside the room.** The in-room network was grown by sweeping a ship-sized
+    probe outward from each door, and the probe follows open doors into the next room, so a room's network quietly
+    spread into its neighbours: on Tower of Isengard 85% of it lay in other rooms, and a bot in the tower could be
+    told to fly to a point in a room it was not in. A point now joins a room's network only if the probe ends inside
+    that room. Rooms too small to hold a network of their own use the older door-to-door skeleton, as they did
+    before.
 *   **Routes no longer pass through one-sided walls.** Descent 3 walls have one visible side, and the in-room
     route network tested its links without regard to which side it was looking from, so a link could start behind
     a partition and read as clear. In the Town of Bree tavern that put a route straight through the bar's partition
