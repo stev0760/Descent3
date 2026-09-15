@@ -235,6 +235,26 @@ not, rm36 → rm39 2 / 1. Two Red grabs of the Blue flag in the first ten minute
 capture was the whole six-round haul); one carrier died outdoors after 99 s of `rm-1->48 x14` entrance approaches
 (rm48/rm3 = the Red-side entrances — the next trace). Entrances: rm21 3 crossed, rm20 0/2.
 
+**Isengard round 1-2 in full, and the outdoor lattice's underground twin (`e6ac0d15`).** Round 1: four episodes
+(three Red grabs of the Blue flag returned, one Blue carrier alive 447 s), both flags out 133 s — a standoff at
+last; round 2: **a capture** (Blue, after a 697 s carry), five episodes, both flags out 219 s. Stucks 19 then 70,
+of which 18 and 67 OUTDOORS and one per round in the sewer (Phase 1: ~22 per round there). The outdoor class is the
+carriers: Gregg (Blue flag, goal rm49 = the goal cube at the TOWER TOP, rm47 at y 944-1213) sat 397 s at
+(1995,293,2211), 75 u up against the tower's north face with `outdoor-route wp (entrance leg, goal 49)` re-issued
+every 10-30 s, `stuck escape — no portal`, while the door it needed (rm3, the 13 u vestibule on the EAST face) was
+round the corner. rm48/rm49 are 20 u goal cubes: rm49 in the tower top, rm48 in rm45 at y -629..-500 (the dungeon).
+Rendering the tower base with the outdoor lattice overlaid (new `render_room.py --overlay --center/--radius`) showed
+the region lattice covering the tower's open ground floor (legitimate) — and asking the same question of Town of
+Bree found the outdoor twin of the in-room bug: **Bree's region lattice had 12912 nodes and 11000 of them were
+INSIDE the buildings, down to y=58 under a terrain at y~240** — the sweep follows doors, the town is sunk, and the
+map's two outdoor halves were joined THROUGH the tavern. Rule: an outdoor cell must end on a terrain cell or inside
+an exterior shell room (rm25, the sunken courtyard, is one), never in an interior room. Only two doorway cells fail
+the test itself; everything behind them was reachable only through them. Gate: Bree 12912 → 1904 nodes at the same
+x/z extent, y 238..309; Isengard 6923 → 6920. Deployed at the Isengard round-2 boundary as
+`<lab>/outdoor-20260915/` (Isengard 6 → Bree 12) — Isengard's read continues unchanged; Bree gets the rule for its
+second sample. Still open on Isengard: the entrance-leg waypoint around the tower's wings (the pin above), the
+rm20 pipe mouth (0/5 crossed), and the long carries.
+
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 
 8 bots hotshot, PPS 40, one round per map (15-min CTF, 10-min anarchy), fellowship all 9 levels first. Logs
