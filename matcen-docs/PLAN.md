@@ -566,8 +566,7 @@ priority order:** (1) **Bree Red is on defence all round** — policy, not nav (
 early grab keeps it there): the CTF role-balance item is now the Bree bottleneck; (2) **dropped flags are never
 recovered** — 11 of Blue's 19 episodes ended as silent 120 s returns; (3) **an outdoor ENTRY commit is overwritten by
 the outdoor via within a second** (Isengard rm20/rm21: "target occluded" → detour → press): honour the commit for its
-window as the indoor hop-commit does, or fold it into the plan (Phase 4); (4) **Isengard room 36**: 134 pins, 122 item
-chases — the unreachable-items item (§3.5). Phases 2-3 stay as written; none of (1)-(4) is a door point.
+window as the indoor hop-commit does, or fold it into the plan (Phase 4); (4) **Isengard room 36**: 134 pins — re-read 2026-09-15: 306 of 342 presses are ROUTED legs toward the tower's hatch/side portals (skeleton via first hop behind a solid face, chain never driving), 28 item chases; the in-room threading class of §3.0 step 1, not the items item. Phases 2-3 stay as written; none of (1)-(4) is a door point.
 
 **(1)-(3) built 2026-09-15 (BOTS_DEVEL 2026-09-15, follow-up batch) — and the Bree bottleneck was misread.** The
 timeline's "silent 120 s return" label was wrong (a carried flag never times out): 11 of the 19 Blue episodes were

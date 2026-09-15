@@ -129,6 +129,20 @@ even after hysteresis and a third of lives never armed — a quarter of every li
 at the t2s arm's round-1 boundary as `<lab>/budget-20260915/` (Bree 12 → Isengard 6). Read: "gear-up budget spent"
 per life, armed-after/never-armed unchanged or better, chases/life down, Red objective time up.
 
+**Isengard room 36 re-read (from the Phase 1 Isengard log, while the Bree arms run).** The "122 item chases" label was
+wrong: of the 342 wall presses logged in rm36, 306 carry `goal=pursuit` (a routed/explore leg toward an adjacent room:
+rm35 110, rm39 75, rm41 46, rm40 40, rm38 31) and 5 a powerup; item chases there are 28 room-progress timeouts (Shield
+16, NapalmRocket 9) and 26 sealed abandons. rm36 is the tower interior: 685 x 201 x 476 u, 1035 faces, seven portals —
+three side doors to rm39, two CEILING hatches (rm40, rm41 at y=182, normal 0,-1,0) and two FLOOR hatches (rm35, rm38
+at y=0); path_pnt unreachable, portal LOS blocked 36/42, roadmap 2048 nodes / 8124 lattice cells / ONE routable
+component, six items all `review` with 0/8 approaches clear. The pin trace (Hawk, 02:54): at (2212,37,1678) wanting
+rm41's hatch at (1950,182,1931) — `seam guard: engine path detours via room 38 — aiming through portal to 41`, then
+`skeleton via in room 36 (target room 41)` every 4 s with net_disp 5, `via search failed … hit face=36/1 tmap=1587 d=34`,
+`hop outcome: NOT-CROSSED rm36 -> rm41` — a skeleton via whose first hop the hull cannot reach (a thin-ray "visible
+node" behind a non-breakable face), pressed for 8 s, then the hard-pin escape; chain=none throughout, so the roadmap's
+one routable component is never driving the leg. This is the in-room threading class (PLAN §3.0 step 1, the indoor
+planner), not the outdoor pass: register, and read it with the overlay or a room render before building.
+
 ### 2026-09-14: overnight stability + coverage sweep on 836f2f75 — 27 soaks, 33 maps, 4 Debug-build aborts
 
 8 bots hotshot, PPS 40, one round per map (15-min CTF, 10-min anarchy), fellowship all 9 levels first. Logs
