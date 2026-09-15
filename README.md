@@ -47,7 +47,8 @@ tends to keep the other on defence (a role-policy question, next). Outdoor maps 
 the play-test build `c099220f` crashed on maps whose doors open onto terrain (found on Nightmare
 Castle: the new door-crossing check started an outdoor-side sweep inside the building's exterior
 shell), and the fix on top of it is verified on Nightmare Castle and Isengard.
-See [Known limitations](#known-limitations) and the [release notes](matcen-docs/CHANGELOG.md). The September 14-15 outdoor sprint then took the hardest outdoor map, Town of Bree, from two bot captures in twenty rounds to five in its first two: a complete bot-side table of doors to the outdoors, hull-fitted door approaches, no more pushes through a wall beside a door or routes through a one-sided partition, and CTF roles that apply from a session's first level.
+The September 14-15 outdoor sprint then took the hardest outdoor map, Town of Bree, from two bot captures in twenty rounds to five in its first two: a complete bot-side table of doors to the outdoors, hull-fitted door approaches, no more pushes through a wall beside a door or routes through a one-sided partition, and CTF roles that apply from a session's first level.
+See [Known limitations](#known-limitations) and the [release notes](matcen-docs/CHANGELOG.md).
 
 ### Features
 
