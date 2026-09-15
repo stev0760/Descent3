@@ -1806,6 +1806,55 @@ bool BotIsCarryingEnemyFlag(int bot_index) {
   return false;
 }
 
+int BotGetObjectiveItem(int bot_index, vector *pos_out, int *roomnum_out) {
+  if (BotGetGameMode() != BGM_CTF)
+    return -1;
+  const int slot = Bots[bot_index].player_slot;
+  const int my_team = Players[slot].team;
+  if (my_team < 0 || my_team >= BOT_MAX_TEAMS)
+    return -1;
+  const BotSquadRole role = Bots[bot_index].squad_role;
+  if (role == SQUAD_FOLLOW || role == SQUAD_COVER)
+    return -1; // escort logic owns those
+  const int teams = Num_teams > BOT_MAX_TEAMS ? BOT_MAX_TEAMS : Num_teams;
+  int pick = -1;
+  const bool runner_pressing = role == SQUAD_FREELANCE && Bots[bot_index].objective_lean == BOT_LEAN_RUNNER &&
+                               !BotIsCarryingEnemyFlag(bot_index); // the runner keeps pressing (role fix)
+  if (Bot_objective.flag_state[my_team] == FLAG_DROPPED && Bot_objective.flag_objnum[my_team] >= 0 &&
+      !runner_pressing) {
+    // Our flag is on the ground: touching it returns it home (ctf.cpp:1034) and a carrier keeps what it holds.
+    // Nobody can score until it is home, so this outranks every other errand for everyone on the team
+    // except the runner, who keeps the attack errand alive while the home flag is out.
+    pick = Bot_objective.flag_objnum[my_team];
+  } else if (!BotIsCarryingEnemyFlag(bot_index)) {
+    // A dropped enemy flag: the fumble grab. Anyone may take it while our flag is safe at home; an
+    // attacker takes it regardless (that is the errand it was already on).
+    const bool attacker =
+        role == SQUAD_ATTACK || (role == SQUAD_FREELANCE && Bots[bot_index].objective_lean != BOT_LEAN_DEFEND);
+    if (Bot_objective.flag_state[my_team] == FLAG_AT_HOME || attacker) {
+      const object *obj = &Objects[Players[slot].objnum];
+      float best = 1e30f;
+      for (int t = 0; t < teams; t++) {
+        if (t == my_team || Bot_objective.flag_state[t] != FLAG_DROPPED || Bot_objective.flag_objnum[t] < 0)
+          continue;
+        const object *f = &Objects[Bot_objective.flag_objnum[t]];
+        const float d = vm_VectorDistanceQuick(&obj->pos, &f->pos);
+        if (d < best) {
+          best = d;
+          pick = Bot_objective.flag_objnum[t];
+        }
+      }
+    }
+  }
+  if (pick < 0 || pick > Highest_object_index || Objects[pick].type != OBJ_POWERUP)
+    return -1;
+  if (pos_out)
+    *pos_out = Objects[pick].pos;
+  if (roomnum_out)
+    *roomnum_out = (int)Objects[pick].roomnum; // a terrain cell when the flag lies outdoors
+  return pick;
+}
+
 int BotGetCarrierTouchObjnum(int bot_index) {
   if (BotGetGameMode() != BGM_CTF)
     return -1;

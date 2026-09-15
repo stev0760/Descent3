@@ -267,6 +267,13 @@ void BotPrintObjectiveState();
 // Returns a room index the bot should navigate toward, or -1 if no objective applies.
 // Called from BotDoExploreRoaming() to short-circuit random room selection.
 int BotGetObjectiveRoom(int bot_index);
+// CTF flag recovery (2026-09-15): the free flag this bot should TOUCH right now — its own dropped flag (touching
+// returns it) or a dropped enemy flag it may grab — as an OBJECT with a position and the flag's roomnum, which
+// may be a terrain cell (ROOMNUM_OUTSIDE) when the flag lies outdoors. -1 when there is nothing to touch.
+// BotGetObjectiveRoom cannot express an outdoor flag (a terrain cell is not a room), and its room answer sent
+// bots to a room's centre, never to the flag: on Town of Bree 11 of 19 flag episodes ended as silent 120 s
+// returns with nobody touching the drop. The objective consumer asks this first.
+int BotGetObjectiveItem(int bot_index, vector *pos_out, int *roomnum_out);
 
 // Target selection bias for objective-relevant enemies.
 // Returns a score adjustment (negative = prefer target, positive = avoid).

@@ -3458,6 +3458,49 @@ static void BotDoExploreRoaming(int bot_index) {
 
   // Objective-mode navigation: if the game mode suggests a specific room, go there.
   // If already at the objective room, hold position (don't fall through to random sampling).
+  // CTF flag recovery (2026-09-15): a free flag to TOUCH — our dropped flag, or a dropped enemy flag — is an
+  // OBJECT with a position, not a room. Fly to the flag itself (the room-centre aim left bots idling in the
+  // flag's room), and take an outdoor drop as a terrain-cell goal (a room the chooser below cannot express).
+  // Within reach with a clear line: an object goal, the same touch the carrier uses at home.
+  {
+    vector ipos{};
+    int iroom = -1;
+    const int item = BotGetObjectiveItem(bot_index, &ipos, &iroom);
+    if (item >= 0) {
+      int &pgi = Bots[bot_index].pursuit_goal_index;
+      const float d = vm_VectorDistanceQuick(&obj->pos, &ipos);
+      bool clear = false;
+      if (d < BOT_FLAG_TOUCH_DIST) {
+        if (OBJECT_OUTSIDE(obj))
+          clear = BotSegmentClearOutdoor(obj->pos, ipos, obj->size);
+        else
+          clear = BotSegmentClear(obj->roomnum, obj->pos, ipos, obj->size);
+      }
+      static int Recover_log_item[MAX_BOTS]; // item+1 of the last "touching" line, so the touch logs once
+      if (clear) {
+        if (!(pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used &&
+              obj->ai_info->goals[pgi].type == AIG_GET_TO_OBJ && Recover_log_item[bot_index] == item + 1)) {
+          if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+            GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+          int handle = Objects[item].handle;
+          pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&handle, 2, 1.0f, GF_SPEED_ATTACK);
+          Recover_log_item[bot_index] = item + 1;
+          LOG_DEBUG.printf("BOT OBJ: '%s' flag recovery -> touching '%s' (obj %d, %.0fu%s)", Bots[bot_index].callsign,
+                           Object_info[Objects[item].id].name, item, d, ROOMNUM_OUTSIDE(iroom) ? ", outdoors" : "");
+        }
+        return;
+      }
+      Recover_log_item[bot_index] = 0;
+      bool reissued = false;
+      const int wp = BotSetRoutedGoal(bot_index, iroom, ipos, &reissued, TRAVEL_OWNER_OBJECTIVE);
+      if (reissued)
+        LOG_DEBUG.printf("BOT OBJ: '%s' flag recovery nav -> wp %d ('%s' obj %d %s at %.0f,%.0f,%.0f, %.0fu)",
+                         Bots[bot_index].callsign, wp, Object_info[Objects[item].id].name, item,
+                         ROOMNUM_OUTSIDE(iroom) ? "OUTDOORS" : "indoors", ipos.x(), ipos.y(), ipos.z(), d);
+      return;
+    }
+  }
+
   int obj_room = BotGetObjectiveRoom(bot_index);
   if (obj_room >= 0 && Rooms[obj_room].used) {
     if (obj_room == obj->roomnum) {

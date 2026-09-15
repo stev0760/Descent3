@@ -70,6 +70,11 @@ RE_ROOM_EVIDENCE = [re.compile(x) for x in (
     r"chain built rm(-?\d+)", r"composed route rm(-?\d+)", r"stuck escalation \(room (-?\d+)",
     r"BOT PRESS: '[^']+' rm(-?\d+)", r"hop outcome: (?:CROSSED|NOT-CROSSED) rm(-?\d+)")]
 ENTRY_INFER_WINDOW = 20.0
+# CTF flag recovery (2026-09-15): the objective consumer flies to a free flag (own dropped / enemy fumble) and
+# touches it with an object goal. Counted per map; the flag timeline (flag_conversion.py --timeline) is the
+# outcome instrument (silent 120 s returns = drops nobody touched).
+RE_FLAG_RECOVER_NAV = re.compile(r"flag recovery nav -> wp (-?\d+) \('([^']*)' obj (\d+) (OUTDOORS|indoors)")
+RE_FLAG_RECOVER_TOUCH = re.compile(r"flag recovery -> touching '([^']*)' \(obj (\d+), ([\d.]+)u(, outdoors)?\)")
 RE_TS_HMS = re.compile(r"(\d\d):(\d\d):(\d\d)\.(\d+)")
 
 
@@ -426,6 +431,12 @@ def new_map_stats():
         "entry_fail_why": Counter(),         # recommit / timeout / outdoors (inferred only)
         "entry_pending": {},                 # bot -> (door room, commit time) while inferring
         "entry_src": "inferred",             # "observer" once a server outcome line is seen
+        # CTF flag recovery: routed legs toward a free flag (indoor/outdoor) and touch goals issued.
+        "recover_nav": 0,
+        "recover_nav_outdoor": 0,
+        "recover_touch": 0,
+        "recover_touch_outdoor": 0,
+        "recover_items": Counter(),          # flag name -> touches
         # 0.9.14 objective-arrival telemetry: what the ARRIVED declaration actually observed.
         "arrived_obj": 0,                    # enriched ARRIVED lines (new build only)
         "arrived_rooms": Counter(),
@@ -591,6 +602,20 @@ def parse_log(path):
                         s["via_fail_breakable"] += 1
                     if md.group(6) == "1":
                         s["via_fail_forcefield"] += 1
+                continue
+
+            m = RE_FLAG_RECOVER_NAV.search(line)
+            if m:
+                s["recover_nav"] += 1
+                if m.group(4) == "OUTDOORS":
+                    s["recover_nav_outdoor"] += 1
+                continue
+            m = RE_FLAG_RECOVER_TOUCH.search(line)
+            if m:
+                s["recover_touch"] += 1
+                s["recover_items"][m.group(1)] += 1
+                if m.group(4):
+                    s["recover_touch_outdoor"] += 1
                 continue
 
             m = RE_ENTRY_OUTCOME.search(line)
@@ -1639,6 +1664,23 @@ def print_report(stats, total_lines, log_path):
     # exist to answer WHY a failure happened, not just that it did: which face blocked a via search,
     # which door a committed hop failed to cross, what the objective arrival actually saw, and
     # whether the item-reach graph verdict contradicts raw line-of-sight.
+    if any(s["recover_nav"] or s["recover_touch"] for s in stats.values()):
+        print(f"## Flag Recovery (CTF)")
+        print()
+        print(f"Routed legs toward a free flag (own dropped / enemy fumble) and object-goal touches issued. Read the "
+              f"outcome in `flag_conversion.py --timeline`: silent 120 s returns are the drops nobody touched.")
+        print()
+        print(f"| Map | Recovery legs | of which outdoors | Touch goals | of which outdoors | Flags touched |")
+        print(f"|---|---|---|---|---|---|")
+        for name in maps:
+            s = stats[name]
+            if not (s["recover_nav"] or s["recover_touch"]):
+                continue
+            items = ", ".join(f"{k}x{v}" for k, v in s["recover_items"].most_common(3)) or "-"
+            print(f"| {name} | {s['recover_nav']} | {s['recover_nav_outdoor']} | {s['recover_touch']} "
+                  f"| {s['recover_touch_outdoor']} | {items} |")
+        print()
+
     if any(s["entry_commits"] for s in stats.values()):
         print(f"## Entrance Commits (outdoor pass Phase 0)")
         print()
