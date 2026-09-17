@@ -38,7 +38,11 @@ without flag activity raises a reach concern but does not identify a coverage de
 
 ---
 
-## 2. Where the project actually is (2026-09-10, 0.9.13-dev)
+## 2. Where the project actually is (2026-09-10, 0.9.13-dev; status line 2026-09-17 below)
+
+> **2026-09-17:** the candidate is **0.9.14-dev on `f687c46b`**, soaked across the fellowship loops, bedlam
+> 4-team, abend2, dementia, CHAOS, RAGE, Sigma Base and Facing Worlds without a crash, awaiting the
+> operator's flight test before `-dev` is stripped. The release sequence from here is §4.0.
 
 The candidate is 0.9.13-dev, not promoted. Anarchy, Team Anarchy, Robo-Anarchy, CTF, Monsterball, Entropy,
 and Hyper-Anarchy have bot implementations, with mode-specific limitations. Entropy takeovers
@@ -640,6 +644,46 @@ Nightmare Castle captures (choke points, 1v1/2v2 only — operator ruling); the 
 ---
 
 ## 4. Release (R1)
+
+### 4.0 The path to R1 — decided 2026-09-17
+
+The sequence, in the operator's words: finish validating 0.9.14 by flying it; ship it stable; then
+grind the remaining map problems in 0.9.15 until every map runs and plays smoothly; only then bump
+the series and start the adjacent work and the community release.
+
+1. **0.9.14 — validate, then ship.** The soaks are done (fellowship loops, bedlam 4-team, abend2,
+   dementia as CTF, CHAOS/RAGE/Sigma Base/Facing Worlds as 3v3 CTF, all on `f687c46b`). What remains
+   is the operator's own flight test. If it holds: strip `-dev`, keep the patch, push `0.9.14` stable.
+   Nothing new lands in 0.9.14 — the Sigma Base fix below is built and in A/B but is a 0.9.15 change.
+2. **0.9.15 — the grind.** One series, as many patches as it takes, each fix soaked and A/B'd before it
+   lands (§5 rules). The registered work, roughly in order of what it unlocks:
+   - **Sigma Base class — two-bunker maps across terrain.** Built 2026-09-17, in A/B: the CTF attack
+     branch no longer vetoes an enemy flag room whose BOA chain is infinite (the chain leaves the mine
+     for terrain), and explore admission drops the router's disagreement retry (a window onto a wall is
+     not a destination). Control: 0 grabs in 4×45 min, no attack errand ever issued indoors.
+   - **Isengard's remaining outdoor pin class** (pipe-mouth / platform cells 136–142,112–120, entrance
+     legs bound for rm3/rm20) and rm20's low entry-crossing rate (§3.7).
+   - **Toroid maps — Rim and abend2 refinements** (NAVIGATION §7.2, geometry captured 2026-09-17): let
+     the lattice own the ring and silence the door-commit machinery until adjacency; Rim additionally
+     needs exit-the-pocket legs for its 45° inner-rim alcoves, the ceiling-exit case for its flag
+     rooms, and a lattice cap not pinned at 2,048 on a 676-tall arc. Rim baseline for this cfg (3v3,
+     45 min): 0.7 caps/rnd, 18 stucks/rnd, ~1,600 re-issues per orbiting carry, up from a documented
+     zero-ever.
+   - **Dropped-flag reaction time** (SteelVapor: seven episodes where a loose flag lay untouched for the
+     full 120 s auto-return — neither the fumble rush nor the defenders' recovery arrived). Mode layer,
+     not nav; low priority.
+   - **Bree Red-side attack difficulty** (map asymmetry vs role policy — measure per team, §3.5).
+   - **Co-op revisit** — cannot be soaked; the operator flies it. Whether it lands in 0.9.15 or later is
+     open.
+   - **Committee collapse and code cleanup** — the 3-site duplicated dispatch in `BotSetRoutedGoal` /
+     `BotDoExploreRoaming`, the stale `legacy` toggle tags, skeleton+roadmap as one network outside the
+     in-room case (the 2026-09-16 sweep). Implied by the grind, scheduled as its own project inside it,
+     Fable-orchestrated.
+3. **Bump the series** (0.10.x per the versioning convention: 0.8.x features, 0.9.x navigation) once
+   the map list plays smoothly. 0.10 is the adjacent work — bot management and feel, command surface
+   and menus — plus the release package: Windows + Linux builds, D3 Pyrodeck, the cloud-hosted 24/7
+   server (a resource-capped soak sizes the droplet first), the announcement. 1.0 waits for the
+   community to have played it.
 
 **Exit criteria:** Entropy and Monsterball playable against bots (**done**), navigation good enough
 that a human enjoys a full round (**§3**), packaging, quickstart, announcement.

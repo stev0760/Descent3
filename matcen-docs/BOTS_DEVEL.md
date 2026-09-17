@@ -15,6 +15,58 @@ re-landed (`5a94875e`) but not yet validated — unfavorable standalone (batteri
 the flag-room arrival stall and the ~58% connectivity dead-ends. The last stable release is
 **0.9.13** (0.9.11 preceded it; 0.9.12 was never promoted).
 
+### 2026-09-17: the stress set as CTF, the Sigma Base class, toroid geometry, and the release sequence
+
+**Stress set on `f687c46b` (3v3, TimeLimit 45, `<lab>/overnight-stress-20260916/`, guard PASS, 0 asserts):**
+CHAOS.MN3 — Wishbone 3.8 and Inversion 4.0 caps/rnd on their first CTF outing; **Rim 0.7 caps/rnd against a
+documented zero-ever** (0.9.8 gridall battery: 0% both arms, 2 grabs in 12 rounds) but still the worst room in the
+set — 18 stucks/rnd (53 of 54 at one point in rm41), 521 via-search fails, one carry of 36 minutes re-issuing
+rm26→25 1,658 times. RAGE (level `entropybugfix`) 2.0 caps/rnd, Blue 10% vs Red 32% conversion. **Sigma Base 0
+grabs in 4×45 min** (the control arm below). Facing Worlds last. Earlier on the same build: bedlam 4-team 162
+caps/13 rnd (Polaris 14.3, Plutonium 18.3, Apparition 11.2, QuadSomniac 6.3 caps/rnd; one Green+Yellow double
+capture), abend2 3v3 1.5 caps/rnd with 11 stucks (1 hard), dementia as CTF — GeoDomes 5.7 caps/rnd at 45 min,
+**SteelVapor 0 with 13 grabs = attrition, not nav**: 7 of 13 carriers died at the stand (drop-timeouts of 123–125 s
+= ~4 s of hold), the rest lived 17–41 s and ran 2–5 rooms of legs, 12 carrier deaths all >500u out, 10 kills/rnd
+(the most of any map), 3 stucks. Registered low-priority: in those seven episodes the loose flag lay untouched for
+the full 120 s — neither fumble rush nor defender recovery arrived (5 recovery legs vs 147 on GeoDomes).
+
+**Sigma Base is not geometry-hard; it was never attacked.** One life per bot in 3,017 s, 0 kills — the teams never
+met. Navdump: rooms 0–19 (Red, flag rm17) and 20–39 (Blue, flag rm20) are two portal-graph components; terrain
+(region 3, one 4,096-node lattice) is the only crossing. Mechanism 1: `BotGetObjectiveRoom_CTF`'s attack branch
+prices the enemy flag room with `BotEstimatePathCost` (the BOA chain), which is 1e30 whenever the engine's path
+leaves the mine for terrain, and skips the room — no runner/flex bot issued an objective errand indoors all hour;
+troute's terrain composer never got a goal. Attackers attacked only while airborne outdoors (distance pricing) and
+lost the objective on crossing a doorway (Hawk: ENTRY commit → rm9 → objective gone → explore). Mechanism 2: the
+six 20u "windows" of rooms 17/20 are portals onto a solid slab of rooms 18/21 (hull probe blocked at 0.5u; the engine
+lists them as six of the map's twelve terrain doors), and explore's DISAGREE retry pass admitted the yards behind
+them — all 36 stuck escalations were the two defenders pressing their own flag room's middle window, 25u from the
+flag. Secondary: the approach from either door room runs through a 17-portal multi-storey atrium (rm19/37) whose
+lattice hits the 2,048 cap; hop failures 27→28 ×51, 2→1 ×26; 26 powerups troll-retired.
+**Fix (uncommitted, 4 files / 58 lines, labelled `<lab>/Descent3-sigfix`, a 0.9.15 change):** attack and fumble
+branches price infinite-BOA rooms by distance as a second tier (log `attack errand across terrain`); explore
+admission uses new `BotRouteExistsHonest` (the ladder without the disagreement pass). 3-minute second-instance
+smoke: all four attackers issued errands within 30 s, 8 troute plans, 2 entry commits, 0 yard destinations, no
+crash. A/B queued behind the stress chain (`<lab>/ab-sigfix-20260917/`: sigmabase 4×45 vs control
+`soak-20260917T085929.log`, then bedlam 4-team 8 rnd vs `soak-20260916T003617.log`).
+
+**Toroid geometry captured** (render-room; roomfaces JSON `ab2-rm*.json`, `rim-rm*.json` persist in the D3 user-data
+dir; `geom-abend2.cfg`, `geom-chaos-rim.cfg` with `SetLevel=3`). abend2: rings 0/30 are octagonal annuli 45u wide
+and 20u tall; the flag "rooms" 38/37 are 10u pockets under the ring floor with a horizontal hatch (a capture is a
+hover-over touch); no glass portals anywhere (bulletproof panes are solid faces to the engine); the 434/259 "hop
+commit REFUSED 0→38 / 30→37" lines are the commit's hull-LOS test failing from every segment but the adjacent one
+while the lattice route keeps the wheel — churn, not a wrong aim. Rim: a vertical wheel of four 676×676×503
+quarter-arcs (16–18 portals, lattice capped at 2,048, 90% of portal legs blocked, path_pnt buried), ~50u pockets hung
+on the inner rim at 45° with one impassable onward portal each (the 36-minute carry was a bot in pocket 26), flag
+rooms 33/35 as slanted boxes opening through their ceiling, rm41 a dead-end wedge. Fix class (0.9.15, NAVIGATION
+§7.2): let the lattice own buried-centre rings and silence door-commit until adjacency; Rim also needs
+exit-the-pocket legs, the ceiling-exit case, and a lattice cap not pinned at 2,048. Open: both arcs' side views
+show lattice nodes projecting into the hole; a bbox test attributes only 3–4% to neighbours — needs a point-in-room
+probe.
+
+**Release sequence decided** (PLAN §4.0): fly 0.9.14, strip `-dev`, push stable; 0.9.15 is the grind until every
+map plays smoothly (the items above plus Isengard's outdoor pin class, Bree's Red side, co-op, and the committee
+collapse/cleanup); then bump the series for bot management/feel/command surface and the community release.
+
 ### 2026-09-15: Phase 1 arms — first bot captures ever on Bree and Isengard; the door is no longer the failure
 
 Chain `<lab>/phase1b-20260914/` on `14e421db` (Phase 1 + the vestibule fix), guard PASS both, 0 asserts:

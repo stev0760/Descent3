@@ -71,3 +71,16 @@ Run it on the second instance with `--cmd '$nav probe ...'` (several `--cmd` are
   (`--binary Descent3-ctl` for a labelled copy in the server dir) and diff the node counts/components
   (`tools/compare_navdumps.py` for the whole map, `render_room.py` for the room).
 - `Read` shows one PNG at a time; render `--width 1400` or less so the tool does not downscale the detail away.
+
+## More traps (2026-09-17, Sigma Base / abend2 / Rim)
+
+- `$nav probe` prints `start cells N / M` — those are TERRAIN cells under the points (`GetTerrainCellFromPos`), even
+  for points deep inside interior rooms, and `end_room=-2147...` values in the legs are terrain cells too. Read the
+  `face rmX/Y` and `BLOCKED/CLEAR` columns; ignore the cell ids indoors.
+- A multi-level mission can be dumped on any level bot-free: add `SetLevel=<n>` to the geom cfg (it is a cvar the
+  dedicated cfg accepts) — no mission repack needed. `geom-chaos-rim.cfg` = CHAOS.MN3 level 3.
+- A "window" portal can be a portal onto a solid face of the neighbouring room (Sigma Base rm17->18: engine lists it
+  as a terrain door, our hull says tight, a 0.5u probe is blocked by rm18's slab). `solid=0 transparent=0 breakable=0`
+  on OUR face says nothing about what is behind it — probe through it before believing either verdict.
+- Flag "rooms" can be pits (abend2 38/37: 10u pockets under the ring floor with a horizontal hatch portal). Render
+  the SIDE view before reasoning about arrival: the top view shows a healthy alcove.

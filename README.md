@@ -50,6 +50,15 @@ shell), and the fix on top of it is verified on Nightmare Castle and Isengard.
 The September 14-15 outdoor sprint then took the hardest outdoor map, Town of Bree, from two bot captures in twenty rounds to five in its first two: a complete bot-side table of doors to the outdoors, hull-fitted door approaches, no more pushes through a wall beside a door or routes through a one-sided partition, and CTF roles that apply from a session's first level.
 See [Known limitations](#known-limitations) and the [release notes](matcen-docs/CHANGELOG.md).
 
+**Release path (decided 2026-09-17).** 0.9.14 ships stable once the operator's flight test confirms
+what the soaks show (fellowship loops, bedlam 4-team, abend2, dementia, CHAOS, RAGE, Sigma Base and
+Facing Worlds, no crashes). 0.9.15 is then the grind: every remaining map problem, fix by fix, each one
+soaked and compared before it lands — two-bunker canyon maps (Sigma Base), Isengard's last outdoor pin
+class, the toroid maps (Rim, abend2), dropped-flag reaction time, and the navigation code consolidation
+— until every map runs and plays smoothly. Only then does the series bump for the adjacent work (bot
+management and feel, the command surface and menus) and the community release. Details:
+[`matcen-docs/PLAN.md`](matcen-docs/PLAN.md) §4.0.
+
 ### Features
 
 *   **Combat AI**: a five-state model (explore, hunt, combat, flee, evade) with predictive lead aiming. Bots circle-strafe, use afterburners to chase and escape, and drop chaff against homing missiles.
@@ -123,6 +132,7 @@ Available in the dedicated server console or via remote telnet:
 
 ### Roadmap
 
+*   **0.9.15 — every map smooth**: the remaining per-map problems, in the order they unlock play — Sigma Base's class (two bunkers across open terrain, where bots never issued an attack across the canyon), Isengard's last outdoor pin class, the toroid maps Rim and abend2 (rings where the next door is never in view), dropped-flag reaction time, a co-op revisit, and the navigation code consolidation. Then the series bumps to 0.10 for bot management, feel, command surface and menus, and the release package (see `matcen-docs/PLAN.md` §4.0).
 *   **Outdoor terrain refinement**: fine-threading of urban outdoor maps and rough-terrain line-of-flight. The remaining hard maps are Town of Bree and Tower of Isengard.
 *   **Dynamic team rebalancing**: rebalance bot teams as humans join and leave. Pre-assignment works today.
 *   **Co-op companions** (0.9.9): bots fly the campaign with you, not for you — they fall in on your wing automatically, keep formation at a calm pace, fight what you fight, and never run the mission on their own. Squad orders from any human do the rest: `!goal` sends one ahead to the current objective as a vanguard, `!hold` posts it, `!freelance` sets it loose. On campaign maps their navigation rides the engine's own hand-authored path network (what the guide-bot flies). Mission-critical scripted pickups are left for humans.
@@ -130,7 +140,7 @@ Available in the dedicated server console or via remote telnet:
 
 ### Known limitations
 
-*   **abend2 ring crossings**: the visually symmetric toroids produce an imbalanced skeleton/arterial network and uneven team behavior. This map-specific limitation is accepted for now. The navigation architecture and source corrections stay; no further abend2-specific fix or soak is planned.
+*   **Toroid maps (abend2, Rim)**: rings where the next door is out of sight from most of the room make bots re-ask the same crossing instead of walking the ring; abend2 still scores (1.5 captures/round in 3v3), Rim rarely (0.7/round, up from a documented zero). Both are on the 0.9.15 list with their geometry captured; abend2's uneven team behaviour is accepted until then.
 *   **CTF return and reach failures**: QuadSomniac Red conversion fell from 24% to zero against an older build spanning two changes, so attribution remains open. Polaris wind routing and Batteries Included flag-room connectivity also remain unresolved.
 *   **Entropy and co-op**: Entropy bots have not completed a room takeover in the recorded tests. Co-op still has reported bot-freezing and client-compatibility problems and was not validated by the latest test set.
 *   **Thin divider rooms**: a few rooms with paper-thin disconnected sections remain hard to route across; a densification pass is planned.
