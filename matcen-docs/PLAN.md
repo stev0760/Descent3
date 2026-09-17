@@ -654,10 +654,12 @@ the series and start the adjacent work and the community release.
 1. **0.9.14 — validate, then ship.** The soaks are done (fellowship loops, bedlam 4-team, abend2,
    dementia as CTF, CHAOS/RAGE/Sigma Base/Facing Worlds as 3v3 CTF, all on `f687c46b`). What remains
    is the operator's own flight test. If it holds: strip `-dev`, keep the patch, push `0.9.14` stable.
-   Nothing new lands in 0.9.14 — the Sigma Base fix below is built and in A/B but is a 0.9.15 change.
+   Nothing new lands in 0.9.14 — the Sigma Base fix below is a 0.9.15 change, parked on branch
+   `fix/sigmabase-objective-gate` (`05f620dc`) while its A/B runs; it merges when 0.9.15 opens.
 2. **0.9.15 — the grind.** One series, as many patches as it takes, each fix soaked and A/B'd before it
    lands (§5 rules). The registered work, roughly in order of what it unlocks:
-   - **Sigma Base class — two-bunker maps across terrain.** Built 2026-09-17, in A/B: the CTF attack
+   - **Sigma Base class — two-bunker maps across terrain.** Built 2026-09-17 on
+     `fix/sigmabase-objective-gate` (`05f620dc`), in A/B: the CTF attack
      branch no longer vetoes an enemy flag room whose BOA chain is infinite (the chain leaves the mine
      for terrain), and explore admission drops the router's disagreement retry (a window onto a wall is
      not a destination). Control: 0 grabs in 4×45 min, no attack errand ever issued indoors.

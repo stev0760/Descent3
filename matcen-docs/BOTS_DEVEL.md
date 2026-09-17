@@ -42,7 +42,8 @@ lists them as six of the map's twelve terrain doors), and explore's DISAGREE ret
 them — all 36 stuck escalations were the two defenders pressing their own flag room's middle window, 25u from the
 flag. Secondary: the approach from either door room runs through a 17-portal multi-storey atrium (rm19/37) whose
 lattice hits the 2,048 cap; hop failures 27→28 ×51, 2→1 ×26; 26 powerups troll-retired.
-**Fix (uncommitted, 4 files / 58 lines, labelled `<lab>/Descent3-sigfix`, a 0.9.15 change):** attack and fumble
+**Fix (branch `fix/sigmabase-objective-gate` = `05f620dc`, 4 files / 58 lines, labelled `<lab>/Descent3-sigfix`, a
+0.9.15 change — merges when 0.9.15 opens, never into 0.9.14):** attack and fumble
 branches price infinite-BOA rooms by distance as a second tier (log `attack errand across terrain`); explore
 admission uses new `BotRouteExistsHonest` (the ladder without the disagreement pass). 3-minute second-instance
 smoke: all four attackers issued errands within 30 s, 8 troute plans, 2 entry commits, 0 yard destinations, no
