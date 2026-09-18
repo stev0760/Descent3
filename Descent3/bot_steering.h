@@ -38,6 +38,9 @@ struct fvi_info;
 #define BOT_PORTAL_SHIP_RADIUS 2.5f    // swept-sphere fit test: can a ship fly through at all?
 #define BOT_PORTAL_TIGHT_RADIUS 4.0f   // comfortable-margin test: fits but no slack -> tightness penalty
 #define BOT_PORTAL_TIGHT_PENALTY 40.0f // cost added for a tight-but-passable opening (~one BOA hop)
+// A portal with a wall this close behind EVERY point of its opening is a window onto a wall (BotPortalClass
+// NEVER), whatever the engine's table says: under one hull radius, so no ship can be on the far side.
+#define BOT_PORTAL_WALL_BACKED_DEPTH 5.0f
 // Engine-passable probe rejection, used only if the strict graph has no route.
 #define BOT_PORTAL_DISAGREE_PENALTY 120.0f
 #define BOT_PORTAL_GLASS_PENALTY 120.0f // TF_BREAKABLE glass: crossable after a shatter (~3 hops detour tolerance)
@@ -201,14 +204,19 @@ vector BotWaypointAimPos(int wp_room, const vector &toward);
 // door can see the centre the answer is unchanged; when it cannot, the aim becomes the first
 // hull-proven skeleton hop from the entry door's twin node toward the goal side. Every failure
 // path falls back to the 2-arg answer verbatim, so this can never return a worse point than today.
-vector BotWaypointAimPos(int wp_room, const vector &toward, object *obj);
+// `goal_room` (optional) lets the door choice look one hop past wp_room — see BotEntryPortalIndex.
+vector BotWaypointAimPos(int wp_room, const vector &toward, object *obj, int goal_room = -1);
 
 // The one "which door will I enter wp_room through" answer, shared by the per-entry aim and the
 // seam guard so the two can never pick different doors in the same tick: among the CURRENT room's
 // portals into wp_room, passable by graded geometry, the one nearest the bot (first-found wins
 // ties — the isengard six-slot lesson), then wind-checked (a one-way tunnel mouth fails).
+// With `goal_room` the pick is priced two hops deep: the leg to each candidate door PLUS the leg from it
+// to the portal the route leaves wp_room through, so a non-convex waypoint room (Sigma Base's rm19
+// gallery, interrupted by the bridge room rm13) is entered by the door on the goal's side rather than
+// the door behind the bot. Nearest still wins when the onward legs tie (parallel slots).
 // Returns the portal index in obj's current room, or -1 when there is no usable door.
-int BotEntryPortalIndex(object *obj, int wp_room);
+int BotEntryPortalIndex(object *obj, int wp_room, int goal_room = -1);
 
 // Per-(room, entry-portal) form of the buried-centre probe: does THIS portal's path_pnt have a
 // hull-clear line to the room's path_pnt? The exact cast BotRoomPathPntReachable makes per portal
@@ -462,6 +470,10 @@ bool BotPortalCrossingTight(int room_idx, int portal_idx);
 // for the rest of the level; a pane this code has seen shatter (PortalPaneShatteredFlip) is a door
 // here. Use this, never BOA_PassablePortal directly, for any admission decision.
 bool BotPortalEnginePassable(int room_idx, int portal_idx);
+// Window onto a wall: solid geometry within BOT_PORTAL_WALL_BACKED_DEPTH behind every sample of the
+// opening (Sigma Base rm17/rm20 -> yard shells rm18/rm21: a slab 3.5 u behind six engine-passable
+// panes). Such a portal is BotPortalClass NEVER and is never admitted by the router's DISAGREE retry.
+bool BotPortalWallBacked(int room_idx, int portal_idx);
 bool BotPortalCrossing(int room_idx, int portal_idx, vector *pnt_out, float *depth_out);
 // The crossing as a PATH seen from room_idx: `near` is the approach point just inside this room,
 // `plane` the point on the portal, `far` the point inside the other room the push-through aims at.

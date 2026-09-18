@@ -3081,9 +3081,9 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
     // The buried-room resolver (skeleton BFS / soft hop): one aim point per room, the d6efc603 lesson.
     unified_aim = BotResolveRoomAim(obj, routed_pos, goal_room, obj->size, &wp_aim, wp_room, &aim_source);
     if (!unified_aim)
-      wp_aim = (wp_room == goal_room) ? routed_pos : BotWaypointAimPos(wp_room, routed_pos, obj);
+      wp_aim = (wp_room == goal_room) ? routed_pos : BotWaypointAimPos(wp_room, routed_pos, obj, goal_room);
   } else {
-    wp_aim = (wp_room == goal_room) ? routed_pos : BotWaypointAimPos(wp_room, routed_pos, obj);
+    wp_aim = (wp_room == goal_room) ? routed_pos : BotWaypointAimPos(wp_room, routed_pos, obj, goal_room);
   }
   {
     // One authority on a routed leg: our resolved aim (wp_aim/wp_room) owns the via/chain target.
@@ -3119,7 +3119,7 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
       // pillar (133 hop commits at room 49's door in one hour, ~0 crossings). The near slot is the
       // one the bot is actually lined up with. Wind is checked inside the helper (a one-way tunnel
       // mouth reads as "no door", exactly as the old inline wind gate did).
-      int best_p = BotEntryPortalIndex(obj, wp_room);
+      int best_p = BotEntryPortalIndex(obj, wp_room, goal_room);
       if (best_p >= 0) {
         const portal &pt = crm.portals[best_p];
         // Slice 2: push through the VALIDATED crossing point, along the door's normal, no deeper than
@@ -7479,6 +7479,7 @@ bool BotNavDump(const char *filename) {
       fprintf(fp, "\"boa_cost_fwd\": %.2f, \"boa_cost_rev\": %.2f, ", boa_fwd, boa_rev);
       fprintf(fp, "\"engine_passable\": %s, \"our_geocost\": %.1f, \"our_impassable\": %s, \"DISAGREE\": %s, ",
               eng_pass ? "true" : "false", gcost, our_impass ? "true" : "false", disagree ? "true" : "false");
+      fprintf(fp, "\"wall_backed\": %s, ", BotPortalWallBacked(r, p) ? "true" : "false");
       fprintf(fp, "\"los_from_pathpnt_clear\": %s, \"los_dist\": %.2f, \"los_portal_to_pathpnt_clear\": %s}%s\n",
               los_clear ? "true" : "false", los_d, los_clear_pe ? "true" : "false",
               (p == rm.num_portals - 1) ? "" : ",");
