@@ -84,3 +84,11 @@ Run it on the second instance with `--cmd '$nav probe ...'` (several `--cmd` are
   on OUR face says nothing about what is behind it — probe through it before believing either verdict.
 - Flag "rooms" can be pits (abend2 38/37: 10u pockets under the ring floor with a horizontal hatch portal). Render
   the SIDE view before reasoning about arrival: the top view shows a healthy alcove.
+- `$nav probe` is NOT ground truth for a deep-interior portal: it starts from the terrain cell under the point and
+  read CLEAR straight through abend2's rm0 p5 slot that the in-engine rays (startroom = the room) found walled 3-5u
+  behind. It works at the indoor/outdoor boundary (Isengard's hatch under rm2's floor). Indoors, trust the dump's
+  per-portal fields (`wall_backed`, `crossing_ok`, `our_geocost`) or `$nav sweep`.
+- A straight corridor can be two rooms with a third in the middle (Sigma Base rm19's gallery, interrupted by the
+  bridge room rm13). A hop outcome NOT-CROSSED whose `now rm` is neither the source nor the target is a pass-through,
+  not a wall — and the re-route from that middle room is where the bot can turn around (the nearest door back into
+  the big room is the one it just came through; `BotEntryPortalIndex` now prices doors two hops deep).

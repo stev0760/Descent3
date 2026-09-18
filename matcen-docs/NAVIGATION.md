@@ -706,7 +706,43 @@ overnight log. A full verbosity-tier + event-vocabulary consolidation is registe
 
 ## 7. Open problems (roadmap)
 
-### 7.0-CURRENT The portal model, slice 1 — 2026-09-12 (0.9.14-dev)
+### 7.0-CURRENT The portal model, slice 10 — window onto a wall, and the door pick two hops deep — 2026-09-18 (branch `fix/sigmabase-window-and-exit` = `f3b37558`, in soak)
+
+**Finding (Sigma Base control soak + the rm19 render + the split A/B; BOTS_DEVEL 2026-09-18).** Two more portal-model
+defects, neither a Sigma Base special case:
+
+1. **A portal can open onto a wall and still be "passable".** Sigma Base's flag rooms have six 20×20 invisible
+   portal faces onto their yard shells with a parallel slab 3.5 u behind them. BOA calls them passable, our 2.5 u
+   probe calls them impassable, the crossing search finds nothing — and the DISAGREE retry (the router's last resort
+   for grates and slits) admitted the yards as explore destinations: 23 yard trips in four rounds, every defender
+   escalation a window press 25 u from the flag. The blanket repair — "no validated crossing → not a door" — is
+   wrong: abend2's 18 DISAGREE portals and Isengard's slot portals have no crossing either and bots fly them.
+2. **The nearest door into the next room is the wrong door when that room is non-convex.** rm19's gallery is
+   interrupted by the bridge room rm13; a bot in the east half routing to the west exit flies into rm13, the
+   re-route from rm13 asks for the nearest door back into rm19 — the one behind it — and the pair oscillates once
+   a second (338 NOT-CROSSED rm19→rm9 vs 11 crossed). The room router is right (rm19 → rm9 is one hop); the door
+   pick had no idea which side of the room it was on.
+
+**What landed (geometry-gated, soaking).** `PortalWallBacked` — thin fvi rays (FQ_BACKFACE)
+from 1 u inside the room through the plane at the centre and halfway to each vertex; every ray blocked within
+`BOT_PORTAL_WALL_BACKED_DEPTH` (5 u) → `BotPortalClass` NEVER, and `BotPortalRouteCost` refuses DISAGREE admission
+for any NEVER portal (the four existing NEVER causes were already refused there by their own checks, so this changes
+only the new class). Navdump portal records carry `wall_backed`. `BotEntryPortalIndex(obj, wp_room, goal_room)` —
+candidate doors priced by the leg to them plus the leg to the nearest portal the route leaves the waypoint room
+through (`BotComputeRoutePasses` from wp_room to the goal; DISAGREE-inclusive, wind-checked, crossing points);
+nearest alone decides when the route ends in the waypoint room or the onward legs tie. Threaded through
+`BotWaypointAimPos` and the hop-commit site so the aim and the seam push still share one door.
+
+**Geometry gate (bot-free, three maps).** Sigma Base: 17 portals → NEVER (yards ×6, atrium windows ×3, rm14→7 ×3,
+rm24→25 ×3, rm38→39, rm5→6), network otherwise identical. abend2: 17 → NEVER — rm0 p5→rm20 (a 16 u slot never
+crossed in the control; rm20 is entered through rm5/rm21), fourteen 15×15 niches into one-portal rooms, rm50→33,
+rm53→8 — ring rm0 still one skeleton component (live 6 → 5), rm30/rm20/rm4 unchanged, split rooms +rm50 +rm53.
+Isengard: 5 — rm12 p3→rm13 (a hatch into a 3 u gap under rm2's floor, confirmed by `$nav probe`) and four 10 u slots
+already NEVER. No flagged face is rendered. **Open:** the soak verdict (Sigma yards/escalations/exit hops; bedlam
+4-team and abend2 regression gates); and Sigma Base attackers still have no reason to leave the bunker indoors —
+distance pricing fires only outdoors — which is the next question once the exits are measured.
+
+### 7.0-PREV The portal model, slice 1 — 2026-09-12 (0.9.14-dev)
 
 **Finding (cockpit + logs + a fresh navdump, same day).** The red flag room's door (rm84 p0 ↔ rm44
 p8) is the worst crossing on Batteries: 20-round telemetry run, hop-commit outcomes 417 crossed /
