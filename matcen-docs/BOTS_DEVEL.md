@@ -109,6 +109,32 @@ lattice keeping a cell inside a wall-backed aperture — a cell whose hull spher
 should not exist). This is a third Sigma mechanism, pre-existing, and probably the one that decides whether the
 defenders ever stand still on their flag.
 
+**Sigma leg verdict (4×45 min, `soak-20260918T064959.log` vs control `soak-20260917T085929.log`; guard: structure
+passes, the escalation delta is a Reaper unit story — 43 → 4 — so per-room reads only):**
+- The window class does its job: explore destinations in the yards 23 → 0; Reaper's 40 escalations in Blue's
+  antechamber rm22 → 0 (he no longer routes through admitted windows there); the map's escalations concentrate
+  in the two flag rooms (117 of 132) — the defend-errand mechanism above, unchanged at ≈0.55/min.
+- The lookahead does its job and exposes the next wall: rm13 → rm19 picks 120, rm31/rm26 → rm37 189 on Blue's
+  mirror; rm19 → rm9 is now attempted 158 times where the control never tried it — 145 of the "NOT-CROSSED" are
+  pass-throughs into rm13 from the east half (the observer mislabels a third room), the real exit attempts from
+  the west half split 13 crossed / 13 turned back; rm19 → rm11 4 / 20. Blue's rm37 → rm36 1/19 → 4/11.
+- Two more mechanisms, one shape: rm2 → rm1 (Red) and rm27 → rm28 (Blue) are the doors out of tall shaft rooms
+  whose top corridor ends in a one-door closet 25 u past the door (rm3, rm29: 22×20×40 u). Every failed hop —
+  137 and 169, up from 66 and 121 with 3× and 0.5× the attempts — ends "now rm3 / now rm29" from a position at
+  the closet mouth: bots miss the 90° turn into the door and pin in the closet (the Batteries pocket class).
+- Attackers arrive and do nothing: cross-bunker explore errands 155 issued, 67 ARRIVED (control 42), yet one
+  attack errand per team all run, 1 grab, 0 captures, 0 kills. The cause is `BotEstimatePathCost`: it walks the
+  engine's BOA chain, and BOA believes in the yard windows (boa cost 8–36 u), so from anywhere inside the enemy
+  bunker its shortest path to the flag runs outdoors and through a window — the chain hits a terrain index and
+  the attack branch reads 1e30. **Change 3 (`9d5bf696`, built as `Descent3-sigwin2`, queued as a 2-round Sigma leg behind
+  abend2):** the attack and fumble branches price with `BotComputeRouteCost` (our router — the model the
+  Entropy branch already uses at line 903), which excludes the windows and prices the interior route the bot
+  will fly; where no interior route exists (own bunker, any bedlam structure) it still reads 1e30 and the outdoor
+  distance pricing takes over as before. Bedlam re-gate owed before merge.
+- Not this build's: rm22 → rm37 (Blue's antechamber windows into the open atrium) escaped the wall-backed rule —
+  nothing solid behind them, only a splayed frame the hull cannot pass — so they remain DISAGREE-admitted; Red's
+  mirror rm16 → rm19 was caught because rm19's 45° sills sit within 5 u. Powerup troll retirements 40 vs 39.
+
 ### 2026-09-17: the stress set as CTF, the Sigma Base class, toroid geometry, and the release sequence
 
 **Stress set on `f687c46b` (3v3, TimeLimit 45, `<lab>/overnight-stress-20260916/`, guard PASS, 0 asserts):**

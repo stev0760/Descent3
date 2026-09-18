@@ -681,8 +681,12 @@ the series and start the adjacent work and the community release.
      windows, 15 u niches, a hatch under a floor — with abend2's ring intact and rm0→rm20, the one
      flagged connector, never crossed in the control) and a two-hop lookahead in `BotEntryPortalIndex`
      (door priced by the leg to it plus the leg to the route's exit). Soaking: Sigma 4×45 → bedlam
-     4-team 12 → abend2 12. Open after it: attackers still need a reason to leave the bunker (distance
-     pricing fires only outdoors) — measure the exit rate first, then decide; and a third mechanism the
+     4-team 12 → abend2 12. The Sigma leg read (BOTS_DEVEL 2026-09-18): yards 0, Reaper's rm22 presses 40 → 0, rm19's west exit
+     attempted for the first time, but 67 cross-bunker explore arrivals produced one attack errand per team —
+     `BotEstimatePathCost` walks the engine's BOA chain, which believes in the yard windows and reads 1e30 from
+     inside the enemy bunker. Change 3 (`9d5bf696`, `Descent3-sigwin2`, 2-round leg queued): the attack/fumble branches price
+     with our router (`BotComputeRouteCost`). Still open: the closet pockets past the shaft-room doors (rm2 → rm1
+     into rm3, rm27 → rm28 into rm29 — the Batteries pocket class); and a third mechanism the
      first 40 minutes exposed: the **defend errand never arrives** (every objective errand on Sigma Base ends
      by a stuck escape — the defender is aimed at a path_pnt 1.5 u from the flag stand and ends at the lattice
      node on the window plane, 3.5 u from the slab; same rate as the control, so the 09-17 "window press =
