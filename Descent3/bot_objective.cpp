@@ -1567,7 +1567,8 @@ static int BotGetObjectiveRoom_CTF(int bot_index) {
           continue;
         if (Bot_objective.flag_state[t] == FLAG_DROPPED && Bot_objective.flag_room[t] >= 0 &&
             Rooms[Bot_objective.flag_room[t]].used) {
-          float d = (bot_room >= 0) ? BotEstimatePathCost(bot_room, Bot_objective.flag_room[t])
+          // Priced by OUR router, not the engine's BOA chain (see the attack branch below).
+          float d = (bot_room >= 0) ? BotComputeRouteCost(bot_room, Bot_objective.flag_room[t])
                                     : vm_VectorDistanceQuick(&obj->pos, &Rooms[Bot_objective.flag_room[t]].path_pnt);
           if (d < fumble_cost) {
             fumble_cost = d;
@@ -1608,7 +1609,15 @@ static int BotGetObjectiveRoom_CTF(int bot_index) {
         room = Bot_objective.flag_room[t];
       if (room < 0 || !Rooms[room].used)
         continue;
-      float cost = (bot_room >= 0) ? BotEstimatePathCost(bot_room, room)
+      // Priced by OUR router (2026-09-18), not the engine's BOA chain. BOA believes in every portal it
+      // calls passable, including a flag room's windows onto its yard shell, so from anywhere inside the
+      // enemy bunker on Sigma Base its shortest path to the flag ran outdoors and through a window: the
+      // chain hit a terrain index, read 1e30, and no attack errand was ever issued indoors — 67 bots
+      // arrived in the enemy bunker by explore in one 4-round soak, 1 attack errand, 1 grab. Our router
+      // excludes what the hull cannot fly and prices the interior route the bot will actually take; where
+      // no interior route exists (a bot in its own bunker, any bedlam structure) it still reads 1e30 and
+      // the outdoor distance pricing takes over once the bot is outside, as before.
+      float cost = (bot_room >= 0) ? BotComputeRouteCost(bot_room, room)
                                    : vm_VectorDistanceQuick(&obj->pos, &Rooms[room].path_pnt);
       if (cost < best_cost) {
         best_cost = cost;
