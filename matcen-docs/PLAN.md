@@ -809,6 +809,19 @@ before proposing anything. *Risk:* none to look.
 Red's), not a defect — Moria is user-made, so the symmetry criterion does not apply. *Proposal:* measure per
 team on every Moria arm from now on; do not act on it yet.
 
+**Q7 — Sigma Base: the defenders stopped pressing and bots can grab, and now the CARRY HOME is visible.** *Symptom
+(2026-09-19, paired arms mid-run, ~1.2 of 4 rounds each).* The control reproduces the known picture: 51 stuck
+escalations with **14 hard pins**, 24 of them in the flag rooms rm17/rm20 — defenders pressing the window plane — one
+entrance commit all round, and zero grabs. On v7: **zero rm17/rm20 escalations, zero outdoors, one hard pin**, entrance
+commits 25 of 26 crossed, 13 stations taken, and the **first grabs (2)**. The raw stuck total is higher (89 vs 51)
+because 71 of them are ONE carrier, Viper, circling at a single spot in room 22 (the Blue antechamber) at net_disp 26 —
+moving-but-slow, the class the analyzer warns inflates totals, not a pin. *Hypothesis:* changes 5 and 6 did what they
+were aimed at — the defend errand now arrives and takes station instead of dying at the window plane, and the attack
+reaches the enemy bunker — so the map has advanced to its next wall, which is the one already registered from
+2026-09-18: **the carry home**. A carrier that can leave the enemy bunker cannot thread its own. *Proposal:* read the
+full arms at ~16:30 first; then render room 22 and trace that carrier's legs before proposing anything. Do not treat
+the 89 as a regression — compare hard pins (14 → 1). *Risk:* none to look.
+
 **Q6 — instrument defect.** `analyze_bot_log.py`'s Kills column matches one of the dozen death-message
 wordings the game prints and undercounts roughly 15×, so it cannot rank arms. The 2026-09-19 tables use
 `BotRespawn` lines instead. *Proposal:* widen the pattern, or drop the column and count respawns. *Risk:*
