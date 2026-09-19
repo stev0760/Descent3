@@ -37,6 +37,7 @@
 #include "bot_steering.h"
 #include "bot.h" // BOT_OUTDOOR_APPROACH_OFFSET (shared with the 12.6 outdoor graph)
 #include "room.h"
+#include "terrain.h" // GetTerrainGroundPoint (outdoor lattice: no cells under the heightfield)
 #include "vecmat.h"
 #include "BOA.h"
 #include "log.h"
@@ -736,7 +737,8 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
   // the room test itself; the rest were only reachable THROUGH those two doorway cells, i.e. the old outdoor
   // lattice bridged the map through the tavern's interior). The surviving lattice spans the same x/z extent at
   // terrain level (y 238..309). Isengard's region lattice was unchanged (its buildings stand on the ground).
-  int od_reject_blocked = 0, od_reject_interior = 0, od_ok_terrain = 0, od_ok_shell = 0, od_ok_none = 0;
+  int od_reject_blocked = 0, od_reject_interior = 0, od_reject_underground = 0, od_ok_terrain = 0, od_ok_shell = 0,
+      od_ok_none = 0;
   // Two-way outdoors (2026-09-15, $nav probe): the exterior shell's faces are FRONT faces from outside and
   // nothing at all from inside (Isengard rm2 face 38 blocks (2007,294,2192) -> (2037,294,2222) at 4 u; the reverse
   // leg is CLEAR at every radius, with or without FQ_BACKFACE), so an edge probed from the node INSIDE the tower
@@ -776,6 +778,22 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
       }
       const int hr = hit.hit_room;
       if (ROOMNUM_OUTSIDE(hr)) {
+        // Under the heightfield (2026-09-19, the Isengard valley pins): terrain collides from ABOVE only, so a sweep
+        // that starts below the surface is clear in every direction — one cell admitted underground (through a
+        // shell's buried wall, or a door seed at grade) floods the whole region under the ground, and each of those
+        // cells then links UP through the surface to the real cells above it. A bot over the valley was handed a
+        // waypoint 11 u under its feet ($nav probe: down leg HIT_TERRAIN at 5 u, up leg CLEAR at every radius) and
+        // pressed the ground at agl 7 until the stuck escape — 238 ground pins in one 30-minute round. A cell on
+        // a terrain cell must stand hull clearance above the ground under it. Solid ground only: a sunken town
+        // (Town of Bree) lies under terrain segments flagged TF_INVISIBLE, which neither draw nor collide — its streets
+        // are legitimately below the heightfield, and the rule without this test left Bree 0 lattice cells.
+        vector gp = cell;
+        const int seg = GetTerrainCellFromPos(&gp);
+        if (seg >= 0 && !(Terrain_seg[seg].flags & TF_INVISIBLE) &&
+            cell.y() < GetTerrainGroundPoint(&gp) + BOT_ROADMAP_CLEARANCE) {
+          od_reject_underground++;
+          return false;
+        }
         od_ok_terrain++;
         return true;
       }
@@ -888,8 +906,13 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     if (rr->outdoor)
       LOG_INFO.printf(
           "[Roadmap] outdoor region lattice admission: terrain %d, shell %d, none %d | rejected blocked %d, "
-          "interior %d (nodes %d)",
-          od_ok_terrain, od_ok_shell, od_ok_none, od_reject_blocked, od_reject_interior, (int)rr->node.size());
+          "interior %d, underground %d (nodes %d)",
+          od_ok_terrain, od_ok_shell, od_ok_none, od_reject_blocked, od_reject_interior, od_reject_underground,
+          (int)rr->node.size());
+    if (rr->outdoor) // the grid the growth ran on — a seeds-only region reads here as a box the seeds are not in
+      LOG_INFO.printf("[Roadmap] outdoor region lattice grid: x %.0f..%.0f y %.0f..%.0f z %.0f..%.0f sp=%.0f cells %dx%dx%d "
+                      "(ceiling cap %.0f)",
+                      org.x(), mx.x(), org.y(), mx.y(), org.z(), mx.z(), sp, Nx, Ny, Nz, BotOutdoorCeilingCap());
   };
 
   // Grow under three phases and keep the fullest lattice (ties keep the earliest). Cell count is the
