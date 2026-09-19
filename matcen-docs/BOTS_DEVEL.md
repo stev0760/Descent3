@@ -17,6 +17,126 @@ the flag-room arrival stall and the ~58% connectivity dead-ends. 0.9.14 was vali
 Isengard's interior pins gone, Animal House stuck-free) and released; the previous stable release was
 **0.9.13** (0.9.11 preceded it; 0.9.12 was never promoted).
 
+### 2026-09-18: the Sigma Base split verdict (corrected), the rework, and its geometry gate
+
+**Split A/B (`<lab>/ab-split-20260917/`, control `soak-20260916T003617.log` f687c46b):** arm A = the distance-priced
+attack errand only (`Descent3-sigfix-A`, 336 fires in 12 rounds), arm B = the honest-route explore admission only
+(`Descent3-sigfix-B`, 0 fires). Both arms ran 13 rounds against a 12-round control, so `ab_guard` failed the level
+sequence; the arms were truncated to their first 12 rounds (a byte-exact cut at the 13th `Opening level` line — A line
+247448, B line 237775), after which the sequence matches and only the reset count differs by the missing terminal
+shutdown dump, which touches nothing the verdict reads. An earlier same-morning table claiming "both halves regress,
+Polaris −20 pp in both" was a filtering error (a `grep -A2` kept two of `flag_conversion.py`'s four team rows); the
+corrected all-team conversion (picks include re-picks of loose flags):
+
+| Map | control | A: attack errand | B: explore | bundled (2–3 rnd/map) |
+|---|---|---|---|---|
+| Apparition | 39.5% (15.0 caps/rnd) | 24.2% (10.7) | 29.7% (13.7) | 25.0% (7.0) |
+| Plutonium | 44.0% (18.3) | 42.6% (17.3) | 46.5% (20.0) | 23.5% (9.5) |
+| Polaris | 34.4% (14.3) | 26.5% (10.3) | 35.0% (12.0) | 22.0% (12.0) |
+| QuadSomniac | 9.4% (6.3) | 11.0% (8.3) | 9.7% (6.7) | 8.3% (5.0) |
+
+(Control Apparition is three real rounds plus a seconds-long stub the analyzer counts as a fourth: 15.0 caps/rnd, not
+the 11.2 quoted on 09-17.) **The bedlam cost is A's**: grabs −21% on Apparition and Polaris, Apparition capture
+carries 47 → 94 s (carries over 90 s: 4 → 12), carrier legs 862 → 1207, Polaris 14 ground-pinned outdoor stucks
+(control 0), explore destinations −69% Apparition / −75% Plutonium — the errand replaces indoor exploring by design,
+and both-flags-out time triples on Apparition (the standoff shape; a role-balance experiment, not a nav fix). **B is
+near-flat** (three maps within noise; Apparition 41 vs 45 caps in 3 rounds), but its blanket form also rejects
+troute-composed cross-structure explore destinations — which is how bots leave a bunker: Sigma Base's control had Red
+picking 49 cross-bunker explore destinations and Blue 14. B alone on Sigma Base is predicted to close the yards and
+produce ~0 grabs. Stucks fell in every arm (34 → 18 / 22, hard 1 → 1 / 0): none of this was a navigation regression.
+Kills doubled on Apparition in A and B but not in the bundled arm — variance.
+
+**Sigma Base, from the render instead of the counts (`sig-rm19/13/9.json`, pins from the hop telemetry):** rm19's
+gallery at y=50, z=1320 runs from the west exit p6 (x=1990 → rm9) to the east exit p7 (x=2380 → rm11) and is
+interrupted by the bridge room rm13 (x 2135–2235, portals p9/p8 of rm19). A bot in the east half routing rm19 → rm9
+aims straight down the gallery (aim x=1966), enters rm13 after 5 u, the hop-commit observer reads NOT-CROSSED "now
+rm13", the re-route from rm13 asks `BotEntryPortalIndex` for the nearest door back into rm19 — p4 east, 0 u away —
+and the pair oscillated once a second: 338 NOT-CROSSED rm19→rm9 vs 11 crossed in the fix arm (the control never even
+attempted rm19→rm9; rm19→rm11 was 7 crossed / 13 not). rm9 and rm11 are the Red bunker's terrain exits (ceiling
+hatches at y=140 into shell rooms rm8/rm10: "entrance outcome CROSSED rm9 portal 0"). The windows: rm17's portals
+p1–p3 → rm18 are 20×20 slanted invisible faces (flags 0x8, not rendered, `crossing_ok=false`, geocost 1e6,
+engine-passable = DISAGREE) with rm18's parallel slab (f7/f8/f9, normal (0,−0.71,−0.71)) 3.5 u behind them.
+
+**The rework (branch `fix/sigmabase-window-and-exit` = `f3b37558` off `9b19a5d5`, lab binary `Descent3-sigwin`; the
+objective change is dropped):**
+1. **Wall-backed portal class** — `PortalWallBacked` in bot_steering.cpp: thin fvi rays (FQ_BACKFACE) from 1 u
+   inside the room through the portal plane at the centre and halfway to each vertex; if every ray meets a wall
+   within `BOT_PORTAL_WALL_BACKED_DEPTH` (5 u) the portal is `BotPortalClass` NEVER, `BotPortalRouteCost` no longer
+   DISAGREE-admits a NEVER portal, and the navdump portal record carries `wall_backed`. The broader rule tried first
+   — "no validated crossing → not a door" — was rejected by the dumps: it would have cut all 18 of abend2's
+   DISAGREE portals (ring connectors included) and Isengard's slot portals, which bots fly.
+2. **Entry-door two-hop lookahead** — `BotEntryPortalIndex(obj, wp_room, goal_room)`, threaded through
+   `BotWaypointAimPos` and the hop-commit site: each candidate door into the waypoint room is priced by the leg to
+   it plus the leg to the nearest portal the route leaves that room through (`BotComputeRoutePasses` from the
+   waypoint room to the goal); nearest alone decides when the route ends there or the onward legs tie (the Isengard
+   six-slot case). Log `entry door lookahead rm%d -> rm%d (goal rm%d): portal %d over nearest %d`.
+
+**Geometry gate (bot-free dumps on the branch binary vs the previous dumps, `tools/compare_navdumps.py`):** Sigma
+Base 17 wall-backed — rm17→18 ×3 and rm20→21 ×3 (the yards), rm16→19 ×3 (atrium windows), rm14→7 ×3, rm24→25 ×3,
+rm38→39, rm5→6 — network otherwise identical (split rooms 12 = 12, routable 16 = 16). abend2 17 — rm0 p5→rm20, a
+16 u slot on the ring that no bot crossed in either direction in the 12-round control (rm20 is entered via rm5 ×23
+and rm21 ×5), fourteen 15×15 niches into one-portal rooms (72–79, 36, 10, 11, 39, 40, 43), rm50→33 and rm53→8 — ring
+rm0 keeps one skeleton component (live portals 6 → 5, 9 nodes, routable), rm30/rm20/rm4 unchanged, split rooms
++rm50 +rm53. Isengard 5 — rm12 p3→rm13, a 20×20 ceiling hatch that `$nav probe` shows opening into a 3 u gap under
+rm2's floor (a real sliver; the old dump had called it a door), and rm30/31→29's 10 u slots, already NEVER. None of
+the flagged faces is rendered; the verdicts are geometric. Two tool lessons: `$nav probe` starts from a terrain cell
+and read CLEAR straight through abend2's rm0 p5 — it is not ground truth for a deep-interior portal (the in-engine
+`wall_backed` field is); and a straight corridor can be two rooms with a third in the middle, so a NOT-CROSSED whose
+"now rm" is neither source nor target is a pass-through, not a wall.
+
+**Soaking (`<lab>/sigwin-20260918/`, detached, started 06:50):** `sigmabase-3v3-sigwin` 4×45 min vs
+`soak-20260917T085929.log` — pre-registered: yard trips (explore → rm18/21) 23 → 0, rm17/rm20 escalations 36 → ~0,
+the rm19→rm9/rm11 NOT-CROSSED rate, lookahead log counts; grabs are expected to stay low (without an indoor errand
+attackers still need a reason to leave — the next question, answered by the exit rate). Then `bedlam4t-sigwin` 12
+rounds vs `soak-20260916T003617.log` (per-map caps and all-team conversion within noise of the table above) and
+`abend2-3v3-sigwin` 12 rounds vs `soak-20260916T072353.log` (1.5 caps/rnd, 11 stucks / 1 hard; no new hotspot in
+rooms 0/30/50/53). 0.9.14's candidate binary is untouched by all of this.
+
+**Early read, 40 min into the Sigma leg (`soak-20260918T064959.log`, round 1 of 4):** the wall-backed class does
+what it says — explore destinations in the yards 0 (control 23 in 4 rounds), 17 WALL-BACKED verdicts at level load,
+cross-bunker explore attempts at the control's rate, 14 lookahead door picks, 155 clean rm13→rm19 crossings and not
+one NOT-CROSSED at rm19's exits (the control had 13 / 20). **But the flag-room escalation rate is unchanged** — 22 in
+40 min vs the control's 100 in 180 min, both ≈0.55/min, at the same position (2185,12,1764) = the middle window's
+plane, state EXPLORE — so the 09-17 attribution of those escalations to explore-to-yard was wrong; the yard trips and
+the presses were two different things. The trail says what the press is: **the defend errand never arrives.** Every
+objective errand on Sigma Base ends `unreach` (46/46 this run, 161/163 in the control; all of them rooms 17 and 20),
+i.e. by a stuck escape, never by arrival — bedlam's errands end in death/timeout/arrival with 14 unreach in 771. The
+defender crosses rm16→rm17 (4-press hop commits and seam pushes from the antechamber, where it keeps detouring for
+powerups), is aimed at the room's path_pnt (2185,10,1740) — 1.5 u from the flag stand at (2185,13.58,1738.56), on the
+door→window axis — and ends every time at the lattice node ON the window plane (2185,10,1765), 3.5 u from the slab,
+pinned (net_disp 8), escapes to rm16, re-issues, repeats every 60–220 s. HUNT/pursuit is not it (1 HUNT entry in 14
+escalations); "occluded" detours are too rare (6). The next instrument is the aim/arrival trace inside rm17: why the
+errand's arrival never fires 1.5 u from the flag and what hands the bot the plane node (via node choice, or the
+lattice keeping a cell inside a wall-backed aperture — a cell whose hull sphere overlaps geometry in the next room
+should not exist). This is a third Sigma mechanism, pre-existing, and probably the one that decides whether the
+defenders ever stand still on their flag.
+
+**Sigma leg verdict (4×45 min, `soak-20260918T064959.log` vs control `soak-20260917T085929.log`; guard: structure
+passes, the escalation delta is a Reaper unit story — 43 → 4 — so per-room reads only):**
+- The window class does its job: explore destinations in the yards 23 → 0; Reaper's 40 escalations in Blue's
+  antechamber rm22 → 0 (he no longer routes through admitted windows there); the map's escalations concentrate
+  in the two flag rooms (117 of 132) — the defend-errand mechanism above, unchanged at ≈0.55/min.
+- The lookahead does its job and exposes the next wall: rm13 → rm19 picks 120, rm31/rm26 → rm37 189 on Blue's
+  mirror; rm19 → rm9 is now attempted 158 times where the control never tried it — 145 of the "NOT-CROSSED" are
+  pass-throughs into rm13 from the east half (the observer mislabels a third room), the real exit attempts from
+  the west half split 13 crossed / 13 turned back; rm19 → rm11 4 / 20. Blue's rm37 → rm36 1/19 → 4/11.
+- Two more mechanisms, one shape: rm2 → rm1 (Red) and rm27 → rm28 (Blue) are the doors out of tall shaft rooms
+  whose top corridor ends in a one-door closet 25 u past the door (rm3, rm29: 22×20×40 u). Every failed hop —
+  137 and 169, up from 66 and 121 with 3× and 0.5× the attempts — ends "now rm3 / now rm29" from a position at
+  the closet mouth: bots miss the 90° turn into the door and pin in the closet (the Batteries pocket class).
+- Attackers arrive and do nothing: cross-bunker explore errands 155 issued, 67 ARRIVED (control 42), yet one
+  attack errand per team all run, 1 grab, 0 captures, 0 kills. The cause is `BotEstimatePathCost`: it walks the
+  engine's BOA chain, and BOA believes in the yard windows (boa cost 8–36 u), so from anywhere inside the enemy
+  bunker its shortest path to the flag runs outdoors and through a window — the chain hits a terrain index and
+  the attack branch reads 1e30. **Change 3 (`9d5bf696`, built as `Descent3-sigwin2`, queued as a 2-round Sigma leg behind
+  abend2):** the attack and fumble branches price with `BotComputeRouteCost` (our router — the model the
+  Entropy branch already uses at line 903), which excludes the windows and prices the interior route the bot
+  will fly; where no interior route exists (own bunker, any bedlam structure) it still reads 1e30 and the outdoor
+  distance pricing takes over as before. Bedlam re-gate owed before merge.
+- Not this build's: rm22 → rm37 (Blue's antechamber windows into the open atrium) escaped the wall-backed rule —
+  nothing solid behind them, only a splayed frame the hull cannot pass — so they remain DISAGREE-admitted; Red's
+  mirror rm16 → rm19 was caught because rm19's 45° sills sit within 5 u. Powerup troll retirements 40 vs 39.
+
 ### 2026-09-17: the stress set as CTF, the Sigma Base class, toroid geometry, and the release sequence
 
 **Stress set on `f687c46b` (3v3, TimeLimit 45, `<lab>/overnight-stress-20260916/`, guard PASS, 0 asserts):**

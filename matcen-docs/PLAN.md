@@ -38,7 +38,7 @@ without flag activity raises a reach concern but does not identify a coverage de
 
 ---
 
-## 2. Where the project actually is (2026-09-10, 0.9.13-dev; status line 2026-09-17 below)
+## 2. Where the project actually is (history; current status in the block immediately below)
 
 > **2026-09-18: `0.9.14` SHIPPED** — flight-validated by the operator (fellowship rotation + Animal House:
 > Isengard's interior pins gone, Animal House stuck-free) and released from `9b19a5d5`. Work continues on
@@ -47,6 +47,12 @@ without flag activity raises a reach concern but does not identify a coverage de
 > **2026-09-17:** the candidate is **0.9.14-dev on `f687c46b`**, soaked across the fellowship loops, bedlam
 > 4-team, abend2, dementia, CHAOS, RAGE, Sigma Base and Facing Worlds without a crash, awaiting the
 > operator's flight test before `-dev` is stripped. The release sequence from here is §4.0.
+>
+> **2026-09-18 (earlier, pre-release):** the candidate was unchanged (`9b19a5d5`; the build-path binary was the
+> candidate, byte-for-byte).
+> The Sigma Base split A/B put the bedlam cost on the objective terrain errand, which is dropped; the rework — a
+> wall-backed portal class and a two-hop entry-door pick — is built on `fix/sigmabase-window-and-exit`,
+> geometry-gated bot-free on Sigma Base, abend2 and Isengard, and soaking (Sigma → bedlam 4-team → abend2). §4.0.
 
 The candidate is 0.9.13-dev, not promoted. Anarchy, Team Anarchy, Robo-Anarchy, CTF, Monsterball, Entropy,
 and Hyper-Anarchy have bot implementations, with mode-specific limitations. Entropy takeovers
@@ -655,18 +661,42 @@ The sequence, in the operator's words: finish validating 0.9.14 by flying it; sh
 grind the remaining map problems in 0.9.15 until every map runs and plays smoothly; only then bump
 the series and start the adjacent work and the community release.
 
-1. **0.9.14 — validate, then ship.** The soaks are done (fellowship loops, bedlam 4-team, abend2,
-   dementia as CTF, CHAOS/RAGE/Sigma Base/Facing Worlds as 3v3 CTF, all on `f687c46b`). What remains
-   is the operator's own flight test. If it holds: strip `-dev`, keep the patch, push `0.9.14` stable.
-   Nothing new lands in 0.9.14 — the Sigma Base fix below is a 0.9.15 change, parked on branch
-   `fix/sigmabase-objective-gate` (`05f620dc`) while its A/B runs; it merges when 0.9.15 opens.
+1. **0.9.14 — DONE, shipped 2026-09-18.** The soaks passed (fellowship loops, bedlam 4-team, abend2,
+   dementia as CTF, CHAOS/RAGE/Sigma Base/Facing Worlds as 3v3 CTF) and the operator's flight test
+   confirmed them: Tower of Isengard's interior pins gone, Animal House — an old geometry trap — clean
+   for a full round. `-dev` stripped, released from `9b19a5d5`. Nothing new landed in 0.9.14; the Sigma
+   Base work was held off it deliberately and merged only after the release, as the first content of
+   0.9.15 (branch `fix/sigmabase-window-and-exit`, superseding `fix/sigmabase-objective-gate` =
+   `05f620dc`, kept as history).
 2. **0.9.15 — the grind.** One series, as many patches as it takes, each fix soaked and A/B'd before it
    lands (§5 rules). The registered work, roughly in order of what it unlocks:
-   - **Sigma Base class — two-bunker maps across terrain.** Built 2026-09-17 on
-     `fix/sigmabase-objective-gate` (`05f620dc`), in A/B: the CTF attack
-     branch no longer vetoes an enemy flag room whose BOA chain is infinite (the chain leaves the mine
-     for terrain), and explore admission drops the router's disagreement retry (a window onto a wall is
-     not a destination). Control: 0 grabs in 4×45 min, no attack errand ever issued indoors.
+   - **Sigma Base class — two-bunker maps across terrain.** The 2026-09-17 branch (`05f620dc`: a
+     distance-priced attack errand across terrain + honest-route explore admission) gave Sigma Base its
+     first capture but cost bedlam; split into one-change arms (13 rounds each vs the 12-round control),
+     the **attack errand owns the cost** — Apparition 39.5 → 24.2% and Polaris 34.4 → 26.5% conversion,
+     grabs −21%, capture carries twice as long (47 → 94 s), 14 new ground pins on Polaris — and the
+     explore half is near-flat but would strand Sigma Base bots too (it rejects the terrain-composed
+     destinations that are how a bot leaves a bunker at all). Both dropped. What the control log and the
+     rm19 render show instead: (1) six engine-passable flag-room windows open onto a slab 3.5 u behind
+     them and the router's disagreement retry admitted the yards (23 trips, every defender escalation);
+     (2) the Red atrium's gallery is interrupted by the bridge room rm13, and the nearest-door entry pick
+     bounced bots between rm19 and rm13 once a second (338 NOT-CROSSED rm19→rm9 vs 11 crossed; Red's
+     exits rm9/rm11 are hatches into the shell). **Rebuilt 2026-09-18 on `fix/sigmabase-window-and-exit`:**
+     a wall-backed portal class (solid within 5 u behind every sample of the opening → NEVER, never
+     DISAGREE-admitted; bot-free it reclassifies 17 Sigma, 17 abend2 and 5 Isengard portals — yard
+     windows, 15 u niches, a hatch under a floor — with abend2's ring intact and rm0→rm20, the one
+     flagged connector, never crossed in the control) and a two-hop lookahead in `BotEntryPortalIndex`
+     (door priced by the leg to it plus the leg to the route's exit). Soaking: Sigma 4×45 → bedlam
+     4-team 12 → abend2 12. The Sigma leg read (BOTS_DEVEL 2026-09-18): yards 0, Reaper's rm22 presses 40 → 0, rm19's west exit
+     attempted for the first time, but 67 cross-bunker explore arrivals produced one attack errand per team —
+     `BotEstimatePathCost` walks the engine's BOA chain, which believes in the yard windows and reads 1e30 from
+     inside the enemy bunker. Change 3 (`9d5bf696`, `Descent3-sigwin2`, 2-round leg queued): the attack/fumble branches price
+     with our router (`BotComputeRouteCost`). Still open: the closet pockets past the shaft-room doors (rm2 → rm1
+     into rm3, rm27 → rm28 into rm29 — the Batteries pocket class); and a third mechanism the
+     first 40 minutes exposed: the **defend errand never arrives** (every objective errand on Sigma Base ends
+     by a stuck escape — the defender is aimed at a path_pnt 1.5 u from the flag stand and ends at the lattice
+     node on the window plane, 3.5 u from the slab; same rate as the control, so the 09-17 "window press =
+     explore to yard" reading was wrong). Instrument the in-room aim/arrival before touching it.
    - **Isengard's remaining outdoor pin class** (pipe-mouth / platform cells 136–142,112–120, entrance
      legs bound for rm3/rm20) and rm20's low entry-crossing rate (§3.7).
    - **Toroid maps — Rim and abend2 refinements** (NAVIGATION §7.2, geometry captured 2026-09-17): let

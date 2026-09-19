@@ -131,8 +131,10 @@ static int pf_cross_level_checksum = 0; // 0.9.14 crossing-point cache (BotPorta
 
 static int pf_small_level_checksum = 0;
 static bool PortalTooSmallForHull(int room_idx, int portal_idx); // defined with the class helpers below
+static int pf_wallbacked_level_checksum = 0; // window-onto-a-wall verdict (PortalWallBacked)
 void BotGeoCostInvalidate() {
   pf_small_level_checksum = 0;
+  pf_wallbacked_level_checksum = 0;
   pf_geocost_level_checksum = 0;
   pf_passable_level_checksum = 0;
   pf_glass_level_checksum = 0;
@@ -304,6 +306,10 @@ float BotPortalRouteCost(int room_idx, int portal_idx, bool allow_disagree) {
   // is locked, because unlocked doors return zero before the swept probe.
   if (Rooms[room_idx].doorway_data || Rooms[connected_room].doorway_data)
     return cost;
+  // A window onto a wall is not a disagreement to retry: the engine's yes is about the face, ours is about
+  // the slab behind it (BotPortalClass NEVER by geometry — Sigma Base rm17 -> rm18).
+  if (BotPortalClass(room_idx, portal_idx) == BOT_PORTAL_CLASS_NEVER)
+    return cost;
 
   // The router returns a next room, not a specific portal. If a strict, downwind-usable parallel
   // portal reaches that same room, keep the disagreement excluded so delivery cannot choose a
@@ -380,6 +386,68 @@ static bool PortalTooSmallForHull(int room_idx, int portal_idx) {
   cached = (min_extent < 2.0f * BOT_ROADMAP_CLEARANCE * BOT_CROSS_FIT_SCALE) ? 1 : 0;
   return cached == 1;
 }
+
+// A portal with solid geometry a few units behind the WHOLE opening is a window onto a wall, not a doorway,
+// whatever BOA's table says. Sigma Base's flag rooms rm17/rm20 open onto their yard shells rm18/rm21 through
+// six 20x20 slanted panes with a parallel slab 3.5 u behind them: the engine calls them passable, the crossing
+// search finds nothing, and the router's DISAGREE retry admitted the yards as explore destinations (23 yard
+// trips in a 4-round soak; every defender escalation was a window press). Thin rays from 1 u inside this room
+// through the plane at the centre and halfway to each vertex; if EVERY ray meets a wall within
+// BOT_PORTAL_WALL_BACKED_DEPTH the far side has no room for a hull. Deliberately narrower than "no validated
+// crossing": abend2's ring connectors and Isengard's slot portals have no crossing either and bots fly them.
+static int8_t pf_portal_wallbacked[MAX_ROOMS][BOT_MAX_PORTALS];
+static bool PortalWallBacked(int room_idx, int portal_idx) {
+  if (pf_wallbacked_level_checksum != BOA_mine_checksum) {
+    memset(pf_portal_wallbacked, -1, sizeof(pf_portal_wallbacked));
+    pf_wallbacked_level_checksum = BOA_mine_checksum;
+  }
+  if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used || portal_idx < 0 ||
+      portal_idx >= Rooms[room_idx].num_portals || portal_idx >= BOT_MAX_PORTALS)
+    return false;
+  int8_t &cached = pf_portal_wallbacked[room_idx][portal_idx];
+  if (cached >= 0)
+    return cached == 1;
+  cached = 0;
+  const room &rm = Rooms[room_idx];
+  if (rm.flags & RF_EXTERNAL)
+    return false; // an exterior shell is not a valid fvi start room
+  const portal &pt = rm.portals[portal_idx];
+  if (pt.portal_face < 0 || pt.portal_face >= rm.num_faces)
+    return false;
+  const face &fc = rm.faces[pt.portal_face];
+  if (fc.num_verts < 3)
+    return false;
+  vector n = fc.normal; // points into this room
+  if (vm_NormalizeVector(&n) < 0.5f)
+    return false;
+  vector centre{};
+  for (int i = 0; i < fc.num_verts; i++)
+    centre = centre + rm.verts[fc.face_verts[i]];
+  centre = centre * (1.0f / (float)fc.num_verts);
+  for (int s = 0; s <= fc.num_verts; s++) {
+    const vector pnt = (s == 0) ? centre : centre + (rm.verts[fc.face_verts[s - 1]] - centre) * 0.5f;
+    vector p0 = pnt + n * 1.0f;
+    vector p1 = pnt - n * BOT_PORTAL_WALL_BACKED_DEPTH;
+    fvi_query fq{};
+    fvi_info hit{};
+    fq.p0 = &p0;
+    fq.p1 = &p1;
+    fq.startroom = room_idx;
+    fq.rad = 0.0f;
+    fq.thisobjnum = -1;
+    fq.ignore_obj_list = nullptr;
+    fq.flags = FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS | FQ_IGNORE_MOVING_OBJECTS | FQ_BACKFACE;
+    const int r = fvi_FindIntersection(&fq, &hit);
+    if (r != HIT_WALL && r != HIT_TERRAIN)
+      return false; // one open column: there is depth behind the opening somewhere — a doorway, however tight
+  }
+  cached = 1;
+  LOG_DEBUG.printf("[Nav] Room %d portal %d -> %d WALL-BACKED: solid within %.0f u behind every sample of the opening",
+                   room_idx, portal_idx, pt.croom, BOT_PORTAL_WALL_BACKED_DEPTH);
+  return true;
+}
+
+bool BotPortalWallBacked(int room_idx, int portal_idx) { return PortalWallBacked(room_idx, portal_idx); }
 
 bool BotPortalEnginePassable(int room_idx, int portal_idx) {
   if (room_idx < 0 || room_idx >= MAX_ROOMS || portal_idx < 0 || portal_idx >= BOT_MAX_PORTALS)
@@ -504,6 +572,8 @@ int BotPortalClass(int room_idx, int portal_idx) {
     return cached = BOT_PORTAL_CLASS_NEVER; // designer veto
   if (PortalTooSmallForHull(room_idx, portal_idx))
     return cached = BOT_PORTAL_CLASS_NEVER; // narrower than the hull: a grate, a pane grid, a hatch
+  if (PortalWallBacked(room_idx, portal_idx))
+    return cached = BOT_PORTAL_CLASS_NEVER; // a window onto a wall: solid a few units behind the whole opening
   doorway *dw = Rooms[room_idx].doorway_data ? Rooms[room_idx].doorway_data : Rooms[cr].doorway_data;
   if (dw && (dw->flags & DF_LOCKED) && !(dw->flags & DF_GB_IGNORE_LOCKED))
     return cached = BOT_PORTAL_CLASS_NEVER; // locked door (same verdict as the router's geocost)
@@ -1762,7 +1832,9 @@ bool BotEntryCenterClear(int room_idx, int portal_idx) {
 // pane — 310 committed crossings timed out at 8.0s in one run, bots firing at glass that never
 // opened. Requiring engine agreement in the same two passes as the router (strict first, DISAGREE
 // last resort) keeps the seam's own selection and the route's edge set from ever disagreeing.
-int BotEntryPortalIndex(object *obj, int wp_room) {
+static int BotComputeRoutePasses(int from_room, int goal_room, int glass_mode, float *out_cost); // the router, below
+
+int BotEntryPortalIndex(object *obj, int wp_room, int goal_room) {
   if (!obj || !obj->ai_info)
     return -1;
   int cur = obj->roomnum;
@@ -1774,6 +1846,38 @@ int BotEntryPortalIndex(object *obj, int wp_room) {
   const int glass_budget = AimGlassBudgetForObj(obj);
   int best_p = -1;
   float best_d = 1e30f;
+  // Two-hop lookahead (2026-09-18): where the route LEAVES wp_room. The nearest door into wp_room is the
+  // wrong door when wp_room is non-convex and the route continues out of it on the bot's far side. Sigma
+  // Base's Red atrium rm19 is a gallery interrupted by the bridge room rm13: a bot in the east half routing
+  // rm19 -> rm9 (the west exit) flew through rm13, the re-route from rm13 picked the nearest door back into
+  // rm19 (the east one, 0 u away), and the pair oscillated once a second — 338 NOT-CROSSED rm19 -> rm9 in
+  // one 4-round soak against 11 crossed. Each candidate is priced by the leg to it PLUS the leg from it to
+  // the nearest exit portal; nearest alone decides only when the route ends in wp_room or the onward legs
+  // tie (the isengard six-slot case: parallel slots, equal onward distance).
+  vector exit_pts[BOT_MAX_PORTALS];
+  int n_exit = 0;
+  if (goal_room >= 0 && goal_room != wp_room && goal_room <= Highest_room_index && Rooms[goal_room].used) {
+    float next_cost = 0.0f;
+    const int next = BotComputeRoutePasses(wp_room, goal_room, glass_budget, &next_cost);
+    if (next >= 0 && next != cur && next <= Highest_room_index && Rooms[next].used) {
+      const room &wrm = Rooms[wp_room];
+      for (int q = 0; q < wrm.num_portals && q < BOT_MAX_PORTALS && n_exit < BOT_MAX_PORTALS; q++) {
+        if (wrm.portals[q].croom != next)
+          continue;
+        if (BotPortalClass(wp_room, q) == BOT_PORTAL_CLASS_NEVER)
+          continue;
+        if (BotPortalRouteCost(wp_room, q, /*allow_disagree=*/true) >= BOT_PORTAL_IMPASSABLE)
+          continue;
+        if (BotPortalWindDir(wp_room, q) < 0)
+          continue;
+        vector ep = wrm.portals[q].path_pnt;
+        BotPortalCrossing(wp_room, q, &ep, nullptr);
+        exit_pts[n_exit++] = ep;
+      }
+    }
+  }
+  int nearest_p = -1;
+  float nearest_d = 1e30f;
   // Doors-first: the strict pass admits only engine-agreeing portals, the fallback pass adds the
   // router's DISAGREE class. Intact panes are a THIRD class, tried only when no door exists — the
   // same sole-route discipline the router and the aim exit set apply.
@@ -1808,10 +1912,31 @@ int BotEntryPortalIndex(object *obj, int wp_room) {
       vector cp = crm.portals[p].path_pnt;
       BotPortalCrossing(cur, p, &cp, nullptr); // the validated point (slice 2)
       float d = vm_VectorDistanceQuick(&obj->pos, &cp);
+      if (d < nearest_d) {
+        nearest_d = d;
+        nearest_p = p;
+      }
+      if (n_exit > 0) {
+        float onward = 1e30f;
+        for (int e = 0; e < n_exit; e++) {
+          const float od = vm_VectorDistanceQuick(&cp, &exit_pts[e]);
+          if (od < onward)
+            onward = od;
+        }
+        d += onward;
+      }
       if (d < best_d) {
         best_d = d;
         best_p = p;
       }
+    }
+  }
+  if (best_p >= 0 && nearest_p >= 0 && best_p != nearest_p) {
+    static float Lookahead_log_t = 0.0f;
+    if (Gametime < Lookahead_log_t || Gametime - Lookahead_log_t > 2.0f) {
+      Lookahead_log_t = Gametime;
+      LOG_DEBUG.printf("BOT NAV: entry door lookahead rm%d -> rm%d (goal rm%d): portal %d over nearest %d", cur, wp_room,
+                       goal_room, best_p, nearest_p);
     }
   }
   return best_p;
@@ -2204,7 +2329,7 @@ vector BotWaypointAimPos(int wp_room, const vector &toward) {
 // overload conditions the answer on the door the bot will actually enter through; it replaces
 // the aim ONLY when that door is blind to the centre, and every failure path falls back to the
 // 2-arg answer verbatim — it can never return a worse point than today.
-vector BotWaypointAimPos(int wp_room, const vector &toward, object *obj) {
+vector BotWaypointAimPos(int wp_room, const vector &toward, object *obj, int goal_room) {
   // No bot context, or no door into the waypoint room (explore to a far/non-adjacent room):
   // the room-level answer.
   if (!obj || !obj->ai_info)
@@ -2217,7 +2342,7 @@ vector BotWaypointAimPos(int wp_room, const vector &toward, object *obj) {
 
   // The door this bot will enter through — the SAME selection the seam guard uses (they share
   // BotEntryPortalIndex precisely so aim and seam can never pick different doors in one tick).
-  int best_p = BotEntryPortalIndex(obj, wp_room);
+  int best_p = BotEntryPortalIndex(obj, wp_room, goal_room);
   if (best_p < 0)
     return BotWaypointAimPos(wp_room, toward);
 
