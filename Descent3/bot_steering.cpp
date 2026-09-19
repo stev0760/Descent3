@@ -3021,6 +3021,17 @@ static float BotRouteDijkstra(int from_room, int goal_room, int *first_hop_out, 
         continue;
       if (nodes[nr].visited)
         continue;
+      // AN EXTERIOR SHELL IS NOT A ROOM TO ROUTE THROUGH (2026-09-19). A structure's RF_EXTERNAL shell touches every
+      // one of its terrain doors, so as a graph node it made "interior" routes that leave by one door and come back in
+      // by another, priced by BOA's portal-to-portal distances across the shell — no terrain, no lattice, no door
+      // verdicts. Tower of Isengard's shell rm2 joins 47 doors: every bot that entered the pipe mouth rm20 was routed
+      // straight back out (26 of 26 hops rm20 -> rm2 in one arm, none inward), the outdoor entrance picker priced
+      // doors with that same fake interior cost and sent it to rm20 again — the "room-20 re-acquire loop" — and
+      // troute's interior-vs-terrain comparison was measuring its terrain plan against a terrain crossing in
+      // disguise ("keeps interior" on nearly every issue). Crossing open air between doors is troute's plan, priced
+      // on the lattice; this router answers for interiors. A shell may still be the goal or the start.
+      if ((Rooms[nr].flags & RF_EXTERNAL) && nr != goal_room)
+        continue;
 
       // Edge admission. Doors require engine agreement as always. An intact breakable pane is a
       // wall to the engine, so it is admitted only under `glass_mode`: SHORTCUT admits VERTICAL
