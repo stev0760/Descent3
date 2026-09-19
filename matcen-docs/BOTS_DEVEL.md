@@ -19,7 +19,7 @@ Isengard's interior pins gone, Animal House stuck-free) and released; the previo
 
 ### 2026-09-19: the outdoor lattice was under the ground; one outdoor dispatch; an errand ends at its point
 
-Branch `fix/outdoor-0915` (local, off `fff9bc3c`), five changes, each its own commit. Started from the operator's
+Branch `fix/outdoor-0915` (local, off `fff9bc3c`), six changes, each its own commit. Started from the operator's
 2026-09-18 flight ("bots still strand in the valley outside Isengard") and his brief for the day: outdoors, and the
 committee collapse.
 
@@ -73,6 +73,19 @@ flag in that room (or the room's path point where the room is not buried-centre)
 station`); inside the station radius the room-progress clock stays at zero — a hold is not a stuck. The same clock rule
 for carriers waiting at home: 49 of the 55 "indoor stuck escalations" in the last 12-round bedlam soak were carriers
 parked at home with the flag, thrown out of their own flag room every 24 s.
+
+**6. An exterior shell is not a room to route through (`d57755b1`).** Found reading the change-5 arm's first minutes: a
+bot hard-pinned 3 u inside rm20's door, goal rm49, `objective nav -> wp 2` — room 2 is the tower's RF_EXTERNAL shell.
+The shell touches all 47 terrain doors, so as a node in the room graph it made "interior" routes that leave by one door
+and re-enter by another, priced by BOA's portal-to-portal distances across the shell. In the change-1 arm every bot that
+entered rm20 was routed straight back out (26 of 26 committed hops rm20 → rm2, none inward); the outdoor entrance picker
+priced doors with the same fake interior cost and chose rm20 again — the long-registered "room-20 re-acquire loop", 22
+of that arm's 49 entrance commits; and troute's v2 comparison was weighing its terrain plan against a terrain crossing
+in disguise ("keeps interior" on nearly every issue, 0-4 completions a level since 0.9.7). Hops into a shell were 9% of
+committed hops on Isengard, 11% on Doors of Moria (rm45 → rm46 ×87, rm0 → rm1 ×60 — how its bots cross between halves),
+0-5% on the bedlam maps. `BotRouteDijkstra` no longer expands an RF_EXTERNAL room unless it is the goal. Interior
+routes stay interior; open air between doors is a troute plan priced on the lattice, or the engine's path when no plan
+composes. 10-minute smoke: entrance commits 26 crossed / 5 not, rm20 5 of 6, troute 53 adoptions / 7 completions.
 
 **Measured the same day: the indoor ladder is quiet.** Last-aim-before-stuck by voice, indoor escalations only: abend2
 12 rounds = 5; bedlam 12 rounds = 55, of which 49 are the waiting carriers above; the flight's five fellowship levels =

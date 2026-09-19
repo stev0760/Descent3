@@ -639,7 +639,9 @@ reproduced, same bot, same cell) against 7. Then the dispatch: the explore ladde
 approach were deleted and outdoor-origin explore stopped being a raw engine goal — every terrain-to-structure trip is
 one issue in `BotSetRoutedGoal` (ENTRY when its push leg is flyable → standoff → lattice waypoint → rescue query). Two
 door rules came with it: an ENTRY commit needs a hull-clear push leg (Doors of Moria's roof hatch rm7), and a push
-shallower than the engine's arrival circle gets a 2 u circle (Isengard's pipe mouths rm20/rm21). What Phase 4 still
+shallower than the engine's arrival circle gets a 2 u circle (Isengard's pipe mouths rm20/rm21). And one for Phase 3: the room router stopped routing THROUGH a structure's exterior shell room (`d57755b1`) — those
+"interior" routes were terrain crossings in disguise, the cause of Isengard's room-20 re-acquire loop and of troute's
+comparison nearly always keeping "interior"; open air between doors is now troute's to plan. What Phase 4 still
 owes: `troute`'s executor as the plan's commitment rule (Phase 3) and the committed via tick on terrain-to-terrain
 legs. **Retired from this section: "seeds-only lattice on Canyons/DownTown"** — neither is an outdoor map (exterior
 portals at or above the flight ceiling; zero terrain presence in a whole soak). Nightmare Castle's 6-seed lattice is

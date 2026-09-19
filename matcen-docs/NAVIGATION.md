@@ -709,7 +709,7 @@ overnight log. A full verbosity-tier + event-vocabulary consolidation is registe
 
 ## 7. Open problems (roadmap)
 
-### 7.0-CURRENT Outdoors: the lattice above ground, one dispatch, and the errand's last leg — 2026-09-19 (branch `fix/outdoor-0915` = `8031ffbf`, in soak)
+### 7.0-CURRENT Outdoors: the lattice above ground, one dispatch, and the errand's last leg — 2026-09-19 (branch `fix/outdoor-0915` = `d57755b1`, in soak)
 
 **Findings (operator's 2026-09-18 flight + same-day probes, renders and arms; BOTS_DEVEL 2026-09-19).**
 
@@ -732,6 +732,13 @@ overnight log. A full verbosity-tier + event-vocabulary consolidation is registe
    CTF errands now fly their last leg: attackers touch an enemy flag that is at home in the room; everyone else takes
    station by the flag (or the room point, never a buried-centre one) and holds within 40 u with the room-progress
    clock at zero. This is the mechanism under the "arrival stall" correlation (arrival distance vs captures).
+
+5. **The room router answers for interiors only.** A structure's RF_EXTERNAL shell touches every one of its terrain
+   doors; as a graph node it let "interior" routes leave by one door and come back in by another at BOA's
+   across-the-shell price. That was Isengard's room-20 re-acquire loop (enter the pipe mouth, be routed straight back
+   out, be sent to the same nearest door again) and the reason troute's interior-vs-terrain comparison almost always
+   kept "interior". `BotRouteDijkstra` does not expand a shell room unless it is the goal; a crossing of open air is a
+   troute plan (door pair scored as interior + lattice + interior) or, failing that, the engine's path.
 
 **Measured: the indoor committee is quiet** — 5 indoor stuck escalations in 12 abend2 rounds, 6 in 12 bedlam rounds
 once the carriers "stuck" waiting at home are set aside, and no in-room voice over-represented at the ones that remain.
