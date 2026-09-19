@@ -113,16 +113,17 @@ lines, `entrance ENTRY held`, and a new "Objective Last Leg" section (`flag grab
 paths collapse to one directory and a third instance dies on the lock file; use short paths.
 
 **Arms (2026-09-19, 8 bots, same day; Isengard 3×20 min, Moria 3×20, Bree 4×15, bedlam 4-team 12 rounds).**
-| Tower of Isengard, 3×20 min | control `fff9bc3c` | change 1 only (`b1622d94`) | v5 (`8031ffbf`, all five) |
-|---|---|---|---|
-| stuck escalations (hard) | 176 (16) | 23 (5) | ISENGARD_V5_STUCKS |
-| — outdoors (hard) | 175 (16) | 21 (3) | ISENGARD_V5_OUT |
-| outdoor stuck events / ground-pinned | 708 / 308 | 197 / 89 | ISENGARD_V5_EVENTS |
-| kills | 5 | 16 | ISENGARD_V5_KILLS |
-| flag pickups (Blue / Red) | 10 (8 / 2) | 16 (13 / 3) | ISENGARD_V5_PICKS |
-| captures | 6 | 2 | ISENGARD_V5_CAPS |
-| flag episodes: capture / returned by defenders / carrier alive at level end | 6 / 4 / 0 | 2 / 10 / 3 | ISENGARD_V5_EPISODES |
-| entrance commits crossed | 19 of 27 (rm20 ×6 not) | 28 of 49 (rm20 ×18 not) | ISENGARD_V5_COMMITS |
+| Tower of Isengard, 3×20 min, 8 bots | control `fff9bc3c` | change 1 only | v5 (changes 1-5) | **v7 (all seven)** |
+|---|---|---|---|---|
+| stuck escalations (hard) | 176 (16) | 23 (5) | 41 (7) | **8 (1)** |
+| — outdoors (hard) | 175 (16) | 21 (3) | 31 (2) | **3 (0)** |
+| outdoor stuck events / ground-pinned | 708 / 308 | 197 / 89 | 154 / 14 | **55 / 15** |
+| entrance commits crossed | 19 of 27 | 28 of 49 | 360 of 404 (the rm20 in/out loop) | **80 of 84** |
+| flag pickups (Blue / Red) | 10 (8 / 2) | 16 (13 / 3) | 19 (14 / 5) | **28 (12 / 16)** |
+| captures | 6 | 2 | 7 | **6** |
+| flag episodes: capture / returned by defenders / carrier alive at level end | 6 / 4 / 0 | 2 / 10 / 3 | 7 / 10 / 1 | **6 / 18 / 1** |
+| seconds both flags out, per round | 0, 0, 0 | 105, 0, 0 | 0, 12, 53 | **69, 204, 56** |
+| carrier deaths outdoors / indoors | — | — | 1 / 10 | **0 / 21** |
 
 The control reproduced the operator's flight to the cell: round 1 had 84 outdoor escalations, 20 of them the same bot
 (Phantom) at the same cell (123,149) bound for the same door (rm21). With the lattice above ground the bots meet: kills
@@ -132,14 +133,17 @@ control half the opposition is parked in the valley and carriers fly home unoppo
 2 captures; the mechanism numbers can be ranked, and they are an order of magnitude apart. Carries themselves are slow
 in both arms (100-200 s; the dungeon hop rm45 → rm34 re-issued up to 59 times in one carry) — an indoor item, registered.
 
-| Doors of Moria, 3×20 min | control `fff9bc3c` | v3 (`161582cc`: changes 1-3) | v5 (`8031ffbf`) |
-|---|---|---|---|
-| stuck escalations (hard) | 86 (8) | 60 (5) | MORIA_V5_STUCKS |
-| — outdoors / flag-room doorway rm15 | 56 / 28 | 16 / 23 | MORIA_V5_SPLIT |
-| entrance commits crossed (rm7 not-crossed) | 22 of 50 (23) | 81 of 87 (1) | MORIA_V5_COMMITS |
-| pickups / captures | 31 / 19 | 36 / 8 | MORIA_V5_PLAY |
+| Doors of Moria, 3×20 min, 8 bots | control `fff9bc3c` | v3 (changes 1-3) | v5 (changes 1-5) | **v7 (all seven)** |
+|---|---|---|---|---|
+| stuck escalations (hard) | 86 (8) | 60 (5) | 36 (3) | MORIA_V7_STUCKS |
+| — outdoors / flag-room doorway rm15 | 56 / 28 | 16 / 23 | 29 / 0 | MORIA_V7_SPLIT |
+| entrance commits crossed (rm7 not-crossed) | 22 of 50 (23) | 81 of 87 (1) | 81 of 85 (0) | MORIA_V7_COMMITS |
+| flag grabs through the new touch / stations taken | — | — | 25 / 9 | MORIA_V7_LASTLEG |
+| pickups / captures | 31 / 19 | 36 / 8 | 34 / 16 | MORIA_V7_PLAY |
+| kills / FLEE transitions | 12 / 71 | 26 / 436 | 23 / 137 | MORIA_V7_FIGHT |
+| carrier deaths outdoors / indoors | 0 / 11 | 9 / 18 | 0 / 17 | MORIA_V7_CDEATH |
 
-Moria repeats Isengard's shape with a larger sample: the doors work (entrance commits 44% → 93% crossed, the roof hatch
+Moria's v3 arm repeats the shape of Isengard's change-1 arm with a larger sample: the doors work (entrance commits 44% → 93% crossed, the roof hatch
 rm7 23 misses → 1), outdoor stucks fall 56 → 16, kills double (12 → 26) and FLEE transitions go 71 → 436 — and captures
 fall 19 → 8 with pickups flat (31 → 36). Flag episodes: control 19 captures / 9 returned by the defenders; v3 8 / 16, with
 capture carries taking 104 s against 57 s. Carriers are not pinned in either arm (0 and 2 carrier stuck states); they are
