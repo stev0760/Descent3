@@ -208,6 +208,28 @@ Two consequences worth remembering:
 with zero terrain presence in the whole run (no entrance-seeks, no outdoor stucks, no outdoor
 carrier ticks).
 
+## 4ba. The terrain is one-sided, invisible terrain is not there, and the sky has a lid (2026-09-19)
+
+Three engine facts every outdoor sweep depends on, read in `physics/findintersection.cpp` (terrain node checks,
+~3843-3900) and `Descent3/TerrainSearch.cpp`:
+
+- **The heightfield collides from above only.** fvi tests a sweep against the two triangles of each terrain node; the
+  triangles face up. A sweep that STARTS under the surface meets nothing — it is clear in every direction, including
+  straight up through the ground. A hull sweep is therefore not evidence that a point is in flyable air: test the point
+  against `GetTerrainGroundPoint()` as well. (The outdoor region lattice did not: three cells admitted under Tower of
+  Isengard's terrain grew into 5,900 underground nodes, each linked up through the surface to the real ones, and bots
+  were handed waypoints under their feet — the "valley pins".) The same holds for an exterior shell room's faces seen
+  from inside: `$nav probe` reads inside → outside CLEAR at every radius, with or without `FQ_BACKFACE`.
+- **`TF_INVISIBLE` terrain segments neither draw nor collide** — the node check is skipped for them
+  (`!(Terrain_seg[n].flags & TF_INVISIBLE)`). Level designers sink structures under them: Town of Bree's streets and
+  courtyards are flyable "outdoors" 20-70 u BELOW the heightfield (the analyzer's outdoor `agl` reads −73 there). Any
+  below-ground rule must exempt invisible segments.
+- **The level's flight ceiling is a real lid.** `Ceiling_height` (level file, default `MAX_TERRAIN_HEIGHT` 350) stops
+  ships; `FQ_CHECK_CEILING` makes a sweep report `HIT_CEILING`. A map whose exterior portals all open at or above the
+  ceiling is not an outdoor map, whatever its sky looks like: Canyons CTF (ceiling −95, canyon tops −98) and DownTown
+  (door approaches y 369-525, ceiling 350) never put a bot outdoors in a whole soak. The `outdoor region lattice grid:`
+  log line prints the cap next to the grid box.
+
 ## 4bb. Intact breakable glass is routable at build time and unroutable at runtime
 
 `BOA_PassablePortal()` wraps its entire passability block in `if (!BOA_f_making_boa)`

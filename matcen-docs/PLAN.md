@@ -229,6 +229,13 @@ slice, each gated by the bot-free dumps and both soak maps, in this order:
 5. **Combat pursuit and powerup chase request destinations from the planner** instead of driving
    the engine path; the hunt-needs-a-route gate (slice 6b) is the first half of this.
 
+**Measured 2026-09-19 — the indoor ladder no longer gates play.** Indoor stuck escalations: 5 in 12 abend2 rounds;
+55 in 12 bedlam rounds, 49 of them carriers waiting at home with the flag (a hold the progress timeout mistook for
+a stuck — fixed in `8031ffbf`); 41 across the five fellowship levels of the 09-18 flight. Counting which in-room voice
+issued the last aim before each of those, none is over-represented (composed 20% of issues, ring 15%, skeleton 11%,
+roadmap 9%, grid route 25%). Steps 1-5 stand as written but are a code-quality project now; the committee cut with
+play value was outdoors, and the first one landed the same day (§3.7 Phase 4, `161582cc`).
+
 After these the ladder is one function — goal, route, plan, next waypoint — and the census shows one
 member at ~100% with the flicker members gone. Success is measured as fewer committed-but-not-crossed
 hops and no rise in pins, per map, per team; not as substrate usage. The room router stays untouched.
@@ -622,6 +629,22 @@ and dies or flees inside it, while Blue's target (71) is two rooms from a door. 
 outdoor approach to the tavern's courtyard hatch rm25 → rm61 is four rooms, but troute's interior-vs-terrain cost
 prefers the corridor), registered, not built.**
 
+**2026-09-19 — the region lattice was under the ground; Phase 4's first cut landed (branch `fix/outdoor-0915`,
+BOTS_DEVEL 2026-09-19).** The Isengard "valley pins" the operator flew on 0.9.14 were not a door problem: terrain collides
+from above only, so three lattice cells admitted under the heightfield grew into 5,900 underground nodes linked up
+through the surface (6811 cells, 916 real), Theta\* routed under the valley and bots were handed waypoints under their
+feet. Rule: a cell on a solid terrain segment stands hull clearance above the ground (`TF_INVISIBLE` segments exempt —
+Bree's streets). Same-day arms, round 1: 84 outdoor stuck escalations on the control (the flight's exact pin
+reproduced, same bot, same cell) against 7. Then the dispatch: the explore ladder's two private copies of the outdoor
+approach were deleted and outdoor-origin explore stopped being a raw engine goal — every terrain-to-structure trip is
+one issue in `BotSetRoutedGoal` (ENTRY when its push leg is flyable → standoff → lattice waypoint → rescue query). Two
+door rules came with it: an ENTRY commit needs a hull-clear push leg (Doors of Moria's roof hatch rm7), and a push
+shallower than the engine's arrival circle gets a 2 u circle (Isengard's pipe mouths rm20/rm21). What Phase 4 still
+owes: `troute`'s executor as the plan's commitment rule (Phase 3) and the committed via tick on terrain-to-terrain
+legs. **Retired from this section: "seeds-only lattice on Canyons/DownTown"** — neither is an outdoor map (exterior
+portals at or above the flight ceiling; zero terrain presence in a whole soak). Nightmare Castle's 6-seed lattice is
+the one real case left.
+
 **Phase 2 — one outdoor network per region.** `EnsureUnionGraph` for `rr->outdoor`: OGraph nodes as
 arterials, the region lattice as local streets, ramps as indoors; the outdoor via query attaches to the
 hull-visible nearest node (parity with indoor). Lift `BotComposeRoomRoute`'s `OBJECT_OUTSIDE` guard so the
@@ -709,6 +732,10 @@ the series and start the adjacent work and the community release.
      full 120 s auto-return — neither the fumble rush nor the defenders' recovery arrived). Mode layer,
      not nav; low priority.
    - **Bree Red-side attack difficulty** (map asymmetry vs role policy — measure per team, §3.5).
+   - **IN SOAK 2026-09-19 (`fix/outdoor-0915`): the valley was the outdoor lattice under the ground (§3.7); Doors of
+     Moria's rm7 was an ENTRY commit from beside a roof hatch; and the registered "arrival stall" has a mechanism —
+     an arrived errand held in the flag room's doorway (`8031ffbf`: attackers touch the flag, everyone else takes
+     station by it, a hold is not a stuck).** The two items below stay listed until the arms and a flight confirm.
    - **Tower of Isengard's valley, with coordinates** (from the operator's 2026-09-18 flight log): 161 stuck
      escalations in one 30-minute round, 151 of them outdoors, 15 hard; 544 of 553 outdoor stucks were
      routed into a structure (entrance-seek miss) and 238 were ground-pinned. One cell dominates —

@@ -17,6 +17,107 @@ the flag-room arrival stall and the ~58% connectivity dead-ends. 0.9.14 was vali
 Isengard's interior pins gone, Animal House stuck-free) and released; the previous stable release was
 **0.9.13** (0.9.11 preceded it; 0.9.12 was never promoted).
 
+### 2026-09-19: the outdoor lattice was under the ground; one outdoor dispatch; an errand ends at its point
+
+Branch `fix/outdoor-0915` (local, off `fff9bc3c`), five changes, each its own commit. Started from the operator's
+2026-09-18 flight ("bots still strand in the valley outside Isengard") and his brief for the day: outdoors, and the
+committee collapse.
+
+**1. The region lattice was 85% underground (`b1622d94`).** The flight log's 161 Isengard stucks were 117 events of ONE
+bot (Phantom, 8 minutes at cell 123,149 on a 26 u lattice leg) plus short presses at y=294 waypoints with the bot at
+agl 6-8. `$nav probe` on the legs: bot → waypoint `HIT_TERRAIN` (or shell face rm2/47) at 0-5 u, waypoint → bot CLEAR at
+every radius. Terrain collides from above only (`findintersection.cpp` checks a segment's two triangles against the
+sweep; nothing faces down), so a sweep that starts under the heightfield is clear in every direction: three cells
+admitted below ground flooded the region — 6811 cells, 916 of them in flyable air — and each underground cell linked
+UP through the surface and out through shell walls to the real ones, stored as two-way edges. Theta\* routed under the
+valley; the string-pull handed out the last visible vertex and then (the terrain-shadow collapse guard) `path[1]`,
+unchecked, under the bot's feet. Rule: a cell that ends on a terrain segment must stand hull clearance above
+`GetTerrainGroundPoint`. **Segments flagged `TF_INVISIBLE` are exempt** — they neither draw nor collide (fvi skips them)
+and Town of Bree's streets lie under them; the first form of the rule left Bree zero cells, caught by the bot-free
+gate before any soak. Gate: Isengard 6811 → 916 cells, 1 component, all 46 seeds joined; Bree, Doors of Moria, Sigma
+Base unchanged (0 underground rejections). The 09-15 "two-way legs cut the lattice to 964" experiment was this same
+population being removed — it was read as "unroutable" and rejected; 916 real cells route fine. New log line
+`outdoor region lattice grid:` (box, pitch, cell counts, ceiling cap).
+
+**2. An outdoor ENTRY commit needs a hull-clear push leg (`7dec62d4`).** Doors of Moria rm7 is a 16×27 u roof hatch at
+the bottom of a 16 u well; the commit sphere is 30 u around the standoff and bots committed from beside and below the
+rim (probe from the pin: shell face rm2/140 at 0 u), 20 NOT-CROSSED in the flight round. The indoor refusal rule
+(`09c40a72`) at the boundary: while the push leg is blocked the standoff stays the aim; within 12 u of the standoff the
+commit goes ahead regardless. Log `entrance ENTRY held`.
+
+**3. One outdoor dispatch (`161582cc`, −172/+42 lines) — the first outdoor committee cut (PLAN §3.7 Phase 4).** The
+explore ladder carried two private copies of the approach (the objective site's entrance stage with its own lattice
+leg + via fallback, and an en-route "outdoor via maintenance" on a carried `oa_steer_pos`), and outdoor-origin explore
+had neither: a raw engine goal at a room behind a wall (Isengard on change 1: two bots pressed the tower's north shell
+after `explore → room 0 from outdoor`). Now every trip from terrain into a structure is issued by `BotSetRoutedGoal`'s
+outdoor branch, in one order: ENTRY push when flyable → straight leg to the standoff → lattice waypoint → the reactive
+rescue (rings, then the door-graph hop) asked as a plain query for that issue's aim, no second commitment window.
+En-route maintenance re-enters the entry outdoors as indoors, so an objective errand keeps its goal room and owner
+across terrain (it used to be re-labelled an explore trip to the door room). `oa_steer_*` removed.
+
+**4. A shallow ENTRY push must not arrive outside the door (`2c9356a3`).** Isengard's pipe mouths rm20/rm21 are 20 u
+deep: the validated 16 u push lands past their back portal, the legacy push is 6 u inside the plane — inside the
+engine goal's ~10 u arrival circle. The goal completed 4 u short of the plane and the bot sat still for the observer's
+8 s: rm20 18 of 22 commits NOT-CROSSED in the change-1 arm, `now` == `from`. When the push is shallower than the
+circle the ENTRY goal's circle becomes 2 u (the stacked-tray rule).
+
+**5. An objective errand ends at its point, not at the room's door (`8031ffbf`) — the arrival-stall mechanism.**
+Arrival in the objective room meant "hold" (`return`), but the errand's last engine goal was the push through the door,
+which completes on the threshold, and nothing owned the leg from the doorway to the flag but the powerup chase, which
+often does not fire there. Doors of Moria rm15 (Red flag room, one portal), one 20-minute round: eleven stuck
+escalations at one spot in the doorway, 21-40 u from a flag at home. Red's defenders parked there all round — in the
+only entrance; each arriving Blue attacker idled beside them 25-90 s and grabbed the flag only after the stuck escape
+threw it loose. Now (CTF only): an attacker with the enemy flag at home in the room gets an object goal on it (`flag
+grab`, the recovery rule: touch on a clear hull line, routed in-room leg otherwise); anyone else takes station by the
+flag in that room (or the room's path point where the room is not buried-centre) and holds within 40 u (`taking
+station`); inside the station radius the room-progress clock stays at zero — a hold is not a stuck. The same clock rule
+for carriers waiting at home: 49 of the 55 "indoor stuck escalations" in the last 12-round bedlam soak were carriers
+parked at home with the flag, thrown out of their own flag room every 24 s.
+
+**Measured the same day: the indoor ladder is quiet.** Last-aim-before-stuck by voice, indoor escalations only: abend2
+12 rounds = 5; bedlam 12 rounds = 55, of which 49 are the waiting carriers above; the flight's five fellowship levels =
+41. No in-room voice (composed 20% of issues, ring 15%, skeleton 11%, roadmap 9%, gridroute 25%) is over-represented
+at stucks. The indoor collapse (PLAN §3.0 steps 1-5) is now a code-quality project; the collapse with play value was
+the outdoor dispatch, and it is where today's cut went.
+
+**Retired:** "seeds-only region lattice on Canyons/DownTown" — neither is an outdoor map. Canyons' level ceiling (−95)
+sits 3 u above the canyon tops (door approaches y=−90); DownTown's door approaches (y 369-525) are above its ceiling
+(350); no bot left a structure on either in the Havoc soak (0 terrain events). Operator confirmed Canyons.
+
+**Instruments/tools:** analyzer counts the entry's `outdoor entrance approach|rescue via` and `(entrance leg, goal N)`
+lines, `entrance ENTRY held`, and a new "Objective Last Leg" section (`flag grab`, `taking station`). Standalone
+`doorsofmoria.mn3` built (fellowship level 4). Trap: the engine truncates `-tempdir` at ~123 characters — long scratchpad
+paths collapse to one directory and a third instance dies on the lock file; use short paths.
+
+**Arms (2026-09-19, 8 bots, same day; Isengard 3×20 min, Moria 3×20, Bree 4×15, bedlam 4-team 12 rounds).**
+| Tower of Isengard, 3×20 min | control `fff9bc3c` | change 1 only (`b1622d94`) | v5 (`8031ffbf`, all five) |
+|---|---|---|---|
+| stuck escalations (hard) | 176 (16) | 23 (5) | ISENGARD_V5_STUCKS |
+| — outdoors (hard) | 175 (16) | 21 (3) | ISENGARD_V5_OUT |
+| outdoor stuck events / ground-pinned | 708 / 308 | 197 / 89 | ISENGARD_V5_EVENTS |
+| kills | 5 | 16 | ISENGARD_V5_KILLS |
+| flag pickups (Blue / Red) | 10 (8 / 2) | 16 (13 / 3) | ISENGARD_V5_PICKS |
+| captures | 6 | 2 | ISENGARD_V5_CAPS |
+| flag episodes: capture / returned by defenders / carrier alive at level end | 6 / 4 / 0 | 2 / 10 / 3 | ISENGARD_V5_EPISODES |
+| entrance commits crossed | 19 of 27 (rm20 ×6 not) | 28 of 49 (rm20 ×18 not) | ISENGARD_V5_COMMITS |
+
+The control reproduced the operator's flight to the cell: round 1 had 84 outdoor escalations, 20 of them the same bot
+(Phantom) at the same cell (123,149) bound for the same door (rm21). With the lattice above ground the bots meet: kills
+tripled and pickups rose 60%, and the capture count fell with them — ten of the variant's fifteen flag episodes ended
+with the defenders returning the flag (the carrier intercepted), none with a carrier pinned on a long carry. In the
+control half the opposition is parked in the valley and carriers fly home unopposed. Three rounds cannot rank 6 against
+2 captures; the mechanism numbers can be ranked, and they are an order of magnitude apart. Carries themselves are slow
+in both arms (100-200 s; the dungeon hop rm45 → rm34 re-issued up to 59 times in one carry) — an indoor item, registered.
+
+| Doors of Moria, 3×20 min | control `fff9bc3c` | v3 (`161582cc`: changes 1-3) | v5 (`8031ffbf`) |
+|---|---|---|---|
+| stuck escalations (hard) | MORIA_CTL_STUCKS | 60 (5) | MORIA_V5_STUCKS |
+| — outdoors / flag-room doorway rm15 | MORIA_CTL_SPLIT | 16 / 23 | MORIA_V5_SPLIT |
+| entrance commits crossed (rm7 not-crossed) | MORIA_CTL_COMMITS | 81 of 87 (1) | MORIA_V5_COMMITS |
+| pickups / captures | MORIA_CTL_PLAY | 36 / 8 | MORIA_V5_PLAY |
+
+BREE_AND_BEDLAM_PLACEHOLDER
+
 ### 2026-09-18: the Sigma Base split verdict (corrected), the rework, and its geometry gate
 
 **Split A/B (`<lab>/ab-split-20260917/`, control `soak-20260916T003617.log` f687c46b):** arm A = the distance-priced

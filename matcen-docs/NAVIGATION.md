@@ -590,8 +590,11 @@ via and commit to it (the existing `AIG_GET_TO_POS` + chain-cap/suspend machiner
 - **Entrance approach offset** — target the door's `path_pnt - face_normal*k` (a clean point *out* of the
   structure), so the final leg isn't into the facade/open-door obstruction the bot pinned behind.
 
-It runs both at entrance-seek and as **en-route maintenance** in `BotDoExploreRoaming` (the pin happens
-mid-flight), carrying the approach point in `oa_steer_pos`/`oa_steer_room`. Pass 3 (the room portal
+**Since 2026-09-19 (one outdoor dispatch, §7.0) it is no longer a via tick on structure-bound legs:**
+`BotSetRoutedGoal`'s outdoor branch asks `BotFindViaPoint` as a plain query — after the ENTRY push, the straight
+standoff leg and the lattice waypoint have all declined — and issues the answer as that leg's aim; the explore ladder's
+entrance-seek copy and its en-route maintenance (`oa_steer_pos`/`oa_steer_room`) are gone. The committed via tick still
+serves terrain-to-terrain targets (pursuit, item chases, escort). Pass 3 (the room portal
 skeleton) stays indoor-only — outdoors `obj->roomnum` is a terrain cell, not a room index. Toggle
 `$outdoorvia` (default ON); bot code only, so indoor nav can't regress.
 
@@ -706,7 +709,38 @@ overnight log. A full verbosity-tier + event-vocabulary consolidation is registe
 
 ## 7. Open problems (roadmap)
 
-### 7.0-CURRENT The portal model, slice 10 — window onto a wall, and the door pick two hops deep — 2026-09-18 (branch `fix/sigmabase-window-and-exit` = `f3b37558`, in soak)
+### 7.0-CURRENT Outdoors: the lattice above ground, one dispatch, and the errand's last leg — 2026-09-19 (branch `fix/outdoor-0915` = `8031ffbf`, in soak)
+
+**Findings (operator's 2026-09-18 flight + same-day probes, renders and arms; BOTS_DEVEL 2026-09-19).**
+
+1. **The outdoor region lattice must be tested against the heightfield, not only swept.** Terrain collides from above
+   only (OBSTACLE_GEOMETRY §4ba): a sweep that starts under the surface is clear everywhere, so a handful of cells
+   admitted below ground become thousands, each linked up through the surface to the real cells. Tower of Isengard:
+   6811 cells, 916 real. Routes ran under the valley and bots were handed waypoints under their feet or inside the
+   tower shell — the whole "valley pin" class. Admission rule: a cell on a SOLID terrain segment stands hull clearance
+   above `GetTerrainGroundPoint`; `TF_INVISIBLE` segments (Town of Bree's sunken streets) are exempt.
+2. **One outdoor dispatch.** Every trip from terrain into a structure — carrier, objective errand, explore, last-known
+   chase — is issued by `BotSetRoutedGoal`'s outdoor branch, in one order: ENTRY push (only when the push leg is
+   hull-clear from where the bot is, or the bot is at the standoff) → straight leg to the standoff → lattice waypoint →
+   reactive rescue (rings, then the door-graph hop) as a plain query. The explore ladder's two private copies are
+   deleted; outdoor-origin explore is no longer a raw engine goal. This is PLAN §3.7 Phase 4's first cut: `outdoor-entry`,
+   `outdoor-leg` and the rescue are now stages of one issue, not rivals.
+3. **An ENTRY push shallower than the engine goal's arrival circle (~10 u) "arrives" outside the door** (Isengard's 20 u
+   pipe-mouth rooms): the goal's circle is shrunk to 2 u for such pushes.
+4. **Arrival in the objective room is not the end of the errand.** The last engine goal of a routed errand is the push
+   through the door; "hold on arrival" parked defenders and attackers in the flag room's doorway (Doors of Moria rm15).
+   CTF errands now fly their last leg: attackers touch an enemy flag that is at home in the room; everyone else takes
+   station by the flag (or the room point, never a buried-centre one) and holds within 40 u with the room-progress
+   clock at zero. This is the mechanism under the "arrival stall" correlation (arrival distance vs captures).
+
+**Measured: the indoor committee is quiet** — 5 indoor stuck escalations in 12 abend2 rounds, 6 in 12 bedlam rounds
+once the carriers "stuck" waiting at home are set aside, and no in-room voice over-represented at the ones that remain.
+§3.0's indoor collapse is code quality from here; it no longer gates play.
+
+**Not outdoor maps (do not list them as lattice defects):** Canyons CTF, DownTown — exterior portals at/above the flight
+ceiling, zero terrain presence.
+
+### 7.0-PREV The portal model, slice 10 — window onto a wall, and the door pick two hops deep — 2026-09-18 (merged into 0.9.15-dev as `fff9bc3c`)
 
 **Finding (Sigma Base control soak + the rm19 render + the split A/B; BOTS_DEVEL 2026-09-18).** Two more portal-model
 defects, neither a Sigma Base special case:
