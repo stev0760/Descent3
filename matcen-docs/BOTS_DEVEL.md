@@ -94,7 +94,7 @@ open against none. With the doors working, troute's adopted plans finally execut
 that arm's adoptions were tie-class wins — terrain at 85% or more of the interior cost, 115 of them at 95% or more
 ("terrain 2970 beats interior 3131"). The factor had been loosened from 0.85 to 1.0 on 2026-07-11, when adopted plans
 never flew. The lattice prices distance, not exposure or the hatch at the far end; 0.85 is that tax. Isengard keeps
-its decisive adoptions (18 of 147 under 0.85). The rest of the dip is play: kills 5 → 16 on Isengard, 12 → 26 on Moria,
+its decisive adoptions (18 of 147 under 0.85). The rest of the dip is play: bot deaths 114 → 157 on Isengard, 225 → 307 on Moria,
 FLEE transitions 71 → 436 — the opposition is no longer parked outside.
 
 **Measured the same day: the indoor ladder is quiet.** Last-aim-before-stuck by voice, indoor escalations only: abend2
@@ -106,6 +106,9 @@ the outdoor dispatch, and it is where today's cut went.
 **Retired:** "seeds-only region lattice on Canyons/DownTown" — neither is an outdoor map. Canyons' level ceiling (−95)
 sits 3 u above the canyon tops (door approaches y=−90); DownTown's door approaches (y 369-525) are above its ceiling
 (350); no bot left a structure on either in the Havoc soak (0 terrain events). Operator confirmed Canyons.
+
+**Instrument defect, registered not fixed:** the analyzer's Kills column matches one death-message wording (`was killed
+by`) of the dozen the game prints, so it undercounts ~15× and cannot rank arms; the numbers above use `BotRespawn` lines.
 
 **Instruments/tools:** analyzer counts the entry's `outdoor entrance approach|rescue via` and `(entrance leg, goal N)`
 lines, `entrance ENTRY held`, and a new "Objective Last Leg" section (`flag grab`, `taking station`). Standalone
@@ -124,10 +127,11 @@ paths collapse to one directory and a third instance dies on the lock file; use 
 | flag episodes: capture / returned by defenders / carrier alive at level end | 6 / 4 / 0 | 2 / 10 / 3 | 7 / 10 / 1 | **6 / 18 / 1** |
 | seconds both flags out, per round | 0, 0, 0 | 105, 0, 0 | 0, 12, 53 | **69, 204, 56** |
 | carrier deaths outdoors / indoors | — | — | 1 / 10 | **0 / 21** |
+| bot deaths (respawn lines) | 114 | 157 | 149 | **192** |
 
 The control reproduced the operator's flight to the cell: round 1 had 84 outdoor escalations, 20 of them the same bot
-(Phantom) at the same cell (123,149) bound for the same door (rm21). With the lattice above ground the bots meet: kills
-tripled and pickups rose 60%, and the capture count fell with them — ten of the variant's fifteen flag episodes ended
+(Phantom) at the same cell (123,149) bound for the same door (rm21). With the lattice above ground the bots meet: bot
+deaths rose 38% and pickups 60%, and the capture count fell with them — ten of the variant's fifteen flag episodes ended
 with the defenders returning the flag (the carrier intercepted), none with a carrier pinned on a long carry. In the
 control half the opposition is parked in the valley and carriers fly home unopposed. Three rounds cannot rank 6 against
 2 captures; the mechanism numbers can be ranked, and they are an order of magnitude apart. Carries themselves are slow
@@ -140,11 +144,11 @@ in both arms (100-200 s; the dungeon hop rm45 → rm34 re-issued up to 59 times 
 | entrance commits crossed (rm7 not-crossed) | 22 of 50 (23) | 81 of 87 (1) | 81 of 85 (0) | MORIA_V7_COMMITS |
 | flag grabs through the new touch / stations taken | — | — | 25 / 9 | MORIA_V7_LASTLEG |
 | pickups / captures | 31 / 19 | 36 / 8 | 34 / 16 | MORIA_V7_PLAY |
-| kills / FLEE transitions | 12 / 71 | 26 / 436 | 23 / 137 | MORIA_V7_FIGHT |
+| bot deaths (respawns) / FLEE transitions | 225 / 71 | 307 / 436 | 318 / 137 | MORIA_V7_FIGHT |
 | carrier deaths outdoors / indoors | 0 / 11 | 9 / 18 | 0 / 17 | MORIA_V7_CDEATH |
 
 Moria's v3 arm repeats the shape of Isengard's change-1 arm with a larger sample: the doors work (entrance commits 44% → 93% crossed, the roof hatch
-rm7 23 misses → 1), outdoor stucks fall 56 → 16, kills double (12 → 26) and FLEE transitions go 71 → 436 — and captures
+rm7 23 misses → 1), outdoor stucks fall 56 → 16, bot deaths rise 225 → 307 and FLEE transitions go 71 → 436 — and captures
 fall 19 → 8 with pickups flat (31 → 36). Flag episodes: control 19 captures / 9 returned by the defenders; v3 8 / 16, with
 capture carries taking 104 s against 57 s. Carriers are not pinned in either arm (0 and 2 carrier stuck states); they are
 being shot at. The control's opposition spends the round outside a hatch it cannot enter. Reported to the operator as
