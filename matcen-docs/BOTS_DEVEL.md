@@ -154,6 +154,25 @@ both flags are out at once for 56-204 s a round where the control never had a st
 deaths outdoors 0 → 0 (the v3 arm's nine are gone with the adoption factor). Both maps now play with contact — bot
 deaths 114 → 192 and 225 → 274 — instead of one team parked outside a door it cannot enter.
 
+**TOWN OF BREE REGRESSES ON CAPTURES, AND THE CAUSE IS CHANGE 7 NOT GOING FAR ENOUGH (2026-09-19, same-day pair,
+4 × 15 min, 8 bots).** Mechanism improved as everywhere else — stuck escalations 33 → 26, entrance commits 71% → 96%
+crossed, outdoor stucks 16 → 7 — and captures went **34 → 17**, conversion Blue 84% → 62% and Red 67% → 18%.
+
+The cause is not the shell rule and not a routing failure: `NO-ROUTE` is zero in both arms and troute adopts at the same
+rate (63 control, 61 v7). What changed is that the adopted plans now **execute** — completions 1 → 11 — because changes
+1-3 made the outdoor legs work. So carriers that used to run home down the tavern corridor now fly the open crossing:
+carrier ticks outdoors 5 → 49, carrier deaths outdoors 0 → 6, dying 200-425 u from home on `troute seg1` and entrance
+legs (two traced: Phantom, rounds 2 and 3). Bree is the map where the interior route is safe and the open ground is not,
+and 0.85 is not a big enough tax to express that.
+
+This is the same class the Moria v3 arm found, one map further on, and it says the factor is the wrong instrument: it
+prices distance against distance, while what differs is exposure. The obvious candidates, in the operator's court:
+(a) a carrier never adopts a terrain plan — its job is to arrive, not to arrive quickly; (b) an explicit exposure term
+on the terrain segment (open-ground length, or time without a wall in reach) rather than another constant; (c) drop
+change 7 and gate adoption on the errand's owner. **No further change was made without review.** Isengard and Moria
+both keep their gains with the factor as it stands, so this is a one-map, one-role regression with a named mechanism,
+not a reason to drop the outdoor work.
+
 **Open, from the v7 arms.** (a) Moria's teams diverge as the arms improve: Blue 17/13 → 24/13 → 31/15 pickups/captures,
 Red 14/6 → 10/3 → 7/0. Moria is user-made and asymmetric, so the symmetry criterion does not apply, but the trend is
 one-sided enough to measure per team before the next change. (b) The flag-grab touch fires 108 times in Moria's rm11
