@@ -141,6 +141,8 @@
 #define BOT_TROUTE_ADOPT_MIN_INTERIOR 500.0f
 #define BOT_ENTRY_COMMIT_DIST 30.0f // 8.2 ($nav entry): within this of the standoff point -> commit THROUGH the door
 #define BOT_ENTRY_STANDOFF_DIST 12.0f // at the standoff itself: commit even when the push-leg sweep clips the frame
+#define BOT_OBJECTIVE_STATION_DIST                                                                                     \
+  40.0f // an arrived objective errand holds within this of its station (the flag / room point)
 #define BOT_FLAG_TOUCH_DIST 150.0f // CTF flag recovery: within this, with a clear line, an object goal touches the flag
 #define BOT_ENTRY_PUSH_DIST 25.0f   // 8.2: aim this far INSIDE the door room (> engine arrive radius: arrival = entry)
 #define BOT_SEAM_RETRY_TIME 5.0f    // $nav seam: one redirect per waypoint room per this window (anti-churn latch)

@@ -3635,6 +3635,77 @@ static void BotDoExploreRoaming(int bot_index) {
           LOG_DEBUG.printf("BOT: '%s' score nav -> home flag obj %d", Bots[bot_index].callsign, flag_objnum);
         } else {
           LOG_DEBUG.printf("BOT: '%s' at home base, waiting for flag return", Bots[bot_index].callsign);
+          Bots[bot_index].last_progress_pos = obj->pos; // waiting at home by decision — not a stuck (see below)
+          Bots[bot_index].room_progress_timer = 0.0f;
+          Bots[bot_index].room_progress_stuck_count = 0;
+        }
+      } else if (BotGetGameMode() == BGM_CTF) {
+        // AN OBJECTIVE ERRAND ENDS AT ITS POINT, NOT AT THE ROOM'S DOOR (2026-09-19). Arrival used to mean "hold":
+        // the errand's last engine goal was the push through the door, it completed on the threshold, and nothing
+        // owned the leg from the doorway to the flag. Doors of Moria's Red flag room (one portal), one 20-minute
+        // round: eleven stuck escalations at one spot in the doorway, 21-40u from a flag sitting at home — Red's
+        // defenders parked there all round (in the only entrance), and every arriving Blue attacker idled beside
+        // them for 25-90 s and grabbed the flag only after the stuck escape threw it loose; the powerup chase that
+        // was supposed to close the distance often does not fire there.
+        //   attacker, enemy flag at home in this room: the flag is an object to touch — the recovery errand's rule
+        //     (an object goal on a clear hull line, a routed goal at its position otherwise);
+        //   anyone else (a defender at its own stand, an attacker whose target is gone): take station by the flag
+        //     in this room, or at the room's path point where that is flyable, and hold THERE.
+        // A deliberate hold is not a stuck: inside the station radius the room-progress clock is kept at zero, so
+        // the 12 s timeout stops throwing guards (and carriers waiting at home, below) around their own flag room.
+        const int my_team = Players[slot].team;
+        const int teams = Num_teams > BOT_MAX_TEAMS ? BOT_MAX_TEAMS : Num_teams;
+        int eflag = -1, room_flag = -1;
+        for (int t = 0; t < teams; t++) {
+          const int fo = Bot_objective.flag_objnum[t];
+          if (Bot_objective.flag_state[t] != FLAG_AT_HOME || fo < 0 || fo > Highest_object_index ||
+              Objects[fo].type != OBJ_POWERUP || (int)Objects[fo].roomnum != obj_room)
+            continue;
+          room_flag = fo;
+          if (t != my_team && eflag < 0)
+            eflag = fo;
+        }
+        static int Grab_log_item[MAX_BOTS]; // flag objnum+1 of the last "grabbing" line, so the touch logs once
+        int &pgi = Bots[bot_index].pursuit_goal_index;
+        if (eflag >= 0) {
+          const vector fpos = Objects[eflag].pos;
+          if (BotSegmentClear(obj->roomnum, obj->pos, fpos, obj->size)) {
+            if (!(pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used &&
+                  obj->ai_info->goals[pgi].type == AIG_GET_TO_OBJ && Grab_log_item[bot_index] == eflag + 1)) {
+              if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+                GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+              int handle = Objects[eflag].handle;
+              pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&handle, 2, 1.0f, GF_SPEED_ATTACK);
+              Grab_log_item[bot_index] = eflag + 1;
+              LOG_DEBUG.printf("BOT OBJ: '%s' flag grab -> touching '%s' (obj %d, %.0fu) in room %d",
+                               Bots[bot_index].callsign, Object_info[Objects[eflag].id].name, eflag,
+                               vm_VectorDistanceQuick(&obj->pos, &fpos), obj_room);
+            }
+          } else {
+            Grab_log_item[bot_index] = 0;
+            bool g_reissued = false;
+            BotSetRoutedGoal(bot_index, obj_room, fpos, &g_reissued, TRAVEL_OWNER_OBJECTIVE);
+            if (g_reissued)
+              LOG_DEBUG.printf("BOT OBJ: '%s' flag grab nav -> '%s' (obj %d, %.0fu, line blocked) in room %d",
+                               Bots[bot_index].callsign, Object_info[Objects[eflag].id].name, eflag,
+                               vm_VectorDistanceQuick(&obj->pos, &fpos), obj_room);
+          }
+        } else {
+          Grab_log_item[bot_index] = 0;
+          const bool have_station = room_flag >= 0 || !BotRoomIsBuried(obj_room);
+          const vector station = room_flag >= 0 ? Objects[room_flag].pos : Rooms[obj_room].path_pnt;
+          if (have_station && vm_VectorDistanceQuick(&obj->pos, &station) > BOT_OBJECTIVE_STATION_DIST) {
+            bool s_reissued = false;
+            BotSetRoutedGoal(bot_index, obj_room, station, &s_reissued, TRAVEL_OWNER_OBJECTIVE);
+            if (s_reissued)
+              LOG_DEBUG.printf("BOT OBJ: '%s' taking station in room %d (%.0fu from the %s)", Bots[bot_index].callsign,
+                               obj_room, vm_VectorDistanceQuick(&obj->pos, &station),
+                               room_flag >= 0 ? "flag" : "room point");
+          } else {
+            Bots[bot_index].last_progress_pos = obj->pos; // holding on station, by decision
+            Bots[bot_index].room_progress_timer = 0.0f;
+            Bots[bot_index].room_progress_stuck_count = 0;
+          }
         }
       }
       return;
@@ -3920,6 +3991,19 @@ static void BotDoCarrierNav(int bot_index) {
       LOG_DEBUG.printf("BOT CTF: '%s' carrier beeline -> own flag obj %d", Bots[bot_index].callsign, flag_objnum);
     } else {
       LOG_DEBUG.printf("BOT CTF: '%s' at home base, waiting for flag return", Bots[bot_index].callsign);
+      // Waiting is a decision, not a stuck (2026-09-19): 49 of bedlam's 55 "indoor stuck escalations" in a 12-round
+      // soak were carriers parked at home with the flag, thrown out of their own flag room by the stuck escape every
+      // 24 s. Wait on station at the room's point (the stand, when the room is an ordinary one) instead of in the
+      // doorway the last hop ended in, and keep the room-progress clock at zero while there.
+      const vector station = Rooms[obj_room].path_pnt;
+      if (!BotRoomIsBuried(obj_room) && vm_VectorDistanceQuick(&obj->pos, &station) > BOT_OBJECTIVE_STATION_DIST) {
+        bool w_reissued = false;
+        BotSetRoutedGoal(bot_index, obj_room, station, &w_reissued, TRAVEL_OWNER_CARRY);
+      } else {
+        Bots[bot_index].last_progress_pos = obj->pos;
+        Bots[bot_index].room_progress_timer = 0.0f;
+        Bots[bot_index].room_progress_stuck_count = 0;
+      }
     }
     return;
   }
