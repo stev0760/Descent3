@@ -2754,10 +2754,32 @@ static bool BotOutdoorEntranceStage(object *obj, int goal_room, vector *dest, in
   // graph node and the composer read, so every outdoor consumer aims at one door point.
   vector out_pos, in_pos;
   BotTerrainDoorPoints(ent_room, ent_portal, &out_pos, &in_pos);
+  // A commit is a push through a door the bot can reach from HERE (2026-09-19) — the indoor hop-commit's rule
+  // (09c40a72) at the boundary. The commit sphere is 30u around the standoff, the validated leg is one column:
+  // Doors of Moria's rm7 is a 16x27u roof hatch at the bottom of a 16u well, and bots committed from beside and
+  // below the rim, pressed the shell wall for the observer's 8 s and were scored NOT-CROSSED 20 times in a round
+  // ($nav probe from the pin (2785,297,2191) to the push point: shell face rm2/140 at 0u). While the push leg is
+  // blocked the standoff stays the aim, with the lattice leg and the via still serving it; at the standoff
+  // itself the commit goes ahead regardless, which is the old behaviour and cannot strand a bot outside a
+  // door whose frame clips the sweep.
   bool entry = false;
-  if (vm_VectorDistanceQuick(&obj->pos, &out_pos) < BOT_ENTRY_COMMIT_DIST) {
-    *dest = in_pos;
-    entry = true;
+  const float standoff_d = vm_VectorDistanceQuick(&obj->pos, &out_pos);
+  if (standoff_d < BOT_ENTRY_COMMIT_DIST) {
+    if (standoff_d < BOT_ENTRY_STANDOFF_DIST || BotSegmentClearOutdoor(obj->pos, in_pos, obj->size)) {
+      *dest = in_pos;
+      entry = true;
+    } else {
+      *dest = out_pos;
+      static float Entry_held_log_t[MAX_BOTS];
+      const int bi = BotFindBySlot(obj->id);
+      if (bi >= 0 && bi < MAX_BOTS &&
+          (Gametime < Entry_held_log_t[bi] || Gametime - Entry_held_log_t[bi] > 5.0f)) {
+        Entry_held_log_t[bi] = Gametime;
+        LOG_DEBUG.printf("BOT NAV: '%s' entrance ENTRY held rm%d portal %d: push leg blocked from (%.0f,%.0f,%.0f), "
+                         "%.0fu off the standoff",
+                         Bots[bi].callsign, ent_room, ent_portal, obj->pos.x(), obj->pos.y(), obj->pos.z(), standoff_d);
+      }
+    }
   } else {
     *dest = out_pos;
   }
