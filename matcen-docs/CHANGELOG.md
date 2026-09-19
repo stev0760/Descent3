@@ -7,6 +7,13 @@ live navigation status is in [NAVIGATION.md](NAVIGATION.md) §7.0.
 Versioning: `0.8.x` = feature releases; `0.9.x` = the navigation-milestone series.
 A `-dev` suffix marks an in-test build that has not yet passed its validation gate.
 
+## [0.9.15-dev] - in test
+
+*Development series. The grind: every remaining map problem, fix by fix, each one soaked and compared
+before it lands. Open on this line so far — two-bunker canyon maps (Sigma Base), Tower of Isengard's
+outdoor valley pins, Doors of Moria's terrain door, the toroid maps, dropped-flag reaction time, and
+the navigation code consolidation. Do not run this as a release.*
+
 ## [0.9.14] - 2026-09-18
 
 *The navigation model was reworked around
