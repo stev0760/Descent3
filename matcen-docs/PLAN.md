@@ -730,6 +730,13 @@ the series and start the adjacent work and the community release.
      rooms, and a lattice cap not pinned at 2,048 on a 676-tall arc. Rim baseline for this cfg (3v3,
      45 min): 0.7 caps/rnd, 18 stucks/rnd, ~1,600 re-issues per orbiting carry, up from a documented
      zero-ever.
+   - **Flanking and map-control awareness — the capability the outdoor work exposed (operator, 2026-09-19).** With the
+     outdoor legs working, bots take the efficient open route instead of the long interior corridor, and on Town of Bree
+     carriers die crossing it (captures 34 → 17 in a same-day pair, carrier deaths outdoors 0 → 6). That is not a routing
+     defect and must not be answered by taxing the efficient route: bots cannot yet hold open ground, cut off a carrier
+     crossing it, or choose a crossing with the enemy's position in mind. Both sides need it — a defence that can contest
+     the open route makes the route choice a real contest instead of a free run. The `BOT_TROUTE_ADOPT_FACTOR` 0.85 tax
+     (`32cdc722`) is a placeholder standing in for this and is the first thing to drop once flanking exists.
    - **Dropped-flag reaction time** (SteelVapor: seven episodes where a loose flag lay untouched for the
      full 120 s auto-return — neither the fumble rush nor the defenders' recovery arrived). Mode layer,
      not nav; low priority.

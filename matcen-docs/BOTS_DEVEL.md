@@ -87,7 +87,7 @@ committed hops on Isengard, 11% on Doors of Moria (rm45 → rm46 ×87, rm0 → r
 routes stay interior; open air between doors is a troute plan priced on the lattice, or the engine's path when no plan
 composes. 10-minute smoke: entrance commits 26 crossed / 5 not, rm20 5 of 6, troute 53 adoptions / 7 completions.
 
-**7. troute's adoption factor back to 0.85 (`32cdc722`).** The capture count fell on both maps while every navigation
+**7. troute's adoption factor back to 0.85 (`32cdc722`) — rationale since overturned, see the Bree ruling below.** The capture count fell on both maps while every navigation
 number rose, and Moria's flag timeline says why: in the control every carrier ran home indoors (42-69 s, no `rm-1`
 legs); in the v3 arm the slow captures all carry outdoor legs (`rm-1 → 11` ×15, 232 s) and nine carriers died in the
 open against none. With the doors working, troute's adopted plans finally execute (completions 1 → 19), and all 156 of
@@ -154,24 +154,29 @@ both flags are out at once for 56-204 s a round where the control never had a st
 deaths outdoors 0 → 0 (the v3 arm's nine are gone with the adoption factor). Both maps now play with contact — bot
 deaths 114 → 192 and 225 → 274 — instead of one team parked outside a door it cannot enter.
 
-**TOWN OF BREE REGRESSES ON CAPTURES, AND THE CAUSE IS CHANGE 7 NOT GOING FAR ENOUGH (2026-09-19, same-day pair,
-4 × 15 min, 8 bots).** Mechanism improved as everywhere else — stuck escalations 33 → 26, entrance commits 71% → 96%
-crossed, outdoor stucks 16 → 7 — and captures went **34 → 17**, conversion Blue 84% → 62% and Red 67% → 18%.
+**TOWN OF BREE: CARRIERS TAKE THE OPEN ROUTE NOW, AND CAPTURES FALL (2026-09-19, same-day pair, 4 × 15 min, 8 bots).**
+Mechanism improved as everywhere else — stuck escalations 33 → 26, entrance commits 71% → 96% crossed, outdoor stucks
+16 → 7 — and captures went 34 → 17, conversion Blue 84% → 62% and Red 67% → 18%.
 
-The cause is not the shell rule and not a routing failure: `NO-ROUTE` is zero in both arms and troute adopts at the same
-rate (63 control, 61 v7). What changed is that the adopted plans now **execute** — completions 1 → 11 — because changes
-1-3 made the outdoor legs work. So carriers that used to run home down the tavern corridor now fly the open crossing:
-carrier ticks outdoors 5 → 49, carrier deaths outdoors 0 → 6, dying 200-425 u from home on `troute seg1` and entrance
-legs (two traced: Phantom, rounds 2 and 3). Bree is the map where the interior route is safe and the open ground is not,
-and 0.85 is not a big enough tax to express that.
+What the arms actually show: `NO-ROUTE` is zero in both, troute adopts at the same rate (63 control, 61 v7), and the
+difference is that adopted plans now **execute** — completions 1 → 11, because changes 1-3 made the outdoor legs work.
+Carriers that used to run the tavern corridor now fly the open crossing: carrier ticks outdoors 5 → 49, carrier deaths
+outdoors 0 → 6, dying 200-425 u from home on `troute seg1` and entrance legs (two traced: Phantom, rounds 2 and 3).
 
-This is the same class the Moria v3 arm found, one map further on, and it says the factor is the wrong instrument: it
-prices distance against distance, while what differs is exposure. The obvious candidates, in the operator's court:
-(a) a carrier never adopts a terrain plan — its job is to arrive, not to arrive quickly; (b) an explicit exposure term
-on the terrain segment (open-ground length, or time without a wall in reach) rather than another constant; (c) drop
-change 7 and gate adoption on the errand's owner. **No further change was made without review.** Isengard and Moria
-both keep their gains with the factor as it stands, so this is a one-map, one-role regression with a named mechanism,
-not a reason to drop the outdoor work.
+**OPERATOR RULING (2026-09-19), and it overturns this session's first reading: this is an improvement, not a
+regression.** The open crossing IS the more efficient route, and the bots are now able to take it. It is dangerous only
+because **flanking awareness is not implemented** — bots cannot yet defend that ground, cut off a carrier crossing it,
+or pick their own crossing with the enemy's position in mind. The capture drop measures the missing capability, not the
+routing. Taxing the efficient route to hide that would be optimising a metric by making the bots worse, which is the
+failure mode this project has already paid for twice.
+
+**Consequence for change 7.** The 0.85 adoption factor was built during this session on exactly the reading the ruling
+overturns: the Moria v3 carrier deaths were read as the plan being wrong, when they were the same missing-defence
+signal. The factor is back at its pre-July value and it costs nothing measurable on Isengard or Moria, but its
+JUSTIFICATION no longer stands, and it is the first candidate to drop when flanking lands. Recorded here so the next
+session does not inherit the wrong rationale. The real item this pair surfaced is a CAPABILITY: flanking and
+map-control awareness (who holds the open ground, where the enemy crosses, when to contest a crossing rather than
+race it) — registered in PLAN §4.0, not built.
 
 **Open, from the v7 arms.** (a) Moria's teams diverge as the arms improve: Blue 17/13 → 24/13 → 31/15 pickups/captures,
 Red 14/6 → 10/3 → 7/0. Moria is user-made and asymmetric, so the symmetry criterion does not apply, but the trend is
