@@ -137,7 +137,14 @@
 // plausibly lose (floor) — short indoor hops never pay the composer's Dijkstras.
 // TUNED 0.85 -> 1.0 (2026-07-11 isengard A/B: 587 comparisons, 0 adopts, tie-class losses e.g.
 // 3716 vs 3720 — the extra 15% hysteresis double-taxed on top of hardcost's pain pricing).
-#define BOT_TROUTE_ADOPT_FACTOR 1.0f
+// BACK TO 0.85 (2026-09-19). The 1.0 was chosen while adopted plans almost never executed (0-4 completions a
+// level). Once the outdoor doors worked they did (Doors of Moria: completions 1 -> 19), and every one of that arm's
+// 156 adoptions was a tie-class win (terrain >= 85% of the interior cost, 115 of them >= 95%): carriers left a 57 s
+// interior run home for "terrain 2970 beats interior 3131", crossed the valley in the open and queued at a roof
+// hatch — capture carries 57 s -> 104 s, 9 carrier deaths outdoors against 0, captures 19 -> 8 in three rounds.
+// The lattice prices distance, not exposure or the door at the far end; the factor is that tax. Isengard's
+// decisive adoptions (18 of 147 under 0.85) still pass.
+#define BOT_TROUTE_ADOPT_FACTOR 0.85f
 #define BOT_TROUTE_ADOPT_MIN_INTERIOR 500.0f
 #define BOT_ENTRY_COMMIT_DIST 30.0f // 8.2 ($nav entry): within this of the standoff point -> commit THROUGH the door
 #define BOT_ENTRY_STANDOFF_DIST 12.0f // at the standoff itself: commit even when the push-leg sweep clips the frame
