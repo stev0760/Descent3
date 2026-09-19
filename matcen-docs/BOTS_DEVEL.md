@@ -178,6 +178,21 @@ session does not inherit the wrong rationale. The real item this pair surfaced i
 map-control awareness (who holds the open ground, where the enemy crosses, when to contest a crossing rather than
 race it) — registered in PLAN §4.0, not built.
 
+**BEDLAM GATE (12 rounds each, v7 against a same-day HEAD control, 4-team).** Captures per round — Apparition
+11.5 → 7.5, Plutonium 17.0 → 15.7, QuadSomniac 9.3 → 8.7, Polaris 10.0 → **14.0**. Aggregate 155 → 145, −6%. Bot deaths
+are identical (1,992 against 1,993 respawns) and pickups are within 7% (321 → 297), so the play is running at the same
+intensity. Two maps moving 35-40% in OPPOSITE directions on the same build is the variance signature this set has shown
+before (the same binary read Polaris conversion 47% one day and 37% the next). **Read as no systematic regression.**
+
+**One real mechanism defect, confirmed at scale and NOT the cause of the above: the flag-grab goal churns.** 2,821
+issues across the 12 rounds — 244/round on Apparition, 335 on Plutonium, 259 on Polaris, 21 on QuadSomniac — against 297
+actual pickups, roughly nine issues per grab. A single bot re-issues on the same flag object with the distance bouncing
+(45 u, 16, 22, 45, 21): the dedup in change 5 only holds while the object goal stays live, and every combat state
+transition clears it, so the approach is restarted instead of continued. It does not explain the capture movement
+(Apparition and Polaris churn at the same rate and move opposite ways), but it wastes the final approach and should be
+fixed on its own merits — hold the grab across a goal clear rather than re-deriving it. This is the Moria rm11 open item
+(108 issues for 7 pickups) confirmed on four more maps.
+
 **Open, from the v7 arms.** (a) Moria's teams diverge as the arms improve: Blue 17/13 → 24/13 → 31/15 pickups/captures,
 Red 14/6 → 10/3 → 7/0. Moria is user-made and asymmetric, so the symmetry criterion does not apply, but the trend is
 one-sided enough to measure per team before the next change. (b) The flag-grab touch fires 108 times in Moria's rm11
