@@ -2772,8 +2772,7 @@ static bool BotOutdoorEntranceStage(object *obj, int goal_room, vector *dest, in
       *dest = out_pos;
       static float Entry_held_log_t[MAX_BOTS];
       const int bi = BotFindBySlot(obj->id);
-      if (bi >= 0 && bi < MAX_BOTS &&
-          (Gametime < Entry_held_log_t[bi] || Gametime - Entry_held_log_t[bi] > 5.0f)) {
+      if (bi >= 0 && bi < MAX_BOTS && (Gametime < Entry_held_log_t[bi] || Gametime - Entry_held_log_t[bi] > 5.0f)) {
         Entry_held_log_t[bi] = Gametime;
         LOG_DEBUG.printf("BOT NAV: '%s' entrance ENTRY held rm%d portal %d: push leg blocked from (%.0f,%.0f,%.0f), "
                          "%.0fu off the standoff",

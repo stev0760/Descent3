@@ -910,9 +910,10 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
           od_ok_terrain, od_ok_shell, od_ok_none, od_reject_blocked, od_reject_interior, od_reject_underground,
           (int)rr->node.size());
     if (rr->outdoor) // the grid the growth ran on — a seeds-only region reads here as a box the seeds are not in
-      LOG_INFO.printf("[Roadmap] outdoor region lattice grid: x %.0f..%.0f y %.0f..%.0f z %.0f..%.0f sp=%.0f cells %dx%dx%d "
-                      "(ceiling cap %.0f)",
-                      org.x(), mx.x(), org.y(), mx.y(), org.z(), mx.z(), sp, Nx, Ny, Nz, BotOutdoorCeilingCap());
+      LOG_INFO.printf(
+          "[Roadmap] outdoor region lattice grid: x %.0f..%.0f y %.0f..%.0f z %.0f..%.0f sp=%.0f cells %dx%dx%d "
+          "(ceiling cap %.0f)",
+          org.x(), mx.x(), org.y(), mx.y(), org.z(), mx.z(), sp, Nx, Ny, Nz, BotOutdoorCeilingCap());
   };
 
   // Grow under three phases and keep the fullest lattice (ties keep the earliest). Cell count is the
