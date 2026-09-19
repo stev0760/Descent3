@@ -18,16 +18,16 @@ In test on branch `fix/outdoor-0915` (2026-09-19), measured against the same ros
 
 - **Bots no longer strand in the valley outside Tower of Isengard.** Most of their outdoor route network had grown
   *under the ground* — the terrain only stops a ship from above, so the network spread beneath it and then linked back up
-  through the surface. Routes ran through the hillside and a bot would be told to fly to a point under its own feet, or
-  inside the tower wall, and press there for minutes. The network now stays above solid ground (sunken towns such as
+  through the surface. Routes ran through the hillside, and a bot sent to a point under its own feet — or inside the tower
+  wall — would press there for minutes. The network now stays above solid ground (sunken towns such as
   Bree are recognised and left alone). Stuck episodes over three 20-minute rounds: 176 before, 8 with everything
   below — and both teams reach the enemy flag now (pickups 10 → 28, Red's share 2 → 16), with both flags out at once
   for one to three minutes a round where there had never been a standoff at all.
 - **Getting into a building from outside is one routine.** Carriers, attackers and wandering bots all line up a
   door the same way, follow the outdoor network when the straight line is blocked, and push through only when the push
   is actually flyable from where they are. Bots wandering in from outdoors used to skip all of it and fly at the wall.
-  Roof hatches (Doors of Moria: 23 failed entries a round → 2) and shallow pipe mouths (Isengard) are crossed now;
-  doors overall went from 44-70% of attempts to 95% on both maps.
+  Roof hatches (Doors of Moria: 23 failed entries a round → 2) and shallow pipe mouths (Isengard) are crossed now.
+  Doors overall went from 44-70% of attempts to 95% on both maps.
 - **A route indoors stays indoors.** The route planner used to treat a building's outer shell as one more room, so an
   "indoor" route could leave by one door and come back in by another — on Isengard bots entered a pipe, were sent
   straight back out, and were sent to the same pipe again. Flying between doors across open ground is now a deliberate,
@@ -35,8 +35,8 @@ In test on branch `fix/outdoor-0915` (2026-09-19), measured against the same ros
   taking a marginally shorter run across the open valley and dying there.
 - **Bots finish the job at the flag.** On reaching a flag room a bot used to stop in the doorway — defenders parked
   in the only entrance, attackers idled beside them a few ship-lengths from the flag until something knocked them loose.
-  Attackers now fly at the flag; defenders take up a post beside their own flag; and a bot holding position on purpose
-  is no longer treated as stuck and thrown around its own flag room every half minute. Doors of Moria's flag-room
+  Attackers now fly at the flag and defenders take up a post beside their own. A bot holding position on purpose is no
+  longer treated as stuck and thrown around its own flag room every half minute. Doors of Moria's flag-room
   doorway went from 28 stuck episodes in three rounds to none.
 
 None of this is a per-map fix and none of it adds a setting. Alongside it the bots simply meet each other more:

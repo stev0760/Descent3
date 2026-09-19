@@ -54,8 +54,8 @@ See [Known limitations](#known-limitations) and the [release notes](matcen-docs/
 (fellowship loops, bedlam 4-team, abend2, dementia, CHAOS, RAGE, Sigma Base and Facing Worlds, no
 crashes): indoor pins gone on Tower of Isengard, and Animal House — previously a geometry trap — clean.
 0.9.15 is the grind: every remaining map problem, fix by fix, each one
-soaked and compared before it lands. The outdoor work is in test — bots stranding in Tower of Isengard's
-valley, roof hatches and pipe mouths they could not enter, and the doorway stall in a flag room; what
+soaked and compared before it lands. The outdoor work is in test: bots stranding in Tower of Isengard's
+valley, roof hatches and pipe mouths they could not enter, and the doorway stall in a flag room. What
 remains is two-bunker canyon maps (Sigma Base), the toroid maps (Rim, abend2), dropped-flag reaction
 time, and the navigation code consolidation, until every map runs and plays smoothly. Only then does the series bump for the adjacent work (bot
 management and feel, the command surface and menus) and the community release. Details:
@@ -134,7 +134,7 @@ Available in the dedicated server console or via remote telnet:
 
 ### Roadmap
 
-*   **0.9.15 — every map smooth**: the remaining per-map problems, in the order they unlock play — Sigma Base's class (two bunkers across open terrain: flag-room windows onto a wall that the router admitted, and a gallery interrupted by a bridge room that the nearest-door pick oscillated in — the fix is built and soaking), the outdoor pass now in test (an outdoor route network that had grown under the terrain, one routine for entering a building, routes indoors that stay indoors, and errands that finish at the flag rather than in its doorway), the toroid maps Rim and abend2 (rings where the next door is never in view), dropped-flag reaction time, a co-op revisit, and the navigation code consolidation. Then the series bumps to 0.10 for bot management, feel, command surface and menus, and the release package (see `matcen-docs/PLAN.md` §4.0).
+*   **0.9.15 — every map smooth**: the remaining per-map problems, in the order they unlock play — Sigma Base's class (two bunkers across open terrain: flag-room windows onto a wall that the router admitted, and a gallery interrupted by a bridge room that the nearest-door pick oscillated in — the fix is built and soaking), the outdoor pass now in test (a route network that had grown under the terrain, one routine for entering a building, routes indoors that stay indoors, and errands that finish at the flag rather than in its doorway), the toroid maps Rim and abend2 (rings where the next door is never in view), dropped-flag reaction time, a co-op revisit, and the navigation code consolidation. Then the series bumps to 0.10 for bot management, feel, command surface and menus, and the release package (see `matcen-docs/PLAN.md` §4.0).
 *   **Outdoor terrain refinement**: fine-threading of urban outdoor maps and rough-terrain line-of-flight. The remaining hard maps are Town of Bree and Tower of Isengard.
 *   **Dynamic team rebalancing**: rebalance bot teams as humans join and leave. Pre-assignment works today.
 *   **Co-op companions** (0.9.9): bots fly the campaign with you, not for you — they fall in on your wing automatically, keep formation at a calm pace, fight what you fight, and never run the mission on their own. Squad orders from any human do the rest: `!goal` sends one ahead to the current objective as a vanguard, `!hold` posts it, `!freelance` sets it loose. On campaign maps their navigation rides the engine's own hand-authored path network (what the guide-bot flies). Mission-critical scripted pickups are left for humans.
