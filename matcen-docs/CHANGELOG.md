@@ -14,6 +14,29 @@ before it lands. Open on this line so far — two-bunker canyon maps (Sigma Base
 outdoor valley pins, Doors of Moria's terrain door, the toroid maps, dropped-flag reaction time, and
 the navigation code consolidation. Do not run this as a release.*
 
+In test on branch `fix/outdoor-0915` (2026-09-19), measured against the same roster on the same day:
+
+- **Bots no longer strand in the valley outside Tower of Isengard.** Most of their outdoor route network had grown
+  *under the ground* — the terrain only stops a ship from above, so the network spread beneath it and then linked back up
+  through the surface. Routes ran through the hillside and a bot would be told to fly to a point under its own feet, or
+  inside the tower wall, and press there for minutes. The network now stays above solid ground (sunken towns such as
+  Bree are recognised and left alone). Stuck episodes over three 20-minute rounds: 176 before, 8 with everything
+  below — and both teams now reach the enemy flag (pickups 10 → 28, Red's share 2 → 16).
+- **Getting into a building from outside is one routine.** Carriers, attackers and wandering bots all line up a
+  door the same way, follow the outdoor network when the straight line is blocked, and push through only when the push
+  is actually flyable from where they are. Bots wandering in from outdoors used to skip all of it and fly at the wall.
+  Roof hatches (Doors of Moria: 23 failed entries a match → 0) and shallow pipe mouths (Isengard) are crossed now;
+  doors overall went from 44-70% of attempts to 95%.
+- **A route indoors stays indoors.** The route planner used to treat a building's outer shell as one more room, so an
+  "indoor" route could leave by one door and come back in by another — on Isengard bots entered a pipe, were sent
+  straight back out, and were sent to the same pipe again. Flying between doors across open ground is now a deliberate,
+  separately priced choice, and it has to be clearly cheaper before a bot leaves cover: flag carriers had started
+  taking a marginally shorter run across the open valley and dying there.
+- **Bots finish the job at the flag.** On reaching a flag room a bot used to stop in the doorway — defenders parked
+  in the only entrance, attackers idled beside them a few ship-lengths from the flag until something knocked them loose.
+  Attackers now fly at the flag; defenders take up a post beside their own flag; and a bot holding position on purpose
+  is no longer treated as stuck and thrown around its own flag room every half minute.
+
 ## [0.9.14] - 2026-09-18
 
 *The navigation model was reworked around

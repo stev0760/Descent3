@@ -139,13 +139,27 @@ in both arms (100-200 s; the dungeon hop rm45 → rm34 re-issued up to 59 times 
 
 | Doors of Moria, 3×20 min, 8 bots | control `fff9bc3c` | v3 (changes 1-3) | v5 (changes 1-5) | **v7 (all seven)** |
 |---|---|---|---|---|
-| stuck escalations (hard) | 86 (8) | 60 (5) | 36 (3) | MORIA_V7_STUCKS |
-| — outdoors / flag-room doorway rm15 | 56 / 28 | 16 / 23 | 29 / 0 | MORIA_V7_SPLIT |
-| entrance commits crossed (rm7 not-crossed) | 22 of 50 (23) | 81 of 87 (1) | 81 of 85 (0) | MORIA_V7_COMMITS |
-| flag grabs through the new touch / stations taken | — | — | 25 / 9 | MORIA_V7_LASTLEG |
-| pickups / captures | 31 / 19 | 36 / 8 | 34 / 16 | MORIA_V7_PLAY |
-| bot deaths (respawns) / FLEE transitions | 225 / 71 | 307 / 436 | 318 / 137 | MORIA_V7_FIGHT |
-| carrier deaths outdoors / indoors | 0 / 11 | 9 / 18 | 0 / 17 | MORIA_V7_CDEATH |
+| stuck escalations (hard) | 86 (8) | 60 (5) | 36 (3) | **47 (2)** |
+| — outdoors / flag-room doorway rm15 | 56 / 28 | 16 / 23 | 29 / 0 | **40 / 0** |
+| entrance commits crossed (rm7 not-crossed) | 22 of 50 (23) | 81 of 87 (1) | 81 of 85 (0) | **74 of 78 (2)** |
+| flag grabs through the new touch / stations taken | — | — | 25 / 9 | **134 / 9** |
+| pickups / captures | 31 / 19 | 36 / 8 | 34 / 16 | **38 / 15** |
+| bot deaths (respawns) / FLEE transitions | 225 / 71 | 307 / 436 | 318 / 137 | **274 / 82** |
+| carrier deaths outdoors / indoors | 0 / 11 | 9 / 18 | 0 / 17 | **0 / 21** |
+
+**Where the seven changes land (four arms per map, same roster, same day).** Tower of Isengard: stuck escalations 176 →
+8, outdoors 175 → 3, entrance commits 70% → 95% crossed, pickups 10 → 28 with Red's share 2 → 16, captures 6 → 6, and
+both flags are out at once for 56-204 s a round where the control never had a standoff at all. Doors of Moria: stucks
+86 → 47 (hard 8 → 2), the flag-room doorway 28 → 0, commits 44% → 95%, pickups 31 → 38, captures 19 → 15, carrier
+deaths outdoors 0 → 0 (the v3 arm's nine are gone with the adoption factor). Both maps now play with contact — bot
+deaths 114 → 192 and 225 → 274 — instead of one team parked outside a door it cannot enter.
+
+**Open, from the v7 arms.** (a) Moria's teams diverge as the arms improve: Blue 17/13 → 24/13 → 31/15 pickups/captures,
+Red 14/6 → 10/3 → 7/0. Moria is user-made and asymmetric, so the symmetry criterion does not apply, but the trend is
+one-sided enough to measure per team before the next change. (b) The flag-grab touch fires 108 times in Moria's rm11
+for 7 Red pickups — either honest churn in a contested room (every combat state change re-issues the goal) or a
+re-issue loop; the dedup only spans a continuous object goal. (c) Isengard's carries stay long (the dungeon hop
+rm45 → rm34 re-issued up to 59 times in one carry) — an indoor threading item, unchanged by this work.
 
 Moria's v3 arm repeats the shape of Isengard's change-1 arm with a larger sample: the doors work (entrance commits 44% → 93% crossed, the roof hatch
 rm7 23 misses → 1), outdoor stucks fall 56 → 16, bot deaths rise 225 → 307 and FLEE transitions go 71 → 436 — and captures
