@@ -7,7 +7,31 @@ Current implementation status is in `BOTS_DEVEL.md`. Physics model reference is 
 
 ## Current Status
 
-**0.9.14-dev, portal model slice 1** (2026-09-12, later): `BotPortalClass(room, portal)` is the one
+**0.9.15-dev, the outdoor pass** (2026-09-19, branch `fix/outdoor-0915`, in soak). Seven changes, each
+its own commit; read NAVIGATION.md §7.0-CURRENT and BOTS_DEVEL 2026-09-19 before touching any of it:
+
+1. **The outdoor region lattice never admits a cell under solid terrain.** Terrain collides from above
+   only, so a hull sweep starting below the heightfield is clear in every direction — that is not
+   evidence of flyable air. `CellInRoom`'s outdoor branch also tests `GetTerrainGroundPoint`, exempting
+   `TF_INVISIBLE` segments (sunken towns such as Town of Bree are legitimately below the surface).
+2. **An outdoor ENTRY commit needs a hull-clear push leg** from where the bot is (or the bot within
+   `BOT_ENTRY_STANDOFF_DIST` of the standoff). Log `entrance ENTRY held`.
+3. **One outdoor dispatch.** Every terrain-to-structure trip is issued by `BotSetRoutedGoal`'s outdoor
+   branch: ENTRY push → standoff leg → lattice waypoint → `BotFindViaPoint` as a plain rescue query.
+   `BotDoExploreRoaming`'s two private copies are gone, and `oa_steer_pos`/`oa_steer_room` no longer
+   exist. Outdoor-origin explore dispatches through the same entry, not a raw engine goal.
+4. **A shallow ENTRY push gets a 2 u arrival circle** (the stacked-tray rule) so arrival means crossing.
+5. **A CTF objective errand ends at its point, not the room's door**: attackers touch an enemy flag at
+   home in that room, everyone else takes station by the flag or the room point and holds within
+   `BOT_OBJECTIVE_STATION_DIST`, with the room-progress clock zeroed — a deliberate hold is not a stuck.
+6. **`BotRouteDijkstra` never expands an `RF_EXTERNAL` room** unless it is the goal. A shell touches
+   every terrain door of its structure, so as a node it produced "interior" routes that left by one
+   door and re-entered by another.
+7. **`BOT_TROUTE_ADOPT_FACTOR` is 0.85 again** — a terrain plan must be meaningfully cheaper than the
+   interior route, because adopted plans now actually execute and the lattice prices distance, not
+   exposure.
+
+PREVIOUS: **0.9.14-dev, portal model slice 1** (2026-09-12, later): `BotPortalClass(room, portal)` is the one
 classification every in-room layer consumes — NEVER (solid/window/too-small/locked), DOOR
 (engine-passable), PANE (intact breakable glass). Wall "portals" keep their skeleton slot (index ==
 portal index is an invariant) but carry no edges (`BotSkelLivePortalMask`), never seed the lattice,
@@ -397,7 +421,9 @@ behavior-identical to the Phase 10 base).
   zero) + graded geometry cost + dynamic penalty. Returns the next room toward `goal`, or `-1` when
   no finite interior route exists — callers then feed the engine the far goal and let its own
   pathing take over, so the router can lengthen a route but **never strand a bot**. Interior-only
-  (no terrain-region expansion → no sky-routing). Recomputed on demand; no result cache (a run is
+  (no terrain-region expansion → no sky-routing), and since 2026-09-19 that means an `RF_EXTERNAL`
+  shell room is not expanded either (only as a goal): a shell joins every terrain door of its
+  structure, so routing through it invented door-to-door "interior" routes across open air. Recomputed on demand; no result cache (a run is
   microseconds even on the largest maps).
 - **`BotPortalGeoCost(room, portal)`** — graded geometry cost. Grates/slits (swept ship-radius
   probe blocked), locked doors, and `PF_BLOCK`/`PF_TOO_SMALL_FOR_ROBOT` → `BOT_PORTAL_IMPASSABLE`;
@@ -428,8 +454,10 @@ wobble are not solved by routing alone.
 **Explore destinations:** `BotDoExploreRoaming()` randomly samples rooms across the entire map
 (`Highest_room_index`), validates reachability via `BOA_GetNextRoom() != BOA_NO_PATH`, filters
 `BOAF_TOO_SMALL_FOR_ROBOT`, and scores candidates by: unvisited (+100), uncrowded (-40 per bot
-heading there), random tiebreaker. Sets `AIG_GET_TO_POS` with the room center — the engine builds
-the full BOA+BNode path. `explore_room_timer` scales proportionally to `BOA_ComputeMinDist()`.
+heading there), random tiebreaker. Outdoors the candidates are the region's terrain doors instead.
+Dispatch is `BotSetRoutedGoal` from either origin (2026-09-19) — an outdoor-origin explore used to
+set a raw `AIG_GET_TO_POS` at the destination's door point, with no entrance stage, lattice leg or
+rescue behind it, and bots pressed the nearest wall. `explore_room_timer` scales proportionally to `BOA_ComputeMinDist()`.
 
 **Pursuit:** `BotSetPursuitGoal()` uses `AIG_GET_TO_OBJ` with the target handle. The engine's
 `AIPathAllocPath` handles all multi-room BOA+BNode routing automatically. BOA reachability is
