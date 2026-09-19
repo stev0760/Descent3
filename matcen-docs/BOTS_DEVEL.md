@@ -19,7 +19,7 @@ Isengard's interior pins gone, Animal House stuck-free) and released; the previo
 
 ### 2026-09-19: the outdoor lattice was under the ground; one outdoor dispatch; an errand ends at its point
 
-Branch `fix/outdoor-0915` (local, off `fff9bc3c`), six changes, each its own commit. Started from the operator's
+Branch `fix/outdoor-0915` (local, off `fff9bc3c`), seven changes, each its own commit. Started from the operator's
 2026-09-18 flight ("bots still strand in the valley outside Isengard") and his brief for the day: outdoors, and the
 committee collapse.
 
@@ -86,6 +86,16 @@ committed hops on Isengard, 11% on Doors of Moria (rm45 → rm46 ×87, rm0 → r
 0-5% on the bedlam maps. `BotRouteDijkstra` no longer expands an RF_EXTERNAL room unless it is the goal. Interior
 routes stay interior; open air between doors is a troute plan priced on the lattice, or the engine's path when no plan
 composes. 10-minute smoke: entrance commits 26 crossed / 5 not, rm20 5 of 6, troute 53 adoptions / 7 completions.
+
+**7. troute's adoption factor back to 0.85 (`32cdc722`).** The capture count fell on both maps while every navigation
+number rose, and Moria's flag timeline says why: in the control every carrier ran home indoors (42-69 s, no `rm-1`
+legs); in the v3 arm the slow captures all carry outdoor legs (`rm-1 → 11` ×15, 232 s) and nine carriers died in the
+open against none. With the doors working, troute's adopted plans finally execute (completions 1 → 19), and all 156 of
+that arm's adoptions were tie-class wins — terrain at 85% or more of the interior cost, 115 of them at 95% or more
+("terrain 2970 beats interior 3131"). The factor had been loosened from 0.85 to 1.0 on 2026-07-11, when adopted plans
+never flew. The lattice prices distance, not exposure or the hatch at the far end; 0.85 is that tax. Isengard keeps
+its decisive adoptions (18 of 147 under 0.85). The rest of the dip is play: kills 5 → 16 on Isengard, 12 → 26 on Moria,
+FLEE transitions 71 → 436 — the opposition is no longer parked outside.
 
 **Measured the same day: the indoor ladder is quiet.** Last-aim-before-stuck by voice, indoor escalations only: abend2
 12 rounds = 5; bedlam 12 rounds = 55, of which 49 are the waiting carriers above; the flight's five fellowship levels =
