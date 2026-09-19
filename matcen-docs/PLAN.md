@@ -737,6 +737,11 @@ the series and start the adjacent work and the community release.
      crossing it, or choose a crossing with the enemy's position in mind. Both sides need it — a defence that can contest
      the open route makes the route choice a real contest instead of a free run. The `BOT_TROUTE_ADOPT_FACTOR` 0.85 tax
      (`32cdc722`) is a placeholder standing in for this and is the first thing to drop once flanking exists.
+     **The destination, stated by the operator the same day and explicitly a later revision:** bots choosing between
+     route options *dynamically*, with tactics and strategy behind the choice — the safe corridor or the fast crossing
+     depending on where the enemy is, who holds the middle, whether a teammate can contest it. Today the choice is a
+     cost comparison with no notion of opposition. Flanking awareness is the first piece of that, not the whole of it;
+     do not scope the rest into 0.9.15.
    - **Dropped-flag reaction time** (SteelVapor: seven episodes where a loose flag lay untouched for the
      full 120 s auto-return — neither the fumble rush nor the defenders' recovery arrived). Mode layer,
      not nav; low priority.
