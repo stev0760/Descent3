@@ -1,8 +1,8 @@
 # Phase 5: Bot Management & Server Administration
 
 **Status:** Phase 5.5 complete (shipped; this document is the Phase 5 design and implementation record)
-**Current fork:** Matcen 0.9.13 (released 2026-09-11). This navigation work does not change bot-management
-behavior, configuration, or console commands. `$servercaps` remains numeric-only (`fork_version=0.9.13`).
+**Current fork:** Matcen 0.9.14 (released 2026-09-18). This navigation work does not change bot-management
+behavior, configuration, or console commands. `$servercaps` remains numeric-only (`fork_version=0.9.14`).
 abend2's residual navigation imbalance is accepted for now; wider validation uses Nysa and Batteries
 Included on the existing build. No roster-management change accompanies that testing.
 For scoring-symmetry tests, verify all bots use the same difficulty. The expectation applies to
@@ -12,8 +12,10 @@ The operator has standardized future test rosters on Pyro-GL. The replacement si
 loop uses eight Pyro-GL/Hotshot bots after the rotating run stopped at one completed Batteries round.
 Nysa finished with the earlier unequal team hull mixes, also used in the abend2 arms, so its
 team splits retain that confounder. This is a test-config change, not a restriction on supported ships.
-0.9.13 shipped as a bounded correctness release (documented limitations accepted). The 0.9.14
-investigation is recorded in `PLAN.md` section 3.0.
+0.9.13 shipped as a bounded correctness release (documented limitations accepted); 0.9.14 is the
+portal-model and outdoor navigation release, recorded in `PLAN.md` section 3.0 and the CHANGELOG.
+Roster size is now treated as a test variable in its own right: bottleneck maps such as Animal House
+stalemate with evenly matched teams, and a smaller roster (2v2) is a legitimate diagnostic axis there.
 **Prerequisite reading:** `BOT_DEV_REFERENCE.md`, `BOTS_DEVEL.md`
 **Key files:** `Descent3/bot.h`, `Descent3/bot.cpp`, `Descent3/dedicated_server.cpp`
 

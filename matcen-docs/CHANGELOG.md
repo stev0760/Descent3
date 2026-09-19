@@ -7,9 +7,9 @@ live navigation status is in [NAVIGATION.md](NAVIGATION.md) §7.0.
 Versioning: `0.8.x` = feature releases; `0.9.x` = the navigation-milestone series.
 A `-dev` suffix marks an in-test build that has not yet passed its validation gate.
 
-## [0.9.14-dev] - in test
+## [0.9.14] - 2026-09-18
 
-*Development build, play-test candidate as of 2026-09-15. The navigation model was reworked around
+*The navigation model was reworked around
 one idea — a door is a validated crossing, not a point, and a wall is never a door — and every layer
 now reads the same geometry. Measured on the two indoor gate maps against the 0.9.13 line: on Batteries
 Included the bots' route failures went to zero, stuck escalations fell from 159 to 97 per four rounds
@@ -26,8 +26,10 @@ the first level rather than the second. Known limits: one
 propped office door and three floor hatches on Batteries are narrower than a Pyro and are treated as
 such; a desk pocket in one office still wedges a ship now and then; on Town of Bree the Red team's
 attack runs the length of the Blue building's interior under fire and rarely completes (map asymmetry —
-Blue's flag sits deep in the tavern, Red's two rooms from a door); Tower of Isengard's tower interior
-still pins ships at its hatches. Do not run this as a release yet.*
+Blue's flag sits deep in the tavern, Red's two rooms from a door); and on Tower of Isengard bots still
+strand in the open valley outside, though the tower interior that used to pin them no longer does.
+Confirmed in live play on 2026-09-18 across a five-level fellowship rotation and Animal House — a map
+that used to catch ships on its geometry and now runs a full round without a single stuck.*
 
 *   **The outdoor route network stays outdoors, and out of the walls.** Town of Bree is a sunken town, and the
     outdoor network had followed the tavern doors down into the buildings: eleven thousand of its thirteen thousand

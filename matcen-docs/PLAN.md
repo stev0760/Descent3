@@ -40,6 +40,10 @@ without flag activity raises a reach concern but does not identify a coverage de
 
 ## 2. Where the project actually is (2026-09-10, 0.9.13-dev; status line 2026-09-17 below)
 
+> **2026-09-18: `0.9.14` SHIPPED** — flight-validated by the operator (fellowship rotation + Animal House:
+> Isengard's interior pins gone, Animal House stuck-free) and released from `9b19a5d5`. Work continues on
+> 0.9.15-dev. The history below describes the candidate as it stood pre-release.
+>
 > **2026-09-17:** the candidate is **0.9.14-dev on `f687c46b`**, soaked across the fellowship loops, bedlam
 > 4-team, abend2, dementia, CHAOS, RAGE, Sigma Base and Facing Worlds without a crash, awaiting the
 > operator's flight test before `-dev` is stripped. The release sequence from here is §4.0.
@@ -675,6 +679,16 @@ the series and start the adjacent work and the community release.
      full 120 s auto-return — neither the fumble rush nor the defenders' recovery arrived). Mode layer,
      not nav; low priority.
    - **Bree Red-side attack difficulty** (map asymmetry vs role policy — measure per team, §3.5).
+   - **Tower of Isengard's valley, with coordinates** (from the operator's 2026-09-18 flight log): 161 stuck
+     escalations in one 30-minute round, 151 of them outdoors, 15 hard; 544 of 553 outdoor stucks were
+     routed into a structure (entrance-seek miss) and 238 were ground-pinned. One cell dominates —
+     123,149 with 117 of them — then 127,112 with 29. This is the registered outdoor pin class, now with
+     a target.
+   - **Doors of Moria** (new to the registry, same flight log): 55 stucks in a round, 39 outdoors and 15 in
+     room 15; `ENTRANCE_COMMIT_FAIL` with door rm7 failing 20 of its commits.
+   - **Roster size as a test axis.** Every soak to date is 3v3 or 4-team 8-bot. On bottleneck maps evenly
+     matched teams stalemate *by design* — Animal House at 3v3 produced zero flag pickups with zero stucks
+     and is NOT a nav defect — so a 2v2 leg is a diagnostic, not just a balance tweak. Animal House first.
    - **Co-op revisit** — cannot be soaked; the operator flies it. Whether it lands in 0.9.15 or later is
      open.
    - **Committee collapse and code cleanup** — the 3-site duplicated dispatch in `BotSetRoutedGoal` /

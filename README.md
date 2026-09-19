@@ -14,7 +14,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 **No client modifications are required.** Retail D3 v1.5 clients and compatible engines (PiccuEngine) connect and play against bots as-is. A server with no bot configuration behaves exactly like vanilla D3.
 
-**Current release: 0.9.13** (2026-09-11) — a correctness checkpoint with documented limitations (see [matcen-docs/CHANGELOG.md](matcen-docs/CHANGELOG.md)), **not** a "navigation solved" release.
+**Current release: 0.9.14** (2026-09-18) — the portal-model and outdoor navigation release: a door is a validated crossing rather than a point, walls are never doors, and every layer reads the same geometry (see [matcen-docs/CHANGELOG.md](matcen-docs/CHANGELOG.md)). Confirmed in live play. Not a "navigation solved" release — see [Known limitations](#known-limitations).
 Bots now build usable navigation grids in flat rooms and combine arterial paths with local routes
 through complex interiors. They discard routes when the commitment ends, including on respawn,
 instead of reusing waypoints from an abandoned plan. The host overlay shows indoor and outdoor
@@ -34,7 +34,7 @@ unproven. QuadSomniac also has an unresolved Red return-navigation signal agains
 0.9.13 ships as that correctness release — the limitations above are documented, not solved. The
 interior-only window misroute (bots routing through unreachable window glass) and the flag-room
 arrival stalls are held for the 0.9.14 sprint, which traces failed and successful carrier crossings
-to identify the remaining fault. **The working tree is now 0.9.14-dev**, a play-test candidate after the September 13 portal-model
+to identify the remaining fault. **0.9.14 ships that work**, after the September 13 portal-model
 sprint: a door is now a validated crossing rather than a point, walls are never doors to the route
 network, shattered glass becomes a doorway at runtime, a bot only hunts what it can reach, the bend
 search fits ducts and toroid tubes, and every layer reads the same geometry. Measured against the
@@ -50,9 +50,10 @@ shell), and the fix on top of it is verified on Nightmare Castle and Isengard.
 The September 14-15 outdoor sprint then took the hardest outdoor map, Town of Bree, from two bot captures in twenty rounds to five in its first two: a complete bot-side table of doors to the outdoors, hull-fitted door approaches, no more pushes through a wall beside a door or routes through a one-sided partition, and CTF roles that apply from a session's first level.
 See [Known limitations](#known-limitations) and the [release notes](matcen-docs/CHANGELOG.md).
 
-**Release path (decided 2026-09-17).** 0.9.14 ships stable once the operator's flight test confirms
-what the soaks show (fellowship loops, bedlam 4-team, abend2, dementia, CHAOS, RAGE, Sigma Base and
-Facing Worlds, no crashes). 0.9.15 is then the grind: every remaining map problem, fix by fix, each one
+**Release path.** 0.9.14 shipped on 2026-09-18 after its flight test confirmed what the soaks showed
+(fellowship loops, bedlam 4-team, abend2, dementia, CHAOS, RAGE, Sigma Base and Facing Worlds, no
+crashes): indoor pins gone on Tower of Isengard, and Animal House — previously a geometry trap — clean.
+0.9.15 is the grind: every remaining map problem, fix by fix, each one
 soaked and compared before it lands — two-bunker canyon maps (Sigma Base), Isengard's last outdoor pin
 class, the toroid maps (Rim, abend2), dropped-flag reaction time, and the navigation code consolidation
 — until every map runs and plays smoothly. Only then does the series bump for the adjacent work (bot

@@ -1,7 +1,8 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Matcen **0.9.14-dev (2026-09-12)** — telemetry, the aim-layer fixes, and glass routing
+**Status:** Matcen **0.9.14 — RELEASED 2026-09-18** (development continues on 0.9.15-dev).
+The 0.9.14 line: telemetry, the aim-layer fixes, and glass routing
 on top of the 0.9.13 release. The instruments: via-fail blocker identity + tier, objective-arrival
 item distance and aim, hop-commit crossed/not-crossed, item-reach graph-vs-LOS. The aim fixes:
 single-exit rooms aim at their sole door, multi-door aim/chain exit sets are filtered through the
@@ -12,7 +13,8 @@ vertical panes are priced shortcuts, horizontal vents only sole routes, with Bot
 single loadout gate and a committed-glass-hop clear pass. The window-misroute per-portal fix is
 re-landed (`5a94875e`) but not yet validated — unfavorable standalone (batteries hard-stucks
 190→607) — and its sibling implementation gaps stay open. The remaining interior-nav targets are
-the flag-room arrival stall and the ~58% connectivity dead-ends. The last stable release is
+the flag-room arrival stall and the ~58% connectivity dead-ends. 0.9.14 was validated by the operator's own flight on 2026-09-18 (fellowship rotation + Animal House:
+Isengard's interior pins gone, Animal House stuck-free) and released; the previous stable release was
 **0.9.13** (0.9.11 preceded it; 0.9.12 was never promoted).
 
 ### 2026-09-17: the stress set as CTF, the Sigma Base class, toroid geometry, and the release sequence
