@@ -75,6 +75,10 @@ ENTRY_INFER_WINDOW = 20.0
 # outcome instrument (silent 120 s returns = drops nobody touched).
 RE_FLAG_RECOVER_NAV = re.compile(r"flag recovery nav -> wp (-?\d+) \('([^']*)' obj (\d+) (OUTDOORS|indoors)")
 RE_FLAG_RECOVER_TOUCH = re.compile(r"flag recovery -> touching '([^']*)' \(obj (\d+), ([\d.]+)u(, outdoors)?\)")
+# Objective errand's last leg (builds from 2026-09-19): an attacker in the enemy flag room flies at the flag itself
+# ("flag grab -> touching" on a clear line, "flag grab nav ->" otherwise); anyone else takes station by the flag.
+RE_FLAG_GRAB = re.compile(r"flag grab (-> touching|nav ->) '([^']*)' \(obj (\d+), ([\d.]+)u.*\) in room (-?\d+)")
+RE_TAKE_STATION = re.compile(r"taking station in room (-?\d+) \(([\d.]+)u from the (flag|room point)\)")
 RE_TS_HMS = re.compile(r"(\d\d):(\d\d):(\d\d)\.(\d+)")
 
 
@@ -411,6 +415,12 @@ def new_map_stats():
         "level_exits_usable": None,   # 0.9.12 classifier: flyable interior->terrain exits
         "level_exits_total": None,
         "oa_seek_events": 0,          # Phase 8.1: outdoor entrance-seek goals issued
+        "flag_grab_touch": 0,         # 2026-09-19: attacker in the enemy flag room -> object goal on the flag
+        "flag_grab_nav": 0,           #   ... line blocked -> routed goal at the flag's position
+        "flag_grab_rooms": Counter(),
+        "flag_grab_dist": [],
+        "take_station": 0,            # arrived errand flies to its station (flag / room point) instead of holding at the door
+        "take_station_rooms": Counter(),
         "oa_rescue_events": 0,        # of those, issues served by the ring / door-graph rescue (2026-09-19)
         "entry_held": Counter(),      # door room -> ENTRY commits held back because the push leg was blocked
         "oa_seek_rooms": Counter(),   # entrance room → count (which structures bots are seeking)
@@ -632,6 +642,17 @@ def parse_log(path):
                 s["recover_nav"] += 1
                 if m.group(4) == "OUTDOORS":
                     s["recover_nav_outdoor"] += 1
+                continue
+            m = RE_FLAG_GRAB.search(line)
+            if m:
+                s["flag_grab_touch" if m.group(1) == "-> touching" else "flag_grab_nav"] += 1
+                s["flag_grab_rooms"][int(m.group(5))] += 1
+                s["flag_grab_dist"].append(float(m.group(4)))
+                continue
+            m = RE_TAKE_STATION.search(line)
+            if m:
+                s["take_station"] += 1
+                s["take_station_rooms"][int(m.group(1))] += 1
                 continue
             m = RE_FLAG_RECOVER_TOUCH.search(line)
             if m:
@@ -1759,6 +1780,26 @@ def print_report(stats, total_lines, log_path):
             items = ", ".join(f"{k}x{v}" for k, v in s["recover_items"].most_common(3)) or "-"
             print(f"| {name} | {s['recover_nav']} | {s['recover_nav_outdoor']} | {s['recover_touch']} "
                   f"| {s['recover_touch_outdoor']} | {items} |")
+        print()
+
+    if any(s["flag_grab_touch"] or s["flag_grab_nav"] or s["take_station"] for s in stats.values()):
+        print(f"## Objective Last Leg (CTF, 2026-09-19)")
+        print()
+        print(f"An arrived objective errand now flies its last leg: `grab` = an attacker in the enemy flag room sent at "
+              f"the flag itself (touch = clear hull line, nav = routed in-room leg); `station` = a defender / waiting "
+              f"bot sent to its station by the flag instead of holding in the doorway. Distances are at issue time.")
+        print()
+        print(f"| Map | Grab touches | Grab nav legs | median grab dist | Top flag rooms | Stations taken | Station rooms |")
+        print(f"|---|---|---|---|---|---|---|")
+        for name in maps:
+            s = stats[name]
+            if not (s["flag_grab_touch"] or s["flag_grab_nav"] or s["take_station"]):
+                continue
+            gd = sorted(s["flag_grab_dist"])
+            med = f"{gd[len(gd) // 2]:.0f}u" if gd else "-"
+            rooms = ", ".join(f"rm{k}x{v}" for k, v in s["flag_grab_rooms"].most_common(3)) or "-"
+            srooms = ", ".join(f"rm{k}x{v}" for k, v in s["take_station_rooms"].most_common(3)) or "-"
+            print(f"| {name} | {s['flag_grab_touch']} | {s['flag_grab_nav']} | {med} | {rooms} | {s['take_station']} | {srooms} |")
         print()
 
     if any(s["entry_commits"] for s in stats.values()):
