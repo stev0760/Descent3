@@ -766,6 +766,54 @@ the series and start the adjacent work and the community release.
      `BotDoExploreRoaming`, the stale `legacy` toggle tags, skeleton+roadmap as one network outside the
      in-room case (the 2026-09-16 sweep). Implied by the grind, scheduled as its own project inside it,
      Fable-orchestrated.
+### 4.0.1 Queued for review — found 2026-09-19, NOT built
+
+Operator ruling the same day: catalogue and queue, move on nothing until he has play-tested, and expect a
+multi-model review and blind-spot check first. Each item is symptom, evidence, hypothesis, proposal, risk.
+Nothing below has been implemented.
+
+**Q1 — the flag-grab goal churns (confirmed, five maps).** *Symptom:* 2,821 `flag grab` issues in 12 bedlam
+rounds against 297 pickups, ~9 per grab; one bot re-issues on the same flag object with its distance bouncing
+45 u → 16 → 22 → 45. Per round: Apparition 244, Plutonium 335, Polaris 259, QuadSomniac 21; Doors of Moria
+rm11 108 issues for 7 pickups. *Hypothesis:* the dedup in change 5 holds only while the `AIG_GET_TO_OBJ` goal
+is live, and every combat state transition clears the goal (`BotClearActiveGoal` on state change), so the
+final approach is restarted rather than continued. *Proposal:* remember the grab across a goal clear —
+re-issue the same object goal without re-deriving, or key the dedup on the flag objnum plus a short timer
+rather than on goal liveness. *Risk:* low; it is the same shape as the powerup-chase hysteresis that already
+works. *Not the cause of the bedlam capture spread* — Apparition and Polaris churn alike and moved opposite
+ways. *Open question:* why QuadSomniac churns 10× less; its flag rooms may be the exception that names the
+trigger.
+
+**Q2 — settle the bedlam capture spread with a repeat pair, not a fix.** *Symptom:* v7 against a same-day
+control moved Apparition 11.5 → 7.5 and Polaris 10.0 → 14.0 per round, with bot deaths identical (1,992 vs
+1,993) and pickups within 7%. *Hypothesis:* variance, not mechanism — two maps moving 35-40% in opposite
+directions on one build is this set's known signature, and no change in the batch touches bedlam geometry
+(the bot-free sweep found zero underground rejections on all four, and shell hops are 0-5% there).
+*Proposal:* re-run the identical pair overnight; if Apparition and Polaris swap direction the question is
+closed, and if Apparition falls again it becomes a real lead with a named map. Costs a machine-night and no
+code. *Risk:* none.
+
+**Q3 — `BOT_TROUTE_ADOPT_FACTOR` 0.85 is a placeholder, not a fix.** Its rationale was overturned the day it
+landed (see the flanking item above). It costs nothing measurable on Isengard or Moria. *Proposal:* drop it
+when flanking lands, or drop it now and accept more open-ground crossings, which is the behaviour the
+operator called an improvement. *Risk:* dropping it now restores Bree's carrier crossings before there is a
+defence to contest them — a play change, not a regression, but his call.
+
+**Q4 — Isengard's carries stay long.** *Symptom:* the dungeon hop rm45 → rm34 re-issued up to 59 times inside
+one carry; 100-200 s carries on a map with no outdoor pins left. *Hypothesis:* indoor threading, untouched by
+the outdoor work — the same in-room class as §3.0 step 1. *Proposal:* render the pair and read the re-issues
+before proposing anything. *Risk:* none to look.
+
+**Q5 — Doors of Moria's teams diverge as the arms improve.** Blue 17/13 → 24/13 → 31/15 pickups/captures, Red
+14/6 → 10/3 → 7/0. *Hypothesis:* map asymmetry amplified by better nav (Blue's approach gets more usable than
+Red's), not a defect — Moria is user-made, so the symmetry criterion does not apply. *Proposal:* measure per
+team on every Moria arm from now on; do not act on it yet.
+
+**Q6 — instrument defect.** `analyze_bot_log.py`'s Kills column matches one of the dozen death-message
+wordings the game prints and undercounts roughly 15×, so it cannot rank arms. The 2026-09-19 tables use
+`BotRespawn` lines instead. *Proposal:* widen the pattern, or drop the column and count respawns. *Risk:*
+none; it changes no behaviour and makes old logs comparable.
+
 3. **Bump the series** (0.10.x per the versioning convention: 0.8.x features, 0.9.x navigation) once
    the map list plays smoothly. 0.10 is the adjacent work — bot management and feel, command surface
    and menus — plus the release package: Windows + Linux builds, D3 Pyrodeck, the cloud-hosted 24/7
