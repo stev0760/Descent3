@@ -873,7 +873,6 @@ void BotForceEscortMode(int bot_index) {
   Bots[bot_index].explore_dest_room = -1;
   Bots[bot_index].explore_room_timer = 0.0f;
   BotClearTravelDest(bot_index, TRAVEL_END_REPLACEMENT);
-  Bots[bot_index].oa_steer_room = -1;
 }
 
 // Set a pursuit goal for the bot's current AI target.
@@ -3300,15 +3299,34 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
     // pre-check keeps open terrain untouched, and the bedlam gate verdicts the default).
     // (BotOutdoorEntranceStage/BotOutdoorRouteLeg self-report their own §7 member win.)
     nav_dest_overridden = true;
-    if (!entry_commit && BotOutdoorRouteLeg(obj, dest, dest_room, &dest, &dest_room))
+    // One outdoor dispatch (2026-09-19): every trip from terrain into a structure — carrier, objective errand,
+    // explore, last-known chase — is issued HERE, in one order: the door's ENTRY push when it is flyable, else the
+    // straight leg to the standoff, else the region lattice's waypoint, else the reactive rescue (the ring
+    // go-around, then the door-graph hop) asked as a plain query for THIS issue's aim. The explore ladder used to
+    // carry two copies of this order with their own via maintenance, and outdoor-origin explore had none of it (a
+    // raw engine goal at a room behind a wall). The rescue is not the via tick: no commitment window of its own —
+    // the issue is held until the engine goal completes, like a lattice waypoint.
+    const vector standoff = dest;
+    bool rescued = false;
+    if (!entry_commit && BotOutdoorRouteLeg(obj, dest, dest_room, &dest, &dest_room)) {
       // 2026-09-15: the waypoint and the door it serves, so a pinned entrance leg can be placed on a render
       LOG_DEBUG.printf(
           "BOT NAV: '%s' %s wp (entrance leg, goal %d) door rm%d wp (%.0f,%.0f,%.0f) from (%.0f,%.0f,%.0f)",
           Bots[bot_index].callsign, troute_active ? "troute seg1" : "outdoor-route", goal_room, entry_room_c, dest.x(),
           dest.y(), dest.z(), obj->pos.x(), obj->pos.y(), obj->pos.z());
-    else
+    } else {
+      if (!entry_commit) {
+        vector so = standoff, rv{};
+        const int so_room = GetTerrainRoomFromPos(&so); // the standoff is outdoors: its terrain cell starts the sweeps
+        if (BotFindViaPoint(obj, standoff, so_room, &rv) == BOT_VIA_FOUND) {
+          dest = rv;
+          dest_room = obj->roomnum;
+          rescued = true;
+        }
+      }
       LOG_DEBUG.printf("BOT NAV: '%s' outdoor entrance %s -> room %d (goal %d)", Bots[bot_index].callsign,
-                       entry_commit ? "ENTRY" : "approach", dest_room, goal_room);
+                       entry_commit ? "ENTRY" : (rescued ? "rescue via" : "approach"), entry_room_c, goal_room);
+    }
     if (entry_commit && Bots[bot_index].entry_commit_room < 0) {
       Bots[bot_index].entry_commit_room = entry_room_c;
       Bots[bot_index].entry_commit_portal = entry_portal_c;
@@ -3395,8 +3413,8 @@ static void BotDoExploreRoaming(int bot_index) {
       // Phase 12: en-route via maintenance. The interior-obstacle press happens MID-room while
       // this branch is holding course (93% of pumphouse presses were in EXPLORE), so the
       // occlusion probe has to run here, not just at goal-issue time.
-      if (!OBJECT_OUTSIDE(obj) && Bots[bot_index].travel_dest_room >= 0 &&
-          !ROOMNUM_OUTSIDE(Bots[bot_index].travel_dest_room) && Rooms[Bots[bot_index].travel_dest_room].used) {
+      if (Bots[bot_index].travel_dest_room >= 0 && !ROOMNUM_OUTSIDE(Bots[bot_index].travel_dest_room) &&
+          Rooms[Bots[bot_index].travel_dest_room].used) {
         // Step 3 (NAVIGATION.md §6.9): en-route maintenance IS dispatch. The live errand —
         // the Task 2 intent (final dest + owner) — re-enters the single router entry every tick,
         // exactly like carrier/escort/hold legs already do. The entry's en-route guard makes this a
@@ -3405,8 +3423,9 @@ static void BotDoExploreRoaming(int bot_index) {
         // roadmap substrate takes over interior explore-class legs from the raw engine-BOA goal, so
         // the validation arm attributes the substrate shift to a single place. Task 2's "nothing
         // reads intent back" contract is REVISED here by design — §4's diagram is intent → one
-        // entry, and this is that wire. Outdoor legs (either end) keep the legacy machinery below,
-        // untouched (operator guardrail: the outdoor scaffolding stays).
+        // entry, and this is that wire. 2026-09-19: a bot OUTDOORS with an interior errand re-enters here too
+        // (the entry's outdoor branch owns the door, the lattice leg and the rescue), as carriers always have;
+        // the ladder's own copy of that maintenance is gone. Terrain destinations keep the raw issue below.
         BotTravelOwner m_owner =
             (Bots[bot_index].travel_owner >= 0) ? (BotTravelOwner)Bots[bot_index].travel_owner : TRAVEL_OWNER_EXPLORE;
         bool m_reissued = false;
@@ -3455,40 +3474,6 @@ static void BotDoExploreRoaming(int bot_index) {
           gi_info.pos = aim_pos;
           gi_info.roomnum = aim_room;
           pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
-        }
-      } else if (Bot_outdoor_via_enabled && Bots[bot_index].oa_steer_room >= 0 &&
-                 Bots[bot_index].oa_steer_room == Bots[bot_index].explore_dest_room) {
-        // 12.6 outdoor via maintenance: the wall-pin happens MID-FLIGHT while holding course to the
-        // entrance (same as the indoor interior press), so the lateral go-around has to run here, not
-        // just at entrance-seek time. The carried approach point must be for the current dest (an
-        // entrance the hook resolved), else a stale target would mis-detour. Detour around structures.
-        // 2026-09-15: this ticked the via toward the approach point every tick — the "skeleton via" hop over the
-        // door graph — and overrode the lattice waypoint the ladder had just issued (Isengard, the platform under
-        // the rm20 pipe mouth: the ladder's `outdoor-route wp` line, then `skeleton via (target room 20)` every
-        // 4 s, then the pin). Same order as the ladder now: a live ENTRY commit is left alone; a lattice leg keeps
-        // the wheel (its waypoint goal is re-issued only once the previous one has completed); the graph hop only
-        // when there is no leg.
-        vector appr = Bots[bot_index].oa_steer_pos;
-        int aroom = Bots[bot_index].oa_steer_room;
-        int &pgi = Bots[bot_index].pursuit_goal_index;
-        const bool goal_live = (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used);
-        if (Bots[bot_index].entry_commit_room < 0) { // a push through a door in flight: no detour, no re-aim
-          vector leg{};
-          int leg_room = -1;
-          const bool lattice_leg = BotOutdoorRouteLeg(obj, appr, aroom, &leg, &leg_room);
-          if (lattice_leg) {
-            if (!goal_live) {
-              goal_info gi_info{};
-              gi_info.pos = leg;
-              gi_info.roomnum = leg_room;
-              pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
-            }
-          } else if (!BotViaPointTick(bot_index, appr, aroom, pgi, nullptr) && !goal_live) {
-            goal_info gi_info{};
-            gi_info.pos = appr;
-            gi_info.roomnum = aroom;
-            pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
-          }
         }
       }
       return; // still en route
@@ -3640,92 +3625,9 @@ static void BotDoExploreRoaming(int bot_index) {
       return;
     }
 
-    // Phase 8.1 outdoor entrance awareness: outdoors the engine path-follower can't steer across
-    // terrain to a structure, so it strands the bot at the room center (buried down a shaft, or
-    // behind a wall). Resolve the terrain-facing NEAR door leading to the objective and aim the
-    // engine goal at its path_pnt; the engine then steers the full-3D approach itself. Indoors this
-    // is skipped and the interior router below runs (it owns the shaft descent / post interior).
-    if (Bot_terrain_steering_enabled && OBJECT_OUTSIDE(obj)) {
-      int ent_room = -1, ent_portal = -1;
-      vector ent_pos;
-      int ent_dest_room = -1;
-      bool entry_commit = false;
-      // 8.2 two-stage approach: standoff point outside the door (12.6), then — within commit
-      // range — the push-through point INSIDE it ($nav entry). Carried to the en-route via
-      // maintenance below either way.
-      if (BotOutdoorEntranceStage(obj, obj_room, &ent_pos, &ent_dest_room, &ent_room, &ent_portal, &entry_commit)) {
-        Bots[bot_index].oa_steer_pos = ent_pos;
-        Bots[bot_index].oa_steer_room = ent_room;
-        int &pgi = Bots[bot_index].pursuit_goal_index;
-        // Outdoor go-around: if a structure blocks the straight line to the approach point, commit to a
-        // lateral via (around the footprint, under the ceiling) instead of beelining into the wall.
-        // Not at the ENTRY stage (2026-09-15): the push through the door is a 16-25u hull-validated leg and a
-        // detour there is the committee overwriting a commit — Isengard rm20/rm21: "target occluded" 0.5 s
-        // after every ENTRY commit, then a press, then NOT-CROSSED. The observer resolves the commit instead.
-        // One outdoor network (2026-09-15): the region lattice leg is asked FIRST and the OGraph "skeleton via" hop
-        // serves only when there is no lattice leg. On Isengard the explore ladder's skeleton hops toward the rm20
-        // pipe mouth ran straight up through a platform the bot was under ($nav probe from the pin (2127,272,1976)
-        // to the door node: blocked at 0 u; the space is 30 u high between terrain and slab), fifteen pins a round
-        // at one cell; the lattice has nodes beside and above the platform and threads it. The routed path
-        // (BotSetRoutedGoal) already prefers the lattice leg; this is the same order for the ladder.
-        vector leg_pos{};
-        int leg_room = -1;
-        const bool lattice_leg = !entry_commit && BotOutdoorRouteLeg(obj, ent_pos, ent_room, &leg_pos, &leg_room);
-        if (!lattice_leg && !entry_commit && BotViaPointTick(bot_index, ent_pos, ent_room, pgi, nullptr)) {
-          Bots[bot_index].explore_dest_room = ent_room;
-          Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
-          BotSetTravelDest(bot_index, ent_room, TRAVEL_OWNER_EXPLORE, TRAVEL_END_REPLACEMENT);
-          return;
-        }
-        // Line clear (or via reached this tick): head to the current stage's point. Re-issue only when
-        // the entrance changed or the goal lapsed (no per-tick churn) — stage advance rides goal
-        // completion: arriving at the standoff self-clears the goal, and the next issue commits entry.
-        bool en_route = (Bots[bot_index].explore_dest_room == ent_room && pgi >= 0 && pgi < MAX_GOALS &&
-                         obj->ai_info->goals[pgi].used && Bots[bot_index].explore_room_timer > 0.0f);
-        if (!en_route) {
-          if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
-            GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
-          goal_info gi_info{};
-          gi_info.pos = ent_pos;
-          gi_info.roomnum = ent_room;
-          // Terrain track piece 2 ($nav outroute) / piece 1 ($nav troute): the leg to the door
-          // approach point is THE isengard entrance-miss beeline — when it's terrain-blocked,
-          // follow the region lattice toward it (waypoint advances on goal completion, en_route
-          // holds between waypoints). troute owns this follower for all entrance legs (the
-          // piece-1-proper prescription). Skipped on the entry commit — that's a ~25u door push.
-          bool routed = lattice_leg;
-          if (lattice_leg) {
-            gi_info.pos = leg_pos;
-            gi_info.roomnum = leg_room;
-          }
-          pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
-          Bots[bot_index].explore_dest_room = ent_room;
-          Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX;
-          BotSetTravelDest(bot_index, ent_room, TRAVEL_OWNER_EXPLORE, TRAVEL_END_REPLACEMENT);
-          if (entry_commit) {
-            LOG_DEBUG.printf("BOT NAV: '%s' entrance ENTRY commit -> room %d portal %d (obj %d)",
-                             Bots[bot_index].callsign, ent_room, ent_portal, obj_room);
-            if (Bots[bot_index].entry_commit_room < 0) { // Phase 0 entrance observer (see BotDoFrame)
-              Bots[bot_index].entry_commit_room = ent_room;
-              Bots[bot_index].entry_commit_portal = ent_portal;
-              Bots[bot_index].entry_commit_time = Gametime;
-              Bots[bot_index].entry_commit_pos = obj->pos;
-              Bots[bot_index].entry_commit_aim = gi_info.pos;
-            }
-          } else if (routed)
-            LOG_DEBUG.printf("BOT NAV: '%s' outdoor-route wp (entrance room %d, %.0fu leg) wp (%.0f,%.0f,%.0f) from "
-                             "(%.0f,%.0f,%.0f)",
-                             Bots[bot_index].callsign, ent_room, vm_VectorDistanceQuick(&obj->pos, &ent_pos),
-                             gi_info.pos.x(), gi_info.pos.y(), gi_info.pos.z(), obj->pos.x(), obj->pos.y(),
-                             obj->pos.z());
-          else
-            LOG_DEBUG.printf("BOT: '%s' outdoor entrance-seek -> room %d portal %d (obj %d)", Bots[bot_index].callsign,
-                             ent_room, ent_portal, obj_room);
-        }
-        return;
-      }
-    }
-
+    // Outdoors the routed entry below owns the whole approach (2026-09-19, one outdoor dispatch): the terrain-facing
+    // door, its standoff and ENTRY push, the lattice leg toward it and the reactive rescue. This site used to
+    // carry its own copy of that order, with the errand re-labelled as an explore trip to the door room.
     // Phase 11 waypoint injection: head to the next room on the cost-aware route rather than
     // straight at the far objective room (which lets the engine re-plan via its own greedy BOA and
     // ignore our routing). Shared BotSetRoutedGoal handles the route, the hold-check, and fallback.
@@ -3887,48 +3789,18 @@ static void BotDoExploreRoaming(int bot_index) {
   int dest_room = candidates[best_idx];
   vector dest_pos = Rooms[dest_room].path_pnt;
 
-  // For outdoor bots, find the portal entrance position for better approach
-  if (is_outdoor) {
-    int cellnum = CELLNUM(obj->roomnum);
-    int region = TERRAIN_REGION(cellnum);
-    const int ndoor = BotTerrainDoorCount(region); // Phase 1: our table, not BOA_connect
-    for (int c = 0; c < ndoor; c++) {
-      int droom = -1, pidx = -1;
-      if (BotTerrainDoorAt(region, c, &droom, &pidx) && droom == dest_room) {
-        if (pidx >= 0 && pidx < Rooms[dest_room].num_portals)
-          BotTerrainDoorPoints(dest_room, pidx, &dest_pos, nullptr); // the validated outside approach
-        break;
-      }
-    }
-  }
-
-  // Clear old explore goal and set new AIG_GET_TO_POS destination
-  if (!is_outdoor) {
-    // Step 3 #4: interior-origin explore dispatches through the router entry — the highest-traffic
-    // conversion, last by design, with the churn counter watching it. The old errand ends TIMEOUT
-    // (the re-roll cause; arrival upgrade happens inside the clear) BEFORE dispatch so the entry's
-    // default doesn't relabel it. The distance-scaled window below is re-asserted after dispatch:
-    // explore pacing (6-20s by distance) is the site's semantics; the entry's MAX default would
-    // slow near-hop re-rolls.
-    BotClearTravelDest(bot_index, TRAVEL_END_TIMEOUT);
-    bool ex_reissued = false;
-    BotSetRoutedGoal(bot_index, dest_room, dest_pos, &ex_reissued, TRAVEL_OWNER_EXPLORE);
-  } else {
-    // Outdoor-origin explore: legacy raw issue, unchanged — the entrance-portal approach machinery
-    // and outdoor via own these legs until the outdoor-coverage era (arm (c)).
-    int &pgi = Bots[bot_index].pursuit_goal_index;
-    if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
-      GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
-    pgi = -1;
-
-    goal_info gi_info{};
-    gi_info.pos = dest_pos;
-    gi_info.roomnum = dest_room;
-
-    pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
-    Bots[bot_index].explore_dest_room = dest_room;
-    BotSetTravelDest(bot_index, dest_room, TRAVEL_OWNER_EXPLORE, TRAVEL_END_TIMEOUT);
-  }
+  // Step 3 #4: explore dispatches through the router entry — the highest-traffic conversion, last by design, with
+  // the churn counter watching it. The old errand ends TIMEOUT (the re-roll cause; arrival upgrade happens inside
+  // the clear) BEFORE dispatch so the entry's default doesn't relabel it. The distance-scaled window below is
+  // re-asserted after dispatch: explore pacing (6-20s by distance) is the site's semantics; the entry's MAX
+  // default would slow near-hop re-rolls.
+  // 2026-09-19: outdoor-origin explore too. It was a raw engine goal at the chosen room's door point — no entrance
+  // stage, no lattice leg, no rescue — and the engine's terrain path pressed the structure's shell until the
+  // progress timeout (Tower of Isengard, the tower's north face: two bots on one spot, `explore -> room 0`,
+  // $nav probe: shell face rm2/61 at 0 u). The entry's outdoor branch resolves the door itself.
+  BotClearTravelDest(bot_index, TRAVEL_END_TIMEOUT);
+  bool ex_reissued = false;
+  BotSetRoutedGoal(bot_index, dest_room, dest_pos, &ex_reissued, TRAVEL_OWNER_EXPLORE);
 
   // Scale timer based on BOA distance estimate (Phase 4.0)
   float est_dist = 0.0f;

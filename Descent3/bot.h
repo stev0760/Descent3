@@ -481,8 +481,6 @@ struct bot_info {
   int travel_dest_room;   // final intended room, -1 = no live intent
   int8_t travel_owner;    // BotTravelOwner of the live intent (bot.cpp), -1/none when clear
   float travel_set_time;  // Gametime the intent was set — held-duration on BOT DEST lines
-  vector oa_steer_pos;    // 12.6: outdoor entrance approach point (carried from entrance-seek to the
-  int oa_steer_room;      //       en-route via maintenance so the lateral go-around runs mid-flight); room=-1 none
   int explore_stuck_room; // last room abandoned due to stuck — blacklisted for next pick
   // Fifth lifetime cause: a destination that forced a stuck escape is demoted for a while, so
   // persistent intent cannot re-pick it immediately and grind the same wedge. Errand-scope only —

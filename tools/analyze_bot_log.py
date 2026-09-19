@@ -193,6 +193,9 @@ RE_STALL_REPLAN = re.compile(r"stall-replan: (via released|chase aborted|route r
 # Outdoor lattice follower event. Current builds emit it under troute; archived 0.9.7 logs emitted
 # the same wording under the retired outroute lever. g1 = leg kind, g2 = target room, g3 = leg length.
 RE_OUTDOOR_ROUTE = re.compile(r"outdoor-route wp \((goal|entrance) room (-?\d+), (\d+)u leg\)")
+# One outdoor dispatch (2026-09-19): every entrance leg is issued by the routed entry, whose line names the goal
+# and the door instead ("outdoor-route wp (entrance leg, goal 48) door rm21 wp (...)"; "troute seg1 wp (...)").
+RE_OUTDOOR_ROUTE_ENTRY = re.compile(r"(?:outdoor-route|troute seg1) wp \(entrance leg, goal (-?\d+)\) door rm(-?\d+)")
 
 # Outdoor diagnostic suffix appended (by BotTerrainDiag) to outdoor stuck/escalation/escape lines:
 #   " | TERRAIN cell=X,Z rgn=R agl=A spd=S dest=D(TERRAIN|STRUCT|none)"
@@ -203,6 +206,11 @@ RE_TERRAIN_DIAG = re.compile(
 # Phase 8.1 outdoor entrance-seek issuance (routing aimed an outdoor bot at a structure entrance).
 # Pairs with terrain_entrance (the stuck-miss count): seeks issued should rise as misses fall.
 RE_OA_SEEK = re.compile(r"outdoor entrance-seek -> room (\d+) portal (\d+) \(obj (\d+)\)")
+# The routed entry's twin of the seek line (the only one on builds from 2026-09-19): approach = straight leg to the
+# door's standoff, rescue via = the ring/door-graph go-around served as the aim. ENTRY lines are commits, counted
+# in the Entrance Commits section, not here.
+RE_OA_APPROACH = re.compile(r"outdoor entrance (approach|rescue via) -> room (-?\d+) \(goal (-?\d+)\)")
+RE_ENTRY_HELD = re.compile(r"entrance ENTRY held rm(-?\d+) portal (-?\d+)")
 
 # Terrain route composer ($nav troute). ADOPT = a cross-terrain plan was chosen over the interior
 # route, which REDIRECTS the bot's routed goal at the exit room. A map whose interior->terrain
@@ -403,6 +411,8 @@ def new_map_stats():
         "level_exits_usable": None,   # 0.9.12 classifier: flyable interior->terrain exits
         "level_exits_total": None,
         "oa_seek_events": 0,          # Phase 8.1: outdoor entrance-seek goals issued
+        "oa_rescue_events": 0,        # of those, issues served by the ring / door-graph rescue (2026-09-19)
+        "entry_held": Counter(),      # door room -> ENTRY commits held back because the push leg was blocked
         "oa_seek_rooms": Counter(),   # entrance room → count (which structures bots are seeking)
         "waiting_flag": 0,
         "poll_ctf": 0,
@@ -937,6 +947,17 @@ def parse_log(path):
                 s["oa_seek_events"] += 1
                 s["oa_seek_rooms"][int(mo.group(1))] += 1
                 continue
+            mo = RE_OA_APPROACH.search(line)
+            if mo:
+                s["oa_seek_events"] += 1
+                s["oa_seek_rooms"][int(mo.group(2))] += 1
+                if mo.group(1) == "rescue via":
+                    s["oa_rescue_events"] += 1
+                continue
+            mo = RE_ENTRY_HELD.search(line)
+            if mo:
+                s["entry_held"][int(mo.group(1))] += 1
+                continue
 
             mo = RE_TROUTE_ADOPT.search(line)
             if mo:
@@ -1077,6 +1098,9 @@ def parse_log(path):
                     s["outroute_ent"] += 1
                 else:
                     s["outroute_goal"] += 1
+                continue
+            if RE_OUTDOOR_ROUTE_ENTRY.search(line):
+                s["outroute_ent"] += 1
                 continue
 
             m = RE_GAME_MODE.search(line)
@@ -2158,14 +2182,15 @@ def print_report(stats, total_lines, log_path):
             print("**Entrance-seek issued (Phase 8.1):** outdoor bots routed at a structure doorway "
                   "(climb-to-entrance). Compare with the `entrance` column above.")
             print()
-            print(f"| Map | Seeks issued | Top entrance rooms |")
-            print(f"|---|---|---|")
+            print(f"| Map | Seeks issued | of which rescue via | Top entrance rooms | ENTRY held (push leg blocked) |")
+            print(f"|---|---|---|---|---|")
             for name in maps:
                 s = stats[name]
                 if not s["oa_seek_events"]:
                     continue
                 top_rooms = ", ".join(f"room {r}x{c}" for r, c in s["oa_seek_rooms"].most_common(3))
-                print(f"| {name} | {s['oa_seek_events']} | {top_rooms} |")
+                held = ", ".join(f"rm{r}x{c}" for r, c in s["entry_held"].most_common(3)) or "-"
+                print(f"| {name} | {s['oa_seek_events']} | {s['oa_rescue_events']} | {top_rooms} | {held} |")
             print()
 
     # Terrain route composer + the 0.9.12 level classifier. "Exits" is the classifier's verdict:
