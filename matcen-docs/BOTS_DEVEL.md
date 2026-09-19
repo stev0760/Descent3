@@ -124,10 +124,17 @@ in both arms (100-200 s; the dungeon hop rm45 → rm34 re-issued up to 59 times 
 
 | Doors of Moria, 3×20 min | control `fff9bc3c` | v3 (`161582cc`: changes 1-3) | v5 (`8031ffbf`) |
 |---|---|---|---|
-| stuck escalations (hard) | MORIA_CTL_STUCKS | 60 (5) | MORIA_V5_STUCKS |
-| — outdoors / flag-room doorway rm15 | MORIA_CTL_SPLIT | 16 / 23 | MORIA_V5_SPLIT |
-| entrance commits crossed (rm7 not-crossed) | MORIA_CTL_COMMITS | 81 of 87 (1) | MORIA_V5_COMMITS |
-| pickups / captures | MORIA_CTL_PLAY | 36 / 8 | MORIA_V5_PLAY |
+| stuck escalations (hard) | 86 (8) | 60 (5) | MORIA_V5_STUCKS |
+| — outdoors / flag-room doorway rm15 | 56 / 28 | 16 / 23 | MORIA_V5_SPLIT |
+| entrance commits crossed (rm7 not-crossed) | 22 of 50 (23) | 81 of 87 (1) | MORIA_V5_COMMITS |
+| pickups / captures | 31 / 19 | 36 / 8 | MORIA_V5_PLAY |
+
+Moria repeats Isengard's shape with a larger sample: the doors work (entrance commits 44% → 93% crossed, the roof hatch
+rm7 23 misses → 1), outdoor stucks fall 56 → 16, kills double (12 → 26) and FLEE transitions go 71 → 436 — and captures
+fall 19 → 8 with pickups flat (31 → 36). Flag episodes: control 19 captures / 9 returned by the defenders; v3 8 / 16, with
+capture carries taking 104 s against 57 s. Carriers are not pinned in either arm (0 and 2 carrier stuck states); they are
+being shot at. The control's opposition spends the round outside a hatch it cannot enter. Reported to the operator as
+it stands: the capture count went down on both maps while every navigation number and every combat number went up.
 
 BREE_AND_BEDLAM_PLACEHOLDER
 
