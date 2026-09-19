@@ -3265,6 +3265,7 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   // BotViaPointTick above. Carriers share this function, so this is also the "escape out of the structure" fix.
   bool nav_dest_overridden = seam_redirect; // §7: seam already counted at assertion time, above
   int entry_room_c = -1, entry_portal_c = -1; // Phase 0 entrance observer: which door the ENTRY stage committed to
+  bool entry_issue = false;                   // this issue is the ENTRY push itself (not the standoff/leg/rescue)
   if (seam_redirect) {
     // 0.9.7 seam guard: aim just past the direct portal, claimed in the CURRENT room — a
     // same-room goal gives the engine nothing to BOA-path (and detour) on; it steers straight
@@ -3308,6 +3309,7 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
     // the issue is held until the engine goal completes, like a lattice waypoint.
     const vector standoff = dest;
     bool rescued = false;
+    entry_issue = entry_commit;
     if (!entry_commit && BotOutdoorRouteLeg(obj, dest, dest_room, &dest, &dest_room)) {
       // 2026-09-15: the waypoint and the door it serves, so a pinned entrance leg can be placed on a render
       LOG_DEBUG.printf(
@@ -3350,6 +3352,19 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   if (aim_source == BOT_ROOM_AIM_ROADMAP && pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used) {
     LOG_DEBUG.printf("BOT NAV: '%s' roadmap route in room %d (target room %d)", Bots[bot_index].callsign,
                      (int)obj->roomnum, wp_room);
+  }
+  if (entry_issue && pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used && entry_room_c >= 0 &&
+      entry_portal_c >= 0 && entry_portal_c < Rooms[entry_room_c].num_portals) {
+    // A shallow ENTRY push must not "arrive" outside the door (2026-09-19). Tower of Isengard's pipe mouths rm20 and
+    // rm21 are 20u deep: the validated 16u push lands past their back portal, so the legacy push toward the room's
+    // path_pnt is used — 6u inside the door plane, INSIDE the engine's arrival circle (the ship's AI circle, ~10u).
+    // The goal completed with the ship still 4u short of the plane and the bot sat still for the observer's 8 s:
+    // rm20 18 of its 22 commits NOT-CROSSED in three rounds, `now` == `from` on most of them. Same cure as the
+    // stacked tray below: when the push is shallower than the circle, arrival needs the hull centre past the plane.
+    const vector &door_pnt = Rooms[entry_room_c].portals[entry_portal_c].path_pnt;
+    goal &eg = obj->ai_info->goals[pgi];
+    if (vm_VectorDistance(&dest, &door_pnt) < eg.circle_distance + obj->size * 0.5f)
+      eg.circle_distance = BOT_STACKED_TRAY_ARRIVE_DIST;
   }
   if (tray_aim && pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used) {
     // The other half of the tray fix: shrink THIS goal's arrival sphere. The default 10u circle
