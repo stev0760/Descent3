@@ -79,6 +79,15 @@ RE_FLAG_RECOVER_TOUCH = re.compile(r"flag recovery -> touching '([^']*)' \(obj (
 # ("flag grab -> touching" on a clear line, "flag grab nav ->" otherwise); anyone else takes station by the flag.
 RE_FLAG_GRAB = re.compile(r"flag grab (-> touching|nav ->) '([^']*)' \(obj (\d+), ([\d.]+)u.*\) in room (-?\d+)")
 RE_TAKE_STATION = re.compile(r"taking station in room (-?\d+) \(([\d.]+)u from the (flag|room point)\)")
+# Server frame timing (builds from 2026-09-20, bot_perf.cpp). A long server frame is a hole in every client's position
+# stream = rubber-banding. `slow frame` = one frame over budget with its inclusive per-subsystem ms(calls);
+# `summary` = one line a minute.
+RE_PERF_SLOW = re.compile(r"\[Perf\] slow frame: bots (\d+) ms, prev server frame (\d+) ms \|(.*)")
+RE_PERF_SUMMARY = re.compile(r"\[Perf\] summary (\d+)s: (\d+) frames \(([\d.]+) fps\), bots avg ([\d.]+) ms worst (\d+) ms, "
+                             r"bot-layer frames >10ms (\d+) >25ms (\d+) >50ms (\d+) >100ms (\d+) \| "
+                             r"server frames >50ms (\d+) >100ms (\d+) >250ms (\d+) worst (\d+) ms")
+RE_PERF_SCOPE = re.compile(r" ([a-z]+) (\d+)\((\d+)\)")
+RE_ATTACK_ACROSS = re.compile(r"attack errand across terrain: no interior route rm(-?\d+) -> enemy flag rm(-?\d+)")
 RE_TS_HMS = re.compile(r"(\d\d):(\d\d):(\d\d)\.(\d+)")
 
 
@@ -421,6 +430,13 @@ def new_map_stats():
         "flag_grab_dist": [],
         "take_station": 0,            # arrived errand flies to its station (flag / room point) instead of holding at the door
         "take_station_rooms": Counter(),
+        "perf_minutes": 0,            # 2026-09-20: [Perf] summary lines (one a minute while bots play)
+        "perf_frames": 0,
+        "perf_bot_ms": 0.0,           #   sum of (avg bot-layer ms * frames), for the weighted average
+        "perf_over": [0, 0, 0],       #   server frames over 50 / 100 / 250 ms
+        "perf_worst": 0,
+        "perf_slow_cause": Counter(), #   slow frames over 100 ms, by their costliest leaf subsystem
+        "attack_across": 0,           # attack errands issued with no interior route (terrain plan owns the trip)
         "oa_rescue_events": 0,        # of those, issues served by the ring / door-graph rescue (2026-09-19)
         "entry_held": Counter(),      # door room -> ENTRY commits held back because the push leg was blocked
         "oa_seek_rooms": Counter(),   # entrance room → count (which structures bots are seeking)
@@ -648,6 +664,28 @@ def parse_log(path):
                 s["flag_grab_touch" if m.group(1) == "-> touching" else "flag_grab_nav"] += 1
                 s["flag_grab_rooms"][int(m.group(5))] += 1
                 s["flag_grab_dist"].append(float(m.group(4)))
+                continue
+            if "[Perf]" in line:
+                m = RE_PERF_SUMMARY.search(line)
+                if m:
+                    s["perf_minutes"] += 1
+                    s["perf_frames"] += int(m.group(2))
+                    s["perf_bot_ms"] += float(m.group(4)) * int(m.group(2))
+                    for k in range(3):
+                        s["perf_over"][k] += int(m.group(10 + k))
+                    s["perf_worst"] = max(s["perf_worst"], int(m.group(5)), int(m.group(13)))
+                    continue
+                m = RE_PERF_SLOW.search(line)
+                if m:
+                    if int(m.group(1)) > 100:
+                        # Scopes are inclusive; the wrappers say nothing about cause, so rank the leaves only.
+                        wrappers = {"state", "routed", "via", "explore", "findvia", "roomaim", "sweep", "reach", "troute"}
+                        leaves = [(int(ms), nm) for nm, ms, _ in RE_PERF_SCOPE.findall(m.group(3)) if nm not in wrappers]
+                        top = max(leaves)[1] if leaves and max(leaves)[0] * 2 >= int(m.group(1)) else "other"
+                        s["perf_slow_cause"][top] += 1
+                    continue
+            if RE_ATTACK_ACROSS.search(line):
+                s["attack_across"] += 1
                 continue
             m = RE_TAKE_STATION.search(line)
             if m:
@@ -1229,6 +1267,13 @@ def parse_log(path):
 def detect_anomalies(stats):
     anomalies = []
     for name, s in stats.items():
+        mins = s["perf_minutes"]
+        if mins >= 3 and (s["perf_over"][2] / mins >= 1.0 or s["perf_worst"] >= 1000):
+            cause = ", ".join(f"{k} ({v})" for k, v in s["perf_slow_cause"].most_common(3)) or "unattributed"
+            anomalies.append((name, "FRAME_STALL",
+                              f"{s['perf_over'][2] / mins:.1f} server frames/min over 250 ms, worst {s['perf_worst']} ms "
+                              f"— clients see bots freeze and snap (rubber-banding). Costliest subsystems: {cause}"))
+    for name, s in stats.items():
         res = s["entry_crossed"] + s["entry_not_crossed"]
         if res >= 5 and s["entry_crossed"] * 2 < res:
             rooms = ", ".join(f"rm{r} ({c})" for r, c in s["entry_rooms_failed"].most_common(3))
@@ -1780,6 +1825,28 @@ def print_report(stats, total_lines, log_path):
             items = ", ".join(f"{k}x{v}" for k, v in s["recover_items"].most_common(3)) or "-"
             print(f"| {name} | {s['recover_nav']} | {s['recover_nav_outdoor']} | {s['recover_touch']} "
                   f"| {s['recover_touch_outdoor']} | {items} |")
+        print()
+
+    if any(s["perf_minutes"] for s in stats.values()):
+        print(f"## Server Frame Timing ([Perf], 2026-09-20)")
+        print()
+        print(f"The server sends positions once per frame, so a long frame is a gap in every client's update stream — "
+              f"what a player sees as bots freezing and snapping. At 60 fps a frame is 16.7 ms; at PPS 40 a client "
+              f"expects a position every 25 ms. Counts are server frames per MINUTE of bot play; `cause` = the costliest "
+              f"leaf subsystem of each bot-layer frame over 100 ms (build = roadmap build slice, theta = Theta* search, "
+              f"skel = skeleton build, crossing = door-crossing sampler, union = composed-route network).")
+        print()
+        print(f"| Map | Minutes | Avg bot layer | >50 ms /min | >100 ms /min | >250 ms /min | Worst frame | Causes (>100 ms) |")
+        print(f"|---|---|---|---|---|---|---|---|")
+        for name in maps:
+            s = stats[name]
+            if not s["perf_minutes"]:
+                continue
+            mins = s["perf_minutes"]
+            cause = ", ".join(f"{k}x{v}" for k, v in s["perf_slow_cause"].most_common(4)) or "-"
+            print(f"| {name} | {mins} | {s['perf_bot_ms'] / max(s['perf_frames'], 1):.2f} ms | "
+                  f"{s['perf_over'][0] / mins:.1f} | {s['perf_over'][1] / mins:.1f} | {s['perf_over'][2] / mins:.1f} | "
+                  f"{s['perf_worst']} ms | {cause} |")
         print()
 
     if any(s["flag_grab_touch"] or s["flag_grab_nav"] or s["take_station"] for s in stats.values()):

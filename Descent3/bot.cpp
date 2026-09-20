@@ -59,6 +59,7 @@
 #include "dedicated_server.h"
 #include "init.h"
 #include "log.h"
+#include "bot_perf.h"
 
 bot_info Bots[MAX_BOTS];
 int Num_bots = 0;
@@ -2385,6 +2386,7 @@ static_assert(bot_info::BOT_CHAIN_MAX == BOT_SKEL_MAX_NODES, "via_chain must mat
 
 static int BotViaPointTick(int bot_index, const vector &target_pos, int target_room, int &goal_slot,
                            BotViaResult *verdict_out) {
+  BotPerfScope perf(BPERF_VIA_TICK);
   if (verdict_out)
     *verdict_out = BOT_VIA_CLEAR;
   int slot = Bots[bot_index].player_slot;
@@ -2802,6 +2804,7 @@ static bool BotOutdoorEntranceStage(object *obj, int goal_room, vector *dest, in
 // plan completes when an interior route to the real goal exists again. Returns true when the
 // goal was redirected (seg0). Fail-open everywhere: no plan means exactly today's behavior.
 static bool BotTrouteRedirect(int bot_index, object *obj, int *goal_room, vector *final_pos) {
+  BotPerfScope perf(BPERF_TROUTE);
   bot_info &bi = Bots[bot_index];
   if (!Bot_troute_enabled) {
     bi.troute_goal_room = -1;
@@ -2913,6 +2916,7 @@ static bool BotTrouteRedirect(int bot_index, object *obj, int *goal_room, vector
 // naturally on room-entry without churning the engine path). Sets *reissued when a new goal was set.
 static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_pos, bool *reissued,
                             BotTravelOwner owner) {
+  BotPerfScope perf(BPERF_ROUTED_GOAL);
   if (reissued)
     *reissued = false;
   int slot = Bots[bot_index].player_slot;
@@ -3392,6 +3396,7 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
 // Called from BotUpdateState() every 0.5s tick when no powerup goal is active.
 // Uses pursuit_goal_index — cleared automatically when leaving EXPLORE via BotClearActiveGoal().
 static void BotDoExploreRoaming(int bot_index) {
+  BotPerfScope perf(BPERF_EXPLORE);
   int slot = Bots[bot_index].player_slot;
   object *obj = &Objects[Players[slot].objnum];
   if (!obj->ai_info)
@@ -4874,6 +4879,7 @@ static int8_t Reach_verdicts[BOT_REACH_TABLE_SIZE];
 static int Reach_serial = 0;
 
 static bool BotReachGateAllows(object *bot_obj, object *p) {
+  BotPerfScope perf(BPERF_REACH_GATE);
   if (OBJECT_OUTSIDE(bot_obj) || OBJECT_OUTSIDE(p))
     return true;
   if (p->roomnum != bot_obj->roomnum)
@@ -5275,6 +5281,7 @@ static bool BotShouldInterruptForPowerup(int bot_index) {
 // Evaluate and update the bot's behavioral state based on target, distance, LOS, and shields.
 // Called from BotDoFrame after target selection.
 static void BotUpdateState(int bot_index) {
+  BotPerfScope perf(BPERF_STATE);
   int slot = Bots[bot_index].player_slot;
   object *obj = &Objects[Players[slot].objnum];
   if (!obj->ai_info)
@@ -8305,6 +8312,7 @@ const char *BotGameModeName(BotGameMode mode) {
 }
 
 void BotReinitAll() {
+  BotRoadmapCancelBuilds(); // the level under any parked roadmap build was just freed and reloaded
   // §7 contend: the counters still hold the finished level's data here — dump before anything
   // resets them, so every level's histogram lands in the log without operator action.
   BotNavContendDumpAll("level-end");
@@ -8842,6 +8850,7 @@ int BotFindBySlot(int player_slot) {
 }
 
 void BotDoFrame() {
+  BotPerfFrameScope perf_frame;
   // Delayed UI bot spawn — wait for the host to settle into the level
   if (Bot_ui_spawn_pending && Gametime >= Bot_ui_spawn_time) {
     BotDoUISpawn();
@@ -8867,10 +8876,26 @@ void BotDoFrame() {
   }
 
   static int mov_log_counter = 0;
+  int thinkers_this_frame = 0;
+
+  // Sliced roadmap builds: this frame's share, before any bot asks for a room. A human in the game is someone who
+  // would see a long frame, so the budget is small then and generous on a server only bots are playing on.
+  {
+    bool any_bot = false, any_human = false;
+    for (int b = 0; b < MAX_BOTS && !any_bot; b++)
+      any_bot = Bots[b].active;
+    if (any_bot) {
+      for (int p = 0; p < MAX_PLAYERS && !any_human; p++)
+        any_human = (NetPlayers[p].flags & NPF_CONNECTED) && NetPlayers[p].sequence == NETSEQ_PLAYING &&
+                    !(Dedicated_server && p == Player_num) && BotFindBySlot(p) < 0;
+      BotRoadmapPump(any_human);
+    }
+  }
 
   for (int i = 0; i < MAX_BOTS; i++) {
     if (!Bots[i].active)
       continue;
+    perf_frame.any_bot = true;
 
     int slot = Bots[i].player_slot;
 
@@ -9298,7 +9323,16 @@ void BotDoFrame() {
     }
 
     // Target acquisition + state transition (throttled)
-    if (Gametime - Bots[i].last_target_update > BOT_TARGET_UPDATE_INTERVAL) {
+    // ...and STAGGERED. Every bot is initialised in the same frame with the same interval, so all of them came
+    // due in the same frame for the whole round: eleven decision ticks (each may route, compose, price a terrain
+    // crossing) landed in ONE server frame — 130-200 ms frames about once a second on Isengard ([Perf] 2026-09-20),
+    // which a client sees as every bot freezing and snapping. At most BOT_THINKERS_PER_FRAME bots think per frame;
+    // the rest come due next frame (16 ms late on a 0.5 s tick) and the roster stays spread from then on. A bot
+    // overdue by BOT_THINK_DEFER_MAX thinks regardless.
+    const float think_age = Gametime - Bots[i].last_target_update;
+    if (think_age > BOT_TARGET_UPDATE_INTERVAL && (thinkers_this_frame < BOT_THINKERS_PER_FRAME ||
+                                                   think_age > BOT_TARGET_UPDATE_INTERVAL + BOT_THINK_DEFER_MAX)) {
+      thinkers_this_frame++;
       // Retarget cooldown: after HUNT timeout, suppress target acquisition so the bot
       // actually explores instead of immediately re-locking the same unreachable enemy.
       if (Bots[i].retarget_cooldown > 0.0f)

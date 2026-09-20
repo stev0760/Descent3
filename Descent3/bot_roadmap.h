@@ -54,6 +54,11 @@ extern bool Bot_gridnav_enabled;
 #define BOT_ROADMAP_STRAIGHTEN_CLEARANCE 13.5f
 #define BOT_ROADMAP_SPACING 20.0f     // 3D lattice spacing (control-loop param: matches engine arrival/lookahead)
 #define BOT_ROADMAP_MAX_LATTICE 20000 // per-room candidate-cell cap; spacing auto-coarsens past this
+// Sliced builds (2026-09-20): milliseconds of roadmap building per server frame. A 60 fps frame is 16.7 ms and the
+// bot layer averages 2-3 ms, so 5 ms keeps the frame on time with players in the game; an empty server spends most
+// of its frame building.
+#define BOT_ROADMAP_SLICE_MS 5.0
+#define BOT_ROADMAP_SLICE_IDLE_MS 12.0
 
 // Tube densification ($nav dense): a room thinner than the lattice spacing gets ZERO interior nodes — the
 // isengard room-40 class (21u-wide grate tunnel, 143u tall -> 2 portal seeds in 2 components = DEGENERATE) —
@@ -208,6 +213,11 @@ BotViaResult BotRoadmapFindViaOutdoor(object *obj, const vector &target_pos, int
 // in GrowFromSeeds, so a cached roadmap keeps the bridges it was built with; without this flush the
 // toggle is a false A/B lever until the next level load).
 void BotRoadmapInvalidate();
+// Run this frame's share of the sliced roadmap builds (demand lane, then the level prewarm). Call once per
+// server frame while any bot is active; `humans_present` picks the per-frame budget.
+void BotRoadmapPump(bool humans_present);
+// Level (re)load: unwind any build parked mid-way; the prewarm re-queues what is still missing.
+void BotRoadmapCancelBuilds();
 
 // $navdump diagnostic: build (lazily) and dump a room's roadmap — node world positions + per-node
 // component id. Returns node count (0 = external/invalid). Sets *comp_count_out and *degenerate_out.

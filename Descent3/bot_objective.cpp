@@ -21,6 +21,7 @@
 // flags (CTF), orbs (Hyper-Anarchy, Hoard), and the ball (Monsterball).
 
 #include "bot_objective.h"
+#include "bot_perf.h"
 #include "bot.h"
 #include "bot_chat.h"
 #include "bot_steering.h"
@@ -1288,6 +1289,7 @@ static int BotGetObjectiveRoom_Coop(int bot_index) {
 // ---------------------------------------------------------------------------
 
 void BotPollObjectiveState() {
+  BotPerfScope perf(BPERF_OBJ_POLL);
   // First-round leans (2026-09-15): BotAdd assigns leans before the game mode is known, so every bot started a
   // session's FIRST level as BALANCED — no runner, no attacker exemption from hunting (ctf_pushing), the chooser's
   // ATTACK default for all — and only got real leans at the next level (an accidental re-assign on the level-start

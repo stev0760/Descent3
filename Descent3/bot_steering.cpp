@@ -28,6 +28,7 @@
 // - Bot_terrain_steering_enabled ($terrainsteer): outdoor altitude / sky-flatten toggle.
 
 #include "bot_steering.h"
+#include "bot_perf.h"
 #include "bot.h"
 #include "bot_roadmap.h"
 #include "BOA.h"
@@ -585,6 +586,29 @@ int BotPortalClass(int room_idx, int portal_idx) {
 }
 
 // --- Slice 2: validated crossing point per portal (see bot_steering.h) ------------------------
+// OFF THE TERRAIN GRID IS NOT A PLACE (2026-09-20). fvi's terrain walker indexes its visit list with the cell under
+// the sweep and does not range-check it: a sweep with an endpoint outside the 256 x 256 grid that reaches terrain
+// reads cell 0x7fffffff and segfaults (check_terrain_node), after a run of `no_subdivision || f_found_room` asserts.
+// HAVOC level 6 (orbital): room 2 is a 4096 x 4096 ground-plane slab flagged RF_TOUCHES_TERRAIN whose box runs to
+// x = 4134, 38 u past the grid's edge; its lattice grew there and the first sweep from x = 4125.9 killed the server.
+// No bot had ever entered that room, so nothing had ever built it — the level prewarm builds every room. Only on a
+// level that has an outdoors at all: a sealed mine never reaches terrain, wherever the editor put it.
+static bool SweepOffTerrainGrid(const vector &a, const vector &b) {
+  static int grid_checksum = 0;
+  static bool level_has_outdoors = false;
+  if (grid_checksum != BOA_mine_checksum) {
+    grid_checksum = BOA_mine_checksum;
+    level_has_outdoors = false;
+    for (int r = 0; r <= Highest_room_index && !level_has_outdoors; r++)
+      level_has_outdoors = Rooms[r].used && (Rooms[r].flags & (RF_EXTERNAL | RF_TOUCHES_TERRAIN));
+  }
+  if (!level_has_outdoors)
+    return false;
+  const float grid_max = TERRAIN_WIDTH * TERRAIN_SIZE - 1.0f, grid_min = 1.0f;
+  return a.x() < grid_min || a.x() > grid_max || a.z() < grid_min || a.z() > grid_max || b.x() < grid_min ||
+         b.x() > grid_max || b.z() < grid_min || b.z() > grid_max;
+}
+
 static bool ViaSegmentClear(int startroom, const vector &a, const vector &b, float radius, fvi_info *hit_out,
                             bool check_ceiling = false, int extra_fq_flags = 0); // defined with the via layer below
 // The crossing sampler's sweep: honest about back faces (FQ_BACKFACE), so a column that STARTS inside a
@@ -780,6 +804,7 @@ static bool PortalCrossingSide(int probe_room, const vector &P, const vector &di
 static bool PortalCrossingCompute(int room_idx, int portal_idx, vector *pnt, float *depth, vector *near_pt,
                                   vector *far_pt, bool *bent, bool *tight = nullptr, BotCrossTrace *trace = nullptr,
                                   int trace_max = 0, int *trace_n = nullptr) {
+  BotPerfScope perf(BPERF_CROSSING);
   const room &rm = Rooms[room_idx];
   const portal &pt = rm.portals[portal_idx];
   if (pt.portal_face < 0 || pt.portal_face >= rm.num_faces)
@@ -1347,6 +1372,12 @@ void BotBumpPortalPenalty(int room_idx, int portal_idx) {
 // (above the low Bree ceiling) fails and the search picks a lateral detour instead.
 static bool ViaSegmentClear(int startroom, const vector &a, const vector &b, float radius, fvi_info *hit_out,
                             bool check_ceiling, int extra_fq_flags) {
+  BotPerfScope perf(BPERF_SWEEP);
+  if (SweepOffTerrainGrid(a, b)) {
+    if (hit_out)
+      *hit_out = fvi_info{};
+    return false;
+  }
   vector p0 = a, p1 = b;
   fvi_query fq{};
   fvi_info hit{};
@@ -1677,6 +1708,7 @@ static bool SkelBridge(int room_idx, int a_idx, int b_idx, int *pn) {
 // reverted engine-BNode experiment: it kept edges down to max_rad 5.0 while the ship hull is ~6.676).
 // Phase 12.5b — always on (NAVIGATION.md §4.2; consolidation Step 1 inlined the toggle).
 static void SkelBuild(int room_idx) {
+  BotPerfScope perf(BPERF_SKEL_BUILD);
   room &rm = Rooms[room_idx];
   int np = SkelPortalCount(rm);
 
@@ -1991,6 +2023,7 @@ static int SkelBfs(int room_idx, int n, uint64_t seed_mask, uint64_t stop_mask, 
 // Optional `next_room` hint avoids a second BotComputeRoute Dijkstra when the caller has it.
 bool BotResolveRoomAim(object *obj, const vector &target_pos, int target_room, float radius, vector *out,
                        int next_room_hint, BotRoomAimSource *source_out) {
+  BotPerfScope perf(BPERF_ROOM_AIM);
   if (source_out)
     *source_out = BOT_ROOM_AIM_NONE;
   if (!obj || !out)
@@ -2484,6 +2517,7 @@ static void OGraphLevelReset() {
 }
 
 static void OGraphBuild(int region) {
+  BotPerfScope perf(BPERF_OGRAPH);
   OGraphLevelReset();
   int n = 0;
   int nconn = BotTerrainDoorCount(region); // Phase 1: our table, not BOA_connect
@@ -2569,6 +2603,7 @@ static void OGraphBuild(int region) {
 // modeled door, the bot already sees the door (let the ring/beeline fly the final approach), or the
 // graph doesn't connect the two. Mirrors pass-3's exit-set BFS, in terrain-region node space.
 static bool BotOutdoorGraphHop(object *obj, const vector &target_pos, float radius, vector *via_out) {
+  BotPerfScope perf(BPERF_OGRAPH);
   OGraphLevelReset();
   int region = TERRAIN_REGION(CELLNUM(obj->roomnum));
   if (region < 0 || region >= MAX_BOA_TERRAIN_REGIONS)
@@ -2692,6 +2727,7 @@ int BotOGraphDump(int region, vector *pos_out, uint64_t *edges_out, int *ent_cou
 
 BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_room, vector *via_out,
                              bool *skeleton_out, BotRoomAimSource *source_out, BotViaDiag *diag_out) {
+  BotPerfScope perf(BPERF_FIND_VIA);
   if (skeleton_out)
     *skeleton_out = false;
   if (source_out)
@@ -3123,6 +3159,7 @@ static float BotRouteDijkstra(int from_room, int goal_room, int *first_hop_out, 
 //   unkinetic: 1) strict doors                   2) + DISAGREE  (the unchanged legacy ladder)
 // Returns the hop of the first pass that found a route, or -1; out_cost carries that pass's cost.
 static int BotComputeRoutePasses(int from_room, int goal_room, int glass_mode, float *out_cost) {
+  BotPerfScope perf(BPERF_ROUTE);
   int hop = -1;
   if (from_room == goal_room) {
     if (out_cost)

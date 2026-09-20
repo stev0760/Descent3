@@ -35,6 +35,7 @@
 
 #include "bot_roadmap.h"
 #include "bot_steering.h"
+#include "bot_perf.h"
 #include "bot.h" // BOT_OUTDOOR_APPROACH_OFFSET (shared with the 12.6 outdoor graph)
 #include "room.h"
 #include "terrain.h" // GetTerrainGroundPoint (outdoor lattice: no cells under the heightfield)
@@ -48,8 +49,15 @@
 
 #include <algorithm>
 #include <cfloat>
+#include <chrono>
 #include <cmath>
+#include <condition_variable>
+#include <deque>
+#include <functional>
+#include <memory>
+#include <mutex>
 #include <queue>
+#include <thread>
 #include <tuple>
 #include <unordered_map>
 #include <vector>
@@ -127,9 +135,19 @@ enum UnionEdgeKind : uint8_t {
   UNION_ARTERIAL,
 };
 
+// A ship fatter than the lattice clearance (6.7) must re-prove every union edge at its own radius. That
+// sweep ran on EVERY relaxation of EVERY query — a Magnum composing a route in Isengard's 7600-cell hall
+// swept 85-270 thousand times in one frame (0.2-0.5 s, [Perf] 2026-09-20). Walls do not move (the sweep
+// counts wall/backface/terrain hits only, and a shattered pane rebuilds the whole room), so the verdict is
+// cached per directed edge per hull class: same answers, each edge swept once.
+#define BOT_UNION_WIDE_CLASSES 4
+#define BOT_UNION_WIDE_MS_PER_QUERY                                                                                    \
+  6.0 // milliseconds of FRESH wide-hull edge sweeps one composed-route search may spend
+
 struct UnionEdge {
   int to;
   UnionEdgeKind kind;
+  mutable int8_t wide[BOT_UNION_WIDE_CLASSES] = {-1, -1, -1, -1}; // -1 unknown, 0 blocked, 1 clear
 };
 
 struct UnionNode {
@@ -177,6 +195,20 @@ struct RoadmapRoom {
   // skeleton, and destroyed with the room so heal/checksum invalidation cannot leave it stale.
   std::vector<UnionNode> union_graph;
   bool union_built = false;
+  std::vector<float> union_wide_radius; // hull class -> radius, for UnionEdge::wide (first come, first slot)
+
+  // Theta* answers, memoised. The search is a pure function of (this graph, start, goal, the curve clearance): the
+  // same pair asked again — a bot re-issuing from beside the same node, eleven bots pricing the same door pair —
+  // re-ran every line-of-sight sweep, and outdoors one search is ~2,600 terrain sweeps = 150 ms ([Perf] 2026-09-20:
+  // troute pricing 14-17 searches in a frame, 220-260 ms). Dies with the room, so heal/level flushes cannot stale it.
+  struct ThetaMemo {
+    bool found;
+    std::vector<int> path;
+  };
+  std::unordered_map<uint64_t, ThetaMemo> theta_memo;
+  // ...and the search's own line-of-sight tests between node pairs (directed: a one-sided wall reads differently
+  // from its two sides). A search from a NEW start still re-tests the same corner-to-node lines its predecessors did.
+  std::unordered_map<uint64_t, bool> theta_los_memo;
 };
 
 RoadmapRoom *g_room[MAX_ROOMS] = {nullptr};
@@ -185,7 +217,223 @@ int g_checksum = 0;
 
 int g_build_serial = 1; // bumped on every flush — callers key caches of roadmap-derived answers to this
 
+// ---------------------------------------------------------------------------------------------------------------
+// SLICED BUILDS (2026-09-20). A roadmap was built inline the first time anything asked for it, on the server's one
+// thread: up to a million hull sweeps for a big room. Measured with [Perf]: Tower of Isengard froze for 8.6 s, 4.1 s,
+// 2.2 s, 1.6 s... as bots first entered rooms (every client sees all ships freeze, then snap), and DownTown's halls
+// (17,000 cells) froze the server for 100 s at a time — a joining client timed out before it ever got in.
+//
+// The build now runs on a worker that is a COROUTINE, not a concurrent thread: the main thread hands it the turn for
+// a few milliseconds per frame and BLOCKS until it hands the turn back, so exactly one of the two ever runs and the
+// engine (fvi and every global it touches) needs no locking. The worker parks only at SliceYield(), which sits in
+// front of this file's own sweep wrappers — never inside an engine call or another module's lazy cache. A build
+// writes to nothing but its own RoadmapRoom until the main thread publishes it, and until then Get() answers
+// nullptr, which every caller already treats as "no lattice here: use the skeleton".
+//
+// Three lanes, each its own parked worker: on-demand requests (a bot is in the room now), on-demand requests for
+// BIG rooms, and the level-start prewarm (every room, regions first). A lane is first-in first-out and a hall can
+// hold one for two minutes (DownTown rm31: 97 s of build), so the corridor a bot just entered must not queue
+// behind it — nor behind a 17,000-cell hall nobody is in. A level change cancels parked builds by
+// exception from the yield point, before the worker touches the old level's rooms again.
+// ---------------------------------------------------------------------------------------------------------------
+RoadmapRoom *Build(int room_idx);
+RoadmapRoom *BuildOutdoor(int region);
+
+struct BuildRequest {
+  bool outdoor;
+  int id;
+};
+struct SliceCancelled {};
+
+enum { LANE_DEMAND = 0, LANE_DEMAND_BIG = 1, LANE_PREWARM = 2, LANE_COUNT = 3 };
+#define BOT_ROADMAP_BIG_ROOM_CELLS                                                                                     \
+  3000 // candidate cells (bbox volume / pitch^3) past which a room builds in the big lane
+
+struct SliceLane {
+  bool worker_turn = false; // whose turn it is — the ONLY thing the two threads pass back and forth
+  bool cancel = false;
+  bool active = false; // a job is assigned and unpublished
+  bool done = false;
+  bool started = false; // worker thread created
+  BuildRequest job{false, -1};
+  RoadmapRoom *result = nullptr;
+  std::chrono::steady_clock::time_point deadline;
+  std::deque<BuildRequest> queue;
+  int slices = 0;
+  double cpu_ms = 0.0;
+  std::chrono::steady_clock::time_point job_t0;
+};
+
+// Heap, never freed: a parked worker may outlive static destruction at exit.
+struct Slicer {
+  std::mutex m;
+  std::condition_variable cv;
+  SliceLane lane[LANE_COUNT];
+};
+Slicer *g_slicer = nullptr;
+thread_local SliceLane *t_lane = nullptr; // set on a worker thread only; the main thread never yields
+bool g_room_queued[MAX_ROOMS] = {false};
+bool g_region_queued[MAX_BOA_TERRAIN_REGIONS] = {false};
+int g_prewarm_checksum = 0;
+int g_sync_depth = 0; // >0: tools ($nav dump) want the answer now — build inline as before
+
+// The worker's parking spot. Off a worker thread this is one thread_local read.
+void SliceYield() {
+  SliceLane *ln = t_lane;
+  if (!ln)
+    return;
+  if (!ln->cancel && std::chrono::steady_clock::now() < ln->deadline)
+    return;
+  std::unique_lock<std::mutex> lk(g_slicer->m);
+  if (!ln->cancel) {
+    ln->worker_turn = false;
+    g_slicer->cv.notify_all();
+    g_slicer->cv.wait(lk, [ln] { return ln->worker_turn; });
+  }
+  if (ln->cancel)
+    throw SliceCancelled{};
+}
+
+void SliceWorkerMain(SliceLane *ln) {
+  t_lane = ln;
+  std::unique_lock<std::mutex> lk(g_slicer->m);
+  for (;;) {
+    g_slicer->cv.wait(lk, [ln] { return ln->worker_turn; });
+    const BuildRequest job = ln->job;
+    lk.unlock();
+    RoadmapRoom *rr = nullptr;
+    try {
+      rr = job.outdoor ? BuildOutdoor(job.id) : Build(job.id);
+    } catch (const SliceCancelled &) {
+      rr = nullptr;
+    }
+    lk.lock();
+    ln->result = rr;
+    ln->done = true;
+    ln->worker_turn = false;
+    g_slicer->cv.notify_all();
+  }
+}
+
+// Main thread: give the lane's worker the turn until `budget_ms` from now (or its job ends), and wait for it.
+void SliceRun(SliceLane *ln, double budget_ms) {
+  BotPerfScope perf(BPERF_ROADMAP_BUILD);
+  const auto t0 = std::chrono::steady_clock::now();
+  std::unique_lock<std::mutex> lk(g_slicer->m);
+  if (!ln->started) {
+    ln->started = true;
+    std::thread(SliceWorkerMain, ln).detach();
+  }
+  ln->deadline = t0 + std::chrono::microseconds((long long)(budget_ms * 1000.0));
+  ln->worker_turn = true;
+  g_slicer->cv.notify_all();
+  g_slicer->cv.wait(lk, [ln] { return !ln->worker_turn; });
+  ln->slices++;
+  ln->cpu_ms += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+}
+
+void SlicePublish(SliceLane *ln) {
+  RoadmapRoom *rr = ln->result;
+  const BuildRequest job = ln->job;
+  ln->result = nullptr;
+  ln->active = ln->done = false;
+  (job.outdoor ? g_region_queued[job.id] : g_room_queued[job.id]) = false;
+  if (!rr)
+    return; // cancelled
+  RoadmapRoom *&slot = job.outdoor ? g_region[job.id] : g_room[job.id];
+  // A region's arrival changes terrain-leg costs that were cached as "no such leg" while it was pending; a room
+  // REPLACED by a heal rebuild invalidates what was derived from the old one. A room's first build invalidates
+  // nothing (no verdict is cached for a room without a roadmap).
+  if (job.outdoor || slot)
+    g_build_serial++;
+  delete slot;
+  slot = rr;
+  const double wall = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - ln->job_t0).count();
+  LOG_DEBUG.printf("BOT: roadmap %s %d built in %d slices: %.0f ms of build over %.0f ms (%s lane, %d nodes)",
+                   job.outdoor ? "region" : "room", job.id, ln->slices, ln->cpu_ms, wall,
+                   ln == &g_slicer->lane[LANE_PREWARM]  ? "prewarm"
+                   : ln == &g_slicer->lane[LANE_DEMAND] ? "demand"
+                                                        : "demand-big",
+                   (int)rr->node.size());
+}
+
+// Level change / flush: unwind every parked build NOW (the exception leaves from the yield point, so the worker
+// never looks at the old level again) and forget what was queued.
+void SliceCancelAll() {
+  if (!g_slicer)
+    return;
+  for (SliceLane &ln : g_slicer->lane) {
+    if (ln.active) {
+      if (!ln.done) { // parked at a yield point: resume it into the exception
+        ln.cancel = true;
+        SliceRun(&ln, 1e9);
+        ln.cancel = false;
+      }
+      delete ln.result;
+      ln.result = nullptr;
+      ln.active = ln.done = false;
+    }
+    ln.queue.clear();
+  }
+  for (bool &q : g_room_queued)
+    q = false;
+  for (bool &q : g_region_queued)
+    q = false;
+}
+
+void SliceRequest(bool outdoor, int id, int lane) {
+  if (!g_slicer)
+    g_slicer = new Slicer();
+  bool &queued = outdoor ? g_region_queued[id] : g_room_queued[id];
+  if (lane == LANE_DEMAND && !outdoor) { // regions stay in the fast lane: every outdoor leg waits on one
+    const vector ext = Rooms[id].max_xyz - Rooms[id].min_xyz;
+    const float pitch3 = BOT_ROADMAP_SPACING * BOT_ROADMAP_SPACING * BOT_ROADMAP_SPACING;
+    if (ext.x() * ext.y() * ext.z() / pitch3 > BOT_ROADMAP_BIG_ROOM_CELLS)
+      lane = LANE_DEMAND_BIG;
+  }
+  const bool on_demand = (lane != LANE_PREWARM);
+  SliceLane &demand = g_slicer->lane[lane];
+  if (queued) {
+    // Already waiting. A bot asking promotes a prewarm entry to the demand lane — unless the prewarm worker is
+    // already inside it, in which case it simply finishes there.
+    if (!on_demand)
+      return;
+    SliceLane &pre = g_slicer->lane[LANE_PREWARM];
+    for (auto it = pre.queue.begin(); it != pre.queue.end(); ++it)
+      if (it->outdoor == outdoor && it->id == id) {
+        pre.queue.erase(it);
+        demand.queue.push_back({outdoor, id});
+        break;
+      }
+    return;
+  }
+  queued = true;
+  g_slicer->lane[lane].queue.push_back({outdoor, id});
+}
+
+// Finish one specific build now (tools). True if it was in flight or queued and is published on return.
+bool SliceFinishNow(bool outdoor, int id) {
+  if (!g_slicer || !(outdoor ? g_region_queued[id] : g_room_queued[id]))
+    return false;
+  for (SliceLane &ln : g_slicer->lane) {
+    if (ln.active && ln.job.outdoor == outdoor && ln.job.id == id) {
+      while (!ln.done)
+        SliceRun(&ln, 1e9);
+      SlicePublish(&ln);
+      return true;
+    }
+    for (auto it = ln.queue.begin(); it != ln.queue.end(); ++it)
+      if (it->outdoor == outdoor && it->id == id) {
+        ln.queue.erase(it);
+        (outdoor ? g_region_queued[id] : g_room_queued[id]) = false;
+        return false; // only queued: the caller builds it inline
+      }
+  }
+  return false;
+}
+
 void FreeAll() {
+  SliceCancelAll();
   for (int i = 0; i < MAX_ROOMS; i++) {
     delete g_room[i];
     g_room[i] = nullptr;
@@ -241,6 +489,7 @@ bool HasEdge(const std::vector<int> &al, int v) {
 // sweeps (crossing sampler, pseudo-bnodes, the door search) were already FQ_BACKFACE; the roadmap was the one probe
 // that was not, and every layer must agree on what a wall is.
 bool RoadmapLOSr(const RoadmapRoom *rr, const vector &a, const vector &b, float radius) {
+  SliceYield();
   return rr->outdoor ? BotSegmentClearOutdoor(a, b, radius)
                      : BotSegmentClear(rr->probe_room, a, b, radius, nullptr, FQ_BACKFACE);
 }
@@ -251,6 +500,7 @@ bool RoadmapLOS(const RoadmapRoom *rr, const vector &a, const vector &b) {
 // Indoor collision trace with blocker detail for the bounded multi-bend component repair below.
 // The outdoor roadmap never enters that pass.
 bool RoadmapTrace(const RoadmapRoom *rr, const vector &a, const vector &b, fvi_info *hit_out) {
+  SliceYield();
   return !rr->outdoor && BotSegmentClear(rr->probe_room, a, b, BOT_ROADMAP_CLEARANCE, hit_out, FQ_BACKFACE);
 }
 
@@ -763,6 +1013,7 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     return false;
   };
   auto OutdoorLeg2 = [&](const vector &a, const vector &b, fvi_info *hit) {
+    SliceYield();
     if (!BotSegmentClearOutdoorHit(a, b, BOT_ROADMAP_CLEARANCE, hit))
       return false;
     if (InInteriorBox(a) || InInteriorBox(b))
@@ -1095,7 +1346,7 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     if (multi && N0 <= BOT_ROADMAP_BRIDGE_MAX_NODES) { // single-component graphs skip the O(n^2) scan
       std::vector<std::tuple<float, int, int>> cand;
       for (int i = 0; i < N0; i++)
-        for (int j = i + 1; j < N0; j++) {
+        for (int j = (SliceYield(), i + 1); j < N0; j++) {
           if (UFFind(uf, i) == UFFind(uf, j))
             continue;
           float d = Dist(rr->node[i], rr->node[j]);
@@ -1149,8 +1400,17 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
       for (int i = 0; i < N0; i++)
         grid[KeyOf(rr->node[i])].push_back(i);
 
+      // The gather is sweep-free and was the longest unsliceable stretch of a build (Isengard rm34, 12,000 nodes:
+      // 3.4 s in one slice, [Perf] 2026-09-20): a 220 u hash cell holds ~1300 lattice nodes, so every node looked
+      // at tens of thousands of neighbours with two union-find walks each. Roots are fixed during the gather, so
+      // they are read once; the worker may park between nodes; and the closest-first order comes off a heap, which
+      // pops the same sequence a full sort would without sorting the millions of pairs the attempt cap never reaches.
+      std::vector<int> root(N0);
+      for (int i = 0; i < N0; i++)
+        root[i] = UFFind(uf, i);
       std::vector<std::tuple<float, int, int>> cand;
       for (int i = 0; i < N0; i++) {
+        SliceYield();
         int bx = (int)std::floor(rr->node[i].x() / cell), by = (int)std::floor(rr->node[i].y() / cell),
             bz = (int)std::floor(rr->node[i].z() / cell);
         for (int dx = -1; dx <= 1; dx++)
@@ -1160,7 +1420,7 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
               if (it == grid.end())
                 continue;
               for (int j : it->second) {
-                if (j <= i || UFFind(uf, i) == UFFind(uf, j))
+                if (j <= i || root[i] == root[j])
                   continue;
                 float d = Dist(rr->node[i], rr->node[j]);
                 if (d <= BOT_ROADMAP_CORNER_LEN)
@@ -1168,12 +1428,16 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
               }
             }
       }
-      std::sort(cand.begin(), cand.end()); // closest pairs first (the natural gap mouths)
+      // closest pairs first (the natural gap mouths)
+      std::make_heap(cand.begin(), cand.end(), std::greater<std::tuple<float, int, int>>());
 
       int bridged = 0, attempts = 0;
-      for (auto &c : cand) {
+      while (!cand.empty()) {
         if (attempts >= BOT_ROADMAP_CORNER_MAX_ATTEMPTS)
           break;
+        std::pop_heap(cand.begin(), cand.end(), std::greater<std::tuple<float, int, int>>());
+        const std::tuple<float, int, int> c = cand.back();
+        cand.pop_back();
         int i = std::get<1>(c), j = std::get<2>(c);
         if (UFFind(uf, i) == UFFind(uf, j))
           continue; // merged transitively by an earlier bridge
@@ -1448,7 +1712,8 @@ int NearbyDoorObjectCount(int room_idx) {
 
 // Build the per-room volumetric roadmap (indoor). room_idx must be a valid interior room.
 RoadmapRoom *Build(int room_idx) {
-  RoadmapRoom *rr = new RoadmapRoom();
+  std::unique_ptr<RoadmapRoom> holder(new RoadmapRoom()); // a cancelled sliced build unwinds through here
+  RoadmapRoom *rr = holder.get();
   rr->outdoor = false;
   rr->probe_room = room_idx;
   room &rm = Rooms[room_idx];
@@ -1473,6 +1738,10 @@ RoadmapRoom *Build(int room_idx) {
   std::vector<int> uf;
   rr->portal_seed.assign(npc, -1);
   for (int p = 0; p < npc; p++) {
+    // Park BETWEEN doors, here and nowhere deeper: classifying a door fills other modules' lazy tables (the
+    // crossing sampler, ~12 ms a door — a 36-door hall was a 450 ms slice), and a worker parked INSIDE one of those
+    // would leave the main thread reading a half-written table.
+    SliceYield();
     int nr = rm.portals[p].croom;
     if (nr < 0 || nr > Highest_room_index || !Rooms[nr].used)
       continue;
@@ -1501,11 +1770,11 @@ RoadmapRoom *Build(int room_idx) {
   const int n_seed = (int)rr->node.size();
   if (n_seed == 0) {
     rr->degenerate = true;
-    return rr;
+    return holder.release();
   }
 
   GrowFromSeeds(rr, uf, n_seed, rm.min_xyz, rm.max_xyz, BOT_ROADMAP_SPACING, "room", room_idx);
-  return rr;
+  return holder.release();
 }
 
 // Build the per-terrain-region volumetric roadmap (outdoor, Stage 3). Seeds = the region's door approach
@@ -1514,7 +1783,8 @@ RoadmapRoom *Build(int room_idx) {
 // outdoor ceiling so growth can't climb into the sky. The terrain probe (RoadmapLOS, outdoor) rejects cells
 // in the ground / inside a structure / above the ceiling, so the lattice fills only the flyable shell.
 RoadmapRoom *BuildOutdoor(int region) {
-  RoadmapRoom *rr = new RoadmapRoom();
+  std::unique_ptr<RoadmapRoom> holder(new RoadmapRoom());
+  RoadmapRoom *rr = holder.get();
   rr->outdoor = true;
   int nconn = BotTerrainDoorCount(region); // Phase 1: our table, not BOA_connect
 
@@ -1522,6 +1792,7 @@ RoadmapRoom *BuildOutdoor(int region) {
   vector mn{}, mx{};
   bool have_bbox = false;
   for (int c = 0; c < nconn; c++) {
+    SliceYield(); // between doors only — see Build()
     int er = -1, ep = -1;
     if (!BotTerrainDoorAt(region, c, &er, &ep))
       continue;
@@ -1555,7 +1826,7 @@ RoadmapRoom *BuildOutdoor(int region) {
   const int n_seed = (int)rr->node.size();
   if (n_seed == 0 || !have_bbox) {
     rr->degenerate = true;
-    return rr;
+    return holder.release();
   }
 
   // Expand laterally into navigable airspace; cap Y under the outdoor ceiling (no sky-fly). The terrain
@@ -1574,7 +1845,7 @@ RoadmapRoom *BuildOutdoor(int region) {
     mn.y() = mx.y();
 
   GrowFromSeeds(rr, uf, n_seed, mn, mx, BOT_ROADMAP_OUTDOOR_SPACING, "region", region);
-  return rr;
+  return holder.release();
 }
 
 RoadmapRoom *Get(int room_idx) {
@@ -1600,13 +1871,27 @@ RoadmapRoom *Get(int room_idx) {
       opened = true;
     if (opened) {
       LOG_DEBUG.printf("BOT: roadmap room %d HEAL — glass/grate opened, rebuilding", room_idx);
-      delete g_room[room_idx];
-      g_room[room_idx] = nullptr;
-      g_build_serial++; // roadmap-derived caches (reach verdicts, troute door pairs) must refresh
+      if (g_sync_depth > 0) {
+        delete g_room[room_idx];
+        g_room[room_idx] = nullptr;
+        g_build_serial++; // roadmap-derived caches (reach verdicts, troute door pairs) must refresh
+      } else {
+        // Sliced: the old model keeps serving until its replacement is published (which bumps the serial).
+        rr->heal_next_check = FLT_MAX;
+        SliceRequest(false, room_idx, LANE_DEMAND);
+      }
     }
   }
-  if (!g_room[room_idx])
-    g_room[room_idx] = Build(room_idx);
+  if (!g_room[room_idx]) {
+    if (g_sync_depth > 0) {
+      if (!SliceFinishNow(false, room_idx)) {
+        BotPerfScope perf(BPERF_ROADMAP_BUILD);
+        g_room[room_idx] = Build(room_idx);
+      }
+    } else {
+      SliceRequest(false, room_idx, LANE_DEMAND); // nullptr until published: callers fall back to the skeleton
+    }
+  }
   return g_room[room_idx];
 }
 
@@ -1614,8 +1899,16 @@ RoadmapRoom *GetOutdoor(int region) {
   ResetIfStale();
   if (region < 0 || region >= MAX_BOA_TERRAIN_REGIONS)
     return nullptr;
-  if (!g_region[region])
-    g_region[region] = BuildOutdoor(region);
+  if (!g_region[region]) {
+    if (g_sync_depth > 0) {
+      if (!SliceFinishNow(true, region)) {
+        BotPerfScope perf(BPERF_ROADMAP_BUILD);
+        g_region[region] = BuildOutdoor(region);
+      }
+    } else {
+      SliceRequest(true, region, LANE_DEMAND);
+    }
+  }
   return g_region[region];
 }
 
@@ -1641,7 +1934,31 @@ RoadmapRoom *PeekCachedOutdoor(int region) {
 }
 
 // Lazy Theta* over the roadmap. Fills path (start..goal node positions). Returns false if no path.
+bool ThetaStarSearch(RoadmapRoom *rr, int start, int goal, std::vector<int> &path_out);
+
+#define BOT_ROADMAP_THETA_MEMO_MAX 4096 // entries per room/region before the memo is dropped and refilled
+#define BOT_ROADMAP_THETA_LOS_MEMO_MAX 262144
 bool ThetaStar(RoadmapRoom *rr, int start, int goal, std::vector<int> &path_out) {
+  BotPerfScope perf(BPERF_THETA);
+  const uint64_t key =
+      ((uint64_t)(Bot_curve_route_enabled ? 1 : 0) << 63) | ((uint64_t)(uint32_t)start << 31) | (uint32_t)goal;
+  auto it = rr->theta_memo.find(key);
+  if (it == rr->theta_memo.end()) {
+    if (rr->theta_memo.size() >= BOT_ROADMAP_THETA_MEMO_MAX)
+      rr->theta_memo.clear();
+    RoadmapRoom::ThetaMemo memo;
+    memo.found = ThetaStarSearch(rr, start, goal, memo.path);
+    if (!memo.found)
+      memo.path.clear();
+    it = rr->theta_memo.emplace(key, std::move(memo)).first;
+  }
+  if (!it->second.found)
+    return false;
+  path_out.insert(path_out.end(), it->second.path.begin(), it->second.path.end());
+  return true;
+}
+
+bool ThetaStarSearch(RoadmapRoom *rr, int start, int goal, std::vector<int> &path_out) {
   const int N = (int)rr->node.size();
   std::vector<float> g(N, FLT_MAX);
   std::vector<int> par(N, -1);
@@ -1670,7 +1987,19 @@ bool ThetaStar(RoadmapRoom *rr, int start, int goal, std::vector<int> &path_out)
     // a mound/bend is REJECTED — Theta* then keeps the winding node-by-node path (the corkscrew) instead of
     // collapsing it into an over-the-mound chord the engine can't fly at cruise. Edges stay at 6.7 below.
     float straighten_clear = Bot_curve_route_enabled ? BOT_ROADMAP_STRAIGHTEN_CLEARANCE : BOT_ROADMAP_CLEARANCE;
-    if (s != start && !RoadmapLOSr(rr, rr->node[par[s]], rr->node[s], straighten_clear)) {
+    bool parent_los = true;
+    if (s != start) {
+      const uint64_t lkey =
+          ((uint64_t)(Bot_curve_route_enabled ? 1 : 0) << 63) | ((uint64_t)(uint32_t)par[s] << 31) | (uint32_t)s;
+      auto lit = rr->theta_los_memo.find(lkey);
+      if (lit == rr->theta_los_memo.end()) {
+        if (rr->theta_los_memo.size() >= BOT_ROADMAP_THETA_LOS_MEMO_MAX)
+          rr->theta_los_memo.clear();
+        lit = rr->theta_los_memo.emplace(lkey, RoadmapLOSr(rr, rr->node[par[s]], rr->node[s], straighten_clear)).first;
+      }
+      parent_los = lit->second;
+    }
+    if (!parent_los) {
       float best = FLT_MAX;
       int bp = -1;
       for (int v : rr->adj[s])
@@ -1712,20 +2041,28 @@ bool ThetaStar(RoadmapRoom *rr, int start, int goal, std::vector<int> &path_out)
 }
 
 // Nearest roadmap node to pos with clear hull-LOS from pos (the bot's entry/exit to the graph).
+// Probed NEAREST FIRST, and the first clear node is the answer. The old scan walked the nodes in index order
+// (growth order — unrelated to distance) and swept every node closer than the best so far: a bot wedged where
+// no node is in hull view swept the ENTIRE lattice on every via tick — 19,800 sweeps, 80 ms, per tick, in
+// Isengard's 7600-cell hall ([Perf] 2026-09-20), exactly when the bot most needs the frame. Same answer, a
+// handful of sweeps; a point that sees none of its BOT_ROADMAP_ATTACH_PROBES nearest nodes (a ~70 u ball at
+// lattice pitch) is not on this lattice — NONE, and the caller's skeleton/ring fallback takes it, as before.
+#define BOT_ROADMAP_ATTACH_PROBES 256
 int NearestVisible(RoadmapRoom *rr, const vector &pos) {
-  int best = -1;
-  float best_d = FLT_MAX;
   const int N = (int)rr->node.size();
-  for (int i = 0; i < N; i++) {
-    float d = Dist(pos, rr->node[i]);
-    if (d >= best_d)
-      continue;
-    if (RoadmapLOS(rr, pos, rr->node[i])) {
-      best_d = d;
-      best = i;
-    }
-  }
-  return best;
+  std::vector<std::pair<float, int>> cand;
+  cand.reserve(N);
+  for (int i = 0; i < N; i++)
+    cand.emplace_back(Dist(pos, rr->node[i]), i);
+  const int probe_n = std::min(N, BOT_ROADMAP_ATTACH_PROBES);
+  if (probe_n < N)
+    std::partial_sort(cand.begin(), cand.begin() + probe_n, cand.end());
+  else
+    std::sort(cand.begin(), cand.end());
+  for (int i = 0; i < probe_n; i++)
+    if (RoadmapLOS(rr, pos, rr->node[cand[i].second]))
+      return cand[i].second;
+  return -1;
 }
 
 // Bounded graph-connect probe: nearest node to pos with a hull-clear line, testing only the
@@ -1785,6 +2122,7 @@ static void QvDiag(int room_or_region, const char *outcome) {
 }
 
 BotViaResult QueryVia(RoadmapRoom *rr, object *obj, int goal, vector *via_out) {
+  BotPerfScope perf(BPERF_QUERY_VIA);
   bool diag = !OBJECT_OUTSIDE(obj) && BotRoadmapRoomIsHard(obj->roomnum);
   int start = NearestVisible(rr, obj->pos);
   if (start < 0) {
@@ -1872,6 +2210,7 @@ void AddUnionEdge(std::vector<UnionNode> &graph, int a, int b, UnionEdgeKind kin
 bool EnsureUnionGraph(RoadmapRoom *rr, int room_idx, bool cached_only) {
   if (rr->union_built)
     return true;
+  BotPerfScope perf(BPERF_UNION_GRAPH);
   std::vector<UnionNode> graph;
   const int local_n = (int)rr->node.size();
   graph.resize(local_n);
@@ -1964,6 +2303,18 @@ bool ComposeUnionRoute(RoadmapRoom *rr, object *obj, const vector &target_pos, i
     return false;
   const std::vector<UnionNode> &graph = rr->union_graph;
   const float clearance = std::max(obj->size, BOT_ROADMAP_CLEARANCE);
+  int wide_class = -1; // this hull's slot in the per-edge verdict cache (none past four hull sizes: sweep uncached)
+  bool wide_clock_started = false, wide_spent = false;
+  std::chrono::steady_clock::time_point wide_deadline;
+  if (clearance > BOT_ROADMAP_CLEARANCE) {
+    for (int c = 0; c < (int)rr->union_wide_radius.size(); c++)
+      if (fabsf(rr->union_wide_radius[c] - clearance) < 0.01f)
+        wide_class = c;
+    if (wide_class < 0 && (int)rr->union_wide_radius.size() < BOT_UNION_WIDE_CLASSES) {
+      wide_class = (int)rr->union_wide_radius.size();
+      rr->union_wide_radius.push_back(clearance);
+    }
+  }
 
   BotComposedTerminal terminal = BOT_COMPOSE_TERMINAL_NONE;
   vector terminal_pos{};
@@ -2069,9 +2420,30 @@ bool ComposeUnionRoute(RoadmapRoom *rr, object *obj, const vector &target_pos, i
     }
 
     for (const UnionEdge &edge : graph[cur.node].adj) {
-      if (clearance > BOT_ROADMAP_CLEARANCE &&
-          !RoadmapLOSr(rr, graph[cur.node].pos, graph[edge.to].pos, clearance))
-        continue;
+      if (clearance > BOT_ROADMAP_CLEARANCE) {
+        int8_t uncached = -1;
+        int8_t &verdict = (wide_class >= 0) ? edge.wide[wide_class] : uncached;
+        if (verdict < 0) {
+          // The first searches through a big hall meet nothing but unknown edges (DownTown rm31: 111,764 fresh sweeps
+          // in ONE query at 0.3 ms each — a 32.7 s server frame). The budget is time, not a count, because a sweep
+          // costs 1 microsecond in a corridor and 300 in that hall. Past it an unknown edge is not taken THIS time and
+          // stays unknown; the re-issue a second later carries on from a fuller cache. Steady state is unchanged.
+          if (wide_class >= 0) { // (an uncached fifth hull size must never be starved)
+            if (!wide_clock_started) {
+              wide_clock_started = true;
+              wide_deadline = std::chrono::steady_clock::now() +
+                              std::chrono::microseconds((long long)(BOT_UNION_WIDE_MS_PER_QUERY * 1000.0));
+            } else if (!wide_spent) {
+              wide_spent = std::chrono::steady_clock::now() >= wide_deadline;
+            }
+            if (wide_spent)
+              continue;
+          }
+          verdict = RoadmapLOSr(rr, graph[cur.node].pos, graph[edge.to].pos, clearance) ? 1 : 0;
+        }
+        if (!verdict)
+          continue;
+      }
       float d = Dist(graph[cur.node].pos, graph[edge.to].pos);
       bool arterial = edge.kind == UNION_ARTERIAL;
       float next_cost = cost[cur.node] + d * (arterial ? 1.0f : kLocalCost);
@@ -2201,6 +2573,85 @@ bool BotComposeRoomRoute(object *obj, const vector &target_pos, int target_room,
 }
 
 void BotRoadmapInvalidate() { FreeAll(); }
+
+namespace {
+// Tools ($nav dump, the bot-free geometry gate) want the finished model in the same call, as before slicing.
+struct SyncBuildScope {
+  SyncBuildScope() { g_sync_depth++; }
+  ~SyncBuildScope() { g_sync_depth--; }
+};
+} // namespace
+
+// A new level has loaded (same mission looping or not): whatever a parked worker holds points into rooms that were
+// freed and reloaded. Unwind it from its parking spot — it touches nothing on the way out — and let the prewarm
+// queue again; finished roadmaps stay, and are flushed by the checksum test if the geometry actually changed.
+void BotRoadmapCancelBuilds() {
+  SliceCancelAll();
+  g_prewarm_checksum = 0;
+}
+
+// Once per server frame while bots are in the game. Runs the sliced builds for this frame's budget: the demand
+// lane first (a bot is waiting on that room), the level-start prewarm otherwise. With nobody to watch a hitch
+// the budget is most of the frame, so an empty server finishes its level well before the first player joins.
+void BotRoadmapPump(bool humans_present) {
+  ResetIfStale();
+  if (Highest_room_index < 0 || BOA_mine_checksum == 0)
+    return;
+  if (!g_slicer)
+    g_slicer = new Slicer();
+
+  if (g_prewarm_checksum != BOA_mine_checksum) {
+    g_prewarm_checksum = BOA_mine_checksum;
+    int queued = 0;
+    // (BotTerrainDoorCount builds the level's terrain-door table HERE, on the main thread, whole: a worker must
+    // never be the first to ask for it, because it could park half-way through.)
+    for (int rg = 0; rg < MAX_BOA_TERRAIN_REGIONS;
+         rg++) // regions first: the costliest, and every outdoor leg needs one
+      if (!g_region[rg] && BotTerrainDoorCount(rg) > 0) {
+        SliceRequest(true, rg, LANE_PREWARM);
+        queued++;
+      }
+    for (int r = 0; r <= Highest_room_index; r++)
+      if (Rooms[r].used && !(Rooms[r].flags & RF_EXTERNAL) && !g_room[r]) {
+        SliceRequest(false, r, LANE_PREWARM);
+        queued++;
+      }
+    LOG_INFO.printf("[Roadmap] level prewarm queued: %d roadmaps (sliced, %.0f ms/frame with players, %.0f ms without)",
+                    queued, (double)BOT_ROADMAP_SLICE_MS, (double)BOT_ROADMAP_SLICE_IDLE_MS);
+  }
+
+  const double budget_ms = humans_present ? BOT_ROADMAP_SLICE_MS : BOT_ROADMAP_SLICE_IDLE_MS;
+  const auto t_end = std::chrono::steady_clock::now() + std::chrono::microseconds((long long)(budget_ms * 1000.0));
+  for (;;) {
+    const double left_ms = std::chrono::duration<double, std::milli>(t_end - std::chrono::steady_clock::now()).count();
+    if (left_ms < 0.2)
+      break;
+    SliceLane *ln = nullptr;
+    for (SliceLane &cand : g_slicer->lane)
+      if (cand.active || !cand.queue.empty()) {
+        ln = &cand;
+        break;
+      }
+    if (!ln)
+      break;
+    if (!ln->active) {
+      ln->job = ln->queue.front();
+      ln->queue.pop_front();
+      ln->active = true;
+      ln->done = false;
+      ln->slices = 0;
+      ln->cpu_ms = 0.0;
+      ln->job_t0 = std::chrono::steady_clock::now();
+    }
+    SliceRun(ln, left_ms);
+    if (!ln->done)
+      break; // the budget ran out mid-build; it resumes next frame
+    const bool was_prewarm = (ln == &g_slicer->lane[LANE_PREWARM]);
+    SlicePublish(ln);
+    if (was_prewarm && ln->queue.empty())
+      LOG_INFO.printf("[Roadmap] level prewarm complete");
+  }
+}
 
 int BotRoadmapSerial() { return g_build_serial; }
 
@@ -2339,6 +2790,7 @@ int BotRoadmapDumpRoom(int room_idx, vector *pos_out, int *comp_out, int max_nod
     *comp_count_out = 0;
   if (degenerate_out)
     *degenerate_out = false;
+  SyncBuildScope sync;
   RoadmapRoom *rr = Get(room_idx);
   if (!rr)
     return 0;
@@ -2495,6 +2947,7 @@ int BotRoadmapDumpRegion(int region, vector *pos_out, int *comp_out, int max_nod
     *comp_count_out = 0;
   if (degenerate_out)
     *degenerate_out = false;
+  SyncBuildScope sync;
   RoadmapRoom *rr = GetOutdoor(region);
   if (!rr)
     return 0;
