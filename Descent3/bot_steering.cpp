@@ -1967,9 +1967,8 @@ int BotEntryPortalIndex(object *obj, int wp_room, int goal_room) {
       // 14 NOT-CROSSED rm19 -> rm9 with `now rm13`). Equal totals are equal trips; the one that ends nearer the exit
       // is the one that does not turn the bot around. With no onward leg, or equal ones (Isengard's parallel slots),
       // nearest still decides.
-      const float tie = BOT_AB_0915_SIGMA ? std::max(8.0f, 0.05f * std::min(d, best_d)) : -1.0f;
-      const bool better = (tie < 0.0f && d < best_d) || (d < best_d - tie) ||
-                          (fabsf(d - best_d) <= tie && onward < best_onward - 1.0f) ||
+      const float tie = std::max(8.0f, 0.05f * std::min(d, best_d));
+      const bool better = (d < best_d - tie) || (fabsf(d - best_d) <= tie && onward < best_onward - 1.0f) ||
                           (fabsf(d - best_d) <= tie && fabsf(onward - best_onward) <= 1.0f && d < best_d);
       if (best_p < 0 || better) {
         best_d = d;

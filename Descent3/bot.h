@@ -121,7 +121,6 @@
 // Battery indices use *_INDEX constants from weapon_external.h:
 //   VAUSS_INDEX=1, MASSDRIVER_INDEX=6, OMEGA_INDEX=9, etc.
 #define BOT_OMEGA_MAX_DIST 35.0f        // Omega Cannon: leech beam, melee-range only
-#define BOT_MASS_DRIVER_MIN_DIST 100.0f // Mass Driver: hitscan sniper, prefer at distance
 
 // EXPLORE state room roaming (Phase 3.9, overhauled Phase 4.0)
 // Phase 4.0: bots pick destinations from across the entire map via BOA validation,
@@ -183,7 +182,6 @@
 //   COMBAT interrupt  — breaks off a live fight; tight radius, only game-changers
 //   HUNT divert       — detours mid-hunt; medium radius, any upgrade worth grabbing
 #define BOT_POWERUP_INTERRUPT_RADIUS 150.0f // radius to interrupt active combat for a pickup
-#define BOT_POWERUP_INTERRUPT_PRIORITY 15   // (legacy — kept for reference; logic is now name-based)
 #define BOT_POWERUP_DIVERT_RADIUS 275.0f    // radius for a bot in HUNT to divert and grab a pickup
 #define BOT_POWERUP_DIVERT_PRIORITY 4       // minimum priority to trigger HUNT divert (any weapon worth grabbing)
 #define BOT_WEAK_DIVERT_PRIORITY 4          // WEAK bots divert for any weapon at all
@@ -210,9 +208,6 @@
 #define BOT_CLOSERANGE_TURNRATE 65535 // near-instant tracking at point blank
 #define BOT_MIDRANGE_TURNRATE 40000   // fast dogfight tracking
 #define BOT_LONGRANGE_TURNRATE 26000  // snappier long-range aim
-
-// AB burst toward distant weapon pickups in EXPLORE
-#define BOT_PICKUP_AB_DIST 250.0f
 
 // Countermeasure / chaff deployment
 // Flares (battery 20) spawn GENOBJ_CHAFFCHUNK robot objects that attract homing missiles.
@@ -879,9 +874,5 @@ void BotUISettingsInit();
 // Spawn bots from UI roster data (client-hosted games).
 // Called from MultiStartNewLevel(). Does nothing if bot_count <= 0 or already spawned.
 void BotSpawnFromUI();
-
-// Returns the ship alias string for a ship index (e.g., "Pyro-GL", "Phoenix").
-// Returns "Pyro-GL" if the index is invalid.
-const char *BotShipAliasFromIndex(int ship_index);
 
 #endif // BOT_H

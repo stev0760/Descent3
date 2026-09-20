@@ -314,9 +314,6 @@ int BotGetNearestHoardGoalRoom(int bot_index);
 // Returns the cached Object_info ID for Hoard orbs, or -1 if not in Hoard mode.
 int BotGetHoardOrbId();
 
-// Returns the cached Object_info ID for the Entropy virus, or -1 if not in Entropy mode.
-int BotGetEntropyVirusId();
-
 // Mirrored Entropy carry capacity for any player slot (2 x kills-since-death). The DLL's real
 // counter is not exported; ours is a poll-based mirror that under-counts in rare same-poll
 // kill+death races and self-corrects on the next death. See ENTROPY_MODE.md §2.2.

@@ -698,8 +698,6 @@ static void BotPollEntropy() {
   }
 }
 
-int BotGetEntropyVirusId() { return Obj_entropy_virus_id; }
-
 int BotEntropyCarryCapacity(int slot) {
   if (slot < 0 || slot >= BOT_MAX_PLAYERS)
     return 0;
@@ -1639,10 +1637,10 @@ static int BotGetObjectiveRoom_CTF(int bot_index) {
     // cockpit "lost... flying around aimlessly in the bunker". The routed goal already knows what to do with a goal
     // that has no interior route: BotTrouteRedirect plans exit door -> region lattice -> entry door, and since the
     // 2026-09-19 outdoor pass those plans execute. So rank by our router where a route exists, and only among rooms
-    // no interior route reaches fall back to the distance pricing the outdoor branch uses. (Tried on 2026-09-17 as
-    // 05f620dc, before terrain plans executed, and dropped for what it cost the bedlam set; gated on a same-day
-    // bedlam pair again.)
-    if (BOT_AB_0915_SIGMA && best_room < 0 && far_room >= 0 && bot_room >= 0) {
+    // no interior route reaches fall back to the distance pricing the outdoor branch uses. (An earlier, broader
+    // version cost captures on the bedlam maps before terrain plans executed; this one fires only when no flag room
+    // is reachable indoors, and its bedlam regression pair read flat — BOTS_DEVEL.md 2026-09-20.)
+    if (best_room < 0 && far_room >= 0 && bot_room >= 0) {
       best_room = far_room;
       best_cost = far_dist;
       static float Attack_far_log_t[MAX_BOTS];
@@ -1678,7 +1676,6 @@ static int BotGetObjectiveRoom_CTF(int bot_index) {
       return Bot_objective.flag_room[my_team];
     // Fumble rush: enemy flag dropped + our flag safe = defenders join the pile
     if (Bot_objective.flag_state[my_team] == FLAG_AT_HOME) {
-      object *obj = &Objects[Players[slot].objnum];
       for (int t = 0; t < num_teams; t++) {
         if (t == my_team)
           continue;

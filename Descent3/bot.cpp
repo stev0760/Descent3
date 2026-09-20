@@ -9764,9 +9764,3 @@ static void BotDoUISpawn() {
       LOG_WARNING.printf("BOT UI: Failed to spawn bot '%s'", name);
   }
 }
-
-const char *BotShipAliasFromIndex(int ship_index) {
-  if (ship_index < 0 || ship_index >= MAX_SHIPS || !Ships[ship_index].used)
-    return "Pyro-GL";
-  return Ships[ship_index].name;
-}

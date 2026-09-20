@@ -53,7 +53,6 @@ struct fvi_info;
 // 6.7 to match the roadmap's BOT_ROADMAP_CLEARANCE (hull 6.676 + sliver); a bridge that no longer clears
 // simply doesn't form (fail-closed) rather than routing a bot into a gap it jams in.
 #define BOT_PSEUDO_BNODE_RADIUS 6.7f // hull-fit clearance radius for pseudo-bnode edges (== BOT_ROADMAP_CLEARANCE)
-#define BOT_PSEUDO_BNODE_OFFSET 8.0f // push portal offset-nodes this far off the portal face into the room
 #define BOT_SKEL_MAX_NODES 64        // skeleton node cap per room (portal nodes + pseudo-bnodes); 64-bit edge masks
 
 // Collision-guided bridge search (0.9.12 skeleton rework — SKELETON_REWORK.md). Replaces the old
@@ -164,11 +163,6 @@ bool BotSegmentClear(int startroom, const vector &a, const vector &b, float radi
 // RF_EXTERNAL room can't start an fvi trace, but the terrain cell can) and enables the ceiling check,
 // so it rejects legs into the ground, into a structure, OR up over the invisible outdoor ceiling.
 // The volumetric roadmap uses this for terrain-region node growth, edge probing, and Theta* LOS.
-// 0.9.15 gate switch, BUILD-TIME ONLY (not a toggle; delete once the gate is read): 1 = the two Sigma Base changes
-// (attack errand with no interior route; entry-door near-tie goes to the door nearer the exit), 0 = the control arm.
-#ifndef BOT_AB_0915_SIGMA
-#define BOT_AB_0915_SIGMA 1
-#endif
 bool BotSegmentClearOutdoor(const vector &a, const vector &b, float radius);
 // Same sweep with the hit record (hit_out->hit_room = the room the END point is in, or a terrain cell).
 bool BotSegmentClearOutdoorHit(const vector &a, const vector &b, float radius, fvi_info *hit_out);

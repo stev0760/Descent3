@@ -114,7 +114,6 @@ extern bool Bot_roadmap_corner_enabled; // $gridbridge — corner-rounding compo
 // percentage is not a sensitive knob.
 #define BOT_ROADMAP_ROUTABLE_MIN_CELLS 8
 #define BOT_ROADMAP_ROUTABLE_MIN_PAIRPCT 75
-#define BOT_ROADMAP_COMPLEX_MIN_LATTICE 24 // retired with `complex`; removed in the next cleanup pass
 
 // Stage 2 ($gridroute, prototype): route the in-room leg of objective/carrier nav over the volumetric grid
 // PROACTIVELY, not just reactively when a straight line is blocked. Today the router (BotSetRoutedGoal) aims

@@ -2648,8 +2648,9 @@ void BotRoadmapPump(bool humans_present) {
       break; // the budget ran out mid-build; it resumes next frame
     const bool was_prewarm = (ln == &g_slicer->lane[LANE_PREWARM]);
     SlicePublish(ln);
-    if (was_prewarm && ln->queue.empty())
+    if (was_prewarm && ln->queue.empty()) {
       LOG_INFO.printf("[Roadmap] level prewarm complete");
+    }
   }
 }
 
