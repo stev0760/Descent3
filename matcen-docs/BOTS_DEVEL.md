@@ -1,7 +1,8 @@
 
 # Multiplayer Bot System — Development Notes
 
-**Status:** Matcen **0.9.14 — RELEASED 2026-09-18** (development continues on 0.9.15-dev).
+**Status:** Matcen **0.9.15 — RELEASED 2026-09-20** (outdoor navigation, sliced roadmap builds, the frame-time
+instrument, Sigma Base's attack errand; entries 2026-09-19 and 2026-09-20 below). Previous: 0.9.14, 2026-09-18.
 The 0.9.14 line: telemetry, the aim-layer fixes, and glass routing
 on top of the 0.9.13 release. The instruments: via-fail blocker identity + tier, objective-arrival
 item distance and aim, hop-commit crossed/not-crossed, item-reach graph-vs-LOS. The aim fixes:

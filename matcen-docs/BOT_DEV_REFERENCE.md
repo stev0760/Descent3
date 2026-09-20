@@ -7,7 +7,7 @@ Current implementation status is in `BOTS_DEVEL.md`. Physics model reference is 
 
 ## Current Status
 
-**0.9.15-dev, the outdoor pass** (2026-09-19, branch `fix/outdoor-0915`, in soak). Seven changes, each
+**0.9.15 (released 2026-09-20), the outdoor pass** (2026-09-19). Seven changes, each
 its own commit; read NAVIGATION.md §7.0-CURRENT and BOTS_DEVEL 2026-09-19 before touching any of it:
 
 1. **The outdoor region lattice never admits a cell under solid terrain.** Terrain collides from above

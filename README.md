@@ -14,9 +14,9 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 **No client modifications are required.** Retail D3 v1.5 clients and compatible engines (PiccuEngine) connect and play against bots as-is. A server with no bot configuration behaves exactly like vanilla D3.
 
-**Current release: 0.9.14** (2026-09-18), the portal-model release: a door is a validated crossing rather than a point, walls are never doors to the route network, shattered glass becomes a doorway at runtime, and a bot only hunts what it can reach. It was flight-tested on the fellowship, bedlam, abend2, dementia, CHAOS, RAGE, Sigma Base and Facing Worlds maps without a crash. It is not a "navigation solved" release; see [Known limitations](#known-limitations).
+**Current release: 0.9.15** (2026-09-20), the outdoor and smooth-server release. Outdoors: the route network stays above ground, entering a building is one routine, a route indoors stays indoors, and an errand finishes at the flag rather than in its doorway, so the fellowship maps (Town of Bree, Tower of Isengard, Doors of Moria) play both ways. Server: it no longer freezes while it prepares a room's navigation data, which was the cause of bots rubber-banding, of a huge map (HAVOC's DownTown) refusing joins, and of D3 Pyrodeck failing to read the server version; and Sigma Base attackers head for the enemy bunker instead of wandering their own. Flight-tested on Isengard, DownTown, Sigma Base and Batteries Included, and regression-checked on the four bedlam maps. It is not a "navigation solved" release; see [Known limitations](#known-limitations). A build whose version ends in `-dev` is a test build, not a release.
 
-**In test: 0.9.15-dev.** Outdoor navigation: the outdoor route network stays above ground, entering a building is one routine, a route indoors stays indoors, and an errand finishes at the flag rather than in its doorway. That work passed its flight test on 2026-09-20; the fellowship maps (Town of Bree, Tower of Isengard, Doors of Moria) now play both ways. On top of it, the server no longer freezes while it prepares a room's navigation data, which was the cause of bots rubber-banding, of a huge map (HAVOC's DownTown) refusing joins, and of D3 Pyrodeck failing to read the server version; and Sigma Base attackers head for the enemy bunker instead of wandering their own. A `-dev` build is a test build, not a release.
+**Previous release: 0.9.14** (2026-09-18), the portal-model release: a door is a validated crossing rather than a point, walls are never doors to the route network, shattered glass becomes a doorway at runtime, and a bot only hunts what it can reach.
 
 What changed in each release is in the [release notes](matcen-docs/CHANGELOG.md). What is left, and in what order, is in [`matcen-docs/PLAN.md`](matcen-docs/PLAN.md).
 
@@ -93,7 +93,7 @@ Available in the dedicated server console or via remote telnet:
 
 ### Roadmap
 
-*   **0.9.15, every map smooth** (in test): the remaining per-map problems, each fix soaked and compared before it lands. Open on this line: two-bunker canyon maps (Sigma Base), the toroid maps (Rim, abend2), very large maps (HAVOC's DownTown), dropped-flag reaction time, a co-op revisit, and consolidating the navigation code so one layer decides where a bot aims.
+*   **0.9.16 onward, every map smooth**: the remaining per-map problems, each fix soaked and compared before it lands. Open on this line: two-bunker canyon maps (Sigma Base), the toroid maps (Rim, abend2), very large maps (HAVOC's DownTown), dropped-flag reaction time, a co-op revisit, and consolidating the navigation code so one layer decides where a bot aims.
 *   **0.10, the release package**: bot management and feel, the command surface and menus, and packaging for a community release.
 *   **Dynamic team rebalancing**: rebalance bot teams as humans join and leave. Pre-assignment works today.
 
@@ -108,7 +108,7 @@ Co-op companions (bots that fly the campaign on your wing and take `!goal` / `!h
 *   **Entropy and co-op**: Entropy bots have not completed a room takeover in the recorded tests. Co-op still has reported bot-freezing and client-compatibility problems and was not validated by the latest test set.
 *   **Thin divider rooms**: a few rooms with paper-thin disconnected sections remain hard to route across; a densification pass is planned.
 *   **Tight-doorway precision**: doorways barely wider than the ship are routable, but the engine path-follower can be clumsy threading them.
-*   **Outdoor edges**: bots can ground-pin against steep hillsides on rough terrain, and a decorative concave alcove (a doorway-shaped recess with no real door) can trap a flag carrier. Much of the hillside class turned out to be an outdoor route network that had grown beneath the terrain; the fix is in test on 0.9.15-dev (ground pins over three Isengard rounds: 308 to 15).
+*   **Outdoor edges**: bots can ground-pin against steep hillsides on rough terrain, and a decorative concave alcove (a doorway-shaped recess with no real door) can trap a flag carrier. Much of the hillside class turned out to be an outdoor route network that had grown beneath the terrain, fixed in 0.9.15 (ground pins over three Isengard rounds: 308 to 15).
 *   **Decoration powerups**: items sealed inside non-enterable scenery are occasionally chased briefly, then retired level-wide by an evidence-based backstop, so the behavior corrects itself without operator action.
 *   **Multi-flag CTF**: in 4-team CTF, bots don't deliberately hoard multiple flags for the bonus cash-in; they only do it opportunistically.
 *   **Coverage and map balance**: usable navigation on arbitrary maps is the goal, including user-made levels; remaining coverage gaps are limitations, not exemptions. Roughly balanced scoring is expected on designed-symmetric CTF maps with equal-difficulty bots, not on genuinely asymmetric maps. Even scoring alone does not prove coverage is adequate.

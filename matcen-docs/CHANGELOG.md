@@ -7,14 +7,16 @@ live navigation status is in [NAVIGATION.md](NAVIGATION.md) §7.0.
 Versioning: `0.8.x` = feature releases; `0.9.x` = the navigation-milestone series.
 A `-dev` suffix marks an in-test build that has not yet passed its validation gate.
 
-## [0.9.15-dev] - in test
+## [0.9.15] - 2026-09-20
 
-*Development series. The grind: every remaining map problem, fix by fix, each one soaked and compared
-before it lands. Still open on this line — two-bunker canyon maps (Sigma Base), the toroid maps,
-dropped-flag reaction time, and the rest of the navigation code consolidation. Do not run this as a
-release.*
+*The outdoor and smooth-server release. Bots hold their own on maps where the fight crosses open ground (Town of
+Bree, Tower of Isengard, Doors of Moria), and the server no longer freezes while it prepares navigation data — the
+cause of bots rubber-banding, of a huge map refusing joins, and of D3 Pyrodeck failing to read the server version.
+Flight-tested on Isengard, DownTown, Sigma Base and Batteries Included, and checked against the four bedlam maps over
+twelve rounds a side. Still open, and carried to 0.9.16: one team's hub on Sigma Base, the toroid maps (Rim, abend2),
+wandering on very large maps (DownTown), dropped-flag reaction time, and the navigation code consolidation.*
 
-Added 2026-09-20, after the first flight test of the work below:
+**The server stays smooth:**
 
 - **Bots no longer freeze and snap back (rubber-banding), and the server stays responsive on huge maps.** The server
   works out how each room can be flown the first time a bot needs it, and it used to do that in one go, on the same
@@ -46,7 +48,7 @@ Added 2026-09-20, after the first flight test of the work below:
   twelve rounds a side: on the two maps where it applies captures held (61 to 66) and bots grab the flag a third more
   often; on the other two it never triggers.
 
-In test on branch `fix/outdoor-0915` (2026-09-19), measured against the same roster on the same day:
+**Outdoor navigation** (measured against the same roster on the same day):
 
 - **Bots no longer strand in the valley outside Tower of Isengard.** Most of their outdoor route network had grown
   *under the ground* — the terrain only stops a ship from above, so the network spread beneath it and then linked back up

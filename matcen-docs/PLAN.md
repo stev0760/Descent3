@@ -40,6 +40,11 @@ without flag activity raises a reach concern but does not identify a coverage de
 
 ## 2. Where the project actually is (history; current status in the block immediately below)
 
+> **2026-09-20: `0.9.15` SHIPPED** — the outdoor pass, sliced roadmap builds (the rubber-banding / DownTown join /
+> Pyrodeck `$servercaps` fix) and Sigma Base's attack errand; flight-validated by the operator on Isengard, DownTown,
+> Sigma Base and Batteries Included, bedlam regression pair flat. The per-map grind §4.0 describes continues on 0.9.16
+> (queue: §4.0.1 Q8-Q12; first up Q12, Sigma Base Red's hub exit, then DownTown rm110).
+>
 > **2026-09-18: `0.9.14` SHIPPED** — flight-validated by the operator (fellowship rotation + Animal House:
 > Isengard's interior pins gone, Animal House stuck-free) and released from `9b19a5d5`. Work continues on
 > 0.9.15-dev. The history below describes the candidate as it stood pre-release.

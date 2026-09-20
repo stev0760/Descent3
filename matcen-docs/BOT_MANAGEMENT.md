@@ -1,8 +1,10 @@
 # Phase 5: Bot Management & Server Administration
 
 **Status:** Phase 5.5 complete (shipped; this document is the Phase 5 design and implementation record)
-**Current fork:** Matcen 0.9.14 (released 2026-09-18). This navigation work does not change bot-management
-behavior, configuration, or console commands. `$servercaps` remains numeric-only (`fork_version=0.9.14`).
+**Current fork:** Matcen 0.9.15 (released 2026-09-20). This navigation and server-performance work does not change
+bot-management behavior, configuration, or console commands. `$servercaps` remains numeric-only
+(`fork_version=0.9.15`), and since 0.9.15 the server answers it within a frame even during level start (it used to
+stall for seconds while navigation data was built; D3_PYRODECK_SPEC.md has the timing note).
 abend2's residual navigation imbalance is accepted for now; wider validation uses Nysa and Batteries
 Included on the existing build. No roster-management change accompanies that testing.
 For scoring-symmetry tests, verify all bots use the same difficulty. The expectation applies to

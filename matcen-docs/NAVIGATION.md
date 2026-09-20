@@ -6,7 +6,7 @@
 > validated, and folded in as §3.5–§3.6 + §8 History; original in git history). Deep engine research
 > lives in `PATHFINDING_CODEBASE_EXPLORE.md`; per-frame field/constant detail in `BOT_DEV_REFERENCE.md`.
 
-**Status:** Matcen 0.9.14 (released 2026-09-18); development continues on 0.9.15-dev. Telemetry plus the first guided fix. Four additive log
+**Status:** Matcen 0.9.15 (released 2026-09-20; the live snapshot is §7.0-CURRENT). Background from the 0.9.14 line: Telemetry plus the first guided fix. Four additive log
 lines name what blocked a go-around, what the objective arrival actually saw, whether a committed
 doorway was crossed, and whether item reachability agrees with raw line-of-sight; the fix makes
 single-exit rooms aim at their one door and filters the multi-door aim set through the router's own
