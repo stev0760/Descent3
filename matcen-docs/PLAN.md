@@ -822,6 +822,51 @@ reaches the enemy bunker — so the map has advanced to its next wall, which is 
 full arms at ~16:30 first; then render room 22 and trace that carrier's legs before proposing anything. Do not treat
 the 89 as a regression — compare hard pins (14 → 1). *Risk:* none to look.
 
+**Q7 update, 2026-09-20 — the mechanism, and a fix in its gate.** The operator's flight ("bots get lost and give up in
+the bunker") named it: an attacker INSIDE its own bunker has no interior route to the only enemy flag there is, the
+router prices it 1e30, and the attack branch returned no objective at all — 105 explore errands against 19 objective in
+ten minutes, two of five attackers never issued one. *Built, behind the build-time constant `BOT_AB_0915_SIGMA`:* (A) a
+distance-priced fallback among rooms no interior route reaches (the routed goal's terrain plan owns the trip — the
+2026-09-17 idea, re-landed now that terrain plans execute); (B) an entry-door near-tie goes to the door nearer the exit
+(rm19's gallery arms and the hub rm13 are one straight corridor, so the two-hop totals tie by construction and the door
+behind the bot won). *Gate:* bedlam 4-team 12 + 12 rounds, same hour, control `Descent3-ctl9` vs `Descent3-sig9`
+(`<lab>/gate-20260920/`). Pass = per-map caps/round, conversion and deaths flat; on a fail set the constant to 0 and the
+rest of 0.9.15 ships without it. Either way delete the constant afterwards. The carry home (above) is still the next wall.
+
+**Q8 — the skeleton's first-use build is the largest stall left.** *Symptom:* 60-280 ms per room on first use (Debug),
+0.9 s in a DownTown hall; once per room per level. *Why it was not sliced with the roadmap:* `SkelBuild` writes the
+global `skel_*` arrays as it goes and marks the room built at the end; a worker parked inside it would hand the main
+thread a half-built skeleton. *Proposal:* build into a private struct and commit at the end, then queue it in the prewarm
+lane ahead of the room's roadmap. *Risk:* low once it builds privately; the commit is a copy.
+
+**Q9 — fly and soak an optimised build.** The binary the operator flies and every soak runs is `-O0 -g`. `RelWithDebInfo`
+builds and runs; if its log carries the same telemetry, flights and soaks lose nothing by switching and the lag a player
+feels is the lag a release has. *Proposal:* read the 2026-09-20 `Descent3-opt9` Isengard run against the Debug run of the
+same code; if telemetry is intact, make it the flight binary. *Risk:* `ASSERT`s compile out — keep Debug for crash hunts.
+
+**Q10 — three growth attempts per room.** The lattice is grown at three grid phases and the fullest kept, then the winner
+is rebuilt: up to four full growths. The phase search exists for SMALL rooms (the same room read 123 or 6 cells on a
+10 u seed move); in a 10,000-cell hall it buys nothing and costs 4x (DownTown rm31: 97 s of build). *Proposal:* skip
+phases 1-2 when phase 0 yields more than ~1,500 cells. *Risk:* changes which phase validated rooms keep (Isengard rm36
+keeps phase 1 today) — a geometry-gate and an Isengard arm before it lands. Sliced builds made this cost invisible to
+play, which is why it is queued and not built.
+
+**Q11 — DownTown class: a sweep costs 0.3 ms in a hall with thousands of faces.** Every per-query sweep budget counted in
+sweeps is 100x dearer there (attach probes 128 + 128, the 256-probe nearest-visible cap). The wide-hull fill is budgeted
+in time for this reason. *Proposal:* time-budget the attach probes the same way if DownTown-class maps matter after a
+flight. *Risk:* none to measure first — `[Perf]` names the subsystem.
+
+**Q12 — the via layers pick their own door into the next room.** *Symptom (Sigma Base, Red, 2026-09-20 smoke):* rm19 -> rm9
+crossed 6, not crossed 35, with attackers holding a valid terrain plan the whole time. *Evidence:* from inside the hub
+rm13 the router's entry pick is the west door every time, and the composed-route chain still ends at the east door, the
+nearest one into "room 19" (`AIMSPLIT 54.3`, then `chain complete rm13 -> rm19` and the next hop starts from the east arm
+again). `AimExitMask(room, next_room)` — shared by the composer's goal set, `BotRoadmapFindVia` and `BotSkelBuildChain` —
+admits every door into the next room and the search stops at the nearest; none of them is told where the route goes
+AFTER the next room. *Proposal:* when the route continues past the next room, narrow that exit set to the door
+`BotEntryPortalIndex` chose (one mind: the router's door is the via layers' door); keep the full set when the next room is
+the destination. *Risk:* it touches the aim of every multi-door room-to-room transition on every map — its own gate
+(bedlam + fellowship), not a rider on a release. Expected side effect: fewer `AIMSPLIT` lines everywhere.
+
 **Q6 — instrument defect.** `analyze_bot_log.py`'s Kills column matches one of the dozen death-message
 wordings the game prints and undercounts roughly 15×, so it cannot rank arms. The 2026-09-19 tables use
 `BotRespawn` lines instead. *Proposal:* widen the pattern, or drop the column and count respawns. *Risk:*

@@ -104,6 +104,13 @@ The Telnet implementation uses a **command queue with timeout-based response col
 
 `$servercaps` is an exception — it is single-line and collected on the first `\n` after the command echo.
 
+**Timing (2026-09-20).** The server prints the echo and the reply in the same call, so nothing can interleave between
+them; what CAN happen is a late reply. The console is serviced once per server frame, and builds before Matcen 0.9.15
+could stop running frames for seconds at a level start (9.5 s observed on Tower of Isengard, 100 s on HAVOC's DownTown)
+while navigation data was built — a probe sent in that window timed out and the version was never read. 0.9.15 removes
+the stalls (median reply 11 ms on DownTown), but the client should still not treat one timeout as "vanilla server":
+retry the probe a few times over ~30 s before disabling fork features, and accept a `SERVERCAPS` line whenever it arrives.
+
 ### 3.4 Response Parsing
 
 All console output parsing is handled by a `ResponseParser` module, separate from transport and UI logic. Parsers are registered per command and convert raw text into structured objects.

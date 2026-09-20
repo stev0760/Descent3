@@ -709,7 +709,30 @@ overnight log. A full verbosity-tier + event-vocabulary consolidation is registe
 
 ## 7. Open problems (roadmap)
 
-### 7.0-CURRENT Outdoors: the lattice above ground, one dispatch, and the errand's last leg — 2026-09-19 (branch `fix/outdoor-0915` = `d57755b1`, in soak)
+### 7.0-CURRENT Roadmaps build in slices; the via layers still pick their own door — 2026-09-20 (branch `fix/outdoor-0915`, in gate)
+
+Not a routing change, but it changes WHEN the routing substrate exists, so it lives here. Full record: `BOTS_DEVEL.md`
+2026-09-20; rules for touching it: `BOT_DEV_REFERENCE.md`, "Frame time / sliced roadmap builds".
+
+- **A room's roadmap is no longer built the moment it is first asked for.** Builds run on parked worker threads used as
+  coroutines, a few milliseconds per server frame, fed by a level-start prewarm of every room (terrain regions first) and
+  by on-demand requests that jump the queue. Until a room's roadmap is published `Get()` answers nullptr and the bot
+  flies that room by the skeleton, exactly as it does in a room whose lattice is degenerate. On Isengard the whole level
+  is ready ~35 s after the first bot spawns; in DownTown's halls it takes minutes and the skeleton carries play meanwhile.
+  A terrain region pending means no terrain leg prices for a few seconds (`troute REJECT` at level start, retried in 10 s).
+- **The prewarm builds rooms no bot has ever entered**, so it reaches geometry nothing else has: HAVOC level 6's
+  ground-plane slab runs 38 u past the terrain grid, and a sweep from there crashed fvi. `ViaSegmentClear` now refuses a
+  sweep with an endpoint off the grid on any level that has an outdoors (OBSTACLE_GEOMETRY terms: off-grid = not a place).
+- **Query costs that were hiding in the frame time are gone** (attach nearest-first, wide-hull edge verdicts cached, Theta\*
+  and its sight lines memoised): same answers, and `[Perf]` lines now say which subsystem made a frame long.
+- **Open, found today (PLAN §4.0.1 Q12):** the composer, the roadmap via and the skeleton chain choose a door into the NEXT
+  room from `AimExitMask`, nearest first, without knowing where the route goes after that room; the router's
+  two-hop door pick is not theirs. Sigma Base's hub rm13 shows it cleanly (`AIMSPLIT`, then a chain out of the door behind
+  the bot). One mind says the router's door is the via layers' door.
+- **Sigma Base class, first wall down:** an attacker with no interior route to the enemy flag gets its errand anyway and
+  the terrain plan owns the trip (behind `BOT_AB_0915_SIGMA` until the bedlam gate is read).
+
+### 7.0-PREV Outdoors: the lattice above ground, one dispatch, and the errand's last leg — 2026-09-19 (branch `fix/outdoor-0915` = `d57755b1`, in soak)
 
 **Findings (operator's 2026-09-18 flight + same-day probes, renders and arms; BOTS_DEVEL 2026-09-19).**
 

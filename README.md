@@ -54,8 +54,11 @@ See [Known limitations](#known-limitations) and the [release notes](matcen-docs/
 (fellowship loops, bedlam 4-team, abend2, dementia, CHAOS, RAGE, Sigma Base and Facing Worlds, no
 crashes): indoor pins gone on Tower of Isengard, and Animal House — previously a geometry trap — clean.
 0.9.15 is the grind: every remaining map problem, fix by fix, each one
-soaked and compared before it lands. The outdoor work is in test: bots stranding in Tower of Isengard's
-valley, roof hatches and pipe mouths they could not enter, and the doorway stall in a flag room. What
+soaked and compared before it lands. The outdoor work passed its first flight test (2026-09-20: the fellowship maps
+play both ways, Town of Bree best of all). In test on top of it: the server no longer freezes while it prepares a
+room's navigation data — the cause of bots rubber-banding, of a huge map (HAVOC's DownTown) that would not let a player
+join, and of D3 Pyrodeck failing to read the server version — and Sigma Base attackers head for the enemy bunker
+instead of wandering their own. What
 remains is two-bunker canyon maps (Sigma Base), the toroid maps (Rim, abend2), dropped-flag reaction
 time, and the navigation code consolidation, until every map runs and plays smoothly. Only then does the series bump for the adjacent work (bot
 management and feel, the command surface and menus) and the community release. Details:

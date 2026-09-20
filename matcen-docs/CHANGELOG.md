@@ -14,6 +14,37 @@ before it lands. Still open on this line — two-bunker canyon maps (Sigma Base)
 dropped-flag reaction time, and the rest of the navigation code consolidation. Do not run this as a
 release.*
 
+Added 2026-09-20, after the first flight test of the work below:
+
+- **Bots no longer freeze and snap back (rubber-banding), and the server stays responsive on huge maps.** The server
+  works out how each room can be flown the first time a bot needs it, and it used to do that in one go, on the same
+  thread that runs the game: on Tower of Isengard the whole server stopped for one to nine seconds each time a bot entered
+  a new large room, and every player saw every ship freeze, then jump. On DownTown (HAVOC level 5), whose halls are
+  enormous, single stops ran to 100 seconds — a joining player timed out before ever getting in — and D3 Pyrodeck's
+  `$servercaps` probe went unanswered for nine seconds at level start and gave up. That work is now done a few
+  milliseconds at a time, starting when the level loads, and bots fly a room by its doors and corners until its finer
+  map is ready. Measured on Isengard with 11 bots: server frames longer than a tenth of a second fell from 11 a minute to
+  about one, the longest from 8.6 seconds to 0.3; on DownTown the console answers in 11 ms. Those figures are from the
+  unoptimised debug build used for testing — an optimised build of the same code had no frame over a tenth of a second
+  in a full round.
+- **Several smaller causes of the same stutter are gone.** All bots used to make their decisions in the same frame,
+  once or twice a second; they now take turns. A heavy ship (Magnum, Phoenix) re-checked every leg of a room's route
+  network against its wider hull on every query; the answers are remembered. A bot wedged where it could see none of
+  the route network searched all of it, every half second.
+- **A server crash on HAVOC level 6 (orbital) is fixed.** A collision sweep that started past the edge of the terrain map
+  crashed the game's collision code. Only a room no bot had ever entered could trigger it, which is why it had never
+  been seen; preparing every room at level start found it within two seconds.
+- **The server log now reports its own frame timing** (`[Perf]` lines), and the log analyzer flags a map whose frames run
+  long enough for players to notice.
+- **Sigma Base: attackers head for the enemy bunker from the first second** instead of wandering their own. On a map
+  whose two bases connect only across open terrain, a bot inside its base had no indoor route to the enemy flag and
+  was given no objective at all until its wandering happened to take it outside — in a ten-minute match two of five
+  attackers never got one. They now plan the way out, across, and in: in an eight-minute test, wandering errands fell
+  from 105 to 13 and completed base-to-base trips went from none to five. Blue's attack runs cleanly; Red's bots still
+  lose time in the hub of their own base's upper gallery, where two navigation layers disagree about which door to
+  take — understood, and queued as its own change. *(Still in its regression gate against the bedlam maps; it ships
+  only if that set is unaffected.)*
+
 In test on branch `fix/outdoor-0915` (2026-09-19), measured against the same roster on the same day:
 
 - **Bots no longer strand in the valley outside Tower of Isengard.** Most of their outdoor route network had grown

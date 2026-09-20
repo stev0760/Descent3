@@ -121,6 +121,7 @@ For the full phase history and roadmap, see `BOTS_DEVEL.md`.
 | `Descent3/bot_steering.h` | Routing-layer constants and API: portal passability probe (`BOT_PF_PASSABILITY_*`), Phase 11 router costs (`BOT_PORTAL_*`), pseudo-bnode synthesis, outdoor connecting graph. (The Phase 7 potential-field/flow-field code that originally named this file was removed in Phase 10.) |
 | `Descent3/bot_steering.cpp` | The cost-aware Dijkstra room router (`BotComputeRoute`, `BotPortalGeoCost`, dynamic penalties, `BotSetRoutedGoal` waypoint injection) and portal/obstacle geometry probes |
 | `Descent3/bot_roadmap.h/.cpp` | The 0.9.4 volumetric grid-seeded roadmap: per-room/per-region waypoint lattice, Lazy Theta\* in-room planning, heal/dense/curve passes (`NAVIGATION.md` §3.5) |
+| `Descent3/bot_perf.h/.cpp` | Slow-frame attribution (0.9.15): `BotPerfScope` timers on the bot layer's entry points and the sweep primitive; `[Perf] slow frame` / `[Perf] summary` log lines. Log-only. Add a `BPERF_*` id + name when adding a subsystem worth attributing |
 | `Descent3/bot_chat.h/.cpp` | Chat command system: `!` verb parsing, squad orders, addressing (all/team/DM), bot replies |
 | `Descent3/multi_server.cpp` | `BotDoFrame()` hook in `MultiDoServerFrame()`; NPF_BOT send guards |
 | `Descent3/multi.cpp` | `BotReinitAll()` in `MultiStartNewLevel()`; `MakeBOA()` call; send guards |
@@ -699,6 +700,27 @@ Both COMBAT interrupt and HUNT divert set `powerup_interrupt_cooldown` to preven
   flag-room composer refusals were walls being counted as doors.
 - `AIPathGetDPathSlot` can exhaust `MAX_DYNAMIC_PATHS` (200 in `aistruct.h`) with many bots — graceful failure in `aipath.cpp` (no more ASSERT). In practice 20h soaks show it never exhausts.
 - `BOA_mine_checksum == 0` means pathfinding data is absent — `MakeBOA()` is called in `MultiStartNewLevel()` to rebuild it.
+
+### Frame time / sliced roadmap builds (0.9.15)
+- **The server sends positions once per frame: a long frame is rubber-banding for every client.** Anything that can
+  sweep thousands of times must not run whole inside one frame. Read `[Perf]` lines (or the analyzer's Server Frame
+  Timing section) before and after touching a query path; the flown and soaked binary is an unoptimised Debug build.
+- **Roadmap builds run on parked worker threads used as coroutines** (`bot_roadmap.cpp`, SLICED BUILDS). The main
+  thread blocks while a worker runs, so there is no concurrency and fvi needs no locks — *provided the worker parks only
+  at `SliceYield()`*. `SliceYield()` may be called only from the roadmap's own sweep wrappers and outer loops.
+  **Never add a yield inside another module's lazy cache** (crossing sampler, `TdoorBuild`, skeleton, OGraph): several set
+  their built flag before filling the table, and the main thread would read it half-written. A build may write only to
+  its own `RoadmapRoom`.
+- **`Get()` / `GetOutdoor()` return nullptr while a build is pending.** Every caller must fall back (they all do: skeleton
+  via, "unknown" reach verdict, no terrain leg). Do not cache a verdict derived from a missing roadmap: a room's first
+  publish does not bump `BotRoadmapSerial()` (a region's does). Tools that need the model now take a `SyncBuildScope`.
+- **A level (re)load must cancel parked builds** — `BotRoadmapCancelBuilds()` in `BotReinitAll()`. The worker leaves by
+  exception from its parking spot and touches nothing of the freed level.
+- **A sweep endpoint off the 4096 x 4096 terrain grid crashes fvi** (`check_terrain_node`, unchecked cell index) on any
+  level with an outdoors. `ViaSegmentClear` refuses such sweeps (`SweepOffTerrainGrid`); a new sweep path that bypasses
+  it needs the same guard. The level prewarm builds rooms no bot ever enters — expect it to find geometry nothing else has.
+- Per-room memo tables (`theta_memo`, `theta_los_memo`, `UnionEdge::wide`) live in the `RoadmapRoom` and die with it;
+  anything cached there must be a pure function of that room's static geometry.
 
 ### DMFC / PRec
 - DMFC `IsPlayerDedicatedServer()` returns true for PRec entries with team -1 — bots must use team ≥ 0.

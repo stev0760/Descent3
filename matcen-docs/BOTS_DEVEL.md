@@ -17,6 +17,107 @@ the flag-room arrival stall and the ~58% connectivity dead-ends. 0.9.14 was vali
 Isengard's interior pins gone, Animal House stuck-free) and released; the previous stable release was
 **0.9.13** (0.9.11 preceded it; 0.9.12 was never promoted).
 
+### 2026-09-20: the lag was one thread building roadmaps; sliced builds; Sigma Base attackers had no errand
+
+The operator flew `fix/outdoor-0915` (v7) and ruled the fellowship set done: Bree "almost perfect", Isengard and Doors of
+Moria carried both ways with no stucks seen. Four complaints: bots rubber-band and glitch (worse from a second PC), Sigma
+Base bots "get lost and give up" in their bunker, DownTown (HAVOC level 5) would not let a client in while the CPU ran
+hot, and Pyrodeck fails to read `$servercaps`. Three of the four are one bug.
+
+**The instrument (`bot_perf.{cpp,h}`, permanent, log-only).** Scoped timers on the bot layer's entry points and on the
+sweep primitive; `[Perf] slow frame` when the bot layer exceeds 25 ms or the server frame 50 ms, with inclusive
+ms(calls) per subsystem; `[Perf] summary` once a minute. The server sends positions once per frame, so a long frame is a
+hole in every client's stream — the client extrapolates the bots through it and snaps them back. `analyze_bot_log.py`
+gained a Server Frame Timing section and a `FRAME_STALL` anomaly.
+
+**What it measured (Debug build, Isengard, 11 bots, 8 min).** 10.9 server frames a minute over 100 ms, 4.4 over 250 ms,
+worst 8.6 s; 56 of 480 s spent inside slow frames. Causes, in the order they were removed:
+
+1. **Roadmaps were built inline on first use**, on the server's only thread: 8.6 s, 4.1 s, 2.2 s, 1.6 s... as bots
+   first entered rooms; DownTown's halls 18, 16, 100 and 26+ s each (the operator's log) — the joining client timed out.
+   Pyrodeck's probe on the Isengard flight was answered 9.5 s after login, when room 34 (12,028 nodes) finished; echo and
+   reply are printed in one call, so nothing interleaves — the server was simply not running frames.
+   **Sliced builds:** the build runs on a worker used as a COROUTINE — the main thread hands it the turn for a few ms
+   (5 with a human in the game, 12 without) and blocks until it hands the turn back, so one thread runs at a time and
+   fvi needs no locking. It parks only at `SliceYield()`, in the roadmap's own sweep wrappers and outer loops. A build
+   writes only its own `RoadmapRoom`; until it is published `Get()` answers nullptr and every caller falls back to the
+   skeleton as it already did for rooms without a lattice. Three lanes (on-demand, on-demand for rooms over 3000
+   candidate cells, and a level-start PREWARM of every room, regions first), each its own parked worker, so a corridor
+   never queues behind a hall. A level (re)load cancels parked builds by exception from the yield point
+   (`BotRoadmapCancelBuilds` in `BotReinitAll`) — the worker touches nothing of the freed level on its way out.
+   `$nav dump` and the geometry gate still build synchronously (`SyncBuildScope`). A region's publish bumps the roadmap
+   serial (terrain-leg costs cached as "no such leg" while pending); a room's first build does not.
+   *Tried and removed:* a yield inside `BotPortalCrossing`. `TdoorBuild` sets its built flag BEFORE filling its table; a
+   worker parked inside it left the main thread a half-written table (a build died silently 2 s into Sigma Base). The
+   rule: never park inside another module's lazy cache. The terrain-door table is built by the main thread when the
+   prewarm is queued.
+2. **`NearestVisible` walked the lattice in index order** and swept every node nearer than the best so far; a bot that
+   could see no node swept all of it — 19,800 sweeps, 80 ms, per via tick, in Isengard's 7,600-cell hall. Nearest first,
+   256 probes at most: same answer, a handful of sweeps.
+3. **A ship fatter than 6.7 u re-proved every union-graph edge on every composed-route query**: 85-270 thousand sweeps a
+   frame for a Magnum on Isengard, 111,764 at 0.3 ms each in DownTown rm31 = a 32.7 s frame. Verdicts are cached per
+   directed edge per hull class (walls do not move; a heal rebuilds the room), and one query may spend 6 ms on FRESH
+   edges — beyond that an unknown edge is not taken this time and the next re-issue carries on.
+4. **Theta\* re-ran identical searches.** Memoised per room/region by (start, goal), plus the search's line-of-sight tests
+   by directed node pair; outdoors one search was ~2,600 terrain sweeps = 150 ms and troute priced 14-17 in a frame.
+5. **Every bot thought in the same frame** (same interval, initialised together): 130-200 ms frames about once a second.
+   At most two decision ticks per frame; a bot 0.25 s overdue thinks regardless.
+6. The corner-rounding pass gathered cross-component pairs with two union-find walks per pair over a 220 u hash cell
+   (3.4 s unsliceable on a 12,000-node room): roots read once, a yield per node, closest-first off a heap (same order).
+
+**Result (Tower of Isengard, 11 bots, one 8-minute round each, server frames per minute):**
+
+| Build | bot layer avg | > 50 ms | > 100 ms | > 250 ms | worst frame |
+|---|---|---|---|---|---|
+| before — Debug, `fix/outdoor-0915` v7 | 3.30 ms | 23.1 | 10.9 | 4.4 | 8,630 ms |
+| after — Debug (`Descent3-sig9`) | 2.43 ms | 4.0 | 1.3 | 0.3 | 286 ms |
+| after — `RelWithDebInfo` (`-O2`, same code) | 0.33 ms | 0.1 | 0.1 | 0.0 | 100 ms |
+
+The Debug average includes the prewarm's slices (12 ms a frame with no human in the game, ~35 s for Isengard's 43
+roadmaps). The optimised build logs the same telemetry (6,414 `BOT NAV` lines, hop outcomes, STUCKSTATE in the round) —
+the binary the operator flies and every soak runs is `-O0`, which is most of what is left. DownTown: `$servercaps`
+answered in a median 11 ms (p95 17 ms) through the first two minutes of the level that had frozen for 100 s at a time;
+rm31 (10,010 nodes) took 97 s of build spread over 128 s of play. What remains there is the skeleton's first-use build
+(0.9 s in a hall) and sweeps that cost 0.3 ms each — queued, PLAN §4.0.1 Q8/Q11. Orbital: 121 roadmaps prewarmed in 5 s,
+no assert, and the level change to SlavePit cancelled and re-queued cleanly.
+
+**An engine crash the prewarm found.** fvi's terrain walker indexes its visit list with the cell under the sweep and does
+not range-check it: a sweep with an endpoint off the 256 x 256 grid that reaches terrain reads cell 0x7fffffff and
+segfaults in `check_terrain_node`, after a run of `no_subdivision || f_found_room` asserts. HAVOC level 6 (orbital) room 2
+is a 4096 x 4096 ground-plane slab (`RF_TOUCHES_TERRAIN`) whose box runs to x = 4134; no bot had ever entered it, so
+nothing had ever built it. gdb gave the frame: it is inside fvi and depends only on the sweep's endpoints (start x = 4125.9),
+not on which thread asked (a main-thread build of that room was not run to prove it). Guard in the one
+sweep primitive (`SweepOffTerrainGrid`): on a level that has any external or terrain-touching room, a sweep with an
+endpoint outside the grid reads blocked.
+
+**Sigma Base: the attackers had no errand.** `BotGetObjectiveRoom_CTF` prices the enemy flag room with our router, which
+reads 1e30 when the bunkers join only over terrain, and `cost < best_cost` never passes: an attacker inside its own bunker
+got NO objective and roamed on explore errands until one happened to carry it outdoors. The flight log: 105 explore
+errands against 19 objective, the runner's first attack errand 2 min 9 s in, two of five attackers never issued one.
+`BotTrouteRedirect` already plans exit door -> region lattice -> entry door for a goal with no interior route, and since
+2026-09-19 those plans execute. **Change A:** among rooms no interior route reaches, fall back to the distance pricing the
+outdoor branch uses (`attack errand across terrain` in the log). This is `05f620dc` from 2026-09-17, which was dropped for
+what it cost the bedlam set when terrain plans did not yet execute; it is gated again.
+With errands issued from second 2, Red's attackers looped rm19 <-> rm13 for minutes (14 NOT-CROSSED rm19 -> rm9 in 9 min).
+Rendered: rm19's y = 50 level is three enclosed bridge corridors (W to rm9, E to rm11, N to rm1) that meet only in the
+hub rm13; the lattice is one component (it grows through rm13) because the run is physically one straight corridor. From
+just inside rm13 the two-hop lookahead priced the east door 7 + 261 and the west door 91 + 177 — bot, both doors and the
+exit are collinear, so the totals tie by construction and first-found won: the door behind the bot. **Change B:** in
+`BotEntryPortalIndex` a near-tie (5%, 8 u floor) goes to the door with the shorter onward leg. Both changes sit behind the
+build-time constant `BOT_AB_0915_SIGMA` for the gate and nothing else; delete it once the gate is read.
+
+**Sigma Base smoke (8 min, the flight's 11-bot roster, against the flight log):** explore errands 105 -> 13, objective
+errands 34 -> 72, terrain plans 6 -> 33 with 0 -> 5 completed, entrances 15 crossed / 0 missed, Blue's roof exit
+rm27 -> rm28 14 / 0. Red's exit rm19 -> rm9 is still 6 crossed against 35 not, and the trace says why: the ROUTER picks
+the west door (rm13 p5) every time now, but once the bot is inside the hub the composed-route voice builds its own chain
+to "room 19" and takes the NEAREST door into it — the east one, 2 u behind the bot (`composed route rm13 len3 term=EXIT`,
+`AIMSPLIT 54.3 (routed vs via)`, `chain complete rm13 -> rm19`, and the bot is back in the east arm). The via layers
+(composer, roadmap via, skeleton chain — all through `AimExitMask`) choose a door into the next room without knowing where
+the route goes after it. That is the committee, not the door picker; queued as PLAN §4.0.1 Q12, not built. (The hop
+observer's `via portal N` names the COMMITTED door; a bot that left by another door into the same room still reads CROSSED.)
+
+**Gate (running):** bedlam 4-team, 12 rounds each, same hour: control `Descent3-ctl9` (constant = 0) against `Descent3-sig9`.
+
 ### 2026-09-19: the outdoor lattice was under the ground; one outdoor dispatch; an errand ends at its point
 
 Branch `fix/outdoor-0915` (local, off `fff9bc3c`), seven changes, each its own commit. Started from the operator's
