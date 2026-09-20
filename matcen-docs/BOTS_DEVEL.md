@@ -103,8 +103,8 @@ Rendered: rm19's y = 50 level is three enclosed bridge corridors (W to rm9, E to
 hub rm13; the lattice is one component (it grows through rm13) because the run is physically one straight corridor. From
 just inside rm13 the two-hop lookahead priced the east door 7 + 261 and the west door 91 + 177 — bot, both doors and the
 exit are collinear, so the totals tie by construction and first-found won: the door behind the bot. **Change B:** in
-`BotEntryPortalIndex` a near-tie (5%, 8 u floor) goes to the door with the shorter onward leg. Both changes sit behind the
-build-time constant `BOT_AB_0915_SIGMA` for the gate and nothing else; delete it once the gate is read.
+`BotEntryPortalIndex` a near-tie (5%, 8 u floor) goes to the door with the shorter onward leg. Both changes sat behind a
+build-time constant for the gate and nothing else; it was deleted once the gate was read (below).
 
 **Sigma Base smoke (8 min, the flight's 11-bot roster, against the flight log):** explore errands 105 -> 13, objective
 errands 34 -> 72, terrain plans 6 -> 33 with 0 -> 5 completed, entrances 15 crossed / 0 missed, Blue's roof exit
@@ -116,7 +116,25 @@ to "room 19" and takes the NEAREST door into it — the east one, 2 u behind the
 the route goes after it. That is the committee, not the door picker; queued as PLAN §4.0.1 Q12, not built. (The hop
 observer's `via portal N` names the COMMITTED door; a bot that left by another door into the same room still reads CROSSED.)
 
-**Gate (running):** bedlam 4-team, 12 rounds each, same hour: control `Descent3-ctl9` (constant = 0) against `Descent3-sig9`.
+**Gate (read 2026-09-20 16:55, PASS):** bedlam 4-team, 12 rounds each, same hour, both arms `guard=PASS`: control
+(`soak-20260920T135120.log`, both changes off) against variant (`soak-20260920T135125.log`).
+
+| Map | errand fires | control picks / caps / conv | variant picks / caps / conv |
+|---|---|---|---|
+| Apparition | 69 | 86 / 30 / 35% | 129 / 35 / 27% |
+| Plutonium | 97 | 107 / 31 / 29% | 132 / 31 / 23% |
+| QuadSomniac | 0 | 235 / 17 / 7% | 189 / 15 / 8% |
+| Polaris | 0 | 155 / 41 / 26% | 167 / 30 / 18% |
+
+Where change A fires, captures are 61 -> 66 and grabs +35% (the extra grabs are attackers who previously had no errand;
+they convert below the map's average, which is what lowers the percentage). The 2026-09-17 signature (grabs -21%,
+captures -28% on Apparition and Polaris) did not repeat: that version repriced every attack errand, this one only
+answers when no flag room is reachable indoors. Polaris reads 41 -> 30 on three rounds, but neither change acts there:
+A fires zero times, no room pair on Polaris or QuadSomniac is ever crossed by more than one portal (so B has nothing to
+choose between), and hop outcomes are identical (1768 crossed / 204 not against 1806 / 200). The same two zero-effect maps
+show QuadSomniac picks 235 -> 189, which is the size of arm-to-arm noise at three rounds a map. Deaths 1986 -> 1968.
+Frame timing on both arms: no map over 0.3 frames/min above 100 ms (Debug build). The constant is deleted; both changes
+are unconditional.
 
 ### 2026-09-19: the outdoor lattice was under the ground; one outdoor dispatch; an errand ends at its point
 
@@ -1381,7 +1399,7 @@ roadmap), three pieces landed and validated:
 - **Hull-fit clearance 7.0 → 6.7** (hull 6.676 + sliver) — opens the tightest real doorways (Bree basement)
   the 7.0 sphere falsely rejected; never below the hull.
 - **Selective `$gridroute`.** Proactive in-room routing gated to genuinely complex rooms — `orig_comp_count>1`
-  AND ≥`BOT_ROADMAP_COMPLEX_MIN_LATTICE`(24) lattice nodes. The lattice floor fixes a tiny-room false positive
+  AND ≥24 lattice nodes (the `complex` floor constant, since retired). The lattice floor fixes a tiny-room false positive
   (skybox anarchy validation: 5→0 spurious `[COMPLEX]` tags). Fellowship soak: **overall captures 1.56→2.46/rnd
   (+58%)**, khazaddum 0.2→1.0, doorsofmoria/shirebaggins/dwarrodelf at career highs.
 - **Follow/escort responsiveness.** `BotNavigateToFollowTarget` + `BotDoHoldStationNav` now route over the same

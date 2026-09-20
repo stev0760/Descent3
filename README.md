@@ -14,60 +14,16 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 **No client modifications are required.** Retail D3 v1.5 clients and compatible engines (PiccuEngine) connect and play against bots as-is. A server with no bot configuration behaves exactly like vanilla D3.
 
-**Current release: 0.9.14** (2026-09-18) — the portal-model and outdoor navigation release: a door is a validated crossing rather than a point, walls are never doors, and every layer reads the same geometry (see [matcen-docs/CHANGELOG.md](matcen-docs/CHANGELOG.md)). Confirmed in live play. Not a "navigation solved" release — see [Known limitations](#known-limitations).
-Bots now build usable navigation grids in flat rooms and combine arterial paths with local routes
-through complex interiors. They discard routes when the commitment ends, including on respawn,
-instead of reusing waypoints from an abandoned plan. The host overlay shows indoor and outdoor
-navigation, and server diagnostics distinguish stored routes from live commitments.
-The skeleton-order fix removed stalled-chain stuck records in a follow-up test. The endpoint fix
-stops cross-room chains at their exit instead of appending a local aim back inside the room.
-abend2 remains uneven between teams, but its partially solved toroid navigation is accepted as good
-enough for now. Nysa's 20-round baseline produced 67 captures, but Red carriers still pinned near
-the Blue flag room. This is not a complete-coverage pass. The first Batteries validation run was
-stopped after the mission rotated away. A replacement single-level test is running with all-Pyro
-rosters to remove the unequal ship mixes present in earlier tests.
+**Current release: 0.9.14** (2026-09-18), the portal-model release: a door is a validated crossing rather than a point, walls are never doors to the route network, shattered glass becomes a doorway at runtime, and a bot only hunts what it can reach. It was flight-tested on the fellowship, bedlam, abend2, dementia, CHAOS, RAGE, Sigma Base and Facing Worlds maps without a crash. It is not a "navigation solved" release; see [Known limitations](#known-limitations).
 
-Testing included live play, a 20-round abend2 test, and roughly 30 additional rounds across six
-game modes, with no reported crashes or assertion failures. This is not an across-the-board
-navigation improvement: abend2 hard pins increased, while its apparent Red capture recovery remains
-unproven. QuadSomniac also has an unresolved Red return-navigation signal against an older build.
-0.9.13 ships as that correctness release — the limitations above are documented, not solved. The
-interior-only window misroute (bots routing through unreachable window glass) and the flag-room
-arrival stalls are held for the 0.9.14 sprint, which traces failed and successful carrier crossings
-to identify the remaining fault. **0.9.14 ships that work**, after the September 13 portal-model
-sprint: a door is now a validated crossing rather than a point, walls are never doors to the route
-network, shattered glass becomes a doorway at runtime, a bot only hunts what it can reach, the bend
-search fits ducts and toroid tubes, and every layer reads the same geometry. Measured against the
-0.9.13 line: Batteries Included route failures went to zero, stuck escalations fell from 159 to 97
-per four rounds, the spawn-room traps found in play are gone, and arms scored 8 to 13 captures;
-abend2's ring room, which defeated every earlier attempt, went from 80 stuck episodes to 1 and
-captures per round rose from 0.71 to 1.13 on both teams over eight rounds. Openings narrower than a
-Pyro hull (a propped door, pane grids, floor hatches) are treated as walls; the team that grabs first
-tends to keep the other on defence (a role-policy question, next). Outdoor maps are the next sprint;
-the play-test build `c099220f` crashed on maps whose doors open onto terrain (found on Nightmare
-Castle: the new door-crossing check started an outdoor-side sweep inside the building's exterior
-shell), and the fix on top of it is verified on Nightmare Castle and Isengard.
-The September 14-15 outdoor sprint then took the hardest outdoor map, Town of Bree, from two bot captures in twenty rounds to five in its first two: a complete bot-side table of doors to the outdoors, hull-fitted door approaches, no more pushes through a wall beside a door or routes through a one-sided partition, and CTF roles that apply from a session's first level.
-See [Known limitations](#known-limitations) and the [release notes](matcen-docs/CHANGELOG.md).
+**In test: 0.9.15-dev.** Outdoor navigation: the outdoor route network stays above ground, entering a building is one routine, a route indoors stays indoors, and an errand finishes at the flag rather than in its doorway. That work passed its flight test on 2026-09-20; the fellowship maps (Town of Bree, Tower of Isengard, Doors of Moria) now play both ways. On top of it, the server no longer freezes while it prepares a room's navigation data, which was the cause of bots rubber-banding, of a huge map (HAVOC's DownTown) refusing joins, and of D3 Pyrodeck failing to read the server version; and Sigma Base attackers head for the enemy bunker instead of wandering their own. A `-dev` build is a test build, not a release.
 
-**Release path.** 0.9.14 shipped on 2026-09-18 after its flight test confirmed what the soaks showed
-(fellowship loops, bedlam 4-team, abend2, dementia, CHAOS, RAGE, Sigma Base and Facing Worlds, no
-crashes): indoor pins gone on Tower of Isengard, and Animal House — previously a geometry trap — clean.
-0.9.15 is the grind: every remaining map problem, fix by fix, each one
-soaked and compared before it lands. The outdoor work passed its first flight test (2026-09-20: the fellowship maps
-play both ways, Town of Bree best of all). In test on top of it: the server no longer freezes while it prepares a
-room's navigation data — the cause of bots rubber-banding, of a huge map (HAVOC's DownTown) that would not let a player
-join, and of D3 Pyrodeck failing to read the server version — and Sigma Base attackers head for the enemy bunker
-instead of wandering their own. What
-remains is two-bunker canyon maps (Sigma Base), the toroid maps (Rim, abend2), dropped-flag reaction
-time, and the navigation code consolidation, until every map runs and plays smoothly. Only then does the series bump for the adjacent work (bot
-management and feel, the command surface and menus) and the community release. Details:
-[`matcen-docs/PLAN.md`](matcen-docs/PLAN.md) §4.0.
+What changed in each release is in the [release notes](matcen-docs/CHANGELOG.md). What is left, and in what order, is in [`matcen-docs/PLAN.md`](matcen-docs/PLAN.md).
 
 ### Features
 
 *   **Combat AI**: a five-state model (explore, hunt, combat, flee, evade) with predictive lead aiming. Bots circle-strafe, use afterburners to chase and escape, and drop chaff against homing missiles.
-*   **Perception**: bots honor cloaking (a cloaked player is invisible unless revealed by afterburner, headlight, napalm, or weapon fire) and hear weapons and afterburners within a 60-unit radius.
+*   **Perception**: bots honor cloaking (a cloaked player is invisible unless revealed by afterburner, headlight, napalm, or weapon fire), hear weapon fire within 60 units and afterburners within 200.
 *   **Physics parity**: bots fly under the same inertia, momentum, and tri-chord rules as human players.
 *   **Weapons and loadout**: range- and resource-aware weapon switching, splash-damage self-guards, and smart powerup collection. Bots rate their own equipment and pick fights accordingly; a poorly armed bot hunts upgrades before engaging.
 *   **Navigation**: a runtime-built volumetric roadmap over arbitrary map geometry, hierarchical routing, and engine-native steering. See [Navigation](#navigation) below.
@@ -137,16 +93,18 @@ Available in the dedicated server console or via remote telnet:
 
 ### Roadmap
 
-*   **0.9.15 — every map smooth**: the remaining per-map problems, in the order they unlock play — Sigma Base's class (two bunkers across open terrain: flag-room windows onto a wall that the router admitted, and a gallery interrupted by a bridge room that the nearest-door pick oscillated in — the fix is built and soaking), the outdoor pass now in test (a route network that had grown under the terrain, one routine for entering a building, routes indoors that stay indoors, and errands that finish at the flag rather than in its doorway), the toroid maps Rim and abend2 (rings where the next door is never in view), dropped-flag reaction time, a co-op revisit, and the navigation code consolidation. Then the series bumps to 0.10 for bot management, feel, command surface and menus, and the release package (see `matcen-docs/PLAN.md` §4.0).
-*   **Outdoor terrain refinement**: fine-threading of urban outdoor maps and rough-terrain line-of-flight. The remaining hard maps are Town of Bree and Tower of Isengard.
+*   **0.9.15, every map smooth** (in test): the remaining per-map problems, each fix soaked and compared before it lands. Open on this line: two-bunker canyon maps (Sigma Base), the toroid maps (Rim, abend2), very large maps (HAVOC's DownTown), dropped-flag reaction time, a co-op revisit, and consolidating the navigation code so one layer decides where a bot aims.
+*   **0.10, the release package**: bot management and feel, the command surface and menus, and packaging for a community release.
 *   **Dynamic team rebalancing**: rebalance bot teams as humans join and leave. Pre-assignment works today.
-*   **Co-op companions** (0.9.9): bots fly the campaign with you, not for you — they fall in on your wing automatically, keep formation at a calm pace, fight what you fight, and never run the mission on their own. Squad orders from any human do the rest: `!goal` sends one ahead to the current objective as a vanguard, `!hold` posts it, `!freelance` sets it loose. On campaign maps their navigation rides the engine's own hand-authored path network (what the guide-bot flies). Mission-critical scripted pickups are left for humans.
-*   **One navigator per ship** (0.9.11): navigation grew into ten-odd cooperating subsystems as game modes were added, and they sometimes compete for the same decision. 0.9.10 gave bots a travel intent that survives interruption; 0.9.11 routes self-directed interior travel through one decision point, and applies the same "one decision point" principle at room scale to collapse the per-room committee on abend2 — the toroid flag map where three layers each aimed at a different point inside a ring — producing the map's first unattended captures. Explore journeys now arrive more often across all six measured pools, and the KegD3 cockpit verdict was "Feels excellent." Objective-trip arrival remains conservative telemetry because a flag capture does not directly end the logged travel intent. The proposed campaign-outdoor gate widening was dropped after 99% of its target legs failed a ship-width clear-line test; the proven outdoor stack stays. Cleanup has started by removing three default-off experiments (`gridall`, `outroute`, `replan`) with no default behavior change.
+
+Co-op companions (bots that fly the campaign on your wing and take `!goal` / `!hold` / `!freelance` orders) shipped in 0.9.9 and are still experimental; see [Known limitations](#known-limitations). The full plan is in [`matcen-docs/PLAN.md`](matcen-docs/PLAN.md).
 
 ### Known limitations
 
 *   **Toroid maps (abend2, Rim)**: rings where the next door is out of sight from most of the room make bots re-ask the same crossing instead of walking the ring; abend2 still scores (1.5 captures/round in 3v3), Rim rarely (0.7/round, up from a documented zero). Both are on the 0.9.15 list with their geometry captured; abend2's uneven team behaviour is accepted until then.
-*   **CTF return and reach failures**: QuadSomniac Red conversion fell from 24% to zero against an older build spanning two changes, so attribution remains open. Polaris wind routing and Batteries Included flag-room connectivity also remain unresolved.
+*   **Two-bunker maps (Sigma Base)**: bases that connect only across open terrain. Attackers now cross and enter the enemy base, but one team's bots still lose time in a hub of their own base where two navigation layers disagree about which door to take.
+*   **Very large maps (HAVOC's DownTown)**: the server runs them smoothly and bots fight and grab flags, but some wander in a few areas (a parking structure, one team's start) instead of pressing the objective.
+*   **Crossfire maps**: in 4-team CTF on QuadSomniac every team converts few of its flag grabs (5-10%); carriers die in the crossfire on the way home.
 *   **Entropy and co-op**: Entropy bots have not completed a room takeover in the recorded tests. Co-op still has reported bot-freezing and client-compatibility problems and was not validated by the latest test set.
 *   **Thin divider rooms**: a few rooms with paper-thin disconnected sections remain hard to route across; a densification pass is planned.
 *   **Tight-doorway precision**: doorways barely wider than the ship are routable, but the engine path-follower can be clumsy threading them.

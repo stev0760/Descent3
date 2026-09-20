@@ -825,13 +825,14 @@ the 89 as a regression — compare hard pins (14 → 1). *Risk:* none to look.
 **Q7 update, 2026-09-20 — the mechanism, and a fix in its gate.** The operator's flight ("bots get lost and give up in
 the bunker") named it: an attacker INSIDE its own bunker has no interior route to the only enemy flag there is, the
 router prices it 1e30, and the attack branch returned no objective at all — 105 explore errands against 19 objective in
-ten minutes, two of five attackers never issued one. *Built, behind the build-time constant `BOT_AB_0915_SIGMA`:* (A) a
+ten minutes, two of five attackers never issued one. *Built and gated (PASS, 2026-09-20):* (A) a
 distance-priced fallback among rooms no interior route reaches (the routed goal's terrain plan owns the trip — the
 2026-09-17 idea, re-landed now that terrain plans execute); (B) an entry-door near-tie goes to the door nearer the exit
 (rm19's gallery arms and the hub rm13 are one straight corridor, so the two-hop totals tie by construction and the door
-behind the bot won). *Gate:* bedlam 4-team 12 + 12 rounds, same hour, control `Descent3-ctl9` vs `Descent3-sig9`
-(`<lab>/gate-20260920/`). Pass = per-map caps/round, conversion and deaths flat; on a fail set the constant to 0 and the
-rest of 0.9.15 ships without it. Either way delete the constant afterwards. The carry home (above) is still the next wall.
+behind the bot won). *Gate:* bedlam 4-team 12 + 12 rounds, same hour: captures 61 -> 66 on the two maps where (A) fires, grabs +35%,
+navigation outcomes identical on the two where neither change acts (table in BOTS_DEVEL.md 2026-09-20). The gate
+constant is deleted. The 2026-09-20 Sigma Base flight confirmed both the gain (objective errands 121 against 31 explore,
+entrances 37 of 38) and Q12 as the wall that is left (Red's rm19 -> rm9: 16 crossed, 125 not). The carry home (above) is still the next wall.
 
 **Q8 — the skeleton's first-use build is the largest stall left.** *Symptom:* 60-280 ms per room on first use (Debug),
 0.9 s in a DownTown hall; once per room per level. *Why it was not sliced with the roadmap:* `SkelBuild` writes the

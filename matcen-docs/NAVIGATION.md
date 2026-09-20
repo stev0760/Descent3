@@ -298,7 +298,7 @@ to the engine as an ordinary `AIG_GET_TO_POS` sub-goal. The engine does all stee
 invariant); the roadmap outputs a waypoint, never a heading.
 
 **Selective engagement (`$gridroute`).** Proactive in-room routing runs only in **genuinely
-complex rooms** — `orig_comp_count > 1` AND ≥ `BOT_ROADMAP_COMPLEX_MIN_LATTICE` (24) lattice nodes
+complex rooms** — `orig_comp_count > 1` AND ≥ 24 lattice nodes (the retired `complex` floor)
 — so simple maps keep direct routing (no behavior change where the engine was already fine). The
 same router drives objective, carrier, and `!follow`/`!cover`/`!hold` escort nav (escort: route
 when far, beeline when close with LOS).
@@ -730,7 +730,7 @@ Not a routing change, but it changes WHEN the routing substrate exists, so it li
   two-hop door pick is not theirs. Sigma Base's hub rm13 shows it cleanly (`AIMSPLIT`, then a chain out of the door behind
   the bot). One mind says the router's door is the via layers' door.
 - **Sigma Base class, first wall down:** an attacker with no interior route to the enemy flag gets its errand anyway and
-  the terrain plan owns the trip (behind `BOT_AB_0915_SIGMA` until the bedlam gate is read).
+  the terrain plan owns the trip (bedlam regression pair read flat 2026-09-20; unconditional).
 
 ### 7.0-PREV Outdoors: the lattice above ground, one dispatch, and the errand's last leg — 2026-09-19 (branch `fix/outdoor-0915` = `d57755b1`, in soak)
 

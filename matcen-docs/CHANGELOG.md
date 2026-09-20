@@ -42,8 +42,9 @@ Added 2026-09-20, after the first flight test of the work below:
   attackers never got one. They now plan the way out, across, and in: in an eight-minute test, wandering errands fell
   from 105 to 13 and completed base-to-base trips went from none to five. Blue's attack runs cleanly; Red's bots still
   lose time in the hub of their own base's upper gallery, where two navigation layers disagree about which door to
-  take — understood, and queued as its own change. *(Still in its regression gate against the bedlam maps; it ships
-  only if that set is unaffected.)*
+  take — understood, and queued as its own change. Checked against the four bedlam maps over
+  twelve rounds a side: on the two maps where it applies captures held (61 to 66) and bots grab the flag a third more
+  often; on the other two it never triggers.
 
 In test on branch `fix/outdoor-0915` (2026-09-19), measured against the same roster on the same day:
 
