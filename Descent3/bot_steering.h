@@ -164,6 +164,11 @@ bool BotSegmentClear(int startroom, const vector &a, const vector &b, float radi
 // RF_EXTERNAL room can't start an fvi trace, but the terrain cell can) and enables the ceiling check,
 // so it rejects legs into the ground, into a structure, OR up over the invisible outdoor ceiling.
 // The volumetric roadmap uses this for terrain-region node growth, edge probing, and Theta* LOS.
+// 0.9.15 gate switch, BUILD-TIME ONLY (not a toggle; delete once the gate is read): 1 = the two Sigma Base changes
+// (attack errand with no interior route; entry-door near-tie goes to the door nearer the exit), 0 = the control arm.
+#ifndef BOT_AB_0915_SIGMA
+#define BOT_AB_0915_SIGMA 1
+#endif
 bool BotSegmentClearOutdoor(const vector &a, const vector &b, float radius);
 // Same sweep with the hit record (hit_out->hit_room = the room the END point is in, or a terrain cell).
 bool BotSegmentClearOutdoorHit(const vector &a, const vector &b, float radius, fvi_info *hit_out);

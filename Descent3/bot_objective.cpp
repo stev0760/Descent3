@@ -1599,8 +1599,8 @@ static int BotGetObjectiveRoom_CTF(int bot_index) {
     // Find nearest available enemy flag by BOA path cost (not Euclidean)
     object *obj = &Objects[Players[slot].objnum];
     int bot_room = OBJECT_OUTSIDE(obj) ? -1 : obj->roomnum;
-    int best_room = -1;
-    float best_cost = 1e30f;
+    int best_room = -1, far_room = -1;
+    float best_cost = 1e30f, far_dist = 1e30f;
     for (int t = 0; t < num_teams; t++) {
       if (t == my_team)
         continue;
@@ -1611,6 +1611,11 @@ static int BotGetObjectiveRoom_CTF(int bot_index) {
         room = Bot_objective.flag_room[t];
       if (room < 0 || !Rooms[room].used)
         continue;
+      const float room_dist = vm_VectorDistanceQuick(&obj->pos, &Rooms[room].path_pnt);
+      if (room_dist < far_dist) {
+        far_dist = room_dist;
+        far_room = room;
+      }
       // Priced by OUR router (2026-09-18), not the engine's BOA chain. BOA believes in every portal it
       // calls passable, including a flag room's windows onto its yard shell, so from anywhere inside the
       // enemy bunker on Sigma Base its shortest path to the flag ran outdoors and through a window: the
@@ -1624,6 +1629,29 @@ static int BotGetObjectiveRoom_CTF(int bot_index) {
       if (cost < best_cost) {
         best_cost = cost;
         best_room = room;
+      }
+    }
+    // NO INTERIOR ROUTE IS NOT "NO ERRAND" (2026-09-20, the operator's Sigma Base flight). An attacker inside its own
+    // bunker read 1e30 for the only enemy flag there is — the bunkers join over terrain — and got no objective at
+    // all: it roamed the bunker on explore errands until one happened to carry it outdoors, where the distance
+    // pricing above finally gave it the flag. In ten minutes: 105 explore errands against 19 objective ones, the
+    // runner's first attack errand 2 min 9 s into the round, two of the five attackers never issued one, and from the
+    // cockpit "lost... flying around aimlessly in the bunker". The routed goal already knows what to do with a goal
+    // that has no interior route: BotTrouteRedirect plans exit door -> region lattice -> entry door, and since the
+    // 2026-09-19 outdoor pass those plans execute. So rank by our router where a route exists, and only among rooms
+    // no interior route reaches fall back to the distance pricing the outdoor branch uses. (Tried on 2026-09-17 as
+    // 05f620dc, before terrain plans executed, and dropped for what it cost the bedlam set; gated on a same-day
+    // bedlam pair again.)
+    if (BOT_AB_0915_SIGMA && best_room < 0 && far_room >= 0 && bot_room >= 0) {
+      best_room = far_room;
+      best_cost = far_dist;
+      static float Attack_far_log_t[MAX_BOTS];
+      float &fl = Attack_far_log_t[bot_index];
+      if (Gametime < fl || Gametime - fl > 30.0f) {
+        fl = Gametime;
+        LOG_DEBUG.printf("BOT OBJ: '%s' attack errand across terrain: no interior route rm%d -> enemy flag rm%d, "
+                         "priced by distance %.0f",
+                         Bots[bot_index].callsign, bot_room, best_room, best_cost);
       }
     }
     // Role-fix observer (2026-09-15): what the attack branch answers while our flag is out. The Bree

@@ -1910,6 +1910,7 @@ int BotEntryPortalIndex(object *obj, int wp_room, int goal_room) {
   }
   int nearest_p = -1;
   float nearest_d = 1e30f;
+  float best_onward = 1e30f;
   // Doors-first: the strict pass admits only engine-agreeing portals, the fallback pass adds the
   // router's DISAGREE class. Intact panes are a THIRD class, tried only when no door exists — the
   // same sole-route discipline the router and the aim exit set apply.
@@ -1948,8 +1949,8 @@ int BotEntryPortalIndex(object *obj, int wp_room, int goal_room) {
         nearest_d = d;
         nearest_p = p;
       }
+      float onward = 1e30f;
       if (n_exit > 0) {
-        float onward = 1e30f;
         for (int e = 0; e < n_exit; e++) {
           const float od = vm_VectorDistanceQuick(&cp, &exit_pts[e]);
           if (od < onward)
@@ -1957,8 +1958,22 @@ int BotEntryPortalIndex(object *obj, int wp_room, int goal_room) {
         }
         d += onward;
       }
-      if (d < best_d) {
+      // A NEAR-TIE GOES TO THE DOOR NEARER THE EXIT (2026-09-20). When the bot, both doors and the exit lie on one
+      // line the two totals are EQUAL by construction — the door behind the bot (short leg, long onward) and the
+      // door ahead (long leg, short onward) sum to the same length — and first-found won. Sigma Base again, with the
+      // lookahead in place: Red's east gallery arm, the hub rm13, the west arm and the rm9 exit are one straight
+      // corridor; from just inside rm13 the east door priced 7 + 261 and the west door 91 + 177, and an attacker
+      // with a terrain plan through rm9 re-entered the arm it had come from for three minutes (rendered 2026-09-20,
+      // 14 NOT-CROSSED rm19 -> rm9 with `now rm13`). Equal totals are equal trips; the one that ends nearer the exit
+      // is the one that does not turn the bot around. With no onward leg, or equal ones (Isengard's parallel slots),
+      // nearest still decides.
+      const float tie = BOT_AB_0915_SIGMA ? std::max(8.0f, 0.05f * std::min(d, best_d)) : -1.0f;
+      const bool better = (tie < 0.0f && d < best_d) || (d < best_d - tie) ||
+                          (fabsf(d - best_d) <= tie && onward < best_onward - 1.0f) ||
+                          (fabsf(d - best_d) <= tie && fabsf(onward - best_onward) <= 1.0f && d < best_d);
+      if (best_p < 0 || better) {
         best_d = d;
+        best_onward = onward;
         best_p = p;
       }
     }
