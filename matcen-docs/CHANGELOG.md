@@ -7,6 +7,13 @@ live navigation status is in [NAVIGATION.md](NAVIGATION.md) §7.0.
 Versioning: `0.8.x` = feature releases; `0.9.x` = the navigation-milestone series.
 A `-dev` suffix marks an in-test build that has not yet passed its validation gate.
 
+## [0.9.16-dev] - in test
+
+*Development series. One layer decides where a bot aims: the navigation code is consolidated step by step, and each
+step lands with the map that needs it and is soaked against a same-night control before it stays. Open on this line so
+far: one team's hub on Sigma Base, wandering on very large maps (HAVOC's DownTown), bots pinned chasing powerups on
+Batteries Included, and the last first-use stall when the server prepares a room. Do not run this as a release.*
+
 ## [0.9.15] - 2026-09-20
 
 *The outdoor and smooth-server release. Bots hold their own on maps where the fight crosses open ground (Town of
