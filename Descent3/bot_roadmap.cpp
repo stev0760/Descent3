@@ -2065,6 +2065,63 @@ int NearestVisible(RoadmapRoom *rr, const vector &pos) {
   return -1;
 }
 
+// --- Attaching a ship that already touches geometry ---
+// A hull sweep that STARTS in contact is blocked at 0 u in every direction, so a ship pressed against a face —
+// or spawned in one: Batteries Included tucks its player starts under desk lids and between partitions —
+// sees no node at all in a room whose lattice is a few units away. The attach said "wedged, let the rings or
+// the skeleton try", the skeleton aimed it into the furniture, and only the timed escape's reverse burst freed
+// it: 36% of Batteries lives began that way, a median 37-86 s each, a fifth of all bot time on the map; across
+// the 0.9.15 baseline 17-49% of failed via searches started at d=0. The ship IS where it is, so the question
+// is only which way is open: when the hull probe toward the nearest node dies within CONTACT_EPS of its start,
+// the nearest few nodes are tried again with a thin ray, and the first leg is flown on that. Used for the
+// SHIP's own attach only — a goal or an item is never attached through a gap a hull cannot pass.
+#define BOT_ROADMAP_CONTACT_EPS 1.5f    // a hull sweep blocked this close to its start began in contact
+#define BOT_ROADMAP_CONTACT_RADIUS 2.5f // the thin ray (== BOT_PORTAL_SHIP_RADIUS: a ship fits at all)
+#define BOT_ROADMAP_CONTACT_PROBES 24   // nearest nodes tried with the thin ray
+#define BOT_ROADMAP_CONTACT_RANGE 80.0f // ... and no farther than this
+
+bool ShipStartsInContact(const RoadmapRoom *rr, const vector &pos, const vector &toward) {
+  if (rr->outdoor)
+    return false; // terrain legs have their own probe; indoor furniture is the measured class
+  fvi_info hit{};
+  if (BotSegmentClear(rr->probe_room, pos, toward, BOT_ROADMAP_CLEARANCE, &hit, FQ_BACKFACE))
+    return false;
+  return Dist(pos, hit.hit_pnt) < BOT_ROADMAP_CONTACT_EPS;
+}
+
+void ContactAttachLog(const RoadmapRoom *rr, const char *who, int found) {
+  static float Contact_log_t = 0.0f;
+  if (Gametime >= Contact_log_t && Gametime - Contact_log_t <= 2.0f)
+    return;
+  Contact_log_t = Gametime;
+  LOG_DEBUG.printf("BOT NAV: roadmap attach from contact rm%d (%s, thin ray, %d node(s))", rr->probe_room, who, found);
+}
+
+// The ship's own attach for the roadmap via: NearestVisible, then the thin ray when the ship is in contact.
+int NearestVisibleShip(RoadmapRoom *rr, const vector &pos) {
+  int n = NearestVisible(rr, pos);
+  if (n >= 0 || rr->node.empty())
+    return n;
+  std::vector<std::pair<float, int>> cand;
+  for (int i = 0; i < (int)rr->node.size(); i++) {
+    const float d = Dist(pos, rr->node[i]);
+    if (d <= BOT_ROADMAP_CONTACT_RANGE)
+      cand.emplace_back(d, i);
+  }
+  if (cand.empty())
+    return -1;
+  std::sort(cand.begin(), cand.end());
+  if (!ShipStartsInContact(rr, pos, rr->node[cand[0].second]))
+    return -1;
+  const int probe_n = std::min((int)cand.size(), BOT_ROADMAP_CONTACT_PROBES);
+  for (int i = 0; i < probe_n; i++)
+    if (RoadmapLOSr(rr, pos, rr->node[cand[i].second], BOT_ROADMAP_CONTACT_RADIUS)) {
+      ContactAttachLog(rr, "via", 1);
+      return cand[i].second;
+    }
+  return -1;
+}
+
 // Bounded graph-connect probe: nearest node to pos with a hull-clear line, testing only the
 // max_cand closest nodes within max_radius. NearestVisible probes every closer node until one
 // clears — fine when a connection EXISTS (a few probes), but a genuinely disconnected point in a
@@ -2124,7 +2181,7 @@ static void QvDiag(int room_or_region, const char *outcome) {
 BotViaResult QueryVia(RoadmapRoom *rr, object *obj, int goal, vector *via_out) {
   BotPerfScope perf(BPERF_QUERY_VIA);
   bool diag = !OBJECT_OUTSIDE(obj) && BotRoadmapRoomIsHard(obj->roomnum);
-  int start = NearestVisible(rr, obj->pos);
+  int start = NearestVisibleShip(rr, obj->pos);
   if (start < 0) {
     if (diag)
       QvDiag(obj->roomnum, "NONE:no-visible-node");
@@ -2276,7 +2333,7 @@ bool EnsureUnionGraph(RoadmapRoom *rr, int room_idx, bool cached_only) {
 }
 
 std::vector<int> VisibleUnionNodes(RoadmapRoom *rr, const std::vector<UnionNode> &graph, const vector &pos,
-                                   float clearance) {
+                                   float clearance, bool *ship_contact = nullptr) {
   constexpr int kProbeBudget = 128;
   std::vector<std::pair<float, int>> cand;
   cand.reserve(graph.size());
@@ -2292,6 +2349,21 @@ std::vector<int> VisibleUnionNodes(RoadmapRoom *rr, const std::vector<UnionNode>
   for (int i = 0; i < probe_n; i++)
     if (RoadmapLOSr(rr, pos, graph[cand[i].second].pos, clearance))
       visible.push_back(cand[i].second);
+  // The ship's own attach (ship_contact given): in contact, the nearest few nodes by thin ray — see
+  // NearestVisibleShip. The caller validates its first leg with the same ray.
+  if (ship_contact) {
+    *ship_contact = false;
+    if (visible.empty() && probe_n > 0 && ShipStartsInContact(rr, pos, graph[cand[0].second].pos)) {
+      const int thin_n = std::min(probe_n, BOT_ROADMAP_CONTACT_PROBES);
+      for (int i = 0; i < thin_n && cand[i].first <= BOT_ROADMAP_CONTACT_RANGE; i++)
+        if (RoadmapLOSr(rr, pos, graph[cand[i].second].pos, BOT_ROADMAP_CONTACT_RADIUS))
+          visible.push_back(cand[i].second);
+      if (!visible.empty()) {
+        *ship_contact = true;
+        ContactAttachLog(rr, "composer", (int)visible.size());
+      }
+    }
+  }
   return visible;
 }
 
@@ -2369,7 +2441,8 @@ bool ComposeUnionRoute(RoadmapRoom *rr, object *obj, const vector &target_pos, i
   if (goals.empty())
     return false;
 
-  std::vector<int> starts = VisibleUnionNodes(rr, graph, obj->pos, clearance);
+  bool start_contact = false;
+  std::vector<int> starts = VisibleUnionNodes(rr, graph, obj->pos, clearance, &start_contact);
   if (starts.empty())
     return false;
 
@@ -2520,7 +2593,7 @@ bool ComposeUnionRoute(RoadmapRoom *rr, object *obj, const vector &target_pos, i
     waypoint.push_back(target_pos);
   if (waypoint.empty() || (int)waypoint.size() > BOT_COMPOSE_MAX_NODES)
     return false;
-  if (!RoadmapLOSr(rr, obj->pos, waypoint.front(), clearance))
+  if (!RoadmapLOSr(rr, obj->pos, waypoint.front(), start_contact ? BOT_ROADMAP_CONTACT_RADIUS : clearance))
     return false;
   for (size_t i = 1; i < waypoint.size(); i++)
     if (!RoadmapLOSr(rr, waypoint[i - 1], waypoint[i], clearance))
