@@ -873,6 +873,28 @@ AFTER the next room. *Proposal:* when the route continues past the next room, na
 the destination. *Risk:* it touches the aim of every multi-door room-to-room transition on every map — its own gate
 (bedlam + fellowship), not a rider on a release. Expected side effect: fewer `AIMSPLIT` lines everywhere.
 
+**Q13 — Sigma Base, Blue: the cavern rm37 has no in-room path from the rm26 doors to rm35's door (found 2026-09-20,
+smoking Q12).** *Symptom:* Blue attackers leaving their bunker bounce rm26 <-> rm37 on a 12-second cycle —
+`hop commit REFUSED rm37 -> rm35: door approach not in hull view`, then a composed route `rm37 len11 term=EXIT` whose
+second hop leads back out through rm26. Per 8-minute smoke the cycle count is 21 (0.9.15 control), 37, 20 and 64 across
+four builds, one to three bots each time: it swings with who falls in, not with the build. *Evidence:* bot-free dump —
+rm37 is 415 x 360 x 410 u, 1,263 faces, 17 portals, 26 skeleton nodes, lattice not routable; a shortest-path walk of its
+skeleton finds rm35's door (p15) UNREACHABLE from all five doors out of rm26, while the Red gallery rm19 prices its
+doors correctly (west 145 u, east 245 u, both direct edges). The door directly under p15 (p2, 194 u below it) opens into
+a pocket. *Hypothesis:* the missing-edge class in a giant room — the same family as DownTown rm110 and Facing Worlds rm0.
+*Proposal:* render rm37 first; it joins §4.0.2 step 4's test rooms (one in-room planner). *Risk:* none to look. This is
+the wall behind "lost in the bunker" on Blue's side, and no door-choice rule can fix it.
+
+**Q14 — a chain can fly a bot out through a door that is not its exit (lead, 2026-09-20).** *Symptom:* Sigma Base rm19,
+a bot 15 u inside the gallery's west arm bound for the rm9 exit 155 u ahead: `chain built rm19 len2`, and three seconds
+later `chain complete rm19 -> rm13` — back in the hub it had just left. *Hypothesis:* the chain's first node was the
+portal node of the door behind the bot, and a live portal node is flown as a crossing (`SkelFlyPos` hands out the far
+point when the ship is beside the plane). *Proposal:* a portal node that is not the chain's exit is flown to its near
+point only; never forced through. *Risk:* touches the beside rule that fixed the Batteries doorway presses — own gate.
+*Not yet measured cleanly:* "chains toward an adjacent room that end in another room" reads 15-60% per map, but that
+count includes legitimate detours and the registered closet pockets (rm27 -> rm29, rm2 -> rm3); it needs the router's
+next hop in the log line before it can rank anything.
+
 **Q6 — instrument defect.** `analyze_bot_log.py`'s Kills column matches one of the dozen death-message
 wordings the game prints and undercounts roughly 15×, so it cannot rank arms. The 2026-09-19 tables use
 `BotRespawn` lines instead. *Proposal:* widen the pattern, or drop the column and count respawns. *Risk:*
@@ -909,6 +931,18 @@ of 54 — all rm19 -> rm9 after rm13 -> rm19 (three doors) — 44% of the map's 
 pairs already cross 92%. On Batteries 87% of failed hops are on single-door pairs, and Polaris and QuadSomniac
 have none on multi-door pairs at all. *Prediction:* Sigma Base's rm19 -> rm9 falls toward the single-door failure
 rate (~30%); Isengard moves a little; Batteries and bedlam read flat.
+
+**Q12 in gate, 2026-09-20 overnight — three arms, because the first smoke split it.** Built as proposed, Q12 lifted
+Red's hub exits (rm19 -> rm9/rm11 crossed 8 -> 15 in eight minutes) and showed that the router's two-hop lookahead
+prices the onward leg by straight line: on Blue's side it sent every layer to the door under rm35 (Q13). So the series
+is: **L** (`3ea5fb0a`, binary `bd4f6e58`) — the lookahead credits only an onward leg a hull can fly, and a blind
+lookahead falls back to the nearest door; **Qb** (`b9b3b2e3`) — L plus the via layers always take the router's door;
+**Qc** (`7b67fe1b`) — L plus the via layers take it only when the pick rests on a validated onward leg. Eight-minute
+smokes cannot rank Qb against Qc (Q13 swamps them). Gate, `<lab>/gate-q12-20260920/`: Sigma Base 4x45 and fellowship
+9x15 for L, Qb and Qc, each launched the moment the 0.9.15 baseline starts the same map; bedlam 12, Batteries 12 and
+abend2 12 for Qb and Qc. *Read:* Red's rm19 -> rm9/rm11 crossings and hub hops per arm, entrances crossed and pickups
+per team, hard pins and new stuck loci everywhere; bedlam and Batteries against the baseline's own A/A spread. Keep at
+most one of Qb and Qc; revert what does not earn its place (the three are separate commits for that reason).
 
 **Co-op is off this line's critical path (operator, 2026-09-20), and stays on the radar.** His flight of 0.9.15:
 "slightly better, bots get stuck outside". That matches the record — the engine took none of 42 outdoor legs in
