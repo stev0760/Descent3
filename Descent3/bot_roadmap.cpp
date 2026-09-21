@@ -2089,6 +2089,32 @@ bool ShipStartsInContact(const RoadmapRoom *rr, const vector &pos, const vector 
   return Dist(pos, hit.hit_pnt) < BOT_ROADMAP_CONTACT_EPS;
 }
 
+// The thin ray says which way is OPEN; it does not say a hull FITS. This game forces tight squeezes and also has
+// plenty of openings no ship can pass (slits, bars, grates), and a node seen through one of those must not capture
+// a pressed ship ahead of the searches that could find the real way round. So the leg counts only if the ship merely
+// has to un-touch: somewhere in the first CONTACT_UNTOUCH units along the ray, the full hull sweep to the node runs
+// clear. An opened toy box passes; a slit never does.
+#define BOT_ROADMAP_CONTACT_UNTOUCH 24.0f
+bool ContactLegFlyable(const RoadmapRoom *rr, const vector &pos, const vector &node) {
+  if (!RoadmapLOSr(rr, pos, node, BOT_ROADMAP_CONTACT_RADIUS))
+    return false;
+  const float len = Dist(pos, node);
+  if (len < 2.0f)
+    return true;
+  const vector dir = (node - pos) / len;
+  const float reach = std::min(len, BOT_ROADMAP_CONTACT_UNTOUCH);
+  for (float t = 2.0f; t <= reach; t += 2.0f)
+    if (RoadmapLOSr(rr, pos + dir * t, node, BOT_ROADMAP_CLEARANCE))
+      return true;
+  static float Refuse_log_t = 0.0f;
+  if (Gametime < Refuse_log_t || Gametime - Refuse_log_t > 2.0f) {
+    Refuse_log_t = Gametime;
+    LOG_DEBUG.printf("BOT NAV: roadmap attach from contact REFUSED rm%d: thin ray open, no hull-wide leg within %.0fu",
+                     rr->probe_room, reach);
+  }
+  return false;
+}
+
 void ContactAttachLog(const RoadmapRoom *rr, const char *who, int found) {
   static float Contact_log_t = 0.0f;
   if (Gametime >= Contact_log_t && Gametime - Contact_log_t <= 2.0f)
@@ -2115,7 +2141,7 @@ int NearestVisibleShip(RoadmapRoom *rr, const vector &pos) {
     return -1;
   const int probe_n = std::min((int)cand.size(), BOT_ROADMAP_CONTACT_PROBES);
   for (int i = 0; i < probe_n; i++)
-    if (RoadmapLOSr(rr, pos, rr->node[cand[i].second], BOT_ROADMAP_CONTACT_RADIUS)) {
+    if (ContactLegFlyable(rr, pos, rr->node[cand[i].second])) {
       ContactAttachLog(rr, "via", 1);
       return cand[i].second;
     }
@@ -2356,7 +2382,7 @@ std::vector<int> VisibleUnionNodes(RoadmapRoom *rr, const std::vector<UnionNode>
     if (visible.empty() && probe_n > 0 && ShipStartsInContact(rr, pos, graph[cand[0].second].pos)) {
       const int thin_n = std::min(probe_n, BOT_ROADMAP_CONTACT_PROBES);
       for (int i = 0; i < thin_n && cand[i].first <= BOT_ROADMAP_CONTACT_RANGE; i++)
-        if (RoadmapLOSr(rr, pos, graph[cand[i].second].pos, BOT_ROADMAP_CONTACT_RADIUS))
+        if (ContactLegFlyable(rr, pos, graph[cand[i].second].pos))
           visible.push_back(cand[i].second);
       if (!visible.empty()) {
         *ship_contact = true;
