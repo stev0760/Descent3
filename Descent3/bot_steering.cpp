@@ -1866,6 +1866,36 @@ bool BotEntryCenterClear(int room_idx, int portal_idx) {
 // last resort) keeps the seam's own selection and the route's edge set from ever disagreeing.
 static int BotComputeRoutePasses(int from_room, int goal_room, int glass_mode, float *out_cost); // the router, below
 
+// The lookahead's onward leg is a straight line, and a straight line is a path length only where a hull can fly
+// it. Sigma Base's Blue exit: rm26 opens into the cavern rm37 by five doors, and the one directly under rm35's
+// door (194 u below it) won every lookahead on distance while opening into a pocket with no hull view of that
+// door — 39 hop commits REFUSED in eight minutes, and a composed route that led back out through rm26. The
+// verdict is static geometry, so it is kept per (room, entry portal, exit portal) until the level or the
+// roadmap changes (a shattered pane moves the roadmap serial).
+struct EntryOnwardMemo {
+  uint32_t key; // 0 = empty
+  int8_t clear;
+};
+static EntryOnwardMemo entry_onward_memo[2048];
+static int entry_onward_checksum = 0;
+static int entry_onward_serial = -1;
+
+static bool EntryOnwardClear(int wp_room, int entry_portal, int exit_portal, const vector &from, const vector &to) {
+  if (entry_onward_checksum != BOA_mine_checksum || entry_onward_serial != BotRoadmapSerial()) {
+    memset(entry_onward_memo, 0, sizeof(entry_onward_memo));
+    entry_onward_checksum = BOA_mine_checksum;
+    entry_onward_serial = BotRoadmapSerial();
+  }
+  const uint32_t key =
+      (((uint32_t)wp_room << 12) | ((uint32_t)(entry_portal & 63) << 6) | (uint32_t)(exit_portal & 63)) + 1u;
+  EntryOnwardMemo &m = entry_onward_memo[key % 2048u];
+  if (m.key != key) {
+    m.key = key;
+    m.clear = BotSegmentClear(wp_room, from, to, BOT_PSEUDO_BNODE_RADIUS) ? 1 : 0;
+  }
+  return m.clear != 0;
+}
+
 int BotEntryPortalIndex(object *obj, int wp_room, int goal_room) {
   if (!obj || !obj->ai_info)
     return -1;
@@ -1887,6 +1917,7 @@ int BotEntryPortalIndex(object *obj, int wp_room, int goal_room) {
   // the nearest exit portal; nearest alone decides only when the route ends in wp_room or the onward legs
   // tie (the isengard six-slot case: parallel slots, equal onward distance).
   vector exit_pts[BOT_MAX_PORTALS];
+  int exit_portal[BOT_MAX_PORTALS];
   int n_exit = 0;
   if (goal_room >= 0 && goal_room != wp_room && goal_room <= Highest_room_index && Rooms[goal_room].used) {
     float next_cost = 0.0f;
@@ -1904,6 +1935,7 @@ int BotEntryPortalIndex(object *obj, int wp_room, int goal_room) {
           continue;
         vector ep = wrm.portals[q].path_pnt;
         BotPortalCrossing(wp_room, q, &ep, nullptr);
+        exit_portal[n_exit] = q;
         exit_pts[n_exit++] = ep;
       }
     }
@@ -1911,6 +1943,7 @@ int BotEntryPortalIndex(object *obj, int wp_room, int goal_room) {
   int nearest_p = -1;
   float nearest_d = 1e30f;
   float best_onward = 1e30f;
+  bool best_clear = false;
   // Doors-first: the strict pass admits only engine-agreeing portals, the fallback pass adds the
   // router's DISAGREE class. Intact panes are a THIRD class, tried only when no door exists — the
   // same sole-route discipline the router and the aim exit set apply.
@@ -1950,11 +1983,18 @@ int BotEntryPortalIndex(object *obj, int wp_room, int goal_room) {
         nearest_p = p;
       }
       float onward = 1e30f;
+      bool onward_clear = false;
       if (n_exit > 0) {
+        // Swept from this door's far side (inside wp_room) to each exit; a clear leg beats a blocked one.
+        vector near_p = cp, plane_p = cp, far_p = cp;
+        BotPortalCrossingPath(cur, p, &near_p, &plane_p, &far_p, nullptr);
         for (int e = 0; e < n_exit; e++) {
           const float od = vm_VectorDistanceQuick(&cp, &exit_pts[e]);
-          if (od < onward)
+          const bool clear = EntryOnwardClear(wp_room, crm.portals[p].cportal, exit_portal[e], far_p, exit_pts[e]);
+          if ((clear && !onward_clear) || (clear == onward_clear && od < onward)) {
             onward = od;
+            onward_clear = clear;
+          }
         }
         d += onward;
       }
@@ -1970,12 +2010,25 @@ int BotEntryPortalIndex(object *obj, int wp_room, int goal_room) {
       const float tie = std::max(8.0f, 0.05f * std::min(d, best_d));
       const bool better = (d < best_d - tie) || (fabsf(d - best_d) <= tie && onward < best_onward - 1.0f) ||
                           (fabsf(d - best_d) <= tie && fabsf(onward - best_onward) <= 1.0f && d < best_d);
-      if (best_p < 0 || better) {
+      if (best_p < 0 || (onward_clear != best_clear ? onward_clear : better)) {
         best_d = d;
         best_onward = onward;
+        best_clear = onward_clear;
         best_p = p;
       }
     }
+  }
+  if (n_exit > 0 && best_p >= 0 && !best_clear && nearest_p >= 0) {
+    if (best_p != nearest_p) {
+      static float Blind_log_t = 0.0f;
+      if (Gametime < Blind_log_t || Gametime - Blind_log_t > 2.0f) {
+        Blind_log_t = Gametime;
+        LOG_DEBUG.printf("BOT NAV: entry door lookahead blind rm%d -> rm%d (goal rm%d): no clear onward leg, nearest "
+                         "portal %d (not %d)",
+                         cur, wp_room, goal_room, nearest_p, best_p);
+      }
+    }
+    best_p = nearest_p;
   }
   if (best_p >= 0 && nearest_p >= 0 && best_p != nearest_p) {
     static float Lookahead_log_t = 0.0f;
