@@ -878,6 +878,45 @@ wordings the game prints and undercounts roughly 15×, so it cannot rank arms. T
 `BotRespawn` lines instead. *Proposal:* widen the pattern, or drop the column and count respawns. *Risk:*
 none; it changes no behaviour and makes old logs comparable.
 
+### 4.0.2 0.9.16 — the collapse, pulled by maps (decided 2026-09-20)
+
+0.9.15 shipped 2026-09-20 as the outdoor and smooth-server release; the grind continues on 0.9.16-dev. Four of
+the six items carried over are each the play-facing side of one committee-collapse step (§3.0), so each
+subtraction lands with the map that needs it and gets its own gate. That is the guard against the 2026-09-01
+wall, where the collapse metric moved and play did not. Order, approved by the operator:
+
+| # | Work | Collapse step | Test case | Gate |
+|---|---|---|---|---|
+| 0 | Open 0.9.16-dev; read the 0.9.15 baseline; one no-behaviour cleanup commit | none | none | identical bot-free dumps + a smoke |
+| 1 | **Q12** — the router's door is the via layers' door | one mind at the door | Sigma Base Red rm19 -> rm9 | bedlam + fellowship + Sigma Base |
+| 2 | Powerup chase asks the routed goal for its destination | step 5 (the hunt half exists) | Batteries rm80/60/8 chase pins | Batteries 12 + bedlam |
+| 3 | **Q8** — the skeleton builds privately, commits at the end, rides the prewarm lane | enabler for step 1 | DownTown's 968 ms frame | perf instrument, identical dumps |
+| 4 | One in-room planner: union graph, cached plan, re-plan on invalidation | steps 1 and 3 | DownTown rm110, Facing Worlds rm0, Isengard rm45 -> rm34 (Q4) | the full map set |
+| 5 | Seam and hop-commit become the commitment rule; stuck escape becomes an invalidation signal | steps 2 and 4 | none | must read flat |
+
+Riders at any point, low risk: Q1 (flag-grab churn) and Q6 (the analyzer's kills column).
+
+**Gate method.** Control and variant run at the SAME TIME on separate port sets, never on different nights. The
+0.9.15 baseline (2026-09-20 overnight, `<lab>/baseline-0915-20260920/`, 27 soaks) carries two identical bedlam
+4-team arms run simultaneously: their per-map spread is the tolerance every 0.9.16 gate is read against, and it
+answers Q2. Its first round already showed the size of the problem — Apparition, same binary, same minute: 6
+captures from 48 pickups on one arm, 12 from 28 on the other. Soaks stay on the Debug build (asserts are the
+crash net, and history stays comparable); the operator flies the optimised one (Q9, decided).
+
+**Q12 pre-check (from existing logs, before building).** True door counts per room pair from the geometry dumps
+against hop outcomes: on Sigma Base the hop taken right after entering through a multi-door pair failed 49 times
+of 54 — all rm19 -> rm9 after rm13 -> rm19 (three doors) — 44% of the map's failed hops. Isengard's multi-door
+pairs already cross 92%. On Batteries 87% of failed hops are on single-door pairs, and Polaris and QuadSomniac
+have none on multi-door pairs at all. *Prediction:* Sigma Base's rm19 -> rm9 falls toward the single-door failure
+rate (~30%); Isengard moves a little; Batteries and bedlam read flat.
+
+**Co-op is off this line's critical path (operator, 2026-09-20), and stays on the radar.** His flight of 0.9.15:
+"slightly better, bots get stuck outside". That matches the record — the engine took none of 42 outdoor legs in
+the 2026-08-04 run, 99.2% of the legs it rejects are hull-blocked, and region-0 terrain has no network of ours
+either (NAVIGATION 7.0.1). The fix class is an extension of our outdoor stack (a lattice for terrain the engine
+gives no region, escort legs through the one outdoor dispatch), independent of the indoor collapse. First input
+when he opens it: the `BOT BNODELEG` verdict counts from a flight log.
+
 3. **Bump the series** (0.10.x per the versioning convention: 0.8.x features, 0.9.x navigation) once
    the map list plays smoothly. 0.10 is the adjacent work — bot management and feel, command surface
    and menus — plus the release package: Windows + Linux builds, D3 Pyrodeck, the cloud-hosted 24/7
