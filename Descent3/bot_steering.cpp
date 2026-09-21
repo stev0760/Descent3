@@ -1510,10 +1510,40 @@ static vector SkelFlyPos(int room_idx, int node, const vector *from = nullptr, b
   return p;
 }
 
-uint64_t BotAimExitMask(object *obj, int room_idx, int dest_room) {
+// One mind at the door. The goal layer aims at the door BotEntryPortalIndex picks — the nearest, or the one the
+// route's NEXT exit favours — while every via layer (skeleton hop, skeleton chain, roadmap via, composed route)
+// searched to the nearest door into the next room on its own graph, none of them told where the route goes after
+// it. Sigma Base's Red hub rm13 opens into the gallery rm19 by three doors: the router named the west one for the
+// rm9 exit, the composed chain ended at the east one, and the hop after it failed 49 times of 54. When the route
+// continues past next_room the router's door is the via layers' door; when it ends there, any door will do.
+int BotRouterExitDoor(object *obj, int room_idx, int next_room, int target_room) {
+  if (!obj || next_room < 0 || target_room < 0 || next_room == target_room)
+    return -1;
+  if (obj->roomnum != room_idx)
+    return -1; // the router prices doors from the ship's own room
+  return BotEntryPortalIndex(obj, next_room, target_room);
+}
+
+static uint64_t AimNarrowToRouterDoor(object *obj, int room_idx, int next_room, int target_room, uint64_t exits) {
+  if (!(exits & (exits - 1)))
+    return exits; // no door or one door: nothing to narrow, and no router query spent
+  const int door = BotRouterExitDoor(obj, room_idx, next_room, target_room);
+  if (door < 0 || door >= 64 || !(exits & (1ull << door)))
+    return exits; // the router's door is not one this layer admits: keep its own set
+  static float Narrow_log_t = 0.0f;
+  if (Gametime < Narrow_log_t || Gametime - Narrow_log_t > 2.0f) {
+    Narrow_log_t = Gametime;
+    LOG_DEBUG.printf("BOT NAV: exit set -> router door rm%d -> rm%d (goal rm%d): portal %d", room_idx, next_room,
+                     target_room, door);
+  }
+  return 1ull << door;
+}
+
+uint64_t BotAimExitMask(object *obj, int room_idx, int dest_room, int target_room) {
   if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used)
     return 0;
-  return AimExitMask(room_idx, SkelPortalCount(Rooms[room_idx]), dest_room, AimGlassBudgetForObj(obj));
+  const uint64_t exits = AimExitMask(room_idx, SkelPortalCount(Rooms[room_idx]), dest_room, AimGlassBudgetForObj(obj));
+  return (target_room >= 0) ? AimNarrowToRouterDoor(obj, room_idx, dest_room, target_room, exits) : exits;
 }
 
 // --- Collision-guided bridge search (0.9.12 skeleton rework, SKELETON_REWORK.md) ----------------
@@ -2162,7 +2192,8 @@ bool BotResolveRoomAim(object *obj, const vector &target_pos, int target_room, f
     if (next_room_hint < 0 && next_room < 0)
       next_room = target_room;
     const int glass_mode = AimGlassBudgetForObj(obj);
-    exits = AimExitMask(room_idx, np, next_room, glass_mode);
+    exits =
+        AimNarrowToRouterDoor(obj, room_idx, next_room, target_room, AimExitMask(room_idx, np, next_room, glass_mode));
     if (!exits) // router returned a non-adjacent hop (shouldn't happen) — direct fallback
       exits = AimExitMask(room_idx, np, target_room, glass_mode);
   } else {
@@ -2277,7 +2308,8 @@ int BotSkelBuildChain(object *obj, int room_idx, int target_room, const vector &
     if (next_room < 0)
       next_room = target_room;
     const int glass_mode = AimGlassBudgetForObj(obj);
-    exits = AimExitMask(room_idx, np, next_room, glass_mode);
+    exits =
+        AimNarrowToRouterDoor(obj, room_idx, next_room, target_room, AimExitMask(room_idx, np, next_room, glass_mode));
     if (!exits)
       exits = AimExitMask(room_idx, np, target_room, glass_mode);
   } else {

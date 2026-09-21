@@ -442,8 +442,14 @@ int BotPortalClass(int room_idx, int portal_idx);
 // The aim layer's exit set for `obj` leaving room_idx toward dest_room (the adjacent next room):
 // bit i set for portals[i] this bot may use, doors first, then vertical panes, then any pane as a
 // sole route — the router's own ladder. Shared with bot_roadmap.cpp so the lattice's exit goal can
-// never be a portal the router would not price (the wall-twin exit goal).
-uint64_t BotAimExitMask(object *obj, int room_idx, int dest_room);
+// never be a portal the router would not price (the wall-twin exit goal). With `target_room` (the route's
+// destination) the set is narrowed to the router's door when it names one — see BotRouterExitDoor.
+uint64_t BotAimExitMask(object *obj, int room_idx, int dest_room, int target_room = -1);
+
+// One mind at the door: the door out of room_idx (the ship's room) into next_room that the router picked for a
+// route continuing to target_room — BotEntryPortalIndex, the goal layer's own selection. -1 = no narrowing
+// applies (the route ends in next_room, the ship is not in room_idx, or no door is usable).
+int BotRouterExitDoor(object *obj, int room_idx, int next_room, int target_room);
 
 // Slice 2: a VALIDATED crossing point per portal. The engine's portal point is the vertex mean of
 // the door polygon and nothing ever checked that a hull can occupy it or sweep through it — a

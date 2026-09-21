@@ -2350,6 +2350,16 @@ bool ComposeUnionRoute(RoadmapRoom *rr, object *obj, const vector &target_pos, i
         goal_extra[node] = 0.0f;
         goal_portal[node] = p;
       }
+    // One mind at the door (BotRouterExitDoor): several doors into next_room and a route that goes on past it —
+    // the plan ends at the router's door, not at whichever door this graph reaches first.
+    if (goals.size() > 1) {
+      const int door = BotRouterExitDoor(obj, room_idx, next_room, target_room);
+      const int seed = (door >= 0 && door < (int)rr->portal_seed.size()) ? rr->portal_seed[door] : -1;
+      if (seed >= 0 && std::find(goals.begin(), goals.end(), seed) != goals.end()) {
+        goals.assign(1, seed);
+        goal_portal[seed] = door;
+      }
+    }
     if (next_room == target_room && BotStackedTrayAim(next_room, room_idx, &terminal_pos)) {
       terminal = BOT_COMPOSE_TERMINAL_STACKED_TRAY;
     } else {
@@ -2750,8 +2760,9 @@ BotViaResult BotRoadmapFindVia(object *obj, const vector &target_pos, int target
     }
     // The exit goal is chosen from the aim layer's admitted exit set (doors first, then panes per this
     // bot's glass authority) — never from "any portal into next_room": a wall twin beside the real door
-    // was the nearest seed from most of Batteries rm84 and the lattice routed carriers onto the wall.
-    const uint64_t exits = BotAimExitMask(obj, room_idx, next_room);
+    // was the nearest seed from most of Batteries rm84 and the lattice routed carriers onto the wall. With the
+    // route's destination passed in, the set is the router's one door whenever the route goes on past next_room.
+    const uint64_t exits = BotAimExitMask(obj, room_idx, next_room, target_room);
     float best_d = FLT_MAX;
     for (int p = 0; p < Rooms[room_idx].num_portals; p++) {
       if (Rooms[room_idx].portals[p].croom != next_room || p >= 64 || !(exits & (1ull << p)))
