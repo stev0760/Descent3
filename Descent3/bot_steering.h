@@ -215,7 +215,7 @@ vector BotWaypointAimPos(int wp_room, const vector &toward, object *obj, int goa
 // gallery, interrupted by the bridge room rm13) is entered by the door on the goal's side rather than
 // the door behind the bot. Nearest still wins when the onward legs tie (parallel slots).
 // Returns the portal index in obj's current room, or -1 when there is no usable door.
-int BotEntryPortalIndex(object *obj, int wp_room, int goal_room = -1);
+int BotEntryPortalIndex(object *obj, int wp_room, int goal_room = -1, bool *onward_validated = nullptr);
 
 // Per-(room, entry-portal) form of the buried-centre probe: does THIS portal's path_pnt have a
 // hull-clear line to the room's path_pnt? The exact cast BotRoomPathPntReachable makes per portal
@@ -447,8 +447,9 @@ int BotPortalClass(int room_idx, int portal_idx);
 uint64_t BotAimExitMask(object *obj, int room_idx, int dest_room, int target_room = -1);
 
 // One mind at the door: the door out of room_idx (the ship's room) into next_room that the router picked for a
-// route continuing to target_room — BotEntryPortalIndex, the goal layer's own selection. -1 = no narrowing
-// applies (the route ends in next_room, the ship is not in room_idx, or no door is usable).
+// route continuing to target_room — BotEntryPortalIndex, the goal layer's own selection — when that pick rests
+// on a hull-clear onward leg. -1 = no narrowing applies (the route ends in next_room, the ship is not in
+// room_idx, no door is usable, or the lookahead was blind and the pick is only the nearest door).
 int BotRouterExitDoor(object *obj, int room_idx, int next_room, int target_room);
 
 // Slice 2: a VALIDATED crossing point per portal. The engine's portal point is the vertex mean of

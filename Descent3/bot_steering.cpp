@@ -1516,12 +1516,16 @@ static vector SkelFlyPos(int room_idx, int node, const vector *from = nullptr, b
 // it. Sigma Base's Red hub rm13 opens into the gallery rm19 by three doors: the router named the west one for the
 // rm9 exit, the composed chain ended at the east one, and the hop after it failed 49 times of 54. When the route
 // continues past next_room the router's door is the via layers' door; when it ends there, any door will do.
+// Only an INFORMED pick binds: when no candidate door has a hull-clear onward leg the router's choice is just the
+// nearest door by straight line, and a via layer searching its own graph knows the room better than that.
 int BotRouterExitDoor(object *obj, int room_idx, int next_room, int target_room) {
   if (!obj || next_room < 0 || target_room < 0 || next_room == target_room)
     return -1;
   if (obj->roomnum != room_idx)
     return -1; // the router prices doors from the ship's own room
-  return BotEntryPortalIndex(obj, next_room, target_room);
+  bool validated = false;
+  const int door = BotEntryPortalIndex(obj, next_room, target_room, &validated);
+  return validated ? door : -1;
 }
 
 static uint64_t AimNarrowToRouterDoor(object *obj, int room_idx, int next_room, int target_room, uint64_t exits) {
@@ -1926,7 +1930,9 @@ static bool EntryOnwardClear(int wp_room, int entry_portal, int exit_portal, con
   return m.clear != 0;
 }
 
-int BotEntryPortalIndex(object *obj, int wp_room, int goal_room) {
+int BotEntryPortalIndex(object *obj, int wp_room, int goal_room, bool *onward_validated) {
+  if (onward_validated)
+    *onward_validated = false;
   if (!obj || !obj->ai_info)
     return -1;
   int cur = obj->roomnum;
@@ -2059,6 +2065,8 @@ int BotEntryPortalIndex(object *obj, int wp_room, int goal_room) {
       }
     }
     best_p = nearest_p;
+  } else if (onward_validated) {
+    *onward_validated = (n_exit > 0 && best_p >= 0 && best_clear);
   }
   if (best_p >= 0 && nearest_p >= 0 && best_p != nearest_p) {
     static float Lookahead_log_t = 0.0f;
