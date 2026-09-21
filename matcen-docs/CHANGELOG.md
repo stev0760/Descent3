@@ -11,8 +11,24 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
 
 *Development series. One layer decides where a bot aims: the navigation code is consolidated step by step, and each
 step lands with the map that needs it and is soaked against a same-night control before it stays. Open on this line so
-far: one team's hub on Sigma Base, wandering on very large maps (HAVOC's DownTown), bots pinned chasing powerups on
-Batteries Included, and the last first-use stall when the server prepares a room. Do not run this as a release.*
+far: one team's hub on Sigma Base, wandering on very large maps (HAVOC's DownTown), one Batteries Included office whose
+route network never grows, and the last first-use stall when the server prepares a room. Do not run this as a release.*
+
+**In test (soaked against same-day controls, not yet flown):**
+
+- **Bots leave their spawn point at once on Batteries Included.** That map starts many ships inside opened toy boxes and
+  under desks. A bot spawned touching the box could not "see" any route out, because every check it ran started from a
+  ship already in contact with a wall, so it pushed at the furniture until a timer freed it: about a third of bot lives
+  began that way, 40 to 90 seconds each, a fifth of all bot time on the map. A bot in contact now looks for the nearest
+  route point along a thin line and uses it only when a full ship's width is clear once it has moved a few units, and a
+  start boxed in on every side but one flies the way the level designer pointed it. Twelve rounds against a control:
+  lives that begin pinned 35% to 5%, hard pins down by three quarters, scoring unchanged. This was not new; it reads the
+  same on every build back to 0.9.13. No change on the bedlam maps, abend2 or the fellowship maps.
+- **Sigma Base: attackers get out of their own bunker and into the enemy's.** When a room opens into the next by several
+  doors, the door a bot picks now accounts for where the route goes afterwards only when that onward stretch can
+  actually be flown, and every part of the pilot heads for the same door. Two three-hour runs against controls: failed
+  room-to-room moves down by a third to a half, five to ten times as many bots reaching the enemy bunker, pickups up
+  from 8 to about 20, the first captures on the map. Still a hard map: captures stay in single figures over three hours.
 
 ## [0.9.15] - 2026-09-20
 

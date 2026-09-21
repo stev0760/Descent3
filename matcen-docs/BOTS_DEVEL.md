@@ -18,6 +18,74 @@ the flag-room arrival stall and the ~58% connectivity dead-ends. 0.9.14 was vali
 Isengard's interior pins gone, Animal House stuck-free) and released; the previous stable release was
 **0.9.13** (0.9.11 preceded it; 0.9.12 was never promoted).
 
+### 2026-09-21: the 0.9.15 baseline; Q12 as three arms; Batteries' pins were trapped player starts
+
+**Baseline (0.9.15 `bfbe6c08`, overnight 09-20, 27 soaks in four parallel chains, all rc=0 / guard PASS / 0 asserts).**
+`<lab>/baseline-0915-20260920/`. Two identical bedlam 4-team arms ran at the same time as a noise floor: Apparition 25
+vs 37 captures and 22 vs 37 stucks, Polaris 31 vs 42 captures, on one binary in one minute. Every 0.9.16 gate is read
+against that spread. Headlines: Batteries 62 captures (Blue 32 / Red 30), 514 hard pins; KegD3 55 captures, 0 hard;
+Bree 57 (Blue 45 / Red 12); Moria Blue 20 / Red 3; Isengard 24 captures in 9 rounds, stuck escalations 8.5/round
+(v7 arms: 2.0 and 5.7), hard 2.4/round (0.3, 0.9); DownTown 2 x 45 min: hot room rm37 (101 and 56 timeouts), then rm31,
+rm110 38 in one run, worst frame 947 ms; **Facing Worlds 72 frames over 250 ms in 15 minutes, worst 3.0 s**; Havoc's
+Rude Awakening 57 timeouts (24 hard) in one round.
+
+**Q12, and why it became three commits.** Pre-check from existing logs (true door counts from the geometry dumps against
+hop outcomes): on Sigma Base the hop right after entering through a multi-door pair failed 49 of 54, all rm19 -> rm9
+after rm13 -> rm19; bedlam and Batteries have almost no failed hops on multi-door pairs. Built as proposed, Q12 lifted
+Red's hub exits in a smoke and exposed that `BotEntryPortalIndex`'s two-hop lookahead prices the onward leg by straight
+line: Blue's rm26 opens into the cavern rm37 by five doors and the one 194 u under rm35's door won every time, into a
+pocket. **L** `3ea5fb0a`: the onward leg is swept at hull radius from the door's far side; a clear leg beats a blocked
+one; no clear leg anywhere = the lookahead is blind and the nearest door decides. **Qb** `b9b3b2e3`: the four via layers
+(skeleton hop, skeleton chain, roadmap via, composed route) always take the router's door when the route continues past
+the next room. **Qc** `7b67fe1b`: they take it only when the pick rests on a validated onward leg.
+
+| Sigma Base, 4 x 45 min, arms simultaneous | control | L | Qb | Qc |
+|---|---|---|---|---|
+| failed hops (night / day sample) | 1483 / 1192 | 814 / 899 | 406 / - | 490 / 686 |
+| entrances crossed (night) | 31 | 184 | 369 | 239 |
+| rm19 -> rm9 crossed / not (night, day) | 32/916, 22/760 | 15/195, 12/141 | 74/155 | 60/40, 50/60 |
+| pickups, captures (night + day) | 8, 0 | 21, 6 | 7, 0 | 19, 4 |
+| respawns (night + day) | 34 | 65 | 21 | 76 |
+| hard pins outside rm22 (day) | 57 | 14 | - | 18 |
+
+Qb grew a hard-pin locus in rm19 (24 timeouts, 11 hard, against 2 / 0 / 0) and is rejected. L and Qc agree across both
+samples; Qc is the better mechanism (rm19 -> rm9 crosses 45-60% against 7-8%), equal in play. Flat elsewhere: bedlam
+(L 116 captures vs 118; Qb/Qc inside the A/A spread), Batteries (L 82 vs 62, Qb 55, Qc 59 vs 62), abend2 (18 / 16 / 18),
+fellowship (28 / 28 / 17 / 27, one round per level). rm22's timeouts are one bot circling at net_disp 26 in every arm.
+**Operator ruling pending: L alone, or L + Qc.** New in the queue from this work: Q13 (rm37 has no in-room path from the
+rm26 doors to rm35's door — the loop count swings 20-64 per smoke on every build) and Q14 (a chain's first node can be
+the door behind the bot, flown as a crossing).
+
+**Step 2 was mis-named: Batteries' pins are trapped player starts.** The baseline's 514 hard pins sit at one spot each
+in six rooms, on ordinary routed legs (`BOT PRESS goal=pursuit rmN` is the routed travel goal, not combat and not a
+powerup), and 75% of the episodes begin within 25 s of that bot respawning. Per life: 36% begin hard-pinned at the
+start, median 37-86 s, 192 of 948 bot-minutes; the same on 0.9.13-dev (33%) and three 0.9.14-dev builds (45 / 33 / 33%),
+and 0% on every other baseline map. The operator supplied the reason: the map's theme is RC-sized toy Pyros loose in the
+Outrage offices, and many player starts are inside opened toy boxes. `$nav sweep` from two starts: every hull sweep
+blocked after 0 u at both radii (rm35: a downward face just above the ship; rm28: two opposing faces). A sweep that
+starts in contact is blind, so the composer and the roadmap via find no node, the ladder falls to the skeleton aim,
+which flies into the box wall, and the timed escape's reverse burst is the only exit, after which the skeleton aim
+drags the bot back. The blindness is general: 17-49% of failed via searches on every baseline map start at d=0.
+**C1** `d783cd18` the ship's own attach (`NearestVisibleShip`, `VisibleUnionNodes` for the composer start) retries the
+nearest 24 nodes within 80 u with a 2.5 u ray when the hull probe dies within 1.5 u of its start; **C2** `14555253` at
+respawn the bot records the start's position and facing (`BOT SPAWN: ... clear ahead: hull 0u thin 54-80u` at every
+trapped start) and, for 45 s within 25 u of it while in contact and unattached, flies the facing; **C3** `f27d247d`
+(the operator's point: tight squeezes are legal, too-small openings are common) a thin-ray leg counts only if a full
+hull sweep to the node runs clear from somewhere in its first 24 u.
+
+| Batteries, 12 rounds, same session | control | C1 | C2 | C3 |
+|---|---|---|---|---|
+| lives begun pinned at the start | 35% | 11% | 3% | 5% |
+| bot-minutes lost there / played | 189 / 975 | 61 / 805 | 33 / 945 | 39 / 909 |
+| stuck escalations (hard) | 520 (391) | 250 (155) | 268 (101) | 266 (101) |
+| pickups / captures | 135 / 71 | 108 / 46 | 154 / 76 | 144 / 70 |
+| attaches / refusals / egress legs | 0 | 585 / - / - | 617 / - / 558 | 574 / 73 / 599 |
+
+Bedlam (captures 138 / 136 / 132, hard 17 / 3 / 10 for control / C2 / C3), abend2 (13 / 26 / 9, hard 20 / 24 / 18) and
+fellowship (25 / 22 / 22; C2's 34 hard against 13 is one bot, ten times, at Isengard rm36's known spot with no attach
+in that room) read flat. **Left on Batteries:** rm60 (64 hard, 19 of 33 lives) and rm80 (21): rm80's lattice is 3 cells
+because its one door seed is boxed in by a propped door leaf — the lattice needs a second seeding source.
+
 ### 2026-09-20: the lag was one thread building roadmaps; sliced builds; Sigma Base attackers had no errand
 
 The operator flew `fix/outdoor-0915` (v7) and ruled the fellowship set done: Bree "almost perfect", Isengard and Doors of
