@@ -944,6 +944,25 @@ abend2 12 for Qb and Qc. *Read:* Red's rm19 -> rm9/rm11 crossings and hub hops p
 per team, hard pins and new stuck loci everywhere; bedlam and Batteries against the baseline's own A/A spread. Keep at
 most one of Qb and Qc; revert what does not earn its place (the three are separate commits for that reason).
 
+**Step 2 re-scoped by measurement, 2026-09-21 — the Batteries pins were never the powerup chase.** The 0.9.15
+baseline (12 rounds) put 514 hard pins in six rooms, each at ONE spot, nearly all on an ordinary routed leg
+(`goal=pursuit`), with the doors themselves crossing fine. 75% of the hard-pin episodes began within 25 s of that bot
+respawning: Batteries tucks its player starts under desk lids and between partitions, **36% of bot lives began
+hard-pinned at the start, a median 37-86 s each, 192 of 948 bot-minutes**. No other baseline map shows it (0% on
+bedlam, abend2, KegD3, Sigma Base, fellowship, Havoc, nysa). *Mechanism (`$nav sweep` from two starts, rendered):* every
+hull sweep from the start is blocked after 0 u, so every planner that sweeps from the ship's position is blind; the
+composer and the roadmap via find no node, the ladder falls to the skeleton aim, which flies into the furniture, and
+only the timed escape's reverse burst frees the bot — after which the skeleton aim drags it back. The blindness is
+general: 17-49% of failed via searches across the baseline maps started at d=0. *In gate
+(`<lab>/gate-contact-20260921/`, control = the parent build):* **C1** (`d783cd18`) the ship's own network attach
+retries with a 2.5 u ray when its hull probe dies within 1.5 u of its start; **C2** (`14555253`) a start boxed in even
+to a thin ray flies the player start's own facing (measured at every trapped start: hull 0 u ahead, thin ray 54-80 u).
+One-round smokes: lives pinned at spawn 36% -> 18% -> 7%, hard pins per round ~34 -> 18 -> 10. Arms: Batteries 12 for
+control / C1 / C2; bedlam 12, fellowship 9 and abend2 12 for control / C2. *Left over and separate:* rm80 (and rm60) —
+a 214 u office whose lattice is 3 cells because its one door seed is boxed in by a propped door leaf; the lattice
+needs a second seeding source when door seeds yield a degenerate grid. The powerup-chase-through-the-planner work
+(collapse step 5) keeps its place in the order but has lost its Batteries justification.
+
 **Co-op is off this line's critical path (operator, 2026-09-20), and stays on the radar.** His flight of 0.9.15:
 "slightly better, bots get stuck outside". That matches the record — the engine took none of 42 outdoor legs in
 the 2026-08-04 run, 99.2% of the legs it rejects are hull-blocked, and region-0 terrain has no network of ours
