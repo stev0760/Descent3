@@ -2656,6 +2656,29 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
     }
   }
 
+  // Spawn egress, part 2. Still at the start, still touching it (the hull sweep toward the leg's target dies at its
+  // own origin) and no network attach above: fly the start's facing as far as the thin ray measured it clear.
+  // Everything below sweeps from the ship's position and would report a wall in every direction.
+  if (!OBJECT_OUTSIDE(obj) && Bots[bot_index].spawn_clear_ahead >= BOT_SPAWN_EGRESS_MIN &&
+      Gametime - Bots[bot_index].life_start_time < BOT_SPAWN_EGRESS_WINDOW &&
+      vm_VectorDistanceQuick(&obj->pos, &Bots[bot_index].spawn_pos) < BOT_SPAWN_EGRESS_RADIUS) {
+    fvi_info touch{};
+    if (!BotSegmentClear(obj->roomnum, obj->pos, target_pos, obj->size, &touch) &&
+        vm_VectorDistanceQuick(&obj->pos, &touch.hit_pnt) < 1.5f) {
+      const float run = std::min(Bots[bot_index].spawn_clear_ahead - obj->size, 50.0f);
+      Bots[bot_index].via_point = Bots[bot_index].spawn_pos + Bots[bot_index].spawn_fvec * run;
+      Bots[bot_index].via_expires = Gametime + BOT_VIA_COMMIT_TIME;
+      Bots[bot_index].via_is_skeleton = 0;
+      issue_via_goal();
+      if (verdict_out)
+        *verdict_out = BOT_VIA_FOUND;
+      LOG_DEBUG.printf("BOT NAV: '%s' spawn egress in room %d: %.0fu along the start's facing (target room %d)",
+                       Bots[bot_index].callsign, (int)obj->roomnum, run, target_room);
+      BotNavMemberWin(bot_index, NAV_MEMBER_VIA);
+      return 1;
+    }
+  }
+
   // Not committed: probe the line to the active steer target and detour if an interior face
   // blocks it AND a clear go-around exists. CLEAR and NONE both mean "steer normally" here —
   // NONE additionally feeds the caller's sealed-target counting via *verdict_out.
@@ -8066,6 +8089,32 @@ static void BotDoFiring(int bot_index) {
 }
 
 // Respawn a dead bot.
+
+// Spawn egress, part 1: remember where and which way this life began. Batteries Included hides its player starts
+// under desk lids and between partitions; the ship begins touching a face, every hull sweep from it is blocked at
+// 0 u, and the planners go blind (36% of lives there began pinned, a fifth of all bot time). The network attach
+// handles the starts a thin ray can see a node from (bot_roadmap.cpp, NearestVisibleShip); for a start boxed in
+// on every side but one, the start's own facing says which side that is.
+static void BotRecordSpawn(int bot_index, int slot) {
+  object *sobj = &Objects[Players[slot].objnum];
+  Bots[bot_index].spawn_pos = sobj->pos;
+  Bots[bot_index].spawn_fvec = sobj->orient.fvec;
+  Bots[bot_index].spawn_clear_ahead = 0.0f;
+  if (OBJECT_OUTSIDE(sobj))
+    return;
+  const vector ahead = sobj->pos + sobj->orient.fvec * BOT_SPAWN_EGRESS_REACH;
+  fvi_info thin{}, hull{};
+  const bool thin_clear = BotSegmentClear(sobj->roomnum, sobj->pos, ahead, BOT_PORTAL_SHIP_RADIUS, &thin);
+  const bool hull_clear = BotSegmentClear(sobj->roomnum, sobj->pos, ahead, sobj->size, &hull);
+  const float thin_d = thin_clear ? BOT_SPAWN_EGRESS_REACH : vm_VectorDistanceQuick(&sobj->pos, &thin.hit_pnt);
+  const float hull_d = hull_clear ? BOT_SPAWN_EGRESS_REACH : vm_VectorDistanceQuick(&sobj->pos, &hull.hit_pnt);
+  Bots[bot_index].spawn_clear_ahead = thin_d;
+  LOG_DEBUG.printf(
+      "BOT SPAWN: '%s' rm%d pos=(%.0f,%.0f,%.0f) facing=(%.2f,%.2f,%.2f) clear ahead: hull %.0fu thin %.0fu",
+      Bots[bot_index].callsign, (int)sobj->roomnum, sobj->pos.x(), sobj->pos.y(), sobj->pos.z(), sobj->orient.fvec.x(),
+      sobj->orient.fvec.y(), sobj->orient.fvec.z(), hull_d, thin_d);
+}
+
 static void BotRespawn(int bot_index) {
   int slot = Bots[bot_index].player_slot;
 
@@ -8098,6 +8147,7 @@ static void BotRespawn(int bot_index) {
   Bots[bot_index].chasing_powerup_handle = OBJECT_HANDLE_NONE;
   Bots[bot_index].chasing_powerup_timer = 0.0f;
   Bots[bot_index].life_start_time = Gametime;
+  BotRecordSpawn(bot_index, slot);
   Bots[bot_index].gearup_budget_logged = false;
   Bots[bot_index].troute_goal_room = -1; // $nav troute: respawn position invalidates any terrain plan
   Bots[bot_index].troute_reject_until = 0.0f;
