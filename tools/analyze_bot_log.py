@@ -28,7 +28,11 @@ RE_STUCK = re.compile(r"stuck escalation \(room (-?\d+)")
 # g1=player name (bots carry the " [BOT]" suffix), g2=team. Split bot vs human captures —
 # soak stats must not credit bots with captures a human in the lobby made.
 RE_CAPTURE = re.compile(r"\*?(.+?) \((\w+)\) captures the (.+?) Flags?\b")
-RE_KILL = re.compile(r"was killed by")
+# Q6 (PLAN 4.0.1): the game's death messages are HUD text and mostly never reach the server log (one wording,
+# `was killed by`, matched 29 lines against 549 bot respawns on a 12-round log). Bot deaths are counted from
+# `BotRespawn` lines instead: every death respawns, and the round-start spawn takes another path (it never
+# prints this line), so every respawn line is a death.
+RE_KILL = re.compile(r"was killed by")  # no longer counted; the column counts respawns
 # Carrier nav — tolerant of both the pre-Phase-11 ("-> home N") and Phase-11 waypoint-injection
 # ("-> wp W (home N)" / Hoard "(K orbs) room R -> wp W (goal N)") formats. g1=current room, g2=goal.
 RE_CARRIER_NAV = re.compile(r"carrier nav (?:\(\d+ orbs\) )?room (-?\d+) -> (?:home |wp \d+ \((?:home|goal) )(\d+)")
@@ -1087,6 +1091,7 @@ def parse_log(path):
             m = RE_RESPAWN.search(line)
             if m:
                 now = _ts_seconds(last_ts)
+                s["kills"] += 1  # a bot death (see RE_KILL)
                 prev = s["life_open"].get(m.group(1))
                 if prev is not None and now is not None and prev["spawn"] is not None and now < prev["spawn"]:
                     now += 86400.0  # the log crossed midnight (HH:MM:SS timestamps only)
@@ -1194,10 +1199,6 @@ def parse_log(path):
                     s["human_caps"] += captured
                     s["human_cappers"][m.group(1).strip()] += captured
                 s["team_caps"][m.group(2)] += captured
-                continue
-
-            if RE_KILL.search(line):
-                s["kills"] += 1
                 continue
 
             m = RE_CARRIER_NAV.search(line)
@@ -1334,11 +1335,11 @@ def detect_anomalies(stats):
         if mode == "CTF" and s["kills"] > 10 and bot_caps == 0:
             if s["obj_nav"] > 0 and s["stucks"] < 20:
                 anomalies.append((name, "FLAG_PICKUP_FAILURE",
-                                  f"CTF mode with {s['kills']} kills and {s['obj_nav']} objective nav events "
+                                  f"CTF mode with {s['kills']} bot deaths and {s['obj_nav']} objective nav events "
                                   f"but zero captures — bots reach flag rooms but can't collect flags"))
             elif s["obj_nav"] == 0 and s["poll_ctf"] == 0:
                 anomalies.append((name, "FLAG_DETECT_SILENCE",
-                                  f"CTF mode with {s['kills']} kills but zero objective nav and zero poll events — "
+                                  f"CTF mode with {s['kills']} bot deaths but zero objective nav and zero poll events — "
                                   f"flag objects likely invisible to bot objective system"))
 
         # Phase 11 router: present but never diverged from BOA / found no geometry / never rerouted,
@@ -1572,7 +1573,7 @@ def detect_anomalies(stats):
         # Zero activity on a CTF map
         if mode == "CTF" and s["kills"] == 0 and s["captures"] == 0 and s["stucks"] > 50:
             anomalies.append((name, "TOTAL_BREAKDOWN",
-                              f"Zero kills and captures with {s['stucks']} stucks — "
+                              f"Zero bot deaths and captures with {s['stucks']} stucks — "
                               f"bots may be completely trapped"))
 
     return anomalies
@@ -1632,7 +1633,7 @@ def print_report(stats, total_lines, log_path):
             cappers.update(s["human_cappers"])
         who = ", ".join(f"{n} x{c}" for n, c in cappers.most_common())
         cap_note += f" (+{total_human_caps} human: {who})"
-    print(f"**Totals:** {cap_note}, {total_kills} kills, {total_stucks} stucks")
+    print(f"**Totals:** {cap_note}, {total_kills} bot deaths, {total_stucks} stucks")
     print()
 
     # Anomalies (top of report for visibility)
@@ -1646,7 +1647,7 @@ def print_report(stats, total_lines, log_path):
     # Per-map summary table
     print(f"## Per-Map Summary")
     print()
-    print(f"| Map | Rounds | Mode | Bot Captures (/rnd) | Kills (/rnd) | Stucks (/rnd) | Carrier Deaths | Avg Death Dist |")
+    print(f"| Map | Rounds | Mode | Bot Captures (/rnd) | Bot deaths (/rnd) | Stucks (/rnd) | Carrier Deaths | Avg Death Dist |")
     print(f"|---|---|---|---|---|---|---|---|")
     for name in maps:
         s = stats[name]
