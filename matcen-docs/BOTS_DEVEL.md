@@ -42,7 +42,20 @@ pinned on E1, 3 of 7 on the control. A per-half-second trace (`BOT SPAWNTRACE`, 
 ship does: it is **not wedged** — it slides along the box axis at 10-22 u/s, turning sideways, shuttling between 4 and 11 u
 from the start with the engine's movement direction flipping sign every sample, and the pursuit goal slot empty in almost
 every sample; in the one life that left (41 u/s within half a second) the egress via was being flown from the powerup
-chase's slot. [Verdict from the extended trace: see below.] Two instrument errors on the way, both caught: the first
+chase's slot. The extended trace (goal slots, via commitment, state) gave the verdict on an rm80 life: the egress via IS
+committed and held from the chase's slot, but the engine's movement direction points away from it (dot with the facing
+-0.26 to -0.33, thrust mostly vertical) — inside a box that small the engine's wall-avoidance term swamps the goal
+direction. **E2** (`cdfc5974`, `517a5df0`): while the egress via is the committed one and the ship is still at its start
+(`via_is_egress`, `BotSpawnEgressLive`), `BotApplyThrust` decomposes the start's facing directly — the stuck escape's
+precedent, a local substitution, never a `movement_dir` write — and the orient override faces it; and a life that begins
+without `BotRespawn` (the round-start spawn, a fifth of all lives, which never had a start recorded and so never an egress)
+records its start on its first frame. Gate, Batteries 12 rounds against the same-minute control (`<lab>/gate-e2-20260922/`,
+guard PASS, 0 asserts): **lives pinned at spawn 22 -> 6 (4% -> 1%); rm60 19 of 41 -> 3 of 59; stuck escalations 242 (104
+hard) -> 167 (32); pickups/captures 128/64 -> 155/72 (Blue 72/40 -> 92/48, Red 56/24 -> 63/24).** rm60 leaves the hard-pin
+list; rm80 rises 18 -> 25 because the lives that used to die in the box now reach its door leaf — the deferred class. The
+direct thrust never rammed: no start on Batteries or the nine fellowship levels spent two seconds under 5 u/s with the
+egress live (scratchpad `spawn_ram.py`); fellowship read flat (28 egress fires in nine rounds, hard pins 3). Two instrument
+errors on the way, both caught: the first
 "egress-first" tabulation was recomputed twice (the tracer's match order briefly swallowed `composed route` lines), and
 the split itself re-verified; and the chase label — the log's `chasing 'X'` on the pins — was not the mechanism (with a
 chase 6 of 10 lives pinned, without one 15 of 25).

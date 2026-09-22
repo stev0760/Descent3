@@ -21,9 +21,13 @@ route network never grows, and the last first-use stall when the server prepares
   ship already in contact with a wall, so it pushed at the furniture until a timer freed it: about a third of bot lives
   began that way, 40 to 90 seconds each, a fifth of all bot time on the map. A bot in contact now looks for the nearest
   route point along a thin line and uses it only when a full ship's width is clear once it has moved a few units, and a
-  start boxed in on every side but one flies the way the level designer pointed it. Twelve rounds against a control:
-  lives that begin pinned 35% to 5%, hard pins down by three quarters, scoring unchanged. This was not new; it reads the
-  same on every build back to 0.9.13. No change on the bedlam maps, abend2 or the fellowship maps.
+  start boxed in on every side but one flies the way the level designer pointed it — under its own thrust, because inside
+  a toy box the ship's built-in wall avoidance drowns out any goal and the ship shuttled in place; and the round-start
+  spawn, which never had a start recorded, gets the same treatment. Twelve rounds against a control, twice: lives that
+  begin pinned 35% to 5% with the first fix, 4% to 1% with the second; hard pins 391 to 32 across both; scoring up
+  (128/64 to 155/72 pickups/captures on the second gate). This was not new; it reads the same on every build back to
+  0.9.13. No change on the bedlam maps, abend2 or the fellowship maps. One office (its door propped open into the room,
+  leaving a gap narrower than a ship) still holds bots at its door; that is a map fact, on the ledger.
 - **Sigma Base: attackers get out of their own bunker and into the enemy's.** When a room opens into the next by several
   doors, the door a bot picks now accounts for where the route goes afterwards only when that onward stretch can
   actually be flown, and every part of the pilot heads for the same door. Two three-hour runs against controls: failed
