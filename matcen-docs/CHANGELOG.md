@@ -29,6 +29,16 @@ route network never grows, and the last first-use stall when the server prepares
   actually be flown, and every part of the pilot heads for the same door. Two three-hour runs against controls: failed
   room-to-room moves down by a third to a half, five to ten times as many bots reaching the enemy bunker, pickups up
   from 8 to about 20, the first captures on the map. Still a hard map: captures stay in single figures over three hours.
+- **No more freeze when a bot first enters a big room.** The last first-use stall left in the server was the room's
+  skeleton — the corner-to-corner graph a bot routes over inside a room — which was built in one frame the first time a
+  bot needed it: 1.5 to 3 seconds on Sigma Base's hub, Facing Worlds' towers and DownTown's halls, during which every
+  client saw all ships freeze. It is now built in slices like the rest of the navigation data, ahead of time when a level
+  loads, and a bot that gets there first flies a simpler version of the room until the full one lands a few seconds later.
+  The finished graphs are identical to before, node for node.
+- **Bots take a flag in one pass instead of circling it.** A bot's approach goal completed about 20 units short of the
+  flag (the ship's built-in "close enough" distance), so it re-aimed from there and swung out again — nine re-aims per
+  pickup on the bedlam maps. The four flag-touch moves (grab, recover, score, return home) now run until contact. One
+  twelve-minute round on Apparition: 36 pickups from 14 re-aims, where the same round used to log around 200.
 
 ## [0.9.15] - 2026-09-20
 

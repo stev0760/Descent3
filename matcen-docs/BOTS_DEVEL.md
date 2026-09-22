@@ -18,6 +18,64 @@ the flag-room arrival stall and the ~58% connectivity dead-ends. 0.9.14 was vali
 Isengard's interior pins gone, Animal House stuck-free) and released; the previous stable release was
 **0.9.13** (0.9.11 preceded it; 0.9.12 was never promoted).
 
+### 2026-09-22: Q12 ruled; the rm60 box under a trace; the skeleton rides the slicer (Q8); Q6; the flag touch (Q1)
+
+**Ruling and validation.** The operator kept L + Qc on the two Sigma Base samples. The lab `Descent3` became HEAD
+(`61a4c443`, the C3 code) and the six arm binaries went. Because the contact fix had only been soaked on four maps, the
+ruled-on state ran the same minute as 0.9.15 (`Descent3-0915-release`) on everything else, as four pair-chains
+(`<lab>/val-0916-20260922/`, eight servers): Sigma Base 4x45 then KegD3 and the four small maps; Isengard 9x20 then
+DownTown 2x45; Bree 12 then Havoc 6; Moria 6x20 then nysa 4 and the four mode regressions. [Results: see the 15:30 read
+below.]
+
+**rm60 measured, then measured again.** 19 of 33 rm60 lives were still pinned after the contact fix. The render
+(scratchpad `rm60-top/side.png`, `$nav sweep` from the start) is exact: the start (2058, -152, 2385) sits in a toy box
+whose floor (face 26, y -159) and lid (face 27, y -146) are 13 u apart around a 13.35 u ship, side plates 13-17 u apart
+(faces 25/31 and 28/29), the mouth at x 2041 on the facing's side, and the "RC Pyro" faces 0-23 at the mouth. The hull
+sweep from the start is blocked at 0 u by the lid in every direction, as at all sixteen Batteries starts (every one reads
+`hull 0u` at spawn). First reading of the C2/C3 logs, by the first plan the via layer issued: composed route first (the
+contact attach's leg to a lattice node), 33 of 51 lives pinned; spawn egress first, 10 of 10 out. **E1** (`00d0a803`) put the
+egress ahead of the attach and capped it at two fires; its gate (`<lab>/gate-e1-20260922/`, Batteries 12 + fellowship 9,
+control the same minute) [read below]. Its first rounds already disagreed with the split: 4 of 9 egress-first lives
+pinned on E1, 3 of 7 on the control. A per-half-second trace (`BOT SPAWNTRACE`, in the F1 commit) then showed what the
+ship does: it is **not wedged** — it slides along the box axis at 10-22 u/s, turning sideways, shuttling between 4 and 11 u
+from the start with the engine's movement direction flipping sign every sample, and the pursuit goal slot empty in almost
+every sample; in the one life that left (41 u/s within half a second) the egress via was being flown from the powerup
+chase's slot. [Verdict from the extended trace: see below.] Two instrument errors on the way, both caught: the first
+"egress-first" tabulation was recomputed twice (the tracer's match order briefly swallowed `composed route` lines), and
+the split itself re-verified; and the chase label — the log's `chasing 'X'` on the pins — was not the mechanism (with a
+chase 6 of 10 lives pinned, without one 15 of 25).
+
+**rm80 deferred with its geometry.** The office's one door (p0, 41 u wide, faces 880/897/899) has its leaf (face 881) propped
+open into the room from the hinge (1967, 2885) to the tip (1997, 2900); the gap between the leaf and the jamb's inner corner
+(2003, 2890) is 11.6 u, under the hull, and the door seed (the portal path point, 4 u from the leaf) has its hull inside the
+leaf, so the lattice never grows past the door plane (7 nodes, 3 cells, on the plane or in rm45). Bots still slide through
+by luck: 11 crossings, 18 of 34 lives out. Census of door seeds whose lattice never enters the room (`seed_isolated.py`
+over bot-free dumps of seven maps): Batteries rm80 p0, rm46 p10 / rm55 p0; Sigma Base rm19 p14-16 and rm37 p2 are slanted
+hatches the crossing sampler already refuses; nothing on Isengard, Bree, Moria, abend2, DownTown. Ledger, not build.
+
+**Q8 (`455aacbe`).** `[Perf]` by subsystem over the whole baseline (scratchpad `perf_frames.py`): the skeleton's first-use
+build was the one-frame freeze — Facing Worlds rm0 2.9 s, Sigma Base rm37 1.8 s and rm19 1.4 s (28,000 sweeps), DownTown
+0.9 s, Isengard 0.27 s — and all of it is the bridge search (the portal graph is milliseconds). Facing Worlds' other 72 slow
+frames are single Lazy Theta* queries of 7,000-11,000 sweeps in rm0/rm1 (10,094 and 14,994 lattice cells): step 4's case,
+recorded in PLAN. The build now writes to a private `SkelData`; first use stores the base graph inline and, when a live
+pair has no straight leg, queues the full build on the roadmap's coroutine slicer as a third job kind (`BuildRequest.skel`),
+yielding before every sweep; the publish replaces the base graph, drops the room's union network and bumps the serial;
+the prewarm queues every room's skeleton ahead of the roadmaps; tools (`BotSkelDumpRoom`) build inline as before. Gate:
+bot-free dumps of Sigma Base (40 rooms) and Batteries (324) node-for-node identical; a 9-minute Sigma Base smoke bridged
+rm37 in 142 slices over 2.4 s of wall time and 30 rooms in 3.9 s of build, the largest skeleton share of any frame 12 ms;
+play gate Sigma 4x45 + Isengard 9x20 against the same-minute control (`<lab>/gate-s1-20260922/`) [read below].
+
+**Q6 (`c580d612`).** The analyzer's kills column matched one HUD wording (29 lines against 549 respawns on a 12-round log);
+it now counts respawns as bot deaths (the round-start spawn takes another path and never prints the line).
+
+**Q1 (`5d46e532`, arm F1).** Between two flag-grab issues on the same flag nothing else is logged (3,198 re-issues, 273 via
+lines and 12 state changes between them on one bedlam log) and the distance oscillates 41 -> 14 -> 30 -> 19 -> 43 u. The
+ship AI's circle distance is 10 u (`Player.cpp`), so a `GET_TO_OBJ` goal completes about 20 u from a flag's centre and
+the errand re-issues it with a fresh engine path. `BotAddTouchGoal` sets the goal's circle distance to -100, the engine's
+own melee-chase value, at the four flag-touch sites. Powerup chases do not show the signature (2,600-2,900 pickups against
+18-88 near-miss timeouts). Smoke, one 12-minute Apparition round: 36 pickups, 14 captures, 14 grab issues (0.4 per pickup
+against 5.8). Gate: bedlam 12 against the same-minute control (`<lab>/gate-f1-20260922/`) [read below].
+
 ### 2026-09-21: the 0.9.15 baseline; Q12 as three arms; Batteries' pins were trapped player starts
 
 **Baseline (0.9.15 `bfbe6c08`, overnight 09-20, 27 soaks in four parallel chains, all rc=0 / guard PASS / 0 asserts).**
