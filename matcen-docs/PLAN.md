@@ -967,15 +967,22 @@ needs a second seeding source when door seeds yield a degenerate grid. The power
 it; 0.9.15 and the ruled-on state ran as same-minute pairs the same day on the maps the contact arms had not covered
 (Sigma Base, Isengard, DownTown, Bree, Havoc, Moria, nysa, KegD3, the four small maps and the four mode regressions).
 
-**rm60 measured 2026-09-22 — the box, not the chase.** The rm60 start is inside a toy box 13 u tall (its lid at y -146,
-the floor at -159) around a 13.4 u ship: the ship can only SLIDE along the box's axis, which is the start's facing.
-Sixty-one rm60 lives on the C2 and C3 arms, split by the FIRST plan the via layer issued: spawn egress first, 10 of 10
-left the box; composed route first (the contact attach's thin-ray leg to a lattice node, diagonal to the axis), 33 of
-51 wedged against the side wall at (2053, -152, 2384), five units from the start. The powerup chase the log blamed was
-the same wedge under another label (with a chase 6 of 10 pinned, without one 15 of 25). **E1** (`00d0a803`): the egress
-runs before the composed route and the skeleton chain, clears a chain built before the ship un-touched, and fires at
-most twice a life so a start facing a gap the hull cannot pass gets eight seconds of it and then the attach planners.
-Gate: Batteries 12 and fellowship 9, control and E1 the same minute (`<lab>/gate-e1-20260922/`).
+**rm60 measured 2026-09-22 — the box, then the trace.** The rm60 start is inside a toy box 13 u tall (its lid at y -146,
+the floor at -159) around a 13.4 u ship. Sixty-one rm60 lives on the C2 and C3 arms split by the FIRST plan the via layer
+issued: spawn egress first, 10 of 10 left; composed route first, 33 of 51 pinned. **E1** (`00d0a803`) put the egress ahead
+of the attach and capped it at two fires — and its first rounds disproved the split as a cause (4 of 9 egress-first lives
+pinned on E1, 3 of 7 on the control). A half-second trace of the ship (`BOT SPAWNTRACE`) then showed the mechanism: the
+egress via is issued, committed and held, but the engine's movement direction points away from it (dot with the facing
+-0.26 to -0.33, thrust mostly vertical) — inside a box that small the engine's wall-avoidance term swamps the goal
+direction — and the ship shuttles 4-11 u into the box at 10-22 u/s, turning sideways, for the whole commitment; the lives
+that left did so at 41 u/s within half a second because the first frame's direction happened to point out. **E2**
+(`cdfc5974`): while the egress via is the committed one and the ship is still at the start, the thrust decomposes the
+start's facing directly (the stuck escape's precedent) and the ship faces it; and a life that begins without a respawn
+(the round-start spawn, a fifth of all lives) now records its start on its first frame — those lives never had an egress
+at all, and rm80's six-minute door-leaf press on the smoke was one. Smoke, one Batteries round: 62 lives, none pinned at
+spawn, every rm60 life out in half a second. Gate: Batteries 12 against the same-minute control, and fellowship 9
+(`<lab>/gate-e2-20260922/`). The chase label on the pins was never the mechanism (with a chase 6 of 10 pinned, without
+one 15 of 25).
 
 **rm80 deferred, with its geometry.** The office's only door (p0, 41 u wide) has its leaf propped open INTO the room:
 face 881 runs from the hinge at (1967, 2885) to (1997, 2900), and the gap between the leaf and the right jamb's inner
