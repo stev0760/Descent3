@@ -24,8 +24,14 @@ Isengard's interior pins gone, Animal House stuck-free) and released; the previo
 (`61a4c443`, the C3 code) and the six arm binaries went. Because the contact fix had only been soaked on four maps, the
 ruled-on state ran the same minute as 0.9.15 (`Descent3-0915-release`) on everything else, as four pair-chains
 (`<lab>/val-0916-20260922/`, eight servers): Sigma Base 4x45 then KegD3 and the four small maps; Isengard 9x20 then
-DownTown 2x45; Bree 12 then Havoc 6; Moria 6x20 then nysa 4 and the four mode regressions. [Results: see the 15:30 read
-below.]
+DownTown 2x45; Bree 12 then Havoc 6; Moria 6x20 then nysa 4 and the four mode regressions. All 30 soaks rc 0, guard
+PASS, 0 asserts (scratchpad `val_read.py`). Pickups/captures, 0.9.15 -> ruled-on state: Bree 106/61 -> 125/66 (hard pins
+19 -> 16); Isengard 9 rounds 66/19 -> 90/24 (hard 14 -> 13, the rm36 sewer watch unchanged); nysa 130/28 -> 140/31;
+Moria 77/23 -> 64/21 with escalations 61 -> 113, all of them outdoors (51 -> 85, hard 4 -> 7: the registered ground-pin
+class, untouched by anything in the state — the egress never fired on the map); DownTown 2 x 45 and the six Havoc
+levels are single-round samples and read within their own spread (DownTown 6/2 and 4/2 -> 1/1 and 5/0, escalations
+55 and 101 -> 41 and 115); the four mode regressions flat. [Sigma Base 4x45, KegD3 and the four small maps: chain 1,
+read below.]
 
 **rm60 measured, then measured again.** 19 of 33 rm60 lives were still pinned after the contact fix. The render
 (scratchpad `rm60-top/side.png`, `$nav sweep` from the start) is exact: the start (2058, -152, 2385) sits in a toy box
