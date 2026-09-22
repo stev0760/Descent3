@@ -65,7 +65,10 @@ yielding before every sweep; the publish replaces the base graph, drops the room
 the prewarm queues every room's skeleton ahead of the roadmaps; tools (`BotSkelDumpRoom`) build inline as before. Gate:
 bot-free dumps of Sigma Base (40 rooms) and Batteries (324) node-for-node identical; a 9-minute Sigma Base smoke bridged
 rm37 in 142 slices over 2.4 s of wall time and 30 rooms in 3.9 s of build, the largest skeleton share of any frame 12 ms;
-play gate Sigma 4x45 + Isengard 9x20 against the same-minute control (`<lab>/gate-s1-20260922/`) [read below].
+play gate Sigma 4x45 + Isengard 9x20 against the same-minute control (`<lab>/gate-s1-20260922/`, all guard PASS, 0
+asserts): frames over 250 ms carried by the skeleton 2 -> 0 on Sigma (worst frame 1680 -> 439 ms) and 1 -> 0 on Isengard
+(worst 805 -> 825 ms, a sweep frame); play flat-to-better — Sigma pickups 6 -> 11, captures 0 -> 5, hard pins 5 / 4, the
+Red hub rm19 -> rm9 crossed 46 of 158 -> 30 of 57; Isengard pickups 80 -> 90, captures 24 -> 39, hard 18 -> 7. Q8 stays.
 
 **Q6 (`c580d612`).** The analyzer's kills column matched one HUD wording (29 lines against 549 respawns on a 12-round log);
 it now counts respawns as bot deaths (the round-start spawn takes another path and never prints the line).
