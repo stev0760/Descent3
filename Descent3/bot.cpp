@@ -832,6 +832,17 @@ static int BotAddTouchGoal(object *obj, int objnum) {
   return gi;
 }
 
+// The spawn egress is live: its via is the committed one and the ship is still at a start it touches (E2). While it
+// is, the ship flies the start's facing under DIRECT thrust, the way the stuck escape already drives: inside a toy box
+// 13 u tall around a 13.4 u ship the engine's wall-avoidance term swamps the goal direction (movement_dir pointed away
+// from a committed via 41 u ahead, thrust mostly vertical), and the ship shuttled 4-11 u into the box at 10-22 u/s,
+// turning sideways, for the whole commitment (Batteries rm60/rm80 traces, 2026-09-22).
+static bool BotSpawnEgressLive(int bot_index, const object *obj) {
+  return Bots[bot_index].via_is_egress && Bots[bot_index].via_expires > Gametime && !OBJECT_OUTSIDE(obj) &&
+         Gametime - Bots[bot_index].life_start_time < BOT_SPAWN_EGRESS_WINDOW &&
+         vm_VectorDistanceQuick(&obj->pos, &Bots[bot_index].spawn_pos) < BOT_SPAWN_EGRESS_RADIUS;
+}
+
 static void BotClearActiveGoal(int bot_index) {
   BotClearViaChain(bot_index); // retire stored chain metadata even in the no-ai_info window
   int slot = Bots[bot_index].player_slot;
@@ -2447,6 +2458,7 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
   auto issue_via_goal = [&]() {
     if (goal_slot >= 0 && goal_slot < MAX_GOALS && obj->ai_info->goals[goal_slot].used)
       GoalClearGoal(obj, &obj->ai_info->goals[goal_slot]);
+    Bots[bot_index].via_is_egress = 0; // any via issue retires the egress mark; the egress sets it right after
     goal_info gi_info{};
     gi_info.pos = Bots[bot_index].via_point;
     gi_info.roomnum = obj->roomnum;
@@ -2594,6 +2606,7 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
       Bots[bot_index].via_expires = Gametime + BOT_VIA_COMMIT_TIME;
       Bots[bot_index].via_is_skeleton = 0;
       issue_via_goal();
+      Bots[bot_index].via_is_egress = 1; // BotApplyThrust flies it directly (E2)
       if (verdict_out)
         *verdict_out = BOT_VIA_FOUND;
       LOG_DEBUG.printf(
@@ -6226,7 +6239,7 @@ static void BotUpdateAimDirection(int bot_index) {
   if (nav_goal_room >= 0 && !OBJECT_OUTSIDE(obj)) {
     bool should_face_nav = !has_valid_target || !BotHasLOS(obj, target);
     if (should_face_nav) {
-      vector nav_dir = obj->ai_info->movement_dir;
+      vector nav_dir = BotSpawnEgressLive(bot_index, obj) ? Bots[bot_index].spawn_fvec : obj->ai_info->movement_dir;
       if (vm_GetMagnitude(&nav_dir) > 0.1f) {
         obj->ai_info->last_see_target_pos = obj->pos + nav_dir * 200.0f;
         return;
@@ -6326,6 +6339,12 @@ static void BotApplyThrust(int bot_index) {
   // Read movement_dir from previous frame's AIDoFrame() — world-space normalized direction
   vector &mdir = obj->ai_info->movement_dir;
   float mdir_mag = vm_GetMagnitude(&mdir);
+  // E2: the spawn egress flies the start's facing under direct thrust (see BotSpawnEgressLive).
+  const bool egress_live = BotSpawnEgressLive(bot_index, obj);
+  if (egress_live) {
+    mdir = Bots[bot_index].spawn_fvec;
+    mdir_mag = vm_GetMagnitude(&mdir);
+  }
 
   // Phase 10: steering is the engine path-follower's movement_dir (flow-field steering removed —
   // routing picks the goal room, the engine steers there). Decompose into bot-local axes.
@@ -8159,6 +8178,7 @@ static void BotRecordSpawn(int bot_index, int slot) {
   Bots[bot_index].spawn_fvec = sobj->orient.fvec;
   Bots[bot_index].spawn_clear_ahead = 0.0f;
   Bots[bot_index].spawn_egress_fires = 0;
+  Bots[bot_index].via_is_egress = 0;
   if (OBJECT_OUTSIDE(sobj))
     return;
   const vector ahead = sobj->pos + sobj->orient.fvec * BOT_SPAWN_EGRESS_REACH;
@@ -8206,6 +8226,7 @@ static void BotRespawn(int bot_index) {
   Bots[bot_index].chasing_powerup_handle = OBJECT_HANDLE_NONE;
   Bots[bot_index].chasing_powerup_timer = 0.0f;
   Bots[bot_index].life_start_time = Gametime;
+  Bots[bot_index].spawn_recorded_life = Gametime;
   BotRecordSpawn(bot_index, slot);
   Bots[bot_index].gearup_budget_logged = false;
   Bots[bot_index].troute_goal_room = -1; // $nav troute: respawn position invalidates any terrain plan
@@ -9017,6 +9038,17 @@ void BotDoFrame() {
         BotRespawn(i);
       }
       continue;
+    }
+
+    // A life that began without BotRespawn (the round-start spawn, a fifth of all lives) records its start on its
+    // first frame, once the ship is placed: the spawn egress (E1/E2) never ran for those, and Batteries rm80's
+    // longest pins were round-start lives pressing the door leaf.
+    if (Bots[i].spawn_recorded_life != Bots[i].life_start_time) {
+      const object *pobj = &Objects[Players[slot].objnum];
+      if (pobj->type == OBJ_PLAYER && !(Players[slot].flags & (PLAYER_FLAGS_DEAD | PLAYER_FLAGS_DYING))) {
+        Bots[i].spawn_recorded_life = Bots[i].life_start_time;
+        BotRecordSpawn(i, slot);
+      }
     }
 
     // Outdoor pass Phase 0: entrance-commit outcome (log-only), the terrain-door twin of the block

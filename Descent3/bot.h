@@ -616,6 +616,8 @@ struct bot_info {
   vector spawn_fvec;
   float spawn_clear_ahead;   // thin-ray clear distance along spawn_fvec, measured at spawn (0 = none / outdoors)
   int spawn_egress_fires;    // egress commits issued this life (BOT_SPAWN_EGRESS_MAX_FIRES)
+  int via_is_egress;         // the committed via is the spawn egress: BotApplyThrust flies it directly (E2)
+  float spawn_recorded_life; // life_start_time of the life whose start BotRecordSpawn has recorded
   bool gearup_budget_logged; // the once-per-life "budget spent" line
   vector entry_commit_pos;   // bot position at commit
   vector entry_commit_aim;   // the push-through point issued
