@@ -963,6 +963,56 @@ a 214 u office whose lattice is 3 cells because its one door seed is boxed in by
 needs a second seeding source when door seeds yield a degenerate grid. The powerup-chase-through-the-planner work
 (collapse step 5) keeps its place in the order but has lost its Batteries justification.
 
+**Q12 ruled 2026-09-22: L + Qc stay** (operator, on the two Sigma Base samples). The contact fix (C1 + C2 + C3) stays with
+it; 0.9.15 and the ruled-on state ran as same-minute pairs the same day on the maps the contact arms had not covered
+(Sigma Base, Isengard, DownTown, Bree, Havoc, Moria, nysa, KegD3, the four small maps and the four mode regressions).
+
+**rm60 measured 2026-09-22 — the box, not the chase.** The rm60 start is inside a toy box 13 u tall (its lid at y -146,
+the floor at -159) around a 13.4 u ship: the ship can only SLIDE along the box's axis, which is the start's facing.
+Sixty-one rm60 lives on the C2 and C3 arms, split by the FIRST plan the via layer issued: spawn egress first, 10 of 10
+left the box; composed route first (the contact attach's thin-ray leg to a lattice node, diagonal to the axis), 33 of
+51 wedged against the side wall at (2053, -152, 2384), five units from the start. The powerup chase the log blamed was
+the same wedge under another label (with a chase 6 of 10 pinned, without one 15 of 25). **E1** (`00d0a803`): the egress
+runs before the composed route and the skeleton chain, clears a chain built before the ship un-touched, and fires at
+most twice a life so a start facing a gap the hull cannot pass gets eight seconds of it and then the attach planners.
+Gate: Batteries 12 and fellowship 9, control and E1 the same minute (`<lab>/gate-e1-20260922/`).
+
+**rm80 deferred, with its geometry.** The office's only door (p0, 41 u wide) has its leaf propped open INTO the room:
+face 881 runs from the hinge at (1967, 2885) to (1997, 2900), and the gap between the leaf and the right jamb's inner
+corner (2003, 2890) is 11.6 u — under the 13.4 u hull, so no clearance-model change can route it, and the door's lattice
+seed (the portal's path point, 4 u from the leaf) has its hull inside the leaf, which is why the room's lattice never
+grows past the door plane. Bots still slide through by luck (11 crossings, 18 of 34 lives out). A census of "door seeds
+whose lattice never enters the room" (scratchpad `seed_isolated.py`, bot-free dumps): Batteries rm80 p0 and rm46 p10 /
+rm55 p0 with `crossing_ok`; Sigma Base rm19 p14-16 and rm37 p2 are the slanted rm16 / rm22 hatches the crossing sampler
+already refuses; nothing on Isengard, Bree, Moria, abend2 or DownTown. Two doors on one map: a ledger item (seed
+relocation when the seed's hull is in contact), not a build.
+
+**Q8 built 2026-09-22 (`455aacbe`, arm S1).** The skeleton's bridge search — the whole first-use cost (Sigma Base rm19
+1.4 s and 28,000 sweeps, rm37 1.8 s, Facing Worlds rm0 2.9 s, DownTown 0.9 s; the portal graph is milliseconds) — builds
+into a private graph on the roadmap's coroutine slicer as a third job kind, parking before every sweep, and replaces the
+room's base graph when it commits; the level prewarm queues every room's skeleton ahead of the roadmaps; a publish drops
+the room's union network so the composer re-imports the bridged arterials. Tools build inline as before: bot-free dumps
+of Sigma Base (40 rooms) and Batteries (324) are node-for-node identical to the previous binary's. Smoke (Sigma Base,
+9 min): rm37 bridged over 142 slices and 2.4 s of wall time, 30 rooms in 3.9 s of build spread over frames, the largest
+skeleton share of any frame 12 ms. Play gate: Sigma Base 4x45 and Isengard 9x20, control and S1 the same minute
+(`<lab>/gate-s1-20260922/`).
+
+**Step 4 pre-check (from the 0.9.15 baseline).** Facing Worlds' storms are not the skeleton: 73 frames over 250 ms and 18
+over a second in one 15-minute round, carried by single Lazy Theta* queries of 7,000-11,000 hull sweeps (1.6-2.4 s each)
+in rm0 and rm1 — 650 x 457 x 1250 u and 650 x 620 x 1250 u, 10,094 and 14,994 lattice cells. The component pre-check is
+already there (`QueryVia`); the cost is a successful search over a lattice that size with one sweep per expansion. The
+in-room planner's design has to answer it: a pitch that scales with the room, a per-query expansion budget with a memoised
+failure, or a query that yields across frames while the ship flies its straight line. Everywhere else the worst frame was
+under 250 ms except the skeleton first-use builds Q8 removed.
+
+**Q6 done (`c580d612`)**: the analyzer's kills column counts bot deaths from respawn lines. **Q1 measured 2026-09-22:**
+between two flag-grab issues on the same flag nothing else is logged (3,198 re-issues on one bedlam log, 273 via lines
+between them, 12 state changes) and the distance oscillates 41 -> 14 -> 30 -> 19 -> 43 u: the ship AI's circle distance
+is 10 u (Player.cpp), so the engine completes a GET_TO_OBJ goal about 20 u from a flag's centre, before contact, and the
+errand re-issues it from there with a fresh engine path. The engine's own melee chase sets the goal's circle distance to
+-100 so it never ends by distance; the four flag-touch goals (grab, recovery, score, carrier beeline) now do the same
+(`BotAddTouchGoal`). Powerup chases do not show the signature (2,600-2,900 pickups against 18-88 near-miss timeouts).
+
 **Co-op is off this line's critical path (operator, 2026-09-20), and stays on the radar.** His flight of 0.9.15:
 "slightly better, bots get stuck outside". That matches the record — the engine took none of 42 outdoor legs in
 the 2026-08-04 run, 99.2% of the legs it rejects are hull-blocked, and region-0 terrain has no network of ours

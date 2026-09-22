@@ -18,6 +18,8 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 **Previous release: 0.9.14** (2026-09-18), the portal-model release: a door is a validated crossing rather than a point, walls are never doors to the route network, shattered glass becomes a doorway at runtime, and a bot only hunts what it can reach.
 
+**In test: 0.9.16-dev.** Soaked against same-day controls and kept, not yet flown: Sigma Base's Red team exits its hub the way the route intends (the router's door is every layer's door); Batteries Included bots leave the toy boxes and desks they spawn in at once instead of pushing at them (a third of bot lives began that way); the last first-use stall, a big room's skeleton, is now built in slices like the route network. Details in the [release notes](matcen-docs/CHANGELOG.md).
+
 What changed in each release is in the [release notes](matcen-docs/CHANGELOG.md). What is left, and in what order, is in [`matcen-docs/PLAN.md`](matcen-docs/PLAN.md).
 
 ### Features
