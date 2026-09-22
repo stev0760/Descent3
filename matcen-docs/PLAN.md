@@ -900,6 +900,15 @@ wordings the game prints and undercounts roughly 15×, so it cannot rank arms. T
 `BotRespawn` lines instead. *Proposal:* widen the pattern, or drop the column and count respawns. *Risk:*
 none; it changes no behaviour and makes old logs comparable.
 
+**Q15 — TC trips an engine Debug assert (found 2026-09-22).** *Symptom:* both validation arms on TC (0.9.15 and the
+ruled-on state) aborted two minutes into the round on `bump_two_objects`'s `ASSERT(m1 != 0.0f && m2 != 0.0f)`
+(physics/collide.cpp:1874): a zero-mass object took part in a collision. The lines below the assert already clamp a
+non-positive mass, so Release builds play through it; soaks run Debug with `SDL_ASSERT=break`, so the arm dies. It did not
+fire on the 09-20 baseline's TC round. *Hypothesis:* a map object with mass 0 (a TC-specific prop or powerup) colliding
+with a ship; nothing in the bot code sets mass. *Proposal:* find the object (log the two objects' types and ids when either
+mass is zero, once), then either demote the assert to a one-line warning or keep TC out of the Debug regression set.
+*Risk:* none to play.
+
 ### 4.0.2 0.9.16 — the collapse, pulled by maps (decided 2026-09-20)
 
 0.9.15 shipped 2026-09-20 as the outdoor and smooth-server release; the grind continues on 0.9.16-dev. Four of

@@ -30,8 +30,13 @@ PASS, 0 asserts (scratchpad `val_read.py`). Pickups/captures, 0.9.15 -> ruled-on
 Moria 77/23 -> 64/21 with escalations 61 -> 113, all of them outdoors (51 -> 85, hard 4 -> 7: the registered ground-pin
 class, untouched by anything in the state — the egress never fired on the map); DownTown 2 x 45 and the six Havoc
 levels are single-round samples and read within their own spread (DownTown 6/2 and 4/2 -> 1/1 and 5/0, escalations
-55 and 101 -> 41 and 115); the four mode regressions flat. [Sigma Base 4x45, KegD3 and the four small maps: chain 1,
-read below.]
+55 and 101 -> 41 and 115); the four mode regressions flat. Sigma Base 4x45: pickups 7 -> 5 on a low pair (3v3 Sigma
+swings), but the door mechanism holds — the Red hub rm19 -> rm9 crossed 31 of 252 on 0.9.15 and 79 of 125 on the ruled-on
+state, hard pins outside rm22 2 -> 0; KegD3 196/73 -> 185/62; skybox 37/4 -> 41/9; xemedia 60/51 -> 70/60; Stone Cutter
+flat. **TC: both arms died two minutes in on the engine's Debug assert `bump_two_objects: m1 != 0 && m2 != 0`
+(physics/collide.cpp:1874, a zero-mass object in a collision; the code below the assert already clamps the mass)** — on
+0.9.15 as well as the ruled-on state, so not a regression, and it did not fire on the 09-20 baseline's TC run; Release
+builds do not assert. Registered as Q15.
 
 **rm60 measured, then measured again.** 19 of 33 rm60 lives were still pinned after the contact fix. The render
 (scratchpad `rm60-top/side.png`, `$nav sweep` from the start) is exact: the start (2058, -152, 2385) sits in a toy box
