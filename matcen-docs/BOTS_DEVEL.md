@@ -35,7 +35,9 @@ sweep from the start is blocked at 0 u by the lid in every direction, as at all 
 `hull 0u` at spawn). First reading of the C2/C3 logs, by the first plan the via layer issued: composed route first (the
 contact attach's leg to a lattice node), 33 of 51 lives pinned; spawn egress first, 10 of 10 out. **E1** (`00d0a803`) put the
 egress ahead of the attach and capped it at two fires; its gate (`<lab>/gate-e1-20260922/`, Batteries 12 + fellowship 9,
-control the same minute) [read below]. Its first rounds already disagreed with the split: 4 of 9 egress-first lives
+control the same minute) read flat: rm60 lives pinned 19 of 32 on the control, 20 of 37 on E1; hard pins 114 against 125;
+pickups 149 against 123, captures 64 against 67; fellowship flat (E1's egress fired 11 times in nine rounds there). Its
+first rounds had already disagreed with the split: 4 of 9 egress-first lives
 pinned on E1, 3 of 7 on the control. A per-half-second trace (`BOT SPAWNTRACE`, in the F1 commit) then showed what the
 ship does: it is **not wedged** — it slides along the box axis at 10-22 u/s, turning sideways, shuttling between 4 and 11 u
 from the start with the engine's movement direction flipping sign every sample, and the pursuit goal slot empty in almost
