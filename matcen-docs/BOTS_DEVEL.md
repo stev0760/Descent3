@@ -79,7 +79,10 @@ ship AI's circle distance is 10 u (`Player.cpp`), so a `GET_TO_OBJ` goal complet
 the errand re-issues it with a fresh engine path. `BotAddTouchGoal` sets the goal's circle distance to -100, the engine's
 own melee-chase value, at the four flag-touch sites. Powerup chases do not show the signature (2,600-2,900 pickups against
 18-88 near-miss timeouts). Smoke, one 12-minute Apparition round: 36 pickups, 14 captures, 14 grab issues (0.4 per pickup
-against 5.8). Gate: bedlam 12 against the same-minute control (`<lab>/gate-f1-20260922/`) [read below].
+against 5.8). Gate: bedlam 4-team 12 rounds against the same-minute control (`<lab>/gate-f1-20260922/`, both guard
+PASS, 0 asserts): flag-grab issues 2,865 -> 141, recovery issues 399 -> 96, stuck escalations 29 -> 3 (hard 2 -> 1),
+pickups/captures Apparition 117/31 -> 126/34, Plutonium 113/34 -> 127/55, Polaris 135/22 -> 142/27, QuadSomniac
+213/20 -> 221/18; 107 -> 134 captures over the set, every map up or flat. Q1 stays.
 
 ### 2026-09-21: the 0.9.15 baseline; Q12 as three arms; Batteries' pins were trapped player starts
 
