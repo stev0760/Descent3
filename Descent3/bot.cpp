@@ -6337,14 +6337,11 @@ static void BotApplyThrust(int bot_index) {
   }
 
   // Read movement_dir from previous frame's AIDoFrame() — world-space normalized direction
-  vector &mdir = obj->ai_info->movement_dir;
-  float mdir_mag = vm_GetMagnitude(&mdir);
-  // E2: the spawn egress flies the start's facing under direct thrust (see BotSpawnEgressLive).
+  // E2: the spawn egress flies the start's facing under direct thrust (see BotSpawnEgressLive). A local copy: the
+  // engine's movement_dir itself is never written (Invariant #1); the substitution lives in this frame's thrust only.
   const bool egress_live = BotSpawnEgressLive(bot_index, obj);
-  if (egress_live) {
-    mdir = Bots[bot_index].spawn_fvec;
-    mdir_mag = vm_GetMagnitude(&mdir);
-  }
+  vector mdir = egress_live ? Bots[bot_index].spawn_fvec : obj->ai_info->movement_dir;
+  float mdir_mag = vm_GetMagnitude(&mdir);
 
   // Phase 10: steering is the engine path-follower's movement_dir (flow-field steering removed —
   // routing picks the goal room, the engine steers there). Decompose into bot-local axes.
