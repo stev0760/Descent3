@@ -1011,6 +1011,14 @@ already there (`QueryVia`); the cost is a successful search over a lattice that 
 in-room planner's design has to answer it: a pitch that scales with the room, a per-query expansion budget with a memoised
 failure, or a query that yields across frames while the ship flies its straight line. Everywhere else the worst frame was
 under 250 ms except the skeleton first-use builds Q8 removed.
+**DownTown rm37 (step 4's other case), measured 2026-09-22.** The hall (1000 x 430 x 1340 u, five portals) had 101 timeouts
+and 88 escalations in one 45-minute round, only 9 of them hard: a bot circles at (1520, 340, 2180), directly under p2, one
+of three roof openings (p2/p3/p4, normals straight down) onto the external room rm9, all three `crossing_ok` false. In
+that round 519 skeleton chains were built in rm37 toward rm7's door and 3 completed; 17 committed hops rm37 -> rm9 through
+p2, none crossed. The skeleton's live set is the DOOR/PANE class, which p2 is, so its node — at the roof opening — is a
+relay on the chain to rm7 and the ship flies up to it. Fix class: a portal whose crossing the sampler refuses is not a
+relay node (and the router should not price it as a door); whether it stays a legal exit for the outdoor dispatch is the
+open design question, since the same three openings are the hall's terrain doors.
 
 **Q6 done (`c580d612`)**: the analyzer's kills column counts bot deaths from respawn lines. **Q1 measured 2026-09-22:**
 between two flag-grab issues on the same flag nothing else is logged (3,198 re-issues on one bedlam log, 273 via lines
