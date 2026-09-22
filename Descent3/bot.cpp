@@ -63,9 +63,9 @@
 
 bot_info Bots[MAX_BOTS];
 int Num_bots = 0;
-bool Bot_debug_movement = false;          // Toggle with "$botmov on/off" console command
-bool Bot_grate_clear_enabled = true;      // $nav grate — proactive destroyable-obstacle clearing (0.9.6 Stage 2)
-bool Bot_soft_strike_enabled = true;      // $nav strike — same-room soft chase-aborts accrue troll strikes (0.9.7)
+bool Bot_debug_movement = false;     // Toggle with "$botmov on/off" console command
+bool Bot_grate_clear_enabled = true; // $nav grate — proactive destroyable-obstacle clearing (0.9.6 Stage 2)
+bool Bot_soft_strike_enabled = true; // $nav strike — same-room soft chase-aborts accrue troll strikes (0.9.7)
 // $nav bnodesp — defer to the engine's native BNode path pipeline on BNode-rich (SP campaign) maps
 // instead of our routing/via/seam stack (PLAN-coop-nav-rethink.md). Default ON: client-launched co-op
 // has no console, so default-OFF would be untestable (9.5.1); inert by construction on every MP map
@@ -1814,8 +1814,8 @@ static void BotDoStuckClear(int bot_index) {
         static float glass_obstacle_log_t[MAX_BOTS];
         if (Gametime - glass_obstacle_log_t[bot_index] > 5.0f || Gametime < glass_obstacle_log_t[bot_index]) {
           glass_obstacle_log_t[bot_index] = Gametime;
-        LOG_DEBUG.printf("BOT: '%s' breaking glass obstacle in room %d face %d", Bots[bot_index].callsign, face_room,
-                         face_num);
+          LOG_DEBUG.printf("BOT: '%s' breaking glass obstacle in room %d face %d", Bots[bot_index].callsign, face_room,
+                           face_num);
         }
         return;
       }
@@ -2557,6 +2557,39 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
   if (Bots[bot_index].via_suspend_until > Gametime && (int)obj->roomnum == Bots[bot_index].via_suspend_room)
     return 0;
 
+  // Spawn egress, part 2. Still at the start, still touching it (the hull sweep toward the leg's target dies at its
+  // own origin): fly the start's facing as far as the thin ray measured it clear, BEFORE any network attach.
+  // Everything below sweeps from the ship's position and would report a wall in every direction; the contact attach
+  // (bot_roadmap.cpp) works around that with a thin ray, but the leg it finds is not the way the designer left open.
+  // Batteries rm60: a toy box 13 u tall around a 13.4 u ship, whose lid and side walls let the ship SLIDE only along
+  // the box's axis. 61 lives on two arms: every life whose first plan was this egress left the box (10/10); when the
+  // composed route came first its diagonal first leg wedged the ship against the side wall 33 times in 51. Two
+  // fires per life: a start that faces a gap the hull cannot pass (the thin ray is the only measure of "clear
+  // ahead") gets eight seconds of this, then the attach planners take over instead of the same push all window.
+  if (!OBJECT_OUTSIDE(obj) && Bots[bot_index].spawn_clear_ahead >= BOT_SPAWN_EGRESS_MIN &&
+      Bots[bot_index].spawn_egress_fires < BOT_SPAWN_EGRESS_MAX_FIRES &&
+      Gametime - Bots[bot_index].life_start_time < BOT_SPAWN_EGRESS_WINDOW &&
+      vm_VectorDistanceQuick(&obj->pos, &Bots[bot_index].spawn_pos) < BOT_SPAWN_EGRESS_RADIUS) {
+    fvi_info touch{};
+    if (!BotSegmentClear(obj->roomnum, obj->pos, target_pos, obj->size, &touch) &&
+        vm_VectorDistanceQuick(&obj->pos, &touch.hit_pnt) < 1.5f) {
+      const float run = std::min(Bots[bot_index].spawn_clear_ahead - obj->size, 50.0f);
+      Bots[bot_index].spawn_egress_fires++;
+      BotClearViaChain(bot_index); // a chain built before the ship un-touched aims through the box wall
+      Bots[bot_index].via_point = Bots[bot_index].spawn_pos + Bots[bot_index].spawn_fvec * run;
+      Bots[bot_index].via_expires = Gametime + BOT_VIA_COMMIT_TIME;
+      Bots[bot_index].via_is_skeleton = 0;
+      issue_via_goal();
+      if (verdict_out)
+        *verdict_out = BOT_VIA_FOUND;
+      LOG_DEBUG.printf(
+          "BOT NAV: '%s' spawn egress in room %d: %.0fu along the start's facing (target room %d, fire %d)",
+          Bots[bot_index].callsign, (int)obj->roomnum, run, target_room, (int)Bots[bot_index].spawn_egress_fires);
+      BotNavMemberWin(bot_index, NAV_MEMBER_VIA);
+      return 1;
+    }
+  }
+
   // Committed multi-hop chain (Step 3) — the committee-collapse fix. In a BURIED room with a
   // GENUINELY multi-hop crossing, build the ordered skeleton chain ONCE and commit to flying it,
   // instead of re-deriving one skeleton hop per arrival (the abend2 ring orbit, where per-hop
@@ -2599,8 +2632,8 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
     static bool Drive_seen[MAX_BOTS];
     static float Drive_last[MAX_BOTS];
     static int Drive_room[MAX_BOTS], Drive_target[MAX_BOTS];
-    bool changed = !Drive_seen[bot_index] || Drive_room[bot_index] != obj->roomnum ||
-                   Drive_target[bot_index] != target_room;
+    bool changed =
+        !Drive_seen[bot_index] || Drive_room[bot_index] != obj->roomnum || Drive_target[bot_index] != target_room;
     if (changed || Gametime < Drive_last[bot_index] || Gametime - Drive_last[bot_index] > 5.0f) {
       Drive_seen[bot_index] = true;
       Drive_last[bot_index] = Gametime;
@@ -2656,29 +2689,6 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
     }
   }
 
-  // Spawn egress, part 2. Still at the start, still touching it (the hull sweep toward the leg's target dies at its
-  // own origin) and no network attach above: fly the start's facing as far as the thin ray measured it clear.
-  // Everything below sweeps from the ship's position and would report a wall in every direction.
-  if (!OBJECT_OUTSIDE(obj) && Bots[bot_index].spawn_clear_ahead >= BOT_SPAWN_EGRESS_MIN &&
-      Gametime - Bots[bot_index].life_start_time < BOT_SPAWN_EGRESS_WINDOW &&
-      vm_VectorDistanceQuick(&obj->pos, &Bots[bot_index].spawn_pos) < BOT_SPAWN_EGRESS_RADIUS) {
-    fvi_info touch{};
-    if (!BotSegmentClear(obj->roomnum, obj->pos, target_pos, obj->size, &touch) &&
-        vm_VectorDistanceQuick(&obj->pos, &touch.hit_pnt) < 1.5f) {
-      const float run = std::min(Bots[bot_index].spawn_clear_ahead - obj->size, 50.0f);
-      Bots[bot_index].via_point = Bots[bot_index].spawn_pos + Bots[bot_index].spawn_fvec * run;
-      Bots[bot_index].via_expires = Gametime + BOT_VIA_COMMIT_TIME;
-      Bots[bot_index].via_is_skeleton = 0;
-      issue_via_goal();
-      if (verdict_out)
-        *verdict_out = BOT_VIA_FOUND;
-      LOG_DEBUG.printf("BOT NAV: '%s' spawn egress in room %d: %.0fu along the start's facing (target room %d)",
-                       Bots[bot_index].callsign, (int)obj->roomnum, run, target_room);
-      BotNavMemberWin(bot_index, NAV_MEMBER_VIA);
-      return 1;
-    }
-  }
-
   // Not committed: probe the line to the active steer target and detour if an interior face
   // blocks it AND a clear go-around exists. CLEAR and NONE both mean "steer normally" here —
   // NONE additionally feeds the caller's sealed-target counting via *verdict_out.
@@ -2696,8 +2706,8 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
     // diagnosis can tell a glass panel from a solid divider from a buried-centre pass-3 miss.
     if (r == BOT_VIA_NONE && Gametime - Bots[bot_index].via_fail_last_log > 5.0f) {
       Bots[bot_index].via_fail_last_log = Gametime;
-      static const char *fail_stage_names[] = {"none", "rings", "rings-skipped", "outdoor-lattice", "outdoor-graph",
-                                               "pass3"};
+      static const char *fail_stage_names[] = {"none",          "rings", "rings-skipped", "outdoor-lattice",
+                                               "outdoor-graph", "pass3"};
       const int num_stages = (int)(sizeof(fail_stage_names) / sizeof(fail_stage_names[0]));
       const char *stage_name =
           (via_diag.stage >= 0 && via_diag.stage < num_stages) ? fail_stage_names[via_diag.stage] : "?";
@@ -3097,8 +3107,8 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
     // arrival then can only fire inside the tray. Issued claim-room stays wp_room.
     unified_aim = true; // skip the buried-parent resolver — this hop IS the descent
   } else if (Bots[bot_index].via_chain_len > 0 && Bots[bot_index].via_expires > Gametime &&
-             (int)obj->roomnum == Bots[bot_index].via_chain_room &&
-             wp_room == Bots[bot_index].via_chain_target_room && Bots[bot_index].via_chain_cursor >= 0 &&
+             (int)obj->roomnum == Bots[bot_index].via_chain_room && wp_room == Bots[bot_index].via_chain_target_room &&
+             Bots[bot_index].via_chain_cursor >= 0 &&
              Bots[bot_index].via_chain_cursor < Bots[bot_index].via_chain_len) {
     // ONE MIND ON A COMMITTED CROSSING. When the composer has already answered this crossing — a
     // via_chain committed for this exact (room, target room) — the routed goal reads THAT answer
@@ -3150,8 +3160,8 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
     bool steer_divergent = !ROOMNUM_OUTSIDE(steer_room) && steer_room >= 0 && steer_room <= Highest_room_index &&
                            Rooms[steer_room].used && steer_room != obj->roomnum && steer_room != wp_room;
     bool hop_pressed = Bots[bot_index].hop_press_wp == wp_room && Bots[bot_index].hop_press_n >= BOT_HOP_PRESS_TRIGGER;
-    if (!OBJECT_OUTSIDE(obj) && wp_room != obj->roomnum && wp_room >= 0 &&
-        wp_room <= Highest_room_index && Rooms[wp_room].used && (steer_divergent || hop_pressed) &&
+    if (!OBJECT_OUTSIDE(obj) && wp_room != obj->roomnum && wp_room >= 0 && wp_room <= Highest_room_index &&
+        Rooms[wp_room].used && (steer_divergent || hop_pressed) &&
         // Anti-churn latch: one redirect per waypoint per window. A hop the bot cannot actually
         // cross (unbroken glass as the "direct door") otherwise re-fires every tick — 1054
         // same-portal firings in one bsidectf round. One shot, then the goal gets its window;
@@ -3290,7 +3300,7 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   // hop, wp_room == obj->roomnum). On FOUND, aim the engine at that in-room waypoint; on NONE/degenerate keep
   // the path_pnt (today's behavior). Indoor only — outdoors the region roadmap already runs via the reactive
   // BotViaPointTick above. Carriers share this function, so this is also the "escape out of the structure" fix.
-  bool nav_dest_overridden = seam_redirect; // §7: seam already counted at assertion time, above
+  bool nav_dest_overridden = seam_redirect;   // §7: seam already counted at assertion time, above
   int entry_room_c = -1, entry_portal_c = -1; // Phase 0 entrance observer: which door the ENTRY stage committed to
   bool entry_issue = false;                   // this issue is the ENTRY push itself (not the standoff/leg/rescue)
   if (seam_redirect) {
@@ -7328,8 +7338,9 @@ bool BotNavDump(const char *filename) {
               rcc, rdegen ? "true" : "false");
       // Honest coverage split: sampled cells vs traced repair nodes, and whether the portal seeds
       // actually reach each other through the interior rather than by a straight sight line.
-      fprintf(fp, "      \"roadmap_lattice_cells\": %d, \"roadmap_connector_nodes\": %d, "
-                  "\"roadmap_local_pair_pct\": %d, \"roadmap_routable\": %s,\n",
+      fprintf(fp,
+              "      \"roadmap_lattice_cells\": %d, \"roadmap_connector_nodes\": %d, "
+              "\"roadmap_local_pair_pct\": %d, \"roadmap_routable\": %s,\n",
               rcells, rconn, rlpair, rroutable ? "true" : "false");
       fprintf(fp, "      \"roadmap_nodes\": [");
       for (int i = 0; i < rn; i++)
@@ -7349,7 +7360,8 @@ bool BotNavDump(const char *filename) {
       float gcost = BotPortalGeoCost(r, p);
       bool our_impass = (gcost >= BOT_PORTAL_IMPASSABLE);
       // Past the engine's BOA table (portal >= 40) its lookup would read past the row: designer flags only.
-      bool eng_pass = (p < MAX_PATH_PORTALS) ? BOA_PassablePortal(r, p) : !(po.flags & (PF_BLOCK | PF_TOO_SMALL_FOR_ROBOT));
+      bool eng_pass =
+          (p < MAX_PATH_PORTALS) ? BOA_PassablePortal(r, p) : !(po.flags & (PF_BLOCK | PF_TOO_SMALL_FOR_ROBOT));
       bool disagree = eng_pass && our_impass;
       if (disagree)
         disagree_total++;
@@ -8100,6 +8112,7 @@ static void BotRecordSpawn(int bot_index, int slot) {
   Bots[bot_index].spawn_pos = sobj->pos;
   Bots[bot_index].spawn_fvec = sobj->orient.fvec;
   Bots[bot_index].spawn_clear_ahead = 0.0f;
+  Bots[bot_index].spawn_egress_fires = 0;
   if (OBJECT_OUTSIDE(sobj))
     return;
   const vector ahead = sobj->pos + sobj->orient.fvec * BOT_SPAWN_EGRESS_REACH;
@@ -9006,11 +9019,11 @@ void BotDoFrame() {
       } else if (cur != Bots[i].hop_commit_src || Gametime - Bots[i].hop_commit_time > BOT_HOP_OUTCOME_TIMEOUT) {
         LOG_DEBUG.printf("BOT NAV: '%s' hop outcome: NOT-CROSSED rm%d -> rm%d via portal %d (%.1fs, now rm%d) "
                          "from=(%.0f,%.0f,%.0f) aim=(%.0f,%.0f,%.0f) now=(%.0f,%.0f,%.0f)",
-                         Bots[i].callsign, Bots[i].hop_commit_src, Bots[i].hop_commit_wp,
-                         Bots[i].hop_commit_portal, Gametime - Bots[i].hop_commit_time, cur,
-                         Bots[i].hop_commit_pos.x(), Bots[i].hop_commit_pos.y(), Bots[i].hop_commit_pos.z(),
-                         Bots[i].hop_commit_aim.x(), Bots[i].hop_commit_aim.y(), Bots[i].hop_commit_aim.z(),
-                         cobj->pos.x(), cobj->pos.y(), cobj->pos.z());
+                         Bots[i].callsign, Bots[i].hop_commit_src, Bots[i].hop_commit_wp, Bots[i].hop_commit_portal,
+                         Gametime - Bots[i].hop_commit_time, cur, Bots[i].hop_commit_pos.x(),
+                         Bots[i].hop_commit_pos.y(), Bots[i].hop_commit_pos.z(), Bots[i].hop_commit_aim.x(),
+                         Bots[i].hop_commit_aim.y(), Bots[i].hop_commit_aim.z(), cobj->pos.x(), cobj->pos.y(),
+                         cobj->pos.z());
         Bots[i].hop_commit_wp = -1;
       }
     }
@@ -9119,7 +9132,7 @@ void BotDoFrame() {
           // Objective items get the short back-off (see the sealed path): the flag is the errand.
           Bots[i].blacklisted_powerup_expires =
               Gametime + (BotTrollExempt(Bots[i].chasing_powerup_handle) ? BOT_OBJECTIVE_BLACKLIST_DURATION
-                                                                          : BOT_POWERUP_BLACKLIST_DURATION);
+                                                                         : BOT_POWERUP_BLACKLIST_DURATION);
           // Strike discipline (0.9.6): a timeout alone is NOT evidence of a troll item. On maze
           // maps a legitimate chase through glass/office detours routinely outlives the timer —
           // batteriesincluded retired 8 real items in 7 minutes this way. Strike only when the
@@ -9225,9 +9238,8 @@ void BotDoFrame() {
                              Bots[i].callsign, cur_room, Bots[i].via_chain_len > 0 ? "stored" : "none",
                              Bots[i].via_chain_len, Bots[i].via_chain_cursor, Bots[i].via_chain_room,
                              Bots[i].via_chain_target_room, Bots[i].via_expires > Gametime ? "yes" : "no",
-                             (BotIsCarryingEnemyFlag(i) || BotIsCarryingHyperOrb(i)) ? "yes" : "no",
-                             Players[slot].team, net_disp, stuck_state_names[st_i], obj->pos.x(), obj->pos.y(),
-                             obj->pos.z());
+                             (BotIsCarryingEnemyFlag(i) || BotIsCarryingHyperOrb(i)) ? "yes" : "no", Players[slot].team,
+                             net_disp, stuck_state_names[st_i], obj->pos.x(), obj->pos.y(), obj->pos.z());
           }
           BotClearActiveGoal(i);
           Bots[i].explore_stuck_room = cur_room;

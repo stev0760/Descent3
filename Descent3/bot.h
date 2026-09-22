@@ -166,6 +166,7 @@
 #define BOT_SPAWN_EGRESS_MIN 20.0f    // less thin-ray clearance than this ahead = the facing is no way out
 #define BOT_SPAWN_EGRESS_WINDOW 45.0f // seconds of a life in which the start's facing may steer
 #define BOT_SPAWN_EGRESS_RADIUS 25.0f // ... and only while the ship is still this close to the start
+#define BOT_SPAWN_EGRESS_MAX_FIRES 2  // egress commits per life before the attach planners get their turn
 #define BOT_GRATE_PORTAL_NEAR 30.0f // $nav grate pass 4: a destroyable object within this of a portal = in the doorway
 #define BOT_INDOOR_PROGRESS_DIST 50.0f // indoors, also count this much displacement as progress (big-room fix)
 
@@ -613,6 +614,7 @@ struct bot_info {
   vector spawn_pos;
   vector spawn_fvec;
   float spawn_clear_ahead;   // thin-ray clear distance along spawn_fvec, measured at spawn (0 = none / outdoors)
+  int spawn_egress_fires;    // egress commits issued this life (BOT_SPAWN_EGRESS_MAX_FIRES)
   bool gearup_budget_logged; // the once-per-life "budget spent" line
   vector entry_commit_pos; // bot position at commit
   vector entry_commit_aim; // the push-through point issued
