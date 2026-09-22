@@ -733,9 +733,9 @@ void ParseLine(char *srcline, char *command, char *operand, int cmdlen, int oprl
 // One entry point for the navigation toggle/diagnostic surface (the BOTS_DEVEL.md "Pre-Release
 // Cleanup", Option B): bare `$nav` prints the live toggle table, `$nav <name> on|off` flips one,
 // `$nav dump [file]` writes the nav-geometry JSON. The pre-0.9.5 flat command names stay as HIDDEN
-// aliases (soak scripts + muscle memory keep working; they're gone from $bothelp). Rows tagged
-// legacy gate the 0.9.3 fallback substrate and are deleted together with that code in Stage 4
-// (NAVIGATION.md section 3.5). NOTE the near-collision: `$nav bridge` = the 0.9.4 corner-rounding bridge
+// aliases (soak scripts + muscle memory keep working; they're gone from $bothelp). (The 0.9.3 fallback
+// substrate and its `legacy` rows are gone; 0.9.16-dev dropped the tag.) NOTE the near-collision: `$nav bridge` =
+// the 0.9.4 corner-rounding bridge
 // ($gridbridge), while the OLD `$navbridge` = the 12.7 soft-hop, now `$nav softhop`.
 struct NavToggle {
   const char *sub;    // $nav <sub> on|off
@@ -743,68 +743,60 @@ struct NavToggle {
   const char *alias2; // second flat alias, or nullptr
   bool *flag;
   const char *desc;
-  bool legacy;  // 0.9.3 fallback substrate — retired in Stage 4
   bool rebuild; // BUILD-TIME roadmap parameter: flush cached roadmaps when the value changes
 };
 static const NavToggle Nav_toggles[] = {
     {"grid", "gridnav", "navgrid", &Bot_gridnav_enabled, "volumetric grid roadmap (0.9.4; off = 0.9.3 substrate)",
-     false, false},
-    {"bridge", "gridbridge", nullptr, &Bot_roadmap_corner_enabled, "corner-rounding component bridge", false, true},
+     false},
+    {"bridge", "gridbridge", nullptr, &Bot_roadmap_corner_enabled, "corner-rounding component bridge", true},
     {"grate", "grateclear", nullptr, &Bot_grate_clear_enabled, "proactive destroyable-obstacle (grate) clearing",
-     false, false},
+     false},
     {"glass", "glassroute", nullptr, &Bot_glass_route_enabled,
-     "kinetic bots route through breakable glass: vertical panes as shortcuts, any pane as a sole route",
-     false, true},
+     "kinetic bots route through breakable glass: vertical panes as shortcuts, any pane as a sole route", true},
     {"outlattice", "outdoorlattice", nullptr, &Bot_outdoor_lattice_enabled,
-     "outdoor lattice via in blocked-line rescue (off = 0.9.3 rescue order)", false, false},
-    {"wind", "windroute", nullptr, &Bot_wind_route_enabled,
-     "wind-tunnel one-way routing + downwind shortcut bias", false, false},
+     "outdoor lattice via in blocked-line rescue (off = 0.9.3 rescue order)", false},
+    {"wind", "windroute", nullptr, &Bot_wind_route_enabled, "wind-tunnel one-way routing + downwind shortcut bias",
+     false},
     {"outtier", "outdoortier", nullptr, &Bot_outdoor_tier_enabled,
-     "entrance choice by full routed cost (wind/glass-aware), not BOA estimate", false, false},
+     "entrance choice by full routed cost (wind/glass-aware), not BOA estimate", false},
     {"hardroom", "hardroom", nullptr, &Bot_hard_room_enabled,
-     "evidence-gated gridroute: via-suspension repeat offenders get proactive grid routing", false, false},
+     "evidence-gated gridroute: via-suspension repeat offenders get proactive grid routing", false},
     {"curve", "curveroute", nullptr, &Bot_curve_route_enabled,
      "curve-following: fatter-clearance Theta* straightening keeps winding paths (isengard corkscrew Fork-B fix)",
-     false, false},
-    {"strike", "softstrike", nullptr, &Bot_soft_strike_enabled,
-     "same-room soft chase-aborts accrue troll strikes at half weight (magnet-powerup retirement)", false, false},
-    {"dense", "tubedense", nullptr, &Bot_tube_densify_enabled,
-     "thin-tube roadmap densification: hull-fit ladder rungs along portal pairs (degenerate shaft/tunnel fix)",
-     false, true},
-    {"troute", "terrainroute", nullptr, &Bot_troute_enabled,
-     "terrain tier: cross-terrain routes composed over region-lattice door pairs (piece 1, NAVIGATION 3.7)", false,
      false},
+    {"strike", "softstrike", nullptr, &Bot_soft_strike_enabled,
+     "same-room soft chase-aborts accrue troll strikes at half weight (magnet-powerup retirement)", false},
+    {"dense", "tubedense", nullptr, &Bot_tube_densify_enabled,
+     "thin-tube roadmap densification: hull-fit ladder rungs along portal pairs (degenerate shaft/tunnel fix)", true},
+    {"troute", "terrainroute", nullptr, &Bot_troute_enabled,
+     "terrain tier: cross-terrain routes composed over region-lattice door pairs (piece 1, NAVIGATION 3.7)", false},
     {"bnodesp", "bnodenative", nullptr, &Bot_bnode_native_pathing_enabled,
      "defer to the engine's native BNode path pipeline on BNode-rich SP maps (PLAN-coop-nav-rethink.md); "
      "default ON, inert on every BNode-less MP map",
-     false, false},
+     false},
     {"troute2", "troutecompare", nullptr, &Bot_troute_compare_enabled,
-     "v2 route choice: compose terrain plan even when an interior route exists, take the cheaper", false, false},
+     "v2 route choice: compose terrain plan even when an interior route exists, take the cheaper", false},
     {"heal", "roadmapheal", nullptr, &Bot_roadmap_heal_enabled,
-     "stale-glass fix: rebuild a room's roadmap when its watched panes/grates open mid-round", false, true},
+     "stale-glass fix: rebuild a room's roadmap when its watched panes/grates open mid-round", true},
     {"runner", "flagrunner", nullptr, &Bot_dedicated_runner_enabled,
-     "dedicated CTF flag-runner role (1 committed runner + defenders + flex; off = binary attack/defend)", false,
-     false},
+     "dedicated CTF flag-runner role (1 committed runner + defenders + flex; off = binary attack/defend)", false},
     {"hyper", "hyperroles", nullptr, &Bot_hyper_roles_enabled,
-     "Hyper-Anarchy loose orb roles (nearest-K chase orb / hunt carrier; off = everyone races, nobody hunts)", false,
-     false},
+     "Hyper-Anarchy loose orb roles (nearest-K chase orb / hunt carrier; off = everyone races, nobody hunts)", false},
     {"entropy", "entropytakeover", nullptr, &Bot_entropy_takeover_enabled,
-     "Entropy E3 takeover execution (loaded bots invade/hold/retreat; off = E2 economy only)", false, false},
+     "Entropy E3 takeover execution (loaded bots invade/hold/retreat; off = E2 economy only)", false},
     {"mball", "mballstriker", nullptr, &Bot_mball_striker_enabled,
-     "Monsterball M2 striker (approach-point + gated ball shooting; off = legacy ball-chaser)", false, false},
+     "Monsterball M2 striker (approach-point + gated ball shooting; off = legacy ball-chaser)", false},
     {"mroles", "mballroles", nullptr, &Bot_mball_roles_enabled,
-     "Monsterball M3 roles (one striker + support + keeper, utility+hysteresis; off = everyone strikes)", false,
-     false},
+     "Monsterball M3 roles (one striker + support + keeper, utility+hysteresis; off = everyone strikes)", false},
     {"mavoid", "mballavoid", nullptr, &Bot_mball_avoid_enabled,
-     "Monsterball contact-blunder discipline (detour around a ball the leg would bump toward THEIR goal)", false,
-     false},
+     "Monsterball contact-blunder discipline (detour around a ball the leg would bump toward THEIR goal)", false},
     {"mjunction", "mballjunction", nullptr, &Bot_mball_junction_enabled,
      "Monsterball junction steering (in a 3+ portal fork room, shoot only when the induced ball line wins the fork)",
-     false, false},
+     false},
     {"terrain", "terrainsteer", nullptr, &Bot_terrain_steering_enabled, "outdoor terrain steering / entrance redirect",
-     true, false},
-    {"outdoorvia", "outdoorvia", nullptr, &Bot_outdoor_via_enabled, "outdoor lateral go-around ring", true, false},
-    {"outdoorgraph", "outdoorgraph", nullptr, &Bot_outdoor_graph_enabled, "outdoor connecting graph (multi-hop)", true,
+     false},
+    {"outdoorvia", "outdoorvia", nullptr, &Bot_outdoor_via_enabled, "outdoor lateral go-around ring", false},
+    {"outdoorgraph", "outdoorgraph", nullptr, &Bot_outdoor_graph_enabled, "outdoor connecting graph (multi-hop)",
      false},
 };
 
@@ -996,8 +988,7 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     if (!sub[0]) {
       PrintDedicatedMessage("Navigation toggles ($nav <name> on|off):\n");
       for (const NavToggle &t : Nav_toggles)
-        PrintDedicatedMessage("  %-13s %-3s  %s%s\n", t.sub, *t.flag ? "ON" : "off", t.desc,
-                              t.legacy ? " [legacy 0.9.3]" : "");
+        PrintDedicatedMessage("  %-13s %-3s  %s\n", t.sub, *t.flag ? "ON" : "off", t.desc);
       PrintDedicatedMessage("  %-13s %.0fs  Monsterball role commitment period: $nav mtenure <seconds>\n", "mtenure",
                             Bot_mball_role_tenure);
       PrintDedicatedMessage("  %-13s      dump nav geometry to JSON: $nav dump [file]\n", "dump");
@@ -1007,8 +998,9 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
       PrintDedicatedMessage(
           "  %-13s      hull sweeps along a segment, both ways, +/- backface: $nav probe <x> <y> <z> <x2> <y2> <z2>\n",
           "probe");
-      PrintDedicatedMessage("  %-13s      hull sweeps from a point to a door's crossing: $nav sweep <x> <y> <z> <room> <portal>\n",
-                            "sweep");
+      PrintDedicatedMessage(
+          "  %-13s      hull sweeps from a point to a door's crossing: $nav sweep <x> <y> <z> <room> <portal>\n",
+          "sweep");
       PrintDedicatedMessage(
           "  %-13s      §7 committee contention counts (NAVIGATION.md §6.9): $nav contend [index|all]\n", "contend");
       return true;
@@ -1186,8 +1178,7 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     PrintDedicatedMessage("  $botstat [index|all]   - Show bot status details\n");
     PrintDedicatedMessage("  $nav                   - Navigation toggles & status ($nav <name> on|off; bare = list)\n");
     PrintDedicatedMessage("  $nav dump [file]       - Dump current level nav geometry to JSON (alias: $navdump)\n");
-    PrintDedicatedMessage(
-        "  $nav contend [index|all] - §7 nav-committee contention counts (NAVIGATION.md §6.9)\n");
+    PrintDedicatedMessage("  $nav contend [index|all] - §7 nav-committee contention counts (NAVIGATION.md §6.9)\n");
     PrintDedicatedMessage("  $botmov on|off         - Toggle movement debug logging\n");
     PrintDedicatedMessage("  $botmode               - Show detected game mode\n");
     PrintDedicatedMessage("  $botobj                - Show objective state (CTF flags, orbs, etc.)\n");
