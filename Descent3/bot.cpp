@@ -818,6 +818,20 @@ static void BotClearViaChain(int bot_index) {
   Bots[bot_index].via_chain_target_room = -1;
 }
 
+// A goal to TOUCH an object: a flag to grab, the home flag to score on, a dropped flag to return. The ship AI's
+// circle distance is 10 u (Player.cpp), and a GET_TO_OBJ goal completes itself once the surface gap is inside it,
+// about 20 u from a flag's centre and well short of contact, so the errand re-issued it from there — a fresh
+// engine path each time, the ship swinging out to 40 u and back: 3,365 flag-grab issues for 297 pickups in 12
+// bedlam rounds, nothing else logged in between (Q1). The engine's own melee chase uses -100 for the same reason:
+// the goal never ends by distance; the pickup ends it.
+static int BotAddTouchGoal(object *obj, int objnum) {
+  int handle = Objects[objnum].handle;
+  int gi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&handle, 2, 1.0f, GF_SPEED_ATTACK);
+  if (gi >= 0 && gi < MAX_GOALS)
+    obj->ai_info->goals[gi].circle_distance = BOT_TOUCH_GOAL_CIRCLE_DIST;
+  return gi;
+}
+
 static void BotClearActiveGoal(int bot_index) {
   BotClearViaChain(bot_index); // retire stored chain metadata even in the no-ai_info window
   int slot = Bots[bot_index].player_slot;
@@ -3597,8 +3611,7 @@ static void BotDoExploreRoaming(int bot_index) {
               obj->ai_info->goals[pgi].type == AIG_GET_TO_OBJ && Recover_log_item[bot_index] == item + 1)) {
           if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
             GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
-          int handle = Objects[item].handle;
-          pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&handle, 2, 1.0f, GF_SPEED_ATTACK);
+          pgi = BotAddTouchGoal(obj, item);
           Recover_log_item[bot_index] = item + 1;
           LOG_DEBUG.printf("BOT OBJ: '%s' flag recovery -> touching '%s' (obj %d, %.0fu%s)", Bots[bot_index].callsign,
                            Object_info[Objects[item].id].name, item, d, ROOMNUM_OUTSIDE(iroom) ? ", outdoors" : "");
@@ -3668,8 +3681,7 @@ static void BotDoExploreRoaming(int bot_index) {
           int &pgi = Bots[bot_index].pursuit_goal_index;
           if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
             GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
-          int flag_handle = Objects[flag_objnum].handle;
-          pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&flag_handle, 2, 1.0f, GF_SPEED_ATTACK);
+          pgi = BotAddTouchGoal(obj, flag_objnum);
           LOG_DEBUG.printf("BOT: '%s' score nav -> home flag obj %d", Bots[bot_index].callsign, flag_objnum);
         } else {
           LOG_DEBUG.printf("BOT: '%s' at home base, waiting for flag return", Bots[bot_index].callsign);
@@ -3712,8 +3724,7 @@ static void BotDoExploreRoaming(int bot_index) {
                   obj->ai_info->goals[pgi].type == AIG_GET_TO_OBJ && Grab_log_item[bot_index] == eflag + 1)) {
               if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
                 GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
-              int handle = Objects[eflag].handle;
-              pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&handle, 2, 1.0f, GF_SPEED_ATTACK);
+              pgi = BotAddTouchGoal(obj, eflag);
               Grab_log_item[bot_index] = eflag + 1;
               LOG_DEBUG.printf("BOT OBJ: '%s' flag grab -> touching '%s' (obj %d, %.0fu) in room %d",
                                Bots[bot_index].callsign, Object_info[Objects[eflag].id].name, eflag,
@@ -4024,8 +4035,7 @@ static void BotDoCarrierNav(int bot_index) {
       int &pgi = Bots[bot_index].pursuit_goal_index;
       if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
         GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
-      int flag_handle = Objects[flag_objnum].handle;
-      pgi = GoalAddGoal(obj, AIG_GET_TO_OBJ, (void *)&flag_handle, 2, 1.0f, GF_SPEED_ATTACK);
+      pgi = BotAddTouchGoal(obj, flag_objnum);
       LOG_DEBUG.printf("BOT CTF: '%s' carrier beeline -> own flag obj %d", Bots[bot_index].callsign, flag_objnum);
     } else {
       LOG_DEBUG.printf("BOT CTF: '%s' at home base, waiting for flag return", Bots[bot_index].callsign);
@@ -6553,6 +6563,42 @@ static void BotApplyThrust(int bot_index) {
   // Stuck detection: escape after 3s at near-zero speed while applying thrust
   float current_speed = vm_GetMagnitude(&obj->mtype.phys_info.velocity);
   bool applying_thrust = (fabsf(forward) > 0.1f || fabsf(sideways) > 0.1f);
+
+  // SPAWN TRACE (0.9.16-dev diagnostic, Batteries rm60): what the ship does in the first seconds at a start it touches.
+  // Half a second apart while inside the egress window and radius: position, speed and velocity direction, the thrust
+  // this frame, the engine's movement_dir, the goal in the pursuit slot and its position. Read with rm60_trace.py.
+  if (!OBJECT_OUTSIDE(obj) && Bots[bot_index].spawn_clear_ahead > 0.0f &&
+      Gametime - Bots[bot_index].life_start_time < BOT_SPAWN_EGRESS_WINDOW &&
+      vm_VectorDistanceQuick(&obj->pos, &Bots[bot_index].spawn_pos) < BOT_SPAWN_EGRESS_RADIUS) {
+    static float Trace_t[MAX_BOTS];
+    float &lt = Trace_t[bot_index];
+    if (Gametime < lt || Gametime - lt >= 0.5f) {
+      lt = Gametime;
+      const vector vel = obj->mtype.phys_info.velocity;
+      int &pgi = Bots[bot_index].pursuit_goal_index;
+      const goal *g =
+          (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used) ? &obj->ai_info->goals[pgi] : nullptr;
+      vector gp{};
+      if (g && (g->type == AIG_GET_TO_POS))
+        gp = g->g_info.pos;
+      else if (g && ObjGet(g->g_info.handle))
+        gp = ObjGet(g->g_info.handle)->pos;
+      LOG_DEBUG.printf(
+          "BOT SPAWNTRACE: '%s' t=%.1f pos=(%.1f,%.1f,%.1f) spd=%.1f vel=(%.2f,%.2f,%.2f) thrust f=%.2f s=%.2f v=%.2f "
+          "mdir=(%.2f,%.2f,%.2f) fvec=(%.2f,%.2f,%.2f) goal=%s gpos=(%.0f,%.0f,%.0f) path=%d stuck_t=%.1f pgi=%d "
+          "via_left=%.1f via_d=%.0f st=%d pu_gi=%d",
+          Bots[bot_index].callsign, Gametime - Bots[bot_index].life_start_time, obj->pos.x(), obj->pos.y(),
+          obj->pos.z(), current_speed, vel.x(), vel.y(), vel.z(), forward, sideways, vertical, mdir.x(), mdir.y(),
+          mdir.z(), obj->orient.fvec.x(), obj->orient.fvec.y(), obj->orient.fvec.z(),
+          g ? (g->type == AIG_GET_TO_POS   ? "pos"
+               : g->type == AIG_GET_TO_OBJ ? "obj"
+                                           : "other")
+            : "none",
+          gp.x(), gp.y(), gp.z(), (int)obj->ai_info->path.num_paths, Bots[bot_index].stuck_timer, pgi,
+          Bots[bot_index].via_expires - Gametime, vm_VectorDistanceQuick(&obj->pos, &Bots[bot_index].via_point),
+          (int)Bots[bot_index].state, Bots[bot_index].powerup_goal_index);
+    }
+  }
 
   if (Bots[bot_index].stuck_timer >= 0.0f && current_speed < 5.0f && applying_thrust) {
     Bots[bot_index].stuck_timer += Frametime;

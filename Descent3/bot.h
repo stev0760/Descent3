@@ -37,6 +37,7 @@
 #define BOT_FLEE_DISTANCE 300.0f                      // stop fleeing when > 300 units from threat
 #define BOT_COMBAT_EXIT_RANGE (BOT_FIRE_RANGE * 1.2f) // hysteresis for combat→hunt transition
 #define BOT_COMBAT_CIRCLE_DIST 120.0f                 // circle-strafe orbit distance in combat state
+#define BOT_TOUCH_GOAL_CIRCLE_DIST (-100.0f) // a flag-touch goal never completes by distance (engine melee value)
 
 // Thrust-based movement constants (Phase 3.5)
 #define BOT_AFTERBURNER_FUEL_MAX 5.0f                    // seconds of fuel (matches AFTERBURN_TIME)
@@ -120,7 +121,7 @@
 // Weapon-specific range overrides
 // Battery indices use *_INDEX constants from weapon_external.h:
 //   VAUSS_INDEX=1, MASSDRIVER_INDEX=6, OMEGA_INDEX=9, etc.
-#define BOT_OMEGA_MAX_DIST 35.0f        // Omega Cannon: leech beam, melee-range only
+#define BOT_OMEGA_MAX_DIST 35.0f // Omega Cannon: leech beam, melee-range only
 
 // EXPLORE state room roaming (Phase 3.9, overhauled Phase 4.0)
 // Phase 4.0: bots pick destinations from across the entire map via BOA validation,
@@ -147,17 +148,17 @@
 // decisive adoptions (18 of 147 under 0.85) still pass.
 #define BOT_TROUTE_ADOPT_FACTOR 0.85f
 #define BOT_TROUTE_ADOPT_MIN_INTERIOR 500.0f
-#define BOT_ENTRY_COMMIT_DIST 30.0f // 8.2 ($nav entry): within this of the standoff point -> commit THROUGH the door
+#define BOT_ENTRY_COMMIT_DIST 30.0f   // 8.2 ($nav entry): within this of the standoff point -> commit THROUGH the door
 #define BOT_ENTRY_STANDOFF_DIST 12.0f // at the standoff itself: commit even when the push-leg sweep clips the frame
 #define BOT_OBJECTIVE_STATION_DIST                                                                                     \
   40.0f // an arrived objective errand holds within this of its station (the flag / room point)
 #define BOT_FLAG_TOUCH_DIST 150.0f // CTF flag recovery: within this, with a clear line, an object goal touches the flag
-#define BOT_ENTRY_PUSH_DIST 25.0f   // 8.2: aim this far INSIDE the door room (> engine arrive radius: arrival = entry)
-#define BOT_SEAM_RETRY_TIME 5.0f    // $nav seam: one redirect per waypoint room per this window (anti-churn latch)
+#define BOT_ENTRY_PUSH_DIST 25.0f  // 8.2: aim this far INSIDE the door room (> engine arrive radius: arrival = entry)
+#define BOT_SEAM_RETRY_TIME 5.0f   // $nav seam: one redirect per waypoint room per this window (anti-churn latch)
 #define BOT_HOP_PRESS_TRIGGER                                                                                          \
-  4                                 // 0.9.7 hop-commit: same-hop re-issues before the seam push-through fires
-                                    // WITHOUT steer divergence (the 36->38 doorway-lip press: engine path is
-                                    // direct and correct, the lip approach just never crosses)
+  4 // 0.9.7 hop-commit: same-hop re-issues before the seam push-through fires
+    // WITHOUT steer divergence (the 36->38 doorway-lip press: engine path is
+    // direct and correct, the lip approach just never crosses)
 #define BOT_HOP_OUTCOME_TIMEOUT                                                                                        \
   8.0f // 0.9.14: a committed crossing unresolved this long logs arrived-without-crossing
        // (diagnostic bound only — the seam/escape machinery still owns the bot)
@@ -240,8 +241,8 @@
 // Objective items (flags, orbs) are never optional pickups: a failed approach earns a short back-off
 // so the pilot re-plans from where it stands, not a minute of ignoring the objective (0.9.14).
 #define BOT_OBJECTIVE_BLACKLIST_DURATION 5.0f
-#define BOT_UNSTICK_REVERSE_TIME 1.0f // seconds of pure reverse thrust after a hard (net_disp<10) pin
-#define BOT_POWERUP_THRUST_RADIUS 50.0f      // direct-thrust override distance for close visible powerups (Phase 4.06)
+#define BOT_UNSTICK_REVERSE_TIME 1.0f   // seconds of pure reverse thrust after a hard (net_disp<10) pin
+#define BOT_POWERUP_THRUST_RADIUS 50.0f // direct-thrust override distance for close visible powerups (Phase 4.06)
 #define BOT_POWERUP_STALE_CHASE 4.0f // seconds chasing without collecting before treating chase as stale (Phase 4.06)
 #define BOT_GEARUP_BUDGET 30.0f      // seconds per life a default-laser bot may gear up wide before pressing its errand
 
@@ -597,7 +598,7 @@ struct bot_info {
   float hop_commit_time; // Gametime at issue (BOT_HOP_OUTCOME_TIMEOUT bounds a pending one)
   vector hop_commit_pos; // bot position at issue (outcome telemetry)
   float unstick_reverse_until;
-  vector unstick_dir; // world direction of the burst: reverse, or the body direction with the most room
+  vector unstick_dir;                 // world direction of the burst: reverse, or the body direction with the most room
   int hunt_route_from, hunt_route_to; // hunt routability cache: (room, target room) -> ok, 1 s
   bool hunt_route_ok;
   float hunt_route_time; // Gametime until which a hard pin drives pure reverse thrust (0.9.14)
@@ -616,8 +617,8 @@ struct bot_info {
   float spawn_clear_ahead;   // thin-ray clear distance along spawn_fvec, measured at spawn (0 = none / outdoors)
   int spawn_egress_fires;    // egress commits issued this life (BOT_SPAWN_EGRESS_MAX_FIRES)
   bool gearup_budget_logged; // the once-per-life "budget spent" line
-  vector entry_commit_pos; // bot position at commit
-  vector entry_commit_aim; // the push-through point issued
+  vector entry_commit_pos;   // bot position at commit
+  vector entry_commit_aim;   // the push-through point issued
 
   // Intra-room via-point steering (Phase 12) — committed go-around waypoint state
   vector via_point;        // committed go-around waypoint (valid while Gametime < via_expires)
