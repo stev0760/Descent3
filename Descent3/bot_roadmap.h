@@ -47,7 +47,7 @@ extern bool Bot_gridnav_enabled;
 // BASEMENT door, where the blue key lives — a bot/player can barely fit → grid sealed the room → via-dance +
 // "sealed" powerup abandons in room 60). Dropped to a hair over the hull so a gap the ship physically clears
 // is accepted. NEVER set below the hull (the reverted bnode-gen max_rad 5.0 routed bots into gaps they jam in).
-#define BOT_ROADMAP_CLEARANCE 6.7f    // hull 6.676 + 0.024 sliver — fit radius, not a safety margin
+#define BOT_ROADMAP_CLEARANCE 6.7f // hull 6.676 + 0.024 sliver — fit radius, not a safety margin
 // Fatter clearance used ONLY by the $nav curve Theta* straightening (SetVertex) so it won't shortcut
 // two nodes across a mound/bend that clears bare hull but not the engine's avoid-walls margin (~2x
 // hull). Graph adjacency/edges still use BOT_ROADMAP_CLEARANCE so tight doorways thread.
@@ -135,7 +135,7 @@ extern bool Bot_outdoor_lattice_enabled;
 // "simple" (the isengard room-36 class: single-component, huge, concave, unflyable by the raw
 // portal line). Mark on each suspension; promoted for the rest of the level at the threshold.
 extern bool Bot_hard_room_enabled;
-extern bool Bot_curve_route_enabled; // $nav curve: fatter-clearance Theta* straightening (Fork-B fix)
+extern bool Bot_curve_route_enabled;  // $nav curve: fatter-clearance Theta* straightening (Fork-B fix)
 extern bool Bot_tube_densify_enabled; // $nav dense: hull-fit ladder rungs along thin-tube portal pairs
 extern bool Bot_roadmap_heal_enabled; // $nav heal: stale-glass fix — rebuild room roadmaps when panes/grates open
 void BotRoadmapMarkHardRoom(int room_idx);
@@ -217,6 +217,13 @@ void BotRoadmapInvalidate();
 void BotRoadmapPump(bool humans_present);
 // Level (re)load: unwind any build parked mid-way; the prewarm re-queues what is still missing.
 void BotRoadmapCancelBuilds();
+// The sliced worker's parking spot, for other modules' build code (the skeleton's bridge search): a no-op off a
+// worker thread. Never call it from inside an engine call or a lazy cache fill.
+void BotRoadmapSliceYield();
+// True inside a tool's synchronous scope ($nav dump): build everything inline, publish nothing later.
+bool BotRoadmapSyncActive();
+// Queue a room's skeleton bridge pass on the worker (demand lane, or the level prewarm).
+void BotRoadmapRequestSkeleton(int room_idx, bool prewarm);
 
 // $navdump diagnostic: build (lazily) and dump a room's roadmap — node world positions + per-node
 // component id. Returns node count (0 = external/invalid). Sets *comp_count_out and *degenerate_out.

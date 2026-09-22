@@ -170,16 +170,16 @@ struct RoadmapRoom {
                            // old `complex`, which measured how badly the sampler did — see the header.
   // COVERAGE vs REPAIR — keep these apart. Conflating them is what let a room with 3 real sample
   // cells report "97 lattice" and earn routing authority it could not honour (see NAVIGATION.md).
-  int lattice_cells = 0;    // TRUE accepted lattice cells: the volumetric sampler's own output, and the
-                            // only honest coverage signal. NOTHING else may increment this.
-  int connector_nodes = 0;  // nodes synthesized by the repair passes (corner-rounding, tube rungs,
-                            // multibend connectors). Real navigable waypoints, but they trace a single
-                            // path — they do not cover a room. Never read them as coverage.
+  int lattice_cells = 0;        // TRUE accepted lattice cells: the volumetric sampler's own output, and the
+                                // only honest coverage signal. NOTHING else may increment this.
+  int connector_nodes = 0;      // nodes synthesized by the repair passes (corner-rounding, tube rungs,
+                                // multibend connectors). Real navigable waypoints, but they trace a single
+                                // path — they do not cover a room. Never read them as coverage.
   int local_pair_coverage = -1; // % of portal-seed pairs joined WITHOUT a direct seed-to-seed sight
-                            // line (-1 = undefined, <2 seeds). See RoadmapLocalPairCoverage.
-  bool degenerate = false; // no usable interior roadmap -> caller falls back to the skeleton
-  bool outdoor = false;    // false: indoor room (probe from probe_room); true: terrain region
-  int probe_room = -1;     // indoor fvi start room for the segment probe (unused when outdoor)
+                                // line (-1 = undefined, <2 seeds). See RoadmapLocalPairCoverage.
+  bool degenerate = false;      // no usable interior roadmap -> caller falls back to the skeleton
+  bool outdoor = false;         // false: indoor room (probe from probe_room); true: terrain region
+  int probe_room = -1;          // indoor fvi start room for the segment probe (unused when outdoor)
 
   // $nav heal (0.9.7, the stale-glass fix): roadmaps build while panes/grates are intact — their
   // doorway seeds orphan and their legs read blocked — and nothing ever told the model when the
@@ -241,6 +241,7 @@ RoadmapRoom *BuildOutdoor(int region);
 
 struct BuildRequest {
   bool outdoor;
+  bool skel; // a room skeleton's bridge pass (bot_steering.cpp), not a roadmap
   int id;
 };
 struct SliceCancelled {};
@@ -255,8 +256,9 @@ struct SliceLane {
   bool active = false; // a job is assigned and unpublished
   bool done = false;
   bool started = false; // worker thread created
-  BuildRequest job{false, -1};
+  BuildRequest job{false, false, -1};
   RoadmapRoom *result = nullptr;
+  void *skel_result = nullptr; // a skel job's finished private graph
   std::chrono::steady_clock::time_point deadline;
   std::deque<BuildRequest> queue;
   int slices = 0;
@@ -274,6 +276,13 @@ Slicer *g_slicer = nullptr;
 thread_local SliceLane *t_lane = nullptr; // set on a worker thread only; the main thread never yields
 bool g_room_queued[MAX_ROOMS] = {false};
 bool g_region_queued[MAX_BOA_TERRAIN_REGIONS] = {false};
+bool g_skel_queued[MAX_ROOMS] = {false};
+bool &QueuedFlag(const BuildRequest &r) {
+  return r.skel ? g_skel_queued[r.id] : r.outdoor ? g_region_queued[r.id] : g_room_queued[r.id];
+}
+bool SameJob(const BuildRequest &a, const BuildRequest &b) {
+  return a.outdoor == b.outdoor && a.skel == b.skel && a.id == b.id;
+}
 int g_prewarm_checksum = 0;
 int g_sync_depth = 0; // >0: tools ($nav dump) want the answer now — build inline as before
 
@@ -302,13 +311,19 @@ void SliceWorkerMain(SliceLane *ln) {
     const BuildRequest job = ln->job;
     lk.unlock();
     RoadmapRoom *rr = nullptr;
+    void *skel = nullptr;
     try {
-      rr = job.outdoor ? BuildOutdoor(job.id) : Build(job.id);
+      if (job.skel)
+        skel = BotSkelBuildPrivate(job.id);
+      else
+        rr = job.outdoor ? BuildOutdoor(job.id) : Build(job.id);
     } catch (const SliceCancelled &) {
       rr = nullptr;
+      skel = nullptr;
     }
     lk.lock();
     ln->result = rr;
+    ln->skel_result = skel;
     ln->done = true;
     ln->worker_turn = false;
     g_slicer->cv.notify_all();
@@ -334,10 +349,28 @@ void SliceRun(SliceLane *ln, double budget_ms) {
 
 void SlicePublish(SliceLane *ln) {
   RoadmapRoom *rr = ln->result;
+  void *skel = ln->skel_result;
   const BuildRequest job = ln->job;
   ln->result = nullptr;
+  ln->skel_result = nullptr;
   ln->active = ln->done = false;
-  (job.outdoor ? g_region_queued[job.id] : g_room_queued[job.id]) = false;
+  QueuedFlag(job) = false;
+  if (job.skel) {
+    // The union network of this room's roadmap was built over the old graph: drop it so the composer re-imports
+    // the bridged arterials, and bump the serial for the memos keyed on it.
+    if (BotSkelPublish(job.id, skel)) {
+      if (g_room[job.id]) {
+        g_room[job.id]->union_built = false;
+        g_room[job.id]->union_graph.clear();
+      }
+      g_build_serial++;
+      const double wall =
+          std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - ln->job_t0).count();
+      LOG_DEBUG.printf("BOT: skeleton room %d bridged in %d slices: %.0f ms of build over %.0f ms (%s lane)", job.id,
+                       ln->slices, ln->cpu_ms, wall, ln == &g_slicer->lane[LANE_PREWARM] ? "prewarm" : "demand");
+    }
+    return;
+  }
   if (!rr)
     return; // cancelled
   RoadmapRoom *&slot = job.outdoor ? g_region[job.id] : g_room[job.id];
@@ -371,6 +404,8 @@ void SliceCancelAll() {
       }
       delete ln.result;
       ln.result = nullptr;
+      BotSkelDiscard(ln.skel_result);
+      ln.skel_result = nullptr;
       ln.active = ln.done = false;
     }
     ln.queue.clear();
@@ -379,13 +414,16 @@ void SliceCancelAll() {
     q = false;
   for (bool &q : g_region_queued)
     q = false;
+  for (bool &q : g_skel_queued)
+    q = false;
 }
 
-void SliceRequest(bool outdoor, int id, int lane) {
+void SliceRequest(bool outdoor, int id, int lane, bool skel = false) {
   if (!g_slicer)
     g_slicer = new Slicer();
-  bool &queued = outdoor ? g_region_queued[id] : g_room_queued[id];
-  if (lane == LANE_DEMAND && !outdoor) { // regions stay in the fast lane: every outdoor leg waits on one
+  const BuildRequest req{outdoor, skel, id};
+  bool &queued = QueuedFlag(req);
+  if (lane == LANE_DEMAND && !outdoor && !skel) { // regions stay in the fast lane: every outdoor leg waits on one
     const vector ext = Rooms[id].max_xyz - Rooms[id].min_xyz;
     const float pitch3 = BOT_ROADMAP_SPACING * BOT_ROADMAP_SPACING * BOT_ROADMAP_SPACING;
     if (ext.x() * ext.y() * ext.z() / pitch3 > BOT_ROADMAP_BIG_ROOM_CELLS)
@@ -400,32 +438,33 @@ void SliceRequest(bool outdoor, int id, int lane) {
       return;
     SliceLane &pre = g_slicer->lane[LANE_PREWARM];
     for (auto it = pre.queue.begin(); it != pre.queue.end(); ++it)
-      if (it->outdoor == outdoor && it->id == id) {
+      if (SameJob(*it, req)) {
         pre.queue.erase(it);
-        demand.queue.push_back({outdoor, id});
+        demand.queue.push_back(req);
         break;
       }
     return;
   }
   queued = true;
-  g_slicer->lane[lane].queue.push_back({outdoor, id});
+  g_slicer->lane[lane].queue.push_back(req);
 }
 
 // Finish one specific build now (tools). True if it was in flight or queued and is published on return.
 bool SliceFinishNow(bool outdoor, int id) {
-  if (!g_slicer || !(outdoor ? g_region_queued[id] : g_room_queued[id]))
+  const BuildRequest req{outdoor, false, id};
+  if (!g_slicer || !QueuedFlag(req))
     return false;
   for (SliceLane &ln : g_slicer->lane) {
-    if (ln.active && ln.job.outdoor == outdoor && ln.job.id == id) {
+    if (ln.active && SameJob(ln.job, req)) {
       while (!ln.done)
         SliceRun(&ln, 1e9);
       SlicePublish(&ln);
       return true;
     }
     for (auto it = ln.queue.begin(); it != ln.queue.end(); ++it)
-      if (it->outdoor == outdoor && it->id == id) {
+      if (SameJob(*it, req)) {
         ln.queue.erase(it);
-        (outdoor ? g_region_queued[id] : g_room_queued[id]) = false;
+        QueuedFlag(req) = false;
         return false; // only queued: the caller builds it inline
       }
   }
@@ -1575,8 +1614,9 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
             vector off = bbc - pt;
             off = off - dir * vm_DotProduct(&off, &dir);
             const float joff = sp * 0.25f;
-            const vector cands[7] = {pt + off,        pt,        pt + off * 0.5f, pt + perp * joff,
-                                     pt - perp * joff, pt + perp2 * joff, pt - perp2 * joff};
+            const vector cands[7] = {
+                pt + off,         pt, pt + off * 0.5f, pt + perp * joff, pt - perp * joff, pt + perp2 * joff,
+                pt - perp2 * joff};
             for (const vector &cand : cands) {
               if (!RoadmapLOS(rr, prev_pos, cand))
                 continue;
@@ -1654,9 +1694,8 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
 
   LOG_DEBUG.printf("BOT: roadmap %s %d: %d nodes (%d seeds + %d cells + %d connector), %d comps, localpair=%d%%, "
                    "sp=%.0f%s%s",
-                   kind, id, N, n_seed, rr->lattice_cells, rr->connector_nodes, rr->comp_count,
-                   rr->local_pair_coverage, sp, rr->degenerate ? " [DEGENERATE]" : "",
-                   rr->routable ? " [ROUTABLE]" : "");
+                   kind, id, N, n_seed, rr->lattice_cells, rr->connector_nodes, rr->comp_count, rr->local_pair_coverage,
+                   sp, rr->degenerate ? " [DEGENERATE]" : "", rr->routable ? " [ROUTABLE]" : "");
 }
 
 // --- $nav heal helpers -------------------------------------------------------------------------
@@ -1680,8 +1719,7 @@ bool PortalHasBreakable(int room_idx, int portal_idx) {
   if (f >= 0 && f < rm.num_faces && rm.faces[f].tmap >= 0 && (GameTextures[rm.faces[f].tmap].flags & TF_BREAKABLE))
     return true;
   int cr = po.croom;
-  if (cr >= 0 && cr <= Highest_room_index && Rooms[cr].used && po.cportal >= 0 &&
-      po.cportal < Rooms[cr].num_portals) {
+  if (cr >= 0 && cr <= Highest_room_index && Rooms[cr].used && po.cportal >= 0 && po.cportal < Rooms[cr].num_portals) {
     const portal &cp = Rooms[cr].portals[po.cportal];
     int cf = cp.portal_face;
     if (cf >= 0 && cf < Rooms[cr].num_faces && Rooms[cr].faces[cf].tmap >= 0 &&
@@ -2699,6 +2737,14 @@ void BotRoadmapCancelBuilds() {
   g_prewarm_checksum = 0;
 }
 
+void BotRoadmapSliceYield() { SliceYield(); }
+bool BotRoadmapSyncActive() { return g_sync_depth > 0; }
+void BotRoadmapRequestSkeleton(int room_idx, bool prewarm) {
+  if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used)
+    return;
+  SliceRequest(false, room_idx, prewarm ? LANE_PREWARM : LANE_DEMAND, /*skel=*/true);
+}
+
 // Once per server frame while bots are in the game. Runs the sliced builds for this frame's budget: the demand
 // lane first (a bot is waiting on that room), the level-start prewarm otherwise. With nobody to watch a hitch
 // the budget is most of the frame, so an empty server finishes its level well before the first player joins.
@@ -2711,7 +2757,14 @@ void BotRoadmapPump(bool humans_present) {
 
   if (g_prewarm_checksum != BOA_mine_checksum) {
     g_prewarm_checksum = BOA_mine_checksum;
-    int queued = 0;
+    int queued = 0, skels = 0;
+    // Skeletons first: every indoor leg reads one, and most rooms finish in a slice or two (a room whose doors all
+    // see each other has no bridge pass at all). Without this the first bot into a hub builds it in one frame.
+    for (int r = 0; r <= Highest_room_index; r++)
+      if (Rooms[r].used && !(Rooms[r].flags & RF_EXTERNAL) && !BotSkelRoomBridged(r)) {
+        SliceRequest(false, r, LANE_PREWARM, /*skel=*/true);
+        skels++;
+      }
     // (BotTerrainDoorCount builds the level's terrain-door table HERE, on the main thread, whole: a worker must
     // never be the first to ask for it, because it could park half-way through.)
     for (int rg = 0; rg < MAX_BOA_TERRAIN_REGIONS;
@@ -2725,8 +2778,9 @@ void BotRoadmapPump(bool humans_present) {
         SliceRequest(false, r, LANE_PREWARM);
         queued++;
       }
-    LOG_INFO.printf("[Roadmap] level prewarm queued: %d roadmaps (sliced, %.0f ms/frame with players, %.0f ms without)",
-                    queued, (double)BOT_ROADMAP_SLICE_MS, (double)BOT_ROADMAP_SLICE_IDLE_MS);
+    LOG_INFO.printf("[Roadmap] level prewarm queued: %d roadmaps + %d skeletons (sliced, %.0f ms/frame with players, "
+                    "%.0f ms without)",
+                    queued, skels, (double)BOT_ROADMAP_SLICE_MS, (double)BOT_ROADMAP_SLICE_IDLE_MS);
   }
 
   const double budget_ms = humans_present ? BOT_ROADMAP_SLICE_MS : BOT_ROADMAP_SLICE_IDLE_MS;
@@ -2952,8 +3006,7 @@ bool BotRoadmapRoomRoutable(int room_idx) {
   return rr && !rr->degenerate && rr->routable;
 }
 
-bool BotRoadmapCoverage(int room_idx, int *cells_out, int *connector_out, int *local_pair_pct_out,
-                        bool *routable_out) {
+bool BotRoadmapCoverage(int room_idx, int *cells_out, int *connector_out, int *local_pair_pct_out, bool *routable_out) {
   if (cells_out)
     *cells_out = 0;
   if (connector_out)

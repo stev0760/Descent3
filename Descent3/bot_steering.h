@@ -60,7 +60,7 @@ struct fvi_info;
 // when a straight leg blocks, it fans candidates around the blocker (reusing BotFindViaPoint's
 // tangent frame) and expands until it reaches the goal, then string-pulls the polyline into explicit
 // bend nodes. Never adds an edge that fails ViaSegmentClear; fails closed on budget/geometry.
-#define BOT_SKEL_BRIDGE_BACKOFF 6.0f   // bend candidates sit this far on the near side of the blocking face
+#define BOT_SKEL_BRIDGE_BACKOFF 6.0f // bend candidates sit this far on the near side of the blocking face
 // Lateral candidate rings as multiples of the hull: the first ones fit an 18u duct junction (a 12u
 // sidestep never did — Batteries' ventilation network has 33 elbow/tee boxes with no bend edge), the
 // last ones still span a 40u toroid tube. Every lateral candidate is also tried one hull-and-a-half
@@ -259,6 +259,14 @@ int BotSkelDumpRoom(int room_idx, vector *pos_out, uint64_t *edges_out, int *por
 // Cached-only form for shadow diagnostics: never builds the skeleton and returns 0 when the room
 // has not already been used by live navigation.
 int BotSkelDumpRoomCached(int room_idx, vector *pos_out, uint64_t *edges_out, int *portal_count_out);
+// Q8: the skeleton's bridge search on the roadmap's sliced worker. BotSkelBuildPrivate runs on the worker and
+// returns an opaque finished graph (nullptr = nothing to do); BotSkelPublish (main thread) takes ownership and
+// makes it the room's graph, true if the room's graph changed; BotSkelDiscard frees an unpublished one.
+// BotSkelRoomBridged: the room's graph is final (no bridge pass pending).
+void *BotSkelBuildPrivate(int room_idx);
+bool BotSkelPublish(int room_idx, void *data);
+void BotSkelDiscard(void *data);
+bool BotSkelRoomBridged(int room_idx);
 // Which portal nodes of the room's skeleton are LIVE (class DOOR or PANE, see BotPortalClass): bit i
 // set for portals[i]. A NEVER portal keeps its node slot (index invariant) but carries no edges and
 // is never bridged, seeded, or counted. Builds the skeleton lazily.

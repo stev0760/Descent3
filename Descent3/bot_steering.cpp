@@ -45,6 +45,7 @@
 #include "log.h"
 
 #include <algorithm>
+#include <memory>
 #include <cmath>
 #include <cstring>
 #include <functional>
@@ -132,7 +133,7 @@ static int pf_cross_level_checksum = 0; // 0.9.14 crossing-point cache (BotPorta
 
 static int pf_small_level_checksum = 0;
 static bool PortalTooSmallForHull(int room_idx, int portal_idx); // defined with the class helpers below
-static int pf_wallbacked_level_checksum = 0; // window-onto-a-wall verdict (PortalWallBacked)
+static int pf_wallbacked_level_checksum = 0;                     // window-onto-a-wall verdict (PortalWallBacked)
 void BotGeoCostInvalidate() {
   pf_small_level_checksum = 0;
   pf_wallbacked_level_checksum = 0;
@@ -582,7 +583,7 @@ int BotPortalClass(int room_idx, int portal_idx) {
     return cached = BOT_PORTAL_CLASS_DOOR; // engine agreement — the router's own admission
   if (BotPortalIsBreakableGlass(room_idx, portal_idx))
     return cached = BOT_PORTAL_CLASS_PANE; // a wall until shot; a route for a kinetic bot
-  return cached = BOT_PORTAL_CLASS_NEVER; // solid face, window, grate: never a doorway
+  return cached = BOT_PORTAL_CLASS_NEVER;  // solid face, window, grate: never a doorway
 }
 
 // --- Slice 2: validated crossing point per portal (see bot_steering.h) ------------------------
@@ -627,7 +628,7 @@ static bool SweepStartRoom(int room, const vector &p, int *out) {
   if (ROOMNUM_OUTSIDE(room) || room < 0 || room > Highest_room_index || !Rooms[room].used ||
       !(Rooms[room].flags & RF_EXTERNAL))
     return true; // a terrain cell or an interior room: a valid start as-is
-  vector q = p; // GetTerrainCellFromPos takes a mutable vector*
+  vector q = p;  // GetTerrainCellFromPos takes a mutable vector*
   const int cell = GetTerrainCellFromPos(&q);
   if (cell < 0)
     return false;
@@ -683,8 +684,8 @@ static void PortalPaneShatteredFlip(int room_idx, int portal_idx) {
 // ±side/±up); every admitted point is hull-swept from its predecessor and lies in that side's room.
 // Success = a point `depth_goal` inside the plane; `out` gets it. One lateral step was not enough for
 // Batteries rm80's door (a leaf right behind the plane); this is what got its on-ramp in.
-static bool PortalCrossingSide(int probe_room, const vector &P, const vector &dir_in, const room &side_rm,
-                               float step, float depth_goal, float R, vector *out, vector *chain_out = nullptr,
+static bool PortalCrossingSide(int probe_room, const vector &P, const vector &dir_in, const room &side_rm, float step,
+                               float depth_goal, float R, vector *out, vector *chain_out = nullptr,
                                int *chain_n = nullptr, int chain_max = 0, BotCrossTrace *trace = nullptr,
                                int trace_max = 0, int *trace_n = nullptr) {
   const float margin = R * 2.0f;
@@ -887,65 +888,65 @@ static bool PortalCrossingCompute(int room_idx, int portal_idx, vector *pnt, flo
   int nc = 0; // candidates of the last pass run, sorted most open first (the bent phase reuses them)
   bool tight_found = false;
   for (int attempt = 0; attempt < 2 && best_depth <= 0.0f; attempt++) {
-  R = radii[attempt];
-  for (int pass = 0; pass < 2 && best_depth <= 0.0f; pass++) {
-    const float step = pass == 0 ? std::max(R * 0.5f, sqrtf(area / 56.0f)) : std::max(R * 0.5f, sqrtf(area / 380.0f));
-    const float min_ins = pass == 0 ? 0.0f : R * 0.5f;
-    nc = 0;
-    if (pass == 0)
-      cand[nc++] = {0.0f, 0.0f, inset(0.0f, 0.0f), 0.0f}; // the engine's point first
-    for (float y = by0 + step * 0.5f; y < by1 && nc < kMaxCand; y += step)
-      for (float x = bx0 + step * 0.5f; x < bx1 && nc < kMaxCand; x += step) {
-        if (pass == 0 && fabsf(x) < step * 0.5f && fabsf(y) < step * 0.5f)
-          continue; // the centroid is already in
-        if (!inside(x, y))
-          continue;
-        const float ins = inset(x, y);
-        if (ins < min_ins)
-          continue;
-        cand[nc++] = {x, y, ins, sqrtf(x * x + y * y)};
+    R = radii[attempt];
+    for (int pass = 0; pass < 2 && best_depth <= 0.0f; pass++) {
+      const float step = pass == 0 ? std::max(R * 0.5f, sqrtf(area / 56.0f)) : std::max(R * 0.5f, sqrtf(area / 380.0f));
+      const float min_ins = pass == 0 ? 0.0f : R * 0.5f;
+      nc = 0;
+      if (pass == 0)
+        cand[nc++] = {0.0f, 0.0f, inset(0.0f, 0.0f), 0.0f}; // the engine's point first
+      for (float y = by0 + step * 0.5f; y < by1 && nc < kMaxCand; y += step)
+        for (float x = bx0 + step * 0.5f; x < bx1 && nc < kMaxCand; x += step) {
+          if (pass == 0 && fabsf(x) < step * 0.5f && fabsf(y) < step * 0.5f)
+            continue; // the centroid is already in
+          if (!inside(x, y))
+            continue;
+          const float ins = inset(x, y);
+          if (ins < min_ins)
+            continue;
+          cand[nc++] = {x, y, ins, sqrtf(x * x + y * y)};
+        }
+      // Most open first (a tie goes to the point nearest the centroid); fixed order -> deterministic.
+      std::sort(cand, cand + nc, [](const Cand &a, const Cand &b) {
+        if (a.ins != b.ins)
+          return a.ins > b.ins;
+        return a.dc < b.dc;
+      });
+      for (int ci = 0; ci < nc; ci++) {
+        const vector P = C + u * cand[ci].x + w * cand[ci].y;
+        for (float D : depths) {
+          if (D < best_depth)
+            break;                    // cannot beat the best on depth
+          const vector a = P + n * D; // inside this room (n points into it)
+          const vector b = P - n * D; // inside the other room
+          fvi_info thit{};
+          const bool column_clear = CrossSweep(room_idx, a, cr_ok, b, R, trace ? &thit : nullptr);
+          if (trace && *trace_n < trace_max - 200) { // leave room for the bent-phase entries
+            BotCrossTrace &t = trace[(*trace_n)++];
+            t.kind = 0;
+            t.p = P;
+            t.depth = D;
+            t.clear = column_clear;
+            t.hit_pnt = thit.hit_pnt;
+            t.hit_norm = thit.num_hits > 0 ? thit.hit_wallnorm[0] : vector{};
+            t.hit_face = thit.num_hits > 0 ? thit.hit_face[0] : -1;
+            t.hit_room = thit.num_hits > 0 ? thit.hit_face_room[0] : -1;
+          }
+          if (!column_clear)
+            continue;
+          if (D > best_depth || (D == best_depth && cand[ci].ins > best_ins)) {
+            best_depth = D;
+            best_ins = cand[ci].ins;
+            best_p = P;
+          }
+          break;
+        }
+        if (best_depth >= BOT_CROSS_DEPTH_MAX && best_ins >= R)
+          break; // the maximum: fully open at full depth
       }
-    // Most open first (a tie goes to the point nearest the centroid); fixed order -> deterministic.
-    std::sort(cand, cand + nc, [](const Cand &a, const Cand &b) {
-      if (a.ins != b.ins)
-        return a.ins > b.ins;
-      return a.dc < b.dc;
-    });
-  for (int ci = 0; ci < nc; ci++) {
-    const vector P = C + u * cand[ci].x + w * cand[ci].y;
-    for (float D : depths) {
-      if (D < best_depth)
-        break; // cannot beat the best on depth
-      const vector a = P + n * D; // inside this room (n points into it)
-      const vector b = P - n * D; // inside the other room
-      fvi_info thit{};
-      const bool column_clear = CrossSweep(room_idx, a, cr_ok, b, R, trace ? &thit : nullptr);
-      if (trace && *trace_n < trace_max - 200) { // leave room for the bent-phase entries
-        BotCrossTrace &t = trace[(*trace_n)++];
-        t.kind = 0;
-        t.p = P;
-        t.depth = D;
-        t.clear = column_clear;
-        t.hit_pnt = thit.hit_pnt;
-        t.hit_norm = thit.num_hits > 0 ? thit.hit_wallnorm[0] : vector{};
-        t.hit_face = thit.num_hits > 0 ? thit.hit_face[0] : -1;
-        t.hit_room = thit.num_hits > 0 ? thit.hit_face_room[0] : -1;
-      }
-      if (!column_clear)
-        continue;
-      if (D > best_depth || (D == best_depth && cand[ci].ins > best_ins)) {
-        best_depth = D;
-        best_ins = cand[ci].ins;
-        best_p = P;
-      }
-      break;
-    }
-    if (best_depth >= BOT_CROSS_DEPTH_MAX && best_ins >= R)
-      break; // the maximum: fully open at full depth
-  }
-  } // pass
-  if (best_depth > 0.0f && attempt == 1)
-    tight_found = true;
+    } // pass
+    if (best_depth > 0.0f && attempt == 1)
+      tight_found = true;
   } // attempt
   if (best_depth > 0.0f) {
     *pnt = best_p;
@@ -1090,8 +1091,9 @@ int BotNavSweepReport(const vector *from, int room_idx, int portal_idx, char *bu
     if (ok)
       put("  reverse 20u away from near: CLEAR\n");
     else
-      put("  reverse 20u away from near: blocked after %.0fu: rm%d face %d\n", vm_VectorDistanceQuick(from, &hit.hit_pnt),
-          hit.num_hits > 0 ? hit.hit_face_room[0] : -1, hit.num_hits > 0 ? hit.hit_face[0] : -1);
+      put("  reverse 20u away from near: blocked after %.0fu: rm%d face %d\n",
+          vm_VectorDistanceQuick(from, &hit.hit_pnt), hit.num_hits > 0 ? hit.hit_face_room[0] : -1,
+          hit.num_hits > 0 ? hit.hit_face[0] : -1);
   }
   return n;
 }
@@ -1202,8 +1204,9 @@ bool BotPortalCrossing(int room_idx, int portal_idx, vector *pnt_out, float *dep
       } else {
         p = pt.path_pnt;
         d = 0.0f;
-        LOG_DEBUG.printf("[Nav] Room %d portal %d: no hull-clear crossing (straight or bent) — keeping the engine point",
-                         room_idx, portal_idx);
+        LOG_DEBUG.printf(
+            "[Nav] Room %d portal %d: no hull-clear crossing (straight or bent) — keeping the engine point", room_idx,
+            portal_idx);
       }
     }
     pf_cross_pnt[room_idx][portal_idx] = p;
@@ -1455,7 +1458,20 @@ static uint64_t skel_edges[MAX_ROOMS][SKEL_MAX_NODES];  // bit j of [room][i]: l
 static uint8_t skel_node_count[MAX_ROOMS];              // total nodes built (portals + pseudo)
 static uint64_t skel_live[MAX_ROOMS];                   // bit i: portals[i] is a DOOR/PANE node (else dead slot)
 static int8_t skel_built[MAX_ROOMS];
-static int8_t room_buried[MAX_ROOMS]; // -1 unknown, else BotRoomPathPntReachable() == false
+static int8_t skel_bridged[MAX_ROOMS]; // the bridge search ran (or no live pair needed it); 0 = base graph only
+static int8_t room_buried[MAX_ROOMS];  // -1 unknown, else BotRoomPathPntReachable() == false
+
+// A skeleton under construction. The builders write here and nowhere else, so a build can run on the roadmap's
+// sliced worker (parked between sweeps, nothing published until it ends) or inline for the tools, and the
+// room's live graph is replaced in one copy. Q8 (PLAN 4.0.2 step 3).
+struct SkelData {
+  vector node_pos[SKEL_MAX_NODES];
+  uint64_t edges[SKEL_MAX_NODES];
+  uint64_t live;
+  int np; // portal slots (node i mirrors portals[i])
+  int n;  // nodes built (portals + bend nodes)
+  bool bridged;
+};
 // Step A per-(room, entry-portal) centre probe: -1 unknown, 1 = this portal sees the path_pnt,
 // 0 = entry-blind. Same lifecycle as room_buried (reset per level on checksum change).
 static int8_t entry_center_clear[MAX_ROOMS][SKEL_MAX_NODES];
@@ -1464,6 +1480,7 @@ static int skel_level_checksum = 0;
 static void SkelLevelReset() {
   if (skel_level_checksum != BOA_mine_checksum) {
     memset(skel_built, 0, sizeof(skel_built));
+    memset(skel_bridged, 0, sizeof(skel_bridged));
     memset(skel_live, 0, sizeof(skel_live));
     memset(room_buried, -1, sizeof(room_buried));
     memset(entry_center_clear, -1, sizeof(entry_center_clear));
@@ -1563,12 +1580,12 @@ uint64_t BotAimExitMask(object *obj, int room_idx, int dest_room, int target_roo
 
 // Connected component id of every node [0,n), via union-find over the edge bitmask. comp_out[i] gets a
 // representative root; two nodes share a component iff their roots match.
-static void SkelComponents(int room_idx, int n, int *comp_out) {
+static void SkelComponents(const uint64_t *edges, int n, int *comp_out) {
   for (int i = 0; i < n; i++)
     comp_out[i] = i;
   for (int i = 0; i < n; i++)
     for (int j = i + 1; j < n; j++)
-      if (skel_edges[room_idx][i] & (1ull << j)) {
+      if (edges[i] & (1ull << j)) {
         int ri = i, rj = j;
         while (comp_out[ri] != ri)
           ri = comp_out[ri];
@@ -1604,13 +1621,14 @@ static vector SkelSideAxis(const vector &dir, const vector &wallnorm) {
 // Commit an ordered swept-clear path (pts[0..npts-1], endpoints already skeleton nodes a_idx/b_idx)
 // into the skeleton: string-pull away redundant interior points, then insert the survivors as bend
 // nodes and edge the chain. Returns false without touching the graph if it can't stay sound/in-budget.
-static bool SkelCommitChain(int room_idx, int a_idx, int b_idx, const vector *pts, int npts, int *pn) {
+static bool SkelCommitChain(int room_idx, SkelData &d, int a_idx, int b_idx, const vector *pts, int npts) {
   // String-pull: keep an interior point only when skipping it would break swept clearance.
   int keep[BOT_SKEL_BRIDGE_MAX_BENDS + 2];
   int kn = 0;
   keep[kn++] = 0; // a
   int anchor = 0;
   for (int i = 1; i < npts - 1; i++) {
+    BotRoadmapSliceYield();
     if (!ViaSegmentClear(room_idx, pts[anchor], pts[i + 1], BOT_PSEUDO_BNODE_RADIUS, nullptr, false, FQ_BACKFACE)) {
       if (kn >= BOT_SKEL_BRIDGE_MAX_BENDS + 1)
         return false; // too many bends for one chain — fail closed
@@ -1620,25 +1638,27 @@ static bool SkelCommitChain(int room_idx, int a_idx, int b_idx, const vector *pt
   }
   keep[kn++] = npts - 1; // b
   int nbends = kn - 2;
-  if (nbends < 0 || *pn + nbends > SKEL_MAX_NODES)
+  if (nbends < 0 || d.n + nbends > SKEL_MAX_NODES)
     return false; // fail closed on node budget
 
   // Validate every surviving leg BEFORE mutating the graph (atomic + sound).
-  for (int k = 0; k + 1 < kn; k++)
+  for (int k = 0; k + 1 < kn; k++) {
+    BotRoadmapSliceYield();
     if (!ViaSegmentClear(room_idx, pts[keep[k]], pts[keep[k + 1]], BOT_PSEUDO_BNODE_RADIUS, nullptr))
       return false;
+  }
 
   int idx[BOT_SKEL_BRIDGE_MAX_BENDS + 2];
   idx[0] = a_idx;
   for (int k = 1; k < kn - 1; k++) {
-    skel_node_pos[room_idx][*pn] = pts[keep[k]];
-    idx[k] = (*pn)++;
+    d.node_pos[d.n] = pts[keep[k]];
+    idx[k] = d.n++;
   }
   idx[kn - 1] = b_idx;
   for (int k = 0; k + 1 < kn; k++) {
     int u = idx[k], v = idx[k + 1];
-    skel_edges[room_idx][u] |= (1ull << v);
-    skel_edges[room_idx][v] |= (1ull << u);
+    d.edges[u] |= (1ull << v);
+    d.edges[v] |= (1ull << u);
   }
   return true;
 }
@@ -1647,9 +1667,9 @@ static bool SkelCommitChain(int room_idx, int a_idx, int b_idx, const vector *pt
 // search: expand the reached point nearest the goal; a blocked cast spawns a tangent fan around the
 // blocker; a candidate is admitted only if its leg from the expanded point is swept-clear. On reaching
 // the goal, reconstruct + commit the chain. Returns true iff an edge/chain was committed.
-static bool SkelBridge(int room_idx, int a_idx, int b_idx, int *pn) {
-  const vector a_pos = skel_node_pos[room_idx][a_idx];
-  const vector b_pos = skel_node_pos[room_idx][b_idx];
+static bool SkelBridge(int room_idx, SkelData &d, int a_idx, int b_idx) {
+  const vector a_pos = d.node_pos[a_idx];
+  const vector b_pos = d.node_pos[b_idx];
   const room &rm = Rooms[room_idx];
   const float R = BOT_PSEUDO_BNODE_RADIUS;
   const float margin = 2.0f * R;
@@ -1683,6 +1703,7 @@ static bool SkelBridge(int room_idx, int a_idx, int b_idx, int *pn) {
     // a bend candidate that landed inside a wall must not read as a clear leg (the old sweep walked
     // out through the face unseen).
     fvi_info hit{};
+    BotRoadmapSliceYield();
     if (ViaSegmentClear(room_idx, rp[best].pos, b_pos, R, &hit, false, FQ_BACKFACE)) {
       vector chain[BOT_SKEL_BRIDGE_MAX_EXPAND + 2];
       int order[BOT_SKEL_BRIDGE_MAX_EXPAND + 2];
@@ -1693,7 +1714,7 @@ static bool SkelBridge(int room_idx, int a_idx, int b_idx, int *pn) {
       for (int t = on - 1; t >= 0; t--)
         chain[cn++] = rp[order[t]].pos; // root (a_pos) .. best
       chain[cn++] = b_pos;
-      return SkelCommitChain(room_idx, a_idx, b_idx, chain, cn, pn);
+      return SkelCommitChain(room_idx, d, a_idx, b_idx, chain, cn);
     }
 
     // Blocked: fan tangent candidates around the blocking face.
@@ -1712,7 +1733,8 @@ static bool SkelBridge(int room_idx, int a_idx, int b_idx, int *pn) {
     for (int ring = 0; ring < BOT_SKEL_BRIDGE_RINGS && rpn < BOT_SKEL_BRIDGE_MAX_EXPAND; ring++) {
       float off = R * ring_scale[ring];
       const vector lat[4] = {anchor + side * off, anchor - side * off, anchor + up * off, anchor - up * off};
-      const vector cands[8] = {lat[0], lat[1], lat[2], lat[3], lat[0] + diag, lat[1] + diag, lat[2] + diag, lat[3] + diag};
+      const vector cands[8] = {lat[0],        lat[1],        lat[2],        lat[3],
+                               lat[0] + diag, lat[1] + diag, lat[2] + diag, lat[3] + diag};
       for (const vector &c : cands) {
         if (rpn >= BOT_SKEL_BRIDGE_MAX_EXPAND)
           break;
@@ -1726,6 +1748,7 @@ static bool SkelBridge(int room_idx, int a_idx, int b_idx, int *pn) {
             dup = true;
         if (dup)
           continue;
+        BotRoadmapSliceYield();
         if (ViaSegmentClear(room_idx, rp[best].pos, c, R, nullptr, false, FQ_BACKFACE))
           rp[rpn++] = {c, best, false};
       }
@@ -1741,13 +1764,14 @@ static bool SkelBridge(int room_idx, int a_idx, int b_idx, int *pn) {
 // via machinery and **hull-aware** so we never synthesize an unflyable edge (the lesson that sank the
 // reverted engine-BNode experiment: it kept edges down to max_rad 5.0 while the ship hull is ~6.676).
 // Phase 12.5b — always on (NAVIGATION.md §4.2; consolidation Step 1 inlined the toggle).
-static void SkelBuild(int room_idx) {
-  BotPerfScope perf(BPERF_SKEL_BUILD);
+// Base pass: portal nodes and every straight portal-to-portal leg. Cheap (np^2 thin sweeps) and enough for the
+// via layers to route a room whose doors see each other, which is most rooms. Returns true when some live pair
+// has no straight leg, i.e. the bridge pass has work.
+static bool SkelBuildBase(int room_idx, SkelData &d) {
   room &rm = Rooms[room_idx];
-  int np = SkelPortalCount(rm);
-
-  for (int i = 0; i < SKEL_MAX_NODES; i++)
-    skel_edges[room_idx][i] = 0;
+  const int np = SkelPortalCount(rm);
+  memset(&d, 0, sizeof(d));
+  d.np = np;
 
   // Portal nodes. Every portal keeps its slot (node index == portal index is an invariant every
   // consumer relies on), but only DOOR/PANE portals are LIVE (0.9.14 portal model): a wall/window
@@ -1755,14 +1779,16 @@ static void SkelBuild(int room_idx) {
   // rooms of an office map spent the whole node budget and the bridge search on solid faces.
   uint64_t live = 0;
   for (int i = 0; i < np; i++) {
-    skel_node_pos[room_idx][i] = rm.portals[i].path_pnt;
+    d.node_pos[i] = rm.portals[i].path_pnt;
+    // Park BETWEEN doors, never inside the classifier (it fills the crossing sampler's table — see the roadmap build).
+    BotRoadmapSliceYield();
     if (BotPortalClass(room_idx, i) != BOT_PORTAL_CLASS_NEVER)
       live |= (1ull << i);
   }
-  skel_live[room_idx] = live;
-  int n = np;
+  d.live = live;
+  d.n = np;
 
-  // Portal↔portal edges (existing validated 2.5 radius — don't disturb known-good routing).
+  // Portal<->portal edges (existing validated 2.5 radius — don't disturb known-good routing).
   bool disconnected_pair = false;
   for (int i = 0; i < np; i++) {
     if (!(live & (1ull << i)))
@@ -1770,30 +1796,39 @@ static void SkelBuild(int room_idx) {
     for (int j = i + 1; j < np; j++) {
       if (!(live & (1ull << j)))
         continue;
-      if (ViaSegmentClear(room_idx, skel_node_pos[room_idx][i], skel_node_pos[room_idx][j], BOT_PORTAL_SHIP_RADIUS,
-                          nullptr)) {
-        skel_edges[room_idx][i] |= (1ull << j);
-        skel_edges[room_idx][j] |= (1ull << i);
+      BotRoadmapSliceYield();
+      if (ViaSegmentClear(room_idx, d.node_pos[i], d.node_pos[j], BOT_PORTAL_SHIP_RADIUS, nullptr)) {
+        d.edges[i] |= (1ull << j);
+        d.edges[j] |= (1ull << i);
       } else {
         disconnected_pair = true; // a portal pair with no straight leg — the via-fail rooms
       }
     }
   }
+  d.bridged = !disconnected_pair;
+  return disconnected_pair;
+}
 
-  // Pseudo-bnodes: only when a live portal pair is disconnected (most rooms are fully connected → no
-  // cost). 0.9.12 rework (SKELETON_REWORK.md): instead of the old all-portal-centroid + blanket offset
-  // nodes (which manufactured the abend2 ring hub), repeatedly bridge the closest still-disconnected
-  // portal pair with the collision-guided search. This builds the spanning connectivity a room actually
-  // supports — segment→bend→segment chains around a curved tube, or portal→corner→portal in an L —
-  // without ever wiring a false hub. Fails closed: unbridgeable pairs stay disconnected.
-  // A pair must include at least one DOOR: two panes on the same wall need no in-room arterial between
-  // them, and pane↔pane pairs would otherwise eat the budget in a glass-walled room (Batteries rm3:
-  // fifteen conference-room panes beside four doors).
-  if (np >= 2 && disconnected_pair) {
+// Bridge pass: pseudo-bnodes, only when a live portal pair is disconnected (most rooms are fully connected -> no
+// cost). 0.9.12 rework (SKELETON_REWORK.md): instead of the old all-portal-centroid + blanket offset
+// nodes (which manufactured the abend2 ring hub), repeatedly bridge the closest still-disconnected
+// portal pair with the collision-guided search. This builds the spanning connectivity a room actually
+// supports — segment->bend->segment chains around a curved tube, or portal->corner->portal in an L —
+// without ever wiring a false hub. Fails closed: unbridgeable pairs stay disconnected.
+// A pair must include at least one DOOR: two panes on the same wall need no in-room arterial between
+// them, and pane<->pane pairs would otherwise eat the budget in a glass-walled room (Batteries rm3:
+// fifteen conference-room panes beside four doors).
+// This is the expensive half (Sigma Base rm19: 28,000 sweeps, 1.4 s; Facing Worlds rm0: 2.9 s) and the reason the
+// build yields: on the sliced worker it parks before every sweep and the room keeps its base graph until this
+// commits (Q8).
+static void SkelBuildBridges(int room_idx, SkelData &d) {
+  const int np = d.np;
+  const uint64_t live = d.live;
+  if (np >= 2 && !d.bridged) {
     bool failed[SKEL_MAX_NODES][SKEL_MAX_NODES] = {{false}};
     int comp[SKEL_MAX_NODES];
-    for (int attempt = 0; attempt < np * np && n < SKEL_MAX_NODES; attempt++) {
-      SkelComponents(room_idx, n, comp);
+    for (int attempt = 0; attempt < np * np && d.n < SKEL_MAX_NODES; attempt++) {
+      SkelComponents(d.edges, d.n, comp);
       // Closest cross-component live portal pair not already known unbridgeable.
       int ai = -1, bi = -1;
       float bestd = 0.0f;
@@ -1806,36 +1841,46 @@ static void SkelBuild(int room_idx) {
             continue;
           if (!i_door && BotPortalClass(room_idx, j) != BOT_PORTAL_CLASS_DOOR)
             continue;
-          float d = vm_VectorDistanceQuick(&skel_node_pos[room_idx][i], &skel_node_pos[room_idx][j]);
-          if (ai < 0 || d < bestd) {
+          float d_ij = vm_VectorDistanceQuick(&d.node_pos[i], &d.node_pos[j]);
+          if (ai < 0 || d_ij < bestd) {
             ai = i;
             bi = j;
-            bestd = d;
+            bestd = d_ij;
           }
         }
       }
       if (ai < 0)
         break; // every live pair connected (or all remaining pairs known unbridgeable)
-      if (!SkelBridge(room_idx, ai, bi, &n))
+      if (!SkelBridge(room_idx, d, ai, bi))
         failed[ai][bi] = true; // fail closed; don't retry this pair
     }
   }
+  d.bridged = true;
+}
 
-  skel_node_count[room_idx] = (uint8_t)n;
+// Replace the room's live graph with a finished build (one copy, on the main thread).
+static void SkelStore(int room_idx, const SkelData &d) {
+  memcpy(skel_node_pos[room_idx], d.node_pos, sizeof(d.node_pos));
+  memcpy(skel_edges[room_idx], d.edges, sizeof(d.edges));
+  skel_live[room_idx] = d.live;
+  skel_node_count[room_idx] = (uint8_t)d.n;
   skel_built[room_idx] = 1;
-  if (n > np) { // bridge nodes synthesized — confirm generation + resulting connectivity (grep "skel bridge")
+  skel_bridged[room_idx] = d.bridged ? 1 : 0;
+  const int np = d.np, n = d.n;
+  if (d.bridged &&
+      n > np) { // bridge nodes synthesized — confirm generation + resulting connectivity (grep "skel bridge")
     // Report how many connected components the LIVE portal set ended in: 1 = fully traversable, >1 =
     // the room still has an unbridged split (the diagnostic the nav overlay reads by eye).
     int comp[SKEL_MAX_NODES];
-    SkelComponents(room_idx, n, comp);
+    SkelComponents(d.edges, n, comp);
     int ncomp = 0, nlive = 0;
     for (int i = 0; i < np; i++) {
-      if (!(live & (1ull << i)))
+      if (!(d.live & (1ull << i)))
         continue;
       nlive++;
       bool seen = false;
       for (int j = 0; j < i && !seen; j++)
-        if ((live & (1ull << j)) && comp[j] == comp[i])
+        if ((d.live & (1ull << j)) && comp[j] == comp[i])
           seen = true;
       if (!seen)
         ncomp++;
@@ -1843,6 +1888,70 @@ static void SkelBuild(int room_idx) {
     LOG_DEBUG.printf("BOT: skel bridge room %d: +%d bend nodes (%d live of %d portals -> %d component(s), buried=%d)",
                      room_idx, n - np, nlive, np, ncomp, RoomBuriedCenter(room_idx) ? 1 : 0);
   }
+}
+
+// Build the per-room node graph: the portal nodes (guaranteed-flyable points) plus, in rooms where
+// some portal pair has no direct hull-clear leg, **pseudo-bnodes** — interior waypoints the BFS can
+// hop through to route AROUND an obstacle between two portals. This is the bot-code analog of the
+// engine's BNode generator (offset-into-room + center node), but layered on top of crude-BOA via the
+// via machinery and **hull-aware** so we never synthesize an unflyable edge (the lesson that sank the
+// reverted engine-BNode experiment: it kept edges down to max_rad 5.0 while the ship hull is ~6.676).
+// Phase 12.5b — always on (NAVIGATION.md §4.2; consolidation Step 1 inlined the toggle).
+//
+// Q8 (PLAN 4.0.2 step 3): first use no longer freezes the server on the bridge search. The base graph is built
+// and stored here, in this call; when a live pair needs bridging the full build is queued on the roadmap's sliced
+// worker (BotSkelBuildPrivate / BotSkelPublish) and replaces the base graph a few frames later. The tools' sync
+// scope ($nav dump) still builds everything inline, so bot-free dumps read exactly as before.
+static void SkelEnsure(int room_idx, bool full = false) {
+  if (skel_built[room_idx] && (skel_bridged[room_idx] || !full))
+    return;
+  BotPerfScope perf(BPERF_SKEL_BUILD);
+  SkelData d;
+  const bool needs_bridges = SkelBuildBase(room_idx, d);
+  if (needs_bridges && (full || BotRoadmapSyncActive()))
+    SkelBuildBridges(room_idx, d);
+  SkelStore(room_idx, d);
+  if (!d.bridged)
+    BotRoadmapRequestSkeleton(room_idx, false);
+}
+
+// The sliced worker's job: the whole build into a private graph, parking before every sweep. Returns nullptr when
+// the room needs nothing (already bridged, or not a skeleton room). Cancelled by exception from a yield point.
+void *BotSkelBuildPrivate(int room_idx) {
+  // No SkelLevelReset here: the level reset is the main thread's; a stale early-out only costs a rebuild at first use.
+  if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used || (Rooms[room_idx].flags & RF_EXTERNAL))
+    return nullptr;
+  if (skel_built[room_idx] && skel_bridged[room_idx])
+    return nullptr;
+  std::unique_ptr<SkelData> d(new SkelData());
+  if (SkelBuildBase(room_idx, *d))
+    SkelBuildBridges(room_idx, *d);
+  return d.release();
+}
+
+// Main thread: take ownership of a private build and make it the room's graph. A base graph stored meanwhile is
+// replaced; a bridged one (built inline by a tool in between) is kept. The union network built over the old
+// graph is dropped by the caller (bot_roadmap.cpp) so the composer re-imports the new arterials.
+bool BotSkelPublish(int room_idx, void *data) {
+  std::unique_ptr<SkelData> d(static_cast<SkelData *>(data));
+  if (!d)
+    return false;
+  SkelLevelReset();
+  if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used)
+    return false;
+  if (skel_built[room_idx] && skel_bridged[room_idx])
+    return false;
+  SkelStore(room_idx, *d);
+  return true;
+}
+
+void BotSkelDiscard(void *data) { delete static_cast<SkelData *>(data); }
+
+bool BotSkelRoomBridged(int room_idx) {
+  SkelLevelReset();
+  if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used || (Rooms[room_idx].flags & RF_EXTERNAL))
+    return true;
+  return skel_built[room_idx] && skel_bridged[room_idx];
 }
 
 bool BotRoomPathPntReachable(int room_idx) {
@@ -2072,8 +2181,8 @@ int BotEntryPortalIndex(object *obj, int wp_room, int goal_room, bool *onward_va
     static float Lookahead_log_t = 0.0f;
     if (Gametime < Lookahead_log_t || Gametime - Lookahead_log_t > 2.0f) {
       Lookahead_log_t = Gametime;
-      LOG_DEBUG.printf("BOT NAV: entry door lookahead rm%d -> rm%d (goal rm%d): portal %d over nearest %d", cur, wp_room,
-                       goal_room, best_p, nearest_p);
+      LOG_DEBUG.printf("BOT NAV: entry door lookahead rm%d -> rm%d (goal rm%d): portal %d over nearest %d", cur,
+                       wp_room, goal_room, best_p, nearest_p);
     }
   }
   return best_p;
@@ -2176,15 +2285,13 @@ bool BotResolveRoomAim(object *obj, const vector &target_pos, int target_room, f
       usable = PanePortalUsable(room_idx, 0, GLASS_ROUTE_SOLE); // the sole outlet is a sole route
     if (!usable)
       return false;
-    if (!skel_built[room_idx])
-      SkelBuild(room_idx);
+    SkelEnsure(room_idx);
     *out = SkelFlyPos(room_idx, 0, &obj->pos); // node i mirrors portals[i]; approach, then push-through
     if (source_out)
       *source_out = BOT_ROOM_AIM_SKELETON;
     return true;
   }
-  if (!skel_built[room_idx])
-    SkelBuild(room_idx);
+  SkelEnsure(room_idx);
   int n = skel_node_count[room_idx]; // portal nodes [0,np), pseudo-bnodes [np,n)
 
   // (b) skeleton BFS first-hop. The exit set is PASSABILITY-FILTERED (0.9.14): the router admits an
@@ -2196,7 +2303,8 @@ bool BotResolveRoomAim(object *obj, const vector &target_pos, int target_room, f
   // shortcuts, any pane as a sole route — exactly the router's ladder.
   uint64_t exits = 0;
   if (target_room != room_idx) {
-    int next_room = (next_room_hint >= 0) ? next_room_hint : BotComputeRoute(room_idx, target_room, BotFindBySlot(obj->id));
+    int next_room =
+        (next_room_hint >= 0) ? next_room_hint : BotComputeRoute(room_idx, target_room, BotFindBySlot(obj->id));
     if (next_room_hint < 0 && next_room < 0)
       next_room = target_room;
     const int glass_mode = AimGlassBudgetForObj(obj);
@@ -2301,8 +2409,7 @@ int BotSkelBuildChain(object *obj, int room_idx, int target_room, const vector &
   int np = SkelPortalCount(rm);
   if (np < 2)
     return 0;
-  if (!skel_built[room_idx])
-    SkelBuild(room_idx);
+  SkelEnsure(room_idx);
   int n = skel_node_count[room_idx];
   if (n < 2)
     return 0;
@@ -2446,8 +2553,7 @@ vector BotWaypointAimPos(int wp_room, const vector &toward) {
   int np = SkelPortalCount(Rooms[wp_room]);
   if (np < 1)
     return Rooms[wp_room].path_pnt;
-  if (!skel_built[wp_room])
-    SkelBuild(wp_room);
+  SkelEnsure(wp_room);
   int n = skel_node_count[wp_room];
   int best = -1;
   float best_d = 1e30f;
@@ -2503,8 +2609,7 @@ vector BotWaypointAimPos(int wp_room, const vector &toward, object *obj, int goa
   // the room-level answer never checked. SkelBfs from the entry node, then pick the reachable node
   // nearest `toward` and parent-walk back to the first hop off the entry.
   SkelLevelReset();
-  if (!skel_built[wp_room])
-    SkelBuild(wp_room);
+  SkelEnsure(wp_room);
   int n = skel_node_count[wp_room];
   // Full BFS from the entry node q (no stop — the selection below scans all reached nodes).
   int dist_n[SKEL_MAX_NODES], parent[SKEL_MAX_NODES];
@@ -2551,8 +2656,7 @@ int BotSkelDumpRoom(int room_idx, vector *pos_out, uint64_t *edges_out, int *por
   int np = SkelPortalCount(rm);
   if (np < 1)
     return 0;
-  if (!skel_built[room_idx])
-    SkelBuild(room_idx);
+  SkelEnsure(room_idx, /*full=*/true); // a tool wants the finished graph now (bot-free dumps read as before Q8)
   int n = skel_node_count[room_idx];
   for (int i = 0; i < n; i++) {
     if (pos_out)
@@ -2569,8 +2673,8 @@ int BotSkelDumpRoomCached(int room_idx, vector *pos_out, uint64_t *edges_out, in
   if (portal_count_out)
     *portal_count_out = 0;
   SkelLevelReset();
-  if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used ||
-      (Rooms[room_idx].flags & RF_EXTERNAL) || !skel_built[room_idx])
+  if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used || (Rooms[room_idx].flags & RF_EXTERNAL) ||
+      !skel_built[room_idx])
     return 0;
   int n = skel_node_count[room_idx];
   for (int i = 0; i < n; i++) {
@@ -2590,8 +2694,7 @@ uint64_t BotSkelLivePortalMask(int room_idx) {
     return 0;
   if (SkelPortalCount(Rooms[room_idx]) < 1)
     return 0;
-  if (!skel_built[room_idx])
-    SkelBuild(room_idx);
+  SkelEnsure(room_idx);
   return skel_live[room_idx];
 }
 
