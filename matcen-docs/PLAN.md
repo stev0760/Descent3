@@ -922,6 +922,7 @@ wall, where the collapse metric moved and play did not. Order, approved by the o
 | 1 | **Q12** — the router's door is the via layers' door | one mind at the door | Sigma Base Red rm19 -> rm9 | bedlam + fellowship + Sigma Base |
 | 2 | Powerup chase asks the routed goal for its destination | step 5 (the hunt half exists) | Batteries rm80/60/8 chase pins | Batteries 12 + bedlam |
 | 3 | **Q8** — the skeleton builds privately, commits at the end, rides the prewarm lane | enabler for step 1 | DownTown's 968 ms frame | perf instrument, identical dumps |
+| 3b | **The hull tiers** (option A below, inserted 2026-09-23 as the next build, operator): the ship's wall sphere (0.8 x size) is the floor, 6.7 stays the comfort hull, the band between is TIGHT — last-resort admission only, per ship, crossed nose-first at the physical radius | the clearance model under steps 4 and 5 | Batteries rm80 (the propped door), Canyons' cracks must stay unused | bot-free dump diff (only the census's portals change class) + Batteries, Canyons, Bree, Isengard vs same-minute controls |
 | 4 | One in-room planner: union graph, cached plan, re-plan on invalidation | steps 1 and 3 | DownTown rm110, Facing Worlds rm0, Isengard rm45 -> rm34 (Q4) | the full map set |
 | 5 | Seam and hop-commit become the commitment rule; stuck escape becomes an invalidation signal | steps 2 and 4 | none | must read flat |
 
