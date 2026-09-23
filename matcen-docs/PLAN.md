@@ -1003,6 +1003,13 @@ rm55 p0 with `crossing_ok`; Sigma Base rm19 p14-16 and rm37 p2 are the slanted r
 already refuses; nothing on Isengard, Bree, Moria, abend2 or DownTown. Two doors on one map: a ledger item (seed
 relocation when the seed's hull is in contact), not a build.
 
+**rm35 confirmed by the operator 2026-09-23 (from the render, no flight).** The room is an empty storage room with its
+door propped open (p0 to rm33); the start is the RC box on the floor in the far corner, the same toy-box class as rm60.
+Map-wide, per the operator: most Batteries starts sit inside RC boxes, some on the floor and some on desks, and a
+few starts are not boxed at all. So rm35's spawn pins are the class E2 flies out of. The nook item above ("wedge under a desk") likely names this same
+box: the room holds no other furniture, so that item is re-read against the E2 gate's rm35 pins before it gets its own
+fix.
+
 **Q8 built 2026-09-22 (`455aacbe`, arm S1).** The skeleton's bridge search — the whole first-use cost (Sigma Base rm19
 1.4 s and 28,000 sweeps, rm37 1.8 s, Facing Worlds rm0 2.9 s, DownTown 0.9 s; the portal graph is milliseconds) — builds
 into a private graph on the roadmap's coroutine slicer as a third job kind, parking before every sweep, and replaces the
