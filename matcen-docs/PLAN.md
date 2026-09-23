@@ -1003,6 +1003,18 @@ rm55 p0 with `crossing_ok`; Sigma Base rm19 p14-16 and rm37 p2 are the slanted r
 already refuses; nothing on Isengard, Bree, Moria, abend2 or DownTown. Two doors on one map: a ledger item (seed
 relocation when the seed's hull is in contact), not a build.
 
+**rm80 re-measured 2026-09-23 — the "sub-hull" verdict above was wrong.** After E2 rm80 is Batteries' stuck room (E2
+gate: 141 escalations, 25 hard; control 98/18; rm60 went 69 -> 0). Slicing the dump at eight heights, the leaf is a
+1.3 u slab hinged at the left jamb, opened about 26 degrees into the room, full height (-158.7 to -82); the tightest
+gap is leaf tip (1996.2, 2901.2) to the recess wall corner (2003, 2890.1): **11.37 u at every height**. The engine
+collides a player with walls at 0.8 of its size (OBSTACLE_GEOMETRY §4d): a 10.7 u sphere, so the gap is flyable with
+0.35 u a side; only our 13.4 u fit hull calls it shut. The door's crossing near point (1990.4, -113.9, 2889.1) sits in
+the pocket BEHIND the leaf, so the straight approach from the room runs into the leaf: 107 of the rm80 stuck samples
+are one 5 u cell at (1976, -114, 2897), the room face of the leaf's middle. The room's other six portals are windows
+(crossing_ok false), the start is an RC box on a desk, and at most 3 of 32 E2 lives there show any sign of leaving.
+Open for the operator: whether "too small for a hull" is measured at the engine's wall sphere (5.34 u radius) or at
+the full size (6.7 u), and whether a 0.35 u-a-side squeeze counts as passable.
+
 **rm35 confirmed by the operator 2026-09-23 (from the render, no flight).** The room is an empty storage room with its
 door propped open (p0 to rm33); the start is the RC box on the floor in the far corner, the same toy-box class as rm60.
 Map-wide, per the operator: most Batteries starts sit inside RC boxes, some on the floor and some on desks, and a

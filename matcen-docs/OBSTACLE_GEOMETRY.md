@@ -300,6 +300,16 @@ Breakable glass is deliberate (§5 gap #1: the bot shatters it). The solid-wall 
 and it is why the terrain-exit check above tests **both** predicates rather than trusting the
 geometry cost alone. Not yet diagnosed; the navdump has no field for this direction.
 
+## 4d. A player ship hits walls at 0.8 of its size (measured 2026-09-23)
+
+`fvi_FindIntersection` (`physics/findintersection.cpp:2687`): when the query is for an `OBJ_PLAYER` and
+`fq->rad == obj->size`, the wall sphere is `fq->rad * PLAYER_SIZE_SCALAR` (`findintersection.h:230`, **0.8**;
+halved again while dead or dying). A Pyro's `size` is 6.676, so it collides with walls at **5.34 u radius, a
+10.7 u sphere**. Our fit radius (`BOT_ROADMAP_CLEARANCE` / `BOT_PSEUDO_BNODE_RADIUS`, 6.7) is the full `size`:
+the planner's "13.4 u hull" is 25% wider than what the physics stops. Object collisions use `size` itself; this
+scalar is walls only. Consequence: an opening between 10.7 u and 13.4 u is flyable and the planner calls it
+closed. Batteries rm80's door (the leaf-tip gap, 11.37 u at every height) is one; bots thread it only by luck.
+
 ---
 
 ## 5. Known gaps / TODO (Phase 12 nav + powerup pass, 0.9.3 stable)
