@@ -1015,6 +1015,39 @@ are one 5 u cell at (1976, -114, 2897), the room face of the leaf's middle. The 
 Open for the operator: whether "too small for a hull" is measured at the engine's wall sphere (5.34 u radius) or at
 the full size (6.7 u), and whether a 0.35 u-a-side squeeze counts as passable.
 
+**The hull question, dug 2026-09-23 (operator: the slit history must not regress the other way).** Facts. (1) The
+physical hull is the engine's wall sphere, 0.8 x size per ship: Pyro 10.68 u across, Black Pyro 10.57, Magnum 10.77,
+Phoenix 12.83; our fit hull is 13.4 (Phoenix 16.0). The rm80 pins sit 5.1 u from the leaf face — the 5.34 u sphere in
+contact, not 6.7. (2) `BOT_CROSS_FIT_SCALE` 0.92 ("contact response slides a hull through a 13.0 u channel") was this
+same fact misread; 0.92 is arbitrary, 0.8 is the physics. (3) Portal census by opening (`portal_band_census.py`, the
+polygon's smaller extent, exactly `PortalTooSmallForHull`'s number) over the eight maps with a current-format dump
+(Batteries, abend2, Bree, Canyons, DownTown, Facing Worlds, Isengard, Sigma Base): below 10.57 (nothing fits) 327
+sides — Batteries 175, Canyons 93, Isengard 18, Sigma 16, Facing Worlds 16, DownTown 5, Bree 4 — the slit class,
+closed under every option; **10.68-12.33 (a Pyro fits, our gate says no) 24 sides** — Canyons 17 (10.8-12.1 u by
+24-224 u cracks between the canyon rooms), Batteries 7 (three 11.4 x 15.2 floor hatches into 15 u under-floor ducts,
+rm37->86, rm38->91, rm38->87; two 11.9 u rm74<->76 pairs the engine already refuses); **12.33-13.4 (our gate passes,
+the 6.7 sweep fails, routed today as TIGHT doors) 22 sides** — Canyons 20 (12.3-13.4 by 19-197 u), Bree 1 (the
+tavern basement door rm5->rm6, 13.1), Isengard 1 (rm39<->rm36, 13.0), Batteries 1 (engine-impassable). rm80's own
+door is 41 x 80; its leaf is behind the plane, which no portal census sees, and interior gaps (under desks, the
+boxes) are uncensused. (4) Bots thread a 13.0 u door: Isengard rm36->rm39 yesterday 99 CROSSED / 20 NOT-CROSSED
+(1.2 u a side). rm80 unrouted: 3 of 32 lives out alive (the rest die in there; six windows). Six of those 32 lives
+were Phoenix bots, which cannot fit at all. (5) The reverted max_rad 5.0 experiment routed at 10.0 u — under the
+physics — so its pins say nothing about the 10.7-13.4 band.
+
+*Options.* **A (recommended): physics is the floor, 6.7 stays the comfort hull.** Below the ship's wall sphere:
+NEVER, as today (327 sides unchanged). Between the wall sphere and 6.7: TIGHT — off the normal network, admitted
+only by the last-resort pass the DISAGREE retry already runs (penalty 120), only for a ship whose own sphere fits
+(Phoenix never gets a Pyro-class gap), and crossed by the door on-ramp's bent search at that ship's physical radius,
+nose-first. Exposure: Canyons' 17 cracks and Batteries' 3 hatches become last-resort-only routes (a bot uses one only
+when its room has no comfortable exit); the 22 tight doors routed at full cost today gain the penalty; rm80's
+Pyro-class lives get a route; the lattice (6.7) and everything under desks is untouched. **B: global physical
+radius** (constants only) — opens every 10.7-13.4 gap including interior ones: the regression the operator fears; an
+experiment only after A shows bots thread tight gaps. **C: leave it** — rm80 stays a trap (3.5% of Batteries lives,
+25 of its 32 remaining hard stucks). Gate for A: bot-free dump diff (only the listed portals change class), then
+Batteries + Canyons + Bree + Isengard against same-minute controls: rm80 lives out, tight-portal crossings, no new
+pins at Canyons' cracks, captures flat. Pre-checks: render Canyons rm0/rm1 (what the cracks are); the operator flies
+out of rm80 in the cockpit.
+
 **rm35 confirmed by the operator 2026-09-23 (from the render, no flight).** The room is an empty storage room with its
 door propped open (p0 to rm33); the start is the RC box on the floor in the far corner, the same toy-box class as rm60.
 Map-wide, per the operator: most Batteries starts sit inside RC boxes, some on the floor and some on desks, and a
