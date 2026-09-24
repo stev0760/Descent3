@@ -1071,6 +1071,19 @@ identical to HEAD. `compare_navdumps` then counts a tight door as usable-without
 doors 7 -> 15 on Batteries; all of them the tight-door rooms) — the tool's accounting, to teach it the class. Pairs
 launched 09:40: Batteries, Canyons, Bree, Isengard, control beside variant.
 
+**A1 mid-pair read (7 rounds, 2026-09-24 11:10) — the tier sits in the wrong place; A2 moves it.** rm80 per life on A1:
+14 lives, 3 reached a tight-hop commit (2 left the office, one in 37 s; one NOT-CROSSED then pinned), 10 never reached
+the commit at all — they explore, chase the office's powerups, fail the via search two to five times ("via search
+failed in room 80") and die at the windows within minutes; one life pinned from spawn on top of the cabinet against
+the north wall (1953,-123,2900: the furniture class, 29 hard escalations, not the door). Control: 15 lives, 2 out by
+luck. So the mechanism works when reached and is reached by a quarter of the lives, because the commit block runs
+only after the routed hop has pressed; the failure the bots actually hit is the via search's. **A2 (`2d08da76`):**
+the public via search runs the comfort hull first and, for a leg toward ANOTHER room (a door approach — never an
+in-room target such as a powerup under a desk), retries at the ship's wall sphere; a leg found there makes a TIGHT
+commitment in that room (`tight via` log line), ended when the bot leaves it. Second Batteries pair launched 11:16
+(ports 2288-2291); the chain's Canyons, Bree and Isengard pairs run A2 (manifest file names keep the A1 suffix; the
+log's build stamp is the truth).
+
 *Options.* **A (recommended): physics is the floor, 6.7 stays the comfort hull.** Below the ship's wall sphere:
 NEVER, as today (327 sides unchanged). Between the wall sphere and 6.7: TIGHT — off the normal network, admitted
 only by the last-resort pass the DISAGREE retry already runs (penalty 120), only for a ship whose own sphere fits
