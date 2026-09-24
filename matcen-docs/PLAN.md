@@ -1046,6 +1046,19 @@ defect of judging an opening by one polygon's extent. So the real exposure of a 
 floor hatches (each the sole opening into a 15 u duct), the two real 13.0-13.1 u doors (Bree, Isengard), and whatever
 interior geometry no census sees.
 
+**A's design of record (2026-09-24, arm A1).** What the code has today: the portal geocost probes are 2.5 u (fit) and
+4.0 u (tight penalty) — bar-and-grate catches, not hull tests; the hull is enforced by the extent gate (12.33 u), the
+crossing sampler (6.7 then 0.92 x 6.7) whose TIGHT verdict nothing consumes, the via search and the commit's
+door-in-view sweep (both `obj->size`), and the network (6.7). The change: (1) rungs — the sampler tries 6.7, then
+0.8 x 8.019 = 6.42 (a Phoenix's wall sphere), then 0.8 x 6.7 = 5.36 (Pyro-class), straight and bent, and records the
+radius that found the crossing (`crossing_fit_r` in the dump); TIGHT = found under 6.7; `BOT_CROSS_FIT_SCALE` retires.
+(2) The extent gate moves to 2 x 5.36 = 10.72 u. (3) The router: a TIGHT crossing is impassable in the strict pass and
+admitted in the last-resort pass (with the DISAGREE penalty) only when the asking ship's wall sphere fits the found
+radius — `BotComputeRoute` knows its bot, the bot-independent cost uses the Pyro-class sphere. (4) While a bot is
+committed to a tight hop it fits, its via legs and the door-in-view sweep run at the found radius instead of
+`obj->size` (per-bot `hop_tight_r`, cleared with the commit). Lattice, skeleton, geocost probes: untouched. Gate as
+above; the first arm measures threading before any speed or nose-first work.
+
 *Options.* **A (recommended): physics is the floor, 6.7 stays the comfort hull.** Below the ship's wall sphere:
 NEVER, as today (327 sides unchanged). Between the wall sphere and 6.7: TIGHT — off the normal network, admitted
 only by the last-resort pass the DISAGREE retry already runs (penalty 120), only for a ship whose own sphere fits
