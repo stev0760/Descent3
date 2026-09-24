@@ -1059,6 +1059,18 @@ committed to a tight hop it fits, its via legs and the door-in-view sweep run at
 `obj->size` (per-bot `hop_tight_r`, cleared with the commit). Lattice, skeleton, geocost probes: untouched. Gate as
 above; the first arm measures threading before any speed or nose-first work.
 
+**A1 built 2026-09-24 (`f1310a81` + `96c3352c`), geometry gate read.** Bot-free Batteries, HEAD vs A1: exactly the
+census's six sides change — the three 11.4 u floor hatches (rm37<->86, rm38<->91, rm38<->87), never -> door, TIGHT at
+5.36; rm305<->307 stays TIGHT (now at 5.36); every other side identical. rm80's door is NOT sampler-tight (its column
+sits in the pocket and clears 6.7) — the tightness is the approach from the room, which is why the commit's
+door-in-view test got its own wall-sphere tier. Canyons: 24 sides change, 16 never -> door at 6.7 (the strips over open
+boundaries), 4 tight at 5.36 (rm3<->5, rm13<->16 strips), 4 at 6.42 (rm7<->rm9, a real 13.3 u doorway into a dead-end
+room, both ship classes fit). The first A1 build planted the hatch seeds into the comfort lattice and rm37 lost its
+114 cells to a seed in contact with the frame; tight doors now seed neither lattice nor skeleton, and rm37 reads
+identical to HEAD. `compare_navdumps` then counts a tight door as usable-without-a-node (split rooms 4 -> 8, isolated
+doors 7 -> 15 on Batteries; all of them the tight-door rooms) — the tool's accounting, to teach it the class. Pairs
+launched 09:40: Batteries, Canyons, Bree, Isengard, control beside variant.
+
 *Options.* **A (recommended): physics is the floor, 6.7 stays the comfort hull.** Below the ship's wall sphere:
 NEVER, as today (327 sides unchanged). Between the wall sphere and 6.7: TIGHT — off the normal network, admitted
 only by the last-resort pass the DISAGREE retry already runs (penalty 120), only for a ship whose own sphere fits
