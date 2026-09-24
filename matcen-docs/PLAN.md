@@ -1096,13 +1096,20 @@ opening to the crossing and the commit); on the ledger with these numbers, not t
 map is built that way and looks it; it probably plays fine now and bottlenecks are expected on a tight map — the
 overlapping-portal merge is an optimisation to do in any case, not a Canyons rescue.
 
-**A1 Batteries pair, final (12 rounds each, guard PASS, 2026-09-24 12:40).** Play flat: picks/caps 139/60 control vs
-131/60 A1, deaths 598 vs 590, frames flat. rm80 WORSE on A1: crossings out of the office 21 (28 spawns) on the control
-vs 6 crossed + 4 NOT-CROSSED (21 spawns) on A1; hard escalations in rm80 21 -> 43 (117 total vs 143). The control's
-bots leave by pressing the leaf and sliding through; A1's 7 tight-hop commits sent bots to thread the 11.37 u gap
-on purpose and they pressed harder. First evidence on the band question, and it points the wrong way for a
-0.35 u-a-side margin. Held for A2b (the via-layer tier, 5 rounds in: 20 tight vias, 6 in rm80, 1 crossing each arm)
-and for the 13.0-13.1 u doors on Bree and Isengard, where the margin is 1.2 u a side.
+**A1 Batteries pair, final (12 rounds each, guard PASS, 2026-09-24 12:40) — read per LIFE, not per crossing.** Play flat:
+picks/caps 139/60 control vs 131/60 A1, deaths 598 vs 590, frames flat. rm80 by spawn-life (`rm_lives.py`): control 28
+lives, 3 out (5 s, 46 s, 386 s), 19 died inside, 6 sat to round end; A1 21 lives, 3 out (37, 47, 259 s), 11 died, 7 sat
+— and all three A1 exits were tight-commit lives (6 lives got a tight commit: 50% out when it fires, fired in a third
+of lives). The hard-escalation gap (control 11, A1 40 among non-exiting lives) is one life wedged inside the bookcase
+by the north wall (29 of the 40); without it the arms are equal. Every current-build sample reads the same: 3/32,
+2/23, 3/28 lives out. (The first read of this pair counted 21 vs 6 "crossings out" — those were visiting bots
+leaving again; withdrawn.) **The blunder's anatomy** (operator: keep it?): the control's two slow exits came from the
+hop commit after four same-hop presses, aimed through the door, then a slide around the leaf's tip; the fast one
+left straight from the box. Lives that die inside last a median of 100-190 s (quartiles 50-270 s; under 60 s: 1-4
+of ~18) — the office's six windows kill anything that lingers, but there is time: what is missing is an attempt
+that works, made early. Blunder alone = ~10% out; the tight commit = 50% when it fires, but it waits for the four
+presses. A2b's via tier fires early (5 of its first 8 lives) and has not converted one. Bree's and Isengard's
+13.0-13.1 u doors (1.2 u a side) are the next read before any ruling on the band.
 
 *Options.* **A (recommended): physics is the floor, 6.7 stays the comfort hull.** Below the ship's wall sphere:
 NEVER, as today (327 sides unchanged). Between the wall sphere and 6.7: TIGHT — off the normal network, admitted
