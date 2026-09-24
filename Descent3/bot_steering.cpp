@@ -3143,6 +3143,26 @@ static BotViaResult FindViaPointR(object *obj, const vector &target_pos, int tar
   return BOT_VIA_NONE;
 }
 
+// Whether a target in this room is one of its doors' crossing points (the approach, plane or push-through point the
+// aim layer hands out for a routed hop). Those legs are door approaches even though the point lies in this room.
+static bool TargetIsDoorApproach(int room_idx, const vector &target) {
+  if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used)
+    return false;
+  const room &rm = Rooms[room_idx];
+  for (int p = 0; p < rm.num_portals && p < BOT_MAX_PORTALS; p++) {
+    if (BotPortalClass(room_idx, p) == BOT_PORTAL_CLASS_NEVER)
+      continue;
+    vector near_p{}, plane{}, far_p{};
+    bool bent = false;
+    if (!BotPortalCrossingPath(room_idx, p, &near_p, &plane, &far_p, &bent))
+      continue;
+    if (vm_VectorDistanceQuick(&target, &near_p) < 3.0f || vm_VectorDistanceQuick(&target, &plane) < 3.0f ||
+        vm_VectorDistanceQuick(&target, &far_p) < 3.0f)
+      return true;
+  }
+  return false;
+}
+
 // The via search at the hull the bot commits with. A committed TIGHT hop this ship fits (Batteries rm80's leaf)
 // sweeps at the radius that found it. And a leg toward ANOTHER room is a door approach: when the comfort hull finds
 // nothing, the wall sphere — what the engine actually stops — gets one try, and a leg it finds makes this a TIGHT
@@ -3153,7 +3173,8 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
   const float tight = (bi >= 0) ? Bots[bi].hop_tight_r : 0.0f;
   const float radius = (tight > 0.0f) ? std::min(obj->size, tight) : obj->size;
   BotViaResult r = FindViaPointR(obj, target_pos, target_room, radius, via_out, skeleton_out, source_out, diag_out);
-  if (r == BOT_VIA_NONE && tight <= 0.0f && bi >= 0 && target_room >= 0 && target_room != obj->roomnum) {
+  if (r == BOT_VIA_NONE && tight <= 0.0f && bi >= 0 && target_room >= 0 &&
+      (target_room != obj->roomnum || TargetIsDoorApproach(obj->roomnum, target_pos))) {
     const float wall_r = BotHullPhys(obj);
     if (wall_r < obj->size - 0.01f) {
       r = FindViaPointR(obj, target_pos, target_room, wall_r, via_out, skeleton_out, source_out, diag_out);
