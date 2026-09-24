@@ -1092,7 +1092,9 @@ rm10->rm11 p5 (17), rm1->rm8 p38 (15), rm14->rm15 p17 (13), rm6->rm1 p0 (11) —
 not tight), and rm3->rm1 p3 is a 12.6 x 118 u STRIP of the tiled rm3/rm1 boundary: the door pick takes the nearest
 portal to the bot, so a thin strip at the edge of an opening can be the one committed to, with its push point at
 the opening's edge. The class is the strip-tiled boundary again (a boundary's overlapping portals should be one
-opening to the crossing and the commit); on the ledger with these numbers, not this arm.
+opening to the crossing and the commit); on the ledger with these numbers, not this arm. **Operator, 2026-09-24:** the
+map is built that way and looks it; it probably plays fine now and bottlenecks are expected on a tight map — the
+overlapping-portal merge is an optimisation to do in any case, not a Canyons rescue.
 
 *Options.* **A (recommended): physics is the floor, 6.7 stays the comfort hull.** Below the ship's wall sphere:
 NEVER, as today (327 sides unchanged). Between the wall sphere and 6.7: TIGHT — off the normal network, admitted
