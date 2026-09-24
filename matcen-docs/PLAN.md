@@ -1156,6 +1156,18 @@ drive half — the wall-sphere via/commit legs (A1's commit tier, A2b's via tier
 is the recommendation regardless. The overlapping-portal merge (operator: do anyway) would also fix rm12 p1's
 blocked probe at the root: the union opening's centre is clear.
 
+**Bree pair (12 rounds each, guard PASS, 17:42) — the 1.2 u-a-side door.** Bot-free, A2 changes no Bree portal class;
+the only TIGHT sides are rm5<->rm6 (13.1 u, found at the 6.42 rung), and rm6 is a spawn room (200 spawns an arm) whose
+exit that door is. Play flat: picks/caps 113/57 vs 109/56; deaths 1054 -> 924; hard escalations 18 -> 13 (rm60 8 -> 6);
+frames flat (Bree's 150-170 ms worst-frame class is on both builds). In rm6 the control's via search failed 172 times
+and pinned nobody (the blunder gets them out); A2b's wall-sphere retry found 140 legs and failed 4 times, pinned
+nobody. The TIGHT demotion of rm5<->rm6 to last resort re-routed a through-shortcut: crossings at rm58->rm72 (31 ->
+228) and rm73->rm71 (127 -> 288) — longer routes, captures unchanged, deaths down. So at 1.2 u a side the wall-sphere
+leg neither helps nor hurts play; it turns via failures into found legs. Isengard (rm39<->rm36, 13.0 u) is the last
+read. **Shape of the ruling forming:** ship the geometry half; keep the drive half only with steering slack — sweep the
+retry at the wall sphere plus ~0.5 u, which excludes rm80's 0.35 u gap (where it only pressed) and keeps Bree's and
+Isengard's doors.
+
 *Options.* **A (recommended): physics is the floor, 6.7 stays the comfort hull.** Below the ship's wall sphere:
 NEVER, as today (327 sides unchanged). Between the wall sphere and 6.7: TIGHT — off the normal network, admitted
 only by the last-resort pass the DISAGREE retry already runs (penalty 120), only for a ship whose own sphere fits
