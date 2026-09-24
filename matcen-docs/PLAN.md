@@ -1084,6 +1084,16 @@ commitment in that room (`tight via` log line), ended when the bot leaves it. Se
 (ports 2288-2291); the chain's Canyons, Bree and Isengard pairs run A2 (manifest file names keep the A1 suffix; the
 log's build stamp is the truth).
 
+**Canyons on the current build (operator asked 2026-09-24; baseline `a2-canyons`, 8-bot mixed roster, 2 teams).** Seven
+rounds in: 50 grabs, 10 captures (5 Blue, 5 Red), 33 returns, 824 deaths, 3 hard stucks (9 total) — it captures and it
+does not pin; the Havoc-rotation singles yesterday read the same rate (0.9.15: 11 grabs / 2 caps in one round; HEAD:
+12 / 4). What remains is doorways: 219 of 956 committed door crossings ended NOT-CROSSED (23%), at rm3->rm1 p3 (22),
+rm10->rm11 p5 (17), rm1->rm8 p38 (15), rm14->rm15 p17 (13), rm6->rm1 p0 (11) — every one a comfortable door (fit 6.7,
+not tight), and rm3->rm1 p3 is a 12.6 x 118 u STRIP of the tiled rm3/rm1 boundary: the door pick takes the nearest
+portal to the bot, so a thin strip at the edge of an opening can be the one committed to, with its push point at
+the opening's edge. The class is the strip-tiled boundary again (a boundary's overlapping portals should be one
+opening to the crossing and the commit); on the ledger with these numbers, not this arm.
+
 *Options.* **A (recommended): physics is the floor, 6.7 stays the comfort hull.** Below the ship's wall sphere:
 NEVER, as today (327 sides unchanged). Between the wall sphere and 6.7: TIGHT — off the normal network, admitted
 only by the last-resort pass the DISAGREE retry already runs (penalty 120), only for a ship whose own sphere fits
