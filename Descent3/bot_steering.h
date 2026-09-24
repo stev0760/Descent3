@@ -38,6 +38,12 @@ struct fvi_info;
 #define BOT_PORTAL_SHIP_RADIUS 2.5f    // swept-sphere fit test: can a ship fly through at all?
 #define BOT_PORTAL_TIGHT_RADIUS 4.0f   // comfortable-margin test: fits but no slack -> tightness penalty
 #define BOT_PORTAL_TIGHT_PENALTY 40.0f // cost added for a tight-but-passable opening (~one BOA hop)
+// The engine collides a player with walls at PLAYER_SIZE_SCALAR (0.8) of its size (findintersection.cpp): a Pyro's
+// 6.676 u size is a 5.34 u wall sphere, 10.7 u across. Our fit hull (BOT_ROADMAP_CLEARANCE, the full size) is the
+// COMFORT hull, 25% wider than what physics stops. An opening between the two is TIGHT: the ship fits, the planner
+// did not know it (Batteries rm80's propped leaf leaves 11.37 u; 32 Pyro lives spawned behind it, 3 got out).
+#define BOT_HULL_PHYS_WIDE 6.42f // 0.8 x 8.019, the Phoenix's wall sphere
+#define BOT_HULL_PHYS 5.36f      // 0.8 x 6.7, the Pyro class (Pyro 6.676, Magnum 6.729, Black Pyro 6.604)
 // A portal with a wall this close behind EVERY point of its opening is a window onto a wall (BotPortalClass
 // NEVER), whatever the engine's table says: under one hull radius, so no ship can be on the far side.
 #define BOT_PORTAL_WALL_BACKED_DEPTH 5.0f
@@ -393,7 +399,7 @@ bool BotTerrainDoorAt(int region, int i, int *room_out, int *portal_out);
 // path_pnt +/- offsets when the door has no validated crossing. Returns true when validated.
 bool BotTerrainDoorPoints(int room, int portal, vector *outside_out, vector *inside_out);
 // Delivery-side portal verdict matching the coarse router's strict-first, disagreement-last policy.
-float BotPortalRouteCost(int room_idx, int portal_idx, bool allow_disagree);
+float BotPortalRouteCost(int room_idx, int portal_idx, bool allow_disagree, float hull_phys = BOT_HULL_PHYS);
 
 // --- 0.9.14 glass routing ($nav glass): intact breakable panes as routable edges ---------------
 //
@@ -472,13 +478,16 @@ int BotRouterExitDoor(object *obj, int room_idx, int next_room, int target_room)
 // anchor: measured 2026-09-12, moving the skeleton nodes and lattice seeds onto it split rooms on
 // both test maps and starved the red flag room's lattice, so the network keeps the engine point.
 #define BOT_CROSS_DEPTH_MAX 24.0f // deepest sweep tried either side of the plane (a leaf, a lip, a frame)
-// The door-fit radius as a fraction of the hull: the engine's contact response slides a ship through a
-// gap a few percent narrower than its hull (measured: Batteries rm45 -> rm80, a 13.0u channel past a
-// propped leaf, Pyro hull 13.35u, crossed by bots and pilots). A crossing found only at this radius is
-// reported TIGHT. Not applied to the network (lattice/skeleton legs keep the full hull).
-#define BOT_CROSS_FIT_SCALE 0.92f
-// Whether the cached crossing was found only at the door-fit radius.
+// The crossing sampler's rungs: the comfort hull, then the wall spheres of the roster's two ship classes. A
+// crossing found only under the comfort hull is TIGHT: not a strict edge, a last resort for a ship whose wall
+// sphere fits the radius that found it (the old 0.92 "door-fit" scale was this same fact, misread as contact slop).
+#define BOT_CROSS_RUNGS 3
+// Whether the cached crossing was found only under the comfort hull.
 bool BotPortalCrossingTight(int room_idx, int portal_idx);
+// The radius that found the cached crossing (0 = no crossing).
+float BotPortalCrossingFitRadius(int room_idx, int portal_idx);
+// A ship's wall sphere: the radius the engine stops against walls.
+float BotHullPhys(const object *obj);
 // The engine's passability verdict as OUR layers must read it. BOA_PassablePortal consults a cost
 // table frozen at level load, so a pane that shattered mid-level stays "impassable" to the engine
 // for the rest of the level; a pane this code has seen shatter (PortalPaneShatteredFlip) is a door

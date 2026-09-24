@@ -291,8 +291,15 @@ float BotPortalGeoCost(int room_idx, int portal_idx) {
 // Keep BotPortalGeoCost as the strict physical verdict used by sealed-room and grate checks. The
 // coarse router may tolerate a probe rejection only in its second, last-resort search: BOA must
 // independently call the portal passable, and every strictly flyable route must already have failed.
-float BotPortalRouteCost(int room_idx, int portal_idx, bool allow_disagree) {
+float BotPortalRouteCost(int room_idx, int portal_idx, bool allow_disagree, float hull_phys) {
   float cost = BotPortalGeoCost(room_idx, portal_idx);
+  // A crossing found only under the comfort hull (Batteries rm80's leaf, a 13.1 u basement door): not a strict
+  // edge. A last resort, priced like a DISAGREE, for a ship whose wall sphere fits the radius that found it.
+  if (cost < BOT_PORTAL_IMPASSABLE && BotPortalCrossingTight(room_idx, portal_idx)) {
+    if (!allow_disagree || hull_phys > BotPortalCrossingFitRadius(room_idx, portal_idx) + 0.01f)
+      return BOT_PORTAL_IMPASSABLE;
+    return cost + BOT_PORTAL_DISAGREE_PENALTY;
+  }
   if (cost < BOT_PORTAL_IMPASSABLE || !allow_disagree || room_idx < 0 || room_idx > Highest_room_index ||
       !Rooms[room_idx].used || portal_idx < 0 || portal_idx >= Rooms[room_idx].num_portals ||
       portal_idx >= BOT_MAX_PORTALS)
@@ -344,8 +351,8 @@ static int8_t pf_glass_flipped[MAX_ROOMS][BOT_MAX_PORTALS]; // 1 = a pane this l
 // grids (fifteen 11x6u panes between the blue base and the room behind it, fifteen more at the
 // conference hub) and its 11u floor hatches. Shoot-through is not fly-through — bots that routed to
 // those panes shot them open and then pressed a hole nothing can pass (a spawn room's only real exit
-// is up a 19x20u vent). Extents are the portal polygon's in its own plane; the threshold is the hull
-// diameter at the door-fit scale (BOT_CROSS_FIT_SCALE). Cached per level.
+// is up a 19x20u vent). Extents are the portal polygon's in its own plane; the threshold is the Pyro-class
+// wall sphere's diameter (BOT_HULL_PHYS): under it nothing fits. Cached per level.
 static int8_t pf_portal_small[MAX_ROOMS][BOT_MAX_PORTALS]; // -1 unknown, 1 too small for the hull, 0 fits
 static bool PortalTooSmallForHull(int room_idx, int portal_idx) {
   if (pf_small_level_checksum != BOA_mine_checksum) {
@@ -385,7 +392,7 @@ static bool PortalTooSmallForHull(int room_idx, int portal_idx) {
     w1 = std::max(w1, dw);
   }
   const float min_extent = std::min(u1 - u0, w1 - w0);
-  cached = (min_extent < 2.0f * BOT_ROADMAP_CLEARANCE * BOT_CROSS_FIT_SCALE) ? 1 : 0;
+  cached = (min_extent < 2.0f * BOT_HULL_PHYS) ? 1 : 0;
   return cached == 1;
 }
 
@@ -651,7 +658,8 @@ static int8_t pf_cross_state[MAX_ROOMS][BOT_MAX_PORTALS]; // -1 unknown, 0 engin
 static vector pf_cross_near[MAX_ROOMS][BOT_MAX_PORTALS];  // approach point inside THIS room
 static vector pf_cross_far[MAX_ROOMS][BOT_MAX_PORTALS];   // push-through point inside the OTHER room
 static int8_t pf_cross_bent[MAX_ROOMS][BOT_MAX_PORTALS];  // 1 = found by the lateral fan, 0 = straight column
-static int8_t pf_cross_tight[MAX_ROOMS][BOT_MAX_PORTALS]; // 1 = found only at the door-fit radius
+static int8_t pf_cross_tight[MAX_ROOMS][BOT_MAX_PORTALS]; // 1 = found only under the comfort hull
+static float pf_cross_fit_r[MAX_ROOMS][BOT_MAX_PORTALS];  // the rung that found it (0 = none)
 
 static void PortalPaneShatteredFlip(int room_idx, int portal_idx) {
   const portal &pt = Rooms[room_idx].portals[portal_idx];
@@ -803,8 +811,8 @@ static bool PortalCrossingSide(int probe_room, const vector &P, const vector &di
 }
 
 static bool PortalCrossingCompute(int room_idx, int portal_idx, vector *pnt, float *depth, vector *near_pt,
-                                  vector *far_pt, bool *bent, bool *tight = nullptr, BotCrossTrace *trace = nullptr,
-                                  int trace_max = 0, int *trace_n = nullptr) {
+                                  vector *far_pt, bool *bent, bool *tight, float *fit_r = nullptr,
+                                  BotCrossTrace *trace = nullptr, int trace_max = 0, int *trace_n = nullptr) {
   BotPerfScope perf(BPERF_CROSSING);
   const room &rm = Rooms[room_idx];
   const portal &pt = rm.portals[portal_idx];
@@ -859,12 +867,11 @@ static bool PortalCrossingCompute(int room_idx, int portal_idx, vector *pnt, flo
     return best;
   };
   const float area = std::max((bx1 - bx0) * (by1 - by0), 1.0f);
-  // Two radii. The hull first; then the DOOR-FIT radius, a few percent under it: the engine's contact
-  // response slides a hull through a gap slightly narrower than itself (Batteries rm45 -> rm80: the
-  // propped leaf leaves a 13.0u channel past the jamb, the Pyro hull is 13.35u across, and bots and
-  // pilots go through it), and a 17u duct with a bend inside has no hull-radius chain at all while
-  // bots use it. A crossing found only at the fit radius is TIGHT: it exists, it is not comfortable.
-  const float radii[2] = {BOT_ROADMAP_CLEARANCE, BOT_ROADMAP_CLEARANCE * BOT_CROSS_FIT_SCALE};
+  // Three rungs. The comfort hull first; then the wall spheres the engine actually stops — a Phoenix's, then the
+  // Pyro class's (findintersection.cpp scales a player's wall sphere by 0.8: Batteries rm45 -> rm80's propped
+  // leaf leaves 11.37 u, a Pyro's 10.68 u sphere passes it, our 13.4 u hull does not). A crossing found only
+  // under the comfort hull is TIGHT: it exists, and the router treats it as a last resort for a ship that fits.
+  const float radii[BOT_CROSS_RUNGS] = {BOT_ROADMAP_CLEARANCE, BOT_HULL_PHYS_WIDE, BOT_HULL_PHYS};
   float R = radii[0];
   struct Cand {
     float x, y, ins, dc;
@@ -887,7 +894,7 @@ static bool PortalCrossingCompute(int room_idx, int portal_idx, vector *pnt, flo
   vector best_p{};
   int nc = 0; // candidates of the last pass run, sorted most open first (the bent phase reuses them)
   bool tight_found = false;
-  for (int attempt = 0; attempt < 2 && best_depth <= 0.0f; attempt++) {
+  for (int attempt = 0; attempt < BOT_CROSS_RUNGS && best_depth <= 0.0f; attempt++) {
     R = radii[attempt];
     for (int pass = 0; pass < 2 && best_depth <= 0.0f; pass++) {
       const float step = pass == 0 ? std::max(R * 0.5f, sqrtf(area / 56.0f)) : std::max(R * 0.5f, sqrtf(area / 380.0f));
@@ -945,7 +952,7 @@ static bool PortalCrossingCompute(int room_idx, int portal_idx, vector *pnt, flo
           break; // the maximum: fully open at full depth
       }
     } // pass
-    if (best_depth > 0.0f && attempt == 1)
+    if (best_depth > 0.0f && attempt >= 1)
       tight_found = true;
   } // attempt
   if (best_depth > 0.0f) {
@@ -953,6 +960,8 @@ static bool PortalCrossingCompute(int room_idx, int portal_idx, vector *pnt, flo
     *depth = best_depth;
     if (tight)
       *tight = tight_found;
+    if (fit_r)
+      *fit_r = R;
     const float far_d = best_depth < 16.0f ? 16.0f : best_depth; // the push must clear the 15u arrival sphere
     *near_pt = best_p + n * std::min(BOT_CROSS_DEPTH_MAX / 3.0f, best_depth); // a lip approaches at its own depth
     *far_pt = best_p - n * far_d;
@@ -965,7 +974,7 @@ static bool PortalCrossingCompute(int room_idx, int portal_idx, vector *pnt, flo
   if (cr_ok == room_idx)
     return false;
   const float bstep = BOT_CROSS_DEPTH_MAX / 3.0f;
-  for (int attempt = 0; attempt < 2; attempt++) {
+  for (int attempt = 0; attempt < BOT_CROSS_RUNGS; attempt++) {
     const float Rb = radii[attempt];
     for (int ci = 0; ci < nc && ci < 6; ci++) {
       if (cand[ci].ins < Rb * 0.5f && ci > 0)
@@ -990,7 +999,9 @@ static bool PortalCrossingCompute(int room_idx, int portal_idx, vector *pnt, flo
       *far_pt = B;
       *bent = true;
       if (tight)
-        *tight = attempt == 1;
+        *tight = attempt >= 1;
+      if (fit_r)
+        *fit_r = Rb;
       return true;
     }
   }
@@ -1015,7 +1026,7 @@ int BotNavProbeReport(const vector *a, const vector *b, char *buf, int buflen) {
   const int ra = room_of(*a), rb = room_of(*b);
   put("probe (%.0f,%.0f,%.0f) -> (%.0f,%.0f,%.0f): start cells %d / %d\n", a->x(), a->y(), a->z(), b->x(), b->y(),
       b->z(), ra, rb);
-  const float radii[3] = {0.5f, BOT_ROADMAP_CLEARANCE, BOT_ROADMAP_CLEARANCE * BOT_CROSS_FIT_SCALE};
+  const float radii[3] = {0.5f, BOT_ROADMAP_CLEARANCE, BOT_HULL_PHYS};
   for (int dir = 0; dir < 2; dir++) {
     const vector &p = dir ? *b : *a;
     const vector &q = dir ? *a : *b;
@@ -1065,7 +1076,7 @@ int BotNavSweepReport(const vector *from, int room_idx, int portal_idx, char *bu
       from->x(), from->y(), from->z(), room_idx, portal_idx, Rooms[room_idx].portals[portal_idx].croom,
       has ? "yes" : "NONE", bent ? " (bent)" : "", near_p.x(), near_p.y(), near_p.z(), plane.x(), plane.y(), plane.z(),
       far_p.x(), far_p.y(), far_p.z());
-  const float radii[2] = {BOT_ROADMAP_CLEARANCE, BOT_ROADMAP_CLEARANCE * BOT_CROSS_FIT_SCALE};
+  const float radii[2] = {BOT_ROADMAP_CLEARANCE, BOT_HULL_PHYS};
   const char *names[3] = {"near", "plane", "far"};
   const vector *targets[3] = {&near_p, &plane, &far_p};
   for (int ri = 0; ri < 2; ri++) {
@@ -1108,6 +1119,20 @@ bool BotPortalCrossingTight(int room_idx, int portal_idx) {
   return pf_cross_tight[room_idx][portal_idx] == 1;
 }
 
+float BotPortalCrossingFitRadius(int room_idx, int portal_idx) {
+  if (room_idx < 0 || room_idx >= MAX_ROOMS || portal_idx < 0 || portal_idx >= BOT_MAX_PORTALS)
+    return 0.0f;
+  vector p{};
+  float d = 0.0f;
+  if (!BotPortalCrossing(room_idx, portal_idx, &p, &d)) // fills the cache
+    return 0.0f;
+  return pf_cross_fit_r[room_idx][portal_idx];
+}
+
+float BotHullPhys(const object *obj) {
+  return (obj && obj->size > 0.0f) ? obj->size * PLAYER_SIZE_SCALAR : BOT_HULL_PHYS;
+}
+
 int BotPortalCrossingTrace(int room_idx, int portal_idx, BotCrossTrace *out, int max_out) {
   if (!out || max_out <= 0 || room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used ||
       portal_idx < 0 || portal_idx >= Rooms[room_idx].num_portals)
@@ -1120,7 +1145,7 @@ int BotPortalCrossingTrace(int room_idx, int portal_idx, BotCrossTrace *out, int
   float d = 0.0f;
   bool bent = false;
   int n = 0;
-  PortalCrossingCompute(room_idx, portal_idx, &p, &d, &cn, &cf, &bent, nullptr, out, max_out, &n);
+  PortalCrossingCompute(room_idx, portal_idx, &p, &d, &cn, &cf, &bent, nullptr, nullptr, out, max_out, &n);
   return n;
 }
 
@@ -1156,11 +1181,15 @@ bool BotPortalCrossing(int room_idx, int portal_idx, vector *pnt_out, float *dep
       const bool here = canonical || (Rooms[cr].flags & RF_EXTERNAL);
       vector cnear{}, cfar{};
       bool tight = false;
-      ok = here ? PortalCrossingCompute(room_idx, portal_idx, &p, &d, &cnear, &cfar, &bent, &tight)
-                : PortalCrossingCompute(cr, cp, &p, &d, &cnear, &cfar, &bent, &tight);
+      float fitr = 0.0f;
+      ok = here ? PortalCrossingCompute(room_idx, portal_idx, &p, &d, &cnear, &cfar, &bent, &tight, &fitr)
+                : PortalCrossingCompute(cr, cp, &p, &d, &cnear, &cfar, &bent, &tight, &fitr);
       pf_cross_tight[room_idx][portal_idx] = tight ? 1 : 0;
-      if (twin_ok)
+      pf_cross_fit_r[room_idx][portal_idx] = ok ? fitr : 0.0f;
+      if (twin_ok) {
         pf_cross_tight[cr][cp] = tight ? 1 : 0;
+        pf_cross_fit_r[cr][cp] = ok ? fitr : 0.0f;
+      }
       if (ok && bent) {
         // Bent: A and B are the found entry points, each ~16u inside its side — symmetric by construction.
         near_here = here ? cnear : cfar;
@@ -2007,7 +2036,8 @@ bool BotEntryCenterClear(int room_idx, int portal_idx) {
 // pane — 310 committed crossings timed out at 8.0s in one run, bots firing at glass that never
 // opened. Requiring engine agreement in the same two passes as the router (strict first, DISAGREE
 // last resort) keeps the seam's own selection and the route's edge set from ever disagreeing.
-static int BotComputeRoutePasses(int from_room, int goal_room, int glass_mode, float *out_cost); // the router, below
+static int BotComputeRoutePasses(int from_room, int goal_room, int glass_mode, float hull_phys,
+                                 float *out_cost); // the router, below
 
 // The lookahead's onward leg is a straight line, and a straight line is a path length only where a hull can fly
 // it. Sigma Base's Blue exit: rm26 opens into the cavern rm37 by five doors, and the one directly under rm35's
@@ -2066,7 +2096,7 @@ int BotEntryPortalIndex(object *obj, int wp_room, int goal_room, bool *onward_va
   int n_exit = 0;
   if (goal_room >= 0 && goal_room != wp_room && goal_room <= Highest_room_index && Rooms[goal_room].used) {
     float next_cost = 0.0f;
-    const int next = BotComputeRoutePasses(wp_room, goal_room, glass_budget, &next_cost);
+    const int next = BotComputeRoutePasses(wp_room, goal_room, glass_budget, BotHullPhys(obj), &next_cost);
     if (next >= 0 && next != cur && next <= Highest_room_index && Rooms[next].used) {
       const room &wrm = Rooms[wp_room];
       for (int q = 0; q < wrm.num_portals && q < BOT_MAX_PORTALS && n_exit < BOT_MAX_PORTALS; q++) {
@@ -2968,6 +2998,11 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
   }
 
   float radius = obj->size;
+  { // a committed TIGHT hop this ship fits (Batteries rm80's leaf): the legs to it sweep at the radius that found it
+    const int bi = BotFindBySlot(obj->id);
+    if (bi >= 0 && Bots[bi].hop_tight_r > 0.0f)
+      radius = std::min(radius, Bots[bi].hop_tight_r);
+  }
 
   fvi_info block{};
   if (ViaSegmentClear(obj->roomnum, obj->pos, target_pos, radius, &block, is_outdoor))
@@ -3216,7 +3251,7 @@ int BotPortalWindDir(int room_idx, int portal_idx) {
 // runs these as a ladder. The 2026-08-30 paired A/B (NAVIGATION.md §7.0) proved the free form a hard
 // regression — picks/rnd 1.94→0.56, stucks +131% — because 127 of Batteries' 207 panes are CEILING
 // vents and free routing aimed bots at horizontal openings they cannot thread. Hence the split.
-static float BotRouteDijkstra(int from_room, int goal_room, int *first_hop_out, bool allow_disagree,
+static float BotRouteDijkstra(int from_room, int goal_room, int *first_hop_out, bool allow_disagree, float hull_phys,
                               int glass_mode = GLASS_ROUTE_OFF) {
   if (first_hop_out)
     *first_hop_out = -1;
@@ -3296,7 +3331,7 @@ static float BotRouteDijkstra(int from_room, int goal_room, int *first_hop_out, 
       if (!engine_ok && !pane)
         continue;
 
-      float geo = BotPortalRouteCost(r, p, allow_disagree);
+      float geo = BotPortalRouteCost(r, p, allow_disagree, hull_phys);
       if (geo >= BOT_PORTAL_IMPASSABLE)
         continue; // grate/slit/locked — route around it
 
@@ -3368,7 +3403,7 @@ static float BotRouteDijkstra(int from_room, int goal_room, int *first_hop_out, 
 //   kinetic:   A) strict doors + vertical panes   B) + DISAGREE   C) + any pane (no door route left)
 //   unkinetic: 1) strict doors                   2) + DISAGREE  (the unchanged legacy ladder)
 // Returns the hop of the first pass that found a route, or -1; out_cost carries that pass's cost.
-static int BotComputeRoutePasses(int from_room, int goal_room, int glass_mode, float *out_cost) {
+static int BotComputeRoutePasses(int from_room, int goal_room, int glass_mode, float hull_phys, float *out_cost) {
   BotPerfScope perf(BPERF_ROUTE);
   int hop = -1;
   if (from_room == goal_room) {
@@ -3378,19 +3413,19 @@ static int BotComputeRoutePasses(int from_room, int goal_room, int glass_mode, f
   }
   float cost;
   if (glass_mode == GLASS_ROUTE_SHORTCUT) {
-    cost = BotRouteDijkstra(from_room, goal_room, &hop, false, GLASS_ROUTE_SHORTCUT);
+    cost = BotRouteDijkstra(from_room, goal_room, &hop, false, hull_phys, GLASS_ROUTE_SHORTCUT);
     if (cost < 1e30f) {
       if (out_cost)
         *out_cost = cost;
       return hop;
     }
-    cost = BotRouteDijkstra(from_room, goal_room, &hop, true, GLASS_ROUTE_OFF);
+    cost = BotRouteDijkstra(from_room, goal_room, &hop, true, hull_phys, GLASS_ROUTE_OFF);
     if (cost < 1e30f) {
       if (out_cost)
         *out_cost = cost;
       return hop;
     }
-    cost = BotRouteDijkstra(from_room, goal_room, &hop, true, GLASS_ROUTE_SOLE);
+    cost = BotRouteDijkstra(from_room, goal_room, &hop, true, hull_phys, GLASS_ROUTE_SOLE);
     if (cost < 1e30f) {
       if (out_cost)
         *out_cost = cost;
@@ -3401,13 +3436,13 @@ static int BotComputeRoutePasses(int from_room, int goal_room, int glass_mode, f
     return hop;
   }
   // Unkinetic (or bot-independent): the unchanged doors-only ladder.
-  cost = BotRouteDijkstra(from_room, goal_room, &hop, false, GLASS_ROUTE_OFF);
+  cost = BotRouteDijkstra(from_room, goal_room, &hop, false, hull_phys, GLASS_ROUTE_OFF);
   if (cost < 1e30f) {
     if (out_cost)
       *out_cost = cost;
     return hop;
   }
-  cost = BotRouteDijkstra(from_room, goal_room, &hop, true, GLASS_ROUTE_OFF);
+  cost = BotRouteDijkstra(from_room, goal_room, &hop, true, hull_phys, GLASS_ROUTE_OFF);
   if (cost < 1e30f) {
     if (out_cost)
       *out_cost = cost;
@@ -3420,7 +3455,10 @@ static int BotComputeRoutePasses(int from_room, int goal_room, int glass_mode, f
 
 int BotComputeRoute(int from_room, int goal_room, int bot_index) {
   const int glass_mode = (bot_index >= 0) ? BotGlassBudgetForBot(bot_index) : GLASS_ROUTE_OFF;
-  return BotComputeRoutePasses(from_room, goal_room, glass_mode, nullptr);
+  const float hull = (bot_index >= 0 && Bots[bot_index].active)
+                         ? BotHullPhys(&Objects[Players[Bots[bot_index].player_slot].objnum])
+                         : BOT_HULL_PHYS;
+  return BotComputeRoutePasses(from_room, goal_room, glass_mode, hull, nullptr);
 }
 
 // Full routed path cost under OUR cost model (BOA base + graded geometry + wind one-way gating +
@@ -3429,7 +3467,7 @@ int BotComputeRoute(int from_room, int goal_room, int bot_index) {
 // 1e30 = no finite route. Bot-independent form: no glass authority (geometry-only verdicts).
 float BotComputeRouteCost(int from_room, int goal_room) {
   float cost = 0.0f;
-  BotComputeRoutePasses(from_room, goal_room, GLASS_ROUTE_OFF, &cost);
+  BotComputeRoutePasses(from_room, goal_room, GLASS_ROUTE_OFF, BOT_HULL_PHYS, &cost);
   return cost;
 }
 

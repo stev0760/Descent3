@@ -3236,7 +3236,16 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
         // (147 carrier ticks, 9 NOT-CROSSED, the flag never came home). A push aimed at a wall is refused,
         // the press count starts over, and the route that was working keeps the wheel.
         const vector approach_pt = cross_ok ? cross_near : pt.path_pnt;
-        const bool door_in_view = BotSegmentClear(obj->roomnum, obj->pos, approach_pt, obj->size);
+        // A TIGHT crossing (found only under the comfort hull) this ship's wall sphere fits: the view sweep and the
+        // via legs run at the radius that found it, since the comfort hull cannot see through the gap at all.
+        float tight_r = 0.0f;
+        if (cross_ok && BotPortalCrossingTight(obj->roomnum, best_p)) {
+          const float fit = BotPortalCrossingFitRadius(obj->roomnum, best_p);
+          if (BotHullPhys(obj) <= fit + 0.01f)
+            tight_r = fit;
+        }
+        const bool door_in_view =
+            BotSegmentClear(obj->roomnum, obj->pos, approach_pt, tight_r > 0.0f ? tight_r : obj->size);
         if (!door_in_view) {
           Bots[bot_index].hop_press_n = 0;
           static float Refuse_log_t[MAX_BOTS];
@@ -3261,6 +3270,10 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
           Bots[bot_index].hop_commit_time = Gametime;
           Bots[bot_index].hop_commit_pos = obj->pos; // where the bot stood when it committed (outcome line)
           Bots[bot_index].hop_commit_aim = seam_pnt; // what it was told to fly
+          Bots[bot_index].hop_tight_r = tight_r;
+          if (tight_r > 0.0f)
+            LOG_DEBUG.printf("BOT NAV: '%s' tight hop rm%d -> rm%d via portal %d at %.1fu (ship %.1fu)",
+                             Bots[bot_index].callsign, (int)obj->roomnum, wp_room, best_p, tight_r, BotHullPhys(obj));
           if (steer_divergent)
             LOG_DEBUG.printf("BOT NAV: '%s' seam guard: engine path detours via room %d — aiming through portal to %d",
                              Bots[bot_index].callsign, steer_room, wp_room);
@@ -7516,10 +7529,11 @@ bool BotNavDump(const char *filename) {
         BotPortalCrossingPath(r, p, &cnear, nullptr, &cfar, &cbent);
         fprintf(fp,
                 "\"crossing\": [%.2f,%.2f,%.2f], \"crossing_depth\": %.1f, \"crossing_ok\": %s, \"crossing_bent\": %s, "
-                "\"crossing_tight\": %s, \"crossing_near\": [%.2f,%.2f,%.2f], \"crossing_far\": [%.2f,%.2f,%.2f], ",
+                "\"crossing_tight\": %s, \"crossing_fit_r\": %.2f, \"crossing_near\": [%.2f,%.2f,%.2f], "
+                "\"crossing_far\": [%.2f,%.2f,%.2f], ",
                 cpnt.x(), cpnt.y(), cpnt.z(), cdepth, cok ? "true" : "false", cbent ? "true" : "false",
-                BotPortalCrossingTight(r, p) ? "true" : "false", cnear.x(), cnear.y(), cnear.z(), cfar.x(), cfar.y(),
-                cfar.z());
+                BotPortalCrossingTight(r, p) ? "true" : "false", BotPortalCrossingFitRadius(r, p), cnear.x(), cnear.y(),
+                cnear.z(), cfar.x(), cfar.y(), cfar.z());
         // The portal polygon itself, and for a door with no crossing the sampler's replay: what each
         // hull sweep hit, plus the polygons of the faces that stopped it — the obstacle, not a count.
         fprintf(fp, "\"face_verts\": [");
@@ -8316,6 +8330,7 @@ void BotInitAll() {
     Bots[i].via_suspend_until = 0.0f;
     Bots[i].via_suspend_room = -1;
     Bots[i].hop_commit_wp = -1;
+    Bots[i].hop_tight_r = 0.0f;
     Bots[i].hop_commit_portal = -1;
     Bots[i].hop_commit_src = -1;
     Bots[i].hop_commit_time = 0.0f;
@@ -8500,6 +8515,7 @@ void BotReinitAll() {
     Bots[i].via_suspend_until = 0.0f;
     Bots[i].via_suspend_room = -1;
     Bots[i].hop_commit_wp = -1;
+    Bots[i].hop_tight_r = 0.0f;
     Bots[i].hop_commit_portal = -1;
     Bots[i].hop_commit_src = -1;
     Bots[i].hop_commit_time = 0.0f;
@@ -8774,6 +8790,7 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   Bots[bot_index].active = true;
   // Observers idle for a bot added mid-game (the level reinit is what normally clears them).
   Bots[bot_index].hop_commit_wp = -1;
+  Bots[bot_index].hop_tight_r = 0.0f;
   Bots[bot_index].entry_commit_room = -1;
   Bots[bot_index].life_start_time = Gametime;
   Bots[bot_index].gearup_budget_logged = false;
@@ -8839,6 +8856,7 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   Bots[bot_index].via_suspend_until = 0.0f;
   Bots[bot_index].via_suspend_room = -1;
   Bots[bot_index].hop_commit_wp = -1;
+  Bots[bot_index].hop_tight_r = 0.0f;
   Bots[bot_index].hop_commit_portal = -1;
   Bots[bot_index].hop_commit_src = -1;
   Bots[bot_index].hop_commit_time = 0.0f;
@@ -9091,6 +9109,7 @@ void BotDoFrame() {
                          Bots[i].hop_commit_src, Bots[i].hop_commit_wp, Bots[i].hop_commit_portal,
                          Gametime - Bots[i].hop_commit_time, (hop_exit && cur == -1) ? ", outdoors" : "");
         Bots[i].hop_commit_wp = -1;
+        Bots[i].hop_tight_r = 0.0f;
       } else if (cur != Bots[i].hop_commit_src || Gametime - Bots[i].hop_commit_time > BOT_HOP_OUTCOME_TIMEOUT) {
         LOG_DEBUG.printf("BOT NAV: '%s' hop outcome: NOT-CROSSED rm%d -> rm%d via portal %d (%.1fs, now rm%d) "
                          "from=(%.0f,%.0f,%.0f) aim=(%.0f,%.0f,%.0f) now=(%.0f,%.0f,%.0f)",
@@ -9100,6 +9119,7 @@ void BotDoFrame() {
                          Bots[i].hop_commit_aim.y(), Bots[i].hop_commit_aim.z(), cobj->pos.x(), cobj->pos.y(),
                          cobj->pos.z());
         Bots[i].hop_commit_wp = -1;
+        Bots[i].hop_tight_r = 0.0f;
       }
     }
 
@@ -9135,7 +9155,8 @@ void BotDoFrame() {
       Bots[i].explore_stuck_room = -1;
       Bots[i].explore_room_timer = 0.0f;
       BotClearTravelDest(i, TRAVEL_END_DEATH);
-      Bots[i].hop_commit_wp = -1; // a committed crossing dies with the life that made it
+      Bots[i].hop_commit_wp = -1;
+      Bots[i].hop_tight_r = 0.0f; // a committed crossing dies with the life that made it
       Bots[i].last_progress_room = -1;
       Bots[i].room_progress_timer = 0.0f;
       for (int v = 0; v < BOT_VISITED_ROOM_COUNT; v++)
