@@ -1111,6 +1111,14 @@ that works, made early. Blunder alone = ~10% out; the tight commit = 50% when it
 presses. A2b's via tier fires early (5 of its first 8 lives) and has not converted one. Bree's and Isengard's
 13.0-13.1 u doors (1.2 u a side) are the next read before any ruling on the band.
 
+**A2b Batteries pair, final (12 rounds each, guard PASS, 14:36).** Play UP on A2b: picks/caps 153/67 vs 112/49 on the
+control (Blue 86/38 vs 54/20, Red 67/29 vs 58/29), deaths 634 vs 501, frames flat (62 vs 71 ms worst), hard escalations
+18 vs 16. rm80 not helped: 22 lives, 2 out (6 s and 25 s, neither through the tier), 16 died inside; the via tier fired
+in 11 lives and converted none, and rm80's escalations went 54 -> 127 (hard 9 -> 10) — more pressing at the leaf, no
+exits. The hatch into the duct (rm38 p4 -> rm87) was crossed once. So at a 0.35 u-a-side margin the wall-sphere leg
+does not thread: A1's commit converted 3 of 6, A2b's via 0 of 11, the blunder 1-3 of 20. The play gain is unexplained
+by rm80; whether the duct legs (rm202/205, 20 tight vias) carried Blue's extra play is being read.
+
 *Options.* **A (recommended): physics is the floor, 6.7 stays the comfort hull.** Below the ship's wall sphere:
 NEVER, as today (327 sides unchanged). Between the wall sphere and 6.7: TIGHT — off the normal network, admitted
 only by the last-resort pass the DISAGREE retry already runs (penalty 120), only for a ship whose own sphere fits
