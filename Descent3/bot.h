@@ -604,6 +604,7 @@ struct bot_info {
   float hunt_route_time; // Gametime until which a hard pin drives pure reverse thrust (0.9.14)
   vector hop_commit_aim; // the push-through point issued (outcome telemetry)
   float hop_tight_r;     // a TIGHT committed hop this ship fits: the radius that found its crossing (0 = comfortable)
+  int hop_tight_room;    // the room that commitment was made in; leaving it ends the commitment
   // 0.9.14 outdoor pass, Phase 0 (PLAN.md 3.7): the entrance twin of the hop-commit observer. Set when an
   // outdoor bot commits THROUGH a terrain-facing door (the ENTRY stage); resolved in BotDoFrame when its
   // roomnum flips indoors (CROSSED) or the timeout passes still outside (NOT-CROSSED). Log-only.

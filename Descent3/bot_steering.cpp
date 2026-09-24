@@ -2965,8 +2965,8 @@ int BotOGraphDump(int region, vector *pos_out, uint64_t *edges_out, int *ent_cou
   return n;
 }
 
-BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_room, vector *via_out,
-                             bool *skeleton_out, BotRoomAimSource *source_out, BotViaDiag *diag_out) {
+static BotViaResult FindViaPointR(object *obj, const vector &target_pos, int target_room, float radius, vector *via_out,
+                                  bool *skeleton_out, BotRoomAimSource *source_out, BotViaDiag *diag_out) {
   BotPerfScope perf(BPERF_FIND_VIA);
   if (skeleton_out)
     *skeleton_out = false;
@@ -2995,13 +2995,6 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
     if (target_room < 0 || target_room > Highest_room_index || !Rooms[target_room].used ||
         (Rooms[target_room].flags & RF_EXTERNAL))
       return BOT_VIA_CLEAR;
-  }
-
-  float radius = obj->size;
-  { // a committed TIGHT hop this ship fits (Batteries rm80's leaf): the legs to it sweep at the radius that found it
-    const int bi = BotFindBySlot(obj->id);
-    if (bi >= 0 && Bots[bi].hop_tight_r > 0.0f)
-      radius = std::min(radius, Bots[bi].hop_tight_r);
   }
 
   fvi_info block{};
@@ -3148,6 +3141,31 @@ BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_r
       diag_out->stage = BOT_VIA_FAIL_PASS3; // last indoor tier also failed
   }
   return BOT_VIA_NONE;
+}
+
+// The via search at the hull the bot commits with. A committed TIGHT hop this ship fits (Batteries rm80's leaf)
+// sweeps at the radius that found it. And a leg toward ANOTHER room is a door approach: when the comfort hull finds
+// nothing, the wall sphere — what the engine actually stops — gets one try, and a leg it finds makes this a TIGHT
+// commitment in this room. In-room targets never get it: a powerup under a desk stays where the comfort hull says.
+BotViaResult BotFindViaPoint(object *obj, const vector &target_pos, int target_room, vector *via_out,
+                             bool *skeleton_out, BotRoomAimSource *source_out, BotViaDiag *diag_out) {
+  const int bi = BotFindBySlot(obj->id);
+  const float tight = (bi >= 0) ? Bots[bi].hop_tight_r : 0.0f;
+  const float radius = (tight > 0.0f) ? std::min(obj->size, tight) : obj->size;
+  BotViaResult r = FindViaPointR(obj, target_pos, target_room, radius, via_out, skeleton_out, source_out, diag_out);
+  if (r == BOT_VIA_NONE && tight <= 0.0f && bi >= 0 && target_room >= 0 && target_room != obj->roomnum) {
+    const float wall_r = BotHullPhys(obj);
+    if (wall_r < obj->size - 0.01f) {
+      r = FindViaPointR(obj, target_pos, target_room, wall_r, via_out, skeleton_out, source_out, diag_out);
+      if (r != BOT_VIA_NONE) {
+        Bots[bi].hop_tight_r = wall_r;
+        Bots[bi].hop_tight_room = obj->roomnum;
+        LOG_DEBUG.printf("BOT NAV: '%s' tight via in room %d toward room %d at %.1fu (comfort hull %.1f found nothing)",
+                         Bots[bi].callsign, (int)obj->roomnum, target_room, wall_r, obj->size);
+      }
+    }
+  }
+  return r;
 }
 
 // Phase 12 troll-powerup gate. Local and conservative on purpose: only the item's own room is
