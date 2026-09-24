@@ -1037,6 +1037,15 @@ supply this number; only the A arm itself can. rm80 unrouted: 3 of 32 lives out 
 arm ran the flat roster); a Phoenix, 12.83 u across, could not fit at all. (5) The reverted max_rad 5.0 experiment routed at 10.0 u — under the
 physics — so its pins say nothing about the 10.7-13.4 band.
 
+**Canyons re-read from a render (2026-09-24, `canyons.mn3` = HAVOC level 4 repacked single-level; bot-free dump
+`canyons-7a488f4f.json`).** Its 37 band sides are not cracks: rm0's eight portals to rm1 all lie in one plane (z 2191)
+and overlap — one 224 x 57 u open boundary cut into strip polygons; the "11.4 u" one is its top strip, with open
+portals above and below it. The extent gate closes the thin strips (class never) while the wide ones beside them are
+doors, so nothing is lost today; but a boundary tiled only by thin strips would be sealed by that gate — a latent
+defect of judging an opening by one polygon's extent. So the real exposure of a physical floor is Batteries' three
+floor hatches (each the sole opening into a 15 u duct), the two real 13.0-13.1 u doors (Bree, Isengard), and whatever
+interior geometry no census sees.
+
 *Options.* **A (recommended): physics is the floor, 6.7 stays the comfort hull.** Below the ship's wall sphere:
 NEVER, as today (327 sides unchanged). Between the wall sphere and 6.7: TIGHT — off the normal network, admitted
 only by the last-resort pass the DISAGREE retry already runs (penalty 120), only for a ship whose own sphere fits
