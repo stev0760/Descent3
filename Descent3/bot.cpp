@@ -3244,8 +3244,21 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
           if (BotHullPhys(obj) <= fit + 0.01f)
             tight_r = fit;
         }
-        const bool door_in_view =
-            BotSegmentClear(obj->roomnum, obj->pos, approach_pt, tight_r > 0.0f ? tight_r : obj->size);
+        bool door_in_view = BotSegmentClear(obj->roomnum, obj->pos, approach_pt, tight_r > 0.0f ? tight_r : obj->size);
+        // The approach is a hull test too. A door whose approach point hides behind a leaf (Batteries rm80: the
+        // pocket behind the propped leaf, 11.37 u past its tip) is reached at the wall sphere by a bent leg the
+        // comfort hull cannot make; if the via search finds that leg at the wall sphere, the hop is TIGHT at it.
+        if (!door_in_view && cross_ok && tight_r <= 0.0f) {
+          const float wall_r = BotHullPhys(obj);
+          Bots[bot_index].hop_tight_r = wall_r; // the via search sweeps at it
+          vector via_try{};
+          const BotViaResult vr = BotFindViaPoint(obj, approach_pt, (int)obj->roomnum, &via_try);
+          Bots[bot_index].hop_tight_r = 0.0f;
+          if (vr == BOT_VIA_CLEAR || vr == BOT_VIA_FOUND) {
+            tight_r = wall_r;
+            door_in_view = true;
+          }
+        }
         if (!door_in_view) {
           Bots[bot_index].hop_press_n = 0;
           static float Refuse_log_t[MAX_BOTS];

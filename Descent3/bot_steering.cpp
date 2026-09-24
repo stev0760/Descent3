@@ -1811,7 +1811,7 @@ static bool SkelBuildBase(int room_idx, SkelData &d) {
     d.node_pos[i] = rm.portals[i].path_pnt;
     // Park BETWEEN doors, never inside the classifier (it fills the crossing sampler's table — see the roadmap build).
     BotRoadmapSliceYield();
-    if (BotPortalClass(room_idx, i) != BOT_PORTAL_CLASS_NEVER)
+    if (BotPortalClass(room_idx, i) != BOT_PORTAL_CLASS_NEVER && !BotPortalCrossingTight(room_idx, i))
       live |= (1ull << i);
   }
   d.live = live;

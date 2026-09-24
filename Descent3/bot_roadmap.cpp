@@ -1786,6 +1786,11 @@ RoadmapRoom *Build(int room_idx) {
     const int pclass = BotPortalClass(room_idx, p);
     if (pclass == BOT_PORTAL_CLASS_NEVER)
       continue;
+    // A TIGHT door (its crossing found only under the comfort hull) is not part of the comfort network: its seed
+    // sits in contact with the frame and the growth from it dies (Batteries rm37: the 11.4 u floor hatch's seed
+    // cost the office its 114 cells). The via layer crosses tight doors, as a last resort, at the wall sphere.
+    if (BotPortalCrossingTight(room_idx, p))
+      continue;
     int idx = (int)rr->node.size();
     vector seed = rm.portals[p].path_pnt;
     if (pclass == BOT_PORTAL_CLASS_PANE) {
