@@ -1139,6 +1139,23 @@ but rose yesterday — per-run variance in one side's play, not a route shift. V
 sampling it with every release pair. (Q12's L/Qc are build arms, not `$nav` toggles; isolating them would take
 arms, which these numbers do not warrant.)
 
+**Canyons replication (second same-minute pair, 8 rounds, guard PASS, 16:43): 31 vs 13 captures (first pair 29 vs 14),
+grabs 71 vs 54, hard stucks 2 vs 1, deaths 1120 vs 948, only 2 tight-via legs — so the via tier is not the cause. THE
+MECHANISM: the middle passage rm2<->rm12 between the two canyons was ONE-WAY for routing on the current build.
+rm12 -> rm2 had two portals: p1 (45 x 57 u, class door) whose geocost probe is blocked (its polygon centre is in rock:
+`our_impassable`, DISAGREE, last-resort only) and p0 (an 11.4 x 46 u strip) sealed NEVER by the 12.33 u extent gate —
+zero rm12 -> rm2 crossings in every current-build log (both pairs, the baseline). A1's physics gate (10.72 u) admits the
+strip; its column clears the full 6.7 hull (the strip overlaps p1's opening), so it is a strict door: 40-47 rm12 -> rm2
+crossings a run, and rm2 -> rm12 gains p9 as a second strict door (38-54). Both teams now use the passage both ways;
+Blue's captures tripled (5 -> 17, 6 -> 20), Red's rose (9 -> 12, 7 -> 11). This is the extent gate's latent defect,
+found from a render this morning, cashing in on the flag route. **What this separates:** A1's geometry half — the
+physics floor for the extent gate, the sampler's rungs and TIGHT verdict, tight doors as last resort and out of the
+comfort network — earns its place (Canyons doubled; Batteries' hatches held as tight; rm37 kept its lattice). Its
+drive half — the wall-sphere via/commit legs (A1's commit tier, A2b's via tier) — has shown no benefit at rm80's
+0.35 u margin and pressed the leaf harder. The 1.2 u doors (Bree, Isengard) decide the drive half; the geometry half
+is the recommendation regardless. The overlapping-portal merge (operator: do anyway) would also fix rm12 p1's
+blocked probe at the root: the union opening's centre is clear.
+
 *Options.* **A (recommended): physics is the floor, 6.7 stays the comfort hull.** Below the ship's wall sphere:
 NEVER, as today (327 sides unchanged). Between the wall sphere and 6.7: TIGHT — off the normal network, admitted
 only by the last-resort pass the DISAGREE retry already runs (penalty 120), only for a ship whose own sphere fits
