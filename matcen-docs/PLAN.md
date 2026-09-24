@@ -1096,6 +1096,14 @@ opening to the crossing and the commit); on the ledger with these numbers, not t
 map is built that way and looks it; it probably plays fine now and bottlenecks are expected on a tight map — the
 overlapping-portal merge is an optimisation to do in any case, not a Canyons rescue.
 
+**A1 Batteries pair, final (12 rounds each, guard PASS, 2026-09-24 12:40).** Play flat: picks/caps 139/60 control vs
+131/60 A1, deaths 598 vs 590, frames flat. rm80 WORSE on A1: crossings out of the office 21 (28 spawns) on the control
+vs 6 crossed + 4 NOT-CROSSED (21 spawns) on A1; hard escalations in rm80 21 -> 43 (117 total vs 143). The control's
+bots leave by pressing the leaf and sliding through; A1's 7 tight-hop commits sent bots to thread the 11.37 u gap
+on purpose and they pressed harder. First evidence on the band question, and it points the wrong way for a
+0.35 u-a-side margin. Held for A2b (the via-layer tier, 5 rounds in: 20 tight vias, 6 in rm80, 1 crossing each arm)
+and for the 13.0-13.1 u doors on Bree and Isengard, where the margin is 1.2 u a side.
+
 *Options.* **A (recommended): physics is the floor, 6.7 stays the comfort hull.** Below the ship's wall sphere:
 NEVER, as today (327 sides unchanged). Between the wall sphere and 6.7: TIGHT — off the normal network, admitted
 only by the last-resort pass the DISAGREE retry already runs (penalty 120), only for a ship whose own sphere fits
