@@ -1116,8 +1116,9 @@ control (Blue 86/38 vs 54/20, Red 67/29 vs 58/29), deaths 634 vs 501, frames fla
 18 vs 16. rm80 not helped: 22 lives, 2 out (6 s and 25 s, neither through the tier), 16 died inside; the via tier fired
 in 11 lives and converted none, and rm80's escalations went 54 -> 127 (hard 9 -> 10) — more pressing at the leaf, no
 exits. The hatch into the duct (rm38 p4 -> rm87) was crossed once. So at a 0.35 u-a-side margin the wall-sphere leg
-does not thread: A1's commit converted 3 of 6, A2b's via 0 of 11, the blunder 1-3 of 20. The play gain is unexplained
-by rm80; whether the duct legs (rm202/205, 20 tight vias) carried Blue's extra play is being read.
+does not thread: A1's commit converted 3 of 6, A2b's via 0 of 11, the blunder 1-3 of 20. The play gain is not the tier's: the duct
+rooms' crossings FELL on A2b (rm270->271 4 vs 18, rm271->273 5 vs 14) and the 20 duct-room tight vias aimed at in-room
+points; Batteries' same-config samples swing 112-155 grabs / 49-72 caps, so 153/67 vs 112/49 is that swing.
 
 *Options.* **A (recommended): physics is the floor, 6.7 stays the comfort hull.** Below the ship's wall sphere:
 NEVER, as today (327 sides unchanged). Between the wall sphere and 6.7: TIGHT — off the normal network, admitted
