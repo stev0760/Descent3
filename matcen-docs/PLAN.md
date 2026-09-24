@@ -1120,6 +1120,15 @@ does not thread: A1's commit converted 3 of 6, A2b's via 0 of 11, the blunder 1-
 rooms' crossings FELL on A2b (rm270->271 4 vs 18, rm271->273 5 vs 14) and the 20 duct-room tight vias aimed at in-room
 points; Batteries' same-config samples swing 112-155 grabs / 49-72 caps, so 153/67 vs 112/49 is that swing.
 
+**Canyons pair, final (8 rounds each, guard PASS, 14:41): captures DOUBLED on A2b — 29 vs 14 (Blue 17 vs 5, Red 12 vs
+9), grabs 67 vs 71, deaths 1055 vs 1048, hard stucks 1 vs 5, frames flat.** The map's one tight doorway, rm7<->rm9 (12.8 u,
+~1 u a side for a Pyro), went 0 crossed / 5 failed on the control and 4 / 0 on A2b (6 tight vias, all there) — but rm9 is a
+dead-end pocket, not on the flag path (CTF goals: red rm8, blue rm15; the NOT-CROSSED hotspots rm1->rm8 p38 and
+rm14->rm15 p17 are the flag-room doors). So the doubling is not the tier's rm9 crossings; the candidates are A1's
+other Canyons changes — 16 boundary strips never -> door (seeds, door candidates) and two strip pairs (rm3<->5,
+rm13<->16) to last resort — read against the bot-free network diff below. One pair; a second Canyons pair (ports
+2288-2291, `g-canyons2-*`) launched 14:44 to replicate before any claim.
+
 *Options.* **A (recommended): physics is the floor, 6.7 stays the comfort hull.** Below the ship's wall sphere:
 NEVER, as today (327 sides unchanged). Between the wall sphere and 6.7: TIGHT — off the normal network, admitted
 only by the last-resort pass the DISAGREE retry already runs (penalty 120), only for a ship whose own sphere fits
