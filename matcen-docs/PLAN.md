@@ -1030,8 +1030,10 @@ rm37->86, rm38->91, rm38->87; two 11.9 u rm74<->76 pairs the engine already refu
 the 6.7 sweep fails, routed today as TIGHT doors) 22 sides** — Canyons 20 (12.3-13.4 by 19-197 u), Bree 1 (the
 tavern basement door rm5->rm6, 13.1), Isengard 1 (rm39<->rm36, 13.0), Batteries 1 (engine-impassable). rm80's own
 door is 41 x 80; its leaf is behind the plane, which no portal census sees, and interior gaps (under desks, the
-boxes) are uncensused. (4) Bots thread a 13.0 u door: Isengard rm36->rm39 yesterday 99 CROSSED / 20 NOT-CROSSED
-(1.2 u a side). rm80 unrouted: 3 of 32 lives out alive (the rest die in there; six windows) — all 32 Pyros (the E2
+boxes) are uncensused. (4) Evidence that bots thread a tight door: NONE yet — the Isengard rm36<->rm39 crossings first read as 99/20 at a
+13.0 u door went through the wide parallel doorway (rm36 p0, 21.5 x 40 u); the 13.0 u one (rm39 p2, its rm36 end is
+23.8 u) saw one crossing all day. The router avoids a tight door beside a wide one, so soaks on today's build cannot
+supply this number; only the A arm itself can. rm80 unrouted: 3 of 32 lives out alive (the rest die in there; six windows) — all 32 Pyros (the E2
 arm ran the flat roster); a Phoenix, 12.83 u across, could not fit at all. (5) The reverted max_rad 5.0 experiment routed at 10.0 u — under the
 physics — so its pins say nothing about the 10.7-13.4 band.
 
