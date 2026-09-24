@@ -3248,15 +3248,19 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
         // The approach is a hull test too. A door whose approach point hides behind a leaf (Batteries rm80: the
         // pocket behind the propped leaf, 11.37 u past its tip) is reached at the wall sphere by a bent leg the
         // comfort hull cannot make; if the via search finds that leg at the wall sphere, the hop is TIGHT at it.
+        // The comfort hull's bent search runs first: an approach it can make is not a tight hop, and the refusal
+        // rule below stands for it (160 commits a round went tight at ordinary doors when this tier skipped that).
         if (!door_in_view && cross_ok && tight_r <= 0.0f) {
-          const float wall_r = BotHullPhys(obj);
-          Bots[bot_index].hop_tight_r = wall_r; // the via search sweeps at it
           vector via_try{};
-          const BotViaResult vr = BotFindViaPoint(obj, approach_pt, (int)obj->roomnum, &via_try);
-          Bots[bot_index].hop_tight_r = 0.0f;
-          if (vr == BOT_VIA_CLEAR || vr == BOT_VIA_FOUND) {
-            tight_r = wall_r;
-            door_in_view = true;
+          if (BotFindViaPoint(obj, approach_pt, (int)obj->roomnum, &via_try) == BOT_VIA_NONE) {
+            const float wall_r = BotHullPhys(obj);
+            Bots[bot_index].hop_tight_r = wall_r; // the via search sweeps at it
+            const BotViaResult vr = BotFindViaPoint(obj, approach_pt, (int)obj->roomnum, &via_try);
+            Bots[bot_index].hop_tight_r = 0.0f;
+            if (vr == BOT_VIA_CLEAR || vr == BOT_VIA_FOUND) {
+              tight_r = wall_r;
+              door_in_view = true;
+            }
           }
         }
         if (!door_in_view) {
