@@ -1129,6 +1129,16 @@ other Canyons changes — 16 boundary strips never -> door (seeds, door candidat
 rm13<->16) to last resort — read against the bot-free network diff below. One pair; a second Canyons pair (ports
 2288-2291, `g-canyons2-*`) launched 14:44 to replicate before any claim.
 
+**KegD3 3v3, 0.9.15 vs the current build, 8 rounds same minute (guard PASS, 14:47; a proper pair after three 4-round
+samples read 73 -> 62 -> 45 caps).** Aggregate flat within the map's swing: grabs 357 vs 346, caps 136 vs 126 (-7%),
+deaths 1116 vs 1055, zero stucks on both, the shape identical (median flag episode 14-15 s, both flags out ~210 s a
+round, standoff grabs ~19 of 44, returns 140 vs 142, worst frame 279 vs 280 ms — a KegD3 slow-frame class on both
+builds). Per team it swings: Blue 49 -> 24 caps (conversion 30% -> 17%), Red 87 -> 102 (44% -> 50%); yesterday's
+4-round pair went the other way (Blue 17 -> 23, Red 56 -> 39), and Blue's carrier legs home (rm4->2->1) halved today
+but rose yesterday — per-run variance in one side's play, not a route shift. Verdict: KegD3 holds; nothing to fix, keep
+sampling it with every release pair. (Q12's L/Qc are build arms, not `$nav` toggles; isolating them would take
+arms, which these numbers do not warrant.)
+
 *Options.* **A (recommended): physics is the floor, 6.7 stays the comfort hull.** Below the ship's wall sphere:
 NEVER, as today (327 sides unchanged). Between the wall sphere and 6.7: TIGHT — off the normal network, admitted
 only by the last-resort pass the DISAGREE retry already runs (penalty 120), only for a ship whose own sphere fits
