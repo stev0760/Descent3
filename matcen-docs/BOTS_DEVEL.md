@@ -18,6 +18,60 @@ the flag-room arrival stall and the ~58% connectivity dead-ends. 0.9.14 was vali
 Isengard's interior pins gone, Animal House stuck-free) and released; the previous stable release was
 **0.9.13** (0.9.11 preceded it; 0.9.12 was never promoted).
 
+### 2026-09-24: the hull question — physics is the floor (arms A1/A2), Canyons doubles, KegD3 holds
+
+**The ruling asked for.** rm80 on Batteries (an office whose door is propped open into the room) had become the map's
+stuck room once the toy-box fix landed. Re-measured from a render: the leaf's tip leaves 11.37 u at every height. And
+the engine collides a player with walls at `PLAYER_SIZE_SCALAR` 0.8 of its size (`findintersection.cpp`): a Pyro's
+6.676 u size is a 5.34 u wall sphere, 10.68 u across, so the gap is flyable and our 13.4 u fit hull is 25% wider than
+what physics stops (`OBSTACLE_GEOMETRY.md` §4d; the pinned ships sit 5.1 u from the leaf — the 5.34 u sphere in
+contact). The operator's rule — never route through what a hull cannot fit — has always been the concern behind bunker
+slits; the census (`tools/portal_band_census.py`, the portal polygon's smaller extent, `PortalTooSmallForHull`'s own
+number) over the eight maps with a current dump put 327 sides below the physics (closed under any option) and 46 in
+the band between physics and the comfort hull, 37 of them on Canyons — which a render showed are overlapping strips
+tiling open boundaries, not cracks (`engine-gotchas`: a polygon's extent is not the opening's width). Two claims from
+the 22nd were withdrawn on the way: the E2 arm was all-Pyro (no Phoenix rm80 lives), and the "83% through a 13.0 u
+door" on Isengard was the wide doorway beside it.
+
+**A1 (`f1310a81` .. `f5c346dc`), the hull tiers.** The crossing sampler tries the comfort hull, a Phoenix's wall
+sphere (6.42) and the Pyro class's (5.36), records the radius that found the crossing (`crossing_fit_r` in the dump)
+and calls one found under the comfort hull TIGHT; the extent gate drops to the Pyro-class sphere's diameter (10.72 u);
+the router makes a TIGHT crossing impassable in the strict pass and a DISAGREE-priced last resort for a ship whose
+wall sphere fits; tight doors seed neither the lattice nor the skeleton (the first cut planted the 11.4 u floor-hatch
+seeds into rm37's comfort lattice and the office lost its 114 cells to a seed in contact with the frame — caught by
+the bot-free diff, which is why that diff comes before any soak); and a bot committed to a tight hop it fits sweeps
+its via legs and the door-in-view test at the found radius. **A2/A2b (`2d08da76`, `79d06af3`)**: the wall-sphere
+retry moved into the via search, for door-approach legs only (a target within 3 u of a door's crossing point, or in
+another room — never an in-room powerup), since rm80's bots fail there, two to five times a life, before any commit.
+
+**Read per life, not per crossing.** rm80 spawn-lives out: control 3 of 28, A1 3 of 21 (all via tight commits; 50%
+when it fires, fires in a third of lives), A2b 2 of 22 (11 tight-via lives, none converted, escalations 54 -> 127 with
+hard flat). Lives that die inside last a median 100-190 s — the office's six windows — so time is not the constraint;
+the attempt is, and at 0.35 u a side the wall-sphere leg does not thread. The control's exits are the blunder: the
+hop commit after four presses, then a slide around the leaf's tip. Per-life tables: `rm_lives.py`.
+
+**Canyons doubled, twice (29 vs 14, 31 vs 13; guard PASS; stucks flat).** Not the tier: the middle passage rm2<->rm12
+between the two canyons was ONE-WAY for routing — rm12 -> rm2's wide portal has its polygon centre in rock (probe
+blocked, last resort only) and the 11.4 u strip beside it was NEVER under the 12.33 u gate; zero rm12 -> rm2 crossings
+in every current-build log. A1's physics gate admits the strip, its column clears 6.7, and both teams use the passage
+both ways (40-47 crossings a run). The overlapping-portal merge (operator: an optimisation to do anyway) would fix the
+blocked probe at its root. Otherwise Canyons on the current build already captures (11 in 8 rounds) and does not pin
+(3 hard stucks in 8 rounds); its 23% NOT-CROSSED commits sit at strip doorways.
+
+**The other pairs.** KegD3 3v3, 0.9.15 vs current, 8 rounds same minute: flat (grabs 357 vs 346, caps 136 vs 126,
+zero stucks, the standoff shape identical); the earlier 73 -> 62 -> 45 was 4-round noise, and the per-team split
+flips between pairs. Bree: flat (57 vs 56 caps), deaths -12%, hard stucks 18 -> 13; its 13.1 u door is a spawn room's
+exit where 172 via failures became 140 found legs, no pins either way; the TIGHT demotion re-routed a through-shortcut
+onto two other doorways. Isengard: flat (27 vs 23), hard stucks 15 -> 9, the tier fired twice; its 800 ms
+level-start frame is on every build since the 22nd. Second samples of the 22nd's work held: bedlam grab re-issues 162
+(was 2,885), Batteries rm60 50 spawns / 0 escalations.
+
+**Standing at close.** Proposed: ship A's geometry half (gate, rungs, TIGHT last resort, tight doors out of the
+network); keep the drive half only with ~0.5 u of steering slack on the retry radius (excludes rm80, keeps the Bree
+class) — A3, pending the operator's flight of A2b this evening and his ruling. The blunder stays. Lab: `Descent3` =
+`7a488f4f`, `Descent3-A1`, `Descent3-A2` (A2b), `Descent3-v0915`; `missions/canyons.mn3` = HAVOC level 4 alone.
+Furniture class named from a render: bots wedge inside the bookcase's open shelves by rm80's north wall.
+
 ### 2026-09-22: Q12 ruled; the rm60 box under a trace; the skeleton rides the slicer (Q8); Q6; the flag touch (Q1)
 
 **Ruling and validation.** The operator kept L + Qc on the two Sigma Base samples. The lab `Descent3` became HEAD

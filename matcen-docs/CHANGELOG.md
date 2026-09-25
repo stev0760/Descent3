@@ -27,7 +27,17 @@ route network never grows, and the last first-use stall when the server prepares
   begin pinned 35% to 5% with the first fix, 4% to 1% with the second; hard pins 391 to 32 across both; scoring up
   (128/64 to 155/72 pickups/captures on the second gate). This was not new; it reads the same on every build back to
   0.9.13. No change on the bedlam maps, abend2 or the fellowship maps. One office (its door propped open into the room,
-  leaving a gap narrower than a ship) still holds bots at its door; that is a map fact, on the ledger.
+  leaving an 11 u gap a ship clears with a third of a unit to spare) still holds bots at its door: a pilot can squeeze it,
+  a bot cannot on purpose, and the three ways tried to make it do so read no better than blundering through.
+- **Openings are judged by what the ship physically fits, not by a wider planning hull — and Canyons doubles its
+  captures.** The game stops a player ship against walls at a sphere four fifths of its size; the bots' route planner
+  had been using the full size, so any opening between the two (a foot of a unit, on a 13-unit ship) counted as a wall.
+  Openings the ship physically fits but the planner finds cramped are now routes of last resort: used only when a room
+  has no roomier way out, never as a shortcut, and never by a ship whose own size does not fit them; they also stay out
+  of the room's ordinary route network, so a cramped hatch cannot starve a room of routes. On Canyons the passage
+  between the two canyons had been one-way for bots (its wide portal's probe hits rock, and the strip beside it fell
+  under the old rule): eight-round pairs against a same-minute control, twice — 29 captures to 14, then 31 to 13, with
+  stuck counts flat. KegD3 (8-round pair against 0.9.15), Bree, Isengard and Batteries read flat.
 - **Sigma Base: attackers get out of their own bunker and into the enemy's.** When a room opens into the next by several
   doors, the door a bot picks now accounts for where the route goes afterwards only when that onward stretch can
   actually be flown, and every part of the pilot heads for the same door. Two three-hour runs against controls: failed
