@@ -1168,6 +1168,16 @@ read. **Shape of the ruling forming:** ship the geometry half; keep the drive ha
 retry at the wall sphere plus ~0.5 u, which excludes rm80's 0.35 u gap (where it only pressed) and keeps Bree's and
 Isengard's doors.
 
+**Isengard pair (9 rounds each, guard PASS, 20:42) — the last arm.** Play flat within the map's swing: picks/caps 78/27
+vs 65/23, deaths 547 vs 538; hard escalations 15 -> 9 (rm36 32 -> 15 in all); the tier fired twice (rm45); the 13.0 u
+doorway rm36<->rm39 carried one to three hops on either arm (its wide neighbour carries the traffic). Worst frames 800+
+ms on BOTH arms = the map's level-start frame, present on every build since 61a4c443 (805/825/802 ms yesterday,
+2-4 frames over 250 ms a run, the first ~2 min after load) — a known class, not this arm's. **Day's verdict on A:**
+the geometry half is a clear win (Canyons doubled twice; Batteries' hatches and Bree's spawn door correctly TIGHT;
+rm37's lattice kept); the drive half is neutral at 1.2 u a side (Bree: failures become legs, no pins; Isengard: too
+little traffic to read) and negative at 0.35 u (rm80: pressing, no exits). Proposed A3: keep the drive half with
+~0.5 u of steering slack on the retry radius, which excludes rm80 and keeps the Bree class; ruling with the operator.
+
 *Options.* **A (recommended): physics is the floor, 6.7 stays the comfort hull.** Below the ship's wall sphere:
 NEVER, as today (327 sides unchanged). Between the wall sphere and 6.7: TIGHT — off the normal network, admitted
 only by the last-resort pass the DISAGREE retry already runs (penalty 120), only for a ship whose own sphere fits
