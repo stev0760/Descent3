@@ -1178,6 +1178,11 @@ rm37's lattice kept); the drive half is neutral at 1.2 u a side (Bree: failures 
 little traffic to read) and negative at 0.35 u (rm80: pressing, no exits). Proposed A3: keep the drive half with
 ~0.5 u of steering slack on the retry radius, which excludes rm80 and keeps the Bree class; ruling with the operator.
 
+**Flight of A2b (operator, evening of the 24th, continued the 26th).** Off script onto HAVOC: Canyons gameplay good; Slave
+Pit and Sewer Rat both felt good — Slave Pit tricky, but with good flying a capture cadence builds; bots mostly "stuck in
+combat" (engaged, not pinned), which reads as later fine-tuning of combat commitment, not navigation. Sigma Base,
+Batteries, bedlam and the fellowship maps still to fly.
+
 *Options.* **A (recommended): physics is the floor, 6.7 stays the comfort hull.** Below the ship's wall sphere:
 NEVER, as today (327 sides unchanged). Between the wall sphere and 6.7: TIGHT — off the normal network, admitted
 only by the last-resort pass the DISAGREE retry already runs (penalty 120), only for a ship whose own sphere fits
