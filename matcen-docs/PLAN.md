@@ -1191,7 +1191,27 @@ rm5/rm11 all on tmap 1374 faces, 50 defensive stations taken); the "capture cade
 Operator's verdict: happy with this build, Slave Pit parked; the gap he sees is §4.1. Same day, base-data soaks on
 the four unflown maps at HEAD `1c0db3bd` (A2b code): logs `soak-20260928T114105` (Batteries 12 rnd -> fellowship 9)
 and `soak-20260928T114108` (bedlam 4-team 9 rnd -> Sigma Base 3v3 4 x 45 min), same cfgs as the 09-24 / bl15
-baselines; read next session.
+baselines; read the same evening (below).
+
+**Base-data read, 2026-09-28 (all four guards PASS; controls = the last same-cfg runs).**
+- *Batteries, 12 rnd, all-Pyro:* 71 caps (5.5/rnd) vs 59 on the 09-24 control and 67 on the A2b arm; picks 162 vs 132/153;
+  conversion 40/48% (Blue/Red) vs 48/42% and 44/43%; hard stucks 13 vs 22/18 (the lowest of the three); rm80 still holds
+  101 of the 123 soft stucks; via failures 603 vs 734/658; carrier deaths 79 vs 65/76; frames flat (worst 100 ms). Flat
+  within the map's swing, hard stucks at their best. rm80 unchanged, as ruled.
+- *bedlam 4-team, 9 rnd:* 126 caps (Apparition 14.0, Plutonium 14.7, Polaris 15.5, QuadSomniac 4.5 per round), 1 soft
+  stuck in 2h15, 0 hard; frames worst 100 ms. The 4-team target-choice shape is §4.1 item 4.
+- *fellowship, one 9-level lap:* 24 caps vs 21 and 17 on the two 09-22 laps; stucks 34 (4 hard) vs 37 (2) and 48 (13);
+  Bree 6 caps vs 7/4, Moria 3 vs 1/3, Gollum's Pursuit 6 vs 3/2, Isengard 0 vs 1/0 with 17 soft stucks (2 hard) and the
+  known 905 ms level-start frame, Khazad-dum 0 every lap (structural). One watch item: Leap of Faith had ONE flag episode
+  (0 caps, 137 deaths) against 8 and 3 on the 09-22 laps — 5 objective arrivals vs 9/6, 2 grab touches vs 5/5, hops and
+  via failures flat; a single round, so a watch, not a regression.
+- *Sigma Base 3v3, 4 x 45 min:* 0 caps, 6 picks (Red 5 / Blue 1), 7 objective arrivals in 3 h (rm20 x5, rm17 x2) — the
+  same zero-scoring class as two of the three 09-22 samples (0 / 5 / 0 caps; 7 / 11 / 7 arrivals). Frames better (worst
+  414 ms vs 1,660 / 440 / 3,084 — Q8). Soft stucks 220 (3 hard), 201 of them in rm22 (the persistent moving-but-slow
+  room: 361 / 69 / 264 before). The hop-failure hotspot MOVED: rm27 -> rm28 not-crossed 107 (was 490 / 523 / 470) but
+  rm2 -> rm1 225 (was 89 / 185 / 33) and rm19 -> rm11 99; via failures 625, top room now rm37 (141) instead of rm26. Sigma
+  stays the open class (the changelog's "one team's hub"): the Q12 gain is not visible in this sample, and the map has
+  never scored in two of three HEAD samples — read it PER TEAM and per bunker before any claim.
 
 *Options.* **A (recommended): physics is the floor, 6.7 stays the comfort hull.** Below the ship's wall sphere:
 NEVER, as today (327 sides unchanged). Between the wall sphere and 6.7: TIGHT — off the normal network, admitted
