@@ -1315,6 +1315,20 @@ rows 4-5, cannot be soaked, first input is a flight log's `BOT BNODELEG` verdict
 experimental with the freezing caveat. **Open decision for the operator:** is "experimental" acceptable wording for the
 announcement, or does co-op join the pre-reveal list? If it joins, it is a 0.9.x line of its own and goes before §4.1.
 
+**Co-op log inventory, 2026-09-28 (operator: "it does work, but it doesn't feel good, bots get lost, it's odd — all
+fixable").** Every server log Pyrodeck writes lands in `builds/linux/build/Debug/` as `<profile>-<UTC>.log`; its live
+config has no co-op profile, and the newest log there is the 09-24 HAVOC flight, so the recent Pyrodeck co-op try and
+the 0.9.15 client-side flight left nothing. The newest co-op logs on disk are the 2026-08-06 session on 0.9.10-dev
+`0c9e4a6c`: `coop-2b2-2026-08-06T20-02-21.log` (55 min, d3.mn3 levels 1-2, Reaper + Phantom escorting the operator)
+and the 3-minute `boaprobe-21-47-14.log`; before those, the 07-19 to 08-05 diagnostics on 0.9.9/0.9.10. What the 08-06
+session recorded, as the baseline a fresh log is read against: `BNODELEG` accept-interior 4,273 / accept-outdoor 0 (the
+outdoor stack took no leg — campaign terrain sits in region 0, where we have no network); 92 stuck escalations, 31
+hard (net_disp < 10), in 55 minutes with two bots; 262 wall presses; 42 via-search failures; 444 "escort on station"
+issues. No co-op-specific code has changed since (the one-mind cut, the 0.9.15 outdoor pass, sliced builds, spawn
+egress and the hull tiers all touch the shared nav stack), so the current state is unmeasured. **Next input:** a
+Pyrodeck profile for `dedicated-co-op.cfg` (the profile name becomes the log's prefix), one campaign flight on the
+current build, then read `BOT BNODELEG` / stuck (hard) / `BOT PRESS` / `escort on station` against the numbers above.
+
 ### 4.1 Deferred past 0.9.16 — combat multitasking (operator, 2026-09-28)
 
 **The operator's reading of the A2b flight:** gameplay felt good; what is missing is not navigation but that bots
