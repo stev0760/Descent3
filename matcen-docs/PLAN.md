@@ -1183,6 +1183,16 @@ Pit and Sewer Rat both felt good — Slave Pit tricky, but with good flying a ca
 combat" (engaged, not pinned), which reads as later fine-tuning of combat commitment, not navigation. Sigma Base,
 Batteries, bedlam and the fellowship maps still to fly.
 
+**Read 2026-09-28.** The log is `builds/linux/build/Debug/testing-2026-09-24T21-50-40.log` (Pyrodeck writes it next
+to the binary; A2b, stamp `3d04c5ec-dirty`; 40 min, 5 hotshot bots + operator on Blue). Canyons: bots 9 picks / 3 caps,
+operator 7 / 4, one hard stuck. Sewer Rat: bots 4 / 3, operator 5 / 1, a 209 s both-flags-out standoff. Slave Pit: bots
+0 picks on both teams in 12 min — a reach failure (hub rm1 -> rm5 / rm11 hops not crossed 14 of 25, 52 via failures in
+rm5/rm11 all on tmap 1374 faces, 50 defensive stations taken); the "capture cadence" was the operator's own 7 / 3.
+Operator's verdict: happy with this build, Slave Pit parked; the gap he sees is §4.1. Same day, base-data soaks on
+the four unflown maps at HEAD `1c0db3bd` (A2b code): logs `soak-20260928T114105` (Batteries 12 rnd -> fellowship 9)
+and `soak-20260928T114108` (bedlam 4-team 9 rnd -> Sigma Base 3v3 4 x 45 min), same cfgs as the 09-24 / bl15
+baselines; read next session.
+
 *Options.* **A (recommended): physics is the floor, 6.7 stays the comfort hull.** Below the ship's wall sphere:
 NEVER, as today (327 sides unchanged). Between the wall sphere and 6.7: TIGHT — off the normal network, admitted
 only by the last-resort pass the DISAGREE retry already runs (penalty 120), only for a ship whose own sphere fits
@@ -1261,6 +1271,45 @@ that a human enjoys a full round (**§3**), packaging, quickstart, announcement.
 
 **Accepted for R1:** Plasma/EMD under-selected in weapon choice; Crossfire monsterball bunker
 outlier; QuadSomniac 4-team conversion always poor (crossfire chaos, not a regression).
+
+### 4.1 Deferred past 0.9.16 — combat multitasking (operator, 2026-09-28)
+
+**The operator's reading of the A2b flight:** gameplay felt good; what is missing is not navigation but that bots
+"don't know how to fancy fly and juke toward a goal". Three things a human does at once that a bot cannot: (1) fight
+off enemies *while still moving on the errand* — bots lock into combat instead; (2) dodge missiles and gunfire while
+going *for* the flag; (3) after the grab, leave by the back door, take the long way round, find clever ways to survive
+the return. Hard to explain to bots, but standard arena-bot practice: the movement goal and the aim target are
+separate things, and route choice reads a danger map. This is the "destination" of 4.0.1's flanking item, now
+described from the cockpit.
+
+**Why the code cannot do it today (`bot.cpp`, read 2026-09-28):**
+- The FSM is exclusive. COMBAT installs a circle-strafe goal (`BotSetCombatGoal`, `AIG_MOVE_RELATIVE_OBJ`) that
+  *replaces* the errand's movement goal; the errand resumes only when combat exits (range, 5 s without LOS, low
+  shields, the idle timer). Carriers alone get an idle-combat timeout and an instant exit in the home room.
+- Facing is one-or-the-other. Indoors `BotUpdateAimDirection` faces the target when it has LOS, otherwise
+  `movement_dir`, and the afterburner facing gate then suppresses AB when facing diverges from the path. There is no
+  "face the threat, slide along the path" mode — though `BotApplyThrust` already decomposes `movement_dir` into local
+  axes, so the mechanics of sliding while facing elsewhere exist.
+- Juke is a sinusoid in COMBAT and FLEE only; the engine's `AIF_DODGE` (dodge_percent by difficulty) handles
+  projectiles in every state.
+- The router's edge cost has no danger term — no enemy sightings, kills, or spawn rooms in it; a return route is
+  geometry cost only. The `BOT_TROUTE_ADOPT_FACTOR` 0.85 tax (4.0.1) is the placeholder for this.
+
+**The programme, in this order — all of it deferred until 0.9.16 ships and the reveal is out:**
+1. **Threat cost in the router** (cheapest, measurable). Per-team room heat from recent enemy sightings, kills and
+   the room a flag was just taken from, decaying over tens of seconds; carriers and attackers add it to edge cost,
+   with a cap on the detour ratio so a cold long route beats a hot short one but never an absurd one; attackers
+   prefer one door in and carriers another out. Measured by `flag_conversion.py --timeline`: carrier deaths,
+   return conversion, both-flags-out time. Retires the 0.85 tax.
+2. **Contested-errand mode** (the big lever). A bot with a live objective — attacker or carrier — keeps it as the
+   movement goal and treats the enemy as an aim target only: fire on the move, slide toward the goal while facing
+   the threat. Replaces the COMBAT swap for bots on an errand; roaming bots keep the circle-strafe. Needs a soak
+   matrix (bedlam + fellowship + the HAVOC trio) because deaths and conversion can go either way.
+3. **Travelling juke**: the COMBAT/FLEE sinusoid and reactive dodges applied inside contested-errand, amplitude by
+   difficulty. Rides on 2.
+
+Not before: the four unflown maps' flights, the A3 ruling, and 0.9.16 stripped of `-dev`. Never answered by
+taxing navigation (rule in 4.0.1).
 
 ---
 
