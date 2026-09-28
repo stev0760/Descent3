@@ -1262,7 +1262,8 @@ when he opens it: the `BOT BNODELEG` verdict counts from a flight log.
    community to have played it.
 
 **Exit criteria:** Entropy and Monsterball playable against bots (**done**), navigation good enough
-that a human enjoys a full round (**§3**), packaging, quickstart, announcement.
+that a human enjoys a full round (**§3**), **the committee collapse landed — rows 4 and 5 of 4.0.2, read flat
+(operator ruling 2026-09-28, §4.0.3)**, packaging, quickstart, announcement. Co-op: decision pending (§4.0.3).
 
 - Windows + Linux builds; macOS deferred to community contributors (no test device)
 - D3 Pyrodeck companion admin tool alongside, if built
@@ -1271,6 +1272,48 @@ that a human enjoys a full round (**§3**), packaging, quickstart, announcement.
 
 **Accepted for R1:** Plasma/EMD under-selected in weapon choice; Crossfire monsterball bunker
 outlier; QuadSomniac 4-team conversion always poor (crossfire chaos, not a regression).
+
+### 4.0.3 The collapse ledger and the reveal scope (operator ruling, 2026-09-28)
+
+**Where the 4.0.2 order stands, row by row (read 2026-09-28 against the log, the changelog and the census):**
+
+| row | what | status |
+|---|---|---|
+| 0 | open the line; no-behaviour cleanup | done (`ea291c29`) |
+| 1 (Q12) | the router's door is the via layers' door — one mind at the door | **landed**, ruled 2026-09-22 on two Sigma Base samples; changelog bullet |
+| 3 (Q8) | the skeleton builds in slices ahead of time; no first-use freeze | **landed** (`455aacbe`), perf goal met, play flat-to-better; changelog bullet |
+| 3b | the hull tiers — physical-fit clearance, TIGHT as last resort | **in test** (A2b `79d06af3`, flown 09-24/26 and liked); geometry half a clear win (Canyons doubled twice), drive half neutral at 1.2 u a side and negative at rm80; A3 ruling pending |
+| 2 | the powerup chase asks the routed goal | **re-scoped away** 2026-09-21: the Batteries pins were never the chase; E2 (spawn-contact egress) landed in its place |
+| 4 | one in-room planner: union graph, cached plan, re-plan on invalidation | **not built**; pre-checks done (Facing Worlds' storms are not the skeleton; DownTown rm37 measured) |
+| 5 | seam and hop-commit become the commitment rule; stuck escape an invalidation signal | **not built**; depends on 4 |
+
+Alongside: F1/Q1 (the four flag-touch goals run until contact) landed; the analyzer's kills column (Q6) landed.
+
+**What the census says now.** Rows 4 and 5 are the collapse itself. `BotSetRoutedGoal`'s ladder still stands and its
+branches still consult different graphs in the in-room case. The committee census on the 2026-09-28 bedlam run reads
+as it did on 2026-09-13: the via branch holds ~99% of wheel time, 61-70% of handovers land inside the contention window
+(63/67/70/61% on Apparition/Plutonium/Polaris/QuadSomniac), and the 09-24 HAVOC flight reads the same (via 99% held,
+40-43% contention). Per the 2026-09-08 ruling those figures cannot rank branches of a ladder and are not a defect
+signal; they say the code is not yet one planner — while play is good with the ladder in place (bedlam 126 captures
+in 9 rounds, 1 stuck; Canyons and Sewer Rat scoring in the cockpit).
+
+**Operator ruling, 2026-09-28: the collapse stays in the reveal's scope.** The implementer's recommendation was to ship
+0.9.16 on rows 0-3b and move rows 4-5 into a later consolidation series as a code-quality refactor. The operator
+declined that: the committee collapse is important to him *for the reveal* and must not drop out of sight. So rows 4
+and 5 are pre-reveal work, framed as consolidation: each lands with a **must-read-flat** gate (bedlam + fellowship +
+Sigma Base + the HAVOC trio against same-minute controls; captures, hard stucks and the flag timeline may not move
+outside each map's swing), and the code-cleanup item in 4.0.1 (the 3-site duplicated dispatch in `BotSetRoutedGoal` /
+`BotDoExploreRoaming`, the stale toggle tags, skeleton+roadmap as one network outside the in-room case) rides with
+them. Whether they ship inside 0.9.16 or as 0.9.17 is a version-numbering question, not a scope one; the reveal waits
+for them either way. The exit criteria below now say so.
+
+**Co-op, same day.** Known-broken and not started, not merely untested: the last flight (0.9.15) read "slightly
+better, bots get stuck outside"; the mechanism is on record above (the engine took none of 42 outdoor legs in the
+2026-08-04 run; campaign terrain the engine gives no region has no network of ours). Fix class: an extension of the
+outdoor stack — a lattice for region-less terrain plus escort legs through the one outdoor dispatch — independent of
+rows 4-5, cannot be soaked, first input is a flight log's `BOT BNODELEG` verdict counts. The README already labels co-op
+experimental with the freezing caveat. **Open decision for the operator:** is "experimental" acceptable wording for the
+announcement, or does co-op join the pre-reveal list? If it joins, it is a 0.9.x line of its own and goes before §4.1.
 
 ### 4.1 Deferred past 0.9.16 — combat multitasking (operator, 2026-09-28)
 
@@ -1307,6 +1350,15 @@ described from the cockpit.
    matrix (bedlam + fellowship + the HAVOC trio) because deaths and conversion can go either way.
 3. **Travelling juke**: the COMBAT/FLEE sinusoid and reactive dodges applied inside contested-errand, amplitude by
    difficulty. Rides on 2.
+4. **Four-team target choice** (found 2026-09-28 in the bedlam base run, operator: defer). The CTF attack objective
+   takes the enemy flag with the lowest route cost (`BotGetObjectiveRoom_CTF`, the `cost < best_cost` loop), so in
+   4-team play the most expensive flag on a map is barely attacked and its owner never defends: Apparition's Green flag
+   left home 3 times in 45 min (route cost 824, the map's highest) and Green scored 17; Plutonium's Yellow flag 5 times
+   (cost 1131) and Yellow scored 18 at 82% conversion; on Polaris Green's flag is the cheapest (409), left home 22 times,
+   and Green carriers were the weakest (6 scored / 8 returned). Stable across builds (the 09-24 run shows the same
+   Plutonium and Polaris shape), so map-structural. The pedestal flags themselves grab fine when reached. Fix class:
+   spread attackers across flags with a cost tie-break, or weight toward the leading team or the least-defended flag.
+   Mode layer, 4-team only, fine-tuning.
 
 Not before: the four unflown maps' flights, the A3 ruling, and 0.9.16 stripped of `-dev`. Never answered by
 taxing navigation (rule in 4.0.1).
