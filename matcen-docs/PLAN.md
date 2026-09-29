@@ -1213,6 +1213,45 @@ baselines; read the same evening (below).
   stays the open class (the changelog's "one team's hub"): the Q12 gain is not visible in this sample, and the map has
   never scored in two of three HEAD samples — read it PER TEAM and per bunker before any claim.
 
+**Sigma Base, read from the operator's flight the same evening (`testing-2026-09-29T00-16-31.log`, 8 min, 5 bots,
+build `1c0db3bd`) + a bot-free render — THE MECHANISM.** He saw bots "oscillating indoors on both teams", then one Red
+bot reach the Blue flag. The log agrees and explains it. Both bases are mirror images and both fail the same way:
+- *Red:* the attack errand has no interior route to rm20 (correct — the bases connect only over terrain), so the
+  terrain plan is "exit rm1 -> region 3 lattice -> entry rm36". Reaper crossed rm2 -> rm1 eleven times in eight minutes
+  and never left rm1 the right way: `roadmap route in room 1` -> `roadmap via in room 1` -> one second later
+  `via-point reached (room 2)`, then `chain built rm2 (target room 1)` again; 8 of its rm2 -> rm1 commits ended
+  "now rm3" at (2160,57,969), the dead-end closet. Ninja's plan used the other exit, rm9: it crossed rm19 -> rm9 four
+  times and each time the composed route in rm9 took it straight back to rm19. *Blue:* Phantom's plan "exit rm28"
+  crossed rm27 -> rm28 fifteen times, same shape. The via branch and the terrain branch traded the wheel 126 times
+  (93% of handovers inside the contention window; the map's committee thrash is this loop, not the ladder).
+- *The exception proves it:* Viper, spawned at rm19's OTHER start (2225,-110,1250), went rm19 -> rm9 -> door rm8 ->
+  terrain -> rm35 (entrance crossed in 0.4 s) -> `troute complete` -> rm22 -> rm20 and took the flag 74 s after
+  spawning. The terrain leg and the entrance work. Only the EXIT rooms fail.
+- *Why (rendered, `sigma-rm1.json`, and the same in rm28):* rm1 is not a corridor. It is a 90 x 85 u ground chamber
+  (y 40-70, portals to rm2 and rm19 at floor level), a 20 x 20 u vertical shaft up its centre through two hatch
+  frames, and a 40 u top box (y 120-155) whose south wall holds the door to the terrain cap rm0 at (2185,140,1085).
+  Its roadmap lattice has 142 nodes, 138 "accepted cells": a full 5 x 5 grid at EVERY height — 25 nodes at y 157.5,
+  above the room's ceiling; 25 per level through the shaft heights, of which at most two can be inside the 20 u
+  shaft; and one at (2157,55,969), outside the bbox and inside rm3. Roughly 95 of 142 nodes are in rock or in
+  neighbouring rooms, in one connected component, so the Theta* route from the floor to the exit door goes THROUGH
+  the rock beside the shaft; the bot flies at a node in the wall (five `BOT PRESS rm1 ... steer rm1 d=43`), the
+  engine's wall avoidance shoves it back down the chamber, the errand re-issues from rm2, and the rm3 node draws it
+  into the closet. rm28 is the mirror. Unchanged since the 09-18 dump (`compare_navdumps`: identical node counts).
+- *Root cause in the builder (`bot_roadmap.cpp`, `GrowFromSeeds` / `CellInRoom`):* an indoor cell is accepted when a
+  6.7 u hull sweep from an already-accepted node reaches it (`RoadmapLOS` -> `BotSegmentClear(probe_room, ...)`, no
+  FQ_BACKFACE) and by NOTHING else — there is no point-in-room test. A cell 5 u from a wall (pitch 20 on a 90 u
+  chamber puts cells at 2145 against the wall at 2140) starts its sweep with the sphere already through the face, the
+  face is behind the start and not a hit, the cell beyond the wall is accepted, and from a cell in rock every further
+  sweep is clear because rock has no faces (one-sided geometry). The outdoor branch has exactly this class of test
+  (the underground rule of 2026-09-19); the indoor branch never got one. **Fix class: reject an indoor candidate cell
+  unless `fvi_QuickRoomCheck(&cell, &Rooms[probe_room])` says it is inside the room** (the engine's own parity test,
+  `room.cpp` `FindPointRoom` uses it). General, level-agnostic, one gate: the bot-free dump diff must DROP nodes in
+  tower/shaft/L-shaped rooms and lose none in convex ones; then a Sigma pair (exits rm1/rm9/rm28/rm35, the flag
+  timeline) and the bedlam + fellowship must-read-flat set. Not built — the operator's call.
+- *Also on record, separate:* both hubs are "not routable" — rm19 lattice 4 components joining 40% of its 17 door
+  pairs, rm37 2 components / 57% — the standing "one team's hub" item; rock nodes may be bridging or splitting them,
+  so re-read after the fix, not before.
+
 *Options.* **A (recommended): physics is the floor, 6.7 stays the comfort hull.** Below the ship's wall sphere:
 NEVER, as today (327 sides unchanged). Between the wall sphere and 6.7: TIGHT — off the normal network, admitted
 only by the last-resort pass the DISAGREE retry already runs (penalty 120), only for a ship whose own sphere fits
