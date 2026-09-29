@@ -1028,6 +1028,7 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
   // terrain level (y 238..309). Isengard's region lattice was unchanged (its buildings stand on the ground).
   int od_reject_blocked = 0, od_reject_interior = 0, od_reject_underground = 0, od_ok_terrain = 0, od_ok_shell = 0,
       od_ok_none = 0;
+  int in_reject_void = 0; // indoor cells inside no room at all (rock / sky), 2026-09-28
   // Two-way outdoors (2026-09-15, $nav probe): the exterior shell's faces are FRONT faces from outside and
   // nothing at all from inside (Isengard rm2 face 38 blocks (2007,294,2192) -> (2037,294,2222) at 4 u; the reverse
   // leg is CLEAR at every radius, with or without FQ_BACKFACE), so an edge probed from the node INSIDE the tower
@@ -1058,6 +1059,33 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     if (InInteriorBox(a) || InInteriorBox(b))
       return BotSegmentClearOutdoor(b, a, BOT_ROADMAP_CLEARANCE);
     return true;
+  };
+  auto InThisOrNeighbourRoom = [&](const vector &cell) -> bool {
+    if (rr->outdoor || rr->probe_room < 0 || rr->probe_room > Highest_room_index)
+      return true;
+    vector pt = cell;
+    room *r = &Rooms[rr->probe_room];
+    if (fvi_QuickRoomCheck(&pt, r))
+      return true;
+    for (int i = 0; i < r->num_portals; i++) {
+      const int cr = r->portals[i].croom;
+      if (cr < 0 || cr > Highest_room_index || !Rooms[cr].used || (Rooms[cr].flags & RF_EXTERNAL))
+        continue;
+      if (fvi_QuickRoomCheck(&pt, &Rooms[cr]))
+        return true;
+      if (Rooms[cr].flags & RF_DOOR) { // a door room is a sliver: the cells that matter sit in the room beyond it
+        for (int j = 0; j < Rooms[cr].num_portals; j++) {
+          const int cr2 = Rooms[cr].portals[j].croom;
+          if (cr2 < 0 || cr2 > Highest_room_index || cr2 == rr->probe_room || !Rooms[cr2].used ||
+              (Rooms[cr2].flags & RF_EXTERNAL))
+            continue;
+          if (fvi_QuickRoomCheck(&pt, &Rooms[cr2]))
+            return true;
+        }
+      }
+    }
+    in_reject_void++;
+    return false;
   };
   auto CellInRoom = [&](const vector &from, const vector &cell) {
     if (rr->outdoor) {
@@ -1105,7 +1133,17 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     // (no edges through one-sided walls) keeps those grids from bridging rooms through solid. A door-transition
     // zone (cells within 48 u of the door, admitted as leaves) was tried and restores too little (Bree +24 cells).
     // The principled replacement — one route across the boundary — is Phase 3.
-    return RoadmapLOS(rr, from, cell);
+    if (!RoadmapLOS(rr, from, cell))
+      return false;
+    // 2026-09-28 (Sigma Base rm1 / rm28, the exit-room loop): the sweep alone also admits cells in ROCK. A cell hugging
+    // a wall (pitch 20 on a 90 u chamber puts the grid 5 u from the shell) sweeps on with the hull already through the
+    // face, and from a cell outside the room every further sweep is clear because rock has no faces — rm1's lattice
+    // was a full 5x5 grid at every height, 25 nodes above its ceiling, ~95 of 142 outside the room, one component, so
+    // Theta* routed the exit leg THROUGH the shaft wall. This is not the 2026-09-15 in-room rule (which also threw
+    // away the foreign cells grown through doors and cost Bree its captures): a cell stays if it lies inside THIS
+    // room, a room adjacent through one of its portals, or the room beyond an adjacent door room. Only cells inside
+    // no room at all — the void grid — are rejected.
+    return InThisOrNeighbourRoom(cell);
   };
   auto ResetToSeeds = [&]() {
     rr->node.resize(n_seed);
@@ -1193,6 +1231,9 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     return rr->lattice_cells;
   };
   auto LogOutdoorAdmission = [&]() {
+    if (!rr->outdoor && in_reject_void > 0)
+      LOG_DEBUG.printf("[Roadmap] room %d lattice: %d void cells rejected (inside no room), nodes %d", rr->probe_room,
+                       in_reject_void, (int)rr->node.size());
     if (rr->outdoor)
       LOG_INFO.printf(
           "[Roadmap] outdoor region lattice admission: terrain %d, shell %d, none %d | rejected blocked %d, "
