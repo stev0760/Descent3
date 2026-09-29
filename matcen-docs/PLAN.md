@@ -1477,6 +1477,20 @@ interior cell; rock never sees the inside of a wall); adjacent EXTERNAL rooms ac
 Sigma, Bree, bedlam, abend2, KegD3, Batteries on b7153178 against ctl and 22fb70b0 — rm1 must stay ~40 nodes, rm58 must
 return to ~370, the ring rooms to their control counts.
 
+**Gate reads on the refinements (07:00-07:15).** b7153178 (six rays): Sigma rm1 39 / rm2 105 (fix holds); Bree rm58 only
+122 of 372 — the missing cells are in the STREET, which on Bree is terrain under an invisible heightfield, not a room:
+"inside no room" is not "in rock" there. `0fd83da4` adds the outdoor-space case (a cell inside no room is kept over the
+ground under a visible segment, anywhere under an invisible one, under the ceiling): Bree identical to control in every
+room; Sigma rm1 86 nodes — the shaft column stays a single line at x 2185 with the rock beside it and the rm3 node gone,
+the 47 extra cells lie in the cap room rm0's box and the air above it, i.e. the space beyond the exit door; abend2 ring
+rooms 213 -> 149 and Apparition rm4 398 -> 172 stay reduced, and offline six-axis rays from the rejected Apparition
+cells see only back faces or nothing (under the floor, beside the walls, past the ends) — genuine void; whether the
+door-threshold air cells at floor level matter for play is what the pairs decide. **Day soak launched 07:13 on
+0fd83da4 vs 1c0db3bd (d29-20260929/):** A bree-fix2 -> abend2-fix2 -> sigmabase-fix2 -> kegd3-fix2 (~14:15);
+B bree-ctl2 -> abend2-ctl2 -> bedlam4t-ctl2 -> kegd3-ctl2 (~13:30); C bedlam4t-fix2 -> batteries-fix2 ->
+fellowship-fix2 (~14:45). The build path is 0fd83da4 for the operator's evening flight. Pass = Bree and bedlam pairs
+flat, abend2 pair flat or better, Sigma holds its gain, Batteries and fellowship flat; then strip `-dev`.
+
 ### 4.1 Deferred past 0.9.16 — combat multitasking (operator, 2026-09-28)
 
 **The operator's reading of the A2b flight:** gameplay felt good; what is missing is not navigation but that bots

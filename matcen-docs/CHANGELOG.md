@@ -57,7 +57,13 @@ route network never grows, and the last first-use stall when the server prepares
   indoor oscillation on both teams that the operator saw, and the reason attackers rarely left their bunker. A grid
   point is now kept only if it lies inside its own room or a room next door through a doorway. The exit tower's grid
   went from 142 points to 38, all of them in the chamber, the shaft and the top box; the base hubs lost only points
-  that were never in the room. In test overnight against a same-minute control; not yet flown.
+  that were never in the room. The first cut of the rule asked the engine's own "which room am I in" test, which
+  looks along one axis and calls a point outside when its ray leaves through a doorway: Town of Bree lost most of
+  one building's grid and half its captures overnight, and the bedlam structures lost a third. The rule now looks
+  along all six axes, and a point that lies in no room is still kept when it sits in open air over the terrain —
+  Bree's streets are terrain, and a building's grid growing out of its door into the street is the route through
+  that door. Sigma Base's captures went from 3 to 12 in the same three hours on the first cut; the corrected cut is
+  in test during the day of 2026-09-29 against same-minute controls; flown once by the operator ("felt WAY better").
 - **A bot outside no longer rams a window to reach a powerup it can see inside.** Sigma Base's flag rooms have
   bulletproof windows onto the terrain; a bot outdoors could see the items in the antechamber through them, chased
   each one into the glass, timed out, and tried the next — and every timeout counted as a "this item is unreachable"
