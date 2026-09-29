@@ -1517,6 +1517,23 @@ Moria -> HAVOC -> Nysa; done ~03:30. Build path and lab = dd9876e6 for the opera
 the first guard's level (caps ~12, stucks ~18 in 3 h), Bree/bedlam/Batteries/fellowship flat or better, KegD3 read
 per round against its pair; then strip `-dev`.
 
+**abend2 IS a regression, and it is not the guard (18:30, operator's concern confirmed).** Same roster every run
+(`soak-bots-3v3.cfg`: six hotshot bots, Pyro/Phoenix/Magnum a side), same 15-minute rounds. On 09-21 builds
+(7b67fe1b, b9b3b2e3, 14555253, f27d247d) and 0.9.15 this cfg scored 9-26 captures per 12 rounds with 14-30 hard stucks;
+every build from 1c0db3bd on scores 0 (ctl 0 / 6 rnd, 415 hard; 22fb70b0 3 / 6, 432 hard; 0fd83da4 0, 427; dd9876e6
+0 / 4, 322). The window is the 09-22 to 09-24 nav commits (E1/E2 spawn egress, Q8, Q1 flag touch, the A1/A2b hull
+tiers). *Where the bots are:* rm20 (Blue, 234 stuck events, 40 hard) and rm4 (Red, 130) — rooms whose only way to the
+ring (rm20 p2 -> rm0, rm4 p0 -> rm30) the current dump classes `tight`, `crossing_fit_r 0.0`, `our_impassable`; the via
+search in those rooms fails 1,200 times an arm against face 17 with target room 37 / 38 (the flag pits beyond the
+ring), and `hop commit REFUSED` shows bots trapped there; the 09-21 run had no via failures in rm4 / rm20 at all. The
+pit hatches themselves (rm0 -> rm38, rm30 -> rm37, 10.7 u) read `crossing_ok` now and fire as tight hops 387 / 885
+times — that part of A1 works. **Suspect: the A1 rule "tight doors leave the comfort network" applied to rm20's and
+rm4's doors, whose crossing sampler now finds NO fit (0.0) — like Bree's rm6 spawn door, which A2b's wall-sphere
+retry rescued, but here the retry never finds a leg.** Next (tomorrow, render first): `$nav roomfaces 20` + `$nav
+sweep` from a pinned position in rm20 to portal 2; measure the gap against the 10.68 u physics floor; if it is
+flyable the sampler is the defect, if not the door was never ours and the 09-21 route went another way (check rm20's
+other portals p0 -> rm21, p1 -> rm5). 0.9.16 does not ship with abend2 at zero.
+
 ### 4.1 Deferred past 0.9.16 — combat multitasking (operator, 2026-09-28)
 
 **The operator's reading of the A2b flight:** gameplay felt good; what is missing is not navigation but that bots
