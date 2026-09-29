@@ -62,8 +62,10 @@ route network never grows, and the last first-use stall when the server prepares
   one building's grid and half its captures overnight, and the bedlam structures lost a third. The rule now looks
   along all six axes, and a point that lies in no room is still kept when it sits in open air over the terrain —
   Bree's streets are terrain, and a building's grid growing out of its door into the street is the route through
-  that door. Sigma Base's captures went from 3 to 12 in the same three hours on the first cut; the corrected cut is
-  in test during the day of 2026-09-29 against same-minute controls; flown once by the operator ("felt WAY better").
+  that door. Sigma Base's captures went from 3 to 12 in the same three hours on the first cut; the daytime pairs on
+  the corrected cut read Bree 34 to 28 and the bedlam set 114 to 97 in its favour, abend2 unchanged, Batteries and the
+  fellowship lap flat; the final cut keeps every grid point either test calls interior and is in an overnight
+  regression on 2026-09-29. Flown once by the operator on the first cut ("felt WAY better").
 - **A bot outside no longer rams a window to reach a powerup it can see inside.** Sigma Base's flag rooms have
   bulletproof windows onto the terrain; a bot outdoors could see the items in the antechamber through them, chased
   each one into the glass, timed out, and tried the next — and every timeout counted as a "this item is unreachable"

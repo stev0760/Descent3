@@ -1506,6 +1506,17 @@ which had NO stucks on the first guard; rm22's lattice is 465 (ctl) -> 109 (22fb
 **Verdict so far:** 0fd83da4 is a net improvement over control on every pair and no map regressed; it is not yet the
 first guard's Sigma result. Not stable-ready until rm22 is understood; the operator flies 0fd83da4 this evening.
 
+**rm22 resolved, v4 = `dd9876e6` (18:05).** Offline six-axis rays from rm22's 397 rejected cells: 290 back-only, 104 no
+hit, 3 front — the six-ray rule is right about them; but 22fb70b0 had kept 41 cells there whose only front face lies on
+the engine test's DIAGONAL retry, and rm22 had no stucks with them. v4's room test is the union: `fvi_QuickRoomCheck`
+OR any of six axis rays. Bot-free: Sigma rm22 68 -> 109 (= 22fb70b0), rm1 86 with the shaft column a single line;
+Bree identical to control in every room (1,192 nodes); KegD3 rm18 stays 190 (both tests reject the same 84 cells).
+**Overnight regression launched 18:15 on dd9876e6 vs 1c0db3bd (d29n-20260929/, last night's roster):** A sigma-fix ->
+bree-fix -> batteries-fix; B sigma-ctl -> bree-ctl -> bedlam4t-fix -> fellowship-fix; C abend2 -> KegD3 -> Isengard ->
+Moria -> HAVOC -> Nysa; done ~03:30. Build path and lab = dd9876e6 for the operator's evening flight. Pass = Sigma at
+the first guard's level (caps ~12, stucks ~18 in 3 h), Bree/bedlam/Batteries/fellowship flat or better, KegD3 read
+per round against its pair; then strip `-dev`.
+
 ### 4.1 Deferred past 0.9.16 — combat multitasking (operator, 2026-09-28)
 
 **The operator's reading of the A2b flight:** gameplay felt good; what is missing is not navigation but that bots
