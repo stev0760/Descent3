@@ -1491,6 +1491,21 @@ B bree-ctl2 -> abend2-ctl2 -> bedlam4t-ctl2 -> kegd3-ctl2 (~13:30); C bedlam4t-f
 fellowship-fix2 (~14:45). The build path is 0fd83da4 for the operator's evening flight. Pass = Bree and bedlam pairs
 flat, abend2 pair flat or better, Sigma holds its gain, Batteries and fellowship flat; then strip `-dev`.
 
+**Day soak read, 2026-09-29 18:00 (0fd83da4 vs 1c0db3bd, same-minute pairs; 11 soaks, every guard PASS).** Bree pair
+34 vs 28 caps (Blue 27 vs 21), stucks 32 (11 hard) vs 56 (13), outdoor stucks 14 vs 48 — the regression is gone and the
+map reads better. bedlam 4-team 114 vs 97 (Apparition 50 vs 35, Plutonium 17 vs 27, QuadSomniac 17 vs 14, Polaris 30 vs
+21). abend2 pair 0 vs 0 captures, 510 (115 hard) vs 545 (115) stucks — both arms zero at this 3v3 / 15-min / 6-round cfg,
+so last night's "3 captures" was not a regression; abend2's zero class at this cfg is pre-existing. fellowship lap 28
+vs 24 / 21 / 17 (Isengard worst frame 206 ms vs 905). Batteries 59 vs 71 / 59 / 67, hard 22 — flat. KegD3 pair 60 vs 78
+(per round 15/11/20/14 vs 17/22/17/22; Red 51 vs 63) — a watch: the second lower sample on the operator's benchmark
+map; rm18's lattice 274 -> 190 is the only sizeable change there. **Sigma on 0fd83da4: 2 caps, 199 soft stucks (12
+hard), pickups 24** — better than control (3 / 380 / 10) but well short of the first guard's night run (12 / 18 / 54).
+The difference has an address: 171 of the 199 stucks are Red attackers moving-but-slow in rm22, Blue's antechamber,
+which had NO stucks on the first guard; rm22's lattice is 465 (ctl) -> 109 (22fb70b0) -> 68 (0fd83da4). Whether the
+41 cells the six-ray rule dropped there are real space is being checked by roomfaces + offline rays (also KegD3 rm18).
+**Verdict so far:** 0fd83da4 is a net improvement over control on every pair and no map regressed; it is not yet the
+first guard's Sigma result. Not stable-ready until rm22 is understood; the operator flies 0fd83da4 this evening.
+
 ### 4.1 Deferred past 0.9.16 — combat multitasking (operator, 2026-09-28)
 
 **The operator's reading of the A2b flight:** gameplay felt good; what is missing is not navigation but that bots
