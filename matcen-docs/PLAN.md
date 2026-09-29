@@ -1252,6 +1252,16 @@ bot reach the Blue flag. The log agrees and explains it. Both bases are mirror i
   pairs, rm37 2 components / 57% — the standing "one team's hub" item; rock nodes may be bridging or splitting them,
   so re-read after the fix, not before.
 
+**Batteries Included at 6v6, the same evening (`testing-2026-09-29T00-27-51.log`, 25 min, 11 hotshot bots + the operator,
+`bsidectf.mn3`, build `1c0db3bd`) — the operator's verdict: "feels about perfect. Gold standard of Descent bot
+multiplayer at this point. Very fun."** His reading of the class: any map of this complexity — indoor mazes joined by
+large open corridors, the office layout giving both a unique feel and interesting combat encounters — would play this
+well as the bots stand; the sweet spot is about 12 players, possibly 12-16. The log under it: 22 flag episodes, 11
+captures (8 bot, 3 his), conversion Blue 62% / Red 38%, both flags out 110 s, 117 bot deaths; 51 stucks of which 11
+hard, 44 of them in the two known rooms (rm80 29, rm12 15) — the propped office and its neighbour, unchanged; server
+cost at 12 players: bot layer 1.16 ms a frame average, worst bot-layer frame 28 ms, no server frame over 50 ms in any
+minute — 16 players is inside the budget on this evidence. This is the first map the operator calls finished.
+
 *Options.* **A (recommended): physics is the floor, 6.7 stays the comfort hull.** Below the ship's wall sphere:
 NEVER, as today (327 sides unchanged). Between the wall sphere and 6.7: TIGHT — off the normal network, admitted
 only by the last-resort pass the DISAGREE retry already runs (penalty 120), only for a ship whose own sphere fits
