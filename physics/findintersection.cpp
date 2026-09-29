@@ -2305,6 +2305,86 @@ int fvi_QuickDistObjectList(vector *pos, int init_room_index, float rad, int16_t
   return num_objects;
 }
 
+// Directional room test for the bot navigation layer (2026-09-29). A ray from `pos` along `dir` against THIS room's
+// shell faces only: returns 1 when the closest face hit is a front face (the point sees the inside of the room's
+// wall — only an interior point can), 0 when it is a back face (the point is outside, looking at the wall's far side),
+// -1 when the ray meets no face of this room at all (it left through a portal, or there is nothing of this room that
+// way). fvi_QuickRoomCheck is the same test along +x with one diagonal retry; the bot layer asks six axes so that a
+// cell beside a doorway, whose x-rays leave through the door, is still recognised by the floor under it.
+int fvi_RoomCheckDir(vector *pos, room *cur_room, const vector *dir) {
+  vector hit_point, colp, wall_norm, face_normal;
+  float cur_dist;
+  if (!(cur_room->used) || (cur_room->flags & RF_EXTERNAL))
+    return -1;
+  vector new_pos = *pos + *dir * 10000000.0f;
+  vector min_xyz = *pos, max_xyz = *pos;
+  for (int a = 0; a < 3; a++) {
+    if (new_pos[a] < min_xyz[a]) min_xyz[a] = new_pos[a];
+    if (new_pos[a] > max_xyz[a]) max_xyz[a] = new_pos[a];
+  }
+  uint8_t msector = 0;
+  if (min_xyz.x() <= cur_room->bbf_min_xyz.x()) msector |= 0x01;
+  if (min_xyz.y() <= cur_room->bbf_min_xyz.y()) msector |= 0x02;
+  if (min_xyz.z() <= cur_room->bbf_min_xyz.z()) msector |= 0x04;
+  if (max_xyz.x() >= cur_room->bbf_max_xyz.x()) msector |= 0x08;
+  if (max_xyz.y() >= cur_room->bbf_max_xyz.y()) msector |= 0x10;
+  if (max_xyz.z() >= cur_room->bbf_max_xyz.z()) msector |= 0x20;
+  int closest_hit_type = 0;
+  float closest_hit_distance = 10000000.0f;
+  const int16_t num_bbf_regions = cur_room->num_bbf_regions;
+  int16_t *num_faces_ptr = cur_room->num_bbf;
+  uint8_t *bbf_val = cur_room->bbf_list_sector;
+  vector *region_min = cur_room->bbf_list_min_xyz;
+  vector *region_max = cur_room->bbf_list_max_xyz;
+  int16_t **bbf_list_ptr = cur_room->bbf_list;
+  for (int test1 = 0; test1 < num_bbf_regions; test1++) {
+    if (((*bbf_val) & msector) == (*bbf_val) &&
+        !(region_min->x() > max_xyz.x() || region_min->y() > max_xyz.y() || region_min->z() > max_xyz.z() ||
+          region_max->x() < min_xyz.x() || region_max->y() < min_xyz.y() || region_max->z() < min_xyz.z())) {
+      int16_t *cur_face_index_ptr = *bbf_list_ptr;
+      for (int sort_list_cur = 0; sort_list_cur < (*num_faces_ptr); sort_list_cur++) {
+        const int i = *cur_face_index_ptr;
+        cur_face_index_ptr++;
+        vector *vertex_ptr_list[MAX_VERTS_PER_FACE];
+        if (cur_room->faces[i].flags & FF_NOT_SHELL)
+          continue;
+        if (!room_manual_AABB(&cur_room->faces[i], &min_xyz, &max_xyz))
+          continue;
+        const int nv = cur_room->faces[i].num_verts;
+        for (int count = 0; count < nv; count++)
+          vertex_ptr_list[count] = &cur_room->verts[cur_room->faces[i].face_verts[count]];
+        face_normal = cur_room->faces[i].normal;
+        bool f_backface = false;
+        int face_hit_type = check_line_to_face(&hit_point, &colp, &cur_dist, &wall_norm, pos, &new_pos, &face_normal,
+                                               vertex_ptr_list, nv, 0.0);
+        if (!face_hit_type) {
+          face_normal *= -1.0f;
+          for (int count = 0; count < nv; count++)
+            vertex_ptr_list[nv - count - 1] = &cur_room->verts[cur_room->faces[i].face_verts[count]];
+          face_hit_type = check_line_to_face(&hit_point, &colp, &cur_dist, &wall_norm, pos, &new_pos, &face_normal,
+                                             vertex_ptr_list, nv, 0.0);
+          f_backface = true;
+        }
+        if (face_hit_type &&
+            ((cur_dist <= closest_hit_distance && !f_backface) || (cur_dist < closest_hit_distance && f_backface))) {
+          closest_hit_distance = cur_dist;
+          closest_hit_type = f_backface ? HIT_BACKFACE : HIT_WALL;
+        }
+      }
+    }
+    num_faces_ptr++;
+    bbf_val++;
+    region_max++;
+    region_min++;
+    bbf_list_ptr++;
+  }
+  if (closest_hit_type == HIT_WALL)
+    return 1;
+  if (closest_hit_type == HIT_BACKFACE)
+    return 0;
+  return -1;
+}
+
 bool fvi_QuickRoomCheck(vector *pos, room *cur_room, bool try_again) {
   vector hit_point; // where we hit
   vector colp;

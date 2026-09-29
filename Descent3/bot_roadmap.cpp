@@ -1060,26 +1060,46 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
       return BotSegmentClearOutdoor(b, a, BOT_ROADMAP_CLEARANCE);
     return true;
   };
+  // Is `pt` inside room `r`? Six axis rays against the room's own shell: the first ray whose closest hit is a FRONT face
+  // proves an interior point (rock never sees the inside of a wall); a back face or nothing proves nothing by itself,
+  // because a cell beside a doorway can send its x-rays out through the door (fvi_QuickRoomCheck's +x/diagonal pair
+  // called those "outside" and the 2026-09-28 guard threw away door-side cells on Bree, Batteries and Apparition).
+  auto PointInRoom = [&](const vector &pt, int rnum) -> bool {
+    static const vector dirs[6] = {{1, 0, 0}, {-1, 0, 0}, {0, -1, 0}, {0, 1, 0}, {0, 0, 1}, {0, 0, -1}};
+    vector p = pt;
+    for (const vector &d : dirs)
+      if (fvi_RoomCheckDir(&p, &Rooms[rnum], &d) == 1)
+        return true;
+    return false;
+  };
+  auto InRoomBox = [&](const vector &pt, int rnum) -> bool { // external rooms have no testable shell: their box
+    const room &rm = Rooms[rnum];
+    return pt.x() >= rm.min_xyz.x() && pt.x() <= rm.max_xyz.x() && pt.y() >= rm.min_xyz.y() &&
+           pt.y() <= rm.max_xyz.y() && pt.z() >= rm.min_xyz.z() && pt.z() <= rm.max_xyz.z();
+  };
+  auto InRoomOrBox = [&](const vector &pt, int rnum) -> bool {
+    if (rnum < 0 || rnum > Highest_room_index || !Rooms[rnum].used)
+      return false;
+    return (Rooms[rnum].flags & RF_EXTERNAL) ? InRoomBox(pt, rnum) : PointInRoom(pt, rnum);
+  };
   auto InThisOrNeighbourRoom = [&](const vector &cell) -> bool {
     if (rr->outdoor || rr->probe_room < 0 || rr->probe_room > Highest_room_index)
       return true;
-    vector pt = cell;
     room *r = &Rooms[rr->probe_room];
-    if (fvi_QuickRoomCheck(&pt, r))
+    if (PointInRoom(cell, rr->probe_room))
       return true;
     for (int i = 0; i < r->num_portals; i++) {
       const int cr = r->portals[i].croom;
-      if (cr < 0 || cr > Highest_room_index || !Rooms[cr].used || (Rooms[cr].flags & RF_EXTERNAL))
+      if (cr < 0 || cr > Highest_room_index || !Rooms[cr].used)
         continue;
-      if (fvi_QuickRoomCheck(&pt, &Rooms[cr]))
+      if (InRoomOrBox(cell, cr))
         return true;
       if (Rooms[cr].flags & RF_DOOR) { // a door room is a sliver: the cells that matter sit in the room beyond it
         for (int j = 0; j < Rooms[cr].num_portals; j++) {
           const int cr2 = Rooms[cr].portals[j].croom;
-          if (cr2 < 0 || cr2 > Highest_room_index || cr2 == rr->probe_room || !Rooms[cr2].used ||
-              (Rooms[cr2].flags & RF_EXTERNAL))
+          if (cr2 == rr->probe_room)
             continue;
-          if (fvi_QuickRoomCheck(&pt, &Rooms[cr2]))
+          if (InRoomOrBox(cell, cr2))
             return true;
         }
       }

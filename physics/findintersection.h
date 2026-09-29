@@ -402,6 +402,8 @@ extern int FVI_counter;
 extern int FVI_room_counter;
 
 bool fvi_QuickRoomCheck(vector *pos, room *cur_room, bool try_again = false);
+// 1 = a front face of this room is the closest hit along dir (interior point), 0 = a back face (outside), -1 = no face.
+int fvi_RoomCheckDir(vector *pos, room *cur_room, const vector *dir);
 
 extern fvi_info *fvi_hit_data_ptr;
 extern fvi_query *fvi_query_ptr;
