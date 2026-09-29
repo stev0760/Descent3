@@ -4966,6 +4966,27 @@ static int Reach_serial = 0;
 
 static bool BotReachGateAllows(object *bot_obj, object *p) {
   BotPerfScope perf(BPERF_REACH_GATE);
+  // 2026-09-28 (Sigma Base, the operator's 6v6 standoff): a bot OUTSIDE eyeing an item INSIDE a structure through a
+  // see-through face — the flag rooms' bulletproof windows — chased it into the glass every eight seconds, and each
+  // timeout was a HARD strike that retired the room's powerups for everyone (a false troll conviction). The engine
+  // beelines at a goal it can see; a window is not a way in. One hull sweep from the bot to the item: blocked by a
+  // face that is transparent but neither breakable nor a forcefield means "seen, not reachable from here" — skip it.
+  // A solid wall or terrain in the way keeps the legacy answer (the engine routes through a door).
+  if (OBJECT_OUTSIDE(bot_obj) && !OBJECT_OUTSIDE(p) && p->roomnum >= 0 && p->roomnum <= Highest_room_index) {
+    if (vm_VectorDistanceQuick(&bot_obj->pos, &p->pos) < 300.0f) { // the pin happens at the glass; far items re-gate on approach
+      fvi_info hit{};
+      if (!BotSegmentClearOutdoorHit(bot_obj->pos, p->pos, bot_obj->size, &hit) && hit.hit_type[0] == HIT_WALL) {
+        const int fr = hit.hit_face_room[0], fi = hit.hit_face[0];
+        if (fr >= 0 && fr <= Highest_room_index && Rooms[fr].used && fi >= 0 && fi < Rooms[fr].num_faces) {
+          const face &fa = Rooms[fr].faces[fi];
+          const uint32_t tf = (fa.tmap >= 0) ? GameTextures[fa.tmap].flags : 0u;
+          if (!(tf & (TF_BREAKABLE | TF_FORCEFIELD)) && (GetFacePhysicsFlags(&Rooms[fr], &Rooms[fr].faces[fi]) & FPF_TRANSPARENT))
+            return false;
+        }
+      }
+    }
+    return true;
+  }
   if (OBJECT_OUTSIDE(bot_obj) || OBJECT_OUTSIDE(p))
     return true;
   if (p->roomnum != bot_obj->roomnum)
