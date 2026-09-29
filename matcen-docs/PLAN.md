@@ -1267,6 +1267,37 @@ sigmabase-fix 4 x 45 -> bree-fix 6 -> batteries-fix 12; B = sigmabase-ctl (1c0db
 fellowship-fix lap. Bree is the pair the 09-15 rule lost. The operator flies Sigma on the build-path binary (22fb70b0)
 meanwhile. If the pair and the flat set read clean, 0.9.16 can be called stable.
 
+**The operator's 6v6 Sigma flight on 22fb70b0 (`testing-2026-09-29T01-07-48.log`, 27 min, 11 bots + him):** "inconclusive
+from one test, but it felt WAY better, less stucks"; bots on both sides cluster in the middle bunker area; the map is
+challenging but capturable. The log: 8 stucks (0 hard) in 27 minutes against 220 (3 hard) in the afternoon's three-hour
+control, via failures 331 (rm13 81, rm4 38), hops crossed 76%, both flags out 212 s, 2 captures + 1 his; worst frame
+622 ms with eleven Theta* frames over 100 ms (0.7/min) — the hub lattices are now real cells, so Theta* on rm19/rm37
+costs more per query: a perf watch item for the morning read, not a stall class yet. **The standoff he described
+(Red carrier at home with his flag while he held theirs, 21:27-21:31), from the log — two mechanisms, neither a
+flag-recovery defect:**
+1. *The Blue defender at the window was Zed, pursuing the carrier.* From 21:28:17 every navigation line targets room
+   17 (Reaper's room) and every via search from outside ends on rm18 face 22/33 at 0-2 u — the window. Why no
+   entrance: `BotTrouteRedirect` only makes a terrain plan when the bot is INSIDE a structure (exit -> lattice ->
+   entry); a bot already outdoors keeps legacy outdoor nav, whose entrance-seek reads the ENGINE's terrain-door table
+   (20 doors in region 3), and the engine lists rm18 — the flag room's external window box, `engine_passable`, our
+   hull `tight` / `crossing_fit_r 0` — as a door into rm17. Our table has 6 doors and would have sent it in through
+   rm8 or rm10. Fix class: the already-outdoor entrance-seek must use OUR door table (and a pursuit toward an interior
+   target should get the same troute plan an attack errand gets). Nav-wide (every outdoor->indoor leg by a bot that
+   is already outside), so it waits for the soak read — this is the `OUTDOOR_ENTRANCE_MISS` class (26/26 outdoor
+   stucks routed into a structure in this log).
+2. *At the same window, Zed also chased rm16's powerups through the glass* (ImpactMortar, Plasmacannon, Energy at
+   ~90 u; `BotReachGateAllows` returns "unknown" for an outdoor bot), timing out every 8 s with a HARD strike each —
+   false troll convictions of reachable items. **Built the same night (commit after 22fb70b0): an outdoor bot within
+   300 u of an indoor item sweeps a hull line to it; blocked by a transparent, unbreakable, non-forcefield face = skip.**
+   Deployed to the build path only (labelled `Descent3-glassgate-<hash>` in the lab; the running chains stay on
+   22fb70b0 so the void guard's soak is not contaminated — the 09-15 ledger's lesson). Soak it after the chains.
+3. *The Red carrier (Reaper) pinned in rm17 with `goal=none`, steer 2 u away, for four minutes.* The carrier's
+   face-the-home-flag override is NOT it (`BotGetCarrierTouchObjnum` returns -1 when the home flag is CARRIED). With
+   no flag at home the errand takes station at rm17's room point (2185,10,1740), the bbox centre; a steer point 2 u
+   away that the bot presses toward and never reaches reads like the point sitting inside the flag pedestal or the
+   window recess. Unconfirmed — render rm17 with the pin before touching it. Small fix class once confirmed (a
+   station point must be a reachable lattice node, not the bbox centre).
+
 **Batteries Included at 6v6, the same evening (`testing-2026-09-29T00-27-51.log`, 25 min, 11 hotshot bots + the operator,
 `bsidectf.mn3`, build `1c0db3bd`) — the operator's verdict: "feels about perfect. Gold standard of Descent bot
 multiplayer at this point. Very fun."** His reading of the class: any map of this complexity — indoor mazes joined by

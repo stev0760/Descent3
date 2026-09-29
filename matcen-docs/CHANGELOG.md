@@ -58,6 +58,12 @@ route network never grows, and the last first-use stall when the server prepares
   point is now kept only if it lies inside its own room or a room next door through a doorway. The exit tower's grid
   went from 142 points to 38, all of them in the chamber, the shaft and the top box; the base hubs lost only points
   that were never in the room. In test overnight against a same-minute control; not yet flown.
+- **A bot outside no longer rams a window to reach a powerup it can see inside.** Sigma Base's flag rooms have
+  bulletproof windows onto the terrain; a bot outdoors could see the items in the antechamber through them, chased
+  each one into the glass, timed out, and tried the next — and every timeout counted as a "this item is unreachable"
+  strike that retired the antechamber's powerups for the whole server. An outdoor bot now sweeps a ship-wide line to
+  an indoor item before chasing it; a see-through, unbreakable face in the way means the item is seen, not reachable,
+  and it is skipped. Built the same night, not yet soaked.
 - **Bots take a flag in one pass instead of circling it.** A bot's approach goal completed about 20 units short of the
   flag (the ship's built-in "close enough" distance), so it re-aimed from there and swung out again — nine re-aims per
   pickup on the bedlam maps. The four flag-touch moves (grab, recover, score, return home) now run until contact. One
