@@ -1571,6 +1571,22 @@ this. Batteries: rm37 keeps its 114 cells, skel_live 1; rm38 / 86 / 87 / 91 iden
 PASS = captures on the fix arm with the control at zero; then the fix is committed and the morning regression read
 proceeds on the fix build.
 
+*The second half, read from the pair's first minutes (19:50).* Both arms show the same spawn-room signature the day
+soak did: Blue bots in rm20 (Red in rm4) with STUCKSTATE `chain=none via_live=no`, `BOT PRESS ... goal=pursuit rm38
+path=1 steer rm0`, and the via search failing against rm20's face 17 — the render of rm20 (three pins from the fix arm)
+puts every pin within 10 u of p2, the wall-backed window onto the ring (rm0's side is class NEVER), with the real doors
+p0 -> rm21 and p1 -> rm5 at the far corners. Mechanism: the pit hatch is still TIGHT on the fix build, so the router's
+strict pass cannot reach the pit at all; the last-resort pass then runs and admits every DISAGREE portal at +120 —
+including rm20 p2, the window, which beats the long way round. The approach to that window fails (no crossing), the
+via search fails against the wall, the bot falls to the engine path, and the engine's BOA path also points through the
+window (engine-passable). On 0.9.15 the hatch had geo 0 and the strict pass reached the pit the long way, so the
+window was never admitted. Fix, arm 3 (`Descent3-pitfix2`, launched 19:49, port 2296, same cfg): the same leaf rule in
+`BotPortalRouteCost` — a tight door that is a room's only door is priced TIGHT (+40) in the strict pass, not left to
+the last resort; a ship whose wall sphere does not fit it is still impassable in both passes. The bot-free dump cannot
+see this change (route cost is not dumped); play decides. Read all three arms at ~21:00: pitctl (parent), pitfix
+(network only), pitfix2 (network + router). Follow-up for the ledger, not for 0.9.16: the last-resort pass admits a
+DISAGREE portal whose far side is a wall-backed NEVER window — a known wall should never be a last resort.
+
 ### 4.1 Deferred past 0.9.16 — combat multitasking (operator, 2026-09-28)
 
 **The operator's reading of the A2b flight:** gameplay felt good; what is missing is not navigation but that bots

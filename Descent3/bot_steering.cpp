@@ -295,8 +295,16 @@ float BotPortalRouteCost(int room_idx, int portal_idx, bool allow_disagree, floa
   float cost = BotPortalGeoCost(room_idx, portal_idx);
   // A crossing found only under the comfort hull (Batteries rm80's leaf, a 13.1 u basement door): not a strict
   // edge. A last resort, priced like a DISAGREE, for a ship whose wall sphere fits the radius that found it.
+  // Unless it is the only door of a room it joins (abend2's flag pits): then it is THE route, priced as tight in the
+  // strict pass. Left to the last-resort pass, every route to the pit failed the strict pass and the last-resort pass
+  // then admitted the spawn room's wall-backed window onto the ring as a shortcut (rm20 p2 -> rm0, DISAGREE): the
+  // bots pressed at that window instead of flying the long way round (2026-09-29, both arms of the pit-network pair).
   if (cost < BOT_PORTAL_IMPASSABLE && BotPortalCrossingTight(room_idx, portal_idx)) {
-    if (!allow_disagree || hull_phys > BotPortalCrossingFitRadius(room_idx, portal_idx) + 0.01f)
+    if (hull_phys > BotPortalCrossingFitRadius(room_idx, portal_idx) + 0.01f)
+      return BOT_PORTAL_IMPASSABLE;
+    if (!BotPortalTightLeavesNetwork(room_idx, portal_idx))
+      return cost + BOT_PORTAL_TIGHT_PENALTY;
+    if (!allow_disagree)
       return BOT_PORTAL_IMPASSABLE;
     return cost + BOT_PORTAL_DISAGREE_PENALTY;
   }
