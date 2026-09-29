@@ -1067,6 +1067,11 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
   auto PointInRoom = [&](const vector &pt, int rnum) -> bool {
     static const vector dirs[6] = {{1, 0, 0}, {-1, 0, 0}, {0, -1, 0}, {0, 1, 0}, {0, 0, 1}, {0, 0, -1}};
     vector p = pt;
+    // The engine's own test first (+x ray, then a diagonal retry): the 2026-09-28 guard used it alone and kept 41
+    // cells in Sigma Base rm22 that the six axis rays alone do not (their only front face lies on the diagonal);
+    // with them rm22 had no stucks, without them 171. The union of both tests still rejects every rock cell.
+    if (fvi_QuickRoomCheck(&p, &Rooms[rnum]))
+      return true;
     for (const vector &d : dirs)
       if (fvi_RoomCheckDir(&p, &Rooms[rnum], &d) == 1)
         return true;
