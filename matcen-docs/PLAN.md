@@ -1298,6 +1298,20 @@ flag-recovery defect:**
    window recess. Unconfirmed — render rm17 with the pin before touching it. Small fix class once confirmed (a
    station point must be a reachable lattice node, not the bbox centre).
 
+**Full regression roster tonight (operator: "conclude around 7 am"), all on 22fb70b0 unless marked ctl, three port sets:**
+A: Sigma pair fix -> Bree fix -> Batteries 12 (ends ~04:30). B: Sigma ctl (1c0db3bd) -> Bree ctl -> bedlam 4-team 9 ->
+fellowship lap (~06:30). C (launched 22:07): abend2 3v3 6 -> KegD3 3v3 4 -> Isengard 6 x 20 min -> Moria 4 x 20 ->
+HAVOC 6 -> Nysa 4 (~07:00); read each against its bl15 / 09-22 / today's run (same cfgs). Morning order: Sigma pair,
+Bree pair, the flat set, then the C sweep for anything the guard moved on a map it was never meant to touch; then
+build the outdoor entrance fix (item 1 above) + carry the glass gate, soak while the operator is at work, his flight
+validates, then strip `-dev`.
+
+**Release scope after 0.9.16, as the operator listed it 2026-09-28 (off the top of his head; more small items exist):**
+the committee consolidation (rows 4-5, §4.0.3) and general code cleanup; **documentation consolidation** (matcen-docs
+has grown by accretion — one pass to merge, retire and index); **the `!` command harness** (the bot order verbs —
+refine and finish); co-op is expected to fall out of the outdoor work rather than need its own line (recent co-op
+logs not yet seen). He wants the project finished and released.
+
 **Batteries Included at 6v6, the same evening (`testing-2026-09-29T00-27-51.log`, 25 min, 11 hotshot bots + the operator,
 `bsidectf.mn3`, build `1c0db3bd`) — the operator's verdict: "feels about perfect. Gold standard of Descent bot
 multiplayer at this point. Very fun."** His reading of the class: any map of this complexity — indoor mazes joined by
