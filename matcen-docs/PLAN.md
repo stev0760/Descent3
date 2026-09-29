@@ -1534,6 +1534,15 @@ sweep` from a pinned position in rm20 to portal 2; measure the gap against the 1
 flyable the sampler is the defect, if not the door was never ours and the 09-21 route went another way (check rm20's
 other portals p0 -> rm21, p1 -> rm5). 0.9.16 does not ship with abend2 at zero.
 
+**abend2 bisect plan (operator, 18:45: "we had it solved; clear regression; my hunch is the optimization work broke it and
+routes are disconnected when they should be unified").** Last known good = f27d247d (09-21 12:16, 9 caps; 14555253 26).
+Candidates in order: 00d0a803 (E1), 455aacbe (Q8, the sliced skeleton bridge search — the optimisation), 5d46e532 (Q1),
+cdfc5974 (E2), f1310a81 / 96c3352c (A1 tight doors), 79d06af3 (A2b). Bot-free first: worktree build each, dump abend2,
+`compare_navdumps.py` on rm20 / rm4 / rm0 / rm30 / rm37 / rm38 (portal type, crossing_fit_r, skeleton comps, routable,
+isolated_doors); the first build where rm20 p2 / rm4 p0 go tight / fit 0.0 or the rings split is the culprit, confirmed
+by a 4-round abend2 pair parent vs child. If the dumps agree across the range the break is dynamic (E2 / Q1) — bisect by
+soak. Then render rm20 and sweep its ring door against the 10.68 u floor.
+
 ### 4.1 Deferred past 0.9.16 — combat multitasking (operator, 2026-09-28)
 
 **The operator's reading of the A2b flight:** gameplay felt good; what is missing is not navigation but that bots
