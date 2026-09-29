@@ -1082,28 +1082,35 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
       return false;
     return (Rooms[rnum].flags & RF_EXTERNAL) ? InRoomBox(pt, rnum) : PointInRoom(pt, rnum);
   };
+  // Outdoor flyable space, for a cell that lies inside no room: over the ground under a visible terrain segment (or
+  // anywhere under an invisible one — Town of Bree's sunken streets are terrain the heightfield neither draws nor
+  // collides with, and a building's lattice growing out of its door into the street is the route THROUGH that door;
+  // the 2026-09-29 six-ray guard alone left Bree rm58 at 122 of 372 nodes), and under the outdoor ceiling. Rock beside
+  // Sigma Base's exit shaft is below its bunker's ground level, so it still goes.
+  auto InOutdoorSpace = [&](const vector &cell) -> bool {
+    if (cell.y() > BotOutdoorCeilingCap())
+      return false;
+    vector gp = cell;
+    const int seg = GetTerrainCellFromPos(&gp);
+    if (seg < 0)
+      return false;
+    if (Terrain_seg[seg].flags & TF_INVISIBLE)
+      return true;
+    return cell.y() >= GetTerrainGroundPoint(&gp) + BOT_ROADMAP_CLEARANCE;
+  };
   auto InThisOrNeighbourRoom = [&](const vector &cell) -> bool {
     if (rr->outdoor || rr->probe_room < 0 || rr->probe_room > Highest_room_index)
       return true;
-    room *r = &Rooms[rr->probe_room];
     if (PointInRoom(cell, rr->probe_room))
       return true;
-    for (int i = 0; i < r->num_portals; i++) {
-      const int cr = r->portals[i].croom;
-      if (cr < 0 || cr > Highest_room_index || !Rooms[cr].used)
+    for (int rn = 0; rn <= Highest_room_index; rn++) { // any room whose box holds the point (a handful at most)
+      if (rn == rr->probe_room || !Rooms[rn].used || !InRoomBox(cell, rn))
         continue;
-      if (InRoomOrBox(cell, cr))
+      if ((Rooms[rn].flags & RF_EXTERNAL) || PointInRoom(cell, rn))
         return true;
-      if (Rooms[cr].flags & RF_DOOR) { // a door room is a sliver: the cells that matter sit in the room beyond it
-        for (int j = 0; j < Rooms[cr].num_portals; j++) {
-          const int cr2 = Rooms[cr].portals[j].croom;
-          if (cr2 == rr->probe_room)
-            continue;
-          if (InRoomOrBox(cell, cr2))
-            return true;
-        }
-      }
     }
+    if (InOutdoorSpace(cell))
+      return true;
     in_reject_void++;
     return false;
   };
