@@ -1458,6 +1458,25 @@ egress and the hull tiers all touch the shared nav stack), so the current state 
 Pyrodeck profile for `dedicated-co-op.cfg` (the profile name becomes the log's prefix), one campaign flight on the
 current build, then read `BOT BNODELEG` / stuck (hard) / `BOT PRESS` / `escort on station` against the numbers above.
 
+**Overnight read, 2026-09-29 07:00 (13 soaks, every guard PASS, no crashes) — the 22fb70b0 guard is a Sigma win and a
+regression elsewhere; NOT shippable as built.** Sigma pair (4 x 45 min): captures 12 vs 3, pickups 54 vs 10, objective
+arrivals 56 vs 14, soft stucks 18 vs 380 (hard 4 vs 6), deaths 293 vs 18 — the map plays for the first time; both-flags-out
+standoffs appear (one of 35 min: the carrier-waits-at-home class). Isengard 6 x 20: 3.3 caps/rnd vs 2.4 / 1.9 on 09-22,
+hard stucks 7 vs 13 / 14. Moria: flat caps, stucks 51 (2) vs 113 (7) / 61 (4). fellowship lap 30 vs 24. Nysa 33 vs 31 / 28.
+KegD3 11.2/rnd vs 14.0 (09-24, 8 rnd) — low side of its spread. Batteries 65 caps vs 71 / 59 / 67, flat; its 38 hard
+stucks are the known Shield chase pins in rm118 (36 of 38; control range 27-33) — not a regression. **Regressions:** Bree
+pair 22 vs 41 caps (Blue 15 vs 35), hard 12 vs 5; bedlam 4-team 88 vs 126 (Apparition 14 vs 42, Plutonium 28 vs 44,
+Polaris flat, QuadSomniac up); abend2 3 caps in 7 rounds with 437 stucks / 118 hard (rm4 Red 130 events, rm0 Red 79).
+*Bot-free diffs, ctl vs 22fb70b0:* Bree changed 6 of 74 rooms — rm58 372 -> 77 nodes (Blue's approach; the 09-15 ledger's
+rm58), rm67 369 -> 279; Apparition rm4 / rm18 398 -> 160, rm20 341 -> 162; abend2 seventeen rooms down 25-35% (rm23
+1,003 -> 744, ring rm0 213 -> 141); Batteries 12 of 324 rooms, modest. **Cause:** `fvi_QuickRoomCheck` (+x ray, one
+diagonal retry) calls a cell "outside" when both rays leave through doorways — door-side and tube cells in big or curved
+rooms were thrown away. **Refinement built 07:00 as `b7153178`:** `fvi_RoomCheckDir` (new, engine) reports front /
+back / none along one axis; a cell is inside when ANY of six axis rays first meets a front face (the floor proves an
+interior cell; rock never sees the inside of a wall); adjacent EXTERNAL rooms accept by box. Gate: bot-free dumps of
+Sigma, Bree, bedlam, abend2, KegD3, Batteries on b7153178 against ctl and 22fb70b0 — rm1 must stay ~40 nodes, rm58 must
+return to ~370, the ring rooms to their control counts.
+
 ### 4.1 Deferred past 0.9.16 — combat multitasking (operator, 2026-09-28)
 
 **The operator's reading of the A2b flight:** gameplay felt good; what is missing is not navigation but that bots
