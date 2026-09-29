@@ -1543,6 +1543,34 @@ isolated_doors); the first build where rm20 p2 / rm4 p0 go tight / fit 0.0 or th
 by a 4-round abend2 pair parent vs child. If the dumps agree across the range the break is dynamic (E2 / Q1) — bisect by
 soak. Then render rm20 and sweep its ring door against the 10.68 u floor.
 
+**abend2 bisected and root-caused (2026-09-29 19:40) — A1's tight-door exclusion cut the flag pits' only door; Q8 is
+exonerated.** No worktree builds were needed: the lab's labelled binaries span the range. Bot-free abend2 dumps, rooms
+20 / 4 / 21 / 5 / 15 / 26 / 0 / 30 / 37 / 38: 0.9.15 (`bfbe6c08`) and `7a488f4f` (E1 + Q8 + Q1 + E2) are byte-identical
+— the sliced skeleton search changes nothing static. A1, A2 and A2b (`1c0db3bd`) are identical to each other and differ
+from 0.9.15 at exactly one place: the flag pits' hatches, rm0 p4 -> rm38 and rm30 p4 -> rm37 (10.7 u floor hatches,
+normal +y). On 0.9.15 the sampler found them NO crossing (ok=0) and they seeded the lattice and were live in the
+skeleton all the same: rm38 31 nodes, routable. A1's rungs find them a wall-sphere crossing (5.36, depth 4 — a lip),
+so they are TIGHT, and `96c3352c`'s rule "tight doors seed neither lattice nor skeleton" then removes the pit's ONLY
+door on both sides: rm37 / rm38 31 -> 0 nodes, routable false, skel_live 0; rm0 skel_live 31 -> 15, rm30 63 -> 47. The
+router still prices the hatch (a DISAGREE-priced last resort), so the plan says "go to 38" while delivery has no live
+node to aim at — the 1,200 via failures an arm against the hatch frame, and zero captures. The operator's phrase was
+exact: routes disconnected where they should be unified. rm20 p2 / rm4 p0 (yesterday's suspects) are tight and
+impassable on 0.9.15 too (rm0's side is a wall-backed NEVER window); a red herring.
+
+*The fix, built 19:40 on top of `dd9876e6` (lab `Descent3-pitfix`):* `BotPortalTightLeavesNetwork(room, portal)` in
+bot_steering.cpp — a tight door leaves the comfort network unless it is the only door-class portal of either room it
+joins. "Only door" counts tight portals as doors, deliberately: Batteries rm38 (two tight hatches, nothing else) stays
+cut off as it is today, and the exception flips exactly the one-door leaves. Both the roadmap seed loop and
+`SkelBuildBase`'s live mask use it; the router's tight pricing and the hop commit's wall-sphere tier are untouched.
+Bot-free gate, parent `dd9876e6` vs fix: abend2 changes in exactly four rooms — rm37 0 -> 21 nodes, rm38 0 -> 20, both
+routable; rm0 / rm30 live masks back to 31 / 63 (the ring rooms lose ~10 cells each to the hatch seed's grid, the same
+-10 0.9.15 shows against A2b); split rooms 8 -> 6, isolated doors 12 -> 10, routable 23 -> 25, bends 1 -> 3 — every
+count the 0.9.15 dump has. The lattice totals sit under 0.9.15's (2,992 vs 3,882 cells) and that is the void guard, not
+this. Batteries: rm37 keeps its 114 cells, skel_live 1; rm38 / 86 / 87 / 91 identical to A2b. Play pair launched 19:47
+(lab `bis-20260929/`, 4 rounds each, soak-bots-3v3): `abend2-pitfix` vs `abend2-pitctl` (= `dd9876e6`), read ~20:55.
+PASS = captures on the fix arm with the control at zero; then the fix is committed and the morning regression read
+proceeds on the fix build.
+
 ### 4.1 Deferred past 0.9.16 — combat multitasking (operator, 2026-09-28)
 
 **The operator's reading of the A2b flight:** gameplay felt good; what is missing is not navigation but that bots

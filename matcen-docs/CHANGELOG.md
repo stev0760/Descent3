@@ -38,6 +38,14 @@ route network never grows, and the last first-use stall when the server prepares
   between the two canyons had been one-way for bots (its wide portal's probe hits rock, and the strip beside it fell
   under the old rule): eight-round pairs against a same-minute control, twice — 29 captures to 14, then 31 to 13, with
   stuck counts flat. KegD3 (8-round pair against 0.9.15), Bree, Isengard and Batteries read flat.
+- **A cramped hatch that is a room's only door stays in that room's route network.** The rule above, which keeps
+  cramped openings out of a room's ordinary network, had one blind spot: when the cramped opening is the only way into
+  a room, leaving it out cuts the room off entirely. On abend2 the two flag pits are pockets under the ring floor with
+  one hatch each; the hatch is a squeeze for a ship, the rule dropped it, and bots that planned a route to the flag had
+  nothing to fly at once they reached the ring — they pressed at the hatch frame and the map went from 18 captures in
+  twelve rounds (0.9.15) to none. A cramped opening that is the only door of either room it joins now stays in the
+  network on both sides, still priced as a last resort. Bot-free, abend2's pits read exactly as they did on 0.9.15
+  again; Batteries Included reads unchanged.
 - **Sigma Base: attackers get out of their own bunker and into the enemy's.** When a room opens into the next by several
   doors, the door a bot picks now accounts for where the route goes afterwards only when that onward stretch can
   actually be flown, and every part of the pilot heads for the same door. Two three-hour runs against controls: failed

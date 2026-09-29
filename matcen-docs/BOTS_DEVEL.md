@@ -18,6 +18,23 @@ the flag-room arrival stall and the ~58% connectivity dead-ends. 0.9.14 was vali
 Isengard's interior pins gone, Animal House stuck-free) and released; the previous stable release was
 **0.9.13** (0.9.11 preceded it; 0.9.12 was never promoted).
 
+### 2026-09-29: abend2's flag pits — the tight-door exclusion cut a leaf's only door; the leaf exception
+
+abend2 (the toroid benchmark, first bot captures 2026-08-30) scored zero on every build from A1 on, against 9-26
+captures per twelve rounds on 0.9.15 and the 09-21 builds. Bisected bot-free with the lab's labelled binaries in
+under ten minutes: 0.9.15 and the 09-22 build (E1, Q8, Q1, E2) dump byte-identical, so the sliced skeleton search
+(the operator's hunch) is exonerated; A1/A2/A2b differ from 0.9.15 only at the flag-pit hatches (rm0->rm38,
+rm30->rm37). Pre-A1 the sampler found those hatches no crossing and they seeded and were live regardless; A1's
+rungs find them a 5.36 crossing (a 4 u lip), TIGHT, and the A1 rule "tight doors seed neither lattice nor skeleton"
+removed the pit's only door on both sides — no lattice in the pit, no live node at the hatch in the ring, the via
+layer's last resort failing 1,200 times an arm. Fix: `BotPortalTightLeavesNetwork` — a tight door leaves the comfort
+network unless it is the only door-class portal of either room it joins (tight ones count, so Batteries rm38 with
+two tight hatches stays as it was). Parent-vs-fix bot-free diff on abend2: exactly rm37/rm38 (0 -> 21/20 nodes,
+routable) and rm0/rm30 (live masks 15/47 -> 31/63); split rooms 8 -> 6, isolated doors 12 -> 10, routable 23 -> 25 —
+the 0.9.15 counts. Batteries identical. Lesson for the ledger: an exclusion rule on the network needs a
+connectivity floor — a door may be priced out, never cut out, when it is a room's only one. Play pair pending
+(PLAN 4.0.2, 2026-09-29 19:40).
+
 ### 2026-09-24: the hull question — physics is the floor (arms A1/A2), Canyons doubles, KegD3 holds
 
 **The ruling asked for.** rm80 on Batteries (an office whose door is propped open into the room) had become the map's

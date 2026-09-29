@@ -1060,10 +1060,10 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
       return BotSegmentClearOutdoor(b, a, BOT_ROADMAP_CLEARANCE);
     return true;
   };
-  // Is `pt` inside room `r`? Six axis rays against the room's own shell: the first ray whose closest hit is a FRONT face
-  // proves an interior point (rock never sees the inside of a wall); a back face or nothing proves nothing by itself,
-  // because a cell beside a doorway can send its x-rays out through the door (fvi_QuickRoomCheck's +x/diagonal pair
-  // called those "outside" and the 2026-09-28 guard threw away door-side cells on Bree, Batteries and Apparition).
+  // Is `pt` inside room `r`? Six axis rays against the room's own shell: the first ray whose closest hit is a FRONT
+  // face proves an interior point (rock never sees the inside of a wall); a back face or nothing proves nothing by
+  // itself, because a cell beside a doorway can send its x-rays out through the door (fvi_QuickRoomCheck's +x/diagonal
+  // pair called those "outside" and the 2026-09-28 guard threw away door-side cells on Bree, Batteries and Apparition).
   auto PointInRoom = [&](const vector &pt, int rnum) -> bool {
     static const vector dirs[6] = {{1, 0, 0}, {-1, 0, 0}, {0, -1, 0}, {0, 1, 0}, {0, 0, 1}, {0, 0, -1}};
     vector p = pt;
@@ -1862,7 +1862,8 @@ RoadmapRoom *Build(int room_idx) {
     // A TIGHT door (its crossing found only under the comfort hull) is not part of the comfort network: its seed
     // sits in contact with the frame and the growth from it dies (Batteries rm37: the 11.4 u floor hatch's seed
     // cost the office its 114 cells). The via layer crosses tight doors, as a last resort, at the wall sphere.
-    if (BotPortalCrossingTight(room_idx, p))
+    // Unless it is the only door of a room (abend2's flag pits): then it seeds, or the room has no lattice at all.
+    if (BotPortalTightLeavesNetwork(room_idx, p))
       continue;
     int idx = (int)rr->node.size();
     vector seed = rm.portals[p].path_pnt;

@@ -1133,6 +1133,41 @@ float BotHullPhys(const object *obj) {
   return (obj && obj->size > 0.0f) ? obj->size * PLAYER_SIZE_SCALAR : BOT_HULL_PHYS;
 }
 
+// Whether a TIGHT door leaves the comfort network (no lattice seed, no live skeleton node). It leaves UNLESS it is
+// the only door of either room it joins. 2026-09-29, abend2: the flag pits (rm37/rm38, 10 u pockets under the ring
+// floor, one horizontal hatch each) were reached through hatches the sampler found no crossing for, and they seeded
+// and were live all the same (0.9.15: 18 captures in 12 rounds). The hull tiers found those hatches a wall-sphere
+// crossing, called them TIGHT, and the exclusion then dropped the pit's only door on BOTH sides: no lattice in the pit,
+// no live node at the hatch in the ring, the via layer's last resort failing 1,200 times an arm against the hatch
+// frame, zero captures on every build since. Tightness is a price the router pays, never a reason to cut a room off:
+// a leaf's tight door stays live on both sides, and the hop through it still commits at the wall sphere. Batteries
+// rm37's hatches (the case the exclusion was made for) lead to rooms with other doors and still leave. "Only door"
+// counts every door-class portal, tight ones included: a room with two tight hatches and nothing else (Batteries rm38)
+// reads as it did before, cut off — a smaller change than the principle allows, deliberately, until it is soaked.
+bool BotPortalTightLeavesNetwork(int room_idx, int portal_idx) {
+  if (!BotPortalCrossingTight(room_idx, portal_idx))
+    return false;
+  // Does room `r` have a door other than portal `skip`?
+  auto has_other_door = [](int r, int skip) -> bool {
+    if (r < 0 || r > Highest_room_index || !Rooms[r].used)
+      return true; // no room to cut off
+    const room &rm = Rooms[r];
+    for (int i = 0; i < rm.num_portals && i < BOT_MAX_PORTALS; i++) {
+      if (i == skip)
+        continue;
+      const int nr = rm.portals[i].croom;
+      if (nr < 0 || nr > Highest_room_index || !Rooms[nr].used)
+        continue;
+      if (BotPortalClass(r, i) == BOT_PORTAL_CLASS_NEVER)
+        continue;
+      return true;
+    }
+    return false;
+  };
+  const portal &pt = Rooms[room_idx].portals[portal_idx];
+  return has_other_door(room_idx, portal_idx) && has_other_door(pt.croom, pt.cportal);
+}
+
 int BotPortalCrossingTrace(int room_idx, int portal_idx, BotCrossTrace *out, int max_out) {
   if (!out || max_out <= 0 || room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used ||
       portal_idx < 0 || portal_idx >= Rooms[room_idx].num_portals)
@@ -1811,7 +1846,7 @@ static bool SkelBuildBase(int room_idx, SkelData &d) {
     d.node_pos[i] = rm.portals[i].path_pnt;
     // Park BETWEEN doors, never inside the classifier (it fills the crossing sampler's table — see the roadmap build).
     BotRoadmapSliceYield();
-    if (BotPortalClass(room_idx, i) != BOT_PORTAL_CLASS_NEVER && !BotPortalCrossingTight(room_idx, i))
+    if (BotPortalClass(room_idx, i) != BOT_PORTAL_CLASS_NEVER && !BotPortalTightLeavesNetwork(room_idx, i))
       live |= (1ull << i);
   }
   d.live = live;

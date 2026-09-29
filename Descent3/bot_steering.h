@@ -486,6 +486,9 @@ int BotRouterExitDoor(object *obj, int room_idx, int next_room, int target_room)
 bool BotPortalCrossingTight(int room_idx, int portal_idx);
 // The radius that found the cached crossing (0 = no crossing).
 float BotPortalCrossingFitRadius(int room_idx, int portal_idx);
+// A tight door leaves the comfort network (no lattice seed, no live skeleton node) unless it is the only door of
+// either room it joins — a leaf's tight door stays live on both sides (abend2's flag pits).
+bool BotPortalTightLeavesNetwork(int room_idx, int portal_idx);
 // A ship's wall sphere: the radius the engine stops against walls.
 float BotHullPhys(const object *obj);
 // The engine's passability verdict as OUR layers must read it. BOA_PassablePortal consults a cost
