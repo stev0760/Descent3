@@ -1252,6 +1252,21 @@ bot reach the Blue flag. The log agrees and explains it. Both bases are mirror i
   pairs, rm37 2 components / 57% — the standing "one team's hub" item; rock nodes may be bridging or splitting them,
   so re-read after the fix, not before.
 
+**Built the same night as `22fb70b0` ("the indoor roadmap lattice rejects cells inside no room"), operator's call.** Rule:
+a cell stays if `fvi_QuickRoomCheck` puts it inside this room, a room adjacent through a portal, or the room beyond an
+adjacent door room; rejected cells are counted per room (`[Roadmap] room N lattice: K void cells rejected`). The
+2026-09-15 foreign door cells are kept by construction. **Bot-free gate (`compare_navdumps` 1c0db3bd vs 22fb70b0, and
+renders):** rm1 142 -> 38 nodes (12 cells + connectors), every one in the chamber, the shaft column through both
+hatch frames, or the top box — rendered; rm28 the same; rm2 / rm27 1,773 -> 105 (the room is a thin L in a 170 x 305
+x 285 box; the 105 sit in the hall, the tower and rm1's chamber by the door — rendered); rm16 / rm22 531 / 465 ->
+65 / 109; convex rooms (rm4 165, rm13, rm14, rm17, rm20, rm26 179, rm31) unchanged to the node. Hubs: rm19 cells
+6,103 -> 3,003 and door pairs joined 40% -> 22%, rm37 6,074 -> 3,003 and 57% -> 35% — the removed pairs were joined
+THROUGH ROCK, so this is the hubs' true connectivity showing (both were "not routable" before too); the 2,048-node cap
+now buys real cells. Whole map: cells 17,341 -> 6,705. **Overnight chains (d28n-20260928/, launched 21:05):** A =
+sigmabase-fix 4 x 45 -> bree-fix 6 -> batteries-fix 12; B = sigmabase-ctl (1c0db3bd) -> bree-ctl -> bedlam4t-fix 9 ->
+fellowship-fix lap. Bree is the pair the 09-15 rule lost. The operator flies Sigma on the build-path binary (22fb70b0)
+meanwhile. If the pair and the flat set read clean, 0.9.16 can be called stable.
+
 **Batteries Included at 6v6, the same evening (`testing-2026-09-29T00-27-51.log`, 25 min, 11 hotshot bots + the operator,
 `bsidectf.mn3`, build `1c0db3bd`) — the operator's verdict: "feels about perfect. Gold standard of Descent bot
 multiplayer at this point. Very fun."** His reading of the class: any map of this complexity — indoor mazes joined by

@@ -49,6 +49,15 @@ route network never grows, and the last first-use stall when the server prepares
   client saw all ships freeze. It is now built in slices like the rest of the navigation data, ahead of time when a level
   loads, and a bot that gets there first flies a simpler version of the room until the full one lands a few seconds later.
   The finished graphs are identical to before, node for node.
+- **Sigma Base: bots find the way out of their own base.** Each base's exits are towers — a ground chamber, a narrow
+  vertical shaft through two hatches, and a door to the outside at the top. The route grid a bot flies inside a room
+  was being laid over the room's whole bounding box and kept wherever a probe found nothing solid, and rock contains
+  nothing solid to find: two thirds of the exit tower's grid points sat inside the rock beside the shaft, and one sat
+  inside the closet next door, so the bot was steered into the wall, shoved back down, and sent up again — the
+  indoor oscillation on both teams that the operator saw, and the reason attackers rarely left their bunker. A grid
+  point is now kept only if it lies inside its own room or a room next door through a doorway. The exit tower's grid
+  went from 142 points to 38, all of them in the chamber, the shaft and the top box; the base hubs lost only points
+  that were never in the room. In test overnight against a same-minute control; not yet flown.
 - **Bots take a flag in one pass instead of circling it.** A bot's approach goal completed about 20 units short of the
   flag (the ship's built-in "close enough" distance), so it re-aimed from there and swung out again — nine re-aims per
   pickup on the bedlam maps. The four flag-touch moves (grab, recover, score, return home) now run until contact. One
