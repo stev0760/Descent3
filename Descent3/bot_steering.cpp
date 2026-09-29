@@ -299,12 +299,15 @@ float BotPortalRouteCost(int room_idx, int portal_idx, bool allow_disagree, floa
   // strict pass. Left to the last-resort pass, every route to the pit failed the strict pass and the last-resort pass
   // then admitted the spawn room's wall-backed window onto the ring as a shortcut (rm20 p2 -> rm0, DISAGREE): the
   // bots pressed at that window instead of flying the long way round (2026-09-29, both arms of the pit-network pair).
+  // The only door is priced before the ship's size is consulted: the sampler's radius at a shallow pocket is the
+  // pocket's depth, not the door's width (abend2's pits are 10 u deep; the 5.36 column is the one that clears the pit
+  // floor), and on 0.9.15 every class crossed those hatches and scored (the Phoenix Shadow: 339 crossings, 4 flags).
+  // The class rungs are class means: a Magnum's wall sphere (5.38) sits 0.02 above the Pyro-class rung that found a
+  // crossing, so the fit test allows a tenth of a unit, inside the class spread and far inside physics slop.
   if (cost < BOT_PORTAL_IMPASSABLE && BotPortalCrossingTight(room_idx, portal_idx)) {
-    if (hull_phys > BotPortalCrossingFitRadius(room_idx, portal_idx) + 0.01f)
-      return BOT_PORTAL_IMPASSABLE;
     if (!BotPortalTightLeavesNetwork(room_idx, portal_idx))
       return cost + BOT_PORTAL_TIGHT_PENALTY;
-    if (!allow_disagree)
+    if (!allow_disagree || hull_phys > BotPortalCrossingFitRadius(room_idx, portal_idx) + BOT_HULL_FIT_SLACK)
       return BOT_PORTAL_IMPASSABLE;
     return cost + BOT_PORTAL_DISAGREE_PENALTY;
   }

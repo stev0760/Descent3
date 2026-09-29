@@ -44,6 +44,9 @@ struct fvi_info;
 // did not know it (Batteries rm80's propped leaf leaves 11.37 u; 32 Pyro lives spawned behind it, 3 got out).
 #define BOT_HULL_PHYS_WIDE 6.42f // 0.8 x 8.019, the Phoenix's wall sphere
 #define BOT_HULL_PHYS 5.36f      // 0.8 x 6.7, the Pyro class (Pyro 6.676, Magnum 6.729, Black Pyro 6.604)
+// A ship fits the rung that found a crossing when its wall sphere is within this of it: the rungs are class means
+// (a Magnum's 5.38 against the 5.36 Pyro-class rung), and 0.1 u is inside the class spread and physics slop.
+#define BOT_HULL_FIT_SLACK 0.1f
 // A portal with a wall this close behind EVERY point of its opening is a window onto a wall (BotPortalClass
 // NEVER), whatever the engine's table says: under one hull radius, so no ship can be on the far side.
 #define BOT_PORTAL_WALL_BACKED_DEPTH 5.0f

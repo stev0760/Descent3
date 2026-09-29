@@ -1587,6 +1587,22 @@ see this change (route cost is not dumped); play decides. Read all three arms at
 (network only), pitfix2 (network + router). Follow-up for the ledger, not for 0.9.16: the last-resort pass admits a
 DISAGREE portal whose far side is a wall-backed NEVER window — a known wall should never be a last resort.
 
+*The third half (19:58) — the hull gate, and the runtime hull.* Arm 3 still logged the NO-ROUTE fallback (55 in its
+first three minutes, the 09-21 good builds: 0 in twelve rounds), and only for the Pyro and Magnum bots, never the two
+Phoenixes. The "tight hop" lines say why: the only bots ever to pass the router's fit test are Shadow and Ninja, the
+Phoenixes, at `ship 5.3u` — at runtime the Phoenix's wall sphere is the SMALLEST of the roster, and the Pyro-GL and
+Magnum sit above the 5.36 rung by a few hundredths (the dump's `ships[]` sizes, 6.676 / 8.019 / 6.729, are not what
+`BotHullPhys(obj)` reads at runtime; note for the dump writer). So the A1 gate, `hull > fit + 0.01`, made the pit
+hatch impassable in every pass for four of six bots, and my arm-3 rule kept that gate ahead of the leaf rule. The
+0.9.15 good run settles what the gate should do at a room's only door: every class crossed those hatches and scored
+(Shadow, a Phoenix: 339 crossings of rm0 -> rm38, 4 captures; Viper, a Magnum: 4; Ninja: 2; Hawk: 1). The sampler's
+5.36 at that hatch is not the hatch's width but the pit's depth (10 u; a wider column cannot clear the pit floor), so
+the radius is no verdict on who fits. Arm 4 (`Descent3-pitfix3`, launched 19:58, port 2298): the leaf rule runs
+BEFORE the hull gate — a room's only door is priced tight (+40) in the strict pass for every ship — and the fit test
+for other tight doors allows `BOT_HULL_FIT_SLACK` = 0.1 u (the rungs are class means; a Magnum is 0.02 above the
+Pyro-class rung). Prediction: NO-ROUTE lines 0 on arm 4, tight hops by all six bots, captures. Arms 1-3 are the
+ledger's negative controls: parent, network only, network + router-behind-the-gate.
+
 ### 4.1 Deferred past 0.9.16 — combat multitasking (operator, 2026-09-28)
 
 **The operator's reading of the A2b flight:** gameplay felt good; what is missing is not navigation but that bots
