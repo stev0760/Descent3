@@ -46,7 +46,8 @@ route network never grows, and the last first-use stall when the server prepares
   twelve rounds (0.9.15) to none. A cramped opening that is the only door of either room it joins now stays in the
   network on both sides and is priced as a cramped route rather than a last resort, for every ship: a ship's fit
   against a cramped opening decides between alternatives, never whether a room can be reached at all. Bot-free,
-  abend2's pits read exactly as they did on 0.9.15 again; Batteries Included reads unchanged.
+  abend2's pits read exactly as they did on 0.9.15 again; Batteries Included reads unchanged. Four rounds against the
+  build before it: 6 captures to 0, 30 flag pickups to 0, stuck events 0 to 377 — the 0.9.15 profile back.
 - **Sigma Base: attackers get out of their own bunker and into the enemy's.** When a room opens into the next by several
   doors, the door a bot picks now accounts for where the route goes afterwards only when that onward stretch can
   actually be flown, and every part of the pilot heads for the same door. Two three-hour runs against controls: failed

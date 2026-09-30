@@ -3068,8 +3068,8 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
       float &last = No_route_log_t[bot_index];
       if (Gametime < last || Gametime - last > 10.0f) {
         last = Gametime;
-        LOG_DEBUG.printf("BOT NAV: '%s' NO-ROUTE fallback rm%d -> rm%d (wind/geometry-gated) — engine path takes over",
-                         Bots[bot_index].callsign, (int)obj->roomnum, goal_room);
+        LOG_DEBUG.printf("BOT NAV: '%s' NO-ROUTE fallback rm%d -> rm%d (wind/geometry-gated, hull %.2f) — engine path takes over",
+                         Bots[bot_index].callsign, (int)obj->roomnum, goal_room, BotHullPhys(obj));
       }
       BotNavMemberWin(bot_index, NAV_MEMBER_NO_ROUTE); // §7: our router yielded to the engine's BOA
     }
@@ -3241,8 +3241,8 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
         float tight_r = 0.0f;
         if (cross_ok && BotPortalCrossingTight(obj->roomnum, best_p)) {
           const float fit = BotPortalCrossingFitRadius(obj->roomnum, best_p);
-          if (BotHullPhys(obj) <= fit + 0.01f)
-            tight_r = fit;
+          if (BotHullPhys(obj) <= fit + BOT_HULL_FIT_SLACK) // the router's test, same slack (arm 4: the two bots the
+            tight_r = fit;                                    // old 0.01 refused still crossed by the wall-sphere retry)
         }
         bool door_in_view = BotSegmentClear(obj->roomnum, obj->pos, approach_pt, tight_r > 0.0f ? tight_r : obj->size);
         // The approach is a hull test too. A door whose approach point hides behind a leaf (Batteries rm80: the

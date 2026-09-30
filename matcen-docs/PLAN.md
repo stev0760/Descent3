@@ -1404,6 +1404,9 @@ outlier; QuadSomniac 4-team conversion always poor (crossfire chaos, not a regre
 
 ### 4.0.3 The collapse ledger and the reveal scope (operator ruling, 2026-09-28)
 
+**Target date (operator, 2026-09-29): the community reveal in about four weeks, around 2026-10-27.** 0.9.16 stable first
+(the abend2 fix validated in play, a full day regression against `dd9876e6`, the operator's flight), then the scope below.
+
 **Where the 4.0.2 order stands, row by row (read 2026-09-28 against the log, the changelog and the census):**
 
 | row | what | status |
@@ -1602,6 +1605,27 @@ BEFORE the hull gate — a room's only door is priced tight (+40) in the strict 
 for other tight doors allows `BOT_HULL_FIT_SLACK` = 0.1 u (the rungs are class means; a Magnum is 0.02 above the
 Pyro-class rung). Prediction: NO-ROUTE lines 0 on arm 4, tight hops by all six bots, captures. Arms 1-3 are the
 ledger's negative controls: parent, network only, network + router-behind-the-gate.
+
+**Play read (21:05) — abend2 is back to its 0.9.15 profile; the regression is closed.** Four rounds each, soak-bots-3v3,
+same box, arms 1-3 same-minute, arm 4 from 19:58:
+
+| arm | build | captures (/rnd) | flag picks | bot deaths (/rnd) | stucks (hard) | NO-ROUTE | via fails rm20+rm4 |
+|---|---|---|---|---|---|---|---|
+| parent | `dd9876e6` | 0 (0.0) | 0 | 28 (6) | 377 (77) | 1,288 | 1,574 |
+| network only | `0126b884` | 0 (0.0) | 0 | 29 (6) | 334 (57) | 1,289 | 1,638 |
+| network + router behind the gate | `0bf4b517` | 2 (0.4) | 5 | 91 (18) | 267 (63) | 1,230 | 1,227 |
+| all three | `501fad43` | 6 (1.2) | 30 | 375 (75) | 0 (0) | 0 | 0 |
+| 0.9.15, 09-21, 12 rnd | `bfbe6c08` | 18 (1.4) | — | 1,005 (77) | 2 (0) | 0 | 1 |
+
+Arm 4's profile is 0.9.15's: captures 1.2 vs 1.4 a round, deaths 75 vs 77 a round (the bots meet again instead of
+pressing at windows), stucks zero, carrier deaths 24 at 669 u (0.9.15: 67 at 648 u over three times the rounds), picks
+15 a side. Arm 3's two captures were the Phoenixes, the only ships the old gate let through. Two bots (Reaper, Hawk)
+crossed the hatch on arm 4 without a "tight hop" line: the commit's own fit test still had the 0.01 tolerance, and
+the wall-sphere via retry carried them — made consistent with the router's slack in the wrap-up commit, plus the
+router's hull on the NO-ROUTE line (the runtime-hull question above). Tomorrow: the full day regression, `d30-20260930/`,
+fix vs parent `dd9876e6` in same-minute pairs — abend2, Sigma Base, Bree, KegD3, Canyons (A1's map: the fit slack and
+the leaf pricing touch it) — plus Batteries pair, bedlam, Isengard, fellowship on the fix; launches by itself when the
+overnight chains release the port sets. PASS there + the operator's flight = strip `-dev`, 0.9.16.
 
 ### 4.1 Deferred past 0.9.16 — combat multitasking (operator, 2026-09-28)
 

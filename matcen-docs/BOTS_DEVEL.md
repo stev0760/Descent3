@@ -32,8 +32,13 @@ network unless it is the only door-class portal of either room it joins (tight o
 two tight hatches stays as it was). Parent-vs-fix bot-free diff on abend2: exactly rm37/rm38 (0 -> 21/20 nodes,
 routable) and rm0/rm30 (live masks 15/47 -> 31/63); split rooms 8 -> 6, isolated doors 12 -> 10, routable 23 -> 25 —
 the 0.9.15 counts. Batteries identical. Lesson for the ledger: an exclusion rule on the network needs a
-connectivity floor — a door may be priced out, never cut out, when it is a room's only one. Play pair pending
-(PLAN 4.0.2, 2026-09-29 19:40).
+connectivity floor — a door may be priced out, never cut out, when it is a room's only one. The live arms then
+found the same rule missing twice more: the router left a tight hatch to its last-resort pass, which admitted the
+spawn room's wall-backed window onto the ring (the rm20/rm4 presses), and the router's fit test rejected every Pyro
+and Magnum at the 5.36 rung by hundredths (at runtime the Phoenix reads the smallest hull). Four-round arms, parent
+vs network-only vs network+router vs all three: 0 / 0 / 2 / 6 captures, stucks 377 / 334 / 267 / 0, NO-ROUTE
+fallbacks 1,288 / 1,289 / 1,230 / 0. Arm 4 is the 0.9.15 profile (1.2 vs 1.4 captures a round, 75 vs 77 deaths a
+round). Commits `0126b884`, `0bf4b517`, `501fad43`; PLAN 4.0.2, 2026-09-29.
 
 ### 2026-09-24: the hull question — physics is the floor (arms A1/A2), Canyons doubles, KegD3 holds
 
