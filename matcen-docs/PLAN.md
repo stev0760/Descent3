@@ -1627,6 +1627,12 @@ fix vs parent `dd9876e6` in same-minute pairs — abend2, Sigma Base, Bree, KegD
 the leaf pricing touch it) — plus Batteries pair, bedlam, Isengard, fellowship on the fix; launches by itself when the
 overnight chains release the port sets. PASS there + the operator's flight = strip `-dev`, 0.9.16.
 
+**Day regression, first read (2026-09-30 06:55; `d30-20260930/`, launched by itself at 03:08 after the overnight chains).**
+abend2, six rounds, fix `84a3f3d3` vs parent `dd9876e6`, same-minute: 8 captures / 50 picks / 4 stucks (2 hard) / 527 deaths vs
+0 / 5 / 449 (120 hard) / 111 — the four-round result replicated at six. Batteries, six rounds each (sequential on chain C):
+28 captures vs 28, picks 64 vs 66, stucks 58 (14 hard) vs 84 (12) — flat, as the bot-free diff predicted. Sigma pair,
+bedlam, Bree, KegD3, Canyons, Isengard and fellowship still running; read by ~13:00.
+
 ### 4.1 Deferred past 0.9.16 — combat multitasking (operator, 2026-09-28)
 
 **The operator's reading of the A2b flight:** gameplay felt good; what is missing is not navigation but that bots
