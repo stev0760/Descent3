@@ -1669,6 +1669,17 @@ on purpose: the honest cure is a floor-hugging sample row for rooms thinner than
 Play: the same-minute A2b-vs-guard Canyons pair (`d31-20260930/`, launched 14:11) confirms the drop first; then the
 candidate against `84a3f3d3`, eight rounds, before stable.
 
+**Canyons closed (2026-09-30 18:20) — the recovery was already in `84a3f3d3`; the sky exemption measured nothing and is
+reverted.** Same-minute eight-round pairs this afternoon: A2b `1c0db3bd` 19 captures / 51 picks vs the guard build
+`dd9876e6` 12 / 41 (the guard's cost, confirmed: about a third, not the half the 09-24 numbers suggested); then the sky
+exemption `b444f936` 25 / 67 vs `84a3f3d3` 21 / 58 — both back in the A2b range (19-31 across five pairs), the
+exemption's +4 inside the map's swing. So the fit slack (Canyons' three cramped door pairs sit at the Pyro-class rung;
+the old 0.01 refused the Magnums) is what returned the captures, and the rock cells under the canyon floors were not
+load-bearing once the doors priced right. The exemption is reverted (`Descent3/bot_roadmap.cpp` back to `84a3f3d3`):
+a change that measures nothing and readmits rock cells does not ship. The thin-room sampling item stays on the
+ledger for after 0.9.16 — Canyons' rooms are still under-sampled (rm4 22 cells, rm13 not routable), they just play
+fine. 0.9.16 code is complete: the operator's flight is the remaining gate.
+
 ### 4.1 Deferred past 0.9.16 — combat multitasking (operator, 2026-09-28)
 
 **The operator's reading of the A2b flight:** gameplay felt good; what is missing is not navigation but that bots

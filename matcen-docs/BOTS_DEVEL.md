@@ -45,7 +45,10 @@ round). Commits `0126b884`, `0bf4b517`, `501fad43`; PLAN 4.0.2, 2026-09-29.
 pairs (~30) on both arms: the void-cell guard had removed 24% of its cells — rock cells under thin canyon floors, a
 correct verdict that starved rooms too thin for the grid spacing to sample. Stopgap: a room roofed by a portal onto an
 external room keeps the pre-guard acceptance (exactly Canyons' sixteen segments; Sigma/Bree/abend2/Batteries/bedlam
-unchanged bot-free). Proper cure, post-0.9.16: floor-hugging samples for thin rooms.
+unchanged bot-free). In play the stopgap measured nothing (25 vs 21, inside the swing): the same-minute pairs put the
+guard's cost at 19 -> 12 and the fit slack's recovery at 21-25 — Canyons' cramped door pairs sit at the Pyro-class
+rung and the old 0.01 tolerance had refused the Magnums. Reverted; the guard's verdict stands. Proper cure,
+post-0.9.16: floor-hugging samples for thin rooms.
 
 ### 2026-09-24: the hull question — physics is the floor (arms A1/A2), Canyons doubles, KegD3 holds
 
