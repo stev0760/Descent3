@@ -1633,6 +1633,17 @@ abend2, six rounds, fix `84a3f3d3` vs parent `dd9876e6`, same-minute: 8 captures
 28 captures vs 28, picks 64 vs 66, stucks 58 (14 hard) vs 84 (12) — flat, as the bot-free diff predicted. Sigma pair,
 bedlam, Bree, KegD3, Canyons, Isengard and fellowship still running; read by ~13:00.
 
+**Overnight regression read (2026-09-30 07:00; `d29n-20260929/`, `dd9876e6` = void guard v4 + glass gate, vs `1c0db3bd`).**
+PASS. Sigma Base pair, four 45-minute rounds: 6 captures / 43 picks / 10 stucks (2 hard) / 301 deaths vs 0 / 5 / 235 (2 hard)
+/ 21 — the guard's win holds at long rounds against a control that never scores. Everything else flat within swing on
+`dd9876e6`: KegD3 70 captures in 4 rounds (14.0 a round; the 60-vs-78 watch closes), bedlam 105 over the four maps
+(114 / 97 / 88 / 126 on the last four runs), Batteries 70 in 12 rounds (5.4 a round), Isengard 21 in 6 (3.0), Moria 15
+in 4, Nysa 25 in 4 with one stuck, HAVOC as before (Slave Pit 0, DownTown 0 with its 53 wandering stucks, orbital 23),
+fellowship 23 over ten single rounds. abend2 0 (the class the day's fix closes). One watch: Bree pair 28 vs 39 captures
+(picks 62 vs 71, stucks 41 vs 39, hard 10 vs 10) — yesterday's pair on v3 read 34 vs 28 the other way, and the bot-free
+Bree dump on v4 is identical to the control's in every room, so this is the map's swing or the glass gate, not the
+lattice; the day regression's Bree pair on `84a3f3d3` vs `dd9876e6` is the next data point.
+
 ### 4.1 Deferred past 0.9.16 — combat multitasking (operator, 2026-09-28)
 
 **The operator's reading of the A2b flight:** gameplay felt good; what is missing is not navigation but that bots
