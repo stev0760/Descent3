@@ -1644,6 +1644,31 @@ fellowship 23 over ten single rounds. abend2 0 (the class the day's fix closes).
 Bree dump on v4 is identical to the control's in every room, so this is the map's swing or the glass gate, not the
 lattice; the day regression's Bree pair on `84a3f3d3` vs `dd9876e6` is the next data point.
 
+**Day regression, full read (2026-09-30 13:00) — nothing regresses from the abend2 fix; Canyons opens a question about the
+guard.** Pairs, fix `84a3f3d3` vs parent `dd9876e6`: abend2 8 vs 0 captures (stucks 4 vs 449); Batteries 28 vs 28 (58 vs 84);
+Sigma Base 6 vs 7 at 45-minute rounds (13 vs 20); Bree 34 vs 30 (12 vs 31; the overnight Bree watch closes as the map's
+28-41 swing); KegD3 60 vs 62 (0 vs 0); Canyons 16 vs 11 (7 vs 6). Fix-only: bedlam 83 across its four maps (Apparition
+35, the map's swing — bot-free identical to the parent and no tight portal on the level); Isengard 21 with 59 stucks (the
+parent's overnight numbers exactly); fellowship 24 (overnight 23). But both Canyons arms sit under the A2b-era pairs
+(31 vs 13 and 23 vs 27 on 09-24, same cfg), so the drop lies between `1c0db3bd` and `dd9876e6`: the void guard or the
+glass gate, never paired on Canyons.
+
+*Bot-free (14:10):* the leaf fix changes nothing on Canyons (0 rooms, 0 portal verdicts). The guard does: 921 -> 702
+cells; rm1 213 -> 189, rm2 47 -> 29, rm4 63 -> 22, rm6 85 -> 22, rm13 97 -> 71 and no longer routable, rm17 93 -> 46.
+The renders of rm4 with offline rays on the lost cells: every rejected interior cell sits 10-30 u UNDER the canyon-floor
+faces (its +y ray meets a floor's back side and nothing else) — rock, correctly rejected. Canyons' rooms are thin slabs
+between the canyon floor and the rim, roofed by a portal onto an external room (rm4 p9/p10 -> rm32, a flat box at rim
+height; sixteen such rooms, all flagged 0x20), so at the lattice's spacing almost no grid sample falls inside the slab,
+and the pre-guard "lattice" in those rooms was mostly rock cells the bots flew above. Right verdict, ruinous network.
+
+*The candidate (built 14:25, lab `Descent3-skyfix`):* a room with a ceiling portal onto an external room keeps the
+pre-guard acceptance in GrowFromSeeds. The criterion selects exactly the sixteen canyon segments and no room on abend2,
+Batteries or bedlam; Sigma Base has two such rooms (17, 20) and Bree three (55, 61, 69). Bot-free gate: Canyons identical
+to A2b in every room (the six restored, rm13 routable); Sigma and Bree identical to `84a3f3d3` in every room. A stopgap
+on purpose: the honest cure is a floor-hugging sample row for rooms thinner than the spacing, logged for after 0.9.16.
+Play: the same-minute A2b-vs-guard Canyons pair (`d31-20260930/`, launched 14:11) confirms the drop first; then the
+candidate against `84a3f3d3`, eight rounds, before stable.
+
 ### 4.1 Deferred past 0.9.16 — combat multitasking (operator, 2026-09-28)
 
 **The operator's reading of the A2b flight:** gameplay felt good; what is missing is not navigation but that bots

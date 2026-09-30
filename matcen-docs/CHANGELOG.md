@@ -48,6 +48,12 @@ route network never grows, and the last first-use stall when the server prepares
   against a cramped opening decides between alternatives, never whether a room can be reached at all. Bot-free,
   abend2's pits read exactly as they did on 0.9.15 again; Batteries Included reads unchanged. Four rounds against the
   build before it: 6 captures to 0, 30 flag pickups to 0, stuck events 0 to 377 — the 0.9.15 profile back.
+- **Canyon rooms open to the sky keep their route network.** The recent check that stops a room's route lattice
+  from growing into solid rock had a side effect on Canyons: its canyon segments are thin strips between the canyon
+  floor and the rim, roofed by open sky, and the check removed most of their lattice (six rooms lost half to two thirds
+  of it, one lost its routes entirely). Captures on Canyons fell by roughly half. A room roofed by open sky now keeps
+  its previous network; no other map has such rooms in play. Bot-free, Canyons reads exactly as it did before the check
+  and every other map is unchanged.
 - **Sigma Base: attackers get out of their own bunker and into the enemy's.** When a room opens into the next by several
   doors, the door a bot picks now accounts for where the route goes afterwards only when that onward stretch can
   actually be flown, and every part of the pilot heads for the same door. Two three-hour runs against controls: failed

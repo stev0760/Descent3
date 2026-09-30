@@ -1103,8 +1103,27 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
       return true;
     return cell.y() >= GetTerrainGroundPoint(&gp) + BOT_ROADMAP_CLEARANCE;
   };
+  // A room OPEN TO THE SKY — a ceiling portal onto an external room (Canyons: sixteen canyon segments, each a thin slab
+  // between the canyon floor and the rim, roofed by the sky) — keeps the pre-guard acceptance. 2026-09-30: the guard
+  // rejected 24% of Canyons' cells, six rooms lost half to two thirds of their lattice and rm13 stopped being routable.
+  // Offline rays say the rejected cells were in rock 10-30 u UNDER the canyon floor: correct as a verdict, ruinous as a
+  // lattice, because at the grid spacing almost no sample falls inside a slab that thin, and those rock cells had been
+  // the network the bots flew above (A2b: ~30 captures in 8 rounds; the guard build: 11). The honest cure is a
+  // floor-hugging sample row for thin rooms (PLAN 4.0.2, post-0.9.16); until then a sky-roofed room is treated as the
+  // terrain feature it is. Sigma Base's exit towers and Batteries' sheds open sideways onto terrain — not this case.
+  bool open_top = false;
+  if (!rr->outdoor && rr->probe_room >= 0 && rr->probe_room <= Highest_room_index) {
+    const room &pr = Rooms[rr->probe_room];
+    for (int p = 0; p < pr.num_portals && !open_top; p++) {
+      const int cr = pr.portals[p].croom, pf = pr.portals[p].portal_face;
+      if (cr < 0 || cr > Highest_room_index || !Rooms[cr].used || !(Rooms[cr].flags & RF_EXTERNAL))
+        continue;
+      if (pf >= 0 && pf < pr.num_faces && pr.faces[pf].normal.y() < -0.7f)
+        open_top = true;
+    }
+  }
   auto InThisOrNeighbourRoom = [&](const vector &cell) -> bool {
-    if (rr->outdoor || rr->probe_room < 0 || rr->probe_room > Highest_room_index)
+    if (rr->outdoor || rr->probe_room < 0 || rr->probe_room > Highest_room_index || open_top)
       return true;
     if (PointInRoom(cell, rr->probe_room))
       return true;

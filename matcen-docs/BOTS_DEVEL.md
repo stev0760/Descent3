@@ -40,6 +40,13 @@ vs network-only vs network+router vs all three: 0 / 0 / 2 / 6 captures, stucks 3
 fallbacks 1,288 / 1,289 / 1,230 / 0. Arm 4 is the 0.9.15 profile (1.2 vs 1.4 captures a round, 75 vs 77 deaths a
 round). Commits `0126b884`, `0bf4b517`, `501fad43`; PLAN 4.0.2, 2026-09-29.
 
+2026-09-30, the day regression on the fix: nothing regresses (abend2 8 vs 0, Batteries 28 vs 28, Sigma 6 vs 7, Bree
+34 vs 30, KegD3 60 vs 62, Canyons 16 vs 11; bedlam, Isengard, fellowship flat). Canyons, though, sat under its A2b
+pairs (~30) on both arms: the void-cell guard had removed 24% of its cells — rock cells under thin canyon floors, a
+correct verdict that starved rooms too thin for the grid spacing to sample. Stopgap: a room roofed by a portal onto an
+external room keeps the pre-guard acceptance (exactly Canyons' sixteen segments; Sigma/Bree/abend2/Batteries/bedlam
+unchanged bot-free). Proper cure, post-0.9.16: floor-hugging samples for thin rooms.
+
 ### 2026-09-24: the hull question — physics is the floor (arms A1/A2), Canyons doubles, KegD3 holds
 
 **The ruling asked for.** rm80 on Batteries (an office whose door is propped open into the room) had become the map's
