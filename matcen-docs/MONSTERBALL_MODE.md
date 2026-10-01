@@ -3,7 +3,8 @@
 **Status: M1-M3 built and shipped in 0.9.8 (released 2026-07-18; built 2026-07-12 as commits
 `c0db0728`/`9cbf16c1`/`8bf0b4fe`).** §3 describes what the bots do at HEAD, including the
 `$nav mball / mroles / mavoid / mjunction / mtenure` controls. The contact own-goal fix holds; role
-tenure stays at 10 s (longer tenure halved scoring in A/B). M4 polish is not built (MODE7). Open items
+tenure stays at 10 s (longer tenure halved scoring in A/B). M4 polish is not built (MODE7); it is pre-reveal work,
+decided 2026-10-01. Open items
 are in §3.7 "Known open"; the main one is weak finisher conversion on Veins-class corridor maps
 (MODE8). The pre-M1 §3, the junction-feature narrative and the original §6 questions are preserved in
 `archive/MODE-docs-history.md`, Part 2. (This document began as spec-only on 2026-06-12.)
@@ -244,7 +245,7 @@ Soak manifests: `tools/manifests/monsterball-smoke.json`, `monsterball-soak.json
 | MODE8 | Finisher conversion on Veins-class corridor maps is weak; Monster Arena's 42% via-arrival rate is unverified; whether the "fury" results generalise. | Open. |
 | MODE7 | M4 polish (§4.4). | Not built. |
 | MODE9 | Analyzer anomalies `MBALL_BLUNDER_HEAVY` and `MBALL_BALL_STUCK` named in §5. | Not built (§5 note). |
-| COL8 | Retire `$nav mjunction`. | Toggle present; Q20 a default: retire it in the toggle cleanup. |
+| COL8 | Retire `$nav mjunction`. | Toggle present; decided 2026-10-01 (Q20 a): retire it in the toggle cleanup. |
 | MODE12 | Crossfire bunker outlier. | Accepted for the first release (operator ruling). |
 
 ---
@@ -329,10 +330,8 @@ state bumps (4/21 in the soak) are accepted residual. Role tenure is runtime-tun
 
 ### 4.4 Phase M4 (polish): see MODE7
 
-> **DECISION NEEDED (Q10)** — drafted on the default; the operator's second pass settles it.
-
-M4 is not built and is tracked as registry row MODE7 (`PLAN.md` §4, the master registry). The default
-answer to Q10 a places it after the reveal. Its content, unchanged from the original §4.4: difficulty
+M4 is not built and is tracked as registry row MODE7 (`PLAN.md` §4, the master registry). Decided
+2026-10-01: M4's mode verbs and difficulty scaling are pre-reveal work. Its content, unchanged from the original §4.4: difficulty
 scaling of the alignment threshold, prediction quality, blunder-cone width and kickoff reaction;
 wall and ceiling play, deliberate banks, supporter pass-backs and multi-touch dribbling, all out of
 scope until soaks demand them; and the `!attack ball` / `!defend goal` chat verbs (Tier 2 pattern).

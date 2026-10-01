@@ -440,14 +440,12 @@ Real countermeasures are inventory items, not weapon batteries; bots deploy them
 | `BotDeployMines()` (bot.cpp:1530) | Dumps proximity mines, Bouncing Betties and Seeker mines from inventory in a rapid burst (`BOT_MINE_RAPID_INTERVAL`) within `BOT_MINE_PORTAL_DIST` (80u) of an indoor portal; chance `BOT_MINE_DEPLOY_CHANCE` per tick | FSM tick in EXPLORE or FLEE (bot.cpp:9543-9546); per frame while a burst is running |
 | `BotDeployGunboy()` (bot.cpp:1584) | Places a Gunboy sentry near an indoor portal; chance `BOT_GUNBOY_DEPLOY_CHANCE`, cooldown `BOT_GUNBOY_COOLDOWN` (30 s) | FSM tick in EXPLORE or FLEE |
 
-Whether deployed gunboys actually fire at players is unverified (MODE15).
+Deployed gunboys do fire at players (operator testimony, 2026-10-01; MODE15 closed).
 
-> **DECISION NEEDED (Q21)** — drafted on the default; the operator's second pass settles it.
-> This doc used to say "flares must never be fired in combat or countermeasure logic", while the code fires the
-> flare battery as the chaff fallback whenever a bot without real Chaff is in EVADE/FLEE or is targeted by a homing
-> missile (MODE16). The default reading, applied here: the chaff fallback is intended, and the rule is "never
-> select or fire flares as a combat weapon". The alternative is to remove the fallback from `BotDeployChaff()` so
-> bots without Chaff deploy nothing, which would make the old rule true again.
+The flare chaff fallback is intended (decided 2026-10-01, MODE16). The code fires the flare battery as chaff
+whenever a bot without real Chaff is in EVADE/FLEE or is targeted by a homing missile (`BotDeployChaff()`,
+bot.cpp:1496-1508). The design rule stays "never fire flares in combat": a flare is never selected or fired as a
+weapon, and the countermeasure fallback is the one place bot code fires one.
 
 ### Cloak Detection / Perception (`BotCanSeeTarget`)
 
@@ -596,6 +594,9 @@ Both the COMBAT interrupt and the HUNT divert set `powerup_interrupt_cooldown` t
 ### Physics / Thrust
 - **Never suppress forward thrust** in stuck detection. Zeroing forward thrust at spawn is self-perpetuating (the
   bot never builds speed to escape).
+- **Knockback affects bots exactly as it affects players, always** (operator ruling, 2026-10-01, no exceptions):
+  never thrust against weapon knockback; the Entropy active park's counter-thrust (bot.cpp:6367-6368) is the one
+  violation in code and is to be removed (MODE6).
 - `max_delta_velocity = 0` prevents AI goals from writing velocity, but goals still drive **rotation** via
   rotthrust. This is intentional.
 - `AIG_MOVE_AROUND_OBJ` and `AIG_GET_AWAY_FROM_OBJ` have no movement implementation in the engine (no handler in
@@ -982,7 +983,8 @@ lacking BNode data), the Linux mouse buttons, and the mission-download fixes.
 ## Open items referenced in this doc
 
 All are rows in the `PLAN.md` §4 registry: COL7 (retire the `$nav grid off` fallback), MODE14 (CTF
-`HandlePlayerSpew`), MODE15 (gunboys may not fire), MODE16 (flare chaff fallback versus the old rule; Q21),
+`HandlePlayerSpew`), MODE6 (the Entropy park's counter-thrust against knockback, to be removed), MODE15 (gunboys
+fire; closed 2026-10-01), MODE16 (flare chaff fallback; decided intended 2026-10-01),
 CBT13 (no "investigate noise" behaviour), UX5 (overlay reachable by any client). Items from the retired status
 log, now in `archive/BOT_DEV_REFERENCE-status-log.md`: NAV18 (window-misroute fix's sibling gaps) and NAV31
 (Nysa room-69 carrier pins).

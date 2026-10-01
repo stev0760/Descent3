@@ -470,10 +470,6 @@ Windows-only forks.
 
 ## 6. CTF: A Carrier Who Dies in a Flag's Home Goal Does Not Send the Flag Home
 
-> **DECISION NEEDED (Q19)** — drafted on the default; the operator's second pass settles it.
-> Default applied: fix the bug in Matcen and list it here as upstream patch #6. The other
-> choice is to leave the bug in place and drop this entry.
-
 ### Bug
 
 When a flag carrier dies, disconnects or switches to observer mode, the CTF
@@ -550,7 +546,7 @@ any D3 fork shipping the original Outrage CTF source.
 
 - **Matcen:** Open. A code audit found it. The tree does not have the fix yet
   (the current development build, 0.9.16-dev, still has the original line).
-  We plan to fix it before the public release.
+  We will fix it in Matcen before the public release and list the fix here.
 - **DescentDevelopers/Descent3:** Not submitted. Same line at
   `netgames/ctf/ctf.cpp:1750`.
 - **PiccuEngine:** Not checked. Same netgame lineage, so the same fix should

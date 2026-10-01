@@ -1,8 +1,7 @@
 # Pyrodeck contract: the fork-side telnet surface
 
-> **DECISION NEEDED (Q23c)** — drafted on the default; the operator's second pass settles it. Default applied: the
-> Matcen copy of the Pyrodeck spec (v2.6) is retired to `archive/D3_PYRODECK_SPEC-v2.6.md` and this short contract
-> replaces it.
+Decided 2026-10-01: the Matcen copy of the Pyrodeck spec (v2.6) is retired to `archive/D3_PYRODECK_SPEC-v2.6.md`,
+and this short contract replaces it.
 
 **The spec of record is the Pyrodeck repo** (`stev0760/d3-pyrodeck`, its `D3_PYRODECK_SPEC.md` v2.7, app v0.4.19).
 That spec owns the tool: architecture, session model, UI, API, packaging, phases, the vanilla commands it parses.
@@ -39,21 +38,20 @@ What the four flags mean today:
 | Flag | Meaning |
 |---|---|
 | `bots` | the `$` bot commands in §4 exist |
-| `roster` | Pyrodeck reads it as "`$scores` output is parseable"; BOT_MANAGEMENT.md reads it as "config-file roster". See Q7 below |
+| `roster` | Pyrodeck reads it as "`$scores` output is parseable"; BOT_MANAGEMENT.md reads it as "config-file roster". Decided: the config-file roster is its one meaning (below) |
 | `ships` | `$addbot` takes a ship argument |
 | `difficulty` | `$addbot` takes a difficulty argument; `$botdifficulty` exists |
 
 A server without the fork does not print a `SERVERCAPS` line. Pyrodeck treats no match as vanilla and hides the
 bot UI.
 
-> **DECISION NEEDED (Q7)** — drafted on the default; the operator's second pass settles it. Default: advertise
-> `teams` and `squad_orders` now, `population` when the population controls (POP1) land, and make "config-file
-> roster" the one meaning of `roster`; release the change together with a Pyrodeck update. None of this is built.
-> The proposed line would read
-> `SERVERCAPS version=1 fork=Matcen fork_version=X.Y.Z features=bots,roster,ships,difficulty,teams,squad_orders`.
-> `teams` = `$addbot` takes a team argument (built in 0.8.6, never advertised). `squad_orders` = the `!` chat
-> orders exist. `population` = the population console controls exist (not designed yet). Gate UI on `features=`,
-> never on `fork_version`.
+**Decided 2026-10-01 (POP6), not built yet.** Advertise `teams` and `squad_orders` now, and `population` when the
+population controls (POP1) are built. `roster` has one meaning: the config-file roster. The change ships together
+with a Pyrodeck update. The new line will read
+`SERVERCAPS version=1 fork=Matcen fork_version=X.Y.Z features=bots,roster,ships,difficulty,teams,squad_orders`.
+`teams` = `$addbot` takes a team argument (built in 0.8.6, never advertised). `squad_orders` = the `!` chat orders
+exist. `population` = the `$botpopulation` console controls exist (designed in BOT_MANAGEMENT.md §9.5, not built).
+Gate UI on `features=`, never on `fork_version`.
 
 ## 3. Stability tiers
 
@@ -166,7 +164,7 @@ The fix belongs in the Pyrodeck repo; it is tracked as REL8 in the registry (PLA
 ## 9. Open fork-side items
 
 - REL8: Tier 1 drift above, plus the population and team fields once POP1 and POP6 land.
-- POP6: the hard-coded `features=` list (§2, Q7).
+- POP6: the hard-coded `features=` list; the new list is decided (§2), the code change is not made.
 - REL7: the mission-download link refresh (rewrite the URL lines inside the `.mn3`; the engine `MissionURL` cvar was
   reverted on 07-19). Decided, not built. See the registry row in PLAN.md §4.
 - The pre-0.9.16 spec text (features by phase, API, deployment, Addendum A) is in `archive/D3_PYRODECK_SPEC-v2.6.md`.

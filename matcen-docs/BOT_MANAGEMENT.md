@@ -2,7 +2,8 @@
 
 **Status:** the config-file roster, ship selection, difficulty levels, the Bot Settings menu, per-bot team
 assignment and the `$servercaps` handshake are built and shipped. Population management (a target player count and
-seats kept free for humans) is not built; it is the one forward section at the end of this document. The design
+seats kept free for humans) and the allowed-ship rule are decided (2026-10-01) but not built; they are the one
+forward section at the end of this document. The design
 history of this work (the pre-roster problem statement, the init-order bug, the old implementation order and risk
 table) is in `archive/BOT_MANAGEMENT-design-history.md`.
 
@@ -102,8 +103,9 @@ suffix so that D3's prefix-matched private messages (`hudmessage.cpp` `GetMessag
 | Black Pyro | `blackpyro` | Mercenary ship; resolves only if the ship is loaded (`Ships[idx].used`, bot.cpp:9660, :9668). |
 
 Bot physics read `Ships[Players[slot].ship_index]`, so ship choice carries through to thrust, mass, drag and weapons.
-Two known gaps: bots ignore the server's allowed-ship list (POP9), and the navigation network is built for the
-Pyro-class hull, so other hulls fly it less well (POP11).
+Two known gaps: bots ignore the server's allowed-ship list (POP9; the decided fix is in §9.8), and the navigation
+network is built for the Pyro-class hull, so other hulls fly it less well (POP11). The second is documented as a
+limitation: Pyro-class hulls fly best.
 
 ## 3. Console reference
 
@@ -214,8 +216,10 @@ keep)` on a dedicated server.
 Remote-admin tools (D3 Pyrodeck) send `$servercaps` on connect. This fork answers with one line,
 `SERVERCAPS version=1 fork=Matcen fork_version=<X.Y.Z> features=bots,roster,ships,difficulty` (bot.cpp:9900-9904);
 vanilla D3 answers `Unknown command`. The version is numeric only, never with a `-dev` suffix. The feature list is a
-fixed literal: `teams` (per-bot team assignment, built), `squad_orders` and `ctf` are not advertised, and
-`population` would join it when population management lands (POP6). The output formats remote tools rely on are
+fixed literal. Decided 2026-10-01 (POP6): `teams` (per-bot team assignment, built) and `squad_orders` (the `!` order
+harness, built) will be added to it, and `population` joins it when population management (§9) is built. `roster`
+means the config-file roster and nothing else. The change ships together with a Pyrodeck update. None of this is in
+the literal yet. The output formats remote tools rely on are
 specified in `PYRODECK_CONTRACT.md`.
 
 ## 8. Not built, tracked in the registry
@@ -226,13 +230,12 @@ specified in `PYRODECK_CONTRACT.md`.
 
 ---
 
-## 9. Population management (FORWARD, not built)
+## 9. Population management (FORWARD, decided 2026-10-01, not built)
 
-> **DECISION NEEDED (Q1)** — drafted on the default; the operator's second pass settles it.
-> Default applied: (c) both a reserve and a yield; `BotReservedSlots` default 1; `$addbot` respects the reserve; the
-> larger team's lowest-score bot yields, the newest bot breaks ties, with a chat line; `BotTargetPlayers` off by
-> default and 12 in the sample config. The options were: (a) reserve only, (b) yield only, (c) both; reserve default 1
-> or 4; whether `$addbot` may break the reserve; which bot yields; the target default.
+Decided by the operator on 2026-10-01: both a reserve and a yield; `BotReservedSlots` defaults to 1; `$addbot` is
+clamped by the reserve like every other add path; on a full join the larger team's lowest-scoring bot yields, the
+newest bot breaks ties, and a chat line announces it; `BotTargetPlayers` is off by default and set to 12 in the sample
+config. Bots also obey the server's allowed-ship list (§9.8).
 
 Nothing in this section exists in the code: there is no `BotTargetPlayers`, `BotReservedSlots` or `$botpopulation`
 symbol. Registry rows POP1-POP4.
@@ -309,11 +312,20 @@ BotName1=Reaper
 ; BotName2-BotName16, ships, difficulties and teams as in section 2
 ```
 
-### 9.7 Decisions this section carries (POP4)
+### 9.7 Decisions this section carries (POP4, decided)
 
-Reserve vs yield vs both; the reserve default (spec 4 vs 1); whether `$addbot` bypasses the reserve; which bot yields;
-the `BotTargetPlayers` default. All are drafted on the QUESTIONS Q1 default above. When the feature lands, advertise
-`population` in `$servercaps` (POP6) and add the population controls to the Pyrodeck contract (REL8).
+Settled 2026-10-01: both reserve and yield; reserve default 1 (not the original spec's 4); `$addbot` is clamped, with
+no bypass; the yielding bot is the larger team's lowest scorer, newest on a tie, announced in chat; `BotTargetPlayers`
+off by default, 12 in the sample config. When the feature lands, advertise `population` in `$servercaps` (POP6) and
+add the population controls to the Pyrodeck contract (REL8).
+
+### 9.8 Allowed ships (POP9, decided 2026-10-01, not built)
+
+Bots obey the server's allowed-ship list. When a bot's configured ship (`BotShip<n>`, the `$addbot` ship argument or
+the Bot Settings menu) is not allowed on the server, the bot falls back to Pyro-GL, with a log line naming the
+skipped ship. No bot code reads ship permissions today; the engine check is `PlayerIsShipAllowed`
+(player.h:557-558); the natural place to apply it is after `BotResolveShipAlias` (bot.cpp:9642), whose callers are the
+config roster (bot.cpp:9794), `$addbot` (dedicated_server.cpp:878) and the Bot Settings menu (multi_ui.cpp:1618). Registry row POP9.
 
 ## Related documents
 

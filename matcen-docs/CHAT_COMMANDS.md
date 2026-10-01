@@ -5,8 +5,8 @@ parts:
 
 - **Part A, the shipped reference.** What the code does at `ee6e6525` (0.9.16-dev), read from
   `Descent3/bot_chat.cpp` and the order code in `Descent3/bot.cpp`. Every verb and alias is listed once, in §A.5.
-- **Part B, the finish line.** What is left before the harness counts as done, drafted on the default answer to the
-  operator's open questions.
+- **Part B, the finish line.** What is left before the harness counts as done, as the operator decided it on
+  2026-10-01.
 - **Part C, the Design Decisions Log.**
 
 The research survey (nine games, with sources), the Engine Chat System hook history, the Stage 1-3 rollout, the
@@ -47,7 +47,9 @@ form such as `!attack flag` does not work: "flag" is read as a bot name, and whe
 
 - **Free-for-all modes** (Anarchy, Hyper-Anarchy, Hoard, Monsterball, Robo-Anarchy; any mode with one team that is
   not co-op): every verb except `!ping` and `!hunt` is dropped **without a reply**, on the broadcast path
-  (bot_chat.cpp:632) and the DM path (bot_chat.cpp:560). CMD10 tracks the missing reply.
+  (bot_chat.cpp:632) and the DM path (bot_chat.cpp:560). CMD10 tracks the missing reply. This is the behaviour as
+  built; the decided replacement (no orders at all in the anarchy-class modes, a taunt reply to every verb) is in
+  §B.1 and is not built.
 - **Team modes** (CTF, Team Anarchy, Entropy): a bot obeys only players on its own team (`BotShouldObey`,
   bot_chat.cpp:102). Anyone else gets `<bot>: Not taking orders from you!`. There is no taunt (see decision 9).
   `!ping` answers everyone.
@@ -95,7 +97,7 @@ Notes:
   code reading the name lookup may never match there: in a one-team game every player, human or bot, is on team 0
   (bot.cpp:8783-8785 for bots; DMFC `GetTeamForNewPlayer` for humans), and `BotFindPlayerByName` skips candidates on the sender's team
   (bot_chat.cpp:157-160). If so, `!hunt <name>` in free-for-all only makes every bot say `Hunting!`. Not confirmed in
-  a flight.
+  a flight; pending verification (§B.7). The decided rule in §B.1 removes `!hunt` from the anarchy-class modes.
 - **There is no `!get <powerup>`, `!formation`, `!above`, `!below`, `!flank`, `!taunt`, `!help` or `!attack lab`
   verb.** Those are Part B items.
 
@@ -164,25 +166,30 @@ The previous doc (now in the archive) said these things; the code says otherwise
 
 ## Part B. Forward: the finish line
 
-> **DECISION NEEDED (Q2, Q8, Q9)** — drafted on the default; the operator's second pass settles it.
->
-> Q2 options: (a) polish floor only, CMD9-CMD16; (b) (a) plus formation v1 (CMD2); (c) (b) plus `!above`/`!below`/
-> `!flank` (CMD3); (d) (c) plus mode verbs (`!attack lab`, `!attack ball`; CMD4, MODE1, MODE7). Also in or out:
-> `!get <powerup>` (CMD8) and team-chat callouts (CMD18). **Default: (b); `!get` and callouts only if (b) lands
-> early; (c), (d), chaining and grouping stay deferred.**
-> Q8 default: yes, reply to free-for-all orders and limit free-for-all `!hunt` to a DM to one bot.
-> Q9 default: yes, "form up" becomes its own formation mode and `!follow` stays a loose escort.
+Decided by the operator on 2026-10-01:
 
-The operator's goal (2026-09-28) is the `!` harness refined and finished (CMD1). On the default, "finished" means the
-polish floor below plus formation v1, with nothing else blocking the reveal.
+- **Scope (Q2 = b).** "Finished" means the polish floor (§B.1, CMD9-CMD16) plus formation v1 (§B.2, CMD2). `!get
+  <powerup>` (CMD8) and team-chat callouts (CMD18) go in only if formation v1 lands early (§B.3). `!above`/`!below`/
+  `!flank`, chaining and grouping stay deferred (§B.4).
+- **Anarchy-class modes (Q8).** In Anarchy, Hyper-Anarchy and Robo-Anarchy bots take **no orders at all**. Every `!`
+  verb, `!ping` and `!hunt` included, gets a taunt reply and installs nothing. This replaces the `!ping`/`!hunt`
+  free-for-all exceptions the code has today (bot_chat.cpp:560, :632). Not built; CMD10 and CMD11. Hoard and
+  Monsterball, which §A.3 also lists as free-for-all, were not named in the ruling and keep today's gate until the
+  operator rules on them.
+- **Formation (Q9 = yes).** "Form up" becomes a distinct formation mode; `!follow` stays a loose escort (§B.2).
+
+The operator's goal (2026-09-28) is the `!` harness refined and finished (CMD1): the polish floor plus formation v1,
+with nothing else blocking the reveal. The Entropy and Monsterball mode verbs (`!attack lab`/`!defend lab`,
+`!attack ball`/`!defend goal`) are pre-reveal work too, but they ride the mode polish rows MODE1 and MODE7
+(`ENTROPY_MODE.md`, `MONSTERBALL_MODE.md`), not the harness finish.
 
 ### B.1 The polish floor (CMD9-CMD16)
 
 | Id | Item | Proposed behaviour |
 |---|---|---|
 | CMD9 | Discoverability | `!help` answers by DM with the verbs valid in the current mode; a one-time join tip; an unknown verb gets a short DM ("Unknown order. Try !help."). |
-| CMD10 | Free-for-all drops orders silently (`6c4eab43` promised one DM refusal) | One DM: "No squad orders in free-for-all." (Q8 default) |
-| CMD11 | `!hunt` in free-for-all: any human aims every bot at one player; a named bot can be told to hunt itself | Accept free-for-all `!hunt` only as a DM to one bot (Q8 default); skip the bot itself in the lookup. Settle the team-0 lookup question in §A.5 first. |
+| CMD10 | Free-for-all drops orders silently (`6c4eab43` promised one DM refusal) | Decided (Q8): in Anarchy, Hyper-Anarchy and Robo-Anarchy every `!` verb gets a taunt reply and installs nothing. |
+| CMD11 | `!hunt` in free-for-all: any human aims every bot at one player; a named bot can be told to hunt itself | Decided (Q8): `!hunt` loses its free-for-all pass and gets the taunt like every other verb, which closes the grief vector. The self-target check (skip the bot itself in `BotFindPlayerByName`) still applies to the team modes and co-op. |
 | CMD12 | `!hunt` target death is not reported and the ATTACK role persists | Report the kill (or the target's death) to the issuer and fall back to the previous role. |
 | CMD13 | Two-word `!attack flag` / `!defend flag` do not parse | Parse them as aliases of the one-word verbs. |
 | CMD14 | Order reports share the 2 s cooldown and are dropped | Give reports their own budget, or queue them, so an arrival or BLOCKED report is never lost. |
@@ -191,10 +198,10 @@ polish floor below plus formation v1, with nothing else blocking the reveal.
 
 ### B.2 Formation v1 (CMD2)
 
-On the Q9 default, `!formup` and `!form up` stop being aliases of `!follow` and become a distinct formation mode.
+Decided (Q9): `!formup` and `!form up` stop being aliases of `!follow` and become a distinct formation mode.
 `!follow` stays a loose escort. `!regroup` keeps its current meaning unless the operator moves it too.
 
-Target behaviour (Q9 default): **trail** (single file) in tunnels, **wedge** in rooms, and **fixed slots for four or
+Target behaviour: **trail** (single file) in tunnels, **wedge** in rooms, and **fixed slots for four or
 more followers** so no two bots share a point. The registry says the fourth and later followers share one point; the
 code actually cycles four slots, so the fifth shares the first's (§A.6). Either way slots repeat.
 
@@ -223,11 +230,13 @@ sensing, convoy staggering through doors, and a guard against slots inside rock.
 - **CMD18 team-chat callouts.** UT-style intent lines on team chat (flag taken, enemy spotted), the operator's stated
   next step after squad roles (2026-07-12).
 
-### B.4 Deferred past the reveal (on the default)
+### B.4 Deferred past the reveal
 
 - **CMD3** `!above`, `!below`, `!flank left/right` (6DOF positioning; small extensions of the slot code once CMD2 exists).
-- **CMD4** `!hold room` / `!take room` for Entropy; overlaps the Entropy `!attack lab`/`!defend lab` work (MODE1).
-- **Monsterball** `!push ball` / `!block goal` (old Tier 4); overlaps `!attack ball`/`!defend goal` (MODE7).
+- **CMD4** `!hold room` / `!take room` for Entropy. The Entropy `!attack lab`/`!defend lab` verbs it overlaps are
+  pre-reveal under MODE1.
+- **Monsterball** `!push ball` / `!block goal` (old Tier 4). The `!attack ball`/`!defend goal` verbs they overlap are
+  pre-reveal under MODE7.
 - **CMD5** `!taunt` and D3 audio taunts. Refusals stay plain text.
 - **CMD6** command chaining ("Beta cover Gamma") and named squad grouping.
 - **CMD7** duration modifiers ("for 60 seconds") and dual-point patrol.
@@ -248,6 +257,14 @@ sensing, convoy staggering through doors, and a guard against slots inside rock.
 Every player-facing feature must work through plain chat, so retail 1.5 and PiccuEngine players can use it. A HUD
 (for example the quick-order overlay, UX4) may only add to a chat command, never replace one. The client
 compatibility pass (REL12) re-checks this before release.
+
+### B.7 Pending flight verification
+
+- **`!hunt` in Anarchy may never find its target.** By code reading every player in a one-team game is on team 0
+  and the name lookup skips the sender's team (§A.5 note). Unflown. The decided Q8 rule makes the answer moot for the
+  anarchy-class modes once built, but the same lookup governs co-op `!hunt` (CMD26).
+- **Co-op over-spawn.** A roster larger than the co-op player cap once spawned bots past it. The `BotAdd` capacity
+  clamp (bot.cpp:8709), which the config roster goes through (bot.cpp:9802), may already close it. Unflown (COOP4).
 
 ---
 
@@ -280,9 +297,11 @@ compatibility pass (REL12) re-checks this before release.
 
 9. **Enemy commands get a refusal, not compliance** (corrected 2026-10-01). In team modes a bot refuses orders from
    opposing-team players with `Not taking orders from you!`, which stops opponents hijacking your bots. The original
-   decision promised a taunt; none was built (a `!taunt` verb is CMD5, deferred). Exceptions: `!ping` answers
-   everyone, and `!hunt` passes the free-for-all gate.
+   decision promised a taunt; none was built (a `!taunt` verb is CMD5, deferred). Exceptions as built: `!ping`
+   answers everyone, and `!hunt` passes the free-for-all gate. Decided 2026-10-01 (not built): in Anarchy,
+   Hyper-Anarchy and Robo-Anarchy bots take no orders and every `!` verb gets a taunt reply (§B.1, CMD10/CMD11).
 
 10. **`!ping` is permanent diagnostic** — not replaced by `!report`/`!status`. Stays in the
-    verb table as a lightweight proof-of-life with the standard `Pong!` response. `!report`
+    verb table as a lightweight proof-of-life with the standard `Pong!` response (except, once the Q8 rule is
+    built, in the anarchy-class modes, where it gets the taunt like every other verb). `!report`
     and `!status` are the military-style equivalents wired in Stage 2 with richer output.
