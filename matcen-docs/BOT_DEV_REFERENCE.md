@@ -4,7 +4,7 @@
 it is; it carries no project status. Physics model reference is in `D3_MOVEMENT_PHYSICS.md`.
 
 **Status:** the current version and what shipped live in `README.md` and `CHANGELOG.md`; open items live in the
-pre-release registry, `PLAN.md` §4. Navigation design and its live status are in `NAVIGATION.md` (§7.0).
+pre-release registry, `PLAN.md` §4. Navigation design and its live status are in `NAVIGATION.md` (§7).
 The dated status log this file used to carry is in `archive/BOT_DEV_REFERENCE-status-log.md`.
 
 ---

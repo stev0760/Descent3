@@ -10,121 +10,161 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 ## Matcen: multiplayer bots
 
-**Matcen** adds a server-side multiplayer bot system to Descent 3, which never shipped with one. Bots occupy real player slots on dedicated and listen servers and appear to every client as ordinary players, tagged with a `[BOT]` suffix on their callsign.
+**Matcen** adds a server-side multiplayer bot system to Descent 3, which never shipped with one. Bots occupy real player slots on dedicated and listen servers and appear to every client as ordinary players, tagged with a `[BOT]` suffix on their callsign (for example `Reaper[BOT]`).
 
-**No client modifications are required.** Retail D3 v1.5 clients and compatible engines (PiccuEngine) connect and play against bots as-is. A server with no bot configuration behaves exactly like vanilla D3.
+**No client modifications are required.** Retail D3 v1.5 clients and compatible engines (PiccuEngine) connect and play against bots as they are. A server with no bot configuration behaves exactly like vanilla D3.
 
-**Current release: 0.9.15** (2026-09-20), the outdoor and smooth-server release. Outdoors: the route network stays above ground, entering a building is one routine, a route indoors stays indoors, and an errand finishes at the flag rather than in its doorway, so the fellowship maps (Town of Bree, Tower of Isengard, Doors of Moria) play both ways. Server: it no longer freezes while it prepares a room's navigation data, which was the cause of bots rubber-banding, of a huge map (HAVOC's DownTown) refusing joins, and of D3 Pyrodeck failing to read the server version; and Sigma Base attackers head for the enemy bunker instead of wandering their own. Flight-tested on Isengard, DownTown, Sigma Base and Batteries Included, and regression-checked on the four bedlam maps. It is not a "navigation solved" release; see [Known limitations](#known-limitations). A build whose version ends in `-dev` is a test build, not a release.
+**Status: 0.9.16-dev.** The code is complete, the operator flew it on 2026-09-30 and called it "a very solid candidate, almost release ready", and it is in final review before it is marked stable. Until then, treat it as a test build: a version that ends in `-dev` is not a release. What it changes from 0.9.15:
 
-**Previous release: 0.9.14** (2026-09-18), the portal-model release: a door is a validated crossing rather than a point, walls are never doors to the route network, shattered glass becomes a doorway at runtime, and a bot only hunts what it can reach.
+*   Bots on Batteries Included leave the toy boxes and desks they spawn in at once instead of pushing at them.
+*   Openings are judged by what the ship physically fits, so passages that were one-way for bots now work both ways. Canyons roughly doubled its captures.
+*   A cramped hatch that is a room's only door stays routable, so abend2's flag pits are reachable again.
+*   Sigma Base attackers get out of their own bunker and into the enemy's, and the map now sees captures.
+*   The server no longer freezes for a second or more the first time a bot enters a big room.
 
-**In test: 0.9.16-dev.** Soaked against same-day controls and kept, not yet flown: Sigma Base's Red team exits its hub the way the route intends (the router's door is every layer's door); Batteries Included bots leave the toy boxes and desks they spawn in at once instead of pushing at them (a third of bot lives began that way); the last first-use stall, a big room's skeleton, is now built in slices like the route network. Details in the [release notes](matcen-docs/CHANGELOG.md).
+**Latest stable release: 0.9.15** (2026-09-20), the outdoor release: the fellowship maps (Town of Bree, Tower of Isengard, Doors of Moria) play both ways, and the server no longer stalls while it prepares navigation data.
 
 What changed in each release is in the [release notes](matcen-docs/CHANGELOG.md). What is left, and in what order, is in [`matcen-docs/PLAN.md`](matcen-docs/PLAN.md).
 
 ### Features
 
-*   **Combat AI**: a five-state model (explore, hunt, combat, flee, evade) with predictive lead aiming. Bots circle-strafe, use afterburners to chase and escape, and drop chaff against homing missiles.
-*   **Perception**: bots honor cloaking (a cloaked player is invisible unless revealed by afterburner, headlight, napalm, or weapon fire), hear weapon fire within 60 units and afterburners within 200.
-*   **Physics parity**: bots fly under the same inertia, momentum, and tri-chord rules as human players.
-*   **Weapons and loadout**: range- and resource-aware weapon switching, splash-damage self-guards, and smart powerup collection. Bots rate their own equipment and pick fights accordingly; a poorly armed bot hunts upgrades before engaging.
-*   **Navigation**: a runtime-built volumetric roadmap over arbitrary map geometry, hierarchical routing, and engine-native steering. See [Navigation](#navigation) below.
-*   **Game modes**: Anarchy, Team Anarchy, Robo-Anarchy, CTF (role auto-assignment, carrier play, flag recovery), Hyper-Anarchy, Hoard, Entropy (virus economy, room takeovers, repair retreats), and Monsterball (striker/support/keeper roles, own-goal refusal, slam finisher). Bots persist across level transitions.
-*   **Squad orders**: bots respond to `!` chat commands with real navigation and spoken feedback: `!attack`, `!target`, `!defend`, `!hold`, `!follow`, `!cover`, `!hunt`, `!freelance`, `!status`, `!ping`. Orders work from all-chat, team-chat, or direct message. An ordered bot reports "In position." on arrival and "Can't reach you!" when blocked.
-*   **Ships and difficulty**: Pyro-GL, Phoenix, Magnum-AHT, or Black Pyro (requires Mercenary). Five difficulty levels (Trainee through Insane) scale aim, reaction time, evasion, and turn rate, globally or per-bot.
-*   **Team assignment**: pre-assign bots to teams in the config or at the console; anything else auto-balances.
-*   **In-game setup**: a Bot Settings screen in the listen-server flow, with a scrollable roster for up to 16 bots with per-bot name, ship, and difficulty, saved with `.mps` presets.
+*   **Combat AI**: explore, hunt, combat, flee and evade states with predictive lead aiming. Bots circle-strafe, use the afterburner to chase and escape, and drop countermeasures against homing missiles.
+*   **Perception**: bots honor cloaking (a cloaked player is invisible unless afterburner, headlight, napalm or weapon fire gives them away). They hear weapon fire within 60 units and afterburners within 200.
+*   **Physics parity**: bots fly under the same inertia, momentum and drag as human players.
+*   **Weapons and loadout**: range- and ammo-aware weapon switching, splash-damage self-guards, and powerup collection. A poorly armed bot looks for upgrades before it picks a fight.
+*   **Navigation**: a route network built at level load over any map's geometry, a cost-aware room router, and the engine's own steering. See [Navigation](#navigation) below.
+*   **Game modes**: Anarchy, Team Anarchy, Robo-Anarchy, CTF (role assignment, carrier play, flag recovery), Hyper-Anarchy, Hoard, Entropy (virus economy, room takeovers, repair retreats) and Monsterball (striker, support and keeper roles, own-goal refusal, slam finisher). Co-op companions are experimental. Bots stay in the game across level changes.
+*   **Chat orders**: type a `!` command in all-chat, team chat or a private message, and bots answer and act on it. A bare `!verb` goes to every bot on your team, `!verb <name>` to the bot whose name starts with `<name>`, and `<botname>: !verb` is a private message to that bot. The verbs:
+    *   `!attack` (also `!target`, which aims the bot at the enemy nearest you), `!defend`, `!hold` (also `!stay`, `!holdposition`, `!defend here`: hold where you are), `!follow` (also `!regroup`, `!formup`, `!form up`), `!cover` (escort you and fight anything it sees), `!freelance` (also `!stop`, `!dismiss`: cancel orders)
+    *   `!attackflag` (also `!getflag`, `!flag`) and `!defendflag` (also `!guardflag`) for CTF
+    *   `!hunt <name>` (go after one enemy), `!status` (also `!report`), `!ping`
+    *   `!goal` (also `!objective`) in co-op: go to the current mission objective
+    *   An ordered bot reports "In position." or "Right behind you." when it arrives and "Can't get there!" or "Can't reach you!" when it is blocked. In free-for-all modes only `!ping` and `!hunt` work, and the other verbs are ignored without a reply. There is no `!help` yet, and a misspelled verb gets no answer. The full reference is [CHAT_COMMANDS.md](matcen-docs/CHAT_COMMANDS.md).
+*   **Ships and difficulty**: Pyro-GL, Phoenix, Magnum-AHT, or Black Pyro (requires Mercenary). Five difficulty levels, Trainee through Insane, scale aim, reaction time, evasion and turn rate, globally or per bot.
+*   **Team assignment**: put bots on teams in the config or at the console. A bot with no team joins the smallest one. The game's own `$balance` and `$autobalance` commands move bots like any other player.
+*   **In-game setup**: a Bot Settings screen in the listen-server flow sets the bot count, names, ships and difficulty, and saves them in `.mps` presets.
 
 ### Navigation
 
-Multiplayer maps ship with no AI waypoint data. Descent 3 multiplayer never had bots, so the level editor's waypoint pass was never run on any of them. Matcen builds what's missing at runtime: on level load, the server grows a volumetric roadmap (a lattice of flight-verified waypoints, in the tradition of robotics probabilistic roadmaps) through every room and terrain region, tested against the real ship hull so bots are never routed through gaps they can't fly.
+Multiplayer maps ship with no AI waypoint data: Descent 3 multiplayer never had bots, so the level editor's waypoint pass was never run on them. Matcen builds what is missing when a level loads. It grows a lattice of flight-checked waypoints through every room and terrain region, tested against the real ship hull so bots are not sent through gaps they cannot fly, and links each room's corners into one route network.
 
-Routing is hierarchical. A cost-aware router picks the room sequence: it prefers roomier doors, prices tight and breakable openings, and reroutes around obstructions discovered at runtime. An any-angle planner (Lazy Theta\*) threads complex room interiors. Steering stays with the engine's native path-follower and avoidance code, so bot movement inherits the game's own flight feel rather than fighting it. Breakable glass and destructible grates are treated as doors that need opening: bots shoot them out en route with an appropriate weapon.
+A cost-aware router picks the sequence of rooms: it prefers roomy doors, treats cramped openings as a last resort, and reroutes around obstructions found during play. An any-angle planner threads complex room interiors, and the engine's own path-follower and avoidance code do the steering, so bots fly with the game's own feel. A bot carrying a weapon that can break glass may route through a breakable pane and shoot it out on the way. A bot that is stuck against a destructible object shoots it.
 
-The full design, including the engine reference, live tuning status, and the ledger of approaches tried and reverted, is in [`matcen-docs/NAVIGATION.md`](matcen-docs/NAVIGATION.md).
+The full design, the engine reference, the open problems and the list of approaches tried and reverted are in [`matcen-docs/NAVIGATION.md`](matcen-docs/NAVIGATION.md).
 
 ### Server configuration
 
-Bots are configured via a separate config file referenced from `dedicated.cfg`, and can be managed live from the console or telnet. For listen servers (hosting from the client), use the in-game Bot Settings screen instead.
+Bots are configured in a separate file named from `dedicated.cfg`, and can be managed live from the server console or telnet. On a listen server (hosting from the client), use the in-game Bot Settings screen instead.
 
 ```ini
 ; In dedicated.cfg: add this line to enable bots
 BotConfig=bots.cfg
 ```
 ```ini
-; bots.cfg: bot roster config (Key=Value syntax)
+; bots.cfg: bot roster (Key=Value)
 BotCount=4
-BotDifficulty=HOTSHOT
+BotDifficulty=hotshot
 BotName1=Reaper
 BotName2=Phantom
 BotName3=Viper
 BotName4=Shadow
 BotShip1=phoenix
 BotShip2=magnum
-BotDifficulty1=ACE
-BotDifficulty2=TRAINEE
+BotDifficulty1=ace
+BotDifficulty2=trainee
 BotTeam1=1
 BotTeam2=1
 BotTeam3=2
 BotTeam4=2
 ```
 
-A server with no `BotConfig` line runs without bots and behaves exactly like a vanilla D3 server config.
+A server with no `BotConfig` line, or with `BotCount=0`, runs without bots and behaves exactly like vanilla D3. The bot keys only work inside the bot file, not in `dedicated.cfg`.
 
-**Ship aliases:** `pyro`, `phoenix`, `magnum`, `blackpyro` (full names like `Pyro-GL` also accepted).
+*   **Comments** go on their own line, starting with `;` or `#`. A comment after a value becomes part of the value.
+*   **Names** are cut to 14 characters, and `[BOT]` is added to each.
+*   **Ship aliases:** `pyro`, `phoenix`, `magnum`, `blackpyro` (full names like `Pyro-GL` also work). An unknown ship becomes Pyro-GL.
+*   **Difficulty levels:** `trainee`, `rookie`, `hotshot`, `ace`, `insane`. Set the default with `BotDifficulty=` (Hotshot if you leave it out) and per bot with `BotDifficulty1=` and so on. A per-bot value the server does not recognize becomes Hotshot, not your default.
+*   **Teams:** `BotTeam<n>=1` to `4`. Leave it out and the bot joins the smallest team. A team the game mode does not have prints a warning and the bot joins the smallest team. No effect in free-for-all modes.
+*   **Seats:** bots can take the last free seat today. Nothing is kept free for humans, and a human who tries to join a full server is turned away. On a dedicated server the server's own slot counts as a player, so `BotCount` equal to `MaxPlayers - 1` fills every seat. To keep seats free, set `BotCount` to at most `MaxPlayers - 1` minus the seats you want open. The Bot Settings screen stops at one less than the player limit, which on a listen server is the host's seat, so it leaves none free either.
 
-**Difficulty levels:** `trainee`, `rookie`, `hotshot` (default), `ace`, `insane`. Set globally with `BotDifficulty=` or per-bot with `BotDifficulty1=`, etc.
+> **DECISION NEEDED (Q1)**: drafted on the default; the operator's second pass settles it.
 
-**Team assignment:** `BotTeam<n>=1..4` (1-indexed). Omit for auto-balance. Values that exceed the game's active team count warn and auto-balance; values outside `1`–`4` silently auto-balance. No effect in non-team modes.
+Planned (not built): the server will always keep one seat free for a human, in every mode including co-op, and every way of adding a bot, `$addbot` included, will respect it. When a human joins a full server anyway, a bot leaves to make room and says so in chat (from the larger team, the lowest scorer first). An optional target player count will add and remove bots as humans come and go. The design is in [BOT_MANAGEMENT.md](matcen-docs/BOT_MANAGEMENT.md).
 
 ### Console commands
 
-Available in the dedicated server console or via remote telnet:
+Available in the dedicated server console and over remote telnet. `$bothelp` prints this list.
 
 | Command | Description |
 | :--- | :--- |
-| `$addbot <name> [ship] [difficulty] [team]` | Add a bot, e.g. `$addbot Reaper phoenix ace 2`. |
-| `$removebot <index>` | Remove one bot (see `$botlist` for indices). |
+| `$addbot <name> [ship] [difficulty] [team]` | Add a bot, for example `$addbot Reaper phoenix ace 2`. The name is one word. |
+| `$removebot <index>` | Remove one bot (indices from `$botlist`). |
 | `$removebots` | Remove all bots. |
-| `$botlist` | List current bots with ship, difficulty, and status. |
+| `$botlist` | List the bots with ship, difficulty and whether they are alive. |
 | `$botdifficulty <index\|all> <level>` | Change difficulty mid-game. |
-| `$botstat [index\|all]` | Real-time state and physics readout for debugging. |
-| `$nav` | Navigation namespace: bare `$nav` lists all toggles with live state, `$nav <name> on\|off` flips one, `$nav dump [file]` writes nav geometry to JSON for offline analysis. |
-| `$servercaps` | Print server capabilities (remote-admin handshake). |
-| `$bothelp` | List all bot commands. |
+| `$botstat [index\|all]` | Each bot's state, role, target and navigation, for debugging. |
+| `$botmode` | Show the game mode the bots detected. |
+| `$botobj` | Show objective state: flags and carriers, orbs, Monsterball roles, Entropy labs, the co-op goal. |
+| `$botmov on\|off` | Movement debug logging. |
+| `$nav` | Navigation diagnostics. Bare `$nav` lists the toggles with their state; `$nav <name> on\|off` flips one. Sub-commands: `$nav dump [file]` writes the level's navigation geometry to JSON, and `contend`, `roomfaces`, `probe` and `sweep` are developer instruments. These are for diagnosis, not tuning. |
+| `$servercaps` | Print the server's capabilities, for remote admin tools such as D3 Pyrodeck. |
+| `$bothelp` | List the bot commands. |
+
+A listen-server host cannot use `$` bot commands during a match yet.
 
 ### Roadmap
 
-*   **0.9.16 onward, every map smooth**: the remaining per-map problems, each fix soaked and compared before it lands. Open on this line: two-bunker canyon maps (Sigma Base), the toroid maps (Rim, abend2), very large maps (HAVOC's DownTown), dropped-flag reaction time, a co-op revisit, and consolidating the navigation code so one layer decides where a bot aims.
-*   **0.10, the release package**: bot management and feel, the command surface and menus, and packaging for a community release.
-*   **Dynamic team rebalancing**: rebalance bot teams as humans join and leave. Pre-assignment works today.
+The next stable release is 0.9.16, once its final review is done. After it comes the work for the first public release:
 
-Co-op companions (bots that fly the campaign on your wing and take `!goal` / `!hold` / `!freelance` orders) shipped in 0.9.9 and are still experimental; see [Known limitations](#known-limitations). The full plan is in [`matcen-docs/PLAN.md`](matcen-docs/PLAN.md).
+*   **Population and seats**: a free seat always kept for humans, a bot leaving when a human joins a full server, and an optional target player count. Team balance as players come and go already works through the game's `$balance` and `$autobalance` commands. Population is the missing piece.
+*   **Chat orders finished**: `!help`, a reply in free-for-all modes, the two-word `!attack flag` and `!defend flag`, a report when a hunted enemy dies, no lost replies, a notice when a level change clears orders, and formation flying, where bots that form up on you hold distinct slots through tunnels and rooms.
+*   **Client experience**: team control and a free-seat readout in Bot Settings, bot commands for a listen-server host during a match with on-screen feedback, and the navigation overlay (Ctrl+F7) limited to the host.
+*   **One planner per room**: the last consolidation of the navigation code, so a single planner decides a bot's path inside a room. It lands only if it plays no worse on a fixed set of test maps.
+*   **The release package**: Windows and Linux builds on a GitHub release, a quickstart guide, and an announcement. macOS builds will be community-tested.
+*   **D3 Pyrodeck**: the companion web admin tool gets its own production release alongside.
+*   **A hosted server**: a public 24/7 server, sized by a capped load test.
+*   **Client compatibility pass**: retail 1.5, PiccuEngine and the Matcen client, checked against the release server.
+
+The first public release will be 0.10.0. Version 1.0 comes after the community has played it.
+
+> **DECISION NEEDED (Q2, Q3, Q5, Q11)**: drafted on the default; the operator's second pass settles it.
+
+Drafted on the defaults: the chat-order finish line is the polish list plus formation flying, with `!get <powerup>` and team-chat callouts only if time allows (Q2); the client items are the Bot Settings additions, host commands and the host-only overlay, with a quick-order HUD deferred (Q3); co-op ships as experimental (Q5); the public release is 0.10.0 and 1.0 follows community play (Q11). The full plan is in [`matcen-docs/PLAN.md`](matcen-docs/PLAN.md).
 
 ### Known limitations
 
-*   **Toroid maps (abend2, Rim)**: rings where the next door is out of sight from most of the room make bots re-ask the same crossing instead of walking the ring; abend2 still scores (1.5 captures/round in 3v3), Rim rarely (0.7/round, up from a documented zero). Both are on the 0.9.15 list with their geometry captured; abend2's uneven team behaviour is accepted until then.
-*   **Two-bunker maps (Sigma Base)**: bases that connect only across open terrain. Attackers now cross and enter the enemy base, but one team's bots still lose time in a hub of their own base where two navigation layers disagree about which door to take.
-*   **Very large maps (HAVOC's DownTown)**: the server runs them smoothly and bots fight and grab flags, but some wander in a few areas (a parking structure, one team's start) instead of pressing the objective.
-*   **Crossfire maps**: in 4-team CTF on QuadSomniac every team converts few of its flag grabs (5-10%); carriers die in the crossfire on the way home.
-*   **Entropy and co-op**: Entropy bots have not completed a room takeover in the recorded tests. Co-op still has reported bot-freezing and client-compatibility problems and was not validated by the latest test set.
-*   **Thin divider rooms**: a few rooms with paper-thin disconnected sections remain hard to route across; a densification pass is planned.
-*   **Tight-doorway precision**: doorways barely wider than the ship are routable, but the engine path-follower can be clumsy threading them.
-*   **Outdoor edges**: bots can ground-pin against steep hillsides on rough terrain, and a decorative concave alcove (a doorway-shaped recess with no real door) can trap a flag carrier. Much of the hillside class turned out to be an outdoor route network that had grown beneath the terrain, fixed in 0.9.15 (ground pins over three Isengard rounds: 308 to 15).
-*   **Decoration powerups**: items sealed inside non-enterable scenery are occasionally chased briefly, then retired level-wide by an evidence-based backstop, so the behavior corrects itself without operator action.
-*   **Multi-flag CTF**: in 4-team CTF, bots don't deliberately hoard multiple flags for the bonus cash-in; they only do it opportunistically.
-*   **Coverage and map balance**: usable navigation on arbitrary maps is the goal, including user-made levels; remaining coverage gaps are limitations, not exemptions. Roughly balanced scoring is expected on designed-symmetric CTF maps with equal-difficulty bots, not on genuinely asymmetric maps. Even scoring alone does not prove coverage is adequate.
+*   **Seats**: bots can take the last free seat, and nothing is kept free for humans yet (see [Server configuration](#server-configuration)). <!-- POP2 -->
+*   **Toroid maps (Rim, abend2)**: abend2 plays well, but its two teams still score unevenly. On Rim, bots get caught in the ring's angled alcoves. <!-- NAV8, NAV40 -->
+*   **Sigma Base**: bots attack and score, but get stuck for a while in two rooms (a central room and the bridge room) until they work themselves free. <!-- NAV1 -->
+*   **Very large maps (HAVOC's DownTown)**: bots fight and grab flags, but some wander in a few areas (a parking structure, one team's start) instead of pressing the objective. <!-- NAV3, NAV4 -->
+*   **HAVOC's Slave Pit**: bots rarely reach the flags. <!-- NAV3 -->
+*   **Khazad-dum**: CTF bots move and fight but do not capture. <!-- MODE17 -->
+*   **Crossfire maps**: in 4-team CTF on QuadSomniac every team converts few of its flag grabs, because carriers die in the crossfire on the way home. <!-- MODE12 -->
+*   **Thin rooms**: very flat rooms, such as Canyons' canyon strips, get only a sparse route grid. They play, but less smoothly. <!-- NAV7 -->
+*   **Tight doorways**: an opening barely wider than the ship is a route of last resort, and one office door on Batteries Included still holds bots at its frame. <!-- NAV14 -->
+*   **Outdoor edges**: bots can still pin against steep hillsides on rough terrain, and a decorative doorway-shaped recess with no real door can trap a flag carrier. <!-- NAV9, NAV22 -->
+*   **Decoration powerups**: items sealed inside scenery are sometimes chased briefly before the bots give up on them for the rest of the level. <!-- NAV28 -->
+*   **Multi-flag CTF**: in 4-team CTF, bots do not deliberately hoard several flags for the bonus. They only do it by chance. <!-- MODE11 -->
+*   **Ships other than the Pyro**: the route network is built for the Pyro-class hull, so Phoenix and Magnum bots fly it less well. <!-- POP11 -->
+*   **Entropy**: bots completed a room takeover in 0.9.8 testing, but none was seen in later tests. A check on the release build is owed. <!-- MODE2 -->
+*   **Co-op**: works since 0.9.9 and is experimental. Bots fly on your wing and take `!goal`, `!hold` and `!freelance` orders, but they get lost outdoors and are erratic in tight tunnels. <!-- COOP1, COOP4, COOP6 -->
+
+The goal is usable navigation on any map, user-made levels included, and the gaps above are limitations, not exemptions. On CTF maps designed to be symmetric, bots of equal difficulty should score roughly evenly. That is not expected on maps that are genuinely asymmetric, and even scoring alone does not prove the navigation is complete.
 
 ### For developers
 
-Architecture deep-dives, implementation history, and specifications live in [`matcen-docs/`](matcen-docs/):
+Architecture, design, history and specifications live in [`matcen-docs/`](matcen-docs/) (index: [`matcen-docs/README.md`](matcen-docs/README.md)):
 
+*   [PLAN.md](matcen-docs/PLAN.md): the forward plan, the release path, and the registry of every open item (§4)
 *   [CHANGELOG.md](matcen-docs/CHANGELOG.md): release notes, newest first
-*   [NAVIGATION.md](matcen-docs/NAVIGATION.md): canonical navigation design covering hierarchical routing, the volumetric roadmap, the engine reference, live status, and history
-*   [BOT_DEV_REFERENCE.md](matcen-docs/BOT_DEV_REFERENCE.md): architecture, state machine, constants, engine API patterns
-*   [BOTS_DEVEL.md](matcen-docs/BOTS_DEVEL.md): dated build history, newest first
-*   [BOT_MANAGEMENT.md](matcen-docs/BOT_MANAGEMENT.md): configuration, ships, difficulty, remote administration
-*   [CHAT_COMMANDS.md](matcen-docs/CHAT_COMMANDS.md): the chat command system, from research and verb taxonomy through rollout
+*   [NAVIGATION.md](matcen-docs/NAVIGATION.md): the navigation design as built, the engine reference, open navigation problems and the tried-and-reverted ledger
+*   [OBSTACLE_GEOMETRY.md](matcen-docs/OBSTACLE_GEOMETRY.md): how the engine represents walls, glass, grates, doors and forcefields, and what the bots do with each
+*   [BOT_DEV_REFERENCE.md](matcen-docs/BOT_DEV_REFERENCE.md): architecture, state machine, constants, engine API patterns, the list of engine files the fork modifies
+*   [BOTS_DEVEL.md](matcen-docs/BOTS_DEVEL.md): the dated engineering log from the 0.9.13 cycle on
+*   [BOT_MANAGEMENT.md](matcen-docs/BOT_MANAGEMENT.md): configuration, console, difficulty, capacity rules, and the population design
+*   [CHAT_COMMANDS.md](matcen-docs/CHAT_COMMANDS.md): the `!` order reference as built, and what is left to finish
+*   [PYRODECK_CONTRACT.md](matcen-docs/PYRODECK_CONTRACT.md): the console output formats remote admin tools rely on
+*   [archive/](matcen-docs/archive/README.md): history moved out of the live docs, verbatim, including the build log before 0.9.13
 
 ## Contributing
 Anyone can contribute! We have an active Discord presence at [Descent Developer Network](https://discord.gg/GNy5CUQ). Patches should be submitted on GitHub.

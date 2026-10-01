@@ -7,7 +7,7 @@ decisions the operator owes, what is deferred past the reveal, and the rules a g
 **Where everything else lives:** navigation open problems, design and the tried-and-reverted ledger in
 `NAVIGATION.md` §7; the dated engineering log in `BOTS_DEVEL.md`; release notes in `CHANGELOG.md`; the specs behind
 the B and C rows in `BOT_MANAGEMENT.md` (population and seats), `CHAT_COMMANDS.md` (the `!` harness) and
-`PYRODECK_CONTRACT.md` (the telnet contract, replacing `D3_PYRODECK_SPEC.md`; DOC6). Everything this plan carried from
+`PYRODECK_CONTRACT.md` (the telnet contract, replacing the Matcen copy of the Pyrodeck spec, now `archive/D3_PYRODECK_SPEC-v2.6.md`; DOC6). Everything this plan carried from
 2026-08-29 to 2026-10-01 (the navigation blocker narrative, the 0.9.13 to 0.9.16 sprint queues, the Q1-Q15 review bodies
 and every dated soak read) is kept verbatim in `archive/PLAN-2026-08-29_to_10-01.md`.
 
@@ -63,6 +63,10 @@ between here and the reveal is the B list in §3, most of it work that does not 
 
 The history of how the project got here (the navigation blocker, the committee census, the 0.9.13 to 0.9.16 sprints)
 lives in `archive/PLAN-2026-08-29_to_10-01.md`, `BOTS_DEVEL.md` and `CHANGELOG.md`.
+
+**Docs consolidation landed on 2026-10-01** (DOC1, X). Every doc was rewritten to its as-built state; the history it
+dropped was moved verbatim, never deleted, into `matcen-docs/archive/` (index: `archive/README.md`). Open items live
+only in §4; the README's known limitations each name a §4 id.
 
 ---
 
@@ -173,22 +177,24 @@ Status text ("Q13", "Q9") is the old PLAN §4.0.1 review queue, kept in the arch
 | ID | Item | Source | Status (evidence) | Bkt | §4.2 | Q |
 |---|---|---|---|---|---|---|
 | POP1 | **Bot population manager**: `BotTargetPlayers=` (0 = off), add/remove bots as humans join and leave, cycle roster names/ships/difficulty, 5 s cooldown, 5 s check in `MultiDoServerFrame`, `$botpopulation on/off/status/target/reserve`, announce changes in chat | BOT_MANAGEMENT §5.3 182-221, risk row 332; memory `user.md` (12-16 sweet spot) | not built: no `BotTargetPlayers`/`$botpopulation` symbol; the roster spawns once per session (`Bot_roster_spawned`) and `$removebot` never refills | B | 1 | Q1 |
-| POP2 | **Bots never fill the server**: `BotReservedSlots=`; one seat free in every mode (co-op's 4-player cap seals at `BotCount=3`) | BM §5.3 190-204; 07-19 ruling (archived `project-bot-yield-seat`) | **status corrected: nothing is reserved today.** `BotAdd` (bot.cpp:8701-8712) refuses only at `connected >= max_players`, a no-overflow clamp; bots can take the last seat; the Bot Settings menu clamps to `max_players - 1` (multi_ui.cpp:1891, 1927), which on a listen server is zero free seats; whether dedicated slot 0 counts as connected is unverified | B | 2 | Q1 |
+| POP2 | **Bots never fill the server**: `BotReservedSlots=`; one seat free in every mode (co-op's 4-player cap seals at `BotCount=3`) | BM §5.3 190-204; 07-19 ruling (archived `project-bot-yield-seat`) | **status corrected: nothing is reserved today.** `BotAdd` (bot.cpp:8701-8712) refuses only at `connected >= max_players`, a no-overflow clamp; dedicated slot 0 counts as connected (multi_server.cpp:757-758; bot.cpp:8704-8708), so `BotCount = MaxPlayers - 1` fills every seat on a dedicated server (code read, not a runtime test); the Bot Settings menu clamps to `max_players - 1` (multi_ui.cpp:1891, 1927), which on a listen server is zero free seats | B | 2 | Q1 |
 | POP3 | **Bot yields to a human** joining a full server (remove a bot before the player fully joins) | 07-19 ruling; BM §5.3 195, 217 | not built; needs a join-path hook + `BotRemove`; vanilla refusal at multi.cpp:3791 | B | 3 | Q1 |
 | POP4 | Seat-model decisions: reserve vs yield vs both; reserve default (spec 4 vs 1); does `$addbot` bypass the reserve; which bot yields; `BotTargetPlayers` default | BM §5.3 199; FEATURE Q1-Q3; CODE Q5; ARCH Q8 | open | D | NEW | Q1 |
-| POP5 | Team balancing as humans join/leave: DMFC `$balance`/`$autobalance` already do it with bots; fix the README roadmap bullet, BOTS_DEVEL "team assignment is static", BM Implementation Order item 7 mislabel | BM §5.5b; README 100; BOTS_DEVEL 2712 | code done; docs fix only | B | 4 | — |
-| POP6 | `$servercaps` feature list is a hard-coded literal (`bots,roster,ships,difficulty`); `teams` (0.8.6), `squad_orders`, `ctf` never advertised; `roster` defined two ways (BM 375 vs Pyrodeck spec 162); add `population` when POP1 lands | bot.cpp:9900-9904; BM 372-390 | open | C | NEW | Q7 |
+| POP6 | `$servercaps` feature list is a hard-coded literal (`bots,roster,ships,difficulty`); `teams` (0.8.6), `squad_orders`, `ctf` never advertised; `roster` defined two ways (BM 375 vs Pyrodeck spec 162); add `population` when POP1 lands | bot.cpp:9900-9904; BM 372-390 | open; the literal is unchanged at HEAD; proposal drafted under DECISION NEEDED (Q7) in PYRODECK_CONTRACT §2 | C | NEW | Q7 |
 | POP7 | `$botship <index> <ship>` (respawn with a new ship) | BM §5.5b 290 | not built | E | NEW | — |
 | POP8 | Persistent bot statistics (K/D, weapon use, state time, powerups; level-end log) and a `$botstats` console summary | BM §5.6 297-307, §5.5b 291; BOTS_DEVEL 2803 | not started | F | 18 | Q17 |
 | POP9 | Bots ignore the server's allowed-ship list (`PlayerSetShipPermission`); old open questions: `BotCount` live vs load-time; per-ship weapon selection | BM history `40a235bf` | not built (no bot code reads ship permissions) | E | NEW | Q6 |
 | POP10 | An unknown difficulty string becomes Hotshot, not the configured `BotDifficulty=` default | bot.cpp:9833 | open, tiny | E | NEW | — |
 | POP11 | Non-Pyro bots vs a Pyro-class network: roadmap built at the 6.7 comfort hull, Phoenix hull 8.0 (a 6.42 wall-sphere tier exists); rosters all-Pyro by ruling while `phoenix`/`magnum` aliases are offered | NAVIGATION 1252; bot_steering.h:46 | partial | D | NEW | Q6 |
+| POP12 | bots.cfg has no inline comments: a trailing `; note` stays in the value (`BotDifficulty1=ace ; note` becomes Hotshot); strip inline `;` in the parser, or keep the doc rule "comments on their own line" | bot.cpp:9716-9740; old BOT_MANAGEMENT 169-171, 255-262 | open; BOT_MANAGEMENT §2 states the own-line rule | E | NEW | — |
+| POP13 | The old BOT_MANAGEMENT risk row "config parser strips quotes" is false: the parser trims only spaces, tabs, CR and LF, quotes stay in the value | bot.cpp:9731-9739; old BOT_MANAGEMENT 330 | docs corrected (live BM); parser unchanged | E | NEW | — |
+| POP14 | `.mps` `BOTCOUNT` clamps to 16 on load, not to `max_players - 1` (the menu clamps only on Enter/Done); `BotAdd` still refuses at capacity, so the effect is warnings, not overflow | multi_save_setting.cpp:286-291; multi_ui.cpp:1891, 1927 | open; folds into POP2 ("every add path obeys the reserve") | E | NEW | — |
 
 ### CMD: `!` harness and formations
 | ID | Item | Source | Status (evidence) | Bkt | §4.2 | Q |
 |---|---|---|---|---|---|---|
 | CMD1 | **The `!` harness refined and finished** (umbrella; the finish line is owed) | operator 09-28; CHAT_COMMANDS Stages 1-6 | shipped: 12 canonical verbs + 15 aliases (bot_chat.cpp 563-588, 743-812); Stage 4 (Tier 3) and Stage 5 (Tier 4) not built | B | 6 | Q2 |
-| CMD2 | **Formation flying** as a distinct mode on the escort-station primitive: formation types (trail in tunnels, wedge in rooms), corridor-width collapse, convoy staggering; fixes 4th+ followers sharing one point and stations inside rock | CC 149, 238-245, 258-260, 339-346; BOTS_DEVEL 2855; archived NEXT_SESSION_PLAN; bot.cpp:2193-2244 | not built; only `BotGetEscortStation` (45 u, 4 slots); "form up" is a `!follow` alias | B | 6 | Q2 |
+| CMD2 | **Formation flying** as a distinct mode on the escort-station primitive: formation types (trail in tunnels, wedge in rooms), corridor-width collapse, convoy staggering; fixes 4th+ followers sharing one point and stations inside rock | CC 149, 238-245, 258-260, 339-346; BOTS_DEVEL 2855; archived NEXT_SESSION_PLAN; bot.cpp:2193-2244 | not built; only `BotGetEscortStation` (45 u, 4 slots, `ordinal % 4`, bot.cpp:2204-2216): the 4th follower takes deep-rear and the 5th+ reuse slots; "form up" is a `!follow` alias | B | 6 | Q2 |
 | CMD3 | 6DOF positioning: `!above`, `!below`, `!flank left/right` | CC 150-151, 339-340 | not built | D | 6 | Q2 |
 | CMD4 | `!hold room` / `!take room` (Entropy room control) | CC 152-153 | not built; overlaps MODE1 | D | 6 | Q2 |
 | CMD5 | `!taunt` verb + D3 audio taunts; the doc's "enemy commands get a taunt" (code replies "Not taking orders from you!") | CC 90-94, 154, 206, 375-377; `82224761` | not built | F | NEW | — |
@@ -197,7 +203,7 @@ Status text ("Q13", "Q9") is the old PLAN §4.0.1 review queue, kept in the arch
 | CMD8 | `!get <powerup>`; its stated blocker ("needs powerup awareness") now exists (`BotRoadmapItemReach`) | CC 7, 139; `32b5b62e`; BOTS_DEVEL 2023 | not built | D | NEW | Q2 |
 | CMD9 | Discoverability: `!help` (DM reply listing the verbs valid in this mode), a one-time join tip, feedback for unknown verbs | bot_chat.cpp:586-588 | not built; unknown verbs get no reply | B | NEW | Q2 |
 | CMD10 | FFA modes drop every verb but `ping`/`hunt` with no reply (`6c4eab43` promised a single DM refusal) | bot_chat.cpp:560, 632 | open | B | NEW | Q8 |
-| CMD11 | `!hunt` in FFA: any human can aim every bot at one player (grief vector); a named bot in the broadcast set may target itself (`BotFindPlayerByName` skips only the sender) | bot_chat.cpp:149-171, 420-448 | open; self-target needs a check | B | NEW | Q8 |
+| CMD11 | `!hunt` in FFA: any human can aim every bot at one player (grief vector); a named bot in the broadcast set may target itself (`BotFindPlayerByName` skips only the sender) | bot_chat.cpp:149-171, 420-448 | open; by code reading FFA `!hunt <name>` may never match (bots and humans both get team 0 in one-team games, bot.cpp:8785, dmfcbase.cpp:5359-5362, and `BotFindPlayerByName` skips the sender's team, bot_chat.cpp:157-160); if so the defect is "every bot replies Hunting! with no target"; unflown | B | NEW | Q8 |
 | CMD12 | `!hunt` target death is not reported; the ATTACK role persists | bot_chat.cpp:420; CC 284 | open | B | NEW | — |
 | CMD13 | The documented two-word `!attack flag` / `!defend flag` are not parsed ("flag" is tried as a bot-name prefix) | bot_chat.cpp:68-90, 803-807; CC 138-142 | open | B | NEW | — |
 | CMD14 | Order reports share the 2 s per-bot reply cooldown and are dropped silently | bot_chat.h:22; bot_chat.cpp:684-687 | open | B | NEW | — |
@@ -210,6 +216,8 @@ Status text ("Q13", "Q9") is the old PLAN §4.0.1 review queue, kept in the arch
 | CMD21 | A carrier under `!follow` never runs `BotDoCarrierNav` and scores only by luck | archived `project-order-arrival-reachability` | deferred, evidence-gated | E | NEW | — |
 | CMD22 | Order-nav polish: hold-boundary re-arrival jitter; KegD3 rooms 31/32 via-ring blind spot | `9880ff9e` | registered, not built | E | NEW | — |
 | CMD23 | Grate objects invisible to the order-arrival ray (`FQ_CHECK_OBJS` + target exemption) | `a420efb1` | registered, low | E | NEW | — |
+| CMD26 | Co-op `!hunt` changes no role (`Num_teams` 1 in co-op; bot_chat.cpp:428 gate) but clears the anchor; an escorting bot keeps FOLLOW, so the order is weak in co-op (same team-0 lookup question as CMD11) | bot_chat.cpp:420-448 | open, unflown | E | NEW | — |
+| CMD27 | `!goal` with no reachable objective replies "No objective right now. Covering you." and changes nothing (a freelanced or posted bot covers no one) | bot_chat.cpp:546-548 | open; rides the UX6 rewording | E | NEW | — |
 
 ### UX: client UX
 | ID | Item | Source | Status (evidence) | Bkt | §4.2 | Q |
@@ -218,7 +226,7 @@ Status text ("Q13", "Q9") is the old PLAN §4.0.1 review queue, kept in the arch
 | UX2 | A listen-server host has no `$` bot commands mid-match; `BotAdd` refusals give the host no feedback (`PrintDedicatedMessage` is a no-op off the dedicated server) | dedicated_server.cpp:1228, 1482 | open | B | NEW | Q3 |
 | UX3 | Bot Settings menu gaps: no Team control (`roster[].team` round-trips `.mps` with no control), no free-seat readout, no note that bots spawn 3 s after load, dead `BotUIRosterEntry::enabled` (bot.h:876), Black Pyro offered without a Mercenary check | multi_ui.cpp:1602-1990 | open | B | NEW | Q3 |
 | UX4 | Squad-order HUD quick-access overlay (Matcen-client Tier 2, degrades to chat) | BOTS_DEVEL 2832-2845; archived `project_game_mode_roadmap`; deleted README bullet | not built | D | NEW | Q3 |
-| UX5 | Ctrl+F7 overlay reachable by any client (gated only on `!Dedicated_server`); layer 1 builds skeletons synchronously in the render frame | bot_navdebug.cpp:53; bot_steering.cpp:2735 | open | B | NEW | Q3 |
+| UX5 | Ctrl+F7 overlay reachable by any client (gated only on `!Dedicated_server`); layer 1 builds skeletons synchronously in the render frame | bot_navdebug.cpp:53; bot_steering.cpp:2735 | open; documented as current reality in VISUAL_DEBUG "What it can and cannot see"; layer 1 builds via `SkelEnsure` and the `BotPortalCrossing` sampler; the GameLoop.cpp:1270-1271 comment still says it no-ops on a remote client | B | NEW | Q3 |
 | UX6 | Co-op "Heading to: <item>" announcement promises a move no bot makes (bots escort, 07-19 ruling) | bot_objective.cpp:1243-1247 | open | B | NEW | Q5 |
 | UX7 | On the host path a bot's ack can print above the speaker's command | multi.cpp:5010 vs 5012; hudmessage.cpp:857-858 | low confidence; needs a cockpit look | E | NEW | — |
 | UX8 | `$bothelp` shows internal jargon ("§7 ... NAVIGATION.md §6.9") and omits `$nav roomfaces/probe/sweep/mtenure` | dedicated_server.cpp:1170-1186 | open, tiny | C | NEW | — |
@@ -240,24 +248,20 @@ Status text ("Q13", "Q9") is the old PLAN §4.0.1 review queue, kept in the arch
 | COL10 | Outdoor Phase 2: one outdoor network per region; lift the composer's `OBJECT_OUTSIDE` guard; hull-visible attach | PLAN §3.7 655-660 | not built | D | NEW | Q20 |
 | COL11 | Outdoor Phases 3-4 remainder: troute executor as the commitment rule; region-to-region terrain edges if needed; committed via tick on terrain-to-terrain legs; replace `BotResolveOutdoorEntrance` with the composer (partial: `161582cc`) | PLAN 651-672; NAVIGATION 436-439 | not built | D | NEW | Q20 |
 | COL12 | The 0.9.6 grate-DOOR clutter/building allowlist "aimed at a class that may not exist" | OBSTACLE_GEOMETRY §3 94 | in code; no decision | E | NEW | — |
-| COL13 | Code hygiene owed: post-Hyper-Anarchy helpers (`BotIsObjectiveCarrier`, `BotShouldSuppressPowerupSeek`, `BotGetHuntLeashRange`); goal-attachment rework and `BOT_OGRAPH_RADIUS` 6.0→6.7 (`7b06de9f`); resolve-memo serial keying, interior non-portal pane watching, v1-plan vs heal-opened routes (`739f78b6`) | archived `project_hyper_anarchy`; commits | not built | E | NEW | — |
-| COL14 | Stale code comments: bot_chat.cpp:19 ("Stage 3"), :809 (`!objective` "resumes autonomous seeking"), :596 and the `BotAdd` comment (" [BOT]", 6 chars), :556-558 (Monsterball "non-team"), dedicated_server.cpp:863 (`addbot <name> [ship]`) | code audit §6 | open | B | NEW | — |
+| COL13 | Code hygiene owed: post-Hyper-Anarchy helpers (`BotIsObjectiveCarrier`, `BotShouldSuppressPowerupSeek`, `BotGetHuntLeashRange`); goal-attachment rework and `BOT_OGRAPH_RADIUS` 6.0→6.7 (`7b06de9f`); resolve-memo serial keying, interior non-portal pane watching, v1-plan vs heal-opened routes (`739f78b6`) | archived `project_hyper_anarchy`; commits | not built; `BOT_OGRAPH_RADIUS` still 6.0 (bot_steering.h:90); the three helper names are proposed, not existing functions | E | NEW | — |
+| COL14 | Stale code comments: bot_chat.cpp:19 ("Stage 3"), :809 (`!objective` "resumes autonomous seeking"), :596 and the `BotAdd` comment (" [BOT]", 6 chars), :556-558 (Monsterball "non-team"), dedicated_server.cpp:863 (`addbot <name> [ship]`) | code audit §6 | open; the `BotAdd` comment is bot.cpp:8767-8770 (EU9, 10-01) | B | NEW | — |
+| COL26 | Stale code comment: bot_roadmap.cpp:1590-1595 (corner-bridge NOTE) says "the sweep ignores back faces"; `RoadmapLOS` has been `FQ_BACKFACE` since `8b6ee205` | EU2 code audit | open; rides COL14 | B | NEW | — |
+| COL27 | Stale code comments: bot.h:517 `countermeasure_timer` "(future use)" (it gates `BotDeployChaff`); GameLoop.cpp:1270-1271 overlay "no-ops on a remote client" (see UX5) | EU5 code read | open, comment-only | F | NEW | — |
 
 ### DOC: docs
 | ID | Item | Source | Status (evidence) | Bkt | §4.2 | Q |
 |---|---|---|---|---|---|---|
-| DOC1 | **Docs consolidation** (units EU1-EU12 of CONSOLIDATION-PLAN.md) | operator scope; this sweep | planned | B | 7 | Q23 |
 | DOC2 | Doc-style ruling: engineering logs stay in log style; public docs (README, CHANGELOG, index, UPSTREAM_PATCHES, quickstart) get the prose pass | archived `feedback-docs-audience-split` | memory only | B | NEW | — |
-| DOC3 | README refresh: status, roadmap from B/C rows, Known limitations from E/F rows, verb list and console table from code, developer doc list | README inventory S3-S9, S36-S38 | stale | B | 7 | Q5, Q10 |
-| DOC4 | CHANGELOG defects: 0.9.16-dev header vs body, "not yet flown", overnight and glass-gate status, `[0.9.12-dev] in test` never released, 0.9.12 glass "do not retry", 0.8.7 hearing 60 vs code 200, pre-0.8.0 pointer, no 0.10.x in the legend, 0.9.13 limitations block mid-entry, missing mouse / mission-download / grtext fixes | CHANGELOG inventory S3-S4, S29-S35; FEATURE item 83 | stale | B | 7 | — |
-| DOC5 | NAVIGATION ten days behind (no commit since `bfbe6c08`): spawn egress, hull tiers, void-cell guard, cramped-only-door rule, sliced skeleton, Q12, sky-roofed revert; the tried-and-reverted ledger holds 4 of ~33 entries | NAV inventory headline facts, §3b | stale | B | 7 | — |
-| DOC6 | Pyrodeck spec location: Matcen copy v2.6 vs the Pyrodeck repo's v2.7; retire the copy, keep a Matcen-side telnet contract | FEATURE §1, §6 | decision | D | NEW | Q23 |
-| DOC7 | CLAUDE.md doc list and pointers go stale after the consolidation (archive/, Pyrodeck contract, NAV_CONSOLIDATION provenance); operator-owned file | this plan | needs the operator | D | NEW | Q24 |
-| DOC8 | Mode-doc closures: MONSTERBALL §3 pre-M1 text and §6 "resolve in M1" questions; ENTROPY hold depth 12 vs code 24 (bot_objective.h:64) | FEATURE §4 | stale | B | NEW | — |
+| DOC6 | Pyrodeck spec location: Matcen copy v2.6 vs the Pyrodeck repo's v2.7; retire the copy, keep a Matcen-side telnet contract | FEATURE §1, §6 | drafted on the Q23c default: the Matcen copy is `archive/D3_PYRODECK_SPEC-v2.6.md`, `PYRODECK_CONTRACT.md` written; closes when the operator confirms Q23c | D | NEW | Q23 |
+| DOC7 | CLAUDE.md doc list and pointers go stale after the consolidation (archive/, Pyrodeck contract, NAV_CONSOLIDATION provenance); operator-owned file | this plan | needs the operator; the consolidated proposal is written (exact lines to change), applied by the operator per the Q24 default | D | NEW | Q24 |
 | DOC9 | `RoadmapRoom` lifetime-contract docs (doc debt) | `739f78b6` | never written | E | NEW | — |
-| DOC10 | SOAK_0913 §7 harness facts (dirty build stamps the parent hash; SetLevel does not pin) into the matcen-soak skill / test notes | NAV inventory §6 | check memory `test-harness.md` first | B | NEW | — |
+| DOC10 | SOAK_0913 §7 harness facts (dirty build stamps the parent hash; SetLevel does not pin) into the matcen-soak skill / test notes | NAV inventory §6 | doc half done: BOT_DEV_REFERENCE "Measurement caveats > Harness" carries the facts; the matcen-soak skill half is owed (skills are operator-owned) | B | NEW | — |
 | DOC11 | Trim CHANGELOG 0.9.14-0.9.16 to release-note length (detail already in BOTS_DEVEL) | CHANGELOG inventory Q9 | decision | D | NEW | Q23 |
-| DOC12 | A pre-0.8.0 CHANGELOG entry (Phases 0-5) so the list is complete | CHANGELOG inventory §6 | missing | B | NEW | — |
 
 ### REL: release package and Pyrodeck
 | ID | Item | Source | Status (evidence) | Bkt | §4.2 | Q |
@@ -269,18 +273,19 @@ Status text ("Q13", "Q9") is the old PLAN §4.0.1 review queue, kept in the arch
 | REL5 | Bot removal during a level transition is untested | BOTS_DEVEL 2734 | no test recorded | C | NEW | — |
 | REL6 | **D3 Pyrodeck for the reveal**: its own Phase 4 "Production Release" (rotation hardening, Windows rotation E2E, history to noreply email, repo public + first tag + CI dry run, Linux tarball + Windows .exe smoke, issue template); remote admin and orchestration are its Phase 6 | D3_PYRODECK_SPEC §7; Pyrodeck repo PLAN.md 304-344; BOTS_DEVEL roadmap row 5 | Pyrodeck v0.4.19 (09-26), Phases 1-2 done; the Matcen spec's phase list is obsolete | C | 12 | Q12 |
 | REL7 | Pyrodeck mission-download link refresh (rewrite URL lines inside the .mn3; the engine `MissionURL` cvar was reverted on 07-19) | archived `project_release_prep` | decided, not built, not in the spec | C | NEW | Q12 |
-| REL8 | Pyrodeck contract work: population controls and team field once POP1/POP6 land; Tier-1 drift (`$botmode` names, `$addbot` team arg and success line, `Name[BOT]` spacing, role case, `$terrainsteer`, `$botobj` console output) | code audit §7 #28-32; FEATURE §4 | open | C | NEW | Q7 |
+| REL8 | Pyrodeck contract work: population controls and team field once POP1/POP6 land; Tier-1 drift (`$botmode` names, `$addbot` team arg and success line, `Name[BOT]` spacing, role case, `$terrainsteer`, `$botobj` console output) | code audit §7 #28-32; FEATURE §4 | Matcen side documented (every Tier-1 format verified in PYRODECK_CONTRACT §4); the remaining work is Pyrodeck-side: its v2.7 spec still shows the old `$addbot` lines, `Phantom [BOT]`, old `$botmode` names, `fork_version=0.9.5` | C | NEW | Q7 |
 | REL9 | Pyrodeck: validate the `logPath` parent dir before launch; post-launch write check | archived `project_pyrodeck_log_path` | Pyrodeck repo; fix #1 done, #2-#3 unknown | E | NEW | — |
 | REL10 | **Cloud-hosted 24/7 server**, sized by a resource-capped soak (Batteries 12-16 player budget as input) | PLAN 1319-1323, 1389-1390, 1398 | not started | C | 13 | Q12 |
 | REL11 | **Quickstart + announcement** (Reddit r/descent, DDN Discord, DescentBB, SectorGame; ModDB/GameFront). Quickstart content: minimal dedicated.cfg + bots.cfg, `$bothelp`, the `online/Direct TCP~IP.d3c` gotcha, PPS=40 | PLAN §4.0; archived `reference_descent_community`, `project_release_prep` #4 | not started | C | 14 | — |
 | REL12 | **Client compatibility pass**: retail 1.5, PiccuEngine, the Matcen client against the release server; every player-facing feature has a chat fallback (Piccu rule); re-check the March "PiccuEngine control takeover in robo-anarchy" | archived `feedback_piccu_compat`, `project_pending_testing`; deleted README line | Piccu compatible as of 0.8.7; re-verify | C | 15 | — |
-| REL13 | **UPSTREAM_PATCHES** shared at the reveal; index "post-0.9.8" → 0.9.9; add #6 (MODE15) if fixed; assess other fork hardening (aipath ASSERT→graceful, `OnPlayerReconnect` ASSERT→warning, physics collision-warning rate limit, `$setpps` clamp, ENG5) | UPSTREAM_PATCHES; FEATURE §3f | patches 1-5 ready, unsubmitted | C | 16 | Q19 |
+| REL13 | **UPSTREAM_PATCHES** shared at the reveal; index "post-0.9.8" → 0.9.9; add #6 (MODE15) if fixed; assess other fork hardening (aipath ASSERT→graceful, `OnPlayerReconnect` ASSERT→warning, physics collision-warning rate limit, `$setpps` clamp, ENG5) | UPSTREAM_PATCHES; FEATURE §3f | UPSTREAM_PATCHES index versions corrected to the tags (#1, #3 v0.8.13; #2 v0.9.7; #4, #5 v0.9.9); #6 drafted on the Q19 default; assessment list added; patches 1-5 unsubmitted, #6 not yet fixed | C | 16 | Q19 |
 | REL14 | Series bump to 0.10.x: timing (is the reveal build 0.10.0?) | PLAN 1387-1391 | decision | D | 17 | Q11 |
 | REL15 | Write the 1.0 definition into PLAN/README: 1.0 only after community play marks it production-stable (replaces March's "all modes, client UI, solid nav") | memory `release-roadmap.md`; retired PLAN (`3d5b838c^`) | memory only | D | NEW | Q11 |
 | REL16 | Annotated tags: `v0.9.16` on stamp; released 0.8.14, 0.9.3, 0.9.4, 0.9.5, 0.9.6 have none | archived `feedback_git_tags`; `git tag` | open | D | NEW | Q14 |
 | REL17 | Branch hygiene: delete merged/equivalent branches (`fix/mission-exists-check`, `fix/sdl-mouse-controls`, `fix/outdoor-0915`, `fix/sigmabase-window-and-exit`, `fix/vcpkg-libsystemd-gcc16`, `origin/fix/vs2026-release-build`); decide `backup/pre-0530-batch` and `fix/sigmabase-objective-gate` | `git branch -a`, `git cherry` | open | C | NEW | Q14 |
 | REL18 | Merge the fork into `main` / sync upstream (last fetched 2026-08-20): before or after the reveal | memory `release-roadmap.md` | memory only | D | NEW | Q14 |
 | REL19 | Old commit email reachable on GitHub until a support-requested GC; local `stash@{0}` holds it | archived `project-git-identity-scrub` | operator informed | F | NEW | — |
+| REL20 | UPSTREAM_PATCHES assessment list: note `fvi_RoomCheckDir` (physics/findintersection) as fork-only; the engine-files audit missed six modified files and had a stale aipath.cpp row | EU5: `git diff --name-status 156cba8a..ee6e6525` | audit fixed in BOT_DEV_REFERENCE (10-01); the UPSTREAM note owed | C | NEW | — |
 
 ### MODE: game modes
 | ID | Item | Source | Status (evidence) | Bkt | §4.2 | Q |
@@ -288,17 +293,17 @@ Status text ("Q13", "Q9") is the old PLAN §4.0.1 review queue, kept in the arch
 | MODE1 | **Entropy E4**: `!attack lab`/`!defend lab`; difficulty scaling; smarter invasion only with soak evidence; `entropy_kill_streak` mirror hardening; the "combat light" re-evaluation (`76549be3`); loaded-bot aggression taste call; force-load / empty-net drill command; shield-knob iteration | ENTROPY_MODE §3.4 236-241; `76549be3`; archived `project_entropy_mode` | not built; E1-E3 validated 0.9.8 | D | 8 | Q10 |
 | MODE2 | Entropy takeovers on the release build: the docs disagree (ENTROPY_MODE: confirmed 07-15/16; CHANGELOG 0.9.13, SOAK_0913 and the 09-14 sweep: none; README: never). One Dementia run before the README line is rewritten | ENTROPY_MODE 4; CHANGELOG 485-495; BOTS_DEVEL row 6.14 | open | C | NEW | Q10 |
 | MODE3 | Operator in-person Entropy flight ("is this mode fun against bots") | ENTROPY_MODE 266-270 | no record | D | NEW | Q10 |
-| MODE4 | Entropy Inversion refused-pickup spam | ENTROPY_MODE 8; NAVIGATION 2068-2070 | open (analyzer tag exists) | E | NEW | — |
+| MODE4 | Entropy Inversion refused-pickup spam | ENTROPY_MODE 8; NAVIGATION 2068-2070 | open; analyzer tag `ENTROPY_REFUSED_PICKUP_SPAM` (analyze_bot_log.py:1503-1511) | E | NEW | — |
 | MODE5 | Entropy RAGE wind-tunnel counter-fly fix (`9e602d7f`) verification | NAVIGATION 2062; archived `project-098-release` | pending since 0.9.8 | E (verify) | NEW | — |
-| MODE6 | Entropy v6 active park thrusts against knockback, contrary to physics ruling 2 | NAVIGATION 1858-1860; bot.cpp:6353-6360 | in code | D | NEW | Q10 |
+| MODE6 | Entropy v6 active park thrusts against knockback, contrary to physics ruling 2 | NAVIGATION 1858-1860; bot.cpp:6353-6360 | in code (bot.cpp:6353-6373); ENTROPY_MODE §3.3-3.4 name it the one exception to ruling 2 (Q10 d default) | D | NEW | Q10 |
 | MODE7 | **Monsterball M4**: difficulty (alignment, prediction, blunder cone, kickoff); wall/ceiling play, banks, pass-backs (out of scope until soaks demand); `!attack ball`/`!defend goal` | MONSTERBALL_MODE §4.4 227-234 | not built; M1-M3 validated 0.9.8 | D | 9 | Q10 |
 | MODE8 | Monsterball: Veins-class finisher conversion weak; Monster Arena 42% via-arrival unverified; fury generality | MONSTERBALL_MODE 6-7; archived `project_monsterball_mode` | open | E | NEW | — |
-| MODE9 | Monsterball analyzer anomalies `MBALL_BLUNDER_HEAVY`, `MBALL_BALL_STUCK` | MONSTERBALL_MODE 281-283 | not built | E | NEW | — |
+| MODE9 | Monsterball analyzer anomalies `MBALL_BLUNDER_HEAVY`, `MBALL_BALL_STUCK` | MONSTERBALL_MODE 281-283 | confirmed not built; `MBALL_OWN_GOAL_EXCESS` (analyze_bot_log.py:1513-1538) partly covers the BLUNDER_HEAVY intent; nothing covers BALL_STUCK | E | NEW | — |
 | MODE10 | **CTF role balance**: first grab puts the other team on defence; both-flags-out standoffs on long maps; dropped-flag reaction time (SteelVapor); Bree Red side (rm25→rm61 hatch vs corridor); roster size as a test axis (2v2 Animal House); Q3A 240 s stalemate flip; UT HidePath carrier hiding | PLAN 438-448, 605, 630-635, 723-725, 763-766; retired CTF_ROLES_DESIGN.md | timeline instrument done; policy open | E | 27 | — |
 | MODE11 | Multi-flag CTF hoarding (4-team bonus); the only implementation sits unmerged on `backup/pre-0530-batch` (`36df4cce`) | README 115; BOTS_DEVEL 1944; NAVIGATION 2891 | not built | F | NEW | Q14 |
-| MODE14 | CTF DLL bug: `HandlePlayerSpew` indexes `dObjects[pnum]` instead of `dPlayers[pnum].objnum` (wrong goal-room test when a carrier dies); fix + UPSTREAM #6 | BDR 97-99; netgames/ctf/ctf.cpp:1755 | present | D | NEW | Q19 |
+| MODE14 | CTF DLL bug: `HandlePlayerSpew` indexes `dObjects[pnum]` instead of `dPlayers[pnum].objnum` (wrong goal-room test when a carrier dies); fix + UPSTREAM #6 | BDR 97-99; netgames/ctf/ctf.cpp:1755 | present at HEAD (ctf.cpp:1755; correct idiom at :1080; upstream identical); documented as UPSTREAM #6 "Open (fix planned)" under DECISION NEEDED (Q19) | D | NEW | Q19 |
 | MODE15 | Gunboys acquire player targets but do not fire | BOTS_DEVEL 2710 | unverified (bots deploy gunboys, bot.cpp:550) | E (verify) | NEW | — |
-| MODE16 | Flares: BDR gotcha "never fire flares" vs `BotDeployChaff` falling back to `FLARE_INDEX` | BDR 562, 621, 687; bot.cpp:1495-1503 | contradiction | E | NEW | Q21 |
+| MODE16 | Flares: BDR gotcha "never fire flares" vs `BotDeployChaff` falling back to `FLARE_INDEX` | BDR 562, 621, 687; bot.cpp:1495-1503 | drafted in BDR on the Q21(d) default under DECISION NEEDED (Q21): the chaff fallback is intended (bot.cpp:1496-1508, bot.h:218-221); the rule is "never select flares as a weapon" | E | NEW | Q21 |
 | MODE17 | Khazad-dum 0 captures every lap ("structural") | PLAN 1202 | not accepted in writing | D | NEW | Q21 |
 
 ### COOP: co-op
@@ -353,14 +358,13 @@ Status text ("Q13", "Q9") is the old PLAN §4.0.1 review queue, kept in the arch
 | NAV38 | Objective-owned degradation (row 6.28 "open") | BOTS_DEVEL 2067 | no closure; meaning unclear | E (propose close) | NEW | Q21 |
 | NAV39 | Flag-carrier sprint-home speed (Phase 7.6 open bug) | retired NAV_OVERHAUL_3 | probably moot | E (propose close) | NEW | Q21 |
 | NAV40 | abend2 per-team asymmetry vs the symmetry acceptance test ("accepted for now, not a clean pass") | NAVIGATION 1404-1424; PLAN §1; memory `toroid-asymmetry-red-vs-blue` | open | D | NEW | Q21 |
-| NAV41 | Corner-bridge sweep honouring back faces (`FQ_BACKFACE`) "still open" | NAVIGATION 960-963 | probably done by `8b6ee205`; check the corner-bridge midpoint path | E (verify) | NEW | — |
-| NAV42 | The door on-ramp admits points outside the room (two rm80 nodes in the hallway) | NAVIGATION 1251 | probably done by the void-cell guard (CHANGELOG 0.9.16) | E (verify) | NEW | — |
+| NAV42 | The door on-ramp admits points outside the room (two rm80 nodes in the hallway) | NAVIGATION 1251 | not done by the void-cell guard: the door on-ramp commits its string-pulled chain without the void test (bot_roadmap.cpp ~1380-1420) and the guard keeps neighbour-room cells by design (:1106); needs a Batteries rm80 dump read | E (verify) | NEW | — |
 
 ### WAT: watches and instruments
 | ID | Item | Source | Status (evidence) | Bkt | §4.2 | Q |
 |---|---|---|---|---|---|---|
 | WAT1 | `$nav` telemetry consolidation: verbosity tier, shared throttle helper, machine-readable event vocabulary co-versioned with Pyrodeck; Release builds log nothing | NAVIGATION 677-682, 2549-2566 | open | E | 29 | — |
-| WAT2 | Overlay Phase 3: 3D text labels, draw-over (no-z) variant, per-bot state label | VISUAL_DEBUG 6, 113, 131; `d3d7a95d` | roadmap layer built (mode 3); labels not built | E | 29 | — |
+| WAT2 | Overlay Phase 3: 3D text labels, draw-over (no-z) variant, per-bot state label | VISUAL_DEBUG 6, 113, 131; `d3d7a95d` | roadmap layer (mode 3, `08cdefbe`/`7b06de9f`) and outdoor lattice (`463069c6`) built; labels not built (text only in `NavDbgDrawHud`, bot_navdebug.cpp:333); listed in VISUAL_DEBUG "Not built" | E | 29 | — |
 | WAT3 | The navdump's `ships[]` sizes are not the runtime `BotHullPhys` (the router's hull now prints on the NO-ROUTE line) | PLAN 1595-1597, 1621 | open | E | 23 | — |
 | WAT4 | Teach `compare_navdumps` the tight-door class (split-room accounting) | PLAN 1070-1072 | open | E | NEW | — |
 | WAT5 | Outdoor-leg labelling: the objective errand's entrance seek logs `owner=explore`, so objective intents under-count outdoors | BOTS_DEVEL 812-813 | no closure | E | NEW | — |
@@ -378,7 +382,7 @@ Status text ("Q13", "Q9") is the old PLAN §4.0.1 review queue, kept in the arch
 | ENG1 | Pacbox: `check_hit_obj` meets a zero-size hit object; a Release build divides by zero into `hit_wallnorm` (corruption risk); stack taken, object unidentified | PLAN §2 69; BOTS_DEVEL 1097-1104 | no fix, no ruling | D | NEW | Q18 |
 | ENG2 | TC trips an engine Debug assert (`bump_two_objects`, zero mass, Q15); Release unaffected | PLAN 903-910; BOTS_DEVEL 121-125 | open | E | 29 | — |
 | ENG3 | Centroid archive lacks `centroidmain.wav` (sound-page assert at load) | BOTS_DEVEL 1098-1099 | third-party defect; not ruled | D | NEW | Q21 |
-| ENG4 | Kartoon Kanyon: engine `BOA_cost_array` row overrun (routed around by our caches, `BOT_MAX_PORTALS` 64) | PLAN 682-684; bot_steering.h:397 | engine defect remains; upstream candidate | E | NEW | Q19 |
+| ENG4 | Kartoon Kanyon: engine `BOA_cost_array` row overrun (routed around by our caches, `BOT_MAX_PORTALS` 64) | PLAN 682-684; bot_steering.h:397 | engine defect remains; listed in the UPSTREAM_PATCHES assessment list ("40-portal room limit") | E | NEW | Q19 |
 
 ### CBT: combat, tactics and bot character (deferred programme)
 | ID | Item | Source | Status (evidence) | Bkt | §4.2 | Q |
@@ -404,9 +408,18 @@ Status text ("Q13", "Q9") is the old PLAN §4.0.1 review queue, kept in the arch
 Kept so nothing re-enters by surprise. Reopen a row (move it back to its theme with a new status) only on new evidence.
 
 | ID | Item | Source | Status (evidence) | Bkt | §4.2 | Q |
+| POP5 | Team balancing as humans join/leave: DMFC `$balance`/`$autobalance` already do it with bots; fix the README roadmap bullet, BOTS_DEVEL "team assignment is static", BM Implementation Order item 7 mislabel | BM §5.5b; README 100; BOTS_DEVEL 2712 | X: code done (DMFC `$balance`/`$autobalance`); BOT_MANAGEMENT §2 and the README roadmap fixed 10-01; the BOTS_DEVEL line now sits in the archive as history | X | 4 | — |
+| DOC1 | **Docs consolidation** (units EU1-EU12 of CONSOLIDATION-PLAN.md) | operator scope; this sweep | X: landed 2026-10-01 (EU1-EU12); history in `matcen-docs/archive/` (index: archive/README.md); Q23 defaults applied, reversible in git | X | 7 | Q23 |
+| DOC3 | README refresh: status, roadmap from B/C rows, Known limitations from E/F rows, verb list and console table from code, developer doc list | README inventory S3-S9, S36-S38 | X: README rewritten 2026-10-01 on the Q1-Q5 defaults; its DECISION NEEDED markers carry the re-touch once the operator answers | X | 7 | Q5, Q10 |
+| DOC4 | CHANGELOG defects: 0.9.16-dev header vs body, "not yet flown", overnight and glass-gate status, `[0.9.12-dev] in test` never released, 0.9.12 glass "do not retry", 0.8.7 hearing 60 vs code 200, pre-0.8.0 pointer, no 0.10.x in the legend, 0.9.13 limitations block mid-entry, missing mouse / mission-download / grtext fixes | CHANGELOG inventory S3-S4, S29-S35; FEATURE item 83 | X: every listed defect fixed in CHANGELOG.md on 2026-10-01 (consolidation) | X | 7 | — |
+| DOC5 | NAVIGATION ten days behind (no commit since `bfbe6c08`): spawn egress, hull tiers, void-cell guard, cramped-only-door rule, sliced skeleton, Q12, sky-roofed revert; the tried-and-reverted ledger holds 4 of ~33 entries | NAV inventory headline facts, §3b | X: NAVIGATION rewritten as the 0.9.16 design of record (`0dcfe4fd`): ledger L1-L33 in §7.5, open problems by id in §7 | X | 7 | — |
+| DOC8 | Mode-doc closures: MONSTERBALL §3 pre-M1 text and §6 "resolve in M1" questions; ENTROPY hold depth 12 vs code 24 (bot_objective.h:64) | FEATURE §4 | X: ENTROPY hold depth 24 u and MONSTERBALL §3/§6 rewritten from code on 2026-10-01; originals in `archive/MODE-docs-history.md` | X | NEW | — |
+| DOC12 | A pre-0.8.0 CHANGELOG entry (Phases 0-5) so the list is complete | CHANGELOG inventory §6 | X: `## Before 0.8.0` pointer entry added, linking `archive/BOTS_DEVEL-phases-0_to_0.9.12.md` | X | NEW | — |
+| NAV41 | Corner-bridge sweep honouring back faces (`FQ_BACKFACE`) "still open" | NAVIGATION 960-963 | X: the corner bridge calls `RoadmapLOS`, whose indoor sweeps pass `FQ_BACKFACE` since `8b6ee205` (bot_roadmap.cpp:530-534, 1596); a dump read is optional | X | NEW | — |
+| DOC13 | Docs citing the 0.92 door-fit scale (`BOT_CROSS_FIT_SCALE`), which no longer exists: the crossing sampler uses `BOT_CROSS_RUNGS` (comfort hull + two wall spheres, bot_steering.h:484-487) | EU2, EU5 (git grep at ee6e6525: BDR, PLAN, NAVIGATION) | X: no live doc names the constant (grep 10-01); NAVIGATION §4.2 states the replacement | X | NEW | — |
 |---|---|---|---|---|---|---|
-| CMD24 | Route `!follow`/escort through the cost-aware router (CC "open follow-up") | CC 7 | X: `BotSetRoutedGoal(..., TRAVEL_OWNER_ORDER)` in `BotNavigateToFollowTarget` (bot.cpp:2298); CHANGELOG 0.9.11 arrival fix; doc line stale | X | NEW | — |
-| CMD25 | Callsign partial matching ("exact only in MVP") | CC 76-77 | X: prefix match in `BotBaseNameMatch` (`a241ac88`) | X | NEW | — |
+| CMD24 | Route `!follow`/escort through the cost-aware router (CC "open follow-up") | CC 7 | X: `BotSetRoutedGoal(..., TRAVEL_OWNER_ORDER)` in `BotNavigateToFollowTarget` (bot.cpp:2298); CHANGELOG 0.9.11 arrival fix; doc line stale; confirmed 10-01, posts too (bot.cpp:2363) | X | NEW | — |
+| CMD25 | Callsign partial matching ("exact only in MVP") | CC 76-77 | X: prefix match in `BotBaseNameMatch` (`a241ac88`); confirmed 10-01 (bot_chat.cpp:600-611) | X | NEW | — |
 | COL15 | 0.9.16 order row 0: open the line, no-behaviour cleanup | PLAN 921, 1414 | X: `ea291c29` | X | NEW | — |
 | COL16 | Row 1 (Q12): the router's door is the via layers' door | PLAN 865-874, 922, 1415 | X: `b9b3b2e3`, `7b67fe1b`; ruled 09-22 (L + Qc) | X | NEW | — |
 | COL17 | Row 3 (Q8): skeleton builds in slices, no first-use freeze | PLAN 842-846, 924, 1416 | X: `455aacbe`; CHANGELOG bullet | X | NEW | — |
@@ -420,10 +433,10 @@ Kept so nothing re-enters by surprise. Reopen a row (move it back to its theme w
 | COL25 | troute v2 cost-comparison route choice "sequenced next" | NAVIGATION 405-408 | X: built as `troute2` | X | NEW | — |
 | MODE12 | Accepted for R1: Crossfire Monsterball bunker outlier; QuadSomniac 4-team conversion; EVADE under-use | PLAN 1402-1403; archived `project_release_prep` | accepted (operator ruling); list in README limitations | X | 31 | — |
 | MODE13 | "Accepted for R1: Plasma/EMD under-selected" | PLAN 1402 | X: fixed 0.8.5 (BDR 902-910); the PLAN line is stale | X | NEW | — |
-| MODE18 | Countermeasure deployment "a future feature" | BDR 563 | X: `BotDeployMines`/`Gunboy`/`Chaff` (bot.cpp:1481-1584) | X | NEW | — |
+| MODE18 | Countermeasure deployment "a future feature" | BDR 563 | X: `BotDeployMines`/`Gunboy`/`Chaff` (bot.cpp:1481-1584); confirmed 10-01, called at bot.cpp:9482-9483, 9516, 9543-9546; BDR now describes them | X | NEW | — |
 | MODE19 | Scoreboards may hide bots past 32 slots (netgames fix deferred) | retired PLAN | X: bots occupy real slots | X | NEW | — |
 | MODE20 | Hoard accumulation-vs-aggression trade-off deferred | retired PLAN | X: Hoard shipped 0.8.14/0.8.16 | X | NEW | — |
-| COOP7 | Co-op "bot-freezing and client-compatibility problems" | README 110; BOTS_DEVEL 1421-1424, 2914, 2950-2966 | X: 07-19 retest flipped co-op to WORKS (BOTS_DEVEL rows 6.18, 6.20); 0.9.9 shipped; doc lines stale (DOC3) | X | NEW | — |
+| COOP7 | Co-op "bot-freezing and client-compatibility problems" | README 110; BOTS_DEVEL 1421-1424, 2914, 2950-2966 | X: 07-19 retest flipped co-op to WORKS (BOTS_DEVEL rows 6.18, 6.20); 0.9.9 shipped; doc lines stale (DOC3); the BDR engine-files audit caveat is corrected (10-01) | X | NEW | — |
 | NAV12 | The explore sampler picks `RF_EXTERNAL` window rooms | PLAN 450-451; NAVIGATION 2003-2004 | X: slices 5/5b router-validated candidates + NEVER filter; CHANGELOG 0.9.14 251; §4.2 row 26 text stale | X | 26 | — |
 | NAV43 | Polaris 08-31 regression (7→0 caps; DISAGREE admission / wind gate); "Polaris wind routing can collapse"; the wind-gate axis hypothesis | PLAN 414-421; CHANGELOG 0.9.13 479; SOAK_0913 §6b | X: bedlam Polaris 15.5 caps/rnd (PLAN 1200-1201); hypothesis refuted (NAVIGATION 1519-1525) | X | NEW | — |
 | NAV44 | QuadSomniac wind-20 hypothesis; one-hour DISAGREE-admission A/B; §3.0.1 threads (QuadSomniac attribution, Batteries connectivity, state-transition route loss) | PLAN 286-288, 422-426, 541-543 | X: superseded (QuadSomniac → MODE12; Batteries fixed by the portal model; engine-node callers carried as COL5) | X | NEW | — |
@@ -433,9 +446,9 @@ Kept so nothing re-enters by surprise. Reopen a row (move it back to its theme w
 | NAV48 | 0.9.14 sprint staged items: slices 4/5b, honest sweep at build time, hull-width rule, chase-circling hysteresis, back-face sweep | PLAN 147-170; NAVIGATION 1158-1167 | X: slices landed; `8b6ee205`, `c1d34f0a`; A1 extent gate; `fe1dc474` | X | NEW | — |
 | NAV49 | Isengard rm36 same-room approach; rm20 pipe mouth; valley strands | PLAN 679-680; BOTS_DEVEL 986-987; CHANGELOG 0.9.14 180-185 | X: rm36 22/rnd → 0-2; 0.9.15 pipe mouths; valley 176 → 8 stucks | X | NEW | — |
 | NAV50 | abend2: 1-cell vestibules 48/51, longer confirmation, floor-hatch tray entry, ring-threshold hesitation, "accepted map-specific limitation" | NAVIGATION 863, 1117-1134, 2085-2086; CHANGELOG 0.9.11 634-635, 0.9.13 483-484 | X: `0126b884`..`84a3f3d3`; 09-30 flight "incredible" | X | NEW | — |
-| NAV51 | "No code guards troute through windows on interior-only maps" | OBSTACLE §4b 196-198 | X: `BotPortalClass` NEVER + router-validated sampler (CHANGELOG 0.9.14 251) | X | NEW | — |
-| NAV52 | OBSTACLE §5 gaps 1-3 (TF_BREAKABLE geocost; powerup selection bypasses passability; navdump obstacle fields) | OBSTACLE §5 315-358 | X: 0.9.6 glass cost; reach gate + `BotRoomSealedForShip` + hunt-needs-route; navdump fields | X | NEW | — |
-| NAV53 | Articulation / cut-vertex bypass pass; Approach 2 visibility graph; SKELETON_REWORK risk list | SKELETON_REWORK 42-52, 127-136 | X: not needed (slice 7 hull-scaled fan `6c17d9bd` closed abend2 rm0; cap 64; deterministic order); reopen on evidence | X | NEW | — |
+| NAV51 | "No code guards troute through windows on interior-only maps" | OBSTACLE §4b 196-198 | X: `BotPortalClass` NEVER + router-validated sampler (CHANGELOG 0.9.14 251) re-confirmed 10-01: `BotTerrainConnectPassable` (bot_steering.cpp:3745) requires class != NEVER and `PortalWallBacked` (:419) makes a window onto a wall NEVER; OBSTACLE §4b rewritten | X | NEW | — |
+| NAV52 | OBSTACLE §5 gaps 1-3 (TF_BREAKABLE geocost; powerup selection bypasses passability; navdump obstacle fields) | OBSTACLE §5 315-358 | X: 0.9.6 glass cost; reach gate + `BotRoomSealedForShip` + hunt-needs-route; navdump fields re-confirmed 10-01 (bot_steering.cpp:246-275, 3491; bot.cpp:5114, 5157); gaps 1-3 text in `archive/OBSTACLE_GEOMETRY-superseded.md`; gap 4 stays live in OBSTACLE §5 | X | NEW | — |
+| NAV53 | Articulation / cut-vertex bypass pass; Approach 2 visibility graph; SKELETON_REWORK risk list | SKELETON_REWORK 42-52, 127-136 | X: not needed (slice 7 hull-scaled fan `6c17d9bd` closed abend2 rm0; cap 64; deterministic order); reopen on evidence; confirmed 10-01: `6c17d9bd` at HEAD, `BOT_SKEL_MAX_NODES` 64 (bot_steering.h:65) | X | NEW | — |
 | NAV54 | Outdoor altitude OOB, sky-fly, 8.1b/c/d, Phase 12 intra-room via-point validation | BOTS_DEVEL 1989, 2038-2039, 2736 | X: 3.20 `OF_FORCE_CEILING_CHECK`, 0.9.1 zero sky-fly, 0.9.3 | X | NEW | — |
 | NAV55 | Dual-goal combat strategy (PATHFINDING Part 4 #2) | PATHFINDING 351-373 | X: declined (face-travel aim chose otherwise) | X | NEW | — |
 | NAV56 | Robo-anarchy battery config broken | SOAK_0913 179-186 | X: robo ran in the 0.9.15 D set (PLAN 1698) | X | NEW | — |
@@ -466,10 +479,11 @@ Kept so nothing re-enters by surprise. Reopen a row (move it back to its theme w
 Status and bucket changes against §4.2: row 2's status text is corrected (nothing is reserved today). Row 26 is split
 into four rows; its `RF_EXTERNAL` part closes as X (NAV12). Row 31 becomes MODE12 in bucket X (accepted) and absorbs
 EVADE under-use; its stale Plasma/EMD sibling closes as MODE13. Row 7's two named stale lines are carried in DOC3/DOC4.
-No other bucket changed.
+No other bucket changed in the rebuild. The 2026-10-01 close-out then closed row 4 (POP5, docs fixed) and row 7 (DOC1,
+the consolidation) as X.
 
-**Counts** (2026-10-01): 229 rows. A 3 · B 35 · C 16 · D 35 · E 77 (of which 13 "verify" and 6 "propose close") · F 22 ·
-X 41.
+**Counts** (2026-10-01, after the consolidation close-out): 238 rows (229 + 9 new: COL26, COL27, DOC13, POP12-POP14,
+CMD26, CMD27, REL20). A 3 · B 29 · C 17 · D 35 · E 81 (of which 12 "verify" and 6 "propose close") · F 23 · X 50.
 
 ---
 ## 5. Decisions owed
