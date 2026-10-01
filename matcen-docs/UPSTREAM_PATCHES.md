@@ -18,11 +18,15 @@ the patch text in this document is sufficient; there is no need to merge from Ma
 
 | # | Bug | Affected | Status (Matcen) | Status (Upstream) |
 | :--- | :--- | :--- | :--- | :--- |
-| 1 | `$scores` numeric column truncation | 7 netgame DLLs | Fixed (Matcen 0.8.7, header-overlap regression fixed 0.8.8) | Not submitted |
-| 2 | Dedicated server never resets the grtext buffer → overflow crash | `Descent3/GameLoop.cpp` | Fixed (Matcen 0.9.2-dev) | Not submitted |
-| 3 | BNode lookup asserts (crashes) on a room with no BNode data | `Descent3/bnode.cpp` | Hardened (Matcen 0.9.2-dev) | Not submitted |
-| 4 | SDL mouse regression vs retail: wheel-down unbindable, mouse-4 aliases wheel-down, mouse-5 dead | `ddio/lnxmouse.cpp` | Fixed (post-0.9.8) | Not submitted (fixed independently in PiccuEngine) |
-| 5 | Mission-download system: spurious "missing mission" prompt at join, garbage in the URL reply, dead retail copy-protection gate | `Descent3/mission_download.cpp` | Fixed (post-0.9.8) | Not submitted |
+| 1 | `$scores` numeric column truncation | 7 netgame DLLs | Fixed (Matcen 0.8.7, header-overlap regression fixed 0.8.8; first tag v0.8.13) | Not submitted |
+| 2 | Dedicated server never resets the grtext buffer → overflow crash | `Descent3/GameLoop.cpp` | Fixed (Matcen 0.9.3; first tag v0.9.7) | Not submitted |
+| 3 | BNode lookup asserts (crashes) on a room with no BNode data | `Descent3/bnode.cpp` | Hardened (Matcen 0.8.0; first tag v0.8.13) | Not submitted |
+| 4 | SDL mouse regression vs retail: wheel-down unbindable, mouse-4 aliases wheel-down, mouse-5 dead | `ddio/lnxmouse.cpp` | Fixed (Matcen 0.9.9, tag v0.9.9) | Not submitted (fixed independently in PiccuEngine) |
+| 5 | Mission-download system: spurious "missing mission" prompt at join, garbage in the URL reply, dead retail copy-protection gate | `Descent3/mission_download.cpp` | Fixed (Matcen 0.9.9, tag v0.9.9) | Not submitted |
+| 6 | CTF: a carrier who dies in a flag's home goal does not send that flag home (wrong object tested) | `netgames/ctf/ctf.cpp` | Open (fix planned before the public release) | Not submitted |
+
+Version labels: the Matcen version is the first release that carried the fix. Not every release was
+tagged, so the index also gives the first git tag that contains the fix (`git tag --contains <commit>`).
 
 ---
 
@@ -167,11 +171,12 @@ source.
 
 ### Status
 
-- **Matcen:** Fixed in 0.8.7. 0.8.7 shipped with a header-memcpy regression
+- **Matcen:** Fixed in 0.8.7 (commit `f1991eaf`). 0.8.7 shipped with a header-memcpy regression
   that overlapped the first row onto the header; fixed in 0.8.8 by switching
   the header memcpy to use the literal `strlen(TXT_X)` rather than the
   floored `len[i]`. Anyone cherry-picking this patch should take both changes
-  together.
+  together. The 0.8.8 change is commit `e6d7da60`. The first git tag that
+  contains both is `v0.8.13`.
 - **DescentDevelopers/Descent3:** Not submitted. Candidate for PR.
 - **PiccuEngine:** Not submitted. Same fix applies verbatim (source confirmed
   identical at `netgames/anarchy/anarchy.cpp:770-775` and sibling files).
@@ -245,7 +250,8 @@ any D3 engine fork.
 
 ### Status
 
-- **Matcen:** Fixed in 0.9.2-dev.
+- **Matcen:** Fixed during 0.9.2 development (commit `5b0f1255`) and first
+  released in 0.9.3. The first git tag that contains it is `v0.9.7`.
 - **DescentDevelopers/Descent3:** Not submitted. Candidate for PR.
 - **PiccuEngine:** Not submitted. Same fix expected to apply (engine-level
   dedicated render guard is shared lineage).
@@ -302,7 +308,9 @@ experiment and is **not** in the current tree; those asserts only fire when
 
 ### Status
 
-- **Matcen:** Hardened in 0.9.2-dev.
+- **Matcen:** Hardened in commit `d4d91d92` (March 2026), before Matcen had
+  version numbers. First released in 0.8.0. The first git tag that contains it
+  is `v0.8.13`.
 - **DescentDevelopers/Descent3:** Not submitted. Candidate for PR (latent retail
   crash on BNode-less rooms).
 - **PiccuEngine:** Not submitted. Same engine lineage; same fix expected to apply.
@@ -376,7 +384,8 @@ changes. Safe to apply to any SDL3-based D3 fork.
 
 ### Status
 
-- **Matcen:** Fixed post-0.9.8 (branch `fix/sdl-mouse-controls`).
+- **Matcen:** Fixed in 0.9.9 (commit `dc63136c`, branch `fix/sdl-mouse-controls`).
+  First tag: `v0.9.9`.
 - **DescentDevelopers/Descent3:** Not submitted. Candidate for PR.
 - **PiccuEngine:** Already fixed independently (`ddio_sdl/sdlmouse.cpp`); their
   mapping is the reference this fix was ported against.
@@ -451,7 +460,115 @@ Windows-only forks.
 
 ### Status
 
-- **Matcen:** Fixed post-0.9.8 (branch `fix/mission-exists-check`).
+- **Matcen:** Fixed in 0.9.9 (commits `b8137dd2` and `6f8f83df`, branch
+  `fix/mission-exists-check`). First tag: `v0.9.9`.
 - **DescentDevelopers/Descent3:** Not submitted. Candidate for PR (both).
 - **PiccuEngine:** Not fixed there — same code; (a) is masked by Windows
   case-insensitivity, (b) is live but invisible unless the reply is inspected.
+
+---
+
+## 6. CTF: A Carrier Who Dies in a Flag's Home Goal Does Not Send the Flag Home
+
+> **DECISION NEEDED (Q19)** — drafted on the default; the operator's second pass settles it.
+> Default applied: fix the bug in Matcen and list it here as upstream patch #6. The other
+> choice is to leave the bug in place and drop this entry.
+
+### Bug
+
+When a flag carrier dies, disconnects or switches to observer mode, the CTF
+module decides what happens to each flag they carried. The intended rule is in
+the function's own comment: if the carrier is inside the home goal room of a
+flag they hold, that flag goes straight back to its base. Otherwise it drops
+loose and a 120-second return timer starts.
+
+The home-goal test looks at the wrong object, so the rule almost never fires
+as intended:
+
+- A carrier killed inside the flag's home goal drops the flag loose instead of
+  returning it. The flag sits in the goal room until someone touches it or the
+  120-second timer runs out.
+- If the unrelated object the test reads happens to be in a goal room, a flag
+  dropped somewhere else can jump straight home.
+
+### Root cause
+
+`HandlePlayerSpew()` receives a player number (`pnum`) and indexes the object
+array with it directly:
+
+```cpp
+// netgames/ctf/ctf.cpp, HandlePlayerSpew() (line 1755 in Matcen; 1750 in DescentDevelopers/Descent3)
+if (GoalRooms[color] == dObjects[pnum].roomnum) {
+```
+
+A player number is not an object number. The player's ship object lives at
+`dPlayers[pnum].objnum`, so `dObjects[pnum]` is whatever object occupies that
+slot of the object array. The same file gets it right in the flag pickup
+handler (`OnClientCollide`, line 1080), which tests
+`dObjects[dPlayers[pnum].objnum].roomnum`. Original Outrage 1999 code. The
+fork point and current DescentDevelopers/Descent3 `main` have the same line.
+
+### Affected files
+
+| File | Function | Change |
+| :--- | :--- | :--- |
+| `netgames/ctf/ctf.cpp` | `HandlePlayerSpew` | index the object array with the player's object number |
+
+### Fix
+
+Look up the player's object number first and test that object's room:
+
+```cpp
+// Before
+if (GoalRooms[color] == dObjects[pnum].roomnum) {
+
+// After
+int pobjnum = dPlayers[pnum].objnum;
+if (pobjnum >= 0 && GoalRooms[color] == dObjects[pobjnum].roomnum) {
+```
+
+The `pobjnum >= 0` check is defensive: the function also runs on disconnect,
+and the guard costs nothing. When it fails, the flag takes the existing
+drop-and-timer path, which is the safe fallback.
+
+### Caveats
+
+- Play changes slightly: a carrier killed in the flag's own base now returns
+  that flag at once, with the normal "returned" announcement, as the original
+  design intended. Players used to the loose flag in the goal room will notice.
+- The function runs on the server and on every client. All machines must run
+  the fixed module, or the server and clients disagree about where the flag
+  went for that one event. Ship it as a new netgame module, not as a
+  server-only change.
+
+### Portability
+
+One line in one netgame module, no API or protocol change. Safe to apply to
+any D3 fork shipping the original Outrage CTF source.
+
+### Status
+
+- **Matcen:** Open. A code audit found it. The tree does not have the fix yet
+  (the current development build, 0.9.16-dev, still has the original line).
+  We plan to fix it before the public release.
+- **DescentDevelopers/Descent3:** Not submitted. Same line at
+  `netgames/ctf/ctf.cpp:1750`.
+- **PiccuEngine:** Not checked. Same netgame lineage, so the same fix should
+  apply.
+
+---
+
+## Other Fork Hardening to Assess for Upstream
+
+Matcen also changed a few engine and netgame files in ways that might help
+other forks. Nobody has reviewed these as upstream patches yet. This list
+keeps the review from being forgotten. Each one needs a check that it is a
+real upstream defect and not only a Matcen need.
+
+| Change | File | What it does in Matcen | Upstream question |
+| :--- | :--- | :--- | :--- |
+| Dynamic path pool exhaustion | `Descent3/aipath.cpp` | Running out of dynamic AI paths logs a rate-limited warning and fails the path build, instead of `ASSERT(0)` | Can a stock robot-heavy level exhaust the pool? If so, this is a crash fix |
+| Reconnect assert | `netgames/dmfc/dmfcclient.cpp` (`OnPlayerReconnect`) | A reconnecting player whose team was never saved logs a message instead of asserting | Does this assert fire for plain human reconnects? |
+| Collision warning flood | `physics/physics.cpp` | "Too many collisions" warnings are limited to one per second at both sites | Log hygiene only; useful to any server operator |
+| `$setpps` range | `netgames/dmfc/dmfcinputcommand.cpp` | The packets-per-second clamp is `[2, 40]` instead of `[1, 20]` | A behaviour change, not a bug fix; offer as an option, if at all |
+| 40-portal room limit | engine BOA tables (`MAX_PATH_PORTALS` = 40) | Some community maps have rooms with more than 40 portals (Kartoon Kanyon has 45). The engine's per-room portal cost table then overruns its row. Matcen routes around this in its own files and does not change the engine | Needs a minimal fix and a test map before it can be offered |
