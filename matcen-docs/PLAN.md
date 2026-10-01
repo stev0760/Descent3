@@ -70,6 +70,10 @@ only in §4; the README's known limitations each name a §4 id.
 
 ---
 
+**Overnight wide-mode read, 2026-10-01 (ST1): PASS.** The 0.9.15 baseline's D, C and B sets re-run on `4b4e78f4` (18
+soaks, 23:16 to 03:59) read flat or better on every mode and map against the 09-20 baseline logs; the one failed arm is
+TC's known Debug-only engine assert, which 0.9.15 hit too. Stage A now waits only on the operator's final review.
+
 ## 3. Release path and exit criteria
 
 Target (operator, 2026-09-29): the community reveal around **2026-10-27**. Three stages, each with an exit test. Row ids
@@ -166,7 +170,7 @@ Status text ("Q13", "Q9") is the old PLAN §4.0.1 review queue, kept in the arch
 ### ST: 0.9.16 stable
 | ID | Item | Source | Status (evidence) | Bkt | §4.2 | Q |
 |---|---|---|---|---|---|---|
-| ST1 | Read and record the d30n wide-mode overnight on `4b4e78f4` (D, C and B sets vs the 09-20/21 baseline) | PLAN 1697-1700 | started 2026-09-30 23:16; no result recorded in any doc | A | NEW | Q4 |
+| ST1 | Read and record the d30n wide-mode overnight on `4b4e78f4` (D, C and B sets vs the 09-20/21 baseline) | PLAN 1697-1700 | READ 2026-10-01: PASS. 18 soaks on 4b4e78f4 vs the 0.9.15 baseline, same cfgs: Anarchy/Team/Hyper/Robo/Entropy/Monsterball flat on deaths and stucks (Monsterball goals 4+1 vs 1+0; Entropy 0 takeovers both, pickups 26 vs 20); CTF: Nysa 28 vs 28, Isengard 24 vs 24 (stucks 74 vs 85), Moria 26 vs 23 (67 vs 97), xemedia 47 vs 46, HAVOC SewerRat 8 vs 2, Canyons 3 vs 0, orbital 22 vs 16, DownTown 45 min 2 vs 1 (stucks 48 vs 115), skybox 6 vs 11 (2 rnd, swing), Facing Worlds 2 vs 1, metropolis 2 vs 2, Animal House 0 vs 0 (3v3 stalemate by design), TC 1 round then the known Debug assert (ENG row) as on 0.9.15. Nothing regressed. | A | NEW | Q4 |
 | ST2 | Operator flight(s) on the candidate | PLAN 1407, 1683-1689 | first flight done 09-30: abend2 "incredible", Batteries "great", Sigma "good but more flawed", "almost release ready"; operator said more flights and a deeper review follow | A | (bucket-A note) | Q4 |
 | ST3 | A3 ruling on the hull tiers' drive half: keep only with ~0.5 u steering slack, ship A2b as is, or drop it | BOTS_DEVEL 101-103; PLAN 1179-1180, 1417, 1749 | geometry half shipped in 0.9.16-dev (Canyons doubled twice); drive half neutral at 1.2 u a side, negative at rm80; no ruling; §4.1 names it a precondition | D | NEW | Q4 |
 | ST4 | Already-outdoor entrance seek uses OUR door table (engine table lists window box rm18); pursuit toward an interior target gets a troute plan | PLAN 1276-1284, 1306-1307 | promised "before strip -dev" on 09-29; not built (no commit after `e4074b55`); overtaken by the abend2 regression work | D | NEW | Q4 |
