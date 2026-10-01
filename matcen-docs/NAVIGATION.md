@@ -634,7 +634,7 @@ room router stays untouched. Nothing here is a `$nav` toggle or a per-map fix. C
 duplicated dispatch in `BotSetRoutedGoal` / `BotDoExploreRoaming`, stale toggle descriptions, and treating skeleton +
 roadmap as one network outside the in-room case.
 
-**Collapse scope, decided 2026-10-01 (Q20, "yes to all"; orchestrator's reading = the defaults, to confirm).** The
+**Collapse scope, decided 2026-10-01 (Q20; the operator confirmed on 2026-10-01 that the outdoor phases are pre-reveal: "Reveal should be as polished as possible").** The
 0.9.4 "Stage 4, delete the 0.9.3 substrate" is closed as superseded by the one-network ruling (the skeleton is the
 arterials). The legacy toggles `terrain`, `outdoorvia`, `outdoorgraph`, `grid off` and the validated-negative
 `mjunction` retire inside the COL3 cleanup, each retirement inside the must-read-flat gate (COL7, COL8, B). Outdoor
@@ -738,8 +738,8 @@ strategy (declined); NAV56 robo-anarchy battery config; NAV57 the engine's 40-do
 | COL7 | Stage 4 vs the one-network ruling; legacy toggles `terrain`, `outdoorvia`, `outdoorgraph`, `grid off` | B (Q20: Stage 4 closed as superseded; toggles retire in COL3) |
 | COL8 | Retire `$nav mjunction` | B (Q20: with COL3) |
 | COL9 | Pursuit and powerup chases request routed destinations (§7.1 step 5) | B |
-| COL10 | Outdoor Phase 2 (§7.2) | E (Q20: after the reveal) |
-| COL11 | Outdoor Phases 3-4 remainder (§7.2) | E (Q20: after the reveal) |
+| COL10 | Outdoor Phase 2 (§7.2) | B (Q20b, confirmed: pre-reveal, after COL1-COL2) |
+| COL11 | Outdoor Phases 3-4 remainder (§7.2) | B (Q20b, confirmed: pre-reveal, after COL1-COL2) |
 | COL12 | The 0.9.6 grate-DOOR clutter/building allowlist "aimed at a class that may not exist" | E |
 | COL13 | Code hygiene owed: post-Hyper-Anarchy objective-carrier/powerup-suppression/hunt-leash helpers (not yet written); goal-attachment rework and `BOT_OGRAPH_RADIUS` 6.0 → 6.7; resolve-memo serial keying, interior non-portal pane watching, v1-plan vs heal-opened routes | E |
 | COL14 | Stale code comments (bot_chat.cpp, dedicated_server.cpp list in the registry) | B |

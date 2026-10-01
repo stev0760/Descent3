@@ -259,15 +259,15 @@ Status text ("Q13", "Q9") is the old PLAN §4.0.1 review queue, kept in the arch
 |---|---|---|---|---|---|---|
 | COL1 | **Collapse row 4: one in-room planner** (union graph, cached plan, re-plan on invalidation). Gate: must read flat on bedlam + fellowship + Sigma Base + the HAVOC trio vs same-minute controls | PLAN 926, 1419, 1430-1440; design PLAN 197-247 | not built; pre-checks done | B | 5 | — |
 | COL2 | **Collapse row 5**: seam and hop-commit become the commitment rule; stuck escape an invalidation signal (absorbs the old Step-3 "hop granularity on the home-flag approach") | PLAN 927, 1420 | not built; depends on COL1 | B | 5 | — |
-| COL3 | Code cleanup riding rows 4-5: the 3-site duplicated dispatch (`BotSetRoutedGoal` / `BotDoExploreRoaming`), stale toggle tags, skeleton + roadmap as one network outside the in-room case | PLAN 768-771, 1438-1440 | not built; Decided 2026-10-01 (Q20a): the cleanup also retires the legacy toggles (`terrain`, `outdoorvia`, `outdoorgraph`, `grid off`) and `mjunction`, each inside the must-read-flat gate; orchestrator's reading of 'yes to all' = the defaults; to confirm | B | 5 | Q20 |
+| COL3 | Code cleanup riding rows 4-5: the 3-site duplicated dispatch (`BotSetRoutedGoal` / `BotDoExploreRoaming`), stale toggle tags, skeleton + roadmap as one network outside the in-room case | PLAN 768-771, 1438-1440 | not built; Decided 2026-10-01 (Q20a): the cleanup also retires the legacy toggles (`terrain`, `outdoorvia`, `outdoorgraph`, `grid off`) and `mjunction`, each inside the must-read-flat gate | B | 5 | Q20 |
 | COL4 | Row-4 design input: Facing Worlds' Theta* storms (pitch scaling / expansion budget / yielding query) | PLAN 1356-1362 | open | B | 5 | — |
 | COL5 | Remaining engine-path-node target callers (escort, hold, powerup, fallback, outdoor sites) untouched by `cddde48c` | NAVIGATION 1530-1533; PLAN 286-288 | not addressed | B | 5 | — |
 | COL6 | Workaround-retirement audit: measure strike / hardroom / hardcost / blacklist / via-dance firing, retire mechanisms at ~zero (the "true but unproven" list) | NAVIGATION §1.5 69-75, 2039; retired NAV_CONSOLIDATION_PLAN §7 | not done | B | 5 | — |
-| COL7 | Stage 4 "delete the 0.9.3 substrate" vs the 09-05 one-network ruling; legacy toggles `terrain`, `outdoorvia`, `outdoorgraph` and the `grid off` fallback still live | NAVIGATION 308-310, 2293-2296, §4.2/§4.3 banners; BDR 103-105; dedicated_server.cpp:748-804 | superseded in part (`ea291c29` dropped the legacy tag); Decided 2026-10-01 (Q20a): Stage 4 closed as superseded by the one-network ruling; the toggle retirement rides the COL3 cleanup inside the must-read-flat gate; orchestrator's reading of 'yes to all' = the defaults; to confirm | B | 5 | Q20 |
-| COL8 | Retire `$nav mjunction` (validated-negative, default off) | MONSTERBALL_MODE 235-247; dedicated_server.cpp:791 | toggle present; Decided 2026-10-01 (Q20a): retire with COL3; orchestrator's reading of 'yes to all' = the defaults; to confirm | B | NEW | Q20 |
+| COL7 | Stage 4 "delete the 0.9.3 substrate" vs the 09-05 one-network ruling; legacy toggles `terrain`, `outdoorvia`, `outdoorgraph` and the `grid off` fallback still live | NAVIGATION 308-310, 2293-2296, §4.2/§4.3 banners; BDR 103-105; dedicated_server.cpp:748-804 | superseded in part (`ea291c29` dropped the legacy tag); Decided 2026-10-01 (Q20a): Stage 4 closed as superseded by the one-network ruling; the toggle retirement rides the COL3 cleanup inside the must-read-flat gate | B | 5 | Q20 |
+| COL8 | Retire `$nav mjunction` (validated-negative, default off) | MONSTERBALL_MODE 235-247; dedicated_server.cpp:791 | toggle present; Decided 2026-10-01 (Q20a): retire with COL3 | B | NEW | Q20 |
 | COL9 | Pursuit and powerup chases ask for a routed destination (old order row 2 "keeps its place" as collapse step 5); pursuit steering does not ride the nav layer (rm35 class) | PLAN 923, 974; NAVIGATION 1011-1022, 1580-1587 | re-scoped 09-21 (E2 landed instead); step not built | B | 5 | — |
-| COL10 | Outdoor Phase 2: one outdoor network per region; lift the composer's `OBJECT_OUTSIDE` guard; hull-visible attach | PLAN §3.7 655-660 | not built; Decided 2026-10-01 (Q20b): after the reveal; orchestrator's reading of 'yes to all' = the defaults; to confirm | E | NEW | Q20 |
-| COL11 | Outdoor Phases 3-4 remainder: troute executor as the commitment rule; region-to-region terrain edges if needed; committed via tick on terrain-to-terrain legs; replace `BotResolveOutdoorEntrance` with the composer (partial: `161582cc`) | PLAN 651-672; NAVIGATION 436-439 | not built; Decided 2026-10-01 (Q20b): after the reveal; orchestrator's reading of 'yes to all' = the defaults; to confirm | E | NEW | Q20 |
+| COL10 | Outdoor Phase 2: one outdoor network per region; lift the composer's `OBJECT_OUTSIDE` guard; hull-visible attach | PLAN §3.7 655-660 | not built; Decided 2026-10-01 (Q20b, confirmed by the operator: 'Pre reveal. Reveal should be as polished as possible'): PRE-REVEAL, after COL1-COL2 | B | NEW | Q20 |
+| COL11 | Outdoor Phases 3-4 remainder: troute executor as the commitment rule; region-to-region terrain edges if needed; committed via tick on terrain-to-terrain legs; replace `BotResolveOutdoorEntrance` with the composer (partial: `161582cc`) | PLAN 651-672; NAVIGATION 436-439 | not built; Decided 2026-10-01 (Q20b, confirmed by the operator: 'Pre reveal. Reveal should be as polished as possible'): PRE-REVEAL, after COL1-COL2 | B | NEW | Q20 |
 | COL12 | The 0.9.6 grate-DOOR clutter/building allowlist "aimed at a class that may not exist" | OBSTACLE_GEOMETRY §3 94 | in code; no decision | E | NEW | — |
 | COL13 | Code hygiene owed: post-Hyper-Anarchy helpers (`BotIsObjectiveCarrier`, `BotShouldSuppressPowerupSeek`, `BotGetHuntLeashRange`); goal-attachment rework and `BOT_OGRAPH_RADIUS` 6.0→6.7 (`7b06de9f`); resolve-memo serial keying, interior non-portal pane watching, v1-plan vs heal-opened routes (`739f78b6`) | archived `project_hyper_anarchy`; commits | not built; `BOT_OGRAPH_RADIUS` still 6.0 (bot_steering.h:90); the three helper names are proposed, not existing functions | E | NEW | — |
 | COL14 | Stale code comments: bot_chat.cpp:19 ("Stage 3"), :809 (`!objective` "resumes autonomous seeking"), :596 and the `BotAdd` comment (" [BOT]", 6 chars), :556-558 (Monsterball "non-team"), dedicated_server.cpp:863 (`addbot <name> [ship]`) | code audit §6 | open; the `BotAdd` comment is bot.cpp:8767-8770 (EU9, 10-01) | B | NEW | — |
@@ -511,7 +511,7 @@ the consolidation) as X. The operator's 2026-10-01 answers (§5) then moved rows
 11 (REL1) and 17 (REL14) to their new buckets; rows 1-3 stay B.
 
 **Counts** (2026-10-01, after the operator's answers): 240 rows (229 + 11 new: COL26, COL27, DOC13, DOC14, POP12-POP14,
-CMD26, CMD27, REL20, REL21). A 3 · B 48 · C 21 · D 0 · E 76 (of which 10 "verify") · F 25 · X 67.
+CMD26, CMD27, REL20, REL21). A 3 · B 50 · C 21 · D 0 · E 74 (of which 10 "verify") · F 25 · X 67.
 
 ---
 ## 5. Decisions owed
@@ -538,13 +538,10 @@ bucket in §4. One question stays open: Q22 (NAV16).
 - **UX10** (Q3) Decided 2026-10-01: drop the word "feel" (X).
 - **COL7** (Q20) Decided 2026-10-01: Stage 4 is closed as superseded by the one-network ruling; the legacy toggles
   `terrain`, `outdoorvia`, `outdoorgraph` and `grid off` retire in the COL3 cleanup, inside the must-read-flat gate
-  (B). Orchestrator's reading of "yes to all" = the defaults; to confirm.
-- **COL8** (Q20) Decided 2026-10-01: `$nav mjunction` retires with COL3 (B). Orchestrator's reading of "yes to all" =
-  the defaults; to confirm.
-- **COL10** (Q20) Decided 2026-10-01: outdoor Phase 2 after the reveal (E). Orchestrator's reading of "yes to all" =
-  the defaults; to confirm.
-- **COL11** (Q20) Decided 2026-10-01: outdoor Phases 3-4 remainder after the reveal (E). Orchestrator's reading of
-  "yes to all" = the defaults; to confirm.
+  (B). confirmed by the operator on 2026-10-01.
+- **COL8** (Q20) Decided 2026-10-01: `$nav mjunction` retires with COL3 (B). Confirmed by the operator = Confirmed by the operator on 2026-10-01.
+- **COL10** (Q20) Decided 2026-10-01: outdoor Phase 2 after the reveal (E). Confirmed by the operator = Confirmed by the operator on 2026-10-01.
+- **COL11** (Q20) Decided 2026-10-01: outdoor Phases 3-4 remainder after the reveal (E). Orchestrator's reading of Confirmed by the operator on 2026-10-01.
 - **DOC6** (Q23) Decided 2026-10-01: the Matcen copy (v2.6) is retired for `PYRODECK_CONTRACT.md`; the spec of record
   is the Pyrodeck repo (v2.7) (X).
 - **DOC7** (Q24) Decided 2026-10-01: the operator authorises the rewrite of CLAUDE.md to current Anthropic conventions
@@ -645,7 +642,7 @@ ruling (ST3; decided 2026-10-01: the drive half ships as is, A3 later), and 0.9.
 - **Other:** persistent bot statistics and `$botstats` (POP8, Q17: deferred), multi-flag CTF hoarding (MODE11;
   `backup/pre-0530-batch` kept, Q14d), grate-route awareness (NAV30), the old commit email on GitHub (REL19).
 - **After the reveal but open (E, not F):** outdoor collapse Phases 2-4 (COL10, COL11; Q20, orchestrator's reading of
-  "yes to all" = the defaults, to confirm); the overlapping-portal merge (NAV16; Q22 "we will see", decided after the
+  confirmed by the operator on 2026-10-01; the outdoor phases are pre-reveal); the overlapping-portal merge (NAV16; Q22 "we will see", decided after the
   collapse).
 
 ---
