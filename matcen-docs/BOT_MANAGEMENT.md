@@ -1,400 +1,325 @@
-# Phase 5: Bot Management & Server Administration
+# Bot management: operator and developer reference
 
-**Status:** Phase 5.5 complete (shipped; this document is the Phase 5 design and implementation record)
-**Current fork:** Matcen 0.9.15 (released 2026-09-20). This navigation and server-performance work does not change
-bot-management behavior, configuration, or console commands. `$servercaps` remains numeric-only
-(`fork_version=0.9.15`), and since 0.9.15 the server answers it within a frame even during level start (it used to
-stall for seconds while navigation data was built; D3_PYRODECK_SPEC.md has the timing note).
-abend2's residual navigation imbalance is accepted for now; wider validation uses Nysa and Batteries
-Included on the existing build. No roster-management change accompanies that testing.
-For scoring-symmetry tests, verify all bots use the same difficulty. The expectation applies to
-designed-symmetric CTF maps, not to arbitrary maps merely because team sizes match. Record ships,
-roles and per-bot overrides alongside the test roster; coverage remains a separate universal test.
-The operator has standardized future test rosters on Pyro-GL. The replacement single-level Batteries
-loop uses eight Pyro-GL/Hotshot bots after the rotating run stopped at one completed Batteries round.
-Nysa finished with the earlier unequal team hull mixes, also used in the abend2 arms, so its
-team splits retain that confounder. This is a test-config change, not a restriction on supported ships.
-0.9.13 shipped as a bounded correctness release (documented limitations accepted); 0.9.14 is the
-portal-model and outdoor navigation release, recorded in `PLAN.md` section 3.0 and the CHANGELOG.
-Roster size is now treated as a test variable in its own right: bottleneck maps such as Animal House
-stalemate with evenly matched teams, and a smaller roster (2v2) is a legitimate diagnostic axis there.
-**Prerequisite reading:** `BOT_DEV_REFERENCE.md`, `BOTS_DEVEL.md`
-**Key files:** `Descent3/bot.h`, `Descent3/bot.cpp`, `Descent3/dedicated_server.cpp`
+**Status:** the config-file roster, ship selection, difficulty levels, the Bot Settings menu, per-bot team
+assignment and the `$servercaps` handshake are built and shipped. Population management (a target player count and
+seats kept free for humans) is not built; it is the one forward section at the end of this document. The design
+history of this work (the pre-roster problem statement, the init-order bug, the old implementation order and risk
+table) is in `archive/BOT_MANAGEMENT-design-history.md`.
+
+**Key files:** `Descent3/bot.h`, `Descent3/bot.cpp`, `Descent3/dedicated_server.cpp`, `Descent3/multi_ui.cpp`,
+`Descent3/multi_save_setting.cpp`. Line numbers below are at commit `ee6e6525`.
+
+Open items for this area live in the registry (PLAN.md §4) under the POP ids cited below.
 
 ---
 
-## Problem Statement (as it stood before Phase 5)
+## 1. Where bots come from
 
-Bot setup is entirely manual. Server admins must type `$addbot <name>` for each bot after every server start and level change (bots persist across levels, but not across server restarts). There is no way to configure bot count, names, difficulty, or team assignment without live console interaction. This makes unattended server operation impractical.
+There are two ways to get a starting roster, and one console path for live changes.
 
-### Current Console Commands
+| Server type | Source | Spawn point |
+|---|---|---|
+| Dedicated | the file named by `BotConfig=` in `dedicated.cfg` | `BotLoadRosterFile()` (bot.cpp:9683), called from `MultiStartNewLevel()` (multi.cpp:6465) |
+| Listen (client-hosted) | the Bot Settings menu, saved in `.mps` presets | `BotSpawnFromUI()` (bot.cpp:9929, called at multi.cpp:6467); bots join 3 s after the level loads (`BOT_UI_SPAWN_DELAY`, bot.cpp:363) |
+| Dedicated console or telnet | `$addbot` and the other `$` commands in section 3 | `DedicatedHandleBotCommand()` (dedicated_server.cpp:855) |
 
-All bot commands use the `$` prefix, consistent with other server admin commands (e.g., `$help`, `$kick`). Bot commands are intercepted in the engine before reaching the game DLL.
+All three call the same `BotAdd()` (bot.cpp:8701). If `BotConfig=` is set, the UI roster is skipped
+(bot.cpp:9933).
 
-| Command | Description |
-|---------|-------------|
-| `$addbot <name> [ship] [difficulty]` | Add a bot with optional name, ship, and difficulty |
-| `$removebot <index>` | Remove bot by Bots[] index |
-| `$removebots` | Remove all bots |
-| `$botlist` | List active bots with slot/state info |
-| `$botstat [index\|all]` | Real-time physics/state debugging; nav line includes final intent owner/room/held time |
-| `$botmov on\|off` | Toggle movement debug logging |
-| `$nav [name on\|off\|dump]` | Volatile navigation diagnostic namespace; bare `$nav` lists 33 live rows |
-| `$servercaps` | Print server capabilities for remote admin handshake |
-| `$botdifficulty <index\|all> <level>` | Change difficulty mid-game |
-| `$bothelp` | List all bot commands |
+The starting roster spawns **once per game session**: `Bot_roster_spawned` is set on the first level load and reset
+only by `BotShutdownAll()` (bot.cpp:8422). Bots then persist across level changes through `BotReinitAll()`
+(bot.cpp:8494). A bot removed with `$removebot` is not replaced.
 
-The `$nav` surface is diagnostic, not a remote-admin compatibility contract. In 0.9.11 the
-default-off `gridall`, `outroute`, and `replan` rows and flat aliases were removed; Pyrodeck and other
-administration clients must continue capability-gating on `$servercaps`, not on diagnostic command
-existence. The 0.9.12 tight-connector router work adds no toggle or command; the row count remains 33.
+A listen-server host has no `$` bot commands: they are handled on the dedicated console (dedicated_server.cpp:1228)
+and telnet (:1482) only.
 
-### Current Architecture
+## 2. Config file reference (dedicated server)
 
-- `dedicated.cfg` is parsed by `LoadServerConfigFile()` in `dedicated_server.cpp` using a CVar system
-- CVars are defined in `DedicatedServerLex[]` with types (INT, STRING, NONE)
-- Console input is handled by `DedHandleIO()` → `ParseLine()` → command dispatch
-- Bot lifecycle: `BotAdd()` allocates a slot, fires DMFC events, configures AI
-- `BotReinitAll()` called on level transition — preserves bots across level changes
-- `BotInitAll()` / `BotShutdownAll()` at server start/stop
+`dedicated.cfg` takes one bot key, `BotConfig=<file>` (CVar 36, dedicated_server.cpp:212, at most 259 characters).
+The path is resolved with `cf_LocatePath()` at the first level load (bot.cpp:9691). All other bot keys go in that
+file; `BotCount`, `BotName1` and the rest are **not** recognised in `dedicated.cfg` itself. A server with no
+`BotConfig=` line, or with `BotCount=0`, runs without bots.
 
----
-
-## Goals
-
-### 5.1: Config-File Bot Roster (Priority: High) — IMPLEMENTED
-
-Auto-spawn bots on server start without manual console commands. Uses the same `Key=Value` syntax as the standard `dedicated.cfg` format — all D3 server configuration follows a single consistent convention.
-
-**Config model:**
-
-Bot roster is configured via a separate file referenced by `BotConfig=` in `dedicated.cfg`. Bot keys (`BotCount`, `BotName*`, etc.) are NOT recognized in `dedicated.cfg` itself — only `BotConfig=` is a registered CVar. A server with no `BotConfig` line runs without bots — fully backwards compatible.
-
-**Setup — Separate bot config file:**
 ```ini
-; dedicated.cfg — references external bot roster
-PPS=28
+; dedicated.cfg
 MaxPlayers=13
-GameName=BotTestServer
-MissionName=fellowship.mn3
 Scriptname=anarchy.d3m
-ConnectionName=Direct TCP~IP
 BotConfig=bots.cfg
 ```
+
 ```ini
-; bots.cfg — swappable roster preset, same Key=Value syntax
+; bots.cfg
 BotCount=4
+BotDifficulty=hotshot
 BotName1=Reaper
+BotShip1=pyro
+BotDifficulty1=ace
+BotTeam1=1
 BotName2=Phantom
+BotShip2=phoenix
+BotTeam2=2
 BotName3=Viper
 BotName4=Shadow
-BotShip1=pyro
-BotShip2=phoenix
-BotShip3=magnum
-BotShip4=pyro
 ```
 
-All bot callsigns are automatically suffixed with `[BOT]` for identification (e.g., "Reaper[BOT]"; space dropped in 0.9.9 — callsigns are short and the space rendered poorly in the F7 dialog). Suffix rather than prefix so D3's prefix-matched DM routing (`hudmessage.cpp` `GetMessageDestination`) resolves typed `<botname>: ...` against the bot's actual name. Base names are truncated to `CALLSIGN_LEN - 5` = 14 chars to leave room for the suffix.
+### Parser rules (`BotLoadRosterFile`, bot.cpp:9683-9810)
 
-**Implementation:**
-- Config parsed via `BotLoadRosterFile()` in `bot.cpp` — reads the file specified by `BotConfig=` CVar using standalone `fopen()`/`fgets()` parsing (not the CVar system)
-- `BotConfig=<file>` in `dedicated.cfg` stores the path in `Bot_config_file[]`; `BotLoadRosterFile()` resolves it via `cf_LocatePath()` at level-load time
-- `BotSpawnRoster()` called from `MultiStartNewLevel()` after `BotReinitAll()` — spawns once on first level load; subsequent levels use `BotReinitAll()` to preserve bots
-- Names stored in static arrays indexed by bot number (1-based in config, 0-based in storage)
-- Team assignment: auto-balance by default; `BotTeam<n>=` overrides (see §5.5)
-- `BotCount` clamped to `MAX_BOTS` (16); missing `BotNameN` defaults to "BotN"
+- One `Key=Value` per line. Leading and trailing spaces and tabs around the key and value are trimmed.
+- A line whose first non-blank character is `;` or `#` is a comment (bot.cpp:9720). **Comments must be on their own
+  line.** A trailing `; note` stays part of the value: `BotDifficulty1=ace ; note` does not match a difficulty name
+  and becomes Hotshot, and `BotName1=Reaper ; note` becomes part of the name.
+- Keys are case-insensitive (`stricmp`/`strnicmp`, bot.cpp:9741-9768). Values are not unquoted: quote characters
+  become part of the value.
+- Lines are read with a 256-byte buffer.
 
-### 5.1b: Ship Selection (Priority: High) — IMPLEMENTED
+| Key | Meaning | Code |
+|---|---|---|
+| `BotCount` | Number of bots to spawn. Clamped to 0..16 (`MAX_BOTS`, bot.h:25). Missing or 0 spawns nothing. Only entries 1..`BotCount` are used. | bot.cpp:9741 |
+| `BotName<n>` | Base callsign for bot n (1-16). Truncated to 14 characters. Missing becomes `Bot<n>`. Spaces are kept (unlike `$addbot`). | bot.cpp:9747, :9789 |
+| `BotShip<n>` | Ship: an alias (`pyro`, `phoenix`, `magnum`, `blackpyro`) or a full ship name (`Pyro-GL`, `Phoenix`, `Magnum-AHT`, `Black Pyro`), case-insensitive. An unknown or unavailable ship logs a warning and uses Pyro-GL. | bot.cpp:9753, :9798; `BotResolveShipAlias` :9642 |
+| `BotDifficulty` | Global default difficulty: `trainee`, `rookie`, `hotshot`, `ace`, `insane`, or `0`-`4`. Starts as Hotshot. | bot.cpp:9759 |
+| `BotDifficulty<n>` | Per-bot override, same values. An unrecognised value becomes **Hotshot**, not the configured default (POP10). | bot.cpp:9763, :9833 |
+| `BotTeam<n>` | Team 1-4 (1-indexed; stored 0-indexed). Values outside 1-4 auto-balance silently. A team above the game's `Num_teams` prints a warning and auto-balances. Ignored in non-team modes. | bot.cpp:9768; `BotResolveTeam` :9840; `BotAdd` :8784-8795 |
 
-Admins can assign each bot a specific ship via config or console command.
+Without `BotTeam<n>`, a bot joins the smallest team (`BotAdd`, bot.cpp:8784). Moving players between teams after they
+join is DMFC's job: `$balance` and `$autobalance` work with bots (POP5).
 
-**Available ships and aliases:**
+### Callsigns
 
-| Ship | Config/Console Alias | Notes |
-|------|---------------------|-------|
-| Pyro-GL | `pyro` | Default ship. Standard all-rounder. |
-| Phoenix | `phoenix` | Faster, lighter. Different weapon battery layout. |
-| Magnum-AHT | `magnum` | Heavy/tanky. Higher mass and thrust. |
-| Black Pyro | `blackpyro` | Mercenary expansion ship. Only available if Mercenary is installed. |
+Every bot's callsign is its base name plus `[BOT]` with no space, for example `Reaper[BOT]` (`BOT_NAME_SUFFIX`,
+bot.h:725). The base name is cut to 14 characters (`CALLSIGN_LEN` 19 minus the 5-character suffix) on every path:
+config (bot.cpp:9750), `$addbot` (dedicated_server.cpp:876) and `BotAdd` itself (bot.cpp:8771, :8861). The tag is a
+suffix so that D3's prefix-matched private messages (`hudmessage.cpp` `GetMessageDestination`) resolve a typed
+`Reaper: ...` to the bot.
 
-Full names (e.g., `Pyro-GL`, `Magnum-AHT`, `Black Pyro`) also accepted. Aliases are case-insensitive.
+### Ships
 
-**Config:**
+| Ship | Alias | Notes |
+|---|---|---|
+| Pyro-GL | `pyro` | Default. |
+| Phoenix | `phoenix` | Faster and lighter; different weapon battery. |
+| Magnum-AHT | `magnum` | Heavier, more thrust. |
+| Black Pyro | `blackpyro` | Mercenary ship; resolves only if the ship is loaded (`Ships[idx].used`, bot.cpp:9660, :9668). |
+
+Bot physics read `Ships[Players[slot].ship_index]`, so ship choice carries through to thrust, mass, drag and weapons.
+Two known gaps: bots ignore the server's allowed-ship list (POP9), and the navigation network is built for the
+Pyro-class hull, so other hulls fly it less well (POP11).
+
+## 3. Console reference
+
+All bot commands start with `$` and are matched before the game DLL sees the line. This table follows the `$bothelp`
+text (dedicated_server.cpp:1169-1186) and the handlers it describes.
+
+| Command | What it does and prints | Code |
+|---|---|---|
+| `$addbot <name> [ship] [difficulty] [team]` | Adds a bot. Arguments are positional: difficulty is read only after a ship, team only after a difficulty. The name is one word (no spaces), cut to 14 characters; no name gives `Bot`. Unknown ship: a warning and Pyro-GL. Unknown difficulty: Hotshot (POP10). Team is 1-4. Success: `Bot '<callsign>' added in slot N (ship=S, diff=D, team=T)`. Failure: `Failed to add bot (server full or max bots reached)`. | dedicated_server.cpp:856-906 |
+| `$removebot <index>` | Removes the bot at that `Bots[]` index (from `$botlist`). | :908 |
+| `$removebots` | Removes all bots. | :922 |
+| `$botlist` | One line per bot: index, callsign, player slot, ship, difficulty, alive or dead. | :927 |
+| `$botdifficulty <index\|all> <level>` | Sets difficulty live. `all` also sets the default for later bots. Levels as in the config, or `0`-`4`. | :1119 |
+| `$botstat [index\|all]` | Per-bot state, role, objective lean, speed, shields, target, and a navigation line. Diagnostic. | :940 |
+| `$botmode` | `Game mode: <name> (scriptname='...', teams=N)`. Names: Anarchy, Team Anarchy, Robo-Anarchy, Co-op, CTF, Hyper-Anarchy, Hoard, Entropy, Monsterball, Unknown. | :1160; bot.cpp:8469 |
+| `$botobj` | Objective state, printed to the console: flags and carriers, orbs, hoard counts, Monsterball roles, Entropy labs, the co-op goal, per-bot roles and leans. | :1165; `BotPrintObjectiveState` (bot_objective.cpp:1349) |
+| `$botmov on\|off` | Movement debug logging. | :1107 |
+| `$nav` | Navigation diagnostics (see below). | :980 |
+| `$servercaps` | Capability line for remote-admin tools (section 6). | :1156 |
+| `$bothelp` | Prints the command list. | :1169 |
+
+**`$nav` is a diagnostic namespace, not an operator surface or a compatibility contract.** Bare `$nav` lists the
+25 navigation toggles (`Nav_toggles[]`, dedicated_server.cpp:748-804) and then six sub-verbs: `mtenure`, `dump`,
+`roomfaces`, `probe`, `sweep`, `contend` (:988-1006). `$nav <toggle> on|off` flips one; `$nav dump [file]` writes the
+level's navigation geometry as JSON (hidden alias `$navdump`, :1098). Remote-admin tools must gate on `$servercaps`,
+not on which `$nav` rows exist. NAVIGATION.md documents what the toggles do.
+
+## 4. Difficulty
+
+Five tiers, named after the single-player levels, each setting seven parameters (`kDiffParams`, bot.cpp:370-381;
+fields in bot.h:386-394). Hotshot is the baseline and the default.
+
+| Level | Aim error | Fire delay | Flee scale | Juke amplitude | Juke frequency | Dodge | Turn rate |
+|---|---|---|---|---|---|---|---|
+| Trainee | 12° | 0.8 s | 1.8× | 0.4× | 0.6× | 20% | 0.6× |
+| Rookie | 7° | 0.5 s | 1.4× | 0.6× | 0.8× | 50% | 0.8× |
+| Hotshot | 3° | 0.2 s | 1.0× | 1.0× | 1.0× | 100% | 1.0× |
+| Ace | 1° | 0.1 s | 0.7× | 1.2× | 1.2× | 100% | 1.1× |
+| Insane | 0° | 0.0 s | 0.4× | 1.5× | 1.5× | 100% | 1.2× |
+
+Where each one applies:
+
+- **Aim error:** a slow sinusoidal offset on the aim direction (bot.cpp:6326).
+- **Fire delay:** time after acquiring a target before the first shot; it resets on a target change, not on losing
+  line of sight (bot.cpp:1311, :8123).
+- **Flee scale:** multiplies the equipment-tier flee threshold; above 1 flees earlier (bot.cpp:5453).
+- **Juke amplitude and frequency:** scale the evasive juke (bot.cpp:6584, :6598).
+- **Dodge:** sets the engine's `ai_info->dodge_percent` (bot.cpp:598).
+- **Turn rate:** multiplies the dynamic turn rate (bot.cpp:6446).
+
+Set it globally with `BotDifficulty=`, per bot with `BotDifficulty<n>=` or the `$addbot` third argument, and live with
+`$botdifficulty`. `$botlist` shows each bot's level.
+
+## 5. Bot Settings menu and `.mps` presets (listen server)
+
+The host of a client-hosted game sets bots up before the match in **Bot Settings**, a button in the Direct TCP/IP
+"Start a New Game" menu (`netcon/includes/con_dll.h:1166-1173`, DLL export `fp[115]` at multi_dll_mgr.cpp:526). The
+screen is `MultiBotSettingsMenu()` (multi_ui.cpp:1602-1990).
+
+- **Bot Count:** numbers only, applied on Enter or Done, clamped to 16 and to `max_players − 1` (multi_ui.cpp:1891,
+  :1927).
+- **Default Difficulty:** cycles Trainee to Insane.
+- **Roster list:** `n. Name`, one row per bot; click to select.
+- **Detail panel** for the selected bot: Name, Ship (Pyro-GL, Phoenix, Magnum-AHT, Black Pyro), and a per-bot
+  Difficulty that cycles Default, Trainee ... Insane. An empty name falls back to a built-in name (Reaper, Phantom,
+  Viper, ...; bot.cpp:9908).
+- **Done / Cancel.**
+
+There is no team control (the roster entry has a `team` field and `.mps` saves it, but nothing in the menu sets it),
+no free-seat readout, and no host feedback if `BotAdd` refuses a bot. The `enabled` field (bot.h:876) is set and never
+read. Black Pyro is offered without a Mercenary check. The host cannot add, remove or retune bots after the match
+starts. These are client UX items in the registry (UX ids).
+
+Bot settings are saved in `.mps` multiplayer presets (multi_save_setting.cpp:125-140 write, :286-340 read), one
+tab-separated key per line:
+
+| Key | Value |
+|---|---|
+| `BOTCOUNT` | bot count (clamped to 16 on load) |
+| `BOTDEFAULTDIFF` | default difficulty 0-4 |
+| `BOTNAME<n>` | name of bot n |
+| `BOTSHIP<n>` | ship name of bot n |
+| `BOTDIFF<n>` | difficulty 0-4, or 5 for "use the default" |
+| `BOTTEAM<n>` | team 1-4; written only when set |
+
+Older presets without these keys load as before.
+
+## 6. Capacity rules as built
+
+**Zero seats are reserved for humans today.** What exists is a no-overflow clamp:
+
+- `BotAdd()` refuses a bot only when the connected-player count has reached `Netgame.max_players` (bot.cpp:8701-8712).
+  The count includes every `NPF_CONNECTED` slot: humans, bots, and the server's own slot 0, which `MultiStartServer()`
+  marks connected on dedicated and listen servers alike (multi_server.cpp:757-758). A bot can therefore take the
+  last free seat.
+- The Bot Settings menu clamps the bot count to `max_players − 1` (multi_ui.cpp:1891, :1927). On a listen server the
+  host is the other seat, so a full UI roster also leaves no seat free.
+- On a dedicated server, `BotCount = MaxPlayers − 1` fills every seat, because slot 0 counts. Example: co-op missions
+  commonly cap at 4 players, and `BotCount=3` seals a 4-player co-op server.
+- A human who then tries to join gets the vanilla server-full answer (multi.cpp:3791,
+  `MultiCountPlayers() < Netgame.max_players`). No bot is removed to make room.
+
+So an operator who wants human seats free today must size `BotCount` by hand: at most `MaxPlayers − 1 − (seats to
+keep)` on a dedicated server.
+
+## 7. `$servercaps`
+
+Remote-admin tools (D3 Pyrodeck) send `$servercaps` on connect. This fork answers with one line,
+`SERVERCAPS version=1 fork=Matcen fork_version=<X.Y.Z> features=bots,roster,ships,difficulty` (bot.cpp:9900-9904);
+vanilla D3 answers `Unknown command`. The version is numeric only, never with a `-dev` suffix. The feature list is a
+fixed literal: `teams` (per-bot team assignment, built), `squad_orders` and `ctf` are not advertised, and
+`population` would join it when population management lands (POP6). The output formats remote tools rely on are
+specified in `PYRODECK_CONTRACT.md`.
+
+## 8. Not built, tracked in the registry
+
+- `$botship <index> <ship>`, respawning a bot with a new ship: POP7.
+- Persistent bot statistics (kills, deaths, weapon use, state time, powerups; a level-end log) and a `$botstats`
+  console summary: POP8.
+
+---
+
+## 9. Population management (FORWARD, not built)
+
+> **DECISION NEEDED (Q1)** — drafted on the default; the operator's second pass settles it.
+> Default applied: (c) both a reserve and a yield; `BotReservedSlots` default 1; `$addbot` respects the reserve; the
+> larger team's lowest-score bot yields, the newest bot breaks ties, with a chat line; `BotTargetPlayers` off by
+> default and 12 in the sample config. The options were: (a) reserve only, (b) yield only, (c) both; reserve default 1
+> or 4; whether `$addbot` may break the reserve; which bot yields; the target default.
+
+Nothing in this section exists in the code: there is no `BotTargetPlayers`, `BotReservedSlots` or `$botpopulation`
+symbol. Registry rows POP1-POP4.
+
+### 9.1 The rulings
+
+- **Bots never fill the server (POP2).** A D3 client that sees a full server cannot connect, so bots alone must never
+  take the last seat. The 2026-07-19 operator ruling makes this one free seat **in every mode**, co-op included (the
+  4-player co-op cap is the case that bites: dedicated slot 0 plus three bots seals it today).
+- **A human joining a full server makes a bot leave (POP3).** Same ruling: when a human tries to join a full server,
+  a bot is removed before the join is answered, so the human gets the seat.
+- If enough humans join to fill the server on their own, all bots leave. That is expected.
+
+### 9.2 Target player count (POP1)
+
+- **`BotTargetPlayers=<n>`** in the bot config file: the total player count (humans plus bots) the server keeps.
+  `0` (the default) turns the manager off, and the fixed roster behaves as it does today.
+- **Human leaves:** if the total drops below the target, add a bot. Immediate check from `MultiDisconnectPlayer()`
+  (multi_server.cpp:1083).
+- **Human joins:** if the total is above the target, remove a bot. Immediate check from the join path.
+- **Roster cycling:** an added bot takes the next roster entry in order (`BotName<n>`, `BotShip<n>`,
+  `BotDifficulty<n>`, `BotTeam<n>`), wrapping, and skips names already in the game.
+- **Cooldown:** at most one add or remove every 5 seconds, so a burst of joins and leaves does not thrash.
+- **Periodic check:** every 5 seconds from `MultiDoServerFrame()` (multi_server.cpp:2563), next to the existing
+  `BotDoFrame()` call (:2614), as a backstop for the immediate checks.
+- **Announce:** every add or remove the manager makes is announced in chat (`MultiSendMessageFromServer`, the same
+  channel bot replies use, bot_chat.cpp:695).
+- **Team placement:** an added bot goes to the smallest team, as `BotAdd()` already does; DMFC `$autobalance`, if on,
+  handles the rest (POP5).
+
+### 9.3 Seats kept free (POP2)
+
+- **`BotReservedSlots=<n>`**, default **1**, minimum 1 while any bot is active. (The original spec said 4; 1 keeps
+  4-player co-op and small servers usable, and the yield covers a burst of arrivals.)
+- **Ceiling:** a bot may be added only if at least `BotReservedSlots` seats stay free afterwards, counting slot 0,
+  humans and bots as `BotAdd()` does today. With `MaxPlayers=4` co-op on a dedicated server that is at most two bots
+  next to one human, and the yield then covers the fourth seat.
+- **Every add path obeys it:** the config roster (a `BotCount` above the ceiling spawns up to the ceiling and logs the
+  rest as skipped), the Bot Settings menu (clamp to `max_players − 1 − BotReservedSlots`), the population manager,
+  and `$addbot`, which refuses with a message naming the reserve. A misconfigured `BotCount` is the same sealing
+  failure as a full roster, so there is no manual bypass.
+
+### 9.4 Yield on a full join (POP3)
+
+- **Hook:** the server's join answer, before the vanilla refusal at multi.cpp:3791. If the server is full and at least
+  one bot is in the game, remove a bot with `BotRemove()` (bot.cpp:8973) and accept the join.
+- **Which bot:** in team modes, a bot from the larger team (by player count); among those, the lowest score; the
+  newest-added bot breaks ties. In free-for-all modes, the lowest-scoring bot, newest on a tie.
+- **Chat line:** announce the departure, for example `Reaper[BOT] left to make room for a player.`
+- With a reserve of 1 or more, the yield fires only when the reserve is already used up (a burst of arrivals, or a
+  roster an admin filled before the reserve existed).
+
+### 9.5 Console (POP1)
+
+```
+$botpopulation [on|off|status]   ; turn the manager on or off, or print target, reserve, humans, bots
+$botpopulation target <n>        ; change BotTargetPlayers live
+$botpopulation reserve <n>       ; change BotReservedSlots live (minimum 1)
+```
+
+`$removebot` still works; with the manager on, a removed bot is replaced at the next check unless the target is
+lowered or the manager is off. `$bothelp` gains these lines.
+
+### 9.6 Sample config
+
 ```ini
-BotCount=4
-BotShip1=pyro
-BotShip2=phoenix
-BotShip3=magnum
-BotShip4=blackpyro
-```
-
-**Console/Telnet:**
-```
-$addbot Reaper phoenix
-$addbot Shadow magnum
-$addbot Ghost blackpyro
-```
-
-**Implementation:**
-- `BotResolveShipAlias()` maps shorthand aliases → `FindShipName()` → validated ship index
-- `$addbot <name> [ship]` extended to accept optional ship alias as second argument
-- Config uses `BotShipN=alias` entries parsed alongside `BotNameN`
-- Invalid/unavailable ships fall back to default (Pyro-GL) with a log warning
-- All bot code reads physics from `Ships[Players[slot].ship_index]` — ship selection propagates automatically to thrust, mass, drag, weapon batteries
-
-### 5.2: Difficulty Levels (Priority: Medium) — IMPLEMENTED
-
-Scale bot combat effectiveness to match player skill via 7 independent parameters scaled by difficulty tier.
-
-**Tiers** (matching D3 single-player difficulty names):
-
-| Level | Aim Error | Fire Delay | Flee Scale | Juke Amp | Juke Freq | Dodge% | Turn Scale |
-|-------|-----------|------------|------------|----------|-----------|--------|------------|
-| TRAINEE | 12° | 0.8s | 1.8× | 0.4× | 0.6× | 20% | 0.6× |
-| ROOKIE | 7° | 0.5s | 1.4× | 0.6× | 0.8× | 50% | 0.8× |
-| HOTSHOT | 3° | 0.2s | 1.0× | 1.0× | 1.0× | 100% | 1.0× |
-| ACE | 1° | 0.1s | 0.7× | 1.2× | 1.2× | 100% | 1.1× |
-| INSANE | 0° | 0.0s | 0.4× | 1.5× | 1.5× | 100% | 1.2× |
-
-**Implementation (6 behavior scaling points):**
-- **Aim error:** Smooth sinusoidal offset in `BotUpdateAimDirection()` — `aim_wander_phase` advances at 0.7 Hz
-- **Fire reaction delay:** Per-target timer in `BotDoFiring()`/`BotDoSecondaryFiring()` — resets on target change, not LOS loss
-- **Flee threshold:** Equipment-tier flee percentage multiplied by `flee_pct_scale` in `BotUpdateState()`
-- **Juke amplitude/frequency:** Scales `BOT_JUKE_AMPLITUDE_*` and phase advancement in `BotApplyThrust()`
-- **Dodge percent:** `ai_info->dodge_percent` set from params in `BotConfigureAI()`
-- **Turn rate:** Dynamic turn rate multiplied by `turn_rate_scale` in `BotApplyThrust()`
-
-**Config:**
-```ini
-BotDifficulty=HOTSHOT        ; global default
-BotDifficulty1=ACE           ; per-bot override
-BotDifficulty2=TRAINEE
-```
-
-**Console:**
-```
-$addbot Reaper pyro ace
-$botdifficulty 0 trainee     ; change bot 0 mid-game
-$botdifficulty all insane    ; change all bots + default
-$botlist                     ; shows difficulty per bot
-```
-
-### 5.3: Bot Population Management (Priority: Medium)
-
-Dynamically add/remove bots to maintain a target player count as humans join and leave. Standard expected behavior for 24/7 bot-enabled servers.
-
-**Note:** Team *balancing* (moving players between teams) is already handled natively by DMFC's `$balance` and `$autobalance` commands, which work correctly with bots. Phase 5.3 is specifically about bot *population* management — ensuring the right number of bots are in the game.
-
-**Current behavior:** Bots are spawned at server start via config roster and persist. If a human joins, the server can fill up. If humans leave, the game is depopulated. No automatic adjustment.
-
-**Hard constraint — bots must never fill the server:**
-D3 clients see a full server in the browser and cannot connect. Bots must *never* occupy 100% of player slots. The population manager enforces a ceiling: `max bots = MaxPlayers - BotReservedSlots` (minimum 1 reserved). If enough humans join to fill the server naturally, all bots are removed — that's expected. But bots alone can never prevent a human from joining.
-
-**Target behavior:**
-- **Target player count** (`BotTargetPlayers=` config key): Server admin sets a desired total player count (e.g., 8). The system maintains this by adding/removing bots as humans join/leave.
-- **On human connect**: Remove a bot to make room before the new player fully joins. The server always has at least `BotReservedSlots` open slots, so the client never sees "server full" due to bots.
-- **On human disconnect**: If total players drops below the target, add a bot to fill the gap. Use the roster config for bot names/ships/difficulty, cycling through available names.
-- **Slot reservation** (`BotReservedSlots=` config key, default 4, minimum 1): Always keep N slots free for humans. Bots will never fill the server beyond `MaxPlayers - BotReservedSlots`. Clamped to minimum 1 — it is never valid to have 0 reserved slots when bots are active.
-- **Cooldown**: Don't add/remove bots more than once per 5 seconds to avoid thrashing during rapid join/leave.
-- **Manual override**: `$addbot` and `$removebot` still work and bypass the population manager. Admin can also disable auto-management with `$botpopulation off`.
-
-**Config keys (in bot config file):**
-```ini
-BotTargetPlayers=8       ; desired total player count (0 = disabled, use fixed roster)
-BotReservedSlots=4       ; slots always kept free for humans (default 4, minimum 1)
-```
-
-**Console commands:**
-```
-$botpopulation [on|off|status]   ; toggle or query auto-population management
-$botpopulation target <n>        ; change target count live
-$botpopulation reserve <n>       ; change reserved slots live
-```
-
-**Hook points:**
-- `MultiDoServerFrame()` already runs `BotDoFrame()` — add a periodic population check (every 5s)
-- `MultiDisconnectPlayer()` — trigger immediate bot-add check
-- Player join handler — trigger immediate bot-remove check
-
-**Interaction with DMFC team balancing:**
-- After adding/removing a bot, DMFC's `$autobalance` (if enabled) will handle team placement for the new bot or rebalance remaining players.
-- Our `BotAdd()` round-robin already assigns new bots to the smallest team, consistent with DMFC's approach.
-
-### 5.4: Client UI for Bot Match Setup (Priority: High) — IMPLEMENTED
-
-In-game "Bot Settings" screen accessible from the Start a New Game flow (Direct TCP/IP → Start a New Game). Allows listen server hosts to configure bots without touching config files.
-
-**UI elements:**
-- **Bot Count** — edit box (0–16)
-- **Default Difficulty** — cycling hotspot (Trainee/Rookie/Hotshot/Ace/Insane)
-- **Roster listbox** — scrollable list of bots (up to 16), single-click to select
-- **Detail panel** — name edit, ship cycling hotspot, per-bot difficulty cycling hotspot for selected bot
-- **Done/Cancel** buttons
-
-**Implementation (redesigned in 0.8.3 — master-detail layout):**
-- `MultiBotSettingsMenu()` in `multi_ui.cpp` — `NewUIWindow` with `multimain.ogf` background image (metallic border)
-- Master-detail pattern: `newuiListBox` roster on left, detail panel (name/ship/difficulty) on right
-- `SetSelectChangeCallback` forces `DoUI()` return on single-click selection change
-- "Bot Settings" button added between Multiplayer Options and Save Settings in `StartMultiplayerGameMenu()` (`con_dll.h`)
-- DLL API export via `fp[115]` in `multi_dll_mgr.cpp`
-- Bot settings saved/loaded in `.mps` files (`multi_save_setting.cpp`) — backwards compatible
-- `BotUISettings` struct and `BotSpawnFromUI()` in `bot.h`/`bot.cpp`
-- Delayed spawn (3s) so host can manage teams before bots join
-- Priority: UI settings → config file → no bots (listen server vs dedicated server)
-
-**Bug fix (init-order):** `BotAdd()` called `BotConfigureAI(bot_index)` before `Bots[bot_index].player_slot` was set, causing it to silently configure slot 0 (host) instead of the bot. Result: bots spawned without thrust physics, firing, awareness, or dodge — "asleep" until first death+respawn. Fixed by moving `player_slot` and `difficulty` initialization before `BotConfigureAI()`.
-
-### 5.5: Per-Bot Team Pre-Assignment — IMPLEMENTED (Matcen 0.8.6)
-
-Operators can pre-assign bots to specific teams in `bots.cfg` or via console, rather than relying solely on auto-balance. Designed for servers running up to 4-team games and managed by the Pyrodeck companion tool.
-
-**Config (`bots.cfg`):**
-```ini
-BotCount=4
+; bots.cfg
+BotCount=6
+; keep 12 players in the game; 0 = off (the default)
+BotTargetPlayers=12
+; seats always left free for humans (default 1, minimum 1)
+BotReservedSlots=1
 BotName1=Reaper
-BotTeam1=1        ; Team 1
-BotName2=Phantom
-BotTeam2=1        ; Team 1
-BotName3=Viper
-BotTeam3=2        ; Team 2
-BotName4=Shadow
-BotTeam4=2        ; Team 2
-; Omit BotTeam<n> for auto-balance
+; BotName2-BotName16, ships, difficulties and teams as in section 2
 ```
 
-**Console:**
-```
-$addbot Reaper pyro hotshot 2    ← team is 4th optional arg, 1-indexed
-```
+### 9.7 Decisions this section carries (POP4)
 
-**Behavior:**
-- Teams are **1-indexed** in config and console (`1`–`4`); stored 0-indexed internally.
-- Out-of-range team value (`1`–`4` exceeds game's active `Num_teams`): warns and auto-balances.
-- Values outside `1`–`4` (e.g. `5`, `0`, non-numeric): `BotResolveTeam()` returns -1 immediately — silent auto-balance, no warning. These can never be valid in any supported mode.
-- Non-team game modes (anarchy, etc.): `BotTeam<n>` is silently ignored — no effect.
-- `.mps` listen-server presets: `BOTTEAM<n>` key saved/loaded for completeness.
+Reserve vs yield vs both; the reserve default (spec 4 vs 1); whether `$addbot` bypasses the reserve; which bot yields;
+the `BotTargetPlayers` default. All are drafted on the QUESTIONS Q1 default above. When the feature lands, advertise
+`population` in `$servercaps` (POP6) and add the population controls to the Pyrodeck contract (REL8).
 
-**Implementation:**
-- `BotAdd()` gains `int desired_team = -1` parameter; -1 = auto-balance.
-- `BotResolveTeam(const char *)` parallels `BotResolveDifficulty()` — `"1"`–`"4"` → 0-indexed, else -1.
-- `BotUIRosterEntry` gains `int team` field (default -1).
-- `BotLoadRosterFile()` parses `BotTeam<n>=` keys.
-- `BotSpawnFromUI()` and `BotDoUISpawn()` pass `e->team` through to `BotAdd()`.
+## Related documents
 
-### 5.5b: Enhanced Console Commands (Priority: Low)
-
-Extend admin tooling for live management:
-
-| Command | Description |
-|---------|-------------|
-| `$botship <index> <ship>` | Change a bot's ship mid-game (respawns with new ship) |
-| `$botstats` | Summary: total kills, deaths, powerups collected per bot (debugging aid) |
-
-**Dropped from original scope:**
-- `$botteam` — team management is already handled by vanilla DMFC `$balance`/`$autobalance` commands, which work correctly with bots.
-- `$botrebalance` — same; vanilla forced rebalance covers this.
-
-### 5.6: Persistent Bot Statistics (Priority: Low)
-
-Track per-bot performance across sessions for tuning and diagnostics.
-
-**Data to track:**
-- Kills, deaths, K/D ratio per session and cumulative
-- Weapon usage distribution (which weapons fired most, hit rate if feasible)
-- State time distribution (% time in EXPLORE/HUNT/COMBAT/FLEE/EVADE)
-- Powerups collected vs attempted
-
-**Output:** Log summary at level end and/or write to a stats file.
-
----
-
-## Implementation Order
-
-1. ~~**5.6 `$servercaps` handshake**~~ ✅ Implemented
-2. ~~**5.1 Config-file roster**~~ ✅ Implemented
-3. ~~**5.1b Ship selection**~~ ✅ Implemented
-4. ~~**5.2 Difficulty levels**~~ ✅ Implemented
-5. ~~**5.4 Client UI for bot match setup**~~ ✅ Implemented
-6. ~~**5.5 Per-bot team pre-assignment**~~ ✅ Implemented
-7. **5.3 Auto-rebalancing** — quality-of-life feature for team modes
-8. **5.5b Enhanced console** — admin convenience
-9. **5.6 Statistics** — diagnostic tooling
-
----
-
-## Risks and Open Questions
-
-| Risk | Mitigation |
-|------|------------|
-| ~~CVar system has limited capacity~~ | Resolved: bot config uses separate second-pass parser, not CVars |
-| Bot names with spaces in config | Config parser strips quotes; recommend no-space names to match D3 conventions |
-| Difficulty scaling feels artificial | Start with aim accuracy + reaction delay only; add more knobs if needed |
-| Auto-rebalance disrupts gameplay | Add cooldown, only move bots (never humans), announce in chat |
-| Per-bot difficulty in config is verbose | Support global `BotDifficulty` with optional per-bot overrides |
-
----
-
-## 5.6: Remote Administration Handshake (Priority: High — Foundation) — IMPLEMENTED
-
-**Context:** There is no modern server administration tool for Descent 3 — unlike DXX-Rebirth and other retro FPS communities, D3 server admins are limited to the raw telnet console. A companion **web administration application** will be built as a separate project to provide a browser-based UI for managing D3 dedicated servers, including bot management. That project is **out of scope** here, but we need to ensure the D3 server side is designed for remote manageability.
-
-**Compatibility requirement:** The web admin must work with both bot-enabled (this fork) and vanilla D3 v1.5 servers. It communicates via the existing **telnet** interface (D3's remote console). On vanilla servers, bot management (and any other extended features) will be disabled/greyed out in the web UI.
-
-### Capability Handshake: `$servercaps`
-
-We introduce a general-purpose `$servercaps` command that any fork or mod can use to advertise extended features. Bot support is one such feature. This convention can be adopted by the wider community if others extend D3 in similar ways.
-
-**Server-side command:**
-```
-$servercaps
-```
-
-**Response on this fork (bot-enabled):**
-```
-SERVERCAPS version=1 fork=Matcen fork_version=0.9.9 features=bots,roster,ships,difficulty
-```
-
-**Response on vanilla D3:**
-```
-Unknown command: $servercaps
-```
-
-The web admin sends `$servercaps` on connect. If it gets a structured `SERVERCAPS` response, it enables UI sections for the advertised features. If it gets an error or no response, extended features stay greyed out.
-
-### Design Principles
-
-- **Version field:** `version=1` allows future protocol evolution without breaking older web admin versions
-- **Feature flags:** Comma-separated list of supported capabilities. Any fork can add its own flags (e.g., `bots`, `custom_maps`, `anticheat`). The web admin only enables UI for recognized flags.
-- **Backward-compatible:** Adding a new console command doesn't break vanilla clients — unrecognized commands already produce an error response
-- **Stateless:** Each `$servercaps` query returns current state — no persistent handshake session required
-- **Community convention:** By using a generic `$servercaps` rather than bot-specific naming, other modders can adopt the same pattern for their own extensions
-
-### Bot Feature Flags
-
-| Flag | Phase | Description |
-|------|-------|-------------|
-| `bots` | — | Core bot support is present |
-| `roster` | 5.1 | Config-file bot roster (auto-spawn) |
-| `ships` | 5.1b | Bot ship selection |
-| `difficulty` | 5.2 | Difficulty levels |
-| `teams` | 5.5 | Per-bot team pre-assignment |
-| `rebalance` | 5.3 | Auto team rebalancing |
-| `squad_orders` | 6.0 | Squad order framework (attack/defend/follow) |
-| `ctf` | 6.1 | CTF game mode awareness |
-| `botstats` | 5.5b | Bot statistics tracking |
-
-### Implementation Notes
-
-- `$servercaps` is handled by `DedicatedHandleBotCommand()` in `dedicated_server.cpp`, intercepted before game DLL dispatch
-- Response format is plain text, one line, parseable by simple string splitting
-- As each feature is implemented, add its flag to the `$servercaps` response
-- The web admin project will be a separate repository with its own tech stack
-
----
-
-## Related Documents
-
-- `PLAN.md` — Original Phase 5 outline
-- `BOT_DEV_REFERENCE.md` — Current bot architecture and API patterns
-- `BOTS_DEVEL.md` — Phase history and known issues
-- `dedicated_server.cpp` — CVar system and console command dispatch
+- `PLAN.md` §4: the registry (POP, UX, REL rows).
+- `PYRODECK_CONTRACT.md`: the telnet output formats remote-admin tools depend on.
+- `CHAT_COMMANDS.md`: the in-game `!` order verbs.
+- `BOT_DEV_REFERENCE.md`: bot architecture and engine API patterns.
+- `archive/BOT_MANAGEMENT-design-history.md`: the original Phase 5 problem statement, init-order bug, implementation
+  order and risk table.
