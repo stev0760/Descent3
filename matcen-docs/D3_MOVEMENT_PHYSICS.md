@@ -71,14 +71,14 @@ controls->forward_thrust = controls->afterburn_thrust * 1.6f * punch_scalar;
 | 80–90% | 1.0–1.8 (lerp) | **1.6–2.88×** |
 | <80% | 1.0 | **1.6×** |
 
-`#define AFTERBURN_TIME 5.0f` — from `player_external.h:394`.
+`#define AFTERBURN_TIME 5.0` — from `Descent3/player.h:394`.
 
 `BotApplyThrust()` replicates this ramp using `Bots[i].afterburner_fuel` instead of
 `Players[slot].afterburn_time_left` (DoFlyingControl skips on dedicated server).
 
 ---
 
-## 4. Multiplayer Packet Flags (`multi.cpp:1819–1826`)
+## 4. Multiplayer Packet Flags (`multi.cpp:1822–1829`)
 
 These flags drive client-side visual effects in `MP_PLAYER_POS` packets.
 
@@ -157,3 +157,22 @@ obj->mtype.phys_info.full_rotthrust = Ships[ship_idx].phys_info.full_rotthrust;
 obj->mtype.phys_info.flags &= ~PF_FIXED_VELOCITY;
 obj->mtype.phys_info.flags |=  PF_USES_THRUST;
 ```
+
+---
+
+## 7. Two physics rulings that constrain bot movement
+
+Operator rulings (2026-08-04; design record in [`NAVIGATION.md`](NAVIGATION.md) §6.9). They follow from the drag
+model in §1 and apply to every movement change.
+
+1. **Drag means braking is not thrusting.** With no thrust the ship decays toward zero velocity on its own
+   (§1, `v_eq = 0`). A bot stops by releasing thrust, never by reverse-thrusting. In code: when
+   `BotApplyThrust()` has no nav direction it sets `forward = 0.0f` and coasts (`bot.cpp:6416-6433`); it
+   used to drive full throttle there.
+2. **Bots never resist knockback.** Weapon impulses are applied by the physics engine; a bot does not thrust
+   against them, zero its velocity, snap its position, or hold a spot under fire. A human can barely do it,
+   and it reads as unnatural. Losing a hold under fire is the game as designed.
+
+Both rest on the standing rule that bots use only legal thrust inputs. One known exception predates the
+rulings and is not a template: the Entropy hold park (`entropy_holding` in `BotApplyThrust()`, `bot.cpp:6363`) thrusts
+against residual velocity, knockback included.

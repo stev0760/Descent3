@@ -1,3 +1,16 @@
+<!-- Source doc: matcen-docs/SOAK_0913_STABLE_CANDIDATE.md -->
+<!-- Source commit: ee6e6525 -->
+<!-- Source lines: 1-245 (full snapshot) -->
+<!-- Moved verbatim; do not edit. -->
+
+> **Superseded in part (banner added 2026-10-01 at the move).** A one-off review of build `c8566c37` for the 0.9.13
+> release decision; 0.9.13 shipped as `830d7578` on 2026-09-11. Read it as history. Superseded sections:
+> **§5** (Batteries reach failure "is geometry"): the 0.9.14 portal model reversed that verdict. **§6, Entropy**
+> ("never happened"): contradicted by ENTROPY_MODE.md, which records confirmed takeovers. **§6, robo-anarchy**
+> ("never run", config broken): robo ran in the 0.9.15 regression set (registry NAV56). **§6b** (wind gate
+> over-blocks): the hypothesis was checked against fresh geometry and refuted (NAVIGATION.md at `ee6e6525`, lines 1519-1525). The §8
+> questions are all settled. The §7 harness facts live on in BOT_DEV_REFERENCE.md's measurement caveats.
+
 # 0.9.13 stable-candidate report — c8566c37
 
 **Build under test:** `c8566c37` "nav: a route dies with the commitment that authorised it",

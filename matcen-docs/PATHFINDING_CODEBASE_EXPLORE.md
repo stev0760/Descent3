@@ -1,27 +1,26 @@
-# **Guide-Bot Navigation Analysis Report**
+# Engine AI pathing reference
 
-## Executive Summary
+How the stock Descent 3 engine paths its own AI (the single-player Guide-Bot and Thief-Bot scripts in
+`scripts/AIGame.cpp`, the path builder in `Descent3/aipath.cpp`, and the BNode graph in `Descent3/bnode.cpp`).
+Read it to understand what the engine does when an AI goal is set, and which of its techniques are worth borrowing.
+Our bots' own navigation is documented in [`NAVIGATION.md`](NAVIGATION.md); passability rules are in
+[`OBSTACLE_GEOMETRY.md`](OBSTACLE_GEOMETRY.md).
 
-After extensive investigation of the Descent 3 single-player Guide-Bot and Thief-Bot scripts (`scripts/AIGame.cpp`), combined with analysis of the engine's pathfinding systems (`aipath.cpp`, `bnode.cpp`), I can provide a comprehensive comparison between how single-player bots navigate complex passages versus your multiplayer bot implementation.
+Retitled and split 2026-10-01 (source `ee6e6525`). The original Phase 3.x comparison of the Guide-Bot with our
+multiplayer bots, and its recommendations, are in
+[`archive/PATHFINDING-bot-comparison-phase3.md`](archive/PATHFINDING-bot-comparison-phase3.md) with an adoption
+note per recommendation. The filename is kept because other docs cite it.
 
 ---
 
-## **Part 1: How Guide-Bots Navigate Complex Passages**
+## Part 1: How the Guide-Bot navigates
 
-### **1.1 Core Navigation Philosophy**
+The Guide-Bot is OSIRIS script code. It sets explicit AI goals and gates every goal on a reachability
+query. The engine then builds the path (Part 3) and steers along it.
 
-The Guide-Bot uses a fundamentally different approach than your multiplayer bots:
+### 1.1 Key navigation techniques
 
-| Aspect | Single-Player Guide-Bot | Your Multiplayer Bots |
-|--------|------------------------|----------------------|
-| **Goal System** | OSIRIS script-driven with explicit goal management | C++ FSM with `bot_info` state tracking |
-| **Navigation Intent** | Explicitly sets goals via AI engine functions | Consumes `ai_info->movement_dir` from blended AI pipeline |
-| **Path Complexity** | Uses BNode pathfinding for room-internal navigation | Primarily uses BOA for room-to-room routing |
-| **Reachability Checks** | Pre-validates paths with `AI_IsObjReachable()` / `AI_IsDestReachable()` | Post-detection stuck recovery (7s abandon) |
-
-### **1.2 Key Navigation Techniques Used by Guide-Bot**
-
-#### **A. Reachability Validation Before Goal Assignment**
+#### A. Reachability Validation Before Goal Assignment
 
 ```cpp
 // From AIGame.cpp:5028-5040
@@ -49,9 +48,7 @@ if (type == LIT_OBJECT) {
 
 **Key Insight**: The Guide-Bot validates reachability **before** assigning goals. If a path doesn't exist or is blocked, it reports to the player and does not attempt navigation. This prevents bots from getting stuck on invalid paths.
 
-Your multiplayer bots use the opposite approach: they assign goals and only detect being stuck after ~7 seconds of failed attempts.
-
-#### **B. Portal Position Navigation for Indoor Goals**
+#### B. Portal Position Navigation for Indoor Goals
 
 ```cpp
 // From AIGame.cpp:5042-5052
@@ -67,9 +64,9 @@ else if (type == LIT_INTERNAL_ROOM) {
 }
 ```
 
-**Key Insight**: The Guide-Bot navigates to **portal entrance positions**, not room centers. This is identical to your Phase 3.24 fix (`BOA_connect[region][c].portal.path_pnt`), showing this is the correct approach for complex passages.
+**Key Insight**: The Guide-Bot navigates to **portal entrance positions**, not room centers.
 
-#### **C. Trigger Face Navigation with Offset Positioning**
+#### C. Trigger Face Navigation with Offset Positioning
 
 ```cpp
 // From AIGame.cpp:5053-5073
@@ -93,7 +90,7 @@ else if (type == LIT_TRIGGER) {
 
 **Key Insight**: When navigating to trigger points, the Guide-Bot computes an offset position along the face normal (5 units from wall). This prevents bots from trying to navigate into solid geometry.
 
-#### **D. Dual-Goal Strategy for Orientation + Movement**
+#### D. Dual-Goal Strategy for Orientation + Movement
 
 ```cpp
 // From AIGame.cpp:4951-4955
@@ -110,9 +107,9 @@ void GuideBot::AddGetToGoalCommonGoals(int me) {
 - Goal 2: `AIG_MOVE_RELATIVE_OBJ_VEC` - handles orientation relative to target
 - Goal 3: `AIG_GET_TO_OBJ` - handles movement toward target
 
-This dual-goal approach gives the bot both positional and rotational control, unlike your single-goal-per-state FSM.
+This dual-goal approach gives the bot both positional and rotational control.
 
-#### **E. BNode Pathfinding for Complex Internal Navigation**
+#### E. BNode Pathfinding for Complex Internal Navigation
 
 From `aipath.cpp:645-751`, the Guide-Bot uses sophisticated BNode pathfinding:
 
@@ -158,9 +155,9 @@ This allows the Guide-Bot to navigate through rooms with complex geometry, pilla
 
 ---
 
-## **Part 2: BNode System Details**
+## Part 2: BNode System Details
 
-### **2.1 How BNodes Work**
+### 2.1 How BNodes Work
 
 From `bnode.cpp`:
 
@@ -201,7 +198,7 @@ int BNode_FindDirLocalVisibleBNode(int roomnum, vector *pos, vector *fvec, float
 - **Retry logic**: If no visible node found, retries without directional bias (`f_retry = true`)
 - **Size-aware**: Considers object radius when checking visibility
 
-### **2.2 BNode Pathfinding Algorithm**
+### 2.2 BNode Pathfinding Algorithm
 
 From `bnode.cpp:212-290`:
 
@@ -244,207 +241,47 @@ bool BNode_FindPath(int start_room, int i, int j, float rad) {
 
 ---
 
-## **Part 3: Comparison with Your Multiplayer Bot Implementation**
+## Part 3: Path-build fallback (`AIPathAllocPath`)
 
-### **3.1 What You're Already Doing Correctly**
+`AIPathAllocPath()` (`Descent3/aipath.cpp:990`) turns a goal into a path. The order it tries things:
 
-| Feature | Guide-Bot Technique | Your Implementation | Status |
-|---------|--------------------|---------------------|--------|
-| Portal navigation | Navigate to `path_pnt` not room center | Phase 3.24: `BOA_connect[region][c].portal.path_pnt` | ✅ **Match** |
-| Reachability check | `AI_IsObjReachable()` before goal | Phase 3.26: `BOA_GetNextRoom()` when stuck | ⚠️ Different timing |
-| Goal flags | `GF_KEEP_AT_COMPLETION | GF_NOTIFIES` | Your goals use similar flags | ✅ **Match** |
-| A* pathfinding | BNode + BOA hybrid | Phase 3.6: Engine `movement_dir` integration | ✅ **Match** |
+1. **BOA room route exists?** `BOA_GetNextRoom(start, end) != BOA_NO_PATH` (`aipath.cpp:1015`). If not, no path.
+2. **Straight line.** An `fvi_FindIntersection` sweep from start to end (`aipath.cpp:1032`). If clear, the path is
+   the single end point.
+3. **Force the alternate path** when the BOA entry is `BOAF_TOO_SMALL_FOR_ROBOT` (`aipath.cpp:1038`), or when
+   `BOA_HasPossibleBlockage` finds a locked door along the BOA room chain (`aipath.cpp:1040`).
+4. **Normal build** when the straight line is blocked: `AIGenerateBNodePath` (`aipath.cpp:804`) if BNodes are
+   allocated and verified and the ends are not on terrain region 0 or in two different terrain regions; otherwise
+   `AIGenerateBOAPath` (`aipath.cpp:919`), which threads portal `path_pnt`s. If that fails it jumps to step 5.
+5. **Alternate build** (`error_make_alt:`, `aipath.cpp:1064`): `AIFindAltPath` (`aipath.cpp:71`, called at
+   `:1067`) runs a priority-queue search over rooms that admits a portal only if `BOA_PassablePortal` does
+   (`aipath.cpp:121`), so it gets the runtime branch of OBSTACLE_GEOMETRY §1. It then builds
+   `AIGenerateAltBNodePath` (`aipath.cpp:645`) under the same BNode conditions, or `AIGenerateAltBOAPath`.
 
-### **3.2 Key Differences in Approach**
-
-#### **Difference #1: Pre-validation vs Post-detection**
-
-**Guide-Bot**: Validates reachability before assigning goals
-```cpp
-if (AI_IsObjReachable(me, handle[i])) {
-    AI_AddGoal(...);  // Only assign if path exists
-} else {
-    DoMessage(TXT_GB_NOTREACH, true);  // Report failure
-}
-```
-
-**Your Bots**: Assign goals and detect stuck after ~7 seconds
-```cpp
-int gi = GoalAddGoal(obj, AIG_GET_TO_OBJ, ...);  // Always assign
-// ... later in BotApplyThrust ...
-if (stuck_timer > BOT_STUCK_ABANDON_TIME) {
-    BotClearActiveGoal();  // Abandon after failure
-}
-```
-
-**Impact**: Your approach allows more exploration but causes stuck events. Guide-Bot's approach prevents stuck events but may give up too quickly on temporarily blocked paths.
-
-#### **Difference #2: Multi-Goal Strategy**
-
-**Guide-Bot**: Uses multiple simultaneous goals for different purposes
-```cpp
-// Orientation goal (priority 2)
-AI_AddGoal(me, AIG_MOVE_RELATIVE_OBJ_VEC, 2, ..., GF_ORIENT_GOAL_OBJ);
-
-// Movement goal (priority 3)  
-AI_AddGoal(me, AIG_GET_TO_OBJ, 3, ..., GF_ORIENT_VELOCITY);
-```
-
-**Your Bots**: Single active goal per state
-```cpp
-int pursuit_goal_index = -1;  // Only one goal tracked at a time
-pursuit_goal_index = GoalAddGoal(obj, AIG_GET_TO_OBJ, ...);
-```
-
-**Impact**: Guide-Bot can handle complex behaviors (e.g., "face player while moving away") that your single-goal system cannot express.
-
-#### **Difference #3: BNode Pathfinding Usage**
-
-**Guide-Bot**: Actively uses `AIGenerateAltBNodePath()` for room-internal navigation
-```cpp
-// In AI path allocation:
-if (use_alt_path) {
-    AIGenerateAltBNodePath(...);  // Full BNode A* search
-} else {
-    AIGenerateBOAPath(...);  // Simple portal-to-portal
-}
-```
-
-**Your Bots**: Rely on engine's `movement_dir` which blends avoidance with pathfinding
-```cpp
-// In BotApplyThrust():
-vector movement_dir = obj->ai_info->movement_dir;  // Engine computes this
-// Decompose into local thrust axes
-```
-
-**Impact**: Guide-Bot has explicit control over BNode path selection. Your bots let the engine decide, which is simpler but less transparent.
+The script reachability calls are the same search: `AI_IsDestReachable` and `AI_IsObjReachable` resolve to
+`osipf_AIIsDestReachable` / `osipf_AIIsObjReachable` (`Descent3/osiris_predefs.cpp:3644`, `:3653`), and both return
+`AIFindAltPath(obj, obj->roomnum, target_room)`. So the Guide-Bot's "is it reachable" is a room-graph answer on
+the engine's live passability, not a hull-fit test.
 
 ---
 
-## **Part 4: Recommendations for Improving Multiplayer Bot Navigation**
+## Part 4: What not to copy
 
-### **Recommendation #1: Add Pre-Assignment Reachability Check (Optional)**
+### Don't copy: script-based goal management
 
-**Pros**:
-- Prevents stuck events on unreachable goals
-- More efficient than detecting and recovering from being stuck
-- Matches Guide-Bot behavior
+The Guide-Bot uses OSIRIS scripts with explicit goal management (`AI_AddGoal`, `AI_SetGoalCircleDist`). Our C++ FSM is better suited to multiplayer bots.
 
-**Cons**:
-- Adds per-goal computation cost
-- May cause bots to give up too quickly on temporarily blocked paths
-- Requires implementing `AI_IsObjReachable()` wrapper or equivalent
-
-**Implementation Plan**:
-```cpp
-// In BotSetPursuitGoal():
-if (!BotIsPathToTargetReachable(bot_index)) {
-    LOG_DEBUG.printf("BOT: '%s' target unreachable, skipping goal", Bots[bot_index].callsign);
-    return;  // Don't assign goal
-}
-
-int gi = GoalAddGoal(obj, AIG_GET_TO_OBJ, ...);
-```
-
-**Tradeoff Question**: Do you prefer preventing stuck events (Guide-Bot approach) or allowing exploration with recovery (current approach)?
-
-### **Recommendation #2: Implement Dual-Goal Strategy for Combat (Medium Priority)**
-
-**Pros**:
-- Enables more sophisticated behaviors like "circle-strafe while facing target"
-- Matches Guide-Bot's proven multi-goal approach
-- Allows simultaneous orientation and movement control
-
-**Cons**:
-- Increased complexity in goal management
-- Requires tracking multiple goal indices per bot state
-- May need to adjust AI priority handling
-
-**Implementation Plan**:
-```cpp
-// For COMBAT state:
-int orient_goal_index = -1;  // Separate from pursuit goal
-orient_goal_index = GoalAddGoal(obj, AIG_MOVE_RELATIVE_OBJ, ..., GF_ORIENT_GOAL_OBJ);
-
-int movement_goal_index = -1;
-movement_goal_index = GoalAddGoal(obj, AIG_GET_TO_OBJ, ..., GF_SPEED_ATTACK);
-```
-
-**Tradeoff Question**: Is the increased complexity worth the behavioral improvement for your use case?
-
-### **Recommendation #3: Enhance BNode Visibility Checks (Low Priority)**
-
-Your current implementation already uses `AIF_AVOID_WALLS` which triggers engine wall avoidance raycasting. However, you could enhance this with Guide-Bot-style visibility checks when selecting navigation targets:
-
-**Implementation Plan**:
-```cpp
-// In BotFindNavigationTarget():
-if (!BotIsBNodeVisible(bot_index, target_bnode)) {
-    continue;  // Skip invisible BNodes
-}
-```
-
-**Tradeoff Question**: Is the additional raycasting cost justified by improved navigation quality?
-
-### **Recommendation #4: Offset Navigation Targets from Geometry (Already Implemented!)**
-
-Your Phase 3.24 implementation already does this correctly:
-```cpp
-// Navigate to portal entrance positions, not room centers
-int portal_idx = BOA_connect[region][c].portal;
-vector portal_pos = BOA_connect[region][c].path_pnt;
-```
-
-This matches the Guide-Bot's approach of offsetting from walls. **No changes needed.**
-
----
-
-## **Part 5: What NOT to Copy**
-
-### **Don't Copy: Script-Based Goal Management**
-
-The Guide-Bot uses OSIRIS scripts with explicit goal management (`AI_AddGoal`, `AI_SetGoalCircleDist`). Your C++ FSM approach is better suited for multiplayer bots.
-
-### **Don't Copy: Constant Player Interaction**
+### Don't Copy: Constant Player Interaction
 
 The Guide-Bot frequently checks player state and updates goals based on player actions. Multiplayer bots should be more autonomous.
 
-### **Don't Copy: Message-Based Communication**
+### Don't Copy: Message-Based Communication
 
 The Guide-Bot uses `DoMessage()` to communicate with players. This has no equivalent in multiplayer bots.
 
 ---
 
-## **Part 6: Summary of Findings**
-
-| Aspect | Conclusion |
-|--------|------------|
-| **Guide-Bot Navigation Quality** | Excellent - uses reachability validation, BNode pathfinding, and portal-position navigation |
-| **Your Bot Navigation Quality** | Very Good - Phase 3.24+ fixes bring you to parity with Guide-Bot for most scenarios |
-| **Key Gap #1** | Pre-assignment reachability checks (Guide-Bot validates before assigning goals) |
-| **Key Gap #2** | Multi-goal strategy (Guide-Bot uses simultaneous orientation + movement goals) |
-| **Key Gap #3** | BNode visibility-aware selection (Guide-Bot raycasts to confirm node accessibility) |
-| **Overall Assessment** | Your implementation is 85-90% as sophisticated as Guide-Bot. The remaining gaps are incremental improvements, not fundamental deficiencies. |
-
----
-
-## **Part 7: Final Recommendations**
-
-### **Priority 1: Maintain Current Architecture**
-
-Your Phase 3.6+ implementation (movement_dir consumption, BOA repair, portal navigation) is already aligned with single-player techniques. **Do not change this architecture.**
-
-### **Priority 2: Consider Pre-Assignment Reachability**
-
-If stuck events remain problematic after Phase 3.21 (7s goal abandonment), implement Guide-Bot-style reachability validation before assigning goals. This is the single most impactful improvement you could make.
-
-### **Priority 3: Document BNode Pathfinding Usage**
-
-Add comments to `bot.cpp` explaining how your bots use the engine's pathfinding system, referencing the Guide-Bot techniques you've already matched (portal navigation, BOA repair).
-
----
-
-## **Appendix A: Key Functions to Study Further**
+## Appendix A: Key Functions to Study Further
 
 If you want to dive deeper into Guide-Bot navigation:
 
@@ -455,19 +292,14 @@ If you want to dive deeper into Guide-Bot navigation:
 
 ---
 
-## **Appendix B: Files to Reference**
+## Appendix B: Files to Reference
 
 | File | Purpose |
 |------|---------|
 | `scripts/AIGame.cpp` (lines 4951-5100) | GuideBot goal assignment with reachability checks |
 | `Descent3/aipath.cpp` (lines 645-751) | BNode pathfinding implementation |
-| `Descent3/bnode.cpp` (lines 212-464) | BNode A* search and visibility checks |
+| `Descent3/bnode.cpp` (lines 212-466) | BNode A* search and visibility checks |
 | `Descent3/BOA.h` | BOA connectivity data structures |
-| `bot.cpp` (Phase 3.24+) | Your portal navigation implementation |
-
----
-
-**Report End**
-
----
-
+| `Descent3/aipath.cpp` (lines 990-1145) | `AIPathAllocPath`: the path-build fallback chain (Part 3) |
+| `Descent3/aipath.cpp` (line 71) | `AIFindAltPath`: the room-graph search behind every reachability query |
+| `Descent3/osiris_predefs.cpp` (lines 3644-3664) | `AI_IsDestReachable` / `AI_IsObjReachable` bindings |
