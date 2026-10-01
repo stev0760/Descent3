@@ -1,11 +1,14 @@
 # Entropy Mode — Mechanics Reference + Bot Implementation Spec
 
-**Status: E1–E3 IMPLEMENTED AND VALIDATED (0.9.8, released 2026-07-18; built 2026-07-12 as
-commits `d18cebb0`/`bed6db43`/`19266727`).** Working takeovers were confirmed during the
-2026-07-13→18 hosted-server campaign after the hold-behavior ladder landed (doorway-plane park →
-depth + near-rest gate → active braking; see BOTS_DEVEL.md and the 0.9.8 changelog entry).
-`$nav entropy` gates the E3 invasion layer. E4 polish not started. Known-open: Rim is
-nav-hostile for this mode; Inversion produces refused-pickup spam.
+**Status: E1-E3 built and shipped in 0.9.8 (released 2026-07-18; built 2026-07-12 as commits
+`d18cebb0`/`bed6db43`/`19266727`).** Working takeovers were confirmed during the 2026-07-13 to 07-18
+hosted-server campaign, after the hold-behavior ladder landed (doorway-plane park, then depth and
+near-rest gates, then active braking; see the 0.9.8 CHANGELOG entry). The 0.9.13 CHANGELOG
+"known limitations" says the opposite for that release's testing: "Entropy room takeover has not been
+observed in testing." Both statements stand in the record, and a re-check on the release build is owed
+(MODE2, see "Known open" below). `$nav entropy` gates the E3 invasion layer. E4 polish is not built
+(MODE1). The as-built summary is §3; the original E1-E3 build spec is in
+`archive/MODE-docs-history.md`, Part 1.
 Source of truth: `netgames/entropy/` (EntropyBase.cpp, EntropyAux.h, EntropyPackets.cpp,
 EntropyRoom.cpp), read in full for this document. Line references are to those files.
 Read this before writing any Entropy bot code; read `BOT_DEV_REFERENCE.md` and
@@ -159,88 +162,96 @@ they describe is reconstructable:
 
 ---
 
-## 3. Bot design spec (phased, follows the CTF/HA template)
+## 3. What the bots do (as built, 0.9.8 onward)
 
-### 3.1 Phase E1 — scaffolding + observability (no behavior change)
+The phased spec this section replaced (E1 scaffolding, E2 economy, E3 takeover, including the
+2026-07-13 hold-point correction) is preserved verbatim in `archive/MODE-docs-history.md`, Part 1.
+What follows is the code at HEAD. Constants live in `Descent3/bot_objective.h:52-108`.
 
-- `BotObjectiveState` gains an Entropy block:
-  ```c
-  // --- Entropy ---
-  int entropy_virus_id;                          // Object_info id, or -1
-  uint8_t entropy_room_owner[MAX_ROOMS];         // 0=none, 1=red, 2=blue (from flags scan)
-  uint8_t entropy_room_kind[MAX_ROOMS];          // 0=none, 1=lab, 2=energy, 3=repair
-  int entropy_owned_rooms[2];                    // live owned-room counts
-  int entropy_lab_rooms[2][4];                   // up to 4 labs per team, -1 terminated
-  int entropy_virus_count[BOT_MAX_PLAYERS];      // per-player carried (inventory poll)
-  int entropy_kill_streak[BOT_MAX_PLAYERS];      // mirrored kills-since-death (ALL slots — humans too, for target bias)
-  int entropy_world_virus[BOT_HOARD_MAX_WORLD_ORBS]; // free virus objnums + inferred team
-  ```
-  (Exact layout free to change; the `[MAX_ROOMS]` arrays can be byte maps — 1KB total.)
-- `BotPollEntropy()` in `bot_objective.cpp`, called from `BotPollObjectiveState()` under
-  `BGM_ENTROPY`: flags scan, virus object scan, inventory poll, streak-mirror upkeep.
-- `$botobj` prints the Entropy block (owned rooms per team, lab list, per-bot load/capacity).
-- Troll-strike + powerup-scan exemptions for `EntropyVirus` (gotcha #1) go in NOW, so even
-  pre-behavior bots don't poison the strike table while testing.
-- Log lines (analyzer-ready, see §4): `BOT ENTROPY: ...` for pickup-gate decisions, takeover
-  starts/aborts/completions, denial touches.
+### 3.1 Polling and observability (E1)
 
-### 3.2 Phase E2 — virus economy (collection + denial)
+- `BotPollEntropy()` (`Descent3/bot_objective.cpp:599`) rebuilds the Entropy block of
+  `BotObjectiveState` (`bot_objective.h:224-236`) every poll: room owner and kind from the
+  `RF_SPECIAL1..6` scan, owned-room counts, up to `BOT_ENTROPY_MAX_LABS` (4) labs per team, per-player
+  carried virus count from inventory, and the free-virus list with an inferred team. Nothing is
+  cached across polls, because the DLL flips room flags in place on takeover.
+- The virus object id is resolved once at init with `FindObjectIDName("EntropyVirus")`
+  (`bot_objective.cpp:196-200`).
+- `BotEntropyMirrorStreaks()` (`bot_objective.cpp:578`) mirrors the DLL's unexported
+  kills-since-death counter from deltas of `num_kills_level` / `num_deaths_level`. A kill and a death
+  in the same poll count as a death (under-count is safer than over-count), and counters running
+  backwards resync to zero. `BotEntropyCarryCapacity()` (`:701`) returns 2 x streak.
+- `$botobj` prints owned rooms, labs and each player's `carrying N [cap C, streak S]`
+  (`bot_objective.cpp:1435-1455`).
+- `EntropyVirus` is on the troll-strike exemption list with flags and orbs (`Descent3/bot.cpp:4869-4873`).
 
-- **Collection gate:** chase a friendly-lab virus only when `count < capacity` (mirrored).
-  Friendly virus = virus in a room currently owned by us (any kind; in practice labs).
-- **Ownership inference for strays:** viruses keep spawn-room membership almost always (they
-  spew at room center with ~20u/s drift). A virus in *neither* team's special room: skip it
-  (rare, not worth the misread of destroying our own).
-- **Denial:** an enemy-lab virus is destroyed by touch, free of charge. Cheapest rule that
-  works: when passing through/near an enemy lab (en route to anything), add a low-priority
-  touch goal for visible enemy viruses. Do NOT make denial a primary objective at first — it
-  competes with everything and risks suicide-by-room-damage loitering. Revisit with soak data.
-- **Kill-streak awareness in the FSM:** a bot with 0 streak and 0 load should bias toward
-  normal combat (HUNT) rather than orbiting a lab it can't harvest — the streak IS the
-  resource. This is the inversion that makes Entropy interesting: kills are *currency*, not
-  score.
+### 3.2 Virus economy (E2)
 
-### 3.3 Phase E3 — takeover execution (the carrier analog)
+- Powerup selection (`bot.cpp:5199-5214`): an own-team virus gets objective priority 25 only while the
+  mirrored load is below capacity. An enemy virus in the bot's own room gets priority 4 (denial by
+  touch, in passing only). A virus of unknown team (drifted out of any special room) is skipped.
+- A bot with streak 0 has capacity 0 and simply fights; kills are the currency.
+- Streak banking (`bot_objective.cpp:974-988`, commit `76549be3`): a wounded bot with a streak of 1 or
+  more retreats to its own repair room below `BOT_ENTROPY_HEAL_START` (50) and stays until
+  `BOT_ENTROPY_HEAL_DONE` (95). Its flee threshold also rises with the streak (`bot.cpp:5484-5494`).
+- DEFEND lean anchors one room out from the own lab along the BOA hop toward the enemy lab, never inside
+  a lab (`bot_objective.cpp:990-1006`). A zero-capacity defender parked in the lab collided with
+  viruses it could not carry.
 
-- **Loaded-bot branch** at the top of EXPLORE (exact CTF-carrier pattern):
-  when `count >= 5` → `BotGetObjectiveRoom` returns the best enemy special room and the bot
-  beelines. Room choice, first cut: nearest enemy room by `BotEstimatePathCost`; prefer
-  non-lab (energy/repair) when the enemy has exactly one lab? — NO, keep it simple first:
-  nearest. (Taking the last lab triggers their lab-regen rule anyway; the win comes from
-  taking everything.)
-- **The hold:** on arriving inside the enemy room, switch to hold-station at the room's
-  `path_pnt` (or current pos if `path_pnt` unreachable — buried-center rooms exist here too;
-  the 12.3 skeleton machinery applies unchanged): suppress dodge/juke/friend-avoid, hold
-  3.5s, watch shields. Abort + retreat to own repair room when shields < ~25 (tunable) —
-  15 shields of room damage is the planned cost of one takeover (3s × 5/s).
-  **As-built correction (2026-07-13):** E3 shipped "hold at entry position" instead of the
-  path_pnt (buried-center risk), but the routed goal's final position was the raw portal
-  `path_pnt` — a point ON the room boundary plane. The parked ship's `roomnum` flapped
-  between the two rooms and every hold aborted in ≤1s (first clean soak: 32/32 aborts, 0
-  takeovers in 12 rounds). The hold point is now the entry portal pushed
-  `BOT_ENTROPY_HOLD_DEPTH` (12u) INTO the room along the portal-face normal — entry-side
-  hold preserved, boundary flap eliminated.
-- **Carrier survival:** loaded bots get the CTF-carrier treatments — flee bias, combat
-  timeout, thrust override toward the objective, and the existing carrier aim/sprint logic
-  where applicable.
-- **Defense reaction:** `BotGetObjectiveTargetBias` gives strong negative bias (prefer) to:
-  - any enemy *inside one of our special rooms* (they're either taking damage for a reason —
-    a takeover attempt — or harvesting denial; both die well), scaled hugely if their
-    polled virus count ≥ 5 (a sitting, holding-still carrier is the easiest kill in Descent);
-  - loaded enemies near our territory generally (kill = −5+ viruses of enemy tempo).
-- **DEFEND lean / `!defend`:** anchor at own lab (the spawn source is the chokepoint that
-  matters); Stage 6 order anchors work unchanged. ATTACK lean biases collection + invasion.
+### 3.3 Takeover execution (E3, `$nav entropy`)
 
-### 3.4 Phase E4 — polish (after first soaks)
+- Loaded branch (`bot.cpp:5567`): a bot carrying `BOT_ENTROPY_TAKEOVER_LOAD` (5) or more runs
+  `BotDoEntropyInvadeNav()` (`bot.cpp:4168`). Its target comes from `BotGetObjectiveRoom_Entropy()`
+  (`bot_objective.cpp:928`): the nearest enemy special room of any kind, chosen by
+  `BotGetNearestEntropyRoom()` (`:882`) on the wind- and glass-aware routed cost (commit `9e602d7f`,
+  the RAGE wind-tunnel fix).
+- Shield policy (`bot_objective.cpp:941-972`): retreat to an own repair room (energy room as fallback)
+  below `BOT_ENTROPY_RETREAT_SHIELDS` (25), or below `BOT_ENTROPY_REENGAGE_SHIELDS` (45) when not yet
+  holding. A loaded bot on its own heal pad stays until `BOT_ENTROPY_DEPART_SHIELDS` (80).
+- Hold point: the entry portal pushed `BOT_ENTROPY_HOLD_DEPTH` = **24 u** into the room
+  (`bot_objective.h:64`, used at `bot.cpp:4250`). 24 u clears the engine's roughly 10 u goal-arrive
+  radius, so the ship does not stop back on the portal plane. (The original as-built correction used
+  12 u; the 2026-07-14 re-soak showed holds at 12 u still flapping between rooms.)
+- Hold start (`bot.cpp:4197-4199`): only when the ship is at least `BOT_ENTROPY_HOLD_MIN_DEPTH` (8 u)
+  past the nearest portal plane and moving at `BOT_ENTROPY_HOLD_MAX_SPEED` (5 u/s) or less. Once
+  holding, only leaving the room aborts. START and ABORT are logged as `BOT ENTROPY: ... takeover hold`.
+- Active park (`bot.cpp:6353-6373`): while holding in EXPLORE, thrust is replaced by a counter-thrust
+  against any velocity above `BOT_ENTROPY_PARK_BRAKE_SPEED` (2 u/s), and zero thrust below it. Turning
+  and firing are untouched. This thrusting against knockback is the one deliberate exception to the
+  "bots never resist knockback" physics ruling (MODE6, see below).
+- Flee while loaded (`bot.cpp:5468-5484`): mid-hold, fleeing is the abort and is allowed only below the
+  hard floor; loaded and en route, the flee threshold is raised (x1.5, capped at 60%). A loaded bot in
+  idle combat snaps back to EXPLORE after the CTF carrier combat timeout (`bot.cpp:6038-6040`).
+- Defense bias (`BotGetObjectiveTargetBias`, `bot_objective.cpp:1830-1851`): an enemy inside one of our
+  special rooms gets `BOT_ENTROPY_INTRUDER_BIAS` (-300), plus `BOT_ENTROPY_TAKEOVER_THREAT_BIAS` (-400)
+  when it carries 5 or more. A loaded enemy anywhere else gets `BOT_ENTROPY_LOADED_BIAS` (-200).
+- `$nav entropy off` (`Descent3/dedicated_server.cpp:785`) leaves the E2 economy running and stops the
+  invade, hold, retreat and streak-banking branches.
 
-- Squad-verb surface: `!attack lab` / `!defend lab` (Tier 2 pattern from CTF).
-- Difficulty scaling: takeover-abort shield floor, denial appetite, target-bias magnitudes.
-- Smarter invasion: pick rooms that strand the enemy's last lab for endgame pressure;
-  coordinated multi-bot raids (one distracts, one holds) — only with evidence from soaks.
-- Mirror-accuracy hardening for `entropy_kill_streak` if drift shows up in logs (resync
-  opportunity: any observed refused-pickup implies our mirror over-estimated).
+### 3.4 Known open
 
-### 3.5 Explicit non-goals (first release)
+| Id | Item | State at HEAD |
+|---|---|---|
+| MODE2 | Do takeovers happen on the release build? The 0.9.8 campaign confirmed takeovers; the 0.9.13 CHANGELOG known limitations say none were observed in that testing, and the README repeats "not completed". | Open. One Entropy run on `dementia.mn3` with the release build is owed before the README line is rewritten (Q10 b, default yes). |
+| MODE4 | Inversion produces refused-pickup spam (bots chase viruses the server refuses). | Open. The analyzer flags it as `ENTROPY_REFUSED_PICKUP_SPAM` (`tools/analyze_bot_log.py:1503-1511`). |
+| MODE5 | RAGE wind-tunnel counter-fly fix (`9e602d7f`, routed-cost room selection in `BotGetNearestEntropyRoom`). | In code since 0.9.8; never verified on RAGE. |
+| NAV8 | Rim is nav-hostile for this mode (part of the toroid refinements row). | Open; tracked in `NAVIGATION.md` §7. |
+| MODE6 | The active park thrusts against knockback, contrary to physics ruling 2. | In code (`bot.cpp:6363`). Q10 d default: keep it, noted as the one exception. |
+| MODE3 | Operator in-person Entropy flight ("is this mode fun against bots", §4). | No record. Q10 c: operator's call. |
+
+### 3.5 Phase E4 (polish): see MODE1
+
+> **DECISION NEEDED (Q10)** — drafted on the default; the operator's second pass settles it.
+
+E4 is not built and is tracked as registry row MODE1 (`PLAN.md` §4, the master registry). The default answer to Q10 a
+places it after the reveal. Its content, unchanged from the original §3.4: `!attack lab` /
+`!defend lab` squad verbs; difficulty scaling of the abort shield floor, denial appetite and
+target-bias magnitudes; smarter invasion (strand the enemy's last lab, coordinated raids) only with
+soak evidence; mirror hardening for `entropy_kill_streak` (resync on an observed refused pickup);
+re-evaluating "combat light" (`76549be3`) and loaded-bot aggression; a force-load or empty-net drill
+command; and further iteration on the shield knobs.
+
+### 3.6 Explicit non-goals (first release)
 
 - No multi-team Entropy (DLL is hard-capped at 2).
 - No virus-team inference beyond room ownership.
@@ -261,6 +272,10 @@ they describe is reconstructable:
   touches, viruses-lost-on-death. Anomaly tripwires: `TROLL_RETIRED_OBJECTIVE` already exists
   and must stay silent; add `ENTROPY_REFUSED_PICKUP_SPAM` (capacity gate broken) and
   `ENTROPY_ZERO_TAKEOVERS` (the mode's CHASE_PIN analog).
+  *As built:* the analyzer's Entropy section and all three tripwires exist:
+  `ENTROPY_ZERO_TAKEOVERS`, `ENTROPY_HOLD_CHURN` and `ENTROPY_REFUSED_PICKUP_SPAM`
+  (`tools/analyze_bot_log.py:1486-1511`). Soak manifests: `tools/manifests/entropy-smoke.json`,
+  `entropy-soak.json`.
 - **Stage gates** mirror the CTF history: E1 soak = no behavior regressions in any other mode
   + clean `$botobj`; E2 soak = bots carry loads >0 with zero refused-pickup spam; E3 soak =
   takeovers happen, rounds END (the win condition fires) — Entropy rounds ending by
