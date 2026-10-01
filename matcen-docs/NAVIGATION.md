@@ -706,6 +706,7 @@ Phase 1 (the entrance-miss class) shipped in 0.9.15; Phase 4's first cut (one ou
 | NAV38 | Objective-owned degradation (old row 6.28) | X: not reproduced, reopen on evidence (Q21b) |
 | NAV39 | Flag-carrier sprint-home speed | X: not reproduced, reopen on evidence (Q21b) |
 | NAV40 | abend2 per-team asymmetry vs the symmetry acceptance test | X: operator, "not asymmetrical from my testing" (Q21c) |
+| NAV41 | Glasshouse rm1 is five sealed spaces (a hollow pyramid open only below and above; four door galleries on its faces) routed as one volume: `BotRouteDijkstra` is any-portal-in, any-portal-out; the stuck escape ranks portals its space cannot reach; 72 of 76 stucks in the galleries' narrowing wedges | open; designed: route over (room, lattice zone), strict pass forbids, last-resort pass prices, no zoning at the node cap; BOTS_DEVEL 2026-10-01 |
 | NAV41 | Corner-bridge sweep honouring back faces | X: code read (`RoadmapLOS` indoor sweeps pass `FQ_BACKFACE` since `8b6ee205`; §5.2 item 7) |
 | NAV42 | The door on-ramp admits points outside the room (two rm80 nodes in the hallway) | E (verify); the void-cell guard does not test on-ramp nodes |
 

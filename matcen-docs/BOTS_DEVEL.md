@@ -10,6 +10,56 @@ including the CTF, Hyper and Hoard write-ups) is preserved verbatim in
 `matcen-docs/archive/BOTS_DEVEL-phases-0_to_0.9.12.md`. The engine-files audit (single-player, Robo-Anarchy and
 co-op impact) now lives in `matcen-docs/BOT_DEV_REFERENCE.md`.
 
+### 2026-10-01: Glasshouse — a room that is five spaces; the router's one-volume assumption (NAV41)
+
+The operator's flight on `4b4e78f4` (Glasshouse, 6v6 CTF, two 15-minute rounds): "very fun", a stalemate (3 bot captures
+and 1 human), and bots "repeatedly getting trapped in this central pyramidal quadrant area with thin walls", the stuck
+fixes freeing most of them. The log: 76 stuck escalations (7 hard), all 76 in room 1; 168 room-progress timeouts in
+room 1 against 14 in the rest of the map; hop commits refused rm1->rm2 92 times, rm1->rm0 13, rm1->rm8 9, every one
+"door approach not in hull view". Town of Bree the same evening: 5 stucks in 14 minutes, 3 bot and 2 human captures,
+nothing new (rm60 is NAV37's pocket).
+
+Bot-free dump and `$nav roomfaces 1` (renders in the session scratchpad): room 1 is the glass pyramid itself. Its floor
+is one 200 x 170 u portal onto room 0 beneath (p0); a chimney rises from the apex to room 8 (p9, entered through four
+28 x 24 u corner holes around a crossbar); and at y -95..-70 four wedge-shaped galleries sit on the pyramid's sloping
+faces under a flat ceiling, each with two doors to the ring hall room 2 (p1..p8) and walled off from its neighbours by
+6 u partitions (f47/f48, f17/f19, f31/f32, f35/f36). The pyramid faces are two-sided thin walls (f9..f16 under,
+f113..f120 over). The room is five sealed spaces: the hollow pyramid, reachable only from below and above, and four
+galleries reachable only from room 2. `$nav sweep` confirms it: from under the roof every side door is blocked within
+3-7 u by a roof face (f11, f13/f117) and the hatch is clear; from a gallery the hatch and the chimney are blocked at
+0 u (f9, the ceiling f55), its own door is clear, and the neighbouring gallery's door is blocked by the partition
+(f107/f108). The lattice already says so: 317 nodes in 3 components (162 under the roof, 154 in the galleries and
+their door approaches, 1 at the chimney mouth), `roadmap_routable` false, every portal pair LOS-blocked (90 of 90).
+
+The defect: `BotRouteDijkstra` is a Dijkstra over rooms — any portal in, any portal out. A bot in a gallery bound for
+room 0, room 8 or anywhere beyond is told "through room 1's hatch", 20 u away through the glass; a bot under the roof
+bound for room 2 is told "through a side door", which no in-room layer can reach; so the via layer flies the straight
+line into the narrowing wedge between roof and ceiling (clearance falls from 25 u at a door to zero at the apex, and
+every stuck pin sits on the 10-13 u line: x about 2000 and 2100, z about 2025 and 2118). Classified by the roof plane:
+72 of 76 stucks in the galleries, 4 under the roof; 63 of the 92 rm1->rm2 refusals from a gallery aiming at another
+gallery's door; and the stuck escape chose room 8 or room 0 — the chimney and the hatch, unreachable from a gallery —
+69 times of 76, because it ranks a room's portals by "unvisited" with no notion of which ones its own position can
+reach. The operator's description is exact: "the way through is basically the complete opposite direction and all the
+way around".
+
+Not a Glasshouse quirk. The engine's BOA has the same one-volume model (`BOA_cost_array[room][portal]` is a per-portal
+cost from the room's path point; portal-pair connectivity exists only for terrain regions, `BOA_connect`), so vanilla
+robots route the same way. The dump survey of every map on disk finds more rooms whose lattice holds several
+portal-bearing components: abend2 rm4/rm20 (3 portals, 2 components), Bree rm69, Sigma rm19/rm37 (at the 2,048-node
+cap, so a budget split rather than a seal). Which of those are physically sealed and which are lattice gaps is the
+first thing the fix must answer, map by map, bot-free.
+
+Fix design (NAV41, bucket B): the router's node becomes (room, zone), where the zone is the lattice component holding
+the portal the route enters by, and the start zone is the component nearest the bot. A room with one component — every
+other Glasshouse room, nearly every room anywhere — routes exactly as today. Where a room's components split its
+portals, a route in through one zone and out through another is no edge in the strict pass and a priced one in the
+last-resort pass, so a lattice gap in a physically connected room can never strand a bot (the guarantee the disagree
+pass already gives). Rooms at the node cap or degenerate are not zoned. The stuck escape prefers portals in the bot's
+own zone. The dump lists each zoned room's portal groups, so the bot-free diff names every room the change touches on
+every map before a soak runs. Gate: bot-free diffs on the full map set, then paired soaks on Glasshouse (new baseline
+arm `C-glasshouse-8rnd`; the control on `4b4e78f4` started tonight), abend2, Sigma Base and Canyons. The fix is the next
+item on the line; whether it goes into 0.9.16 before the stamp or opens 0.9.17 is the operator's call (asked 2026-10-01).
+
 ### 2026-09-29: abend2's flag pits — the tight-door exclusion cut a leaf's only door; the leaf exception
 
 abend2 (the toroid benchmark, first bot captures 2026-08-30) scored zero on every build from A1 on, against 9-26
