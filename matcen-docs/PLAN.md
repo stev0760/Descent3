@@ -100,6 +100,12 @@ tagged and pushed.
 
 The reveal waits for every B row. Each block has its own exit test. The target cutoff is 2026-10-20 (REL21).
 
+**Operator ruling, 2026-10-01: the committee collapse must be complete before any reveal, indoor rows and outdoor
+phases alike, and the codebase must be clean and polished.** The project is novel engineering that used AI heavily as
+an experiment and grew into something the community has wanted for years; it must not read as generated slop, in its
+code or its docs. So the collapse (COL1-COL3, COL7, COL8, COL10, COL11) is a hard gate that no cutoff relaxes, and a
+code-quality pass (COL28) is an exit criterion with its own checklist.
+
 1. **Population and seats (POP1-POP3, POP5).** A target player count with bots added and removed as humans come and
    go; a seat nobody but a human can take; a bot that leaves when a human joins a full server; the README's team
    balance bullet corrected (DMFC `$balance` already works with bots). Spec: `BOT_MANAGEMENT.md`. **Exit:** a scripted
@@ -139,7 +145,7 @@ the larger team's lowest-scoring bot yields (Q1). The `!` finish line is the pol
 Order: POP1-POP3 first, then the `!` polish floor and formation v1 alongside COL1 (soaks run while chat work is
 built), then COL2, then UX, then the docs close-out (Q16). **Cutoff:** 2026-10-20 is the target for the B work and
 the reveal is about 2026-10-27 (Q15, REL21); on the cutoff unfinished CMD and UX extras move past the reveal, while
-POP1-POP3, COL1 and COL2 stay hard gates.
+POP1-POP3, the whole collapse (COL1-COL3, COL7, COL8, COL10, COL11) and the code-quality pass (COL28) stay hard gates; the reveal moves before they do.
 
 ### Stage C: the release package
 
@@ -273,6 +279,7 @@ Status text ("Q13", "Q9") is the old PLAN §4.0.1 review queue, kept in the arch
 | COL14 | Stale code comments: bot_chat.cpp:19 ("Stage 3"), :809 (`!objective` "resumes autonomous seeking"), :596 and the `BotAdd` comment (" [BOT]", 6 chars), :556-558 (Monsterball "non-team"), dedicated_server.cpp:863 (`addbot <name> [ship]`) | code audit §6 | open; the `BotAdd` comment is bot.cpp:8767-8770 (EU9, 10-01) | B | NEW | — |
 | COL26 | Stale code comment: bot_roadmap.cpp:1590-1595 (corner-bridge NOTE) says "the sweep ignores back faces"; `RoadmapLOS` has been `FQ_BACKFACE` since `8b6ee205` | EU2 code audit | open; rides COL14 | B | NEW | — |
 | COL27 | Stale code comments: bot.h:517 `countermeasure_timer` "(future use)" (it gates `BotDeployChaff`); GameLoop.cpp:1270-1271 overlay "no-ops on a remote client" (see UX5) | EU5 code read | open, comment-only | F | NEW | — |
+| COL28 | Codebase quality bar before the reveal: the code reads as deliberate engineering. Checklist: dead code, dead `$nav` toggles and diagnostic scaffolding that will not ship are removed, not disabled; comments explain the design, not the session that wrote them (no dated narrative, no soak codenames, no "2026-09-xx" chatter in code); names are consistent across the bot modules; no stale comments (COL26, COL27 folded in); `clang-format` clean; tests pass; `$bothelp` and every user-visible string read like a product; one reviewer pass over bot*.cpp with the ledger at hand | operator ruling 2026-10-01 ("clean and polished, not AI-slop") | not started; runs after the collapse lands, inside the must-read-flat gate | B | NEW | - |
 
 ### DOC: docs
 | ID | Item | Source | Status (evidence) | Bkt | §4.2 | Q |
@@ -510,8 +517,8 @@ No other bucket changed in the rebuild. The 2026-10-01 close-out then closed row
 the consolidation) as X. The operator's 2026-10-01 answers (§5) then moved rows 8 and 9 (MODE1, MODE7), 10 (COOP1),
 11 (REL1) and 17 (REL14) to their new buckets; rows 1-3 stay B.
 
-**Counts** (2026-10-01, after the operator's answers): 240 rows (229 + 11 new: COL26, COL27, DOC13, DOC14, POP12-POP14,
-CMD26, CMD27, REL20, REL21). A 3 · B 50 · C 21 · D 0 · E 74 (of which 10 "verify") · F 25 · X 67.
+**Counts** (2026-10-01, after the operator's answers): 241 rows (229 + 12 new: COL26, COL27, COL28, DOC13, DOC14, POP12-POP14,
+CMD26, CMD27, REL20, REL21). A 3 · B 51 · C 21 · D 0 · E 74 (of which 10 "verify") · F 25 · X 67.
 
 ---
 ## 5. Decisions owed
