@@ -1,20 +1,23 @@
 # Changelog: Matcen Multiplayer Bots
 
 Release-notes view of the fork, newest first: what changed for someone running a server.
-The full engineering history behind each release is in [BOTS_DEVEL.md](BOTS_DEVEL.md);
-live navigation status is in [NAVIGATION.md](NAVIGATION.md) §7.0.
+The full engineering history behind each release is in [BOTS_DEVEL.md](BOTS_DEVEL.md) from 0.9.13 on, and in
+[archive/BOTS_DEVEL-phases-0_to_0.9.12.md](archive/BOTS_DEVEL-phases-0_to_0.9.12.md) before that.
+Open items are tracked in [PLAN.md](PLAN.md) §4, and open navigation problems in [NAVIGATION.md](NAVIGATION.md) §7.
 
-Versioning: `0.8.x` = feature releases; `0.9.x` = the navigation-milestone series.
+Versioning: `0.8.x` = feature releases; `0.9.x` = the navigation-milestone series; `0.10.x` = the release package
+series (bot management, feel and the chat and console commands around the public release, not started yet).
 A `-dev` suffix marks an in-test build that has not yet passed its validation gate.
 
 ## [0.9.16-dev] - in test
 
 *Development series. One layer decides where a bot aims: the navigation code is consolidated step by step, and each
-step lands with the map that needs it and is soaked against a same-night control before it stays. Open on this line so
-far: one team's hub on Sigma Base, wandering on very large maps (HAVOC's DownTown), one Batteries Included office whose
-route network never grows, and the last first-use stall when the server prepares a room. Do not run this as a release.*
+step lands with the map that needs it and is soaked against a same-night control before it stays. Still open on this
+line: wandering on very large maps (HAVOC's DownTown), one Batteries Included office whose route network never grows,
+and two Sigma Base rooms where bots still get stuck until their stuck escape frees them. Do not run this as a release.*
 
-**In test (soaked against same-day controls, not yet flown):**
+**In test (soaked against same-day controls, and flown by the operator on 2026-09-30, who called it "a very solid
+candidate, almost release ready"):**
 
 - **Bots leave their spawn point at once on Batteries Included.** That map starts many ships inside opened toy boxes and
   under desks. A bot spawned touching the box could not "see" any route out, because every check it ran started from a
@@ -48,12 +51,13 @@ route network never grows, and the last first-use stall when the server prepares
   against a cramped opening decides between alternatives, never whether a room can be reached at all. Bot-free,
   abend2's pits read exactly as they did on 0.9.15 again; Batteries Included reads unchanged. Four rounds against the
   build before it: 6 captures to 0, 30 flag pickups to 0, stuck events 0 to 377 — the 0.9.15 profile back.
-- **Canyons plays as before.** The rock check above had trimmed Canyons' route lattice (its canyon segments are thin
-  strips between floor and rim, and the removed cells were in rock under the floor), and captures there had dipped by
-  about a third against the build before it. The cramped-door fit tolerance above brings Canyons back: eight-round
-  pairs on the same afternoon read 19 to 12 for the rock check alone, then 21 and 25 with the tolerance, against 19
-  to 31 for the earlier builds. An experiment that returned those rock cells to the lattice measured nothing further
-  and does not ship.
+- **Canyons plays as before.** The rock check (the Sigma Base grid fix below) had trimmed Canyons' route lattice (its
+  canyon segments are thin strips between floor and rim, and the removed cells were in rock under the floor), and
+  captures there had dipped by about a third against the build before it. The cramped-door fit tolerance above brings
+  Canyons back: eight-round pairs on the same afternoon read 19 to 12 for the rock check alone, then 21 and 25 with
+  the tolerance, against 19 to 31 for the earlier builds. An experiment that returned those rock cells to the lattice
+  measured nothing further and does not ship. Canyons' thin canyon rooms still get only a sparse grid. They play fine,
+  and better coverage for rooms that thin is logged for after 0.9.16.
 - **Sigma Base: attackers get out of their own bunker and into the enemy's.** When a room opens into the next by several
   doors, the door a bot picks now accounts for where the route goes afterwards only when that onward stretch can
   actually be flown, and every part of the pilot heads for the same door. Two three-hour runs against controls: failed
@@ -80,14 +84,18 @@ route network never grows, and the last first-use stall when the server prepares
   Bree's streets are terrain, and a building's grid growing out of its door into the street is the route through
   that door. Sigma Base's captures went from 3 to 12 in the same three hours on the first cut; the daytime pairs on
   the corrected cut read Bree 34 to 28 and the bedlam set 114 to 97 in its favour, abend2 unchanged, Batteries and the
-  fellowship lap flat; the final cut keeps every grid point either test calls interior and is in an overnight
-  regression on 2026-09-29. Flown once by the operator on the first cut ("felt WAY better").
+  fellowship lap flat. The final cut keeps every grid point either test calls interior, and it passed the overnight
+  and daytime regressions of 2026-09-29 and 2026-09-30: on Sigma Base, 6 captures to 0 over four 45-minute rounds
+  against a control, and every other map flat within its usual swing. Its one cost was Canyons, about a third of its
+  captures, which the cramped-door fit tolerance won back (see the Canyons note above). Flown by the operator on the
+  first cut ("felt WAY better") and again on 2026-09-30.
 - **A bot outside no longer rams a window to reach a powerup it can see inside.** Sigma Base's flag rooms have
   bulletproof windows onto the terrain; a bot outdoors could see the items in the antechamber through them, chased
   each one into the glass, timed out, and tried the next — and every timeout counted as a "this item is unreachable"
   strike that retired the antechamber's powerups for the whole server. An outdoor bot now sweeps a ship-wide line to
   an indoor item before chasing it; a see-through, unbreakable face in the way means the item is seen, not reachable,
-  and it is skipped. Built the same night, not yet soaked.
+  and it is skipped. It passed the overnight and daytime regressions of 2026-09-29 and 2026-09-30 with no map
+  reading worse for it.
 - **Bots take a flag in one pass instead of circling it.** A bot's approach goal completed about 20 units short of the
   flag (the ship's built-in "close enough" distance), so it re-aimed from there and swung out again — nine re-aims per
   pickup on the bedlam maps. The four flag-touch moves (grab, recover, score, return home) now run until contact. One
@@ -468,31 +476,6 @@ diagnostics. This is **not** a "navigation solved" release: the hard interior-na
     Skeleton and composed route builds are counted separately. Room-exit events no longer appear
     as a route-completion percentage because they do not identify which route or exit was taken.
 
-### Known limitations (unchanged in 0.9.13; scoped for 0.9.14)
-
-*   **Interior-only CTF maps (the Batteries Included class) play poorly.** These maps have decorative,
-    unreachable outdoor scenery seen through windows; bots can still plan routes through that window
-    glass, and a bot that reaches a flag room can fail to close on the flag and stall there. A
-    per-portal fix for the window misroute exists but is deliberately held for 0.9.14.
-*   **Flag carriers still stall on some return legs** — e.g. Nysa's room beside the Blue flag room; on
-    Polaris, carriers spend nearly all their time outdoors.
-*   **Polaris wind routing can collapse:** with the wind gate on, the router may give up and hand the
-    leg to the engine, degrading carrier routing.
-*   **Powerup chasing can wall-press:** a bot chasing an item may pin against interior geometry and
-    time out instead of reaching it. (Pre-existing, not new to this release.)
-*   **abend2 is an accepted map-specific limitation** — toroid navigation is partly solved, but its
-    generated network is uneven between teams.
-*   **QuadSomniac** Red-team conversion is weak (attribution open), and **Entropy** room takeover has
-    not been observed in testing.
-*   **Validation and known costs.** A 20-round abend2 test and roughly 30 additional rounds across
-    six modes reported no crashes or assertion failures. abend2 hard pins rose from 25 to 49.
-    The comparison guard failed on one bot's share of the stuck increase, and the apparent Red
-    capture recovery is not established. Bedlam hard pins fell, but Fellowship results were mixed.
-*   **Unresolved map and mode limitations.** QuadSomniac Red flag conversion fell from 24% to zero
-    against an older build spanning two changes, so the responsible change is unknown. Polaris
-    wind routing and Batteries Included flag-room connectivity still need work. Entropy takeovers
-    remain unobserved in testing. These issues are not fixed by the current candidate.
-
 *   **Bots no longer fly to waypoints from a plan they already abandoned.** A bot's route through a
     room outlived the commitment that authorised it. When the commitment ended — the bot's goal was
     cleared, its plan timed out, or it was killed — the timer was reset but the route itself was
@@ -575,11 +558,37 @@ diagnostics. This is **not** a "navigation solved" release: the hard interior-na
     too weak for abend2 room 30, so the builder now grows controlled frontiers from the
     closest existing nodes on both components instead of tracing the whole ring from one portal pair.
 
-## [0.9.12-dev] - in test
+### Known limitations (unchanged in 0.9.13; scoped for 0.9.14)
 
-*An in-test build, mid-way through a navigation "consolidation" pass: bots are being made to fly
-like one pilot instead of a committee of competing behaviours, by simplifying the navigation code
-rather than piling on more special cases. Not yet validated for play — do not treat as a release.*
+*   **Interior-only CTF maps (the Batteries Included class) play poorly.** These maps have decorative,
+    unreachable outdoor scenery seen through windows; bots can still plan routes through that window
+    glass, and a bot that reaches a flag room can fail to close on the flag and stall there. A
+    per-portal fix for the window misroute exists but is deliberately held for 0.9.14.
+*   **Flag carriers still stall on some return legs**, e.g. Nysa's room beside the Blue flag room; on
+    Polaris, carriers spend nearly all their time outdoors.
+*   **Polaris wind routing can collapse:** with the wind gate on, the router may give up and hand the
+    leg to the engine, degrading carrier routing.
+*   **Powerup chasing can wall-press:** a bot chasing an item may pin against interior geometry and
+    time out instead of reaching it. (Pre-existing, not new to this release.)
+*   **abend2 is an accepted map-specific limitation**: toroid navigation is partly solved, but its
+    generated network is uneven between teams.
+*   **QuadSomniac** Red-team conversion is weak (attribution open), and **Entropy** room takeover has
+    not been observed in testing.
+*   **Validation and known costs.** A 20-round abend2 test and roughly 30 additional rounds across
+    six modes reported no crashes or assertion failures. abend2 hard pins rose from 25 to 49.
+    The comparison guard failed on one bot's share of the stuck increase, and the apparent Red
+    capture recovery is not established. Bedlam hard pins fell, but Fellowship results were mixed.
+*   **Unresolved map and mode limitations.** QuadSomniac Red flag conversion fell from 24% to zero
+    against an older build spanning two changes, so the responsible change is unknown. Polaris
+    wind routing and Batteries Included flag-room connectivity still need work. Entropy takeovers
+    remain unobserved in testing. These issues are not fixed by the current candidate.
+
+## [0.9.12-dev] - never released (folded into 0.9.13)
+
+*A development line that was never released. It ran mid-way through a navigation "consolidation"
+pass: making bots fly like one pilot instead of a committee of competing behaviours by simplifying
+the navigation code rather than adding special cases. The work that held up shipped in 0.9.13
+(2026-09-11). The entries below describe the line as it was tested.*
 
 *   **Bots aim correctly at the door they actually enter through.** When heading into a new room a
     bot used to aim at the room's centre even when the doorway it was coming through couldn't see
@@ -604,6 +613,10 @@ rather than piling on more special cases. Not yet validated for play — do not 
 *   **Full glass routing remains a proven regression** (earlier this line): letting the router plan
     shortcuts through breakable glass made bots stick twice as often and reach the enemy flag a
     third as often. Reverted; do not retry. `NAVIGATION.md` §7.0.
+    *Later: 0.9.14 brought glass routing back in a narrower form. Each bot decides for itself: only a
+    bot carrying a weapon that can break the pane routes through it, an upright pane is a priced
+    shortcut, and a floor or ceiling vent is used only when no door route exists. See the 0.9.14
+    entry.*
 
 ## [0.9.11] - 2026-08-24
 
@@ -795,6 +808,14 @@ for months (this also slightly improves Robo-Anarchy).
 **Operator diagnostics.** The server log now names every locked door at level start, attributes
 any low-speed wall-press to the exact goal that caused it, and stamps each bot's first arrival at
 an objective room — so "the bots feel stuck" is always one grep away from a real answer.
+
+**Fixed: the mouse works as it did in the original game.** Wheel-down can be bound again, the fourth
+mouse button no longer acts as wheel-down, and the fifth mouse button now works.
+
+**Fixed: no false "missing mission" prompt when joining.** On Linux and macOS, a player who had the
+server's mission installed could still be offered a download when the file name's capitalisation
+differed from the server's. Servers also no longer send a garbled reply when asked for a mission's
+download links, and no longer advertise the original 1999 download links for the retail campaigns.
 
 ## [0.9.8] - 2026-07-18
 
@@ -1071,6 +1092,10 @@ soft-hop bridge across disconnected graph sections. Includes the 0.9.2-dev work:
 go-around steering, sealed-"troll"-powerup detection and level-wide retirement, and via-point
 cycle caps.
 
+Also fixes a dedicated-server crash: a server polled for game info by a remote admin tool crashed
+after about fifteen minutes when an internal text buffer filled up. The bug dates from the original
+1999 game.
+
 ## [0.9.1] - 2026-06-03
 
 **Navigation consolidation.** Established the durable two-layer architecture: the fork picks
@@ -1124,8 +1149,8 @@ addressing. Fixes a `$scores` header-overlap regression across all seven netgame
 ## [0.8.7] - 2026-04-13
 
 **Cloak and hearing awareness**: cloaked players are invisible to bots unless revealed by
-afterburner, headlight, napalm, or recent weapon fire; bots hear weapons and afterburners within
-60 units. Includes an upstream `$scores` column-truncation fix.
+afterburner, headlight, napalm, or recent weapon fire; bots hear weapon fire within 60 units and
+afterburners within 200. Includes an upstream `$scores` column-truncation fix.
 
 ## [0.8.6] - 2026-04-12
 
@@ -1153,9 +1178,8 @@ First in-game client UI for bot match setup (listen servers).
 
 Fork identity: Matcen versioning infrastructure and the `$servercaps` remote-admin handshake.
 
----
+## Before 0.8.0
 
-**Before 0.8.0** the bot system itself was built across the project's first five phases: combat
-AI and state machine, weapon and powerup handling, difficulty levels, config-file rosters, and
-dedicated-server integration. That history predates this changelog; see
-[BOTS_DEVEL.md](BOTS_DEVEL.md) and [PLAN.md](PLAN.md).
+The bot system itself (combat AI, weapon and powerup handling, difficulty levels, config-file rosters and
+dedicated-server support) predates this changelog. Its history is in
+[archive/BOTS_DEVEL-phases-0_to_0.9.12.md](archive/BOTS_DEVEL-phases-0_to_0.9.12.md).
