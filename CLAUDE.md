@@ -1,159 +1,90 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Matcen: a Descent 3 fork that adds server-side multiplayer bots. Work happens on `feature/multiplayer-bots`.
+The project is in its final polish before a community release; `matcen-docs/PLAN.md` says what is left.
 
-## Build Commands
-
-Descent 3 uses CMake (3.20+) with Ninja, vcpkg for dependencies, and requires C++17. Set `VCPKG_ROOT` before building.
+## Build and test
 
 ```sh
-# Configure
-cmake --preset linux          # also: win, mac, linux-cross-arm64
-
-# Build
-cmake --build --preset linux --config Debug
-cmake --build --preset linux --config Release
-
-# Install
-cmake --install builds/linux/ --config Debug
-
-# Run tests (requires -DBUILD_TESTING=ON at configure time)
-cmake --preset linux -DBUILD_TESTING=ON
-cmake --build --preset linux --config Debug
-ctest --preset linux -C Debug
+cmake --preset linux                                  # needs VCPKG_ROOT; also: win, mac, linux-cross-arm64
+cmake --build --preset linux --config Debug           # output: builds/linux/build/Debug/
+cmake --preset linux -DBUILD_TESTING=ON && ctest --preset linux -C Debug
+clang-format -i <file>                                # .clang-format is the style; 2 spaces, 120 columns
 ```
 
-# Project Tracking and Reference Files
+- No in-source builds. `compile_commands.json` is always generated. The git hash is baked in via `cmake/CheckGit.cmake`
+  into `d3_version.h` on every build; a dirty tree stamps the PARENT commit's hash, so label test binaries by name.
+- Soaks run the Debug build (asserts are the crash net and the nav telemetry is Debug-only). The operator flies the
+  binary at `builds/linux/build/Debug/Descent3` through Pyrodeck; its logs land next to it as `testing-<UTC>.log`.
 
-All Matcen fork documentation lives in **`matcen-docs/`**:
+## Where things live
 
-- **`matcen-docs/BOT_DEV_REFERENCE.md`** — living developer reference: architecture, FSM, constants, engine API patterns, critical gotchas (and a navigation summary). **Read this before modifying bot code.**
-- **`matcen-docs/BOTS_DEVEL.md`** — phase history and roadmap (the deep engineering log). Update when a phase completes.
-- **`matcen-docs/CHANGELOG.md`** — release-notes view, newest first, user-facing voice (what a server operator notices — no phase numbers or soak codenames). **Add an entry on every version bump and keep the `-dev` entry current while in test; promote it to a dated release entry when the suffix is stripped.**
-- **`matcen-docs/NAVIGATION.md`** — **canonical bot navigation design**: the hierarchical routing model (coarse room-graph Dijkstra + fine volumetric grid roadmap, steering = engine), the 0.9.4 grid-seeded roadmap substrate (§3.5 — robotics PRM + HPA\* + Lazy Theta\*), the engine pathfinding reference, open problems, and consolidated history. **Read this before modifying navigation, routing, or steering code.** Supersedes the retired `NAV_OVERHAUL*.md` / `NAV_CONSOLIDATION.md` docs **and the retired `GRID_NAV_DESIGN.md`** (the 0.9.4 spec — shipped, validated, folded in; originals in git history). The live current-status snapshot (toggles, open issues, tried-&-reverted ledger) is its §7.0; §6.9 holds the consolidation-phase design of record (committee census, the one-router/two-substrate model, the D3 physics rulings — drag means braking is just not thrusting, bots never resist knockback), absorbed from the retired `NAV_CONSOLIDATION_PLAN.md`/`NAV_DESIGN_REVIEW.md`.
-- **`matcen-docs/OBSTACLE_GEOMETRY.md`** — **authoritative reference for how the engine represents passable/impassable geometry**: walls, regular vs. bulletproof glass, grates/slits, breakable objects, destroyable-decor faces, doors, forcefields — with the deciding engine functions (`GetFacePhysicsFlags`, `BOA_PassablePortal`, `find_small_portals`), the flag glossary, and what our bot does for each. **Read this before modifying navigation, portal passability, powerup selection, or stuck-clear code** — it captures hard-won engine facts (e.g. see-through ≠ passable; `TF_BREAKABLE` = breakable glass, kinetic-only; bulletproof glass = engine-impassable) so they don't have to be re-derived.
-- **`matcen-docs/PATHFINDING_CODEBASE_EXPLORE.md`** — Guide-bot navigation analysis: how single-player bots navigate complex passages vs. our multiplayer bots. Deep engine research, cited by `NAVIGATION.md` (still accurate).
-- **`matcen-docs/BOT_MANAGEMENT.md`** — Phase 5 planning and implementation: config-file rosters, ship selection, difficulty levels, auto-rebalancing, `$servercaps` handshake. **Read this before modifying bot management code.**
-- **`matcen-docs/CHAT_COMMANDS.md`** — Phase 6.0 chat command system: cross-genre research synthesis, verb taxonomy (4 tiers), staged rollout plan, engine integration points. **Read this before modifying bot chat code.**
-- **`matcen-docs/ENTROPY_MODE.md`** — Entropy mode mechanics reference (from the netgame DLL source) + phased bot implementation spec (E1–E4). **Read this before writing any Entropy bot code.**
-- **`matcen-docs/MONSTERBALL_MODE.md`** — Monsterball mechanics reference (DLL source; carry is dead code, score into your OWN goal, weapon hits clamp to 10–20 u/s) + sports-AI research synthesis (RLBot/RoboCup) + phased bot spec (M1–M4). **Read this before writing any Monsterball bot code.**
-- **`matcen-docs/PLAN.md`** — **the forward plan**: project goal, honest current status, what is genuinely left, and the navigation blocker gating completion (§3 — the arterial/hierarchy model and the per-entry-portal aim prerequisite). **Read this to know what to work on.**
-- **`matcen-docs/D3_MOVEMENT_PHYSICS.md`** — engine physics constants and packet flag reference.
-- **`matcen-docs/D3_PYRODECK_SPEC.md`** — specification for the D3 Pyrodeck companion web admin tool. **Update this when telnet commands or output formats change.**
+Read the named doc before changing the code it covers. Do not duplicate doc content into this file.
 
-Useful CMake options: `BUILD_TESTING=OFF`, `ENABLE_LOGGER=OFF`, `FORCE_PORTABLE_INSTALL=ON`, `FATAL_GL_ERRORS=OFF`. Output goes to `builds/<preset>/build/<config>/`.
+- `matcen-docs/PLAN.md`: the forward plan and the **master registry of every open item (§4)**. Open items live there
+  and nowhere else; a doc that names one cites its registry id. A rewrite that drops a registry row is a defect:
+  rows change status, they are never removed.
+- `matcen-docs/NAVIGATION.md`: navigation design as built, §7 open problems, the tried-and-reverted ledger. Read it
+  before touching routing, roadmap, skeleton, steering or portal code.
+- `matcen-docs/OBSTACLE_GEOMETRY.md`: how the engine represents passable and impassable geometry. Read it before
+  touching portal passability, powerup selection or stuck-clear code. See-through is not passable.
+- `matcen-docs/BOT_DEV_REFERENCE.md`: architecture, FSM, constants, engine API patterns, gotchas, the engine-files
+  audit, measurement caveats. Read it before modifying bot code.
+- `matcen-docs/BOT_MANAGEMENT.md`: rosters, ships, difficulty, console, the Bot Settings menu, capacity rules, and the
+  population/seat design. `matcen-docs/CHAT_COMMANDS.md`: the `!` orders as built and the finish line.
+- `matcen-docs/ENTROPY_MODE.md`, `MONSTERBALL_MODE.md`: mode rules from the DLL source and the bot behaviour as built.
+- `matcen-docs/PYRODECK_CONTRACT.md`: the telnet surface the D3 Pyrodeck admin tool parses. Update it in the same
+  commit as any `$` command or output change; the spec of record is the Pyrodeck repo.
+- `matcen-docs/CHANGELOG.md`: release notes, newest first, user-facing voice (no phase numbers, no soak codenames).
+  `matcen-docs/BOTS_DEVEL.md`: the dated engineering log from the 0.9.13 cycle on. `matcen-docs/archive/`: verbatim
+  history moved out of the live docs; never edit it.
+- Also: `D3_MOVEMENT_PHYSICS.md`, `PATHFINDING_CODEBASE_EXPLORE.md` (engine AI pathing), `VISUAL_DEBUG.md` (the
+  Ctrl+F7 overlay), `UPSTREAM_PATCHES.md`, and `matcen-docs/README.md` as the index.
 
-## Deployment / Testing Builds
+## Rules that are not obvious from the code
 
-To run a build outside the dev environment, copy these files into the game data directory:
+- **Versioning**: `0.x.y` in `CMakeLists.txt` (`MATCEN_VERSION_*`); 0.8.x features, 0.9.x navigation, 0.10.x the
+  release package. The `-dev` suffix is used only while chasing a specific untested bug or regression. Strip it, keep
+  the patch number, to make that version stable; never bump the patch for an experiment, and never leave a hole in
+  the sequence. `$servercaps` prints the numeric version only (`fork_version=X.Y.Z`).
+- **Every code change updates the docs in the same commit**: `README.md` and `CHANGELOG.md` for anything a server
+  operator notices, a dated `BOTS_DEVEL.md` entry for engineering work, the registry row's status in `PLAN.md`.
+- **Operator rulings (settled, do not re-ask)**: bots obey the same physics as players, always; no thrust against
+  knockback and no immunity of any kind. The README stays short and never names a custom map. Free-for-all modes take
+  no `!` orders. Bots must never fill a server: one seat stays free for humans.
+- **Nav changes are gated by evidence, not by the metric they moved**: a bot-free `$nav dump` diff first
+  (`tools/navdump_geometry.py`, `tools/compare_navdumps.py`), then same-minute paired soaks against a control, one
+  change per arm, read with `tools/analyze_bot_log.py` and `tools/flag_conversion.py`. Judge stuck problems by the
+  `hard` columns (`net_disp<10`), not the raw totals. Render a room (`render-room` skill) before reasoning about an
+  in-room failure. The `matcen-soak` skill holds the lab procedure and its guardrails; the lab directory is per
+  workstation (`tools/soak.local.json`), never hardcoded in a manifest.
+- **Do not resume arbitration-layer tuning on toroid maps** and do not retry the entries in NAVIGATION's
+  tried-and-reverted ledger without new evidence.
 
-```
-<game root>/
-├── Descent3                           # main executable
-├── netgames/*.d3m                     # game mode modules (anarchy, team anarchy, etc.)
-├── online/
-│   └── Direct TCP~IP.d3c             # connection module (HOG archive containing the .so/.dll)
-├── d3-linux.hog                       # primary game data (platform-specific)
-└── ...other data files...
-```
+## Engine facts that bite
 
-The `online/Direct TCP~IP.d3c` file is critical — the raw `.so`/`.dll` from `netcon/lanclient/` is packed into this HOG archive by the build system. Without it, multiplayer connection options (and menus like Bot Settings) won't appear.
+- `cfopen()` with a bare filename searches registered paths and HOGs; use `./name` for a real relative path.
+- Game data lives in HOG archives (`d3-linux.hog`); netgames and scripts load as shared libraries at runtime.
+- `Gametime` resets per level; never latch on it across levels. Player ships collide with walls at 0.8 of their size.
+- Deploying outside the dev tree needs the executable, `netgames/*.d3m`, `online/Direct TCP~IP.d3c` (a HOG holding the
+  connection module; without it the multiplayer menus and Bot Settings never appear) and the data files.
 
+## Bot configuration
 
-# User server launch command
+`dedicated.cfg` takes only `BotConfig=bots.cfg`; `BotCount`, `BotName<n>`, `BotShip<n>`, `BotDifficulty`/`<n>`,
+`BotTeam<n>` go in that file (comments on their own line). Ships `pyro`, `phoenix`, `magnum`, `blackpyro`;
+difficulty `trainee`, `rookie`, `hotshot`, `ace`, `insane`. Console commands use the `$` prefix; `$bothelp` lists them.
+Callsigns get a `[BOT]` suffix with no space. A server with no `BotCount` runs vanilla.
+
+## Running a test server by hand
+
+```sh
 ./Descent3 -dedicated ./dedicated.cfg 2>&1 | tee $PROJECT_DIR/server.log
+```
 
-This pipes debug output from the server to a log file in the $PROJECT_DIR (this project root). During testing, the user will run this command manually in another shell.
-Claude Code should regularly review server logs to diagnose any debug feedback from the user.
-
-## Diagnostic Tooling
-
-Two Python analysis scripts in `tools/` turn raw test output into actionable summaries — prefer them over ad-hoc grepping:
-
-- **`tools/analyze_bot_log.py <server-log>`** — parses a server debug log into per-map stats (captures, kills, stucks, carrier deaths, Phase 11 router activity) and flags anomalies (e.g. `OUTDOOR_STUCK_CLUSTER`, `CARRIER_SURVIVABILITY`, `CHASE_PIN`, `TEAM_IMBALANCE`). **Always run this to read a soak log — naive greps miss events** (e.g. capture lines have specific wording). Note the `## Stuck / Pin Severity` section + the `(hard)` columns: stuck/pin TOTALS are inflated by moving-but-slow timeouts (circling), so judge nav problems by the `net_disp<10` **hard** counts, not the raw totals. `CHASE_PIN` is ambiguous (a real troll powerup vs. plain wall-press during a chase — cross-ref `$navdump`; official maps have no troll powerups). Add a new `RE_*` + accumulator + `detect_anomalies` tag when teaching it a new log pattern.
-- **`tools/visualize_navdump.py <navdump.json>`** — renders a `$navdump` JSON as a top-down SVG map (room bboxes heat-colored by intra-room blockage, path_pnt open/buried-center dots, portal passability ticks, powerup verdict diamonds). Use it to *see* wall-press geometry classes instead of inferring them from counts.
-- **`tools/flag_conversion.py <server-log>`** — flag pickup→capture conversion per map+team (CTF). **The primary short-run regression metric**: duration/roster-independent, isolates the carrier's return trip (grabs-but-no-caps = return-nav failure; no grabs = reach failure). Splits bots vs. humans.
-- **`tools/soakctl.py <manifest.json>`** — agentic soak driver: launches the dedicated server headless, applies `$nav` toggle recipes per phase over telnet, counts rounds, mid-round `$nav dump`s, quits cleanly; emits `ROUND_END`/`SOAK_DONE` events for background monitoring. Manifests in `tools/manifests/` (canonical, tracked; ad-hoc ones go in the gitignored `tools/manifests/local/`). The runtime dir is per-workstation — set `$SOAK_SERVER_DIR` or `tools/soak.local.json` (see `tools/soak.local.example.json`), never hardcode it in a manifest. **See the `matcen-soak` skill for the full test-running procedure and guardrails.**
-- **`$nav sweep <x> <y> <z> <room> <portal>`** (dedicated console) — hull sweeps from a point (a pinned bot's `pos=`) to a door's crossing approach/plane/push-through points at the hull and door-fit radii plus a reverse leg, reporting the face each one hits. The "why is it pinned HERE" instrument; run it bot-free on a second instance via `tools/navdump_geometry.py`'s recipe.
-- **`tools/navdump_geometry.py --cfg <cfg> --out <json> [--binary B] [--console P --useport P --gamespyport P --tempdir D]`** — takes a bot-free `$nav dump` from a dedicated server; with the port/tempdir options it runs as a SECOND instance while a soak occupies the first (the cfg copy needs its own `RemoteConsolePort`). The bot-free geometry gate for any nav change.
-- **`tools/compare_navdumps.py <before.json> <after.json> [room ids]`** — network metrics of two dumps side by side (split rooms, isolated doors, routable rooms, bends, lattice cells, connectors) plus per-room detail. Read it before soaking a network change.
-- **`tools/flag_conversion.py --timeline <server-log>`** — per-round flag timeline: each flag's out-episodes and how they resolved (capture / announced return / silent 120s return), seconds both flags were out, "standoff grabs". The instrument for CTF role balance; capture totals flip with seating, the shape does not.
-- **`tools/analyze_navdump.py <navdump.json> [...]`** — summarizes a `$navdump` JSON (the in-engine runtime nav-geometry dump): obstacle-type histogram, passability DISAGREE/tight portals, breakable-glass/forcefield portals, non-convex rooms (wall-press risk), and troll-powerup classification (sealed vs. same-room-occluded). **Caveat: `sealed_troll` false-positives on outdoor-connected pockets** (the BFS skips external rooms) — the analyzer flags these as `OUTDOOR-LINKED`; trust `review` over `sealed_troll`. See `matcen-docs/OBSTACLE_GEOMETRY.md` for what the types mean.
-
-Log files and `$navdump` JSON output land in user/OS-specific locations (the server log where the launch command is run; `$navdump` files in the dedicated server's working directory) — ask the user for the path rather than assuming one.
-
-## Bot Configuration
-
-Bot roster config uses a separate `Key=Value` config file referenced from `dedicated.cfg`:
-- Add `BotConfig=bots.cfg` to `dedicated.cfg`, then put `BotCount=`, `BotName*=`, `BotShip*=`, `BotDifficulty*=` in `bots.cfg`
-- Bot keys (`BotCount`, `BotName*`, etc.) are NOT recognized in `dedicated.cfg` itself — only `BotConfig=` is parsed there
-
-A server with no `BotCount` (or `BotCount=0`) runs without bots — fully backwards compatible. Ship aliases: `pyro`, `phoenix`, `magnum`, `blackpyro`. All bot names are suffixed with `[BOT]` automatically (no space — callsigns are short) (suffix so D3's prefix-matched DM routing resolves `<botname>:` to the bot).
-
-Difficulty levels: `trainee`, `rookie`, `hotshot` (default), `ace`, `insane`. Set globally with `BotDifficulty=` or per-bot with `BotDifficulty1=`, etc. Change mid-game with `$botdifficulty`.
-
-All bot console commands use the `$` prefix (e.g., `$addbot`, `$botlist`, `$bothelp`). Type `$bothelp` for a full list.
-
-## Architecture
-
-> [!NOTE]
-> **Implemented (Phase 3.6):** Bots consume the engine's `ai_info->movement_dir` — the blended result of
-> path-following, wall avoidance (`AIF_AVOID_WALLS`), friend avoidance (`AIF_AUTO_AVOID_FRIENDS`), and dodge
-> (`AIF_DODGE`). `BotApplyThrust()` decomposes `movement_dir` into local axes. BOA repair (`MakeBOA()`) is
-> called in `MultiStartNewLevel()` when `BOA_mine_checksum == 0`. See Phase 3.6 in `BOTS_DEVEL.md`.
-
-The project is a large set of static libraries linked into the main `Descent3` executable, plus dynamically-loaded script and netgame modules.
-
-**Core game**: `Descent3/` — AI, multiplayer, game loop, UI, physics integration, mission loading. The multiplayer system uses `NetPlayers[32]` for connection state, `Players[32]` for game state, and `Objects[]` for world entities. Server frame loop is in `multi_server.cpp:MultiDoServerFrame()`.
-
-**Platform/IO layers**: `ddio/` (device I/O abstraction), `linux/` and `win32/` (platform-specific), all built on SDL3.
-
-**Rendering**: `renderer/` (OpenGL), `2dlib/`, `grtext/`, `bitmap/`, `model/`.
-
-**Data**: `cfile/` (custom file I/O and HOG archive access), `manage/` (asset management). HOG files are the primary game data archives, built by `tools/HogMaker`.
-
-**Networking**: `networking/` (network layer), `netcon/` (network console). `netgames/` contains multiplayer game modes (anarchy, CTF, coop, etc.) compiled as loadable shared libraries.
-
-**Scripts**: `scripts/` — per-level and per-mission game logic, compiled as loadable modules.
-
-**Other**: `physics/`, `sndlib/`, `music/`, `stream_audio/`, `vecmat/`, `fix/`, `mem/`, `module/` (DLL/SO loading abstraction), `logger/` (wraps plog).
-
-## Key Patterns
-
-- **No in-source builds** — CMake errors if source and build dirs match.
-- **HOG archives** — Game data is packed into `.hog` files. The primary HOG varies by platform (e.g., `d3-linux.hog`).
-- **cfopen() path resolution** — If a filename has no directory component, `cfopen()` searches registered paths/HOGs instead of opening directly. Use `./filename` for relative paths on Linux.
-- **Scripts and netgames** are dynamically loaded at runtime as shared libraries.
-- **Git hash** is embedded via `cmake/CheckGit.cmake`, regenerated each build into `d3_version.h`.
-- **compile_commands.json** is always generated (`CMAKE_EXPORT_COMPILE_COMMANDS=ON`).
-
-## Code Style
-
-Enforced by `.clang-format` (LLVM-based):
-- 2-space indentation, 120-char column limit, K&R brace style
-- Right-aligned pointers (`int *ptr`)
-- Include sort order is preserved (not auto-sorted)
-- Format with: `clang-format -i <file>` or `tools/formatter.sh`
-
-## Versioning
-
-Matcen versions as `0.x.y` with the patch incrementing per release: the `0.8.x` line was the feature releases, `0.9.x` is the navigation-milestone series (current). Version is set in `CMakeLists.txt` (`MATCEN_VERSION_MAJOR/MINOR/PATCH`) and propagated through `cmake/CheckGit.cmake` → `lib/d3_version.h.in` → the binary.
-
-### `-dev` Suffix Convention
-
-A `-dev` suffix (`MATCEN_VERSION_SUFFIX` in `CMakeLists.txt`) is used **only while actively chasing a specific untested bug or regression** — never for stable releases or normal feature work. Purpose: when the suffix is visible in the main menu (`Ver 1.6.0 | Matcen 0.8.x-dev <hash>`), it is an immediate signal that the running build is an in-progress diagnostic and any connected client may be mismatched.
-
-Rules:
-- Add `-dev` when starting investigation that changes observable behavior (diagnostic logging, speculative fixes, experimental tuning) and the work has not yet been validated in a test session.
-- `-dev` commits may or may not be pushed to `origin` — sometimes committed locally just for tracking. This is fine.
-- **Remove the suffix, keep the patch number** once the bug is confirmed fixed and tested. The patch was already incremented when `-dev` was introduced — stripping the suffix produces the stable release of that same version (e.g. `0.8.5-dev` → `0.8.5`). Only increment the patch further for a subsequent separate fix or feature.
-- **`$servercaps` always uses the numeric version only** (`fork_version=X.Y.Z`). Do not include the suffix in `BotPrintServerCaps()` — the D3 Pyrodeck parser expects a clean semver string.
-- When removing the suffix, update `README.md`, `BOTS_DEVEL.md`, and `BOT_MANAGEMENT.md` as usual.
-
-## Documentation Updates
-
-When committing feature work, bug fixes, or version bumps, **always update `README.md` and `matcen-docs/CHANGELOG.md`** alongside `matcen-docs/BOTS_DEVEL.md` and `matcen-docs/BOT_MANAGEMENT.md`. The README is user-facing and must reflect the current version, feature set, and status; the CHANGELOG entry is the release-notes voice (no internal phase numbers or soak codenames).
+The operator runs this (or Pyrodeck) in another shell; review the log with the analyzer, not with ad-hoc greps.
 
 ## CI
 
-Matrix builds across Windows (MSVC), macOS (universal), Linux (GCC), and Linux ARM64 cross-compile. CI uses `BUILD_TESTING=ON` and `ENABLE_LOGGER=ON`. Workflows in `.github/workflows/`.
+Matrix builds for Windows (MSVC), macOS (universal), Linux (GCC) and Linux ARM64 with `BUILD_TESTING=ON` and
+`ENABLE_LOGGER=ON`; workflows in `.github/workflows/`. Release packaging is an open registry item, not yet wired.
