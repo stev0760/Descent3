@@ -315,7 +315,7 @@ Status text ("Q13", "Q9") is the old PLAN §4.0.1 review queue, kept in the arch
 | REL19 | Old commit email reachable on GitHub until a support-requested GC; local `stash@{0}` holds it | archived `project-git-identity-scrub` | operator informed | F | NEW | — |
 | REL20 | UPSTREAM_PATCHES assessment list: note `fvi_RoomCheckDir` (physics/findintersection) as fork-only; the engine-files audit missed six modified files and had a stale aipath.cpp row | EU5: `git diff --name-status 156cba8a..ee6e6525` | audit fixed in BOT_DEV_REFERENCE (10-01); the UPSTREAM note owed | C | NEW | — |
 | REL21 | Pre-reveal cutoff 2026-10-20 for the B work; the reveal about 2026-10-27 | operator answers 2026-10-01 (Q15) | Decided 2026-10-01 (Q15): cutoff 2026-10-20 as the target; reveal about 2026-10-27 | B | NEW | Q15 |
-| REL22 | Release identity and hosting logistics: a VPS purchased and sized (REL10's capped soak decides; 2026-09-30 lab data: one dedicated server at 11 bots used 5-7% of one core and 45-55 MB in a Debug build), a project e-mail address, a Reddit account aged before the announcement, the Discord presence; the operator's own items | operator, 2026-10-01 | not started | C | NEW | - |
+| REL22 | Release identity and hosting logistics: a VPS purchased and sized (REL10's capped soak decides; 2026-09-30 lab data: one dedicated server at 11 bots used 5-7% of one core and 45-55 MB in a Debug build), a project e-mail address, a Reddit account aged before the announcement, the Discord presence; the operator's own items | operator, 2026-10-01 | not started; first contact out of stealth: b2af (co-builder of the Redux Descent League), confirmed 2026-10-01 | C | NEW | - |
 
 ### MODE: game modes
 | ID | Item | Source | Status (evidence) | Bkt | §4.2 | Q |
