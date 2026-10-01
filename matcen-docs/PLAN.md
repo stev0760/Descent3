@@ -1749,6 +1749,58 @@ taxing navigation (rule in 4.0.1).
 
 ---
 
+### 4.2 Pre-release registry — every open item in one place (recovered 2026-10-01)
+
+**Why this section exists.** The operator noticed on 2026-10-01 that the plan's forward sections no longer carried the
+bot-population item ("servers keep a stable bot population, balance as humans join and leave, never fill the server").
+A sweep of every doc, the git history of this plan and the README, and the pre-08-29 memory archive found that item
+and others still recorded elsewhere (BOT_MANAGEMENT §5.3, the 2026-07-19 ruling, BOTS_DEVEL's roadmap table, the
+Pyrodeck spec, the game-mode specs' polish phases, NAVIGATION §7.2) but absent from the exit criteria in §4.0 and the
+reveal scope in §4.0.3. Rewrites of this plan kept the navigation thread and shed the rest. **This section is the
+canonical pre-release list from now on; a doc rewrite that drops a row here is a defect.** Each row names its source so
+the detail is one grep away. Buckets: **A** = 0.9.16 stable, **B** = pre-reveal engineering (the reveal waits for it),
+**C** = the release package, **D** = a decision the operator owes, **E** = registered, open, not blocking (your call
+whether any join B), **F** = explicitly deferred past the reveal.
+
+| # | Item | Source | Status | Bucket |
+|---|---|---|---|---|
+| 1 | **Bot population management**: a target player count (`BotTargetPlayers=`), bots added/removed as humans join and leave, `$botpopulation on/off/status/target/reserve` | BOT_MANAGEMENT §5.3; §2 table | spec written, **not started**; small, self-contained | **B** (operator, 2026-10-01: "should be on the roadmap") |
+| 2 | **Bots never fill the server**: reserved human slots (`BotReservedSlots=`, default 4, min 1); keep one seat free in EVERY mode (co-op's 4-player cap seals at `BotCount=3`) | BOT_MANAGEMENT §5.3 hard constraint; 2026-07-19 ruling (archived memory `project-bot-yield-seat`) | the reserve half exists as the `BotAdd` max-players clamp (0.9.9-dev); the config key and the all-modes rule **not built** | **B** |
+| 3 | **Bot yields to a human**: a human joining a full server kicks the newest / lowest-value bot | same 2026-07-19 ruling; §2 table ("reserve a seat / auto-kick") | **not started**; needs a hook in the join path + `BotRemove` | **B** |
+| 4 | Team balancing as humans join/leave | README roadmap bullet; BOTS_DEVEL "team assignment is static" | DMFC's `$balance` / `$autobalance` already do this and work with bots (BOT_MANAGEMENT §5.5b); the README bullet should say so — a docs fix, not code | docs (B) |
+| 5 | **Committee collapse, rows 4 and 5** (one in-room planner; seam/hop-commit as the commitment rule), with the code cleanup riding on it (3-site dispatch, stale toggle tags, one network outside the in-room case) | §4.0.2, §4.0.3 ruling | not built; must-read-flat gate | **B** (exit criterion) |
+| 6 | **The `!` command harness refined and finished** | operator scope 2026-09-28; CHAT_COMMANDS Stages 1-6 shipped (0.9.3); Stage 4 (Tier 3: formation flying, 6DOF positioning, Entropy room control) and Stage 5 (Tier 4: command chaining, squad grouping) not built | "finished" needs the operator's definition: Tier 3, or polish of Tiers 1-2 | **B / D** |
+| 7 | **Docs consolidation** of matcen-docs; known stale lines: README "Entropy bots have not completed a room takeover" (contradicted by the 2026-07-15/16 validation), §4.0 "Accepted for R1: Plasma/EMD under-selected" (fixed 0.8.5), §2 table "In-room navigation — the blocker", §4.0 item 2's 0.9.15 list (mostly done or superseded) | operator scope; this sweep | not started | **B** |
+| 8 | Entropy **E4 polish**: `!attack lab` / `!defend lab`, difficulty scaling, smarter invasion only with soak evidence | ENTROPY_MODE §3.4 | not built; E1-E3 validated 0.9.8 | **D** (in B if the reveal wants the verbs) |
+| 9 | Monsterball **M4 polish**: `!attack ball` / `!defend goal`, difficulty, bank shots (explicitly out of scope until soaks demand) | MONSTERBALL_MODE §4.4 | not built; M1-M3 validated 0.9.8 | **D** |
+| 10 | **Co-op**: "experimental" wording vs a pre-reveal line; known: bots get lost outdoors (no network on region-less campaign terrain), erratic for tight tunnels (difficulty/pacing tune), aimless shooting at spawn, an over-spawn hole past the cap via the roster | §4.0.3; archived `project-coop-status` (2026-07-19) | decision pending; first input = a fresh Pyrodeck co-op log | **D** |
+| 11 | **Windows + Linux release builds**; the operator flies and soaks an optimised build before release (Q9) | §4.0 item 3; §4.0.1 Q9 | Q9 decided, not done; CI builds all platforms | **C** |
+| 12 | **D3 Pyrodeck** phases: 1 connect MVP, 2 Windows launch + packaging, 3 Docker + provisioning, 4 polish; its remote-admin items (team selection, skill overrides, hot-reload) and server orchestration (multi-instance, match templates) are the "Phase 5 remaining" rows | D3_PYRODECK_SPEC §7; BOTS_DEVEL roadmap row 5 | separate repo, in progress per the operator; which phase the reveal needs is open | **C / D** |
+| 13 | **Cloud-hosted 24/7 server**, sized by a resource-capped soak first | §4.0 item 3 | not started | **C** |
+| 14 | **Quickstart + announcement** (Reddit r/descent, Discord DDN, DescentBB, SectorGame forums; ModDB/GameFront for the files) | §4.0 exit criteria; archived `reference_descent_community` | not started | **C** |
+| 15 | **Client compatibility pass**: retail 1.5, PiccuEngine and the Matcen client against the release server; every player-facing feature has a chat fallback (the Piccu rule) | archived `feedback_piccu_compat`, `project_pending_testing` (Piccu compatible as of 0.8.7) | re-verify on the release build | **C** |
+| 16 | **UPSTREAM_PATCHES.md** shared with the community at the reveal (the `$scores` column fix and successors) | UPSTREAM_PATCHES.md | ready; a line in the announcement | **C** |
+| 17 | **Series bump to 0.10.x** once the map list plays smoothly (0.8 features, 0.9 navigation, 0.10 the release package) | §4.0 item 3; versioning memory | decision of timing | **D** |
+| 18 | Persistent bot statistics (K/D, weapon use, state time) | BOT_MANAGEMENT §5.6 (low) | not started | **F** unless the reveal wants a scoreboard story |
+| 19 | Sigma Base rm37 (Q13, no in-room path) and the bridge room rm13 — the 2026-09-30 flight's two stuck rooms | §4.0.1 Q13; the flight read above | rendered pins pending; operator: not a priority yet | **E** |
+| 20 | Slave Pit zero flag picks; DownTown's wandering (parking structure, one team's start) | README limitations; HAVOC reads | open | **E** |
+| 21 | The last-resort route pass admits a portal whose far side is a wall-backed window | this week's abend2 work | open | **E** |
+| 22 | Thin rooms under-sampled by the lattice (Canyons rm4 22 cells, rm13 not routable; plays fine) — a floor-hugging sample row | Canyons diagnosis above | open | **E** |
+| 23 | The navdump's `ships[]` sizes are not the runtime hull; the hull used by the router now prints on the NO-ROUTE line | this week | open | **E** |
+| 24 | Toroid refinements: Rim's 45° alcoves, ceiling-exit flag rooms, the 2,048 lattice cap; toroidal-room orbit (steering) | §4.0 item 2; NAVIGATION §7.2 | open | **E** |
+| 25 | Isengard's outdoor pin class (cells 123,149 / 127,112) and long carries (Q4); Doors of Moria rm7 commits and diverging teams (Q5) | §4.0 item 2; §4.0.1 | partly improved by the 0.9.15 outdoor pass; re-measure | **E** |
+| 26 | Items the hull cannot reach are never chased; a nook the hull cannot occupy is never entered (Batteries rm35); the explore sampler picks `RF_EXTERNAL` window rooms; `BotPortalGeoCost` calls solid faces free on geodomes | §3.5 | open, small | **E** |
+| 27 | CTF role balance (first grab puts the other team on defence; the operator wants both-flags-out standoffs on long maps); dropped-flag reaction time; Bree Red-side difficulty; roster size as a test axis (2v2 Animal House) | §3.5; §4.0 item 2 | open, policy not geometry | **E** |
+| 28 | `BOT_TROUTE_ADOPT_FACTOR` 0.85 placeholder (Q3) — drop once flanking exists | §4.0.1 | standing | **F** (with 30) |
+| 29 | TC trips an engine Debug assert (Q15); `$nav` diagnostic footprint / telemetry consolidation; the overlay's Phase 3 (labels in 3D) | §4.0.1; NAVIGATION §7.2; VISUAL_DEBUG | open | **E** |
+| 30 | Combat multitasking: threat cost in the router, contested-errand mode, travelling juke, four-team target choice; flanking and map-control awareness | §4.1 | deferred | **F** |
+| 31 | Accepted for R1: Crossfire monsterball bunker outlier; QuadSomniac 4-team conversion always poor | §4.0 | accepted | — |
+
+**Reading the buckets.** A is done but for the operator's flight. B is the engineering the reveal waits for: rows 1-3
+(small, self-contained, the operator's own ask), 5 (the collapse), 6 and 7. C is the package. D needs four answers
+from the operator: the `!` harness's finish line, the mode-verb polish (8, 9), co-op's wording, and the Pyrodeck phase
+the reveal ships with. E and F are listed so nothing re-enters by surprise.
+
 ## 5. Working rules earned the hard way
 
 - **Balance and feel, not perfection.** The operator's bar. Register polish, don't build it.
