@@ -1,0 +1,385 @@
+<!-- Source doc: matcen-docs/CHAT_COMMANDS.md -->
+<!-- Source commit: ee6e6525 -->
+<!-- Source lines: 1-381 (full snapshot: research survey + sources, Engine Chat System hook history, original syntax and verb taxonomy, Stages 1-5 rollout, Stage 6 as-built + original design, Design Decisions Log as first written) -->
+<!-- Moved verbatim; do not edit. -->
+# Bot Chat Commands — Design & Implementation Plan
+
+Phase 6.0 infrastructure: chat-based bot command system. Enables squad orders, game-mode
+awareness, and bot personality expression. Foundational layer for all objective-mode work
+(CTF, Entropy, Co-op, Monsterball).
+
+**Status:** Stages 1–6 shipped in **0.9.3 stable**. Stages 1–3 = chat infrastructure + squad roles + Tier 1/2 verbs (0.8.8–0.8.13); game-mode detection (`BotGameMode`, `$botmode`), objective-state polling (`bot_objective.h`/`.cpp` — CTF flags, Hyper-Anarchy orb, Hoard counts, Monsterball), FSM integration (`BotGetObjectiveRoom()`/`BotGetObjectiveTargetBias()`/`BotObjectiveLean`), Tier 2 verbs (`!hunt`, `!regroup`/`!form up`, `!attack flag`/`!defend flag`), and CTF behavior tuning all landed across 0.8.11–0.8.13. **Stage 6 "Orders as Goals"** — orders own navigation via anchors + a lifecycle with player feedback (`!hold`/`!stay`, `!defend`, escort offset stations, BLOCKED detection/reports, enriched `!status`) — shipped with the Phase 12 nav work (see the Stage 6 section below). `!get <powerup>` deferred (needs powerup awareness). Open follow-up: routing the `!follow`/escort path through the cost-aware router so squad commands behave on complex maps (sequenced after the 0.9.4 nav rewrite).
+
+## Research Summary
+
+Cross-genre survey of bot/wingman command systems:
+
+| Game | Genre | Key patterns |
+|---|---|---|
+| Quake III Arena | Arena FPS | Natural-language synonyms, squad grouping, duration modifiers, `\say_team` dispatch |
+| Unreal Tournament 2004 | Arena FPS | V-key menu, game-mode-scoped verbs (CTF adds flag verbs), Attack/Defend/Freelance core |
+| Wolfenstein: Enemy Territory | Team FPS | Omni-Bot `vsay` voice commands, class-role-aware orders |
+| Rainbow Six Vegas | Tactical FPS | Command wheel (Go To, Breach & Clear, Cover Me), too slow for fast combat |
+| Freespace 2 | Space sim | Form on my wing, Cover me, Engage enemy, command chaining, subsystem targeting |
+| X-Wing / TIE Fighter | Space sim | Shift-hotkey commands (Attack, Cover, Evade, Report, Wait, Home) |
+| Wing Commander | Space sim | Break and Attack, Attack my target, Help Me, Form on wing, RTB |
+| Star Wars: Squadrons | Space sim | Ping-based minimal UX (2-3 commands), modern distillation |
+| Ace Combat | Flight sim | D-pad 2-4 commands: cover player / attack at will |
+
+**Universal patterns** (appear in 4+ references): Attack, Defend/Hold, Cover me, Follow/Form up,
+Attack my target, Dismiss/Freelance, Status/Report.
+
+**D3-unique opportunity:** 6DOF formation flying in tunnel geometry. No prior art — closest
+analogs are open-space (Freespace) or 2.5DOF (Quake/UT). This is Matcen's differentiator.
+
+Sources:
+- Q3 bot commands: https://static.classicmacdemos.com/demos/quake-iii-arena/BotCommands.htm
+- Q3 source (be_ai_chat.c): https://github.com/id-Software/Quake-III-Arena
+- UT2004 squad orders: https://steamcommunity.com/app/13230/discussions/0/451848854997754784/
+- FS2 tactics: http://www.yourturn.ca/freespace/FS-Tactics.htm
+- FS2 Advanced AI Commanding: https://steamcommunity.com/sharedfiles/filedetails/?id=184803370
+- Wing Commander controls: https://www.wcnews.com/controls.shtml
+- WC Academy handbook: https://wingcommander.fandom.com/wiki/TCSN_Academy_Simulator_Handbook
+- X-Wing/TIE controls: https://strategywiki.org/wiki/Star_Wars:_TIE_Fighter/Controls
+- DescentBB bots thread: https://descentbb.net/viewtopic.php?t=8893
+- DescentBB AI discussion: https://www.descentbb.net/viewtopic.php?t=13768
+
+## Engine Chat System (Existing Infrastructure)
+
+D3's multiplayer chat already supports three channels with no protocol changes needed:
+
+| Channel | Keybind | `towho` value | Behavior |
+|---|---|---|---|
+| All chat | F8 | `MULTI_SEND_MESSAGE_ALL` (-1) | Broadcast to everyone |
+| Team chat | Ctrl+F8 | `MULTI_SEND_MESSAGE_*_TEAM` (-2..-5) | Team-only, prefixed `[name]:` |
+| Private DM | F8 + `name:msg` | Player slot (0-31) | Engine parses `name:` prefix, routes to specific player |
+
+Server entry point: `MultiDoMessageToServer()` in `multi.cpp:4992`. The sender's player slot
+is already in the packet (line 4999, currently discarded as a comment). The `towho` byte
+carries channel routing.
+
+Egress: `MultiSendMessageFromServer()` in `multi.cpp:4925`. Already skips `NPF_BOT` recipients
+(line 4969). Supports all three channel types for replies.
+
+## Command Syntax
+
+### Prefix: `!` (exclamation mark)
+
+Single character, low combat-typing cost, free in D3's chat namespace (no existing use).
+Chosen over `/bot` (5 chars, more typing) and bare natural-language (false positive risk).
+
+### Addressing
+
+```
+!verb              → all your bots (team-scoped in team modes, all bots otherwise)
+!verb <botname>    → single bot by callsign (minus `[BOT]` suffix, case-insensitive)
+!verb all          → all bots regardless of team
+<botname>: !verb   → DM shortcut via engine name-parser (auto-routed by index or name prefix)
+```
+
+Bot callsign matching: exact match against `Bots[].name` (the raw name without `[BOT]` suffix),
+case-insensitive. Partial matching deferred — exact only in MVP to avoid ambiguity.
+
+Engine DM routing (`hudmessage.cpp:GetMessageDestination`) prefix-matches the typed text
+against `Players[].callsign`; placing `[BOT]` as a suffix means `reaper:` still matches
+`Reaper[BOT]`. Numeric slot indices (`2:`) also work.
+
+### Reply audience policy
+
+Bot replies inherit the originating `towho`:
+- Command on all-chat → reply on all-chat (visible to everyone)
+- Command on team-chat → reply on team-chat (private to team)
+- Command as DM → reply as DM to sender (quiet acknowledgment)
+
+### Team restrictions
+
+Bots only obey commands from players on the same team (in team modes). If an enemy player
+sends a command, the bot responds with a taunt instead of complying. This prevents opponents
+from hijacking your bots mid-match.
+
+**Exception:** `!ping` is team-agnostic — all bots respond to pings from any player regardless
+of team. This keeps `!ping` useful as a universal diagnostic and gives new players immediate
+feedback that the system is alive.
+
+All other verbs (attack, defend, follow, etc.) enforce team affinity once wired in Stage 2+.
+
+**Co-op exception (0.9.9):** co-op has no teams, but every human is squad leader — `BotShouldObey`
+returns true under `NF_COOP`, both `Num_teams <= 1` verb drops carry an NF_COOP exception, and
+broadcast addressing skips the team filter. All order verbs work; `!attackflag`/`!defendflag`
+degrade to their generic attack/defend replies (no flags in co-op).
+
+### Anti-recursion
+
+- Messages from bot slots (`NetPlayers[slot].flags & NPF_BOT`) are ignored entirely
+- Bots never react to bot chat — prevents reply storms and feedback loops
+
+### Throttling
+
+Per-bot reply cooldown of 2 seconds. When `!attack` is sent to 4 bots, replies stagger
+over ~500ms intervals to prevent chat spam. Cooldown is per-bot, not global.
+
+## Verb Taxonomy
+
+### Tier 1 — MVP (0.8.8 + 0.8.9)
+
+| Verb | Intent | Bot response example | References |
+|---|---|---|---|
+| `ping` | Proof of life (diagnostic, permanent) | `Reaper[BOT]: Pong!` | Scaffold + legacy diagnostic |
+| `status` / `report` | Report current state (military style) | `Reaper[BOT]: Freelance, HP 84, hunting Viper` | Q3, UT, X-Wing |
+| `attack` | Aggression-biased FSM | `Reaper[BOT]: Attacking!` | Universal |
+| `target` | Focus speaker's nearest enemy | `Reaper[BOT]: Targeting Viper!` | X-Wing, WC, FS2 |
+| `defend` | Hold-position / retreat-biased | `Reaper[BOT]: Defending!` | UT, FS2, R6 |
+| `cover` | Protect speaker (or named player) | `Reaper[BOT]: Covering you!` | Universal (6/6 refs) |
+| `follow` | Escort speaker (or named player) | `Reaper[BOT]: Following!` | Q3, FS2, WC |
+| `freelance` | Cancel orders, autonomous FSM | `Reaper[BOT]: Going freelance.` | UT, Q3, FS2 |
+
+`stop` and `dismiss` are aliases for `freelance`. `attack target` is a legacy alias for `target`.
+
+### Tier 2 — Tactical + game-mode (0.9.0)
+
+| Verb | Intent | Context |
+|---|---|---|
+| `hunt <enemy>` | Target specific enemy | Q3 "kill/hunt down" — 1v1 rivalries |
+| `get <powerup>` | Prioritize pickup | Q3 "get quad" — powerup coordination |
+| `regroup` / `form up` | Converge on speaker | FS2, WC, X-Wing |
+| `attack flag` | CTF: grab enemy flag | UT CTF "take their flag" |
+| `defend flag` | CTF: guard home flag | UT CTF "defend the flag" |
+| `goal` / `objective` | Co-op: resume autonomous objective-seeking (0.9.9) | Releases any order/escort; replies with the current mission objective ("Heading to: <item>!") or "No objective right now — covering you." Outside co-op: "No mission objectives in this mode." |
+
+### Tier 3 — D3-unique / flight-sim (post-0.9.0)
+
+| Verb | Intent | Notes |
+|---|---|---|
+| `formation <type>` | Fly in formation | **D3 killer feature** — 6DOF formation in tunnels. No prior art. |
+| `above` / `below` | 6DOF positioning | Vertical axis commands unique to 6DOF |
+| `flank left/right` | Lateral positioning | Tunnel geometry flanking |
+| `hold room` | Entropy: guard controlled room | Area-control awareness |
+| `take room` | Entropy: push into enemy room | Area-control awareness |
+| `taunt` | Trigger D3 audio taunt clip | Personality expression |
+
+### Tier 4 — Advanced (post-1.0)
+
+| Verb | Intent | Notes |
+|---|---|---|
+| `push ball` | Monsterball: push toward goal | Ball-push physics, complex |
+| `block goal` | Monsterball: goaltend | Positioning challenge |
+| Command chaining | "Beta cover Gamma" | FS2-style, complex |
+| Squad grouping | Named sub-squads | Q3-style, low payoff at 32-player cap |
+| Duration modifiers | "for 60 seconds" | Q3-style, low priority |
+| Patrol | Dual-point patrol routes | Q3-style, requires named locations |
+
+## Staged Implementation
+
+### Stage 1: Chat I/O + Ping (0.8.8)
+
+**Goal:** Validate end-to-end message plumbing. No behavior change.
+
+**Files:**
+- `Descent3/bot_chat.cpp` / `bot_chat.h` — new module, all parsing/dispatch/reply logic
+- `Descent3/multi.cpp` — ~3-line hook in `MultiDoMessageToServer()`
+- `Descent3/CMakeLists.txt` — add new source files
+
+**Engine hook (multi.cpp:4992):**
+```
+// In MultiDoMessageToServer():
+uint8_t slot = MultiGetByte(data, &count);     // uncomment the discarded slot
+int towho = (int8_t)MultiGetByte(data, &count);
+// ... existing message parsing ...
+BotOnChatMessage(slot, towho, message);         // NEW: dispatch to bot chat module
+MultiSendMessageFromServer(...);                // existing: rebroadcast to humans
+```
+
+**bot_chat module shape:**
+- `BotOnChatMessage(from_pnum, towho, msg)` — entry point. Skip if `from_pnum` is a bot slot.
+- `BotParseChatCommand(msg)` — detect `!` prefix, extract verb + args.
+- `BotResolveChatTargets(from_pnum, towho, args)` — determine which bot(s) to address.
+- `BotDispatchChatCommand(bot_index, from_pnum, verb, args)` — verb router. Stage 1: `ping` only.
+- `BotSendChatReply(bot_index, msg, towho)` — format `Name [BOT]: text`, call
+  `MultiSendMessageFromServer()`. Enforce per-bot throttle.
+
+**Stage 1 verb:** `ping` only. Three scopes, all team-agnostic:
+
+| Scope | Input | Response | Channel |
+|---|---|---|---|
+| All-chat | F8: `!ping` | Each bot: `Reaper[BOT]: Pong!` | All-chat (visible to everyone) |
+| Team-chat | Ctrl+F8: `!ping` | Team bots: `Reaper[BOT]: Pong!` | Team-chat (private to team) |
+| DM | F8: `reaper: !ping` | `Reaper[BOT]: Pong, Steve!` | DM back to sender only |
+
+DM ping personalizes the response with the sender's callsign. All-chat and team-chat pings
+use the standard `Pong!` response. `!ping` is the only verb that ignores team restrictions —
+all other verbs (Stage 2+) require same-team affinity or the bot taunts instead.
+
+**Validates:** Hook fires correctly, `!` prefix parsed, bot addressing works, channel-inherit
+replies work (all three scopes), anti-recursion holds, throttle prevents spam, DM personalization
+works, no client compat break.
+
+### Stage 2: Squad Roles + Tier 1 Verbs (0.8.9)
+
+**Goal:** Bots accept orders that change behavior.
+
+**New state:** `Bots[].squad_role` enum: `SQUAD_FREELANCE` (default), `SQUAD_ATTACK`,
+`SQUAD_DEFEND`, `SQUAD_FOLLOW`, `SQUAD_COVER`.
+
+**Verbs wired:** `status`, `attack`, `defend`, `follow`, `cover`, `freelance`/`stop`/`dismiss`,
+`attack target`.
+
+**FSM integration:** Bot FSM (`BotDoFrame`) consults `squad_role` to bias:
+- `SQUAD_ATTACK` — lower flee threshold, prefer engagement, chase further
+- `SQUAD_DEFEND` — higher flee threshold, prefer retreat to defended position, camp
+- `SQUAD_FOLLOW` — follow target player, engage only when attacked
+- `SQUAD_COVER` — stick to covered player, prioritize threats to that player
+- `SQUAD_FREELANCE` — existing autonomous FSM (no change)
+
+**Addressing wired:** `!verb <name>` for single bot, DM shortcut for private commands.
+
+### Stage 3: Game-Mode Awareness + Tier 2 (0.9.0)
+
+**Goal:** Bots understand game-mode objectives. Ships 0.9.0 milestone.
+
+**Scope:** CTF flag awareness (attack/defend flag), `hunt`, `get`, `regroup`. Squad roles
+gain mode-specific behavior (SQUAD_ATTACK in CTF = flag runner, SQUAD_DEFEND = flag guard).
+
+### Stage 4: D3-Unique Features + Tier 3 (post-0.9.0)
+
+**Goal:** Formation flying, 6DOF positioning, Entropy room control.
+
+**Design challenge:** Formation in tunnel geometry is a 3D problem with variable corridor
+width. Closest analog is FS2's "form on my wing" but in open space. D3 tunnels constrain
+formation width dynamically — bots must collapse formation in tight corridors and expand
+in open rooms. Novel design, no direct prior art.
+
+### Stage 5: Advanced + Tier 4 (post-1.0)
+
+**Goal:** Monsterball, command chaining, squad grouping. Monsterball bot play is a significant
+physics challenge (ball-push mechanics, goal positioning) and may require dedicated R&D.
+
+## Stage 6: Command Overhaul — Orders as Goals (IMPLEMENTED 2026-06-11 — shipped in 0.9.3 stable)
+
+**As built:** everything below shipped in one pass except formation types (Stage 4 as planned).
+Deltas/notes: `!hold` aliases are `!stay` and `!defend here` (also `!holdposition`); plain
+`!defend` outside CTF anchors at the **bot's** current position, `!hold` at the **speaker's**;
+CTF `!defend`/`!defendflag` keep the objective-system flag-room anchor (no position anchor).
+Escort stations are ordinal slots (left-rear / right-rear / high-rear / deep-rear at 45u) in the
+followed player's orientation frame; within 2.5× station distance and same room the goal switches
+from GET_TO_OBJ (tracking) to GET_TO_POS (station-keeping). BLOCKED = no 25u displacement for 8s
+→ "Can't reach you!"/"Can't get there!" DM to the issuer (30s throttle) + forced goal flush
+(repath). Reports ride the existing 2s reply throttle. Orders persist through death (anchor
+survives; the bot returns to its post after respawn) but not level transitions. The HUNT leash
+for anchored bots is anchor↔target distance (250u), so a bot drawn off station snaps back.
+Hold posts suspend powerup chasing entirely (discipline over greed — v1 simplification).
+Log lines: `BOT ORDER: '<bot>' on station (room R)` / `escort on station (player N)` /
+`BLOCKED in room R`; analyzer section "Orders (Stage 6)". Flag-stolen poll lines now name the
+thief (navmapping16 lesson).
+
+### Original design (for reference)
+
+**Problem statement (user, post-0.9.2-dev testing):** "bots are listening — but their behavior
+barely changes and it does not feel *useful* at all." Commands ack correctly, roles are set and
+never stomped (verified twice in log analysis), yet orders don't visibly matter.
+
+### Why commands feel dead — mechanical audit of what each verb actually does
+
+| Verb | What it actually changes | Why the player can't feel it |
+|---|---|---|
+| `!attack` | flee threshold ×0.5; CTF: flag-runner lean | In anarchy/TA it is ONLY a flee tweak. Navigation unchanged — the bot roams exactly as before. Invisible. |
+| `!defend` | flee ×1.5 + HUNT leash (1.5× fire range); CTF: flag-guard | **No anchor.** Outside CTF "defend" never means a *place* — the bot keeps roaming the whole map. Invisible. |
+| `!follow` | Real nav override (escort branch) | The one verb that owns navigation — and it fails silently: no catch-up burn (lags a human at speed), crowds at a fixed 40u with no offset, wedges in broken rooms (via support only added in 12.2d), and **never reports failure**. The perceived "regression" is unreported failure. |
+| `!cover` | Same nav as follow + free engagement | Indistinguishable from `!follow` in practice. |
+| `!hunt <enemy>` | ATTACK + named target | Works, but when the target dies it silently reverts to nothing. |
+| `!regroup` | One-shot converge goal | No arrival ack; once there, nothing further. |
+| `!status` | Role + HP + state | No order progress: no anchor, no distance, no "why I'm stuck". |
+
+### Root causes (architecture, not bugs)
+
+1. **Orders are biases, not goals.** They nudge FSM thresholds; the FSM's own machinery
+   (powerup chase, roaming, HUNT) still owns navigation. The UT model the doc was founded on
+   is the opposite: *every order derives a destination and the bot navigates there and stays*.
+2. **No spatial anchor concept.** UT's order set is positional (defend point, hold position,
+   assault objective). We have no "here" outside CTF flag rooms.
+3. **No feedback loop.** One ack at issue time, then silence forever. The player cannot
+   distinguish "obeying" from "ignoring" — and with `!follow`'s silent nav failures, they
+   experience ignoring.
+4. **No failure handling.** A follower wedged for 30s behaves no differently than one en route.
+   An order should grant *escalation permission* (aggressive unstick) and, failing that, report.
+
+### The overhaul: orders own navigation
+
+**Order = verb + anchor + lifecycle state.** New `BotOrder` on bot_info wrapping the existing
+`squad_role`/`squad_target_slot`:
+
+```
+anchor_type: NONE | PLAYER <slot> | POSITION <pos,room> | OBJECT <handle>
+state:       ISSUED → EN_ROUTE → ON_STATION | BLOCKED
+```
+
+**Priority ladder, formalized** (today it's implicit and scattered):
+`Carrier/score > Player order > Objective lean > Powerup > Roam`.
+An active order owns the EXPLORE-state nav slot exactly the way `BotDoCarrierNav` already does
+(proven bypass pattern — reuse it as `BotDoOrderNav`).
+
+**New core verb: `!hold` (aliases `!stay`, `!defend here`)** — anchor to the *speaker's position
+at issue time*: navigate there, keep station within ~60u, engage threats near the anchor, return
+when they're dead. This is THE missing universal verb (UT "Hold this position", FS2, R6 — 4+ of
+our references) and it gives `!defend` a spatial meaning in **every** mode:
+- `!defend` in CTF → existing home-flag anchor (unchanged)
+- `!defend` in anarchy/TA → hold at the bot's own current position (UT's "Defend!" semantics)
+- `!hold` anywhere → hold at the speaker's position
+
+**Escort quality pass (`!follow`/`!cover`):**
+- **Offset stations** per follower (left-rear / right-rear / high-rear) instead of all bots
+  crowding one 40u bubble — and these offsets are deliberately the Tier 3 *formation primitive*
+  (Stage 4 builds on them).
+- **Catch-up afterburner** when >150u and the target is receding; speed-match inside the band.
+- **BLOCKED detection**: no progress for ~8s while distance grows → escalated unstick (the
+  order grants permission), then a *report* ("Can't reach you!") — the user's original
+  !follow-as-rescue use case, made explicit.
+
+**Feedback loop (state-transition chat, throttled):**
+- ON_STATION (once): "In position." / "Right behind you."
+- BLOCKED (once, then 30s throttle): "Can't get there!"
+- `!status` enriched with order context: `Holding position, 45u off station, 84 shields`.
+- Orders persist across respawn; the bot re-navigates to its anchor and re-reports.
+
+**Out of scope for Stage 6** (unchanged): formation types, above/below/flank (Stage 4 — they
+become small extensions of the offset-station mechanism), Monsterball (Stage 5), natural
+language, duration modifiers.
+
+**Sequencing note:** Stage 6 depends on nav being trustworthy in the rooms players actually
+fight in — order navigation reuses the same routed-goal + via machinery as everything else, so
+the 12.3 geometry work (rooms 41/69-class via search) directly raises order execution quality.
+Recommended order: 12.3 nav → Stage 6 overhaul → Stage 4 formation.
+
+## Design Decisions Log
+
+1. **Single canonical verb per intent** — not Q3-style synonym parsing. `!attack` only,
+   not `!attack`/`!strike`/`!push`. Reduces parser complexity. Add aliases later if usage
+   shows need.
+
+2. **Game-mode-scoped verb meaning** (UT pattern) — `!attack` means different things in
+   CTF vs Team Anarchy vs Anarchy. Dispatch table keyed by game mode.
+
+3. **`!` prefix over `/bot`** — 1 char vs 5. Free in D3 namespace. Universally understood
+   as command prefix (IRC, Discord, many games).
+
+4. **DM shortcut as bonus channel** — engine's `name:msg` parser already routes to bot slots.
+   Unambiguous intent, no prefix needed. Silent acknowledgment via DM reply.
+
+5. **Reply throttle per-bot, not global** — allows staggered replies. 2s cooldown prevents
+   spam but allows each bot to acknowledge once.
+
+6. **Duration modifiers deferred** — Q3's "for 60 seconds" / "forever" adds complexity
+   without MVP payoff. Orders persist until overridden.
+
+7. **No natural-language parsing** — strict keyword match. NLU is latency-hostile, fragile,
+   and overkill for a command interface. Muscle memory beats natural language in combat.
+
+8. **Formation flying is the D3 differentiator** — no other game combines 6DOF + tunnel
+   geometry + multi-bot formation. Worth dedicated design phase post-0.9.0.
+
+9. **Enemy commands get taunts, not compliance** — in team modes, bots reject orders from
+   opposing-team players and reply with a taunt instead. Adds personality and prevents
+   opponents from hijacking your bots. Exception: `!ping` is team-agnostic (always responds).
+
+10. **`!ping` is permanent diagnostic** — not replaced by `!report`/`!status`. Stays in the
+    verb table as a lightweight proof-of-life with the standard `Pong!` response. `!report`
+    and `!status` are the military-style equivalents wired in Stage 2 with richer output.
