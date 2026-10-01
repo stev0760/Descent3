@@ -79,9 +79,9 @@ vectors. Two physics rulings constrain everything:
    should be loosened generally; failing to hold a spot under fire is the game as designed.
 
 Both reinforce the standing rule: bots use only legal thrust, with no velocity zeroing, position snapping or
-knockback immunity, even to fix a park. The one known exception is the Entropy active park, which thrusts against
-residual velocity including knockback (bot.cpp:6357); it is registered as MODE6 (operator decision, Q10) and is not a
-template.
+knockback immunity, even to fix a park. The rule is absolute (operator, 2026-10-01, Q10d: "NO physics violations:
+knockback must affect bots the same as players, always"). The Entropy active park still thrusts against residual
+velocity including knockback (bot.cpp:6363-6375); that thrust is to be removed (MODE6, B).
 
 **One router, two substrates, one contract.** Every mechanism delivers one engine goal. On a level with baked BNodes
 (the campaign) the engine's own pipeline can plan a leg (`$nav bnodesp`, inert on every BNode-less MP map); otherwise
@@ -596,8 +596,8 @@ fallback, and favours unvisited, uncrowded rooms.
 
 ## 7. Open problems
 
-Every row carries its registry id (PLAN.md §4; buckets: B pre-reveal, D decision owed, E open not blocking, F
-deferred, X closed). Status changes found while writing this doc are in the docs-rewrite status-changes file for the
+Every row carries its registry id (PLAN.md §4; buckets: B pre-reveal, E open not blocking, F deferred, X closed;
+the operator settled every D row on 2026-10-01, PLAN.md §5). Status changes found while writing this doc are in the docs-rewrite status-changes file for the
 registry owner to apply.
 
 ### 7.1 The committee collapse (COL1-COL3, COL5, COL9): design
@@ -634,12 +634,11 @@ room router stays untouched. Nothing here is a `$nav` toggle or a per-map fix. C
 duplicated dispatch in `BotSetRoutedGoal` / `BotDoExploreRoaming`, stale toggle descriptions, and treating skeleton +
 roadmap as one network outside the in-room case.
 
-> **DECISION NEEDED (Q20)** — drafted on the default; the operator's second pass settles it.
-> Default applied here: the 0.9.4 "Stage 4, delete the 0.9.3 substrate" is closed as superseded by the one-network
-> ruling (the skeleton is the arterials). The legacy toggles `terrain`, `outdoorvia`, `outdoorgraph`, `grid off` and
-> the validated-negative `mjunction` are retired inside the COL3 cleanup, each retirement inside the must-read-flat
-> gate (COL7, COL8). Outdoor Phases 2-4 (§7.2) come after the reveal (E). Alternative: keep Stage 4 as written and
-> make the outdoor phases pre-reveal.
+**Collapse scope, decided 2026-10-01 (Q20, "yes to all"; orchestrator's reading = the defaults, to confirm).** The
+0.9.4 "Stage 4, delete the 0.9.3 substrate" is closed as superseded by the one-network ruling (the skeleton is the
+arterials). The legacy toggles `terrain`, `outdoorvia`, `outdoorgraph`, `grid off` and the validated-negative
+`mjunction` retire inside the COL3 cleanup, each retirement inside the must-read-flat gate (COL7, COL8, B). Outdoor
+Phases 2-4 (§7.2) come after the reveal (E). The collapse (rows 4-5) ships in a build after 0.9.16 stable (Q4d).
 
 ### 7.2 Outdoor collapse, Phases 2-4 (COL10, COL11): design
 
@@ -682,38 +681,38 @@ Phase 1 (the entrance-miss class) shipped in 0.9.15; Phase 4's first cut (one ou
 | NAV13 | `BotPortalGeoCost` prices solid faces free (geodomes 504, Batteries 32 walls); no navdump field | open |
 | NAV14 | Batteries rm80 propped-leaf office (11.37 u): lattice never grows past the door plane; bookcase wedges; seed relocation when the seed's hull is in contact; a second seeding source for degenerate door seeds; seed-isolated door census (Batteries rm80 p0, rm46 p10, rm55 p0; Sigma rm19 p14-16, rm37 p2) | deferred with its geometry (three squeeze attempts, L31) |
 | NAV15 | Batteries rm118 Shield chase pins; rm12 powerup-chase circling class | known class, open |
-| NAV16 | Overlapping-portal merge: strip-tiled boundaries become one opening for crossing and commit (fixes Canyons rm12 p1 at the root) | D (Q22, default E after the collapse) |
+| NAV16 | Overlapping-portal merge: strip-tiled boundaries become one opening for crossing and commit (fixes Canyons rm12 p1 at the root) | E (Q22: "we will see"; decided after the collapse) |
 | NAV17 | A chain's first node can be the door behind the bot, flown as a crossing (log the router's next hop first) | not built, not measured |
 | NAV18 | Window-misroute fix's sibling gaps: legacy resolver pass-1 eligibility; cached/memo/forced admission revalidation; helper reciprocal-face and crossing cost | no closure since 0.9.14 |
-| NAV19 | Escape-relapse loop (a freed bot heads back to the spot that beat it) | E (verify): destination demotion may fix it |
+| NAV19 | Escape-relapse loop (a freed bot heads back to the spot that beat it) | E (verify, Q21a: one soak or flight): destination demotion may fix it |
 | NAV20 | Nightmare Castle five-second seam refire; its 6-seed region lattice | E (verify) |
 | NAV21 | One Plutonium room where bots reliably wedge | E (verify) |
-| NAV22 | Decorative concave-alcove trap (a Bree carrier flew into a doorless recess) | open, carrier-critical |
-| NAV23 | Rigidity / node-to-node feel (any loosening must be non-oscillating, L3) | E (propose close) |
+| NAV22 | Decorative concave-alcove trap (a Bree carrier flew into a doorless recess) | X: accepted as a known limitation (Q21c) |
+| NAV23 | Rigidity / node-to-node feel (any loosening must be non-oscillating, L3) | X: not reproduced, reopen on evidence (Q21b) |
 | NAV24 | Goal-blind stuck escape (escape pick ignores the goal) | partial (slice 6b, 9c, destination demotion) |
 | NAV25 | Corridor (multi-point) hand-out for bent crossings | deferred; no Batteries door needs it after the lip rungs |
 | NAV26 | Portal class is computed per side (a sky room's window reads as a door from the sky side) | no fix |
-| NAV27 | A trunk node per room | E (propose close) |
+| NAV27 | A trunk node per room | X: not reproduced, reopen on evidence (Q21b) |
 | NAV28 | Roadmap growth over-reach into sealed pockets (stricter growth probe deferred, L32; troll strikes are the backstop) | open; the void-cell guard covers rock, not pockets |
 | NAV29 | North-star step 2: path-cost detour budget | not built |
 | NAV30 | Grate-route awareness (finite grate cost; Isengard's blastable grate tunnels) | F: needs asymmetric-probe fix, a dynamic overlay and a payoff map |
 | NAV31 | Nysa room-69 carrier pins; carrier return-leg stall | E (verify) |
 | NAV32 | Verification set never re-checked: nysa blue-flag room, stadium-plus side room | open, cheap (overlay) |
 | NAV33 | Stacked-room arrival (invisible horizontal seam on the final leg) | E (verify): abend2 pits fixed, class unverified |
-| NAV34 | July leftovers: interior-pane heal coverage; metropolis_gt navdump pass (rooms 55/56/50/36) | E (propose close) |
-| NAV35 | What defines the two reach populations (~10x picks/round gap) | E (propose close) |
+| NAV34 | July leftovers: interior-pane heal coverage; metropolis_gt navdump pass (rooms 55/56/50/36) | X: not reproduced, reopen on evidence (Q21b) |
+| NAV35 | What defines the two reach populations (~10x picks/round gap) | X: not reproduced, reopen on evidence (Q21b) |
 | NAV36 | Lattice ~2 s re-issue while routing around a partition: a defect in itself? | open |
 | NAV37 | Indoor-item chases fail at the rm60 sealed pocket | E (verify): likely superseded by E2 |
-| NAV38 | Objective-owned degradation (old row 6.28) | E (propose close) |
-| NAV39 | Flag-carrier sprint-home speed | E (propose close) |
-| NAV40 | abend2 per-team asymmetry vs the symmetry acceptance test | D (Q21) |
-| NAV41 | Corner-bridge sweep honouring back faces | E (verify); code reads done (§5.2 item 7) |
+| NAV38 | Objective-owned degradation (old row 6.28) | X: not reproduced, reopen on evidence (Q21b) |
+| NAV39 | Flag-carrier sprint-home speed | X: not reproduced, reopen on evidence (Q21b) |
+| NAV40 | abend2 per-team asymmetry vs the symmetry acceptance test | X: operator, "not asymmetrical from my testing" (Q21c) |
+| NAV41 | Corner-bridge sweep honouring back faces | X: code read (`RoadmapLOS` indoor sweeps pass `FQ_BACKFACE` since `8b6ee205`; §5.2 item 7) |
 | NAV42 | The door on-ramp admits points outside the room (two rm80 nodes in the hallway) | E (verify); the void-cell guard does not test on-ramp nodes |
 
-> **DECISION NEEDED (Q21, Q22)** — drafted on the default; the operator's second pass settles it.
-> Default: NAV19, NAV20, NAV21, NAV31, NAV33, NAV37 are verified in one soak or flight; NAV23, NAV27, NAV34, NAV35,
-> NAV38, NAV39 close as "not reproduced, reopen on evidence"; NAV40 and NAV22 become README limitations; NAV16 is E,
-> after the collapse.
+**Decided 2026-10-01 (Q21, Q22).** NAV19, NAV20, NAV21, NAV31, NAV33 and NAV37 are verified in one soak or flight.
+NAV23, NAV27, NAV34, NAV35, NAV38 and NAV39 close as "not reproduced, reopen on evidence". NAV22 is accepted as a
+known limitation. NAV40 closes: the operator finds abend2 not asymmetric in his testing. NAV16 stays E ("we will
+see"), decided after the collapse.
 
 **Closed on evidence (kept for the record):** NAV12 explore sampler picking `RF_EXTERNAL` window rooms (slices 5/5b);
 NAV43 Polaris 08-31 regression and the wind-axis hypothesis (bedlam Polaris 15.5 caps/rnd; hypothesis refuted);
@@ -732,15 +731,15 @@ strategy (declined); NAV56 robo-anarchy battery config; NAV57 the engine's 40-do
 |---|---|---|
 | COL1 | One in-room planner (§7.1 step 1) | B, not built |
 | COL2 | Seam/hop-commit as the commitment rule; stuck as invalidation (§7.1 steps 2, 4) | B, depends on COL1 |
-| COL3 | Cleanup riding COL1-2 (duplicated dispatch, stale toggle tags, one network outside the in-room case) | B (Q20) |
+| COL3 | Cleanup riding COL1-2 (duplicated dispatch, stale toggle tags, one network outside the in-room case) | B (Q20: also retires the legacy toggles and `mjunction`) |
 | COL4 | Facing Worlds' Theta\* storms as COL1 design input | B |
 | COL5 | Remaining engine-path-node target callers | B |
 | COL6 | Workaround-retirement audit (strike, hardroom, hardcost, blacklist, via-dance firing rates) | B |
-| COL7 | Stage 4 vs the one-network ruling; legacy toggles `terrain`, `outdoorvia`, `outdoorgraph`, `grid off` | D (Q20) |
-| COL8 | Retire `$nav mjunction` | D (Q20) |
+| COL7 | Stage 4 vs the one-network ruling; legacy toggles `terrain`, `outdoorvia`, `outdoorgraph`, `grid off` | B (Q20: Stage 4 closed as superseded; toggles retire in COL3) |
+| COL8 | Retire `$nav mjunction` | B (Q20: with COL3) |
 | COL9 | Pursuit and powerup chases request routed destinations (§7.1 step 5) | B |
-| COL10 | Outdoor Phase 2 (§7.2) | D (Q20) |
-| COL11 | Outdoor Phases 3-4 remainder (§7.2) | D (Q20) |
+| COL10 | Outdoor Phase 2 (§7.2) | E (Q20: after the reveal) |
+| COL11 | Outdoor Phases 3-4 remainder (§7.2) | E (Q20: after the reveal) |
 | COL12 | The 0.9.6 grate-DOOR clutter/building allowlist "aimed at a class that may not exist" | E |
 | COL13 | Code hygiene owed: post-Hyper-Anarchy objective-carrier/powerup-suppression/hunt-leash helpers (not yet written); goal-attachment rework and `BOT_OGRAPH_RADIUS` 6.0 → 6.7; resolve-memo serial keying, interior non-portal pane watching, v1-plan vs heal-opened routes | E |
 | COL14 | Stale code comments (bot_chat.cpp, dedicated_server.cpp list in the registry) | B |
@@ -753,7 +752,7 @@ carry home; COL24 pseudo-bnode Stage 2, outdoor-graph fragmentation, ridge/ancho
 COL7); COL25 troute v2 (built as `troute2`).
 
 **Related rows owned by other themes:** POP11 (non-Pyro hulls against a Pyro-class network; Phoenix wall sphere 6.42,
-comfort hull 8.0), MODE6 (Entropy park against knockback), MODE11 (multi-flag CTF hoarding), CBT5 (flanking cost term,
+comfort hull 8.0), MODE6 (remove the Entropy park's thrust against knockback, B), MODE11 (multi-flag CTF hoarding), CBT5 (flanking cost term,
 the reserved exposure weight on roadmap edges), CBT8 (one-route maps: commit, wait or fight), CBT14/CBT15
 (visit-recency patrol bias; spline trajectories, behaviour-tree FSM), WAT1 (telemetry consolidation), WAT2 (overlay
 labels), WAT3 (navdump ship sizes vs `BotHullPhys`), WAT10 (mysterious_isle conversion), WAT11 (pumphouse/pyroplace).

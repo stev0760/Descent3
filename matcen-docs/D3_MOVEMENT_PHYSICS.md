@@ -173,6 +173,7 @@ model in §1 and apply to every movement change.
    against them, zero its velocity, snap its position, or hold a spot under fire. A human can barely do it,
    and it reads as unnatural. Losing a hold under fire is the game as designed.
 
-Both rest on the standing rule that bots use only legal thrust inputs. One known exception predates the
-rulings and is not a template: the Entropy hold park (`entropy_holding` in `BotApplyThrust()`, `bot.cpp:6363`) thrusts
-against residual velocity, knockback included.
+Both rest on the standing rule that bots use only legal thrust inputs, and the operator ruled on 2026-10-01 that
+there are no exceptions: knockback must affect bots exactly as it affects players, always. The one place that
+still thrusts against residual velocity, the Entropy hold park (`entropy_holding` in `BotApplyThrust()`,
+`bot.cpp:6363-6375`), is scheduled for removal before the release (registry MODE6).
