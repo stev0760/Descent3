@@ -23,4 +23,3 @@ The current version and what shipped are in the top-level [README](../README.md)
 | [UPSTREAM_PATCHES.md](UPSTREAM_PATCHES.md) | Fixes made in the fork for bugs that also exist upstream, ready to share back |
 | Open items | They live in one place: the registry in [PLAN.md](PLAN.md) §4. A doc that names an open item cites its registry id |
 | [archive/](archive/README.md) | History moved out of the live docs on 2026-10-01, verbatim: older plans, logs, design notes, retired specs and reports. Read only; nothing there is current |
-| `DECISIONS-PENDING-2026-10-01.md` | The 24 numbered questions the operator owes from the consolidation; removed once answered. |
