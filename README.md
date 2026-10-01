@@ -14,7 +14,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 **No client modification is needed.** Retail D3 v1.5 clients and compatible engines such as PiccuEngine connect and play as they are. A server with no bot configuration behaves exactly like vanilla D3.
 
-**Status: 0.9.16-dev.** The code is complete and has been flown, and it is in final review before it is marked stable. The latest stable release is 0.9.15. The public release comes with a later 0.10.x build. Release notes are in [CHANGELOG.md](matcen-docs/CHANGELOG.md).
+**Status: 0.9.16 stable.** The latest stable release is 0.9.16 (2026-10-01). The public release comes with a later 0.10.x build. Release notes are in [CHANGELOG.md](matcen-docs/CHANGELOG.md).
 
 Bots fight with lead aiming, strafing, afterburner and countermeasures, collect powerups, honor cloaking, and fly under the same physics as human players. They play Anarchy, Team Anarchy, Robo-Anarchy, Hyper-Anarchy, CTF, Hoard, Entropy and Monsterball, and co-op companions are experimental. Multiplayer maps carry no AI waypoint data, so Matcen builds a route network over each level when it loads.
 

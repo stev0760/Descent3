@@ -44,11 +44,11 @@ without flag activity raises a reach concern but does not identify a coverage de
 
 ## 2. Honest status (2026-10-01)
 
-The candidate is **0.9.16-dev, code complete at `4b4e78f4`** (`CMakeLists.txt:37-40`; every commit since is docs).
+**0.9.16 is stable**, stamped 2026-10-01 (tag `v0.9.16`; its code is `4b4e78f4`, every commit after it docs or the stamp).
 The operator flew it on 2026-09-30: abend2 "incredible", Batteries Included "great", Sigma Base "good but more flawed",
-and overall "a very solid candidate, almost release ready", with more flights and a deeper review to follow (ST2).
-The wide-mode overnight regression on `4b4e78f4` (`d30n-20260930/`, started 2026-09-30 23:16) has no recorded read
-yet (ST1). Navigation is no longer the gate: the indoor ladder stopped gating play on 2026-09-19, and the 09-30 flight
+and overall "a very solid candidate, almost release ready"; on 2026-10-01 Town of Bree ("feels great") and Glasshouse (fun,
+and the NAV41 finding: a room that is several sealed spaces, routed as one) (ST2).
+The wide-mode overnight regression on `4b4e78f4` (`d30n-20260930/`) read flat against the 0.9.15 baseline (ST1). Navigation is no longer the gate: the indoor ladder stopped gating play on 2026-09-19, and the 09-30 flight
 found nothing that blocks a release (the operator: Sigma's sticking does not need more attention yet). **0.9.16 is not
 the reveal** (operator, 2026-10-01: "This will be a later build. We're still working on test and polish."): 0.9.16 is
 stamped stable as the next ordinary release after his flights, and the reveal build is a later 0.10.x (0.10.0 or
@@ -93,8 +93,10 @@ the reveal. The hull tiers' drive half ships as is and A3 comes later (ST3, E); 
 comes later (ST4, E); the collapse rows 4-5 ship in a later build, 0.9.17 or the 0.10.x reveal series, never inside
 0.9.16 (ST6).
 
-**Exit:** the d30n read is flat against the baseline (done, ST1), the operator's flights are in (ST2), `v0.9.16` is
-tagged and pushed.
+**Done 2026-10-01:** the d30n read is flat against the baseline (ST1), the operator's flights are in (ST2), `v0.9.16`
+is tagged and pushed (ST5). The Glasshouse defect found on the last flight (NAV41) is not a regression and ships as a
+noted limitation; the operator chose to stamp first and fix it as the first item on 0.9.17-dev ("especially since we
+don't yet know the implications").
 
 ### Stage B: pre-reveal engineering
 
@@ -106,6 +108,11 @@ an experiment and grew into something the community has wanted for years; it mus
 code or its docs. So the collapse (COL1-COL3, COL7, COL8, COL10, COL11) is a hard gate that no cutoff relaxes, and a
 code-quality pass (COL28) is an exit criterion with its own checklist.
 
+0. **Rooms that are several sealed spaces (NAV41).** Route over (room, lattice zone) instead of rooms, so a bot is sent
+   out by a door its own part of the room can reach (Glasshouse's pyramid galleries). **Exit:** bot-free dumps on the
+   full map set list every zoned room and each is classified sealed or lattice gap; paired soaks on Glasshouse, abend2,
+   Sigma Base and Canyons against the 0.9.16 controls read flat or better, Glasshouse's room-1 stucks (38 a round at 6v6)
+   gone from the galleries.
 1. **Population and seats (POP1-POP3, POP5).** A target player count with bots added and removed as humans come and
    go; a seat nobody but a human can take; a bot that leaves when a human joins a full server; the README's team
    balance bullet corrected (DMFC `$balance` already works with bots). Spec: `BOT_MANAGEMENT.md`. **Exit:** a scripted
@@ -142,7 +149,7 @@ code-quality pass (COL28) is an exit criterion with its own checklist.
 **Decided 2026-10-01 (Q1, Q2, Q3, Q15, Q16).** The seat model is reserve + yield, reserve 1, `$addbot` clamped to it,
 the larger team's lowest-scoring bot yields (Q1). The `!` finish line is the polish floor plus formation v1, with
 `!get` and team-chat callouts in only if that lands early (Q2). Client UX is all four, the HUD overlay included (Q3).
-Order: POP1-POP3 first, then the `!` polish floor and formation v1 alongside COL1 (soaks run while chat work is
+Order: NAV41 first (the zoned-room router, opening 0.9.17-dev; decided 2026-10-01 after the Glasshouse flight), then POP1-POP3, then the `!` polish floor and formation v1 alongside COL1 (soaks run while chat work is
 built), then COL2, then UX, then the docs close-out (Q16). **Cutoff:** 2026-10-20 is the target for the B work and
 the reveal is about 2026-10-27 (Q15, REL21); on the cutoff unfinished CMD and UX extras move past the reveal, while
 POP1-POP3, the whole collapse (COL1-COL3, COL7, COL8, COL10, COL11) and the code-quality pass (COL28) stay hard gates; the reveal moves before they do.
@@ -197,10 +204,10 @@ Status text ("Q13", "Q9") is the old PLAN §4.0.1 review queue, kept in the arch
 | ID | Item | Source | Status (evidence) | Bkt | §4.2 | Q |
 |---|---|---|---|---|---|---|
 | ST1 | Read and record the d30n wide-mode overnight on `4b4e78f4` (D, C and B sets vs the 09-20/21 baseline) | PLAN 1697-1700 | READ 2026-10-01: PASS. 18 soaks on 4b4e78f4 vs the 0.9.15 baseline, same cfgs: Anarchy/Team/Hyper/Robo/Entropy/Monsterball flat on deaths and stucks (Monsterball goals 4+1 vs 1+0; Entropy 0 takeovers both, pickups 26 vs 20); CTF: Nysa 28 vs 28, Isengard 24 vs 24 (stucks 74 vs 85), Moria 26 vs 23 (67 vs 97), xemedia 47 vs 46, HAVOC SewerRat 8 vs 2, Canyons 3 vs 0, orbital 22 vs 16, DownTown 45 min 2 vs 1 (stucks 48 vs 115), skybox 6 vs 11 (2 rnd, swing), Facing Worlds 2 vs 1, metropolis 2 vs 2, Animal House 0 vs 0 (3v3 stalemate by design), TC 1 round then the known Debug assert (ENG row) as on 0.9.15. Nothing regressed. | A | NEW | Q4 |
-| ST2 | Operator flight(s) on the candidate | PLAN 1407, 1683-1689 | first flight done 09-30: abend2 "incredible", Batteries "great", Sigma "good but more flawed", "almost release ready"; operator said more flights and a deeper review follow; Decided 2026-10-01 (Q4c): 0.9.16 is stamped after the operator's flights | A | (bucket-A note) | Q4 |
+| ST2 | Operator flight(s) on the candidate | PLAN 1407, 1683-1689 | first flight done 09-30: abend2 "incredible", Batteries "great", Sigma "good but more flawed", "almost release ready"; operator said more flights and a deeper review follow; Decided 2026-10-01 (Q4c): 0.9.16 is stamped after the operator's flights; flights 2026-10-01: Bree "feels great", Glasshouse fun (NAV41 found); DONE | A | (bucket-A note) | Q4 |
 | ST3 | A3 ruling on the hull tiers' drive half: keep only with ~0.5 u steering slack, ship A2b as is, or drop it | BOTS_DEVEL 101-103; PLAN 1179-1180, 1417, 1749 | geometry half shipped in 0.9.16-dev (Canyons doubled twice); drive half neutral at 1.2 u a side, negative at rm80; no ruling; §4.1 names it a precondition; Decided 2026-10-01 (Q4a): the A2b drive half ships as is; A3 (~0.5 u slack) later | E | NEW | Q4 |
 | ST4 | Already-outdoor entrance seek uses OUR door table (engine table lists window box rm18); pursuit toward an interior target gets a troute plan | PLAN 1276-1284, 1306-1307 | promised "before strip -dev" on 09-29; not built (no commit after `e4074b55`); overtaken by the abend2 regression work; Decided 2026-10-01 (Q4b): later, not before the stamp | E | NEW | Q4 |
-| ST5 | Stamp 0.9.16: strip `-dev`, make the CHANGELOG entry match its body, README status, annotated tag `v0.9.16` | CLAUDE.md versioning; archived `feedback_git_tags` | `CMakeLists.txt:37-40` = 0.9.16 + `-dev`; Decided 2026-10-01 (Q4): 0.9.16 is the next ordinary stable, stamped after the operator's flights; it is not the reveal build ("We're still working on test and polish") | A | NEW | Q4 |
+| ST5 | Stamp 0.9.16: strip `-dev`, make the CHANGELOG entry match its body, README status, annotated tag `v0.9.16` | CLAUDE.md versioning; archived `feedback_git_tags` | DONE 2026-10-01: suffix stripped, CHANGELOG promoted (with the NAV41 known-issue note), README status, annotated tag `v0.9.16`; not the reveal build | A | NEW | Q4 |
 
 ### POP: population and seats
 | ID | Item | Source | Status (evidence) | Bkt | §4.2 | Q |
@@ -492,7 +499,7 @@ Kept so nothing re-enters by surprise. Reopen a row (move it back to its theme w
 | NAV38 | Objective-owned degradation (row 6.28 "open") | BOTS_DEVEL 2067 | X: no closure; meaning unclear; Decided 2026-10-01 (Q21b): closed as not reproduced, reopen on evidence | X | NEW | Q21 |
 | NAV39 | Flag-carrier sprint-home speed (Phase 7.6 open bug) | retired NAV_OVERHAUL_3 | X: probably moot; Decided 2026-10-01 (Q21b): closed as not reproduced, reopen on evidence | X | NEW | Q21 |
 | NAV40 | abend2 per-team asymmetry vs the symmetry acceptance test ("accepted for now, not a clean pass") | NAVIGATION 1404-1424; PLAN §1; memory `toroid-asymmetry-red-vs-blue` | X: Decided 2026-10-01 (Q21c): operator: "abend2 is not asymmetrical from my testing" | X | NEW | Q21 |
-| NAV41 | **A room that is several sealed spaces is routed as one volume** (Glasshouse rm1: a hollow glass pyramid open only from the room below and the chimney above, plus four door galleries on its faces, each with two doors to the ring hall; `BotRouteDijkstra` is any-portal-in, any-portal-out, and the stuck escape ranks portals its space cannot reach). Fix design: route over (room, lattice zone) — the zone is the component holding the entry portal, the start zone the component nearest the bot; cross-zone traversal is no edge in the strict pass and a priced one in the last-resort pass; rooms at the node cap or degenerate are not zoned; the escape prefers own-zone portals; the dump lists each zoned room's portal groups | BOTS_DEVEL 2026-10-01; NAVIGATION §7.3; operator flight 2026-10-01 ("the way through is the complete opposite direction and all the way around") | open; mechanism confirmed bot-free (`$nav sweep`: every side door blocked 3-7 u from under the roof, hatch and chimney blocked at 0 u from a gallery); 72 of 76 stucks in the galleries, 69 of 76 escapes aimed at the hatch or chimney; control soak `C-glasshouse-8rnd` on 4b4e78f4 started 2026-10-01; candidates elsewhere: abend2 rm4/rm20, Bree rm69, Sigma rm19/rm37 (at the cap) — classify sealed vs lattice gap bot-free first | B | NEW | — |
+| NAV41 | **A room that is several sealed spaces is routed as one volume** (Glasshouse rm1: a hollow glass pyramid open only from the room below and the chimney above, plus four door galleries on its faces, each with two doors to the ring hall; `BotRouteDijkstra` is any-portal-in, any-portal-out, and the stuck escape ranks portals its space cannot reach). Fix design: route over (room, lattice zone) — the zone is the component holding the entry portal, the start zone the component nearest the bot; cross-zone traversal is no edge in the strict pass and a priced one in the last-resort pass; rooms at the node cap or degenerate are not zoned; the escape prefers own-zone portals; the dump lists each zoned room's portal groups | BOTS_DEVEL 2026-10-01; NAVIGATION §7.3; operator flight 2026-10-01 ("the way through is the complete opposite direction and all the way around") | open; mechanism confirmed bot-free (`$nav sweep`: every side door blocked 3-7 u from under the roof, hatch and chimney blocked at 0 u from a gallery); 72 of 76 stucks in the galleries, 69 of 76 escapes aimed at the hatch or chimney; control soak `C-glasshouse-8rnd` on 4b4e78f4 started 2026-10-01; candidates elsewhere: abend2 rm4/rm20, Bree rm69, Sigma rm19/rm37 (at the cap) — classify sealed vs lattice gap bot-free first; Decided 2026-10-01: 0.9.16 stamped as is, the fix is the FIRST item on 0.9.17-dev | B | NEW | — |
 | ENG1 | Pacbox: `check_hit_obj` meets a zero-size hit object; a Release build divides by zero into `hit_wallnorm` (corruption risk); stack taken, object unidentified | PLAN §2 69; BOTS_DEVEL 1097-1104 | X: Decided 2026-10-01 (Q18): Pacbox is a modded skybox.mn3 with other ship models; dropped from the map pools, no code fix (the modded-asset ruling) | X | NEW | Q18 |
 | ENG3 | Centroid archive lacks `centroidmain.wav` (sound-page assert at load) | BOTS_DEVEL 1098-1099 | X: Decided 2026-10-01 (Q21c): out of scope (a third-party archive defect) | X | NEW | Q21 |
 

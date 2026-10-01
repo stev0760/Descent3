@@ -57,8 +57,9 @@ last-resort pass, so a lattice gap in a physically connected room can never stra
 pass already gives). Rooms at the node cap or degenerate are not zoned. The stuck escape prefers portals in the bot's
 own zone. The dump lists each zoned room's portal groups, so the bot-free diff names every room the change touches on
 every map before a soak runs. Gate: bot-free diffs on the full map set, then paired soaks on Glasshouse (new baseline
-arm `C-glasshouse-8rnd`; the control on `4b4e78f4` started tonight), abend2, Sigma Base and Canyons. The fix is the next
-item on the line; whether it goes into 0.9.16 before the stamp or opens 0.9.17 is the operator's call (asked 2026-10-01).
+arm `C-glasshouse-8rnd`; the control on `4b4e78f4` started tonight), abend2, Sigma Base and Canyons. Decided the same
+evening: 0.9.16 is stamped as is (the defect is not a regression; the same arm runs on the 0.9.15 binary alongside the
+4b4e78f4 control), and the fix is the first item on 0.9.17-dev — "especially since we don't yet know the implications".
 
 ### 2026-09-29: abend2's flag pits — the tight-door exclusion cut a leaf's only door; the leaf exception
 

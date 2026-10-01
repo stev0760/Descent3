@@ -9,15 +9,15 @@ Versioning: `0.8.x` = feature releases; `0.9.x` = the navigation-milestone serie
 series (bot management, feel and the chat and console commands around the public release, not started yet).
 A `-dev` suffix marks an in-test build that has not yet passed its validation gate.
 
-## [0.9.16-dev] - in test
+## [0.9.16] - 2026-10-01
 
-*Development series. One layer decides where a bot aims: the navigation code is consolidated step by step, and each
-step lands with the map that needs it and is soaked against a same-night control before it stays. Still open on this
-line: wandering on very large maps (HAVOC's DownTown), one Batteries Included office whose route network never grows,
-and two Sigma Base rooms where bots still get stuck until their stuck escape frees them. Do not run this as a release.*
+*The navigation series continues: one layer decides where a bot aims, and each step landed with the map that needed it
+and was soaked against a same-night control before it stayed. Still open on this line: wandering on very large maps
+(HAVOC's DownTown), one Batteries Included office whose route network never grows, two Sigma Base rooms where bots
+still get stuck until their stuck escape frees them, and the Glasshouse pyramid below. A stable release, not the public
+one: that comes with 0.10.x.*
 
-**In test (soaked against same-day controls, and flown by the operator on 2026-09-30, who called it "a very solid
-candidate, almost release ready"):**
+**Changes (each soaked against same-day controls; flown by the operator on 2026-09-30 and 2026-10-01):**
 
 - **Bots leave their spawn point at once on Batteries Included.** That map starts many ships inside opened toy boxes and
   under desks. A bot spawned touching the box could not "see" any route out, because every check it ran started from a
@@ -100,6 +100,17 @@ candidate, almost release ready"):**
   flag (the ship's built-in "close enough" distance), so it re-aimed from there and swung out again — nine re-aims per
   pickup on the bedlam maps. The four flag-touch moves (grab, recover, score, return home) now run until contact. One
   twelve-minute round on Apparition: 36 pickups from 14 re-aims, where the same round used to log around 200.
+
+**Known in this release:**
+
+- **A room that is really several sealed spaces.** Glasshouse's central pyramid is one room to the engine but five
+  spaces to a ship: a hollow pyramid open only from the room below and the chimney above, and four wedge-shaped
+  galleries behind its glass faces, each with two doors to the hall around it. Bots plan as if every door of a room
+  reaches every other, so a bot in a gallery heading anywhere beyond is sent to the hatch under the pyramid — twenty
+  units away through the glass — and presses into the narrowing wedge until its stuck escape sends it out, which also
+  prefers the hatch. With twelve bots that was about forty such episodes a round, nearly all in the galleries; the map
+  stays playable and fun. Routing by the part of a room a bot is actually in is designed and is the first item on the
+  next line.
 
 ## [0.9.15] - 2026-09-20
 
