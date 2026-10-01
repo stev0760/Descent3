@@ -1680,6 +1680,25 @@ a change that measures nothing and readmits rock cells does not ship. The thin-r
 ledger for after 0.9.16 — Canyons' rooms are still under-sampled (rm4 22 cells, rm13 not routable), they just play
 fine. 0.9.16 code is complete: the operator's flight is the remaining gate.
 
+**The operator's flight on `4b4e78f4` (2026-09-30 evening; Pyrodeck logs `testing-2026-09-30T23-29-45` abend2 30 min,
+`10-01T00-00-12` and `00-09-21` Sigma Base 8 + 7 min, `00-16-46` Batteries 11 min, `00-28-52` HAVOC 2.5 h, the last
+2 h a 5v6 the operator had left running).** The verdict: abend2 "incredible — absolutely blown away by how good the
+bots felt"; Sigma Base "good but more flawed" — bots routing through walls into the central column and stuck under a
+bridge to an exit shaft, but the stuck escape recovers them and 6v6 combat keeps it moving, including a flag-carrier
+standoff the operator won in combat ("I do not think the sticking issue needs more attention yet"); Batteries "great";
+Canyons 6v6 for five minutes only. "A very solid candidate, almost release ready"; more flights and a deeper review to
+follow. The logs agree: abend2 3v3 with the operator — bot picks 8 + 8, bot captures 2, the operator 4, zero stucks,
+carrier deaths 14 at 731 u, via failures in the rings as on 0.9.15; Sigma — zero bot captures in two short rounds
+(the 45-minute soaks run 1.2-1.5 a round, so fifteen minutes is below one), 3 soft stucks all in rm37, via failures
+rm37 (33) and rm13 (31, the bridge room), the 'FLAG_PICKUP_FAILURE' tag on both; Batteries — bots 1 capture, the
+operator 4, 22 stucks (1 hard), 6 hard chase pins in room 118 (the known Batteries chase class); HAVOC unattended —
+orbital 34 captures, SewerRat 7, Canyons 1 in its one round, Slave Pit 0 and DownTown 0 with its 48 wandering stucks,
+both known. Sigma's rm37 (Q13, "no in-room path") and the bridge room rm13 are the two rooms to render for the next
+Sigma pass, logged, not blocking. Overnight (23:16): the wide-mode regression on `4b4e78f4` in `d30n-20260930/` — the
+0.9.15 baseline's D set (anarchy, team, hyper, robo, Entropy on Dementia, Monsterball on Frenzy, Nysa, Animal House,
+Facing Worlds, Metropolis), C set (DownTown 45 min, skybox, stonecutter, TC, xemedia, Isengard 9 rounds) and B set
+(HAVOC 6 rounds, Moria 6) — read against the 09-20/21 baseline logs.
+
 ### 4.1 Deferred past 0.9.16 — combat multitasking (operator, 2026-09-28)
 
 **The operator's reading of the A2b flight:** gameplay felt good; what is missing is not navigation but that bots
