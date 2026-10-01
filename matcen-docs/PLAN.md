@@ -315,6 +315,7 @@ Status text ("Q13", "Q9") is the old PLAN §4.0.1 review queue, kept in the arch
 | REL19 | Old commit email reachable on GitHub until a support-requested GC; local `stash@{0}` holds it | archived `project-git-identity-scrub` | operator informed | F | NEW | — |
 | REL20 | UPSTREAM_PATCHES assessment list: note `fvi_RoomCheckDir` (physics/findintersection) as fork-only; the engine-files audit missed six modified files and had a stale aipath.cpp row | EU5: `git diff --name-status 156cba8a..ee6e6525` | audit fixed in BOT_DEV_REFERENCE (10-01); the UPSTREAM note owed | C | NEW | — |
 | REL21 | Pre-reveal cutoff 2026-10-20 for the B work; the reveal about 2026-10-27 | operator answers 2026-10-01 (Q15) | Decided 2026-10-01 (Q15): cutoff 2026-10-20 as the target; reveal about 2026-10-27 | B | NEW | Q15 |
+| REL22 | Release identity and hosting logistics: a VPS purchased and sized (REL10's capped soak decides; 2026-09-30 lab data: one dedicated server at 11 bots used 5-7% of one core and 45-55 MB in a Debug build), a project e-mail address, a Reddit account aged before the announcement, the Discord presence; the operator's own items | operator, 2026-10-01 | not started | C | NEW | - |
 
 ### MODE: game modes
 | ID | Item | Source | Status (evidence) | Bkt | §4.2 | Q |
@@ -517,8 +518,8 @@ No other bucket changed in the rebuild. The 2026-10-01 close-out then closed row
 the consolidation) as X. The operator's 2026-10-01 answers (§5) then moved rows 8 and 9 (MODE1, MODE7), 10 (COOP1),
 11 (REL1) and 17 (REL14) to their new buckets; rows 1-3 stay B.
 
-**Counts** (2026-10-01, after the operator's answers): 241 rows (229 + 12 new: COL26, COL27, COL28, DOC13, DOC14, POP12-POP14,
-CMD26, CMD27, REL20, REL21). A 3 · B 51 · C 21 · D 0 · E 74 (of which 10 "verify") · F 25 · X 67.
+**Counts** (2026-10-01, after the operator's answers): 242 rows (229 + 13 new: COL26, COL27, COL28, REL22, DOC13, DOC14, POP12-POP14,
+CMD26, CMD27, REL20, REL21). A 3 · B 51 · C 22 · D 0 · E 74 (of which 10 "verify") · F 25 · X 67.
 
 ---
 ## 5. Decisions owed
