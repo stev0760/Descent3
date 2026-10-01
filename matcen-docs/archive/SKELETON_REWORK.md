@@ -1,3 +1,7 @@
+<!-- Source doc: matcen-docs/SKELETON_REWORK.md -->
+<!-- Source commit: ee6e6525 -->
+<!-- Source lines: 1-136 (full snapshot) -->
+<!-- Moved verbatim; do not edit. -->
 # Skeleton Rework — collision-guided bridge construction (design of record)
 
 **Status:** design + first implementation, 2026-09-04. Brainstormed jointly by Claude (Opus 4.8) and

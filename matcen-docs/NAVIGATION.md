@@ -1,2964 +1,917 @@
-# NAVIGATION.md — Bot Navigation Design (canonical)
+# NAVIGATION.md: bot navigation, design of record
 
-> **Read this before modifying any navigation, routing, or steering code.** This is the single
-> source of truth for how Matcen bots move. It supersedes the old `NAV_OVERHAUL*.md` /
-> `NAV_CONSOLIDATION.md` pile **and the retired `GRID_NAV_DESIGN.md`** (the 0.9.4 spec — shipped,
-> validated, and folded in as §3.5–§3.6 + §8 History; original in git history). Deep engine research
-> lives in `PATHFINDING_CODEBASE_EXPLORE.md`; per-frame field/constant detail in `BOT_DEV_REFERENCE.md`.
+> **Read this before modifying navigation, routing or steering code.** This file says how Matcen bots move today and
+> why. It is the design of record, not a log. The dated record it replaced (every `7.0` snapshot from June to
+> September 2026, the slice-by-slice portal-model sprint, the committee-collapse narrative, the old toggle table, the
+> Phase 12 build log) is preserved verbatim in `archive/NAVIGATION-history-2026-06_to_09.md`. The 0.9.12 skeleton
+> rework spec is merged into §5.3; its original is `archive/SKELETON_REWORK.md`. Engine geometry facts (what is
+> passable, what a pane or a grate is) live in `OBSTACLE_GEOMETRY.md`; per-frame fields and constants in
+> `BOT_DEV_REFERENCE.md`; the engine's own AI pathing in `PATHFINDING_CODEBASE_EXPLORE.md`.
 
-**Status:** Matcen 0.9.15 (released 2026-09-20; the live snapshot is §7.0-CURRENT). Background from the 0.9.14 line: Telemetry plus the first guided fix. Four additive log
-lines name what blocked a go-around, what the objective arrival actually saw, whether a committed
-doorway was crossed, and whether item reachability agrees with raw line-of-sight; the fix makes
-single-exit rooms aim at their one door and filters the multi-door aim set through the router's own
-passability policy. The window-misroute admission fix is re-landed but not yet validated; the
-interior-navigation defects it exposed (flag-room arrival stall, powerup-chase wall-press) remain
-open. **For the live current-status snapshot (toggle states, open issues, the tried-and-reverted
-ledger) see §7.0**, kept current per soak. The narrative sections below are the design rationale;
-§7.0 is "what's true right now."
+**Status (2026-10-01).** Code is 0.9.16-dev, code complete at `4b4e78f4`. Every function, constant and line number
+below was checked against `ee6e6525`. Open problems are §7, each with its id in the master registry (PLAN.md §4,
+draft at REGISTRY-v2). The tried-and-reverted ledger is §7.5. Live toggle state is the bare `$nav` command, never a
+table in a doc (§6.3).
 
 ---
 
-## 1. The one principle
+## 1. Principle, invariants and the physics rulings
 
-**We complement Outrage's navigation; we do not replace it.** The Fusion engine already has a
-competent path-follower (BOA room routing + BNode in-room waypoints + reactive wall/friend/dodge
-avoidance, all blended into `ai_info->movement_dir`). Every time the fork tried to *override* that
-with its own steering vector (potential fields, flow-as-steering, occupancy dispersal — Phases 7–9),
-it created more problems than it solved and was removed (§8). The durable design adds intelligence
-the engine lacks — **which room to head to** — and leaves **how to fly there** to the engine.
+### 1.1 The one principle
 
-This yields exactly two layers:
+**We complement Outrage's navigation; we do not replace it.** The Fusion engine has a competent path follower (BOA
+room routing, in-room waypoints where a level has them, and reactive wall/friend/dodge avoidance, all blended into
+`ai_info->movement_dir`). Every time the fork overrode that with its own steering vector (potential fields,
+flow-as-steering, occupancy dispersal, Dijkstra-as-steering; Phases 7 to 9) it made more problems than it solved, and
+it was removed (§8). The durable design adds what the engine lacks, **where to go and which door to use**, and leaves
+**how to fly there** to the engine.
 
 | Layer | Owner | Responsibility |
 | :-- | :-- | :-- |
-| **Routing** | **us** | Pick the next room toward the goal (cost-aware, geometry/obstacle-aware). |
-| **Steering** | **engine** | Fly there: path-follow, avoid walls/friends, dodge. We never write `movement_dir`. |
+| Routing | us | The route: next room, the door into it, the waypoint inside the room. Cost-aware, geometry-aware. |
+| Steering | engine | Fly to the waypoint: path-follow, avoid walls and friends, dodge. We never write `movement_dir`. |
 
-The routing layer talks to the steering layer through **one channel only**: the engine goal
-(`AIG_GET_TO_POS` / `AIG_GET_TO_OBJ`). We choose the goal; the engine does the rest.
+The routing layer talks to steering through one channel: the engine goal (`AIG_GET_TO_POS` / `AIG_GET_TO_OBJ`).
+`BotApplyThrust()` (bot.cpp:6347) reads the engine's `movement_dir` and decomposes it onto the ship's local axes.
 
----
+### 1.2 Invariants (do not regress these)
 
-## 1.5 North star — the single spatial authority (2026-07-09, operator-approved)
+1. **Never write `movement_dir`.** Routing returns a room, a door or a waypoint; the engine steers to it. Bounded
+   exceptions decompose a vector of our own into thrust without touching the engine field: the CTF carrier's
+   home-room beeline, the stuck escape and its directional burst, the glass back-off, and the spawn egress
+   (`517a5df0` made the egress a local copy after an E2 build briefly held the engine field by reference).
+2. **Routing failure falls back to the engine, never strands.** `BotComputeRoute` returning -1 hands the engine the
+   far goal (the `NO-ROUTE` line, which prints the hull the router was given).
+3. **Geometry verdicts are soft costs only.** Never mutate engine portal or BOA flags (the `$navprobe` lesson, §7.5
+   L7). Use `BotPortalEnginePassable()`, never `BOA_PassablePortal` directly, for any admission decision.
+4. **Stay out of modes that do not need it.** Objective routing is gated on `BotGetObjectiveRoom()`
+   (bot_objective.cpp:1495), which returns -1 in modes with no objective room, such as anarchy and team anarchy. Keep new routing behaviour
+   gated the same way unless it is deliberately global, and verify that.
+5. **Proven before default.** Behaviour changes land under `-dev` and are soaked against a same-day control before
+   the suffix is stripped. Judge holistically (smoother, more effective movement overall), not by one metric.
+6. **Hull radius is real.** The network is built at the comfort hull, `BOT_ROADMAP_CLEARANCE` 6.7 (Pyro 6.676 plus a
+   sliver; bot_roadmap.h:50). Never build below the ship's wall sphere (the reverted engine BNode generator pruned at
+   5.0 and pinned bots, L2), and never inflate the hull into a safety margin (the original 8.0 clearance fragmented
+   rooms; the engine's avoid-walls owns flight safety). Openings between the wall sphere and the comfort hull are the
+   TIGHT class (§4.4).
+7. **Our layer only.** Feed `AIG_GET_TO_POS` waypoints; never touch `BNode_allocated` or the engine's path build.
+8. **Every layer reads the same geometry.** Portal class, crossing point, hull tier, glass mode and shattered-pane
+   state are computed once and shared by the router, the aim layer, the via layers and the network builders. The
+   portal-model sprint (0.9.14) exists because they did not.
+9. **No per-map fixes.** A rule ships only if it is geometric and general, and it is gated on the bot-free dumps of
+   more than one map before any play arm.
 
-**The disease behind every workaround this project has stacked: the system that *chooses* goals and
-the system that *reaches* goals answer "can I get there?" differently.** Goal selection asks
-line-of-sight ("can I see it?"); navigation asks the roadmap ("can I route there?"); steering asks
-the engine ("can I fly the next 30 units?"). Every disagreement between those answers has bred a
-compensating mechanism: troll strikes, per-bot blacklists, chase timeouts, the hard-pin fairness
-rule, soft-strikes, via-dance caps. A magnet powerup (visible across a concave room's inner wall,
-approachable by nothing — the isengard room-36 class) is precisely a point where selection says yes
-and navigation was never asked. **The strike table is a mechanism for learning behaviorally what
-the roadmap already knows geometrically.**
+### 1.3 The physics rulings (the consolidation phase's design of record)
 
-**The north star: one hierarchical spatial model — coarse room graph, in-room volumetric roadmap,
-terrain tier (§7 piece 1, not yet built) — is the *single authority* every subsystem queries for
-reachability, cost, and next waypoint.** Objectives, powerups, carriers, escorts, entrances: all
-select by path cost and execute by roadmap-following. This does not replace the two-layer principle
-above (§1) — the engine still owns steering — it unifies everything *above* steering into one
-world-model. End state per case:
+Provenance: the retired `NAV_CONSOLIDATION_PLAN.md` and `NAV_DESIGN_REVIEW.md` (absorbed 2026-08-29; originals in git
+history). The full absorbed section, §6.9, is in the archive at its HEAD position.
 
-- Sealed glass-pocket bait: *graph says disconnected* → skipped rationally, forever, zero strikes.
-- Reachable-but-curved item (room-36 Vauss): *graph says reachable at cost X* → grabbed mid-route
-  when X fits the detour budget, ignored while carrying — human-like on both counts.
-- The behavioral-evidence machinery (strikes, blacklists, LOS grab-gates) is not deleted — it
-  becomes a safety net that stops firing, and *that* is how workarounds retire safely.
+**The diagnosis (2026-07-22):** the bot fights like a pilot and travels like a committee. Navigation grew into
+ten-odd cooperating subsystems as game modes were added, and they competed for the same decision. The substrate was
+sound; the incoherence was arbitration.
 
-**Migration sequence** (each staged behind a `$nav` toggle, A/B'd on defaults, gates in §7):
-1. **`$nav reach` (SHIPPED 2026-07-09)** — same-room powerup selection gated by roadmap
-   connectivity (`BotRoadmapItemReach`: both endpoints hull-connect to the graph + same component;
-   fail-open when the model has no answer). First live smoke reproduced the navdump approach
-   analysis from pure geometry (Blackshark rm34 / Superlaser+Vauss rm32 → UNREACHABLE).
-2. **Path-cost detour budget** — score same-room/adjacent candidates by roadmap path length vs a
-   route-detour budget, replacing straight-distance where the graph disagrees.
-3. **Terrain tier (piece 1)** — extend the same authority outdoors; `outroute` becomes its
-   follower rather than a bolt-on.
-4. **Workaround retirement audit** — after 1–3 validate: measure strike/blacklist/dance firing
-   rates; mechanisms at ~zero become documented dead code, then get removed.
+**The north star (operator, 2026-08-04):** a bot flying a ship, not code that is the ship taking orders from several
+vectors. Two physics rulings constrain everything:
 
-**Expected to shrink toward dead code as the model takes authority:** `$nav strike` (Fix A),
-per-bot blacklists, LOS grab-gate (`require_los`), portions of the via-dance caps. **Expected to
-remain (legitimately execution-layer):** seam/hop-commit portal mechanics, stuck escalation — they
-compensate for the engine path-follower we deliberately keep (§1), scoped to portal crossing.
+1. **D3 has real drag. Braking is just not thrusting.** Stop thrusting and the ship slows on its own. A bot that
+   reverse-thrusts to stop is not flying the way a human flies.
+2. **Bots do not resist weapon knockback.** It is near-impossible for a human and reads as unnatural. Active braking
+   should be loosened generally; failing to hold a spot under fire is the game as designed.
 
----
+Both reinforce the standing rule: bots use only legal thrust, with no velocity zeroing, position snapping or
+knockback immunity, even to fix a park. The one known exception is the Entropy active park, which thrusts against
+residual velocity including knockback (bot.cpp:6357); it is registered as MODE6 (operator decision, Q10) and is not a
+template.
 
-## 2. Engine reference (what we build on)
-
-Verified against `aipath.cpp`, `BOA.cpp`, `AImain.cpp`, `aistruct.h`.
-
-### 2.1 BOA — room-to-room routing
-- `BOA_Array[i][j]` is a precomputed next-hop table: from room `i` toward room `j`, enter
-  `BOA_GetNextRoom(i,j)` next. It is built (`BOA.cpp`) by a cost-minimizing search over
-  **`BOA_cost_array`**, which is **distance-based** (`vm_VectorDistance` between portal path points,
-  `BOA.cpp:892`), summing **forward + reverse** portal cost per edge (`BOA.cpp:1003`).
-- BOA gives a single greedy next hop — it does **not** evaluate alternate routes, portal width beyond
-  the `BOAF_TOO_SMALL_FOR_ROBOT` flag, or runtime obstructions. That gap is what our router fills.
-- **BOA repair:** multiplayer maps often ship without BOA data (`BOA_mine_checksum == 0`).
-  `MakeBOA()` is called in `MultiStartNewLevel()` to rebuild it; without it `BOA_GetNextRoom` returns
-  `BOA_NO_PATH` and bots cannot pathfind at all.
-
-### 2.2 BNodes — in-room waypoints
-Points inside a room (usually near portals) the engine threads between to cross a room's interior.
-`AIGenerateBNodePath` builds a node sequence along the BOA room path.
-**Critical: BNodes are BAKED INTO THE LEVEL FILE ONLY** — `ReadBNodeChunk` (`LoadLevel.cpp:3047`) sets
-the global `BNode_allocated`; there is **no runtime generator** (`MakeBOA` builds none). Old user-made
-maps shipped without the `BNODE` chunk → `BNode_allocated = false` → the path build falls back to
-`AIGenerateBOAPath` (`aipath.cpp:1097`), which strings together only the **room `path_pnt` + portal
-points** — no intra-room waypoints. In a buried-center room that `path_pnt` is *inside solid*, so the
-engine aims the bot **into the wall**. This is a durable engine limitation, not a fork regression, and
-it is *the* reason complex rooms on custom maps are unnavigable by the engine alone (see §4.2). Confirm
-per map with `$navdump` → `bnode_allocated` / per-room `bnode_count`.
-**Guard: "no BNodes" is universal — it is *never* a per-map root cause.** Every MP map, official *and*
-custom, healthy *and* broken, ships with `bnode_allocated=false` (vanilla D3 MP had no AI players, so the
-editor's BNode pass was never run on any MP map). The entire bot nav stack since Phase 3.6 is a substitute
-for this missing data; what distinguishes a *problem* map is interior coverage (§8, 0.9.4 entry). Runtime
-*engine* BNode generation was tried and reverted — see the §7.0 ledger; the substitute lives in **our** layer.
-
-### 2.3 The path-follower pipeline
-`GoalAddGoal(AIG_GET_TO_POS/OBJ)` → `AIPathAllocPath` (`aipath.cpp:990`) builds the full path:
-- Beeline if LOS is clear; else a BNode/BOA path along the BOA room chain.
-- `BOA_HasPossibleBlockage` / locked-door / `BOAF_TOO_SMALL_FOR_ROBOT` → `AIFindAltPath` routes
-  *around* (the engine's own go-around — but see §2.5).
-- Path nodes feed `AIPathMoveTurnTowardsNode`, which writes `movement_dir`.
-
-`movement_dir` is a normalized world-space vector recomputed every frame by `ai_move()`, blending
-(priority order): **dodge** (`AIF_DODGE`) → **avoidance** (`AIF_AVOID_WALLS` grazing-wall deflection,
-`AIF_AUTO_AVOID_FRIENDS`) → **primary goal** (path-follow or LOS beeline). `BotApplyThrust()` reads
-`movement_dir` and decomposes it onto the ship's local axes. (`max_delta_velocity = 0` means the
-engine can't move the bot itself — but the vector it computes is valid and is what we thrust along.)
-
-### 2.4 Path pool limits (not a live constraint)
-Paths come from a shared pool: `MAX_NODES 50` per dynamic path × `MAX_JOINED_PATHS 5`, pool
-`MAX_DYNAMIC_PATHS 200` across all AI. Exhaustion is handled gracefully (`aipath.cpp`, no ASSERT).
-**Checked across 20h soaks: it never fires** — so chunking paths is for *route control*, not pool
-relief. Don't justify nav design by pool pressure.
-
-### 2.5 The engine's blind spots (why we add a layer)
-- **Greedy, single-route.** BOA can't pick the better of two parallel pipes, or pre-empt a
-  congested/blocked one.
-- **2D portal sizing.** `find_small_portals()` flags `BOAF_TOO_SMALL_FOR_ROBOT` from the portal
-  face's 2D bbox only — it **misses 3D-occluded slits/grates** (shoot-through-but-not-fly-through),
-  so the engine path-follows straight into them and wedges.
-- **Guide-bot heritage.** The path-follower was tuned for the single-player Guide-Bot, which
-  *pre-validates* reachability (`AI_IsObjReachable`) and follows a nearby human. Autonomous PvP bots
-  crossing a whole map alone stress it differently (see `PATHFINDING_CODEBASE_EXPLORE.md`).
-- **Intra-room occlusion of the path-node→portal line** *(the headline limitation — Phase 12 target,
-  §7)*. A room's path node (`path_pnt`, often the bbox centre) and the next exit portal can have a
-  **free-standing interior obstacle between them** — a glass cover panel, pillar, or column that is a
-  room *face*, not a portal. The path-follower beelines `movement_dir` at the portal and the bot
-  presses the obstacle at d≈0. The portal itself is fully passable (`engine_passable`, `gcost=0`), so
-  routing is correct and **powerless**. The same face blocks the line to *any* in-room goal — a chased
-  **powerup** behind a glass divider or ledge presses identically (and if the goal is genuinely sealed
-  behind a grate/glass, the bot should abandon it, not press) — so the Phase 12 fix keys on the active
-  local goal, not just portals. This reproduces in **vanilla retail D3 with robot enemies** —
-  Outrage authored the single-player AI around it (scripted, hand-placed node paths), so it never
-  surfaced in 1999; free-roaming multiplayer bots expose it, and it is the gap to Q3A/UT-era bot
-  parity. The navdump field `los_from_pathpnt_clear=0` predicts exactly the affected rooms.
+**One router, two substrates, one contract.** Every mechanism delivers one engine goal. On a level with baked BNodes
+(the campaign) the engine's own pipeline can plan a leg (`$nav bnodesp`, inert on every BNode-less MP map); otherwise
+our network plans it: indoors the room router plus the union network (§5), outdoors the terrain composer over the
+region lattice (§5.4). The hard split (campaign has BNodes, MP never will) lives in one predicate.
 
 ---
 
-## 3. Routing layer — hierarchical: coarse room router + fine volumetric roadmap
+## 2. North star: one network, one authority
 
-Since 0.9.4 the routing layer is **two tiers** (the HPA\* pattern — Botea 2004, §9 refs — with D3's
-room/portal topology as the cluster decomposition we never had to derive):
+**The disease behind every workaround:** the system that chooses goals and the system that reaches them used to
+answer "can I get there?" differently. Selection asked line of sight, navigation asked the roadmap, steering asked
+the engine. Each disagreement bred a compensator: troll strikes, per-bot blacklists, chase timeouts, the hard-pin
+fairness rule, via-dance caps. The strike table is a mechanism for learning behaviourally what the network already
+knows geometrically.
 
-```
-            ┌─────────────────────────────────────────────────────────────┐
-   COARSE   │  BotComputeRoute  (room-graph Dijkstra — §3.1, Phase 11)     │
-  (rooms)   │  from_room → goal_room → next-hop room                       │
-            └───────────────┬─────────────────────────────────────────────┘
-                            │  room sequence
-            ┌───────────────▼─────────────────────────────────────────────┐
-   FINE     │  Volumetric roadmap + Lazy Theta*  (§3.5, 0.9.4 — local)     │
-  (volume)  │  bot node → … → exit/target node, over hull-clear grid edges │
-            └───────────────┬─────────────────────────────────────────────┘
-                            │  waypoint (AIG_GET_TO_POS sub-goal)
-            ┌───────────────▼─────────────────────────────────────────────┐
-  STEERING  │  Engine path-follower + AIF_AVOID_WALLS  (§4 — UNCHANGED)    │
-  (engine)  │  flies the ship to the waypoint, deflecting off walls        │
-            └─────────────────────────────────────────────────────────────┘
-```
+**The north star (operator-approved 2026-07-09, restated 2026-09-05 and 2026-09-06):** one hierarchical spatial model
+is the single authority every subsystem queries for reachability, cost and next waypoint.
 
-| HPA\* concept | D3 equivalent (already exists) |
+- **Vocabulary (operator, 2026-09-06).** The **navigation network** is **arterials** (the skeleton: portal nodes and
+  bends, §5.3) plus **local streets** (the lattice fill, §5.2). The **navigator** plans; a **route** is one continuous
+  goal-to-goal path; the **pilot** flies it. The **committee** is the set of extra voices that overwrite the pilot's
+  aim, and it is what we are removing (§7.1). *Router*, *composer*, *governor*, *capillaries* and *grid nav* are
+  retired as separate concepts; they survive as function names only.
+- **One network, not competing substrates (2026-09-05).** Skeleton links and roadmap links are one weighted graph;
+  one A* (`ComposeUnionRoute`, bot_roadmap.cpp:2513, over `EnsureUnionGraph`, :2410) returns a whole route with a
+  typed terminal (same room, exit door, tray) or returns NONE without changing state. The roadmap-authority
+  experiment that let the dense lattice own the crossing moved its own metrics and cratered play (L19); substrate
+  ownership is the wrong architecture. The skeleton is therefore not a "fallback to be deleted": it is the arterial
+  half of the network. The 0.9.4 plan's "Stage 4, delete the 0.9.3 substrate" is superseded in part (COL7).
+- **Judge by goal-to-goal completion**, never by substrate usage or component counts (§5.2: "component counts are
+  not coverage").
+
+**Migration status.**
+
+| Step | State at 0.9.16-dev |
 |---|---|
-| Cluster | A **room** |
-| Entrance / transition node | A **portal** (`path_pnt`) |
-| Abstract-graph search | `BotComputeRoute` (§3.1, cost-aware Dijkstra over the room graph) |
-| Intra-cluster refinement | the **volumetric roadmap** (§3.5) |
+| 1. Item selection gated by network reach | Built: `BotRoadmapItemReach` (bot_roadmap.cpp:2945), `BotRoomSealedForShip` (bot_steering.cpp:3243), hunt-needs-a-route (0.9.14), the outdoor window sweep (`f5562a80`). The old `$nav reach` toggle is gone; the gate is unconditional. |
+| 2. Path-cost detour budget for same/adjacent-room candidates | Not built (NAV29). |
+| 3. Terrain tier | Built: `troute` (`edaba249`), v2 cost comparison `troute2`, one outdoor dispatch (`161582cc`) (§5.4). |
+| 4. Workaround retirement audit (strike, blacklist, hardroom, via-dance firing rates) | Not done (COL6). |
 
-§3.1–§3.4 describe the coarse tier (`bot_steering.cpp`); §3.5 the fine tier (`bot_roadmap.cpp`).
-Both are routing only — they return a *room* / a *waypoint*, never a steering vector. The coarse
-router is active in objective modes only (`BotGetObjectiveRoom()` returns -1 in
-anarchy/team/robo/coop → the router is never reached there, so those modes are behavior-identical
-to the pre-Phase-11 base).
+---
 
-### 3.1 `BotComputeRoute(from, goal) -> next_room | -1`
-Dijkstra over the **interior** room graph (no terrain-region expansion → no sky-routing). Edge cost:
+## 3. Engine reference (what we build on)
+
+Verified against `BOA.cpp`, `aipath.cpp`, `AImain.cpp`, `LoadLevel.cpp`, `multi.cpp` and `physics/` at `ee6e6525`.
+
+### 3.1 BOA: room-to-room routing
+- `BOA_Array[i][j]` is a precomputed next-hop table: from room `i` toward room `j`, enter `BOA_GetNextRoom(i,j)`
+  (BOA.cpp:566). It is built by a cost-minimising search over `BOA_cost_array`, which is distance-based
+  (`vm_VectorDistance` between portal points, BOA.cpp:892) and sums forward and reverse portal cost per edge
+  (BOA.cpp:1003-1004). Terrain regions are extra rows of the same table (`MAX_ROOMS + MAX_BOA_TERRAIN_REGIONS`), with
+  `BOA_connect[region][]` as the terrain door table.
+- BOA gives one greedy next hop. It does not compare alternate routes, judge portal width beyond
+  `BOAF_TOO_SMALL_FOR_ROBOT`, or see runtime obstructions. That gap is what our router fills.
+- **BOA repair:** MP maps often ship without BOA data (`BOA_mine_checksum == 0`). `MultiStartNewLevel()`
+  (multi.cpp:6372) calls `MakeBOA()` (BOA.cpp:2020; call at multi.cpp:6421). Without it bots cannot path at all.
+- **Two passability rules.** `BOA_PassablePortal` (BOA.cpp:208) has a runtime branch (BOA.cpp:235-248, taken when
+  `BOA_f_making_boa` is false) and a build-time branch. At runtime it rejects a rendered non-flythrough face, so an
+  intact pane is impassable to the engine; while BOA is being built it admits panes. Its cost table is frozen at level
+  load, so a pane that shatters mid-level stays impassable to the engine for the rest of the level. Our layers read
+  `BotPortalEnginePassable()` instead (§4.3). Details: `OBSTACLE_GEOMETRY.md` §4bb.
+- `find_small_portals()` (BOA.cpp:1943) flags `BOAF_TOO_SMALL_FOR_ROBOT` from the portal face's 2D bounding box only;
+  it misses 3D-occluded slits and grates.
+
+### 3.2 BNodes: in-room waypoints, baked only
+`AIGenerateBNodePath` (aipath.cpp:804) builds a node sequence along the BOA room path. BNodes are baked into the
+level file only: `ReadBNodeChunk` (LoadLevel.cpp:2991, called at :3933) sets `BNode_allocated = true` (:3047); there
+is no runtime generator. Without the chunk the path build falls back to `AIGenerateBOAPath` (aipath.cpp:919, called at
+:1105), which strings together room `path_pnt`s and portal points only. In a buried-centre room that `path_pnt` is in
+solid, so the engine aims the bot into the wall.
+
+**"No BNodes" is universal on MP maps, never a per-map root cause.** Vanilla D3 multiplayer had no AI players, so the
+editor's BNode pass never ran on any MP map; `$nav dump` shows `bnode_allocated=false` everywhere. The whole bot nav
+stack is the substitute for that missing data. Runtime engine BNode generation was tried and reverted (L2).
+
+### 3.3 The path-follower pipeline
+`GoalAddGoal(AIG_GET_TO_POS/OBJ)` → `AIPathAllocPath` (aipath.cpp:990): beeline if line of sight is clear, else a
+BNode or BOA path; blockage or `BOAF_TOO_SMALL_FOR_ROBOT` sends it to `AIFindAltPath` (aipath.cpp:71). For a position
+goal `AIMoveTowardsPosition()` (AImain.cpp:1736) sets `movement_dir = normalize(goal - pos)` in full 3D, with no
+ground bias (`AIF_BIASED_FLIGHT_HEIGHT` is flock-only). `movement_dir` is recomputed every frame by `ai_move()`,
+blending dodge (`AIF_DODGE`), avoidance (`AIF_AVOID_WALLS`, `AIF_AUTO_AVOID_FRIENDS`) and the goal. Bots run with
+`max_delta_velocity = 0`, so the engine cannot move them; the vector it computes is what we thrust along.
+
+### 3.4 Physics facts we rely on
+- **The wall sphere is 0.8 of the ship.** fvi collides a player with walls at `size * PLAYER_SIZE_SCALAR`
+  (findintersection.h:230 = 0.8, applied at findintersection.cpp:2768). A Pyro (6.676) stops at a 5.34 u sphere,
+  10.7 u across. This is the floor of the hull tiers (§4.4).
+- **Drag.** Movement constants and thrust formulas are in `D3_MOVEMENT_PHYSICS.md`.
+- **Path pool limits** (`MAX_DYNAMIC_PATHS 200`) never fired in 20 h soaks; do not justify nav design by them.
+
+### 3.5 The engine's blind spots (why our layer exists)
+- **Greedy single route.** BOA cannot choose the better of two parallel pipes or pre-empt a blocked one.
+- **2D portal sizing** (above): slits and grates read as doors.
+- **Guide-bot heritage.** The follower was tuned for the single-player Guide-Bot, which pre-validates reachability
+  (`AI_IsObjReachable`) and follows a nearby human.
+- **In-room occlusion.** A room's path point and the next portal can have a free-standing interior face between them
+  (glass cover, pillar, ledge). The follower beelines into it while routing is correct. The navdump field
+  `los_from_pathpnt_clear=0` predicts the affected rooms. This is the gap the in-room network (§5) fills.
+
+---
+
+## 4. The routing stack as built at 0.9.16
 
 ```
-edge = BOA_cost_array[r][p] + BOA_cost_array[nr][cportal]   // forward+reverse: reproduces BOA when the rest is 0
-     + BotPortalGeoCost(r, p)                               // static geometry (grates/tight)
-     + BotPortalDynPenalty(r, p)                            // runtime obstacles
+            ROOM ROUTER        BotComputeRoute: interior room-graph Dijkstra, glass/hull-aware ladder
+  (rooms)   from_room -> goal_room -> next room, and the door into it (BotEntryPortalIndex)
+                 |
+            NETWORK            union A* over arterials (skeleton) + local streets (lattice), §5
+  (volume)  bot -> door crossing / in-room target, string-pulled; troute outdoors (§5.4)
+                 |  waypoint (AIG_GET_TO_POS)
+            ENGINE             path-follower + AIF_AVOID_WALLS (§3.3, unchanged)
 ```
 
-The router first searches the strict geometry graph. If that graph is disconnected, it searches a
-second time with engine-passable fit-probe disagreements priced at
-`BOT_PORTAL_DISAGREE_PENALTY`; these edges never compete with a fully probe-clear route. This is
-deliberately narrower than the reverted 2026-08-22 blanket demotion, which admitted every abend2
-disagreement at normal tight-edge cost and regressed the map.
+The HPA\* mapping (Botea 2004): a room is a cluster, a portal is an entrance, `BotComputeRoute` is the abstract
+search, the union network is intra-cluster refinement. D3 supplies the decomposition; we never had to derive it.
 
-Returns the next room toward `goal`, or **`-1` when neither interior graph has a route** — the caller
-then hands the engine the far goal and lets engine pathing take over. **The router can lengthen a
-route but never strands a bot.** No result cache (costs are dynamic); a run is microseconds even on
-the largest maps, and it runs only on room-advance.
+### 4.1 Room router: `BotComputeRoute(from, goal, bot_index)` (bot_steering.cpp:3541)
 
-Matching BOA's forward+reverse convention is deliberate: with geometry and dynamic terms zero, the
-router **reproduces `BOA_GetNextRoom`**. So it *complements* BOA — it only diverges where geometry or
-a runtime penalty genuinely differs, never silently replacing BOA everywhere.
-
-### 3.2 `BotPortalGeoCost(room, portal)` — graded geometry, **soft** cost
-- Grates/slits (a swept ship-radius sphere through the opening is blocked), locked doors, and
-  `PF_BLOCK` / `PF_TOO_SMALL_FOR_ROBOT` → `BOT_PORTAL_IMPASSABLE`.
-- Fits-but-no-margin (a wider probe is blocked) → `BOT_PORTAL_TIGHT_PENALTY` (prefer a roomier
-  parallel route when one exists).
-- Engine-passable but ship-radius-probe-blocked remains `BOT_PORTAL_IMPASSABLE` in this strict
-  physical verdict. The coarse router alone may price it at `BOT_PORTAL_DISAGREE_PENALTY`, and only
-  after a strict search returns no route. Sealed-room, grate, and powerup checks remain strict.
-- Wide open → 0. Cached per level (geometry is static).
-- **Never mutates engine portal flags.** This is the critical fix over the earlier `$navprobe`
-  attempt, which set `PF_TOO_SMALL_FOR_ROBOT` globally and a false positive **walled off a whole hub**
-  for *all* pathing. As a soft cost, a false "impassable" only makes the router prefer another door,
-  or fall back to the engine — it can't strand anyone. This is what solves the bunker-slit/grate case
-  the engine's 2D `find_small_portals()` misses (§2.5).
-
-### 3.3 Dynamic penalty — emergent obstacles
-`BotBumpPortalPenalty` / `BotPortalDynPenalty`. A room-progress timeout bumps the portal the bot
-failed to cross; the next recompute routes around it; the penalty decays (~20s) and is capped well
-below impassable so a bumped door stays usable as a last resort. This is the **cost-signal form of
-"stop pressing this door"** — it replaces the old special-case goal-ward-escape heuristic, and it
-generalizes to any obstruction that emerges mid-game.
-
-### 3.4 Delivery — waypoint injection (`BotSetRoutedGoal`)
-The engine ignores our route if handed the far goal (it re-plans via its own BOA). So we feed it the
-**adjacent next hop** as an `AIG_GET_TO_POS` goal; the engine path-follows that short hop, and we
-recompute on room-entry. The bot flows portal-to-portal along *our* route. Wired into:
-`BotDoExploreRoaming` (objective nav), `BotDoCarrierNav`, `BotDoHoardCarrierNav`.
-
-### 3.5 The volumetric grid-seeded roadmap (0.9.4 — `bot_roadmap.cpp`, `$gridnav`/`$gridbridge`/`$gridroute`)
-
-*(The 0.9.4 rewrite, formerly specified in the retired `GRID_NAV_DESIGN.md`. Shipped 2026-06-28,
-validated: Fellowship 9-map soak captures +58% vs 0.9.3.)*
-
-**Why it exists.** The 0.9.3 substitute for the missing engine BNodes (portal skeleton +
-pseudo-bnodes, §4.2) places nodes **at and just inside portals** — enough to route between portals
-in convex-ish rooms, but with no coverage of a room's *interior volume*. Two failure modes,
-confirmed on townofbree: **through-room thrash** (a handful of portal-clustered nodes can't capture
-a winding multi-level room → portal-to-portal oscillation, 83/90 stucks "moving-but-slow") and
-**in-room-target unreachability** (no node at an arbitrary interior point → a bot ordered to a
-player or chasing a dropped flag can't path to it *even when adjacent*). The geometry is **3D**
-(room 60 = 186×127×**97** buried labyrinth; room 61 = a 57×401×**123** shaft) — a top-down scheme
-can't represent it. Rather than keep bolting per-symptom fixes onto the portal graph, 0.9.4
-replaced the substrate: a **deterministic (grid-seeded) PRM** — see §9 refs — supplying the
-intra-cluster refinement of the §3 hierarchy.
-
-**Construction (grow-from-seed — the robustness crux).** Per room (indoors) / per terrain region
-(outdoors), built **lazily** on first need, cached, invalidated on `BOA_mine_checksum` — and
-explicitly flushed by `BotRoadmapInvalidate()` when a build-time toggle flips (`$nav bridge`,
-0.9.5 — before that, a mid-level toggle was silently inert on already-built rooms).
-
-1. **Seed** from portal `path_pnt`s (points a ship *provably* occupied).
-2. **Grow**: lay a 3D lattice over the room bbox (`BOT_ROADMAP_SPACING` 20u indoor,
-   `BOT_ROADMAP_OUTDOOR_SPACING` 30u; auto-coarsens past `BOT_ROADMAP_MAX_LATTICE` 20000 cells);
-   accept a lattice cell only when a **hull-swept edge reaches it from an already-accepted node**.
-   Never "cull a point if a probe is clear" — a ray from a void/hollow-core point false-clears; a
-   sweep into solid always hits the boundary face, so growth is robust by construction and
-   **connected components fall out for free**.
-3. **Clearance is a CONNECTIVITY radius, not a flight-safety margin** — `BOT_ROADMAP_CLEARANCE`
-   **6.7** (Pyro hull 6.676 + a sliver). A larger "momentum margin" (the original 8.0) over-rejected
-   tight passages the hull clears (a ~7u tavern doorway) and falsely fragmented rooms; the engine's
-   avoid-walls owns flight safety. **Never set below the hull** (the reverted bnode-gen `max_rad
-   5.0` mistake). Fixed, not speed-scaled → one graph at all speeds.
-4. **Component bridging** (`$gridbridge`): grow-from-seed leaves wall-split interiors as separate
-   components; the **corner bridge** sweeps a single midpoint (lateral/vertical offsets up to
-   `BOT_ROADMAP_CORNER_OFFSET_MAX` 120u over spans ≤ `BOT_ROADMAP_CORNER_LEN` 220u, hull-gated,
-   spatial-hashed, attempts capped) to round the wall corner and connect them. Collapsed the
-   townofbree/khazaddum divider rooms. A gap through solid stays unbridged — that's correct.
-5. **Bounded multi-bend repair** (0.9.13, in test): after the existing builders, portal seeds that
-   still occupy different components get a deterministic multi-source bidirectional search seeded
-   from the closest existing nodes on both component frontiers.
-   A successful polyline is string-pulled, interpolated to ≤12u legs, and committed atomically only
-   after every leg clears at 6.7u. The pass is indoor-only, pair/node bounded, and does not change
-   the room's pre-repair proactive-complexity verdict. Failure leaves the graph untouched.
-
-**Query & delivery.** Local search = **Lazy Theta\*** (any-angle — §9 refs), not
-grid-Dijkstra-then-smooth: straight segments by construction, LOS = the shared hull-sweep.
-Delivery = the **furthest path vertex with clear LOS from the bot** (greedy string-pull), handed
-to the engine as an ordinary `AIG_GET_TO_POS` sub-goal. The engine does all steering (§3
-invariant); the roadmap outputs a waypoint, never a heading.
-
-**Selective engagement (`$gridroute`).** Proactive in-room routing runs only in **genuinely
-complex rooms** — `orig_comp_count > 1` AND ≥ 24 lattice nodes (the retired `complex` floor)
-— so simple maps keep direct routing (no behavior change where the engine was already fine). The
-same router drives objective, carrier, and `!follow`/`!cover`/`!hold` escort nav (escort: route
-when far, beeline when close with LOS).
-
-**Outdoor unification.** The lattice doesn't care whether a cell is "in a room" or "over terrain"
-— `BotRoadmapFindViaOutdoor` builds per terrain region with the same grow/Theta\*/delivery core
-(`GrowFromSeeds` + `QueryVia`; `RoadmapLOS` dispatches on `rr->outdoor`). The outdoor probe crux:
-an `RF_EXTERNAL` room can't start an fvi trace, but the terrain *cell* can — `BotSegmentClearOutdoor`
-resolves it via `GetTerrainRoomFromPos` and runs the ceiling-capped sweep (sees `HIT_TERRAIN`,
-`HIT_WALL`, `HIT_CEILING`). Seeds = the region's `BOA_connect` door approach points; lattice extent
-= structure bboxes + `BOT_ROADMAP_OUTDOOR_MARGIN` (60u), Y-capped under `Ceiling_height − 50` (the
-build-side no-sky-fly bound). A portal contributes a node just inside and just outside — that seam
-edge *is* the indoor↔outdoor connection. Outdoors gains a real router for the first time; the
-decorative-alcove carrier trap (§7.0) becomes a non-issue (a concave recess has no through-edges).
-
-**Fallback.** Degenerate rooms (roadmap culls to near-empty, or components stay disconnected) fall
-back to the 0.9.3 skeleton (§4.2); `$gridnav off` reproduces the full 0.9.3 stack for A/B. Stage 4
-(§7.0 roadmap) deletes the fallback once it has no remaining role.
-
-**Known limits (live — see §7.0 open issues):**
-- **Resolution-completeness blind spot:** a regular lattice can miss a passage wider than the hull
-  but narrower than the spacing. Detectable at build time (a room that fails to connect its own
-  portals); the thin-room densification track (§7.0 #0) is the open fix for khazaddum-class rooms.
-- **Statically-clear ≠ flyable at speed:** a momentum-carrying ship carves a turn radius; the
-  engine's avoid-walls absorbs most of it, and the lattice spacing is a *control-loop* parameter
-  (matches the path-follower's arrival radius/lookahead) — tune against observed motion, not graph
-  metrics. Residual: fine-approach threading of hull-width doorways (§7.0 #0b).
-- **`fvi`-clear ≠ traversable** for dynamic geometry — the sweep inherits every caveat in
-  `OBSTACLE_GEOMETRY.md` (doors, forcefields, grate *objects* — see §7.0 #4); and the growth probe
-  can over-reach into sealed pockets over a lattice step (§7.0 #0a, handled by the troll backstop).
-
-**Prior art & the novelty claim (for reviewers).** Each layer has decades of precedent — PRM
-(Kavraki 1996), HPA\* (Botea 2004), Lazy Theta\* (Nash 2010); Quake III's AAS is a 3D decomposition
-but models *surface locomotion* with typed reachabilities (walk/jump/rocket-jump), not free-flight
-volume sampling. No documented precedent combines a deterministic-PRM + HPA\* substrate inside a
-**6DOF flight volume** driving a competitive MP bot framework. The 6DOF twist cuts both ways:
-harder geometry (sample a volume, not a floor) but a far simpler cost model than AAS — no climb
-penalty, no jump typing, one edge type, pure Euclidean cost. The integration seams (momentum vs.
-static clearance, lattice-vs-control-loop coupling) are where the surprises live — and where the
-open issues above sit.
-
-### 3.6 Flanking hook (reserved — Stage 5, not yet built)
-
-The roadmap reserves a per-node/per-edge **tactical weight**. Flanking = run the local search as
-A\* with an added cost term (node exposure to a threat's LOS/expected facing); the roadmap then
-returns an approach that hugs cover or comes from an unexpected bearing/altitude. Nothing about
-the substrate is flanking-specific — the hook exists so the behavior layer can later supply a cost
-function without a re-architecture. Sequenced after the substrate is the stable default (§7.0
-roadmap, Stage 5).
-
-### 3.7 Terrain tier — piece 1 (2026-07-10, north star §1.5 step 3; BUILT `edaba249`, v1 LADDER-VALIDATED 2026-07-11)
-
-> **Ladder verdict (4 soaks, ~8h, build `edaba249`, zero crashes):** (1) isengard 4v4 A/B — the
-> room-20 over-the-hill door fixation BROKEN (87% of entrance-seeks OFF → 4% ON), lattice follower
-> engaging on blocked legs (0→9), outdoor stucks −22%, ENTRY commits +67%; still 0 picks (interior
-> flag delivery = separate frontier). (2) **bedlam MANDATORY gate PASS** — Apparition 7.3 caps/rnd
-> @67% conv (gold 7.9), Plutonium in band, no outroute-collapse fingerprint anywhere; Polaris
-> attempt rate soft vs the 2-team Jul-5 baseline (2/rnd vs 4-5/rnd at 6 bots) with healthy
-> conversion — WATCH item, not a collapse. (3) fellowship 9/9 normal bands; the composer's first
-> 4 live plans (shirebaggins, doorsofmoria) composed clean — 0 rejects, 0 monotone stalls.
-> (4) bside normal; 143 composer REJECTs on batteriesincluded = CORRECT fail-open (glass-maze goals
-> with neither interior route nor terrain path; negative-cache held cost to ~2.4 composes/min).
->
-> **v2 (sequenced next, operator direction 2026-07-10): cost-comparison route choice.** v1 composes
-> only when NO interior route exists — a carrier never chooses the valley when the corkscrew
-> exists (isengard's bases are interior-connected, so v1 is a no-op for its carriers). v2 composes
-> BOTH and takes the cheaper — one comparison, since both sides now produce commensurable costs.
-> This is also the seam the §3.6 flanking hook plugs into: flanking = the same route choice with a
-> tactical cost term (LOS exposure), a parameter rather than a new system. Needs its own A/B
-> (changes route choice on maps where v1 was a strict no-op).
-
-**Goal.** Cross-terrain objective legs (interior→terrain→interior: isengard flag runs, bree
-carrier returns, bedlam entrance approaches) get PLANNED routes instead of beelines. This is the
-last missing tier of the single spatial authority and the sole blocker on the zero-capture terrain
-maps (isengard 718/731 outdoor stucks = entrance-seek beeline miss; isle conversion 6% chronic =
-carriers lost flying home).
-
-**Substrate verified ready (2026-07-10):** isengard region 1 lattice = 4096+ nodes, **1
-component**, bbox spans the valley conflict cells (~x2144,z1920 inside x[1789,2623]×z[1442,2672]);
-bree = 1893 nodes, 1 component. No lattice-extent work needed first — the around-routes exist in
-the graph today; nothing consults them at plan time.
-
-**Engine alignment.** BOA itself already models terrain regions as extra rooms
-(`BOA_cost_array[MAX_ROOMS+MAX_BOA_TERRAIN_REGIONS][]`, `BOA_INDEX(x) = Highest_room_index+1+r`,
-`BOA_connect[region][] = {roomnum, portal}` door table, region from a cell via
-`TERRAIN_REGION(CELLNUM(roomnum))`). Our `BotRouteDijkstra` (bot_steering.cpp:1115) searches
-interior portals only. Piece 1 does NOT rewrite that Dijkstra.
-
-**Design: hierarchical composition (HPA\*-style), not node-space surgery.** A cross-terrain route
-is a 3-segment plan composed from parts that already exist and are individually validated:
+Dijkstra (`BotRouteDijkstra`, bot_steering.cpp:3339) over the **interior** room graph. Edge cost:
 
 ```
-[interior: bot room → exit door E]  [terrain: E → entry door B over region lattice]  [interior: B → goal]
-        BotComputeRoute                GetOutdoor(r) ThetaStar path length              BotComputeRoute
+edge = BOA_cost_array[r][p] + BOA_cost_array[nr][cportal]   // forward + reverse: reproduces BOA when the rest is 0
+     + BotPortalRouteCost(r, p, allow_disagree, hull_phys)  // static geometry, hull tiers, DISAGREE (bot_steering.cpp:294)
+     + BotPortalDynPenalty(r, p)                            // runtime obstacles (§4.6)
 ```
 
-- **Trigger:** goal-issue when bot and goal rooms have no finite interior route
-  (`BotComputeRoute == -1`) OR one endpoint is outdoors — today's beeline-fallback branch in
-  `BotSetRoutedGoal` (bot.cpp:~2128) becomes the composer's hook. No change on maps where interior
-  routes exist (indoor pool untouched — the regression guard).
-- **Door-pair selection:** enumerate candidate (E, B) pairs from `BOA_connect[region][]`
-  (per-region door count is small). Score = interiorCost(bot→E.room) + latticeCost(E→B) +
-  interiorCost(B.room→goal). Interior terms = `BotComputeRouteCost` (wind/glass/geo/penalty-aware
-  — the `outtier` cost model, already validated for entrance choice). Lattice term = **Theta\*
-  path length over the region roadmap between the two door approach points** — the honest
-  around-the-hill cost (Euclidean lies in exactly the isengard case: over-the-hill chord vs
-  valley route). Door-pair lattice costs cached per region per roadmap serial (lazy).
-- **Bot/goal outdoors:** the outdoor endpoint replaces its door with the position itself
-  (lattice cost from bot pos / to dropped-flag pos); degenerate cases (both outdoors same region)
-  collapse to a single lattice segment.
-- **Execution, per segment:** interior segments = existing wp/seam/hop machinery unchanged.
-  Terrain segment = region-lattice following (the `outroute` delivery skeleton — string-pull the
-  Theta\* path, waypoints advance at goal-completion cadence) under the two §7.0 staged-block
-  correctness rules: **(1) coverage-verified FOUND** — the string-pull must reach within R of the
-  target approach point at PLAN time or the plan is rejected (never "best-effort toward": the
-  orbit class); **(2) monotone progress** — every handed-out waypoint strictly shrinks distance
-  to the segment target, else release and replan the segment ONCE (rate-latched). Beeline
-  pre-check retained: a hull-clear straight line to the segment target skips lattice-following
-  entirely (mysterious_isle/open-terrain guard — the bedlam-collapse lesson: never
-  lattice-follow when the beeline is fine).
-- **Arrival at B:** existing entrance stage (`entry` standoff + commit, validated) unchanged.
-  Carriers and escorts ride automatically (both route through `BotSetRoutedGoal` — closes the
-  known `!follow`-dead-outdoors gap).
+Matching BOA's forward+reverse convention is deliberate: with the other terms zero, the router reproduces
+`BOA_GetNextRoom`; it diverges only where geometry or a runtime penalty genuinely differs.
 
-**Staging.** Toggle **`$nav troute`** (terrain-route tier), default ON, owns the composer and follower
-path outright. The superseded default-off `outroute` lever was removed in 0.9.11; its delivery helper
-remains as troute-owned code. Plan state
-per bot: {exit door, entry door, segment index, region path handle}; invalidated on goal change,
-death, or roadmap serial bump.
+**The pass ladder** (`BotComputeRoutePasses`, bot_steering.cpp:3491), first success wins:
 
-**Not in v1 (sequenced):** grate-route awareness (operator-confirmed natural isengard entry
-through the blastable grate tunnels: finite grate cost at the door-pair layer, analogous to 0.9.6
-glass — increment 2); region↔region terrain edges (multi-region maps; none in the current gate
-pool); replacing `BotResolveOutdoorEntrance` (the composer subsumes it when troute is ON, but the
-resolver remains the fallback path).
+1. **Strict:** doors that are probe-clear for this bot's hull, plus (for a kinetic bot) vertical panes priced as
+   glass (§4.5). A TIGHT door that is the only door of a room it joins is priced here at +40 (§4.4).
+2. **DISAGREE last resort:** also admits engine-passable portals our probe rejects, at
+   `BOT_PORTAL_DISAGREE_PENALTY` 120, and other TIGHT doors whose crossing radius this ship's wall sphere fits. Never
+   admitted here: NEVER-class portals (walls, wall-backed windows, openings narrower than the hull), locked doors,
+   `PF_BLOCK` / `PF_TOO_SMALL_FOR_ROBOT`, and a DISAGREE portal into a room a strict parallel portal already reaches.
+   This pass replaced the reverted blanket demotion (L8).
+3. **Sole glass:** any pane, including horizontal vents, for a kinetic bot (§4.5).
 
-**Validation gates (defaults env, instrument-first):** (a) isengard 4v4 A/B troute off/on —
-entrance-miss share of outdoor stucks (baseline 718/731) collapses, leg distances shrink
-monotonically, first picks/caps; (b) bree carrier returns (ground-pin count); (c) **bedlam
-Polaris/Plutonium no-regression soak is MANDATORY before any default-on ships** (outroute v1 died
-here: 0.9.3 gold = Polaris 15.6 caps/rnd, conv 56–69%); (d) mysterious_isle conversion (6%
-chronic baseline) as the open-terrain guard; (e) fellowship gate unchanged.
+**Interior only; shell rooms are not expanded.** A structure's `RF_EXTERNAL` shell touches every one of its terrain
+doors. As a graph node it let "interior" routes leave by one door and re-enter by another at BOA's across-the-shell
+price (Isengard's room-20 re-acquire loop). `BotRouteDijkstra` does not expand a shell room unless it is the goal
+(`d57755b1`). A crossing of open air is a troute plan or, failing that, the engine's path.
 
----
+Returns the next room, or **-1 when no pass finds a route**: the caller hands the engine the far goal. The router can
+lengthen a route but never strands a bot. No result cache (costs are dynamic); a run is microseconds and runs on
+room advance. The glass mode is per bot and never cached; the geometry caches stay bot-independent.
 
-## 4. Steering layer — the engine plus thin overrides
+### 4.2 The portal model (0.9.14, slices 1-10)
 
-The engine owns steering. Our only touches:
-- **Face-travel aim (indoor).** `BotUpdateAimDirection()` faces the bot along `movement_dir` (its
-  travel direction) rather than locking `fvec` on a far enemy, so thrust/afterburner drive it along
-  the engine path. Paired with the **AB facing gate**: afterburner is suppressed when `fvec` diverges
-  from `movement_dir` (don't afterburn into a wall while turning).
-- **Goal-room selection / explore.** `BotDoExploreRoaming` samples reachable rooms
-  (`BOA_GetNextRoom != BOA_NO_PATH`, filters `BOAF_TOO_SMALL_FOR_ROBOT`), favors unvisited/uncrowded
-  rooms (visited-room memory), and — in objective modes — defers to the router (§3.4).
-- **Intra-room via-point detour (Phase 12).** When the hull-radius line to the engine's *current
-  path node* is blocked by a free-standing interior face (glass cover, pillar, ledge — the §2.5
-  blind spot), a side-committed via-point with clear LOS to both the bot and the target is delivered
-  as an `AIG_GET_TO_POS` sub-goal (`BotViaPointTick`); the engine path-follows to it, then resumes
-  the real target. Sealed same-room powerups are abandoned + blacklisted after
-  `BOT_VIA_SEALED_TICKS` failed via searches, and powerups in sealed rooms (every entry portal
-  geo-impassable) are never selected (`BotRoomSealedForShip`). Still never writes `movement_dir` —
-  a finer-grained waypoint, not a steering layer. Details in §7.
-- **Stuck recovery.** Room-progress timeout (`BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT`, displacement-based
-  so big-room crossings and open-terrain flights aren't false positives) → bump the failed portal
-  (§3.3) and pick a new destination; escalation forces a physical escape. ⚠️ The escape portal pick
-  in `BotApplyThrust` is still **goal-blind** (§7).
-- **Outdoor (`$terrainsteer`, default on).** Indoors the engine handles everything. Outdoors the
-  fork adds a terrain layer (sky-flatten on the **Y** axis — Y is up in this engine; the engine's
-  own `AIF_BIASED_FLIGHT_HEIGHT` altitude regulator is gated to `AIT_BIRD_FLOCK1` and never runs for
-  our `AIG_GET_TO_POS` followers). The router is interior-only and does not touch outdoor routing.
-  This layer is the **outdoor spatial-awareness model — see §4.1.**
+**A portal is not one point and a wall is not a door.** Before 0.9.14 every layer used the portal's vertex mean (the
+engine's point) and filtered walls only in the router. On Batteries Included 248 of 1041 portals were walls or too
+small and 207 were panes; they ate the skeleton cap, polluted coverage, and were legal roadmap exit goals.
 
----
+**`BotPortalClass(room, portal)`** (bot_steering.cpp:573), cached per level, flushed with the geometry caches:
 
-## 4.1 Outdoor navigation (Phase 8.1) — engine 3D steering + entrance redirect
-
-**The engine already steers in full 3D.** For an `AIG_GET_TO_POS` goal, `AIMoveTowardsPosition()`
-(`AImain.cpp:1792`) sets `movement_dir = normalize(goal_pos − obj->pos)` — a goal 150u up yields a
-direction that points **up**. There is no terrain/ground bias for normal goals (`AIF_BIASED_FLIGHT_HEIGHT`
-is flock-only and never set on bots). So outdoors the engine flies a bot straight at whatever 3D point we
-give it. Our job is only **(1) don't mangle that direction, and (2) hand it a *reachable* target.**
-
-**Two things go wrong — both about the target, not the steering:**
-- The engine can't *path* across terrain (no path nodes outdoors → it beelines to `goal_pos`). Aim it at a
-  structure room's center and it beelines into the wall (post) or the ground above a buried shaft room.
-- A multi-door structure (a post has a door per side) — aim at the wrong/far door = into the wall.
-
-**The redirect (`BotResolveOutdoorEntrance`, `bot_steering.cpp`).** When an outdoor bot has a structure
-objective, resolve the terrain-facing **near door** leading to it and aim the `AIG_GET_TO_POS` goal at
-that portal's `path_pnt` (the engine's designer-placed transit point — reachable, unlike the wall-plane
-`face_center`). Door resolution from the engine's own `BOA_connect[region][]` table (structure room +
-terrain portal): **direct** when the objective is terrain-adjacent (posts); else the **min interior-path-
-cost** entrance (`BotEstimatePathCost`) = the surface **pavilion** atop a shaft. Among that room's doors,
-pick the one whose `path_pnt` is **nearest the bot**. The engine then flies the full-3D approach; once the
-bot is inside (`OBJECT_OUTSIDE` false) the interior router owns the shaft descent / post interior. Gated by
-`$terrainsteer` (`Bot_terrain_steering_enabled`): `off` = raw engine (room-center goal), `on` = redirect.
-
-**No sky-flatten, no soft AGL cap (deleted).** Outdoor steering is simply the engine's un-flattened
-`movement_dir` decomposed into thrust. The old `BotFlattenSkyDirection` (zeroed `dir.y()`) and the
-ground-relative AGL-200 cap were band-aids for the **flow-field steering layer deleted in Phase 10** —
-they only survived to harm: flattening the engine's correct +Y is exactly what pinned bots at the base of
-elevated entrances. The **real** altitude rails remain: the absolute `Ceiling_height` cap + hard-recovery
-(`BotApplyThrust`) and the `OF_FORCE_CEILING_CHECK` collision (`physics.cpp` adds `FQ_CHECK_CEILING`),
-which physically halt the bot at the ceiling regardless of thrust. Every outdoor goal is a bounded target
-(objective entrance, explore `BOA_connect` point, HUNT/powerup object, or WANDER's bounded-Y terrain
-point), so nothing pushes a bot skyward with no destination — sky-flying cannot recur absent the deleted
-flow field.
-
-**Mode-agnostic.** Keys off `BotGetObjectiveRoom` — CTF / Hyper-Anarchy / Hoard / Monsterball all benefit;
-Entropy gains it once it has an objective-room hook. All changes are bot code (no engine files).
-
-**Deferred — ridge handling / outdoor anchor graph.** The engine avoids walls, not bare terrain ridges, so
-a hill between bot and target on an extreme map is unhandled (pre-existing, not regressed here). The terrain
-analog of the skeleton — nodes = entrances + sampled terrain waypoints, edges = heightfield-LOS-clear legs,
-cached per level — is the route-around tier; build only if a real map proves over-the-top flight is
-ceiling-blocked.
-
----
-
-## 4.2 In-room navigation on BNode-less custom maps (Phase 12.4 reach-door + 12.5b pseudo-BNodes)
-
-> **[FALLBACK SUBSTRATE — 0.9.3].** Since 0.9.4 the volumetric roadmap (§3.5) is the primary
-> in-room substrate; this layer serves degenerate rooms (roadmap culls to near-empty /
-> disconnected) and the `$gridnav off` A/B baseline. It is deleted together with its toggles at
-> Stage 4 (§7.0 roadmap). Kept documented until then — it is still live code.
-
-**Why a separate layer.** §2.2: the engine's in-room waypoints (BNodes) are baked into the level file only —
-MP maps never carry them, and runtime *engine* BNode generation was **tried and reverted** (§8: it
-displaced the working crude-BOA path, broke the skeleton's foundation, and demanded cascading engine
-edits). Without BNodes the engine threads a room with just its `path_pnt` + portal points, which fails
-outright in **buried-center / no-clear-portal-leg** rooms (Bree's tavern: 1820 faces, unreachable
-bbox-center `path_pnt`, 2 portals with no clear leg between them → 703 via-search-fails). So we build the
-missing in-room waypoints **in our own skeleton**, on top of crude-BOA, never touching the engine.
-
-**Pseudo-BNode interior waypoints (Phase 12.5b — `Bot_pseudo_bnodes_enabled`, `$pseudobnodes`, `SkelBuild`).**
-The portal skeleton (§4) connects only *portals* with hull-clear legs; in a room where two portals have no
-direct leg it has no edge and the bot is stranded. So when `SkelBuild` finds a disconnected portal pair, it
-synthesizes **interior nodes** and connects them, giving the Pass-3 BFS a multi-hop route *around* the
-obstacle:
-- **offset nodes** — one per portal, pushed off the portal face into the room (`path_pnt + face_normal*k`,
-  the engine generator's trick);
-- a **portal-centroid node** — lands in airspace for bent/L/convex rooms even when the bbox-center
-  `path_pnt` is buried in solid (precisely why the engine's center node stranded there).
-
-**Hull-aware** is the crux: pseudo-node edges are tested at the real ship hull (`BOT_PSEUDO_BNODE_RADIUS`
-≈ 6.0, hull 6.676), so we never synthesize an unflyable edge — the exact mistake (`max_rad 5.0`) that sank
-the reverted engine generation. It is **purely additive**: nodes appear only in disconnected rooms, the
-existing portal edges are untouched (no regression on rooms that already routed), and an isolated
-pseudo-node simply gets no edges and is ignored. Each hop is delivered through the same `AIG_GET_TO_POS`
-channel and governed by the same chain-cap → suspend → reroute machinery. This is the bot-code realization
-of the in-room waypoints the engine won't generate — the principled replacement for the reverted engine
-BNode generation. **Staged:** Stage 1 (offset + centroid, shipped) cracks bent/L/multi-portal rooms;
-Stage 2 (off-axis interior sampling) is a follow-up only if buried *central-obstacle* rooms still stall.
-
-**Reactive reach-the-door fallback (`Bot_reach_door_enabled`, default on, `BotFindViaPoint`) — the backstop**
-for when even the pseudo-bnodes find no hull-clear interior route. When the skeleton knows the egress portal
-toward the goal (`exits`) but finds no clean path to it, *in a `RoomBuriedCenter` room*, commit the bot to
-the **nearest egress portal's `path_pnt`** anyway and let the engine's wall-avoidance grind it to the
-threshold; crossing it = progress. It is a **goal waypoint (`AIG_GET_TO_POS`), never a steering force** — so
-it complements the engine's one controller and is categorically unlike the reverted flow/potential-fields
-(§8, Phase 7). Marked as a skeleton hop, so the existing **chain-cap → suspend → room-progress-timeout →
-dyn-bump → reroute** machinery governs it: a bot that keeps reaching the door region without crossing
-reroutes around the room (if an alternate exists), or — if it's the only way out — keeps trying, never worse
-than the churn it replaces (which it also silences, returning `FOUND` instead of `NONE`). Genuinely
-unsolvable rooms (no alternate route + no reachable door) are a map defect no nav layer fixes.
-
----
-
-## 4.3 Outdoor lateral go-around (Phase 12.6 — `$outdoorvia`)
-
-> **[FALLBACK SUBSTRATE — 0.9.3].** Since 0.9.4 the outdoor roadmap (§3.5) replaces the
-> connecting graph as the primary outdoor go-around; this layer is the `$gridnav off` fallback,
-> deleted at Stage 4 (§7.0 roadmap).
-
-§4.1 redirects an outdoor bot's goal to the near structure entrance and lets the engine fly the straight 3D
-approach. But on an *urban* outdoor map (Town of Bree) the buildings' exterior walls form alleys and
-courtyards, and the engine's straight line + grazing wall-avoidance **pins the bot against a facade** (or,
-with the **low invisible ceiling** blocking over-flight, wedges it high in a wall-and-ceiling corner). The
-via go-around was indoor-only (`OBJECT_OUTSIDE` early-returns in `BotFindViaPoint` / `BotViaPointTick`).
-
-**Stage A — lift the gate + a ceiling-aware *reactive* detour.** Outdoors we now run the same ring search
-(`BotFindViaPoint` passes 1–2): when `bot→goal` is blocked, sweep ±side/±up candidates for a clear lateral
-via and commit to it (the existing `AIG_GET_TO_POS` + chain-cap/suspend machinery). Two outdoor specifics:
-- **Ceiling-aware probe** — outdoor `ViaSegmentClear` calls set `FQ_CHECK_CEILING`; `HIT_CEILING` counts as
-  blocked. So *over-the-top* candidates fail under a low ceiling and the search resolves **laterally** —
-  around the footprint, in the ground↔ceiling band. (Indoor probes never pass the flag, so the global
-  ceiling plane can't false-hit a room above it.) No sky-fly guard — the engine handles vertical itself.
-- **Entrance approach offset** — target the door's `path_pnt - face_normal*k` (a clean point *out* of the
-  structure), so the final leg isn't into the facade/open-door obstruction the bot pinned behind.
-
-**Since 2026-09-19 (one outdoor dispatch, §7.0) it is no longer a via tick on structure-bound legs:**
-`BotSetRoutedGoal`'s outdoor branch asks `BotFindViaPoint` as a plain query — after the ENTRY push, the straight
-standoff leg and the lattice waypoint have all declined — and issues the answer as that leg's aim; the explore ladder's
-entrance-seek copy and its en-route maintenance (`oa_steer_pos`/`oa_steer_room`) are gone. The committed via tick still
-serves terrain-to-terrain targets (pursuit, item chases, escort). Pass 3 (the room portal
-skeleton) stays indoor-only — outdoors `obj->roomnum` is a terrain cell, not a room index. Toggle
-`$outdoorvia` (default ON); bot code only, so indoor nav can't regress.
-
-**Stage B — the outdoor connecting graph (`$outdoorgraph`, default ON).** Stage A's reactive ring is
-single-hop and local: its candidate via must *see* the target door, so when a whole structure occludes the
-door the ring returns NONE and the bot pins (the 2026-06-20 soak showed a bot spending an entire ~10-min
-round seeking one entrance it never reached, and `towerofisengard` TOTAL_BREAKDOWN — 0 caps, 327 entrance
-misses). Stage B is the global planner — the outdoor analog of the room skeleton (§4.2). Cached per terrain
-region (`OGraphBuild`), its nodes are:
-- **Entrance approach points** — one per `BOA_connect[region]` door, offset out of the face (the same point
-  Stage A aims at). These are the BFS *targets*.
-- **Perimeter anchors** — the 4 horizontal bbox corners of each unique structure room, pushed out by a
-  margin into airspace at mid-height (capped under `Ceiling_height`). These let the BFS route *around* a
-  footprint to a door on its far side.
-
-Edges are hull-clear **and** ceiling-capped (`ViaSegmentClear` + `FQ_CHECK_CEILING`, startroom = the
-terrain cell under the node). A node buried in a hill/wall or above the ceiling simply gets no clear edge
-and is ignored — self-cleaning, like pseudo-bnode synthesis. `BotOutdoorGraphHop` finds the entrance node
-nearest the resolved door, then BFS's outward from it over the edges and returns the first bot-visible node
-as the via — the bot-adjacent node on a shortest route around the building. It's wired as a new pass in
-`BotFindViaPoint`'s outdoor branch, *after* the reactive ring (cheap near-detour first), marked
-`skeleton_out` so the same chain-cap → suspend → reroute machinery governs the multi-hop chain. If the bot
-already sees the door, the graph defers (the ring/beeline flies the final approach). Toggle `$outdoorgraph`;
-bot code only. `$navdump` emits the per-region graph (`outdoor_graph[]`); `visualize_navdump.py` draws it
-(magenta squares = doors, yellow dots = perimeter anchors, magenta lines = go-around edges).
-
-**Soft-hop bridge across disconnected graphs (Phase 12.7 — `$navbridge` / `$softfollow`, default ON).** Both
-the indoor skeleton (§4.2) and the outdoor graph above fragment on real maps — a free-standing divider splits
-a room's portal sub-graphs (khazaddum 20/31), or buildings split the region graph into components (townofbree
-= 11 components, 7/13 doors reachable). The BFS then dead-ends and the bot pins. The fix is the user's: *a
-crude connection that doesn't build more graphs — stop adhering strictly to node points.* When the BFS can't
-reach the target, **return the best node TOWARD it as a soft progress hop** and let the engine's avoid-walls
-thread the gap (indoor: the §4.2 reach-the-door fallback, generalized from buried-only to all 2-component
-rooms; outdoor: `BotOutdoorGraphHop` returns the bot-visible node nearest the target door instead of failing).
-Marked `skeleton` so chain-cap → suspend → reroute bounds it — it makes progress or reroutes, never grinds
-forever. No graph edges are synthesized (a hull-gated bridge adds nothing; an ungated one aims into walls).
-Companion loosening (`$softfollow`) was tried — `BotViaPointTick` dropping a committed detour the instant the
-straight line to the target re-cleared — and **REMOVED**: it fired inside the commit window, so the target
-line flickering clear/blocked as the bot moved laterally past an obstacle caused release→recommit
-**oscillation** (2026-06-21: via-arrival 73%→18% on the connected darkjourney, recovered to 65% once removed).
-A real rigidity fix must be non-oscillating (release-once-*after-passing*), not target-line flicker (§7.0
-ledger). The soft-hop bridge above is the routing-layer realization of "complement BOA, don't fight it" (§8):
-we only ever set the engine's goal — and it correctly respects the commit window (no circling). Its soak
-verdict is a **partial** win — it ends the dead-pins but not yet the crossing (§7.0 #1).
-
----
-
-## 5. Diagnostics
-
-`$botstat [index|all]` prints, per bot, a status line and a nav line:
-```
-nav: dest_room=5 num_paths=1 path=0/3 mdir|0.98| ahead:WALL d=12.3 solid=0 portal=1 \
-     route:goal=19 dijkstra=3 boa=24 [DIVERGE] gcost=40 intent:room=19 owner=explore held=8.4s
-```
-- `dest_room` = current waypoint; `num_paths`/`path` = engine path-follower state; `mdir|x|` =
-  `movement_dir` magnitude; `ahead:` = forward probe (clear / WALL+solid+portal / TERRAIN / OBJ).
-- `route:` = the router's next hop (`dijkstra`) vs the engine's BOA hop (`boa`); **`[DIVERGE]`** when
-  they differ; `gcost` = geometry cost of the chosen portal (`1000000` = impassable).
-- `intent:` = final travel room, deciding owner, and uninterrupted hold time. `dest_room` remains
-  legacy waypoint/explore bookkeeping and is not the persistent-intent destination.
-
-**Validation gate:** `[DIVERGE]` should appear **only** where `gcost>0` or a dynamic penalty is
-active. DIVERGE at a wide-open portal (`gcost=0`, no penalty) means the base cost isn't reproducing
-BOA — a bug (the router would be silently overriding BOA everywhere), not a feature.
-
-**Roadmap / console surface (0.9.4–0.9.5):**
-- **`$nav`** (bare) — live toggle table; `$nav <name> on|off` flips one; `$nav dump` = `$navdump`.
-  All pre-0.9.5 flat names remain hidden aliases. Watch the near-collision: **`$nav bridge` = the
-  0.9.4 corner bridge (`$gridbridge`); `$nav softhop` = the OLD 12.7 `$navbridge` soft-hop.**
-- **`$navdump`** — emits per-room roadmap node/edge/component counts and the per-region
-  `outdoor_roadmap[]` alongside the legacy `skel_*` fields. Format changes → update
-  `D3_PYRODECK_SPEC.md`.
-- **`tools/visualize_navdump.py`** — draws roadmap nodes colored by component + edges (distinct
-  from the legacy cyan pseudo-bnodes); an outdoor shell colored one component across a wall's
-  flyable side = connected go-around coverage.
-- **`tools/analyze_bot_log.py`** — hard-pin / via-arrival / BLOCKED-order metrics are the A/B
-  scorecard across substrate versions.
-
-**Footprint discipline (2026-07-18):** per-tick code paths must never emit unconditionally — log
-on **state change** (dedupe against the last-emitted value) or through a self-healing `Gametime`
-throttle. The carrier-objective line violated this and single-handedly wrote ~90% of a 237 MB
-overnight log. A full verbosity-tier + event-vocabulary consolidation is registered in §7.2
-(post-0.9.8).
-
----
-
-## 6. Invariants (don't regress these)
-
-1. **Never write `movement_dir`** or otherwise hand the bot a custom steering vector. Routing returns
-   a room (or, outdoors, redirects the goal to a reachable entrance `path_pnt` — §4.1); the engine
-   steers in 3D toward it. **Bounded exception** (where the engine genuinely cannot steer): the
-   flag-carrier home beeline decomposes a direct vector into thrust axes — never writing `movement_dir`,
-   gated to carrier-in-home-room, off everywhere else.
-2. **Routing failure must fall back to the engine**, never strand. `BotComputeRoute` returns -1 →
-   feed the far goal.
-3. **Geometry/obstacle verdicts are soft costs only** — never mutate engine portal/BOA flags.
-4. **Stay out of non-objective modes.** Anything gated on `BotGetObjectiveRoom()` is automatically
-   inert in anarchy/team/robo/coop; keep new routing behavior gated the same way unless deliberately
-   global, and verify it.
-5. **Proven-before-prune / proven-before-default.** Behavior changes land under `-dev`, validated on
-   the test rotation (abend2 glass, SewerRat tunnels, an open map, anarchy/team) before the suffix is
-   stripped. The Phase 8.1b revert is the cautionary tale.
-6. **Hull radius is real.** Probe and edge at the true ship hull (6.676 / `BOT_ROADMAP_CLEARANCE`
-   6.7) — never below it (the reverted bnode-gen `max_rad 5.0` routed bots through gaps they don't
-   fit), and never inflate it into a "safety margin" (the 8.0 clearance falsely fragmented rooms;
-   the engine's avoid-walls owns flight safety).
-7. **Our layer only; never displace the engine's working path.** Feed `AIG_GET_TO_POS` waypoints;
-   never touch `BNode_allocated` or the engine's path build (the BNODE-gen revert, §7.0 ledger).
-   Keep a working fallback substrate live behind a toggle until its replacement passes its gate.
-
----
-
-## 7. Open problems (roadmap)
-
-### 7.0-CURRENT Roadmaps build in slices; the via layers still pick their own door — 2026-09-20 (branch `fix/outdoor-0915`, in gate)
-
-Not a routing change, but it changes WHEN the routing substrate exists, so it lives here. Full record: `BOTS_DEVEL.md`
-2026-09-20; rules for touching it: `BOT_DEV_REFERENCE.md`, "Frame time / sliced roadmap builds".
-
-- **A room's roadmap is no longer built the moment it is first asked for.** Builds run on parked worker threads used as
-  coroutines, a few milliseconds per server frame, fed by a level-start prewarm of every room (terrain regions first) and
-  by on-demand requests that jump the queue. Until a room's roadmap is published `Get()` answers nullptr and the bot
-  flies that room by the skeleton, exactly as it does in a room whose lattice is degenerate. On Isengard the whole level
-  is ready ~35 s after the first bot spawns; in DownTown's halls it takes minutes and the skeleton carries play meanwhile.
-  A terrain region pending means no terrain leg prices for a few seconds (`troute REJECT` at level start, retried in 10 s).
-- **The prewarm builds rooms no bot has ever entered**, so it reaches geometry nothing else has: HAVOC level 6's
-  ground-plane slab runs 38 u past the terrain grid, and a sweep from there crashed fvi. `ViaSegmentClear` now refuses a
-  sweep with an endpoint off the grid on any level that has an outdoors (OBSTACLE_GEOMETRY terms: off-grid = not a place).
-- **Query costs that were hiding in the frame time are gone** (attach nearest-first, wide-hull edge verdicts cached, Theta\*
-  and its sight lines memoised): same answers, and `[Perf]` lines now say which subsystem made a frame long.
-- **Open, found today (PLAN §4.0.1 Q12):** the composer, the roadmap via and the skeleton chain choose a door into the NEXT
-  room from `AimExitMask`, nearest first, without knowing where the route goes after that room; the router's
-  two-hop door pick is not theirs. Sigma Base's hub rm13 shows it cleanly (`AIMSPLIT`, then a chain out of the door behind
-  the bot). One mind says the router's door is the via layers' door.
-- **Sigma Base class, first wall down:** an attacker with no interior route to the enemy flag gets its errand anyway and
-  the terrain plan owns the trip (bedlam regression pair read flat 2026-09-20; unconditional).
-
-### 7.0-PREV Outdoors: the lattice above ground, one dispatch, and the errand's last leg — 2026-09-19 (branch `fix/outdoor-0915` = `d57755b1`, in soak)
-
-**Findings (operator's 2026-09-18 flight + same-day probes, renders and arms; BOTS_DEVEL 2026-09-19).**
-
-1. **The outdoor region lattice must be tested against the heightfield, not only swept.** Terrain collides from above
-   only (OBSTACLE_GEOMETRY §4ba): a sweep that starts under the surface is clear everywhere, so a handful of cells
-   admitted below ground become thousands, each linked up through the surface to the real cells. Tower of Isengard:
-   6811 cells, 916 real. Routes ran under the valley and bots were handed waypoints under their feet or inside the
-   tower shell — the whole "valley pin" class. Admission rule: a cell on a SOLID terrain segment stands hull clearance
-   above `GetTerrainGroundPoint`; `TF_INVISIBLE` segments (Town of Bree's sunken streets) are exempt.
-2. **One outdoor dispatch.** Every trip from terrain into a structure — carrier, objective errand, explore, last-known
-   chase — is issued by `BotSetRoutedGoal`'s outdoor branch, in one order: ENTRY push (only when the push leg is
-   hull-clear from where the bot is, or the bot is at the standoff) → straight leg to the standoff → lattice waypoint →
-   reactive rescue (rings, then the door-graph hop) as a plain query. The explore ladder's two private copies are
-   deleted; outdoor-origin explore is no longer a raw engine goal. This is PLAN §3.7 Phase 4's first cut: `outdoor-entry`,
-   `outdoor-leg` and the rescue are now stages of one issue, not rivals.
-3. **An ENTRY push shallower than the engine goal's arrival circle (~10 u) "arrives" outside the door** (Isengard's 20 u
-   pipe-mouth rooms): the goal's circle is shrunk to 2 u for such pushes.
-4. **Arrival in the objective room is not the end of the errand.** The last engine goal of a routed errand is the push
-   through the door; "hold on arrival" parked defenders and attackers in the flag room's doorway (Doors of Moria rm15).
-   CTF errands now fly their last leg: attackers touch an enemy flag that is at home in the room; everyone else takes
-   station by the flag (or the room point, never a buried-centre one) and holds within 40 u with the room-progress
-   clock at zero. This is the mechanism under the "arrival stall" correlation (arrival distance vs captures).
-
-5. **The room router answers for interiors only.** A structure's RF_EXTERNAL shell touches every one of its terrain
-   doors; as a graph node it let "interior" routes leave by one door and come back in by another at BOA's
-   across-the-shell price. That was Isengard's room-20 re-acquire loop (enter the pipe mouth, be routed straight back
-   out, be sent to the same nearest door again) and the reason troute's interior-vs-terrain comparison almost always
-   kept "interior". `BotRouteDijkstra` does not expand a shell room unless it is the goal; a crossing of open air is a
-   troute plan (door pair scored as interior + lattice + interior) or, failing that, the engine's path.
-
-**Measured: the indoor committee is quiet** — 5 indoor stuck escalations in 12 abend2 rounds, 6 in 12 bedlam rounds
-once the carriers "stuck" waiting at home are set aside, and no in-room voice over-represented at the ones that remain.
-§3.0's indoor collapse is code quality from here; it no longer gates play.
-
-**Not outdoor maps (do not list them as lattice defects):** Canyons CTF, DownTown — exterior portals at/above the flight
-ceiling, zero terrain presence.
-
-### 7.0-PREV The portal model, slice 10 — window onto a wall, and the door pick two hops deep — 2026-09-18 (merged into 0.9.15-dev as `fff9bc3c`)
-
-**Finding (Sigma Base control soak + the rm19 render + the split A/B; BOTS_DEVEL 2026-09-18).** Two more portal-model
-defects, neither a Sigma Base special case:
-
-1. **A portal can open onto a wall and still be "passable".** Sigma Base's flag rooms have six 20×20 invisible
-   portal faces onto their yard shells with a parallel slab 3.5 u behind them. BOA calls them passable, our 2.5 u
-   probe calls them impassable, the crossing search finds nothing — and the DISAGREE retry (the router's last resort
-   for grates and slits) admitted the yards as explore destinations: 23 yard trips in four rounds, every defender
-   escalation a window press 25 u from the flag. The blanket repair — "no validated crossing → not a door" — is
-   wrong: abend2's 18 DISAGREE portals and Isengard's slot portals have no crossing either and bots fly them.
-2. **The nearest door into the next room is the wrong door when that room is non-convex.** rm19's gallery is
-   interrupted by the bridge room rm13; a bot in the east half routing to the west exit flies into rm13, the
-   re-route from rm13 asks for the nearest door back into rm19 — the one behind it — and the pair oscillates once
-   a second (338 NOT-CROSSED rm19→rm9 vs 11 crossed). The room router is right (rm19 → rm9 is one hop); the door
-   pick had no idea which side of the room it was on.
-
-**What landed (geometry-gated, soaking).** `PortalWallBacked` — thin fvi rays (FQ_BACKFACE)
-from 1 u inside the room through the plane at the centre and halfway to each vertex; every ray blocked within
-`BOT_PORTAL_WALL_BACKED_DEPTH` (5 u) → `BotPortalClass` NEVER, and `BotPortalRouteCost` refuses DISAGREE admission
-for any NEVER portal (the four existing NEVER causes were already refused there by their own checks, so this changes
-only the new class). Navdump portal records carry `wall_backed`. `BotEntryPortalIndex(obj, wp_room, goal_room)` —
-candidate doors priced by the leg to them plus the leg to the nearest portal the route leaves the waypoint room
-through (`BotComputeRoutePasses` from wp_room to the goal; DISAGREE-inclusive, wind-checked, crossing points);
-nearest alone decides when the route ends in the waypoint room or the onward legs tie. Threaded through
-`BotWaypointAimPos` and the hop-commit site so the aim and the seam push still share one door.
-
-**Geometry gate (bot-free, three maps).** Sigma Base: 17 portals → NEVER (yards ×6, atrium windows ×3, rm14→7 ×3,
-rm24→25 ×3, rm38→39, rm5→6), network otherwise identical. abend2: 17 → NEVER — rm0 p5→rm20 (a 16 u slot never
-crossed in the control; rm20 is entered through rm5/rm21), fourteen 15×15 niches into one-portal rooms, rm50→33,
-rm53→8 — ring rm0 still one skeleton component (live 6 → 5), rm30/rm20/rm4 unchanged, split rooms +rm50 +rm53.
-Isengard: 5 — rm12 p3→rm13 (a hatch into a 3 u gap under rm2's floor, confirmed by `$nav probe`) and four 10 u slots
-already NEVER. No flagged face is rendered. **Open:** the soak verdict (Sigma yards/escalations/exit hops; bedlam
-4-team and abend2 regression gates); and Sigma Base attackers still have no reason to leave the bunker indoors —
-distance pricing fires only outdoors — which is the next question once the exits are measured.
-
-### 7.0-PREV The portal model, slice 1 — 2026-09-12 (0.9.14-dev)
-
-**Finding (cockpit + logs + a fresh navdump, same day).** The red flag room's door (rm84 p0 ↔ rm44
-p8) is the worst crossing on Batteries: 20-round telemetry run, hop-commit outcomes 417 crossed /
-158 not-crossed entering and 273 / 271 leaving; the operator watched a Blue teammate grab the flag and
-ram the door on the way out. From the red door's centre the room centre is not hull-visible; from the
-blue door it is — the whole Red/Blue asymmetry on a designed-symmetric map. Two general defects sit
-under it, and neither is a Batteries special case:
-
-1. **A portal is one unvalidated point** (`ComputePortalCenter` = vertex mean). Skeleton node,
-   lattice seed, the fit probe, the seam push (+25u toward the NEXT room's bbox centre, not along the
-   normal) and the hop-commit target all use it. A propped leaf that shadows the centre makes the
-   committed line unflyable while the gap beside it is open. Slice 2 (validated crossing segment)
-   owns this.
-2. **Solid walls are portals.** 248 of 1041 Batteries portals are walls/too-small, plus 207 panes.
-   The router filtered them; nothing else did. They ate the 32-node skeleton cap (rm3: 30 portals +
-   2 bends, its four usable doors in two components), polluted pair coverage (one never-connecting
-   wall seed put both flag rooms at 60% < 75% → composer refused), were legal roadmap exit goals
-   (nearest seed to next_room, no passability filter — from most of rm84 the wall twin is nearer
-   than the door), and made the LOS matrix / component census meaningless. **This is slice 1.**
-
-**What landed.** `BotPortalClass(room, portal)` — NEVER / DOOR (engine-passable, incl. the
-DISAGREE class) / PANE (intact breakable glass) — cached per level, flushed with the geometry
-caches. Consumers: `SkelBuild` (NEVER slots keep their index but carry no edges, are never bridged
-or counted; bridge pairs must include a DOOR; masks widened to 64 bits so hub rooms have bend
-budget), roadmap `Build()` (NEVER portals do not seed), `BotRoadmapFindVia` (exit goal from
-`BotAimExitMask`, the aim layer's admission), `routable` (a single-seed room has no pair to cover),
-the navdump (`class`, `skel_live`), the overlay (dead portals drawn grey). Two lattice repairs the
-change exposed: growth is rooted at the seeds, so a lone door seed ON the room's bounding face put
-a sample plane in the wall (rm84 123 → 3 cells under one phase, rm70/rm80 under the other) —
-`GrowFromSeeds` now grows under both the seed-centroid and a centre-anchored phase and keeps the
-fuller lattice; and a room still below the routable floor runs a **door on-ramp**: a bounded
-best-first search along the portal normal with the tangent fan on blocks (the SkelBridge frame),
-committing the string-pulled chain only if it gets 24u inside, then growing from it (rm80: 3 → 239
-cells).
-
-**Geometry gate (bot-free dumps, clean 971aa414 binary vs this build):** Batteries lattice cells
-11914 → 12749, repair connectors 2256 → 540, composer-eligible rooms 26 → 46, rooms with a split
-lattice 101 → 71, rooms whose usable doors are skeleton-disconnected 38 → 37 (rm3 fixed), no room
-lost eligibility, 3 rooms lost >25% cells while going from 2–6 components to 1. abend2: ring rooms
-0/30 byte-identical; the 1-cell vestibules 48/51 reach 8 cells and become routable (watch).
-Pre-registered for the play gate (4-round batteries vs the glass control, then abend2): rm84 → rm44
-NOT-CROSSED falls sharply, flag rooms produce roadmap/composed routes, Blue conversion above zero,
-HARD stucks not up.
-
-**Slice 1 play gate (4-round batteries, soak-20260912T211550 vs the 55a8d28f glass control):**
-Blue 8 grabs / 7 captures (88%) vs 1 / 0; Red 1 / 1 both arms; rm84→rm44 hop commits 1 crossed /
-0 failed vs 34 / 34; objective timeouts inside rm84 25 → 0; room 63 (the glass hotspot) 30 → 0.
-Cost: hard pins 70 → 143, guard FAIL on Hawk (29 of 29 pins in rm78, a pane-only pocket); the rise
-survives excluding him and has a shape — every new hotspot (78, 80, 28, 13, 8) is a room slice 1
-made composer-eligible, and the failure lines there are "picking new destination" (19 → 81) and
-no-route verdicts (48 → 131) at sealed/window rooms next door (78→79, 80→81, 28→30). That is the
-one-hop consumer plus errands to unreachable rooms, now exposed. Not reverted.
-
-**Slice 2 (landed, gated 2026-09-12 late).** `BotPortalCrossing(room, portal, &pnt, &depth)`:
-the door polygon sampled in its plane (inset-sorted grid, centroid first) with the hull sweep along
-the face normal at 24/16/8u either side; the most open clear point and its depth are cached per
-level and shared by both sides (computed on the lower room id). Consumers: the seam push-through
-(`seam_pnt = crossing - normal * clamp(depth, 16, 25)` — along the normal, not toward the next
-room's bbox centre), `BotEntryPortalIndex`'s nearest-door distance, the overlay marker, the navdump
-(`crossing`, `crossing_depth`, `crossing_ok`). **Measured and rejected:** using the point as the
-skeleton node and lattice seed — split rooms 37 → 44 and isolated doors 58 → 72 on Batteries, 5 → 8
-splits on abend2, rm84's lattice 123 → 6 cells (its seed moved 10u and the grid phase followed).
-The network keeps the engine point. Batteries: 592 of 792 live portals validated (all 200
-fallbacks are intact panes, a wall to the sweep by definition); rm84's door point moves 10u into
-the strip beside the leaf at full depth. Lattice growth now tries three phases (seed-centroid,
-centre-anchored, half-pitch shift) and keeps the fullest: cells 12749 → 14300 on Batteries, 4188 →
-4234 on abend2, skeleton byte-identical, no room worse.
-
-**Slice 5 (landed with slice 2).** The explore sampler validates candidates with `BotComputeRoute`
-(the engine's BOA admits intact glass and skybox windows); objective items get
-`BOT_OBJECTIVE_BLACKLIST_DURATION` (5s) instead of 60s on the sealed and chase-timeout paths; the
-sealed line names the item. Play gate: 4-round batteries vs the slice-1 arm
-(`batteries-portal-s125-4rnd.json`).
-
-**Slices 1+2+5 play gate (soak-20260912T222538 vs the slice-1 arm, 4 rounds each).** Blue 10
-grabs / 4 captures (40%) vs 8 / 7; Blue carrier deaths 5 vs 1, all 340-1093u from home in
-hallway rooms (44, 45, 241, 305, 43) with Red returning its flag five times — interception, i.e.
-Red's defenders now hold, not a navigation loss. Red grabs 0 vs 1. Hard pins 143 → 122 (guard
-FAIL on Hawk again, this time 47% of the DECREASE: his rm78 pins 29 → 0), no-route verdicts
-131 → 61, explore errands into skybox rooms 73 → 37 (the remainder was the sampler's neighbour
-fallback — slice 5b), sealed abandons 13 → 6. Red's side is the story: rm8 pins 44 → 61 with its
-only door at 0 crossed / 69 failed committed crossings, rm80 at 6 / 54. Both are shadowed-centre
-doors (rm8's validated point 10.5u aside at depth 16; rm80's has no straight column at all) and
-every hand-out site still aimed bots at the polygon centre — slice 2c below.
-
-**Slice 2c (staged).** The first slice-2 reading of rm8 (Red's supply room, 44 hard pins in the
-slice-1 arm) found its only door is a second shadowed-centre door: polygon centre blocked within 8u,
-validated point 10.5u to the side at depth 16, and its committed crossings ran 0 crossed / 34 failed
-under slice 1 (the glass arm barely needed a commit there). Every hand-out site still aimed bots at
-the centre: `BotResolveRoomAim` (np==1, BFS hop, soft hop), `BotSkelBuildChain`, `BotWaypointAimPos`
-(both forms), `QueryVia`, `ComposeUnionRoute`'s terminal. `SkelFlyPos` / `RoadmapFlyPos` substitute
-the crossing's NEAR point (the approach point just inside this room) at hand-out for a live portal
-node or seed; the seam push aims at the FAR point; graph and grid unchanged (the earlier node move
-split rooms). `BotPortalCrossingPath(room, portal, &near, &plane, &far, &bent)`: straight crossings
-have near/far on the normal (8u in, 16-24u through); a door with no straight column at any sample
-gets a BENT crossing — one lateral-fan step on each side of the plane (rm80's door still has none:
-its way in needs the multi-step on-ramp search, a follow-up). Failed committed crossings now log
-`from=`/`aim=`/`now=` positions. **Slice 3 — tried and REVERTED the same night:** bounding the
-corner-bridge vertex to the room box broke abend2's ring connectors 4 and 20 (a legitimate vertex
-sits just outside a small room through an open portal; room 20 fell to two components and lost
-eligibility). The correct fix is the sweep honouring back faces (FQ_BACKFACE), still open. **Slice 4 (staged):** the composed drive in `BotViaPointTick` runs in any
-`BotRoadmapRoomRoutable` room (or buried), gated on `!BotSegmentClear(bot, target)` — compose only
-when the straight line is blocked; `count >= 2`; the goal-issue ladder reads a live chain in ANY room
-(previously only buried), then the buried resolver, then the waypoint aim. **Slice 5b (staged):** the
-explore sampler's neighbour fallback filters NEVER portals and asks the router (rm80's four window
-portals onto skybox room 81 won that fallback as "unvisited": 11 errands in 1.5 rounds).
-
-**Completion arm (soak-20260912T233600, build 8d50e9f5, vs the 1+2+5 arm; guard PASS).** Blue 8
-grabs / 6 captures (75%) vs 10 / 4; carrier deaths 5 → 2; Red 0 / 0 both arms. Hard pins 122 → 98,
-no-route 61 → 36, "picking new destination" 46 → 14, chase timeouts 160 → 132. rm8 pins 61 → 25
-(its door: 0/69 → 0/17 committed crossings — bots now mostly cross without needing a commit), rm80
-25 → 13. Composed routes 1161 in 4 rounds (slice 4 live, previously 0 outside buried rooms);
-objective intents 63 death / 32 timeout / 69 arrival / 41 replacement — not the all-death stall of
-the earlier widenings. Remaining hotspots: rm12 (25), rm35 (24), rm8 (25), rm80 (13), rm63 (13).
-Two more gates found from the round-1 read and staged after: `BotEntryPortalIndex` and the
-stuck-escape chooser both admitted wall/window portals (the fit probe passes a skybox window; an
-external room is always "unvisited") — both now gate on `BotPortalClass`.
-**Red's zero grabs in four consecutive arms is the room-3 hub — and its "16 components" were a
-seeding artifact.** The bot-free dump shows ONE component of 290 nodes (all four doors, both rm12
-panes, every cell and connector) plus 15 singletons: the conference-room panes on the outer wall at
-x=2407, whose seeds sit IN the glass face and can never reach a cell. Pair coverage counted them
-(7% → not routable → the composer refused Red's approach). Staged: pane seeds offset one hull radius
-into the room; `RoadmapLocalPairCoverage` counts DOOR seeds only. Expected: rm3 (and rm33/rm31, the
-Red-side glass hubs) become composer-eligible; Red grabs appear.
-
-**abend2 regression gate (f20c050a, soak-20260913T003807, 4 rounds vs the endpoint arm's first
-four, same 8-bot roster).** Captures 2 vs 2, hard pins 7 vs 6, carrier deaths 10 vs 11, no hotspot
-outside rooms 30/0 — the pre-registered terms pass. Flags: soft (circling) escalations 47 vs 10 in
-the ring rooms, composed routes 1404 vs 373, via suspensions 209 vs 106, Blue pickups 1 vs 6
-(Phantom 57% of the delta; the driver's guard also fails on the 4-vs-20 level sequence, so it
-never verdicts). Read: slice 4's two-point routes in the buried rings end without a crossing and
-re-pick. Response: the composed-route floor is `count >= 3` in buried rooms again (the form the
-0.9.13 line validated) and `>= 2` only where the blocked-line gate admits open rooms.
-
-**Hub arm (soak-20260913T014208, 1e22895e, vs the completion arm; guard PASS).** Blue 9 grabs /
-5 captures (56%) vs 8 / 6; Red 0 / 0 again; no-route verdicts 36 → 0 (the three class gates);
-the hub composes (rm3 73 routes vs 0); hard pins 98 → 126, of which rm8 25 → 67. The new
-`from=/aim=/now=` field on failed crossings settled rm8 in one read: every failed commit at its door
-had the bot at (1586,-126,2158), 84u from the door, `from == now` for minutes — one bot at a time
-(Shadow 02:04, Zed 02:07, Reaper 02:25 and 02:35), no lattice node within 18u, no item there. A
-geometry pocket the forward-only escape cannot leave; the door was never the problem (its 0/44
-committed crossings were artifacts of a body that never moved). Room 12 shows the identical
-signature at (2217,-126,2187) on Red's route to the hub. Staged: a one-second pure reverse burst on
-a hard pin before the escape goal; the crossing cache builds each side's approach/push from the
-plane point (the mirror had given the non-canonical side an 8u push — inside the arrival sphere);
-intact panes get a synthesized square-on crossing (near a hull radius in front, push 16u through)
-so the nose-on reactive clear fires; the bent search is the multi-step on-ramp primitive on each
-side (rm80's door still has none — its far side is blocked within reach; needs the overlay).
-
-**Burst arm, first two rounds (soak-20260913T024954, 0fc659a0, vs the hub arm's first two):** hard
-pins 57 → 35, rm8 23 → 4 (the pocket episodes now end in seconds: burst → escape → composed route →
-via points reached), but rm35 7 → 21 and rm12 7 → 22, and Blue pickups 7 → 1. rm35's episodes are
-`net_disp 7` beside its door with no crossing commit at all: the door hand-out was the APPROACH point
-8u in front of the plane, inside the via layer's 15u arrival sphere, so a bot beside the door
-"arrived" there over and over and was never told to cross (then the reverse burst fired on a body
-that was not wedged). rm12's are `net_disp 38` chases — circling, the powerup class. Staged: a door
-node or seed hands out its approach point while the bot is on its way and its push-through point once
-beside the door (`SkelFlyPos`/`RoadmapFlyPos` take the bot position; a committed chain's exit node and a
-composed route's exit terminal always take the push-through).
-
-**Burst arm, full (soak-20260913T024954, 0fc659a0, vs the hub arm; guard PASS).** Red 3 grabs / 1
-capture (33%) — Red's first capture in six arms on this map; Blue 6 / 4 (67%) vs 9 / 5. Hard pins
-126 → 69, soft 23 → 63 (bots move more), 71 reverse bursts, rm8 67 → 6. Cost moved: rm80 10 → 40
-(its door still has no crossing, so its bursts re-enter the same approach), rm12 25 → 38 (chase
-circling), rm35 7 → 25 (the approach-point arrival loop — fix staged above). Objective intents
-71 death / 29 timeout / 75 arrival / 27 replacement (arrivals 41 → 75).
-
-**Hand-out arm, full (soak-20260913T035125, c24d0c21, vs the burst arm; guard FAIL as a unit
-story — Shadow alone is 59% of the escalation delta).** Play: Blue 8 grabs / 8 captures (100%), Red
-1 / 1 — the best capture line of the sprint (burst arm 6/4 and 3/1); NO-ROUTE 0; composed routes
-1426 (1049); committed crossings 1559 / 525 not crossed (1521 / 499). Cost: hard pins 85 (71),
-escalations 159 (132). Rooms: rm35 43 (25), rm80 40 (40), rm33 17 (6), rm12 8 (38 — the chase
-circling class fell), rm8 8 (6). rm35 is ONE bot for 27 minutes (Phantom, 03:54 -> 04:21, net_disp
-6-7 the whole time): a dead-end closet with one clean 24u door, the bot in combat PURSUIT of an enemy
-in the next room, pressing a cubicle wall at speed 0.6-1.0 with the engine path active
-(`goal=pursuit ... path=1 steer rm35 d=55`) — pursuit does not ride the nav layer, and on a
-BNode-less map the engine path is a straight line into furniture. Every 25 s the stuck ladder fires
-(reverse burst, then `stuck escape — no portal`: the escape chooser excludes the portal toward the
-explore destination, which in a one-door room is the only door), hands the objective back, the
-composer says `troute REJECT — no door pair reaches goal` for the one-door room, the skeleton via
-takes over, and pursuit takes it back. So the hand-out rule was not what rm35 needed; the rm35
-class is pursuit steering plus two one-door-room gaps (escape exclusion, composer rejection). Wall
-presses in this arm by goal: pursuit 251, powerup 39, none 25.
-
-**Slice 6a — the crossing search is honest and complete (2026-09-13, after the hand-out arm was
-launched).** Read from a new `$navdump` field, `crossing_trace` (every sweep the sampler tried, what it
-hit, and the polygons of the faces that stopped it — see BOT_DEV_REFERENCE), taken on a SECOND server
-instance while the soak ran. Four defects in the sampler, each general: (1) the sweep ignored back
-faces, so a column that STARTED inside a leaf walked out through it unseen — rm80's door read "clear"
-from inside the room and "blocked" from the hallway, a duct read clear from one end only; the
-crossing sweep now uses `FQ_BACKFACE` and runs both directions (`CrossSweep`). (2) The fixed grid step
-plus a 64-candidate cap sampled the RIGHT HALF of a 69u doorway and never saw the open 17u gap beside a
-slab (rm46 -> rm55, the "small edge gap" class); the grid is now sized to its budget, with a fine pass
-(half a hull apart over the polygon a hull can occupy) when the coarse pass finds nothing. (3) The
-bent search's fan was a fixed 12/26/40u — no candidate ever fit inside a 17u ceiling duct; the fan now
-scales with the hull (0.6/1.25/2/3.5 R) and every lateral candidate is also tried one step forward (a
-diagonal). (4) Two more rungs below the 8u column: a 4u LIP (rm45 -> rm80: the propped leaf and a
-chamfered post leave one nose-first line at the leaf's free edge — the old hand-out, the polygon
-centre, sat BEHIND the leaf) and a DOOR-FIT radius (`BOT_CROSS_FIT_SCALE` 0.92: the engine's contact
-response slides a hull through a gap a few percent narrower than itself — that channel measures 13.0u
-against a 13.35u Pyro, and bots and pilots go through it); a crossing found only at the fit radius is
-reported `crossing_tight`. (5) Found 2026-09-13 in the operator's play test, not in any soak (Batteries
-and abend2 have no flyable terrain door): the reverse leg of each column started its sweep in the
-connected room, which for a terrain-facing door is the structure's `RF_EXTERNAL` shell — fvi asserts on
-that start (`findintersection.cpp:2801`; a Release build would sweep the shell's faces as a room).
-Nightmare Castle's hatches open onto the exterior; the first bot aimed at one aborted the server within a
-minute of load, twice. `SweepStartRoom` now maps an exterior start room to the terrain cell under the
-point — the start `BotSegmentClearOutdoor` already used — and a point off the terrain grid reports
-blocked (the door keeps the engine point). The network is untouched (lattice/skeleton legs keep the full hull).
-Batteries, bot-free: doors without a crossing 20 -> 6 (three 11u floor hatches — genuinely narrower
-than the hull, never crossed in any log — plus the four intact panes, which have their synthesized
-path); depth histogram 24u 248 / 16u 362 / 8u 140 / 4u 28; network metrics identical to the burst
-build. Room 80 also turned out NOT to be a spawn closet: bots squeeze in through that 13u channel at
-speed and could not get out because their aim was the leaf's middle. The 4u lip is the general answer
-to that class; whether it converts rm80's 40 pins is the next arm's question.
-
-**Crossing arm, full (soak-20260913T045240, a6c3fc5b, vs the hand-out arm; guard FAIL as a unit
-story — Reaper is 69% of the delta, improving).** The pre-registered rm80 term PASSED outright:
-escalations 40 -> 0, committed crossings at its door 13 not-crossed -> 0 not-crossed — the 4u lip at
-the leaf's free edge is what that door needed. Escalations 159 -> 127 (2.63 -> 2.10/min), NO-ROUTE 1,
-glass shots 1381 -> 820. Not won: hard pins 85 -> 100 (soft 76 -> 29 — the escalations that remain are
-the pinned kind), rm35 37 (43; slice 6b was not in this build), rm12 8 -> 30 (the chase-circling class
-is back), rm33 10; Blue 5 grabs / 4 captures (80%) vs 8 / 8, Red 0 / 0 vs 1 / 1 — inside the sprint's
-Blue band (4-8 captures per arm) but the hand-out arm's 8/8 did not repeat. The grate rm116 -> rm247
-still drew 12 committed crossings (slice 6c was not in this build).
-
-**Slice 6b — a broken pane is a door; a hunt needs a route; the only door is a way out (2026-09-13,
-built from the hand-out arm's rm35 story).** Three general rules. (1) `BreakGlassFace` clears
-`PF_RENDER_FACES` on the portal when a pane shatters; every nav cache (class, geocost, passability,
-glass, crossing) had priced or synthesized the INTACT pane for the whole level, so an unkinetic bot
-kept treating the open hole as a wall — and Batteries rooms 33-38 (the conference-room complex,
-reachable without glass from only twelve rooms) read as sealed: no route home, objective dropped as
-"unreach". A cached PANE is now re-checked against the live flag on every query and flipped to DOOR
-for both sides, retiring the dependent caches (`PortalPaneShatteredFlip`, logged once per pane).
-(2) HUNT rode the engine's path table, which calls intact glass passable; a bot could chase a target
-seen through a pane for the rest of the round (Phantom: 27 minutes pressing a cubicle wall, the target
-one room over). A hunt of a target in another room now needs OUR router to find a route under this
-bot's glass authority (cached per room pair for a second): no route means no blind hunt, and an
-in-progress blind hunt ends as "unreachable" (the existing blacklist path) instead of waiting for
-the no-LOS timeout; `BotSetPursuitGoal` pre-validates the same way. (3) The stuck-escape chooser
-skipped the portal toward the explore destination ("the room that got us stuck") — in a one-door
-room that is the only door, so it took a random lateral escape into the same wall 24 times; the
-excluded door is now the fallback. Telemetry: STUCKSTATE lines carry `state=` and `pos=`. Bot-free
-dump identical to slice 6a (the pane flip is a runtime event). Gate: the arm after the crossing
-arm — rm35/rm33 escalations, `pane ... shattered — now a door` lines, and captures.
-
-**Slice 6c — a pane that is not rendered is not there (2026-09-13).** The new analyzer section listed
-four "breakable glass" door pairs with no crossing (95/169, 116/247, 118/236, 119/206): 19x20u floor
-openings whose portal face carries a breakable texture but is NOT rendered (`PF_RENDER_FACES` clear on
-both sides at level load), with 2u-spaced bar faces behind it — floor GRATES. The geocost's glass
-branch priced them as glass (120) because the probe failed and the texture was breakable, so kinetic
-bots routed through them and committed crossings at bars (rm116 -> rm247: 21 committed, 0 crossed in
-the hand-out arm). Both glass verdicts (`BotPortalGeoCost`, `BotPortalIsBreakableGlass`) now require
-the breakable face to be on a side that renders it — the engine's own "pane present" bit, the one
-`BreakGlassFace` clears — and the shattered test looks at both sides. Bot-free: those eight portals
-went 120 -> impassable (the router's DISAGREE class, engine passable / hull not), disagreements 4 ->
-12, network identical. `tools/analyze_navdump.py` gained the "Door crossings" section (counts, depth
-histogram, tight, the doors without a crossing with their blockers, and the ship hulls).
-
-**Glass/hunt arm, full (soak-20260913T055350, c199e1fc, vs the crossing arm; guard FAIL as a unit
-story — Ninja 53% of the delta).** Play: Blue 12 grabs / 9 captures (75%), Red 3 / 2 (67%) — the best
-capture line of the sprint on both teams (Red's second and third captures ever on this map). Hard
-pins 100 -> 82; rm35 37 -> 30 (with Gregg/Phantom/Ninja sharing it, no 27-minute unit); the grate
-rm116 -> rm247 committed crossings 12 -> 0; 62 pane flips logged, 6 hunts skipped for lack of a
-route. And a REGRESSION the flip introduced: NO-ROUTE 1 -> 299 (rm1 -> rm84 109, rm1 -> rm6 105,
-rm68 -> rm6 69), soft escalations 29 -> 150 with rm1 at 90 — bots in room 1 wandering on the engine
-path with no route to either flag. Mechanism: `BOA_PassablePortal` consults `BOA_cost_array`, which
-is frozen at level load, so a shattered pane stays "impassable" to the ENGINE for the rest of the
-level; our ladder admitted it as glass before the flip (kinetic bots) and, after the flip, as
-neither glass nor an engine-passable door — nobody could route through a broken pane. Slice 6d
-(below) is the fix; the arm's captures came before the map's panes were mostly gone.
-
-**Slice 6d — a shattered pane is a door for the router too (2026-09-13 ~07:05).** Every admission
-decision in our layers now reads `BotPortalEnginePassable()` — the engine's verdict, or true for a
-pane this level that this code has seen shatter (`pf_glass_flipped`, set by the flip for both sides).
-Seven sites in the router/ladder/class/aim, the glass-clear helper in bot.cpp, and the overlay's
-DISAGREE colour. The navdump's `engine_passable` still reports the raw engine table. Bot-free dump
-identical to slice 7 (no flips without bots); harness green. Gate: the glass arm re-run on this
-build after the abend2 gate (`batteries-portal-glassdoor2-4rnd.json`, control = the crossing arm):
-NO-ROUTE back near zero, rm1 back to single digits, captures at the glass arm's level.
-
-**Slice 7 — the skeleton's bridge search scales with the hull (2026-09-13 ~06:15).** The crossing
-arm moved rm12's cost to bots chasing items INTO Batteries' ventilation network: some 230 rooms of
-18u ducts and 25-33u junction boxes, 33 of which were "split" (no skeleton edge between their
-portals), so a bot that entered an elbow had no in-room path to the next portal. `SkelBridge` (the
-0.9.12 rework's collision-guided bridge) had the same two defects the crossing search had: a fixed
-12/26/40/54u lateral fan — no candidate ever fit a 25u box — and no forward-diagonal candidate, plus
-sweeps blind to back faces. Its fan is now hull-scaled (0.6/1.25/2/3.5/6/8 R — the small rings fit a
-duct junction, the large ones still span a 40u toroid tube), every lateral candidate is also tried
-1.5 R forward, the budget is 64 reached points, and the search and its string-pull commit sweep with
-`FQ_BACKFACE`. Bot-free: Batteries split rooms 33 -> 6 (the six left are the 11u hatch rooms 37, 86,
-87, 88, 90, 91 — narrower than the hull), isolated doors 53 -> 11, bend nodes 15 -> 53, lattice
-unchanged. **abend2: ring room 0 — two components through every previous skeleton attempt (the 1d52aa7f
-rework got one bend only; "the bounded tangent-fan can't trace the curved tube") — is ONE component
-(7 -> 9 nodes, two bends); split rooms 5 -> 4, the rest unchanged.** Gate: the abend2 regression arm
-runs on this build.
-
-**abend2 gate on slice 7 (soak-20260913T065439, 6c17d9bd, 4 rounds vs the f20c050a gate; guard FAIL
-as a unit story — Ninja 68% of the delta, improving).** Escalations 54 -> 29 (0.90 -> 0.48/min), hard
-7 -> 2; **ring room 0: 12 -> 0** (the slice's target — the room is one skeleton component and the
-bots no longer pin in it); rm30 38 -> 26 (24 of them one Red bot, Phantom); committed crossings 1593
--> 1955. Per team: Blue 14 grabs / 1 capture (1 / 0 in the control) — Blue reaches the red flag
-fourteen times where it used to reach it once, and converts once; Red 3 grabs / 0 captures (11 / 2).
-So the slice moved the map's dynamics rather than one number: Blue's approach is open, Red's grabs
-fell while Red's captures fell from two to none in four rounds — inside abend2's per-arm noise
-(~0.5-0.75 captures per round) but the wrong direction, and 13 of Blue's 14 carriers did not get
-home. Verdict: pins and connectivity PASS, play INCONCLUSIVE at four rounds; a longer abend2
-confirmation (8 rounds, per-team) is queued after the Batteries re-run.
-
-**Glass re-run, full (soak-20260913T075524, 57aaa31f, vs the crossing arm; GUARD PASS — the sprint's
-first population-level pass).** Blue 17 grabs / 13 captures (76%) — a new best; Red 1 / 0. Hard pins
-100 -> 57, escalations 127 -> 112, NO-ROUTE 0 (299 in the c199e1fc arm: the router-side fix holds),
-rm1 gone from the list, rm35 37 -> 16, rm12 30 -> 19, 49 pane flips. Cost: rm80 back to 36 (0 in the
-crossing arm, 18 in the glass arm) — Reaper 35 — the next diagnosis, with the new `state=`/`pos=`
-telemetry; suspect the one-door escape fallback (slice 6b), which aims the escape at the door's
-engine point, the polygon centre behind the leaf, instead of the lip crossing.
-
-**abend2 8-round confirmation (soak-20260913T085615, 57aaa31f = slices 6a-7+6d, vs the 20-round
-endpoint arm soak-20260910T072205; the guard's structural FAILs are the 8-vs-20 round mismatch, read
-PER ROUND and PER TEAM as the manifest says).** Per round: captures 0.71 -> 1.13 (Red 0.57 -> 0.75
-on FEWER grabs, conversion 17% -> 35%; Blue 0.14 -> 0.38 on 2.5x the grabs, conversion 10% -> 11%);
-escalations 8.5 -> 4.8; **ring room 0: 80 -> 1 in the arm** (rm30 39, one Red bot for most of it);
-carrier deaths 3.9 -> 4.4 per round; committed crossings 436 per round. The 4-round gate's "Red 3
-grabs / 0 captures" was noise: over eight rounds Red captures more per round than the control while
-Blue reaches the red flag two and a half times as often. Every pre-registered term met. The flag
-timeline shows the standoff shape the operator wants appearing on this map with eight bots: both
-flags out in four of eight rounds (4-33 s), five standoff grabs.
-
-**Slice 8 — the network's sweep is honest (2026-09-13 ~09:20).** The glass re-run's rm80 pins (36,
-one bot at the same floor spot in front of the leaf, aiming at the lip) sent me back to the
-lattice: `BotSegmentClear`, the one indoor primitive the roadmap grows, probes and string-pulls
-with, was blind to back faces, so a cell that landed inside a slab connected "through" it. rm80's
-whole 239-cell lattice hung off the door seed through the door leaf. `BotSegmentClear` now sweeps
-with `FQ_BACKFACE` (a sweep from open space is unchanged — the engine's front test already reports a
-sphere that starts overlapping a face's front). Bot-free: Batteries cells 13859 -> 13449, rm80 239
--> 3 cells and NOT routable (honest: the 13.0u channel is narrower than the hull, the composer must
-not drive there), rm55 9 -> 3 (its lattice was through the slab), rm9 216 -> 147, rm16 became
-routable; split rooms and bends unchanged. abend2: cells 4234 -> 3864 (phantom cells inside the
-toroid walls), rooms 0/30 223 -> 204/201 still one component at 100% pair coverage, rm49 became
-routable, the 16u tray rm20 (30 cells) split into two components. Gates: a Batteries arm against
-the glass re-run and an abend2 arm against the 8-round confirmation, both pending.
-
-**Slice 8 — TRIED AND REVERTED (2026-09-13 ~12:10).** Bot-free it was the truth (above). In play it
-cost Batteries: the arm (soak-20260913T105757, 13611c33 vs the glass re-run 57aaa31f, guard PASS)
-scored Blue 5 grabs / 2 captures against 17 / 13, hard pins 57 -> 81, escalations 112 -> 124, rm35
-16 -> 29 with 59 errands toward the red flag dying there (29 before), composed routes 1308 -> 1546,
-one round with no flag episode at all. Mechanism NOT established: the rooms on the base-to-base path
-kept their lattice (rm47 392 -> 360 and rm6 170 -> 157 were the only changes), rm35's lattice and
-door were identical, and the bots pinned at one floor spot of rm35 with a skeleton via toward the
-door. The runtime callers of `BotSegmentClear` (composed-drive gate, skeleton aim, chain export) are
-the open suspect: a hull sweep that starts against a wall the bot is scraping may now read blocked,
-which engages the composed drive more (it did) and changes the aim ladder's choices. Reverted whole;
-the next attempt should make the sweep honest at BUILD time only (a separate primitive for lattice
-growth and probing) and leave the runtime tests as they were, gated the same way. This is the §7.0
-tried-and-reverted ledger's newest entry. **Its abend2 gate, run for the record after the revert
-(soak-20260913T115850, 4 rounds vs the 8-round confirmation): escalations per level 4.7 -> 0.8, the
-via room 30 from 39 to 2 for the arm, captures Blue 12 / 1 and Red 7 / 2 (0.75 per round against
-1.13, four rounds).** So the honest sweep removed abend2's remaining pin cost while breaking
-Batteries — the opposite signs make the build-time-only retry a high-value first item for the next
-navigation sprint, with the runtime callers examined one at a time.
-
-**Slice 9 — an opening narrower than the hull is not a route (2026-09-13 ~12:50, from the
-operator's flight).** He found his own team's respawns trapped in a spawn room whose "glass door"
-is a grid of small decorative panes: shatterable with matter weapons, never flyable, the room's real
-exit being up a vent into the ducts. The dump confirms the class: 62 pane portals on Batteries are
-11x6u (fifteen between the blue base rm3 and rm22, fifteen at the conference hub rm31/rm33, one at
-rm74/rm76), plus the three 11u floor hatches and two dozen 9u window slots the engine calls open —
-all narrower than a 13.35u Pyro. The router priced each pane as glass because its passability probe
-is a 2.5u sphere; kinetic bots routed to them, shot them, and the runtime flip then made them doors
-for everyone: a hole nothing can pass. One geometric rule now sits under every verdict
-(`PortalTooSmallForHull`: the portal polygon's smaller extent in its own plane against the hull
-diameter at the door-fit scale): class NEVER, geocost impassable with no DISAGREE last resort, not
-glass, no runtime flip. Bot-free: 98 portal sides reclassified (62 pane -> never, 30 door -> never),
-split rooms 6 -> 4, isolated doors 11 -> 7, routable 51 -> 52, cells 13859 -> 13651 (the closets
-behind the slots lose their seeds); the main map is still fully connected through doors alone from
-either base, and the conference complex is honestly sealed except through its 19x20u vent — which
-nearly every bot can open, since the engine breaks glass with any matter weapon and the spawn
-concussions qualify. Gate: a Batteries arm against the glass re-run.
-
-**Slice 9b — a bot backs off to shoot glass it is too close to (2026-09-13 ~13:30).** The hull-width
-arm's first round showed the other half of the spawn-room trap: rm1 is a 170x90x213u room whose
-only exit is a 19x20u vent in the ceiling; a bot that spawned under it sat at the crossing's approach
-point 5u below the pane and fired "breaking glass obstacle" twenty times a second — with lasers,
-because the missile that opens glass is refused inside the 30u self-splash guard and nothing moved
-the bot back. `BotClearObstacleSafely` now, when the pane is inside the guard and the bot has a
-missile but no matter primary, applies the one-second legal reverse burst (the hard-pin escape's
-primitive) instead of firing, and the next reactive tick fires from the guard distance. The spammed
-log line is throttled to one per five seconds per bot. Runtime-only; no network change. It rides the
-final play-test arm together with slice 9.
-
-**Hull-width arm, full (soak-20260913T125938, 43a6fa2a = slice 9 alone, vs the glass re-run; guard
-FAIL as a unit story — Phantom 79%).** The pre-registered grid term passed outright: committed
-crossings at the two pane grids 19 -> 0. Everything else went the wrong way: hard pins 57 -> 81,
-escalations 112 -> 202 (soft 56 -> 124), Blue 9 grabs / 7 captures (17 / 13), Red 1 / 1. Where the
-cost went: rm80 45 (36), rm35 43 (16; three bots, one floor pocket at (1282,-151,2311) that the
-reverse burst returns them to), rm68 30 (new: a 1349-face spawn room whose only exit is a 19x20u
-CEILING VENT — 28 of its 30 pins are 5u under the pane, the rm1 pattern), rm1 26 (one bot under its
-vent), rm12 15. Reading: sealing the decoy grids is right and measurable, but the map's three
-vent-only spawn rooms (rm1, rm68, the conference complex through rm37/rm33's vents) then depend on
-a bot opening a ceiling pane from 5u below, which 9b addresses, and the conference complex funnels
-into rm35's floor pocket, which is a pocket-class problem the burst does not solve (a "sweep from
-here" console trace is the diagnostic to build for it). The candidate arm (9 + 9b) decides the
-play-test build; if it does not beat the glass re-run on pins and captures, the play-test build is
-the 57aaa31f line and slices 9/9b wait for the pocket work — the trade being the operator's observed
-grid trap against the sealed complex's pocket.
-
-**Slice 9c — the hard-pin burst goes where there is room (2026-09-13 ~14:15).** A new console
-diagnostic, `$nav sweep x y z room portal` (hull sweeps from a point to a door's crossing points at
-both radii, plus a reverse leg, with the face each hits), read rm35's pocket bot-free: from the pin
-spot (1282,-151,2311) EVERY sweep is blocked at 0u by face 27, normal (0,-1,0) — the bot is wedged
-under a desk with the hull already against its underside — and the reverse leg is blocked at 0u by
-face 25. So the reverse burst, the escape goal, the composed drive's first leg and the skeleton via
-all fail from inside the wedge, by construction. The burst is now directional: at a hard pin the
-five body directions (reverse, down, up, left, right) are swept 16u at hull radius and the burst
-takes the longest clear one (reverse wins ties); the glass back-off keeps straight reverse. Legal
-thrust as before. Runtime-only; tests green. It rides the final play-test arm with 9 and 9b. The
-same command on the other three pin spots: rm80 (1995,-154,2914) — the sweeps toward its door stop
-after 9-14u on the leaf's front (faces 951/1001) and the reverse leg is blocked at 0u by face 1063,
-furniture behind: wedged between the two, the burst has to go up or sideways; rm68 (2445,-75,2540)
-and rm1 (2009,-75,2176) — both AT their vent's approach point, plane and push-through blocked at 0u
-by the intact pane above, which is 9b's case (back straight off, then shoot).
-
-**Arm 9 + 9b, full (soak-20260913T140023, 958a6d5d, vs the glass re-run; GUARD PASS).** The vent
-rooms are solved: rm1 and rm68 are gone from the list (12 back-offs fired), rm80 36 -> 7, grid
-crossings 0. Blue 9 grabs / 8 captures (89%), Red 0 / 0. Cost: hard pins 57 -> 94, escalations
-112 -> 118 — and rm35 37 (16): the desk pocket, which 9c targets. rm12 19 (=), rm13 12. So the
-sealed complex funnels bots into rm35's pocket at about the rate the vents used to eat them, and
-the final candidate (c099220f, with the directional burst) is the arm that decides between the
-9-line and the 57aaa31f line.
-
-**Final candidate arm (soak-20260913T150110, c099220f = 9 + 9b + 9c, vs the glass re-run; GUARD
-PASS).** The sprint's lowest-churn Batteries arm: escalations 97 (112; 118 without the directional
-burst), rm35 37 -> 19 (the burst halves the pocket cost — 55 reverse, 7 down, 3 each up/left/right),
-rm80 8 (36), rm1/rm68 absent (15 back-offs), grid crossings 0 (19), NO-ROUTE 0, committed crossings
-1982 (1692). Cost: hard pins 71 (57), Blue 11 grabs / 8 captures (17 / 13 — inside the sprint's
-4-13 band), Red 0 / 0 (1 / 0); rm8 14 (5). Four of seven pre-registered terms met (vents, rm80,
-grids, no-route); rm35 19 vs 16, hard pins 71 vs 57, captures 8 vs 13 missed. Judged whole
-(holistic rule): the traps the operator saw with his own eyes are gone and the churn is the lowest
-measured; the capture line is one arm inside a wide band. **Play-test build: c099220f**, subject to
-its abend2 gate.
-
-**abend2 gate for the candidate (soak-20260913T160240, c099220f, 4 rounds vs the 8-round
-confirmation; the guard's structural FAILs are the 4-vs-8 mismatch, read per round).** Bot-free the
-build changes nothing on abend2 (no portal reclassified, network identical), the glass back-off is
-inert there, and the directional burst fired once in the arm — so the runtime is the 57aaa31f line.
-Per round: escalations 4.7 -> 3.4, hard pins 0.4 -> 0.2, room 30 39 -> 17 for the arm, room 0 at 0,
-committed crossings 436 -> 375, carrier deaths 3.8 -> 3.6. Grabs healthy (Blue 12, Red 7 in four
-rounds) but captures 0 of 19 against 9 of 45: every episode ended in a return. Nothing in the diff can
-act on this map, so the capture count is recorded as one unsettled data point, not a regression; a
-four-round extension (`abend2-portal-9-ext-4rnd.json`) is queued for the next free lab slot.
-**Sprint close (2026-09-13 ~17:10): play-test build = c099220f** (slices 1-7, 6d, 9, 9b, 9c; slice
-8 reverted). Fallback if the extension disagrees: the 57aaa31f line.
-
-**Committee state, measured (2026-09-13).** Per-level census, share of ACTIVE-held time: `via`
-54% -> 96% from the sprint's start to 57aaa31f; the engine-path fallback (`no-route`) 39% -> 0%;
-`stuck-escape` 4.5% -> 1.9%; the flicker members (`seam`, `path_pnt`, `gridroute`, `hop-commit`)
-2.6% -> 2.5% of the time while taking ~40% of the episodes. The sprint made the members agree on the
-facts; what is left is arbitration, and it goes by subtraction in the order written in PLAN.md §3.0
-("The committee collapse from here"): one in-room planner over the union graph with a committed
-plan, then seam/hop-commit as that plan's commitment rule, then the waypoint/grid branches, then
-stuck as invalidation, then combat pursuit and powerup chase requesting destinations from the
-planner. Measured as fewer committed-but-not-crossed hops with no rise in pins, per map and per team.
-
-**Still open on this line:** the powerup-chase circling class (rm12); a corridor (multi-point)
-hand-out for bent crossings — not needed by any Batteries door after the lip/fit rungs, so deferred;
-the portal class is computed per side (a sky room's window reads as a door from the sky side);
-the door on-ramp admits points a bbox margin outside the room (two of rm80's lattice nodes sit in the
-hallway); the Phoenix hull is 8.0u against a 6.7u clearance (rosters are all-Pyro by ruling).
-Deferred to the next dump: gap-directed lattice sampling, a trunk node per room, the rm3 hub (16
-lattice components, not composer-eligible — Red's whole approach).
-
-### 7.0-PREV Glass routing restored + mechanism telemetry — 2026-09-12 (0.9.14-dev)
-
-0.9.13 shipped as the correctness checkpoint. 0.9.14-dev has three commits: telemetry, the
-aim-layer fixes, and glass routing.
-
-**Glass routing ($nav glass, restored per operator intent).** The 0.9.6 feature existed in the cost
-model (`BotPortalGeoCost` prices intact TF_BREAKABLE panes at BOT_PORTAL_GLASS_PENALTY) but was
-dead: `BOA_PassablePortal` rejects an intact pane at runtime — it only admits one while BOA is being
-built — and the Dijkstra's leading BOA gate short-circuited the finite cost before it was weighed
-(since 5e7ec697, 2026-08-30). The reverted 2026-08-30 arm had proved the FREE form a regression
-(1.94→0.56 picks/rnd, +131% stucks) because 127 of Batteries' 207 panes are ceiling VENTS and free
-routing aimed bots at horizontal openings they cannot thread. The restored design threads that
-needle with an explicit per-bot mode ladder (`BotRouteDijkstra`'s `glass_mode`, never cached — the
-geometry cache stays bot-independent):
-
-| mode | who | edges |
+| Class | Meaning | Consumers' rule |
 |---|---|---|
-| OFF | no kinetic breaker, or `$nav glass` off | doors only (unchanged) |
-| SHORTCUT | BotCanBreakGlass: Vauss / Mass Driver / loaded missile | strict doors **+ vertical panes** priced at +120 (~3 hops, so a comparable door wins) |
-| SOLE | the ladder's last resort, after strict and DISAGREE door passes | any pane, including horizontal vents |
-
-`BotComputeRoute(from, goal, bot_index)` runs the ladder: strict+vertical-panes → +DISAGREE → any
-pane. A horizontal vent can only ever be a sole route (Batteries rm1→rm125 — its only non-wall
-outlet — still routes for a kinetic bot; before this it pressed forever). The aim layer shares the
-policy via `AimExitMask` (doors first, then vertical panes, then any pane) so aim and route cannot
-disagree, and `BotEntryPortalIndex` (the seam/hop-commit door picker) gained the same pane pass.
-The reactive clear gained pass 5 (`BotClearCommittedGlassHop`): a pane the router committed the bot
-to is shot at its own point, since the nose/aim passes miss an off-axis approach — the 2026-08-30
-finding that glass clears FELL in the routed arm. BotCanBreakGlass is the single source of truth for
-"can open a pane", mirrored by BotClearObstacleSafely's firing gate.
-
-**Aim-layer fixes (previously in this section): single-exit aim, passability-filtered exit sets,
-and the engine-agreement gate on BotEntryPortalIndex.** See the entries below; the batteries 4-round
-verdict (soak-20260912T090308 vs the fa5966ed telemetry run) measured rm35 presses 222→4, rm33→31
-glass NOT-CROSSED 70→0, hard stucks flat (467→479), crossings flat, and objective arrivals 1→3 —
-the first time a test arm reached the RED flag room at d_item=69.
-
-**Mechanism telemetry (log-only).** Four additive lines so failures can be diagnosed per episode
-instead of from aggregate counts:
-
-- **`via search failed`** — blocking face (`face=FR/F`), texture, breakable/force-field flags,
-  probe distance, and the tier that gave up (`stage=rings|rings-skipped|outdoor-lattice|
-  outdoor-graph|pass3`). The old line ended at `(target room N)`; both formats parse.
-- **`ARRIVED at objective room`** — objective item identity/objnum, `d_item`, and the aim flown.
-- **`hop outcome`** — `CROSSED` / `NOT-CROSSED ... via portal N` per committed crossing.
-- **`item-reach`** — graph verdict paired with raw hull-LOS (`los=0|1`) and distance.
-
-**First instrumented Batteries read (fa5966ed, 20 rounds, soak-20260911T212808).** 4018 via-fails
-(all pass3, 4013 non-breakable faces), 6288 hop outcomes (67% crossed), 2473 item-reach verdicts
-(87% raw-LOS clear), 4 objective arrivals at `d_item` 71-106u — the arrival-stall is a room-edge
-declaration that never closes. Independent reachability analysis of the run's navdump: ~42% of
-via-fails occur where a usable route exists (the aim fixes), ~58% are connectivity dead-ends (rm70,
-rm16, rm27, rm12→1/62) — a separate workstream. rm8's Red pinning is target-selection, not
-unreachability.
-
-**Window-misroute fix status:** re-landed in 0.9.14-dev commit `5a94875e` (held from 0.9.13 because
-unfavorable standalone: batteries hard stucks 190→607 while eliminating the misroute). Its sibling
-gaps from the implementation review (legacy resolver pass-1 eligibility, cached/memo/forced
-admission revalidation, helper reciprocal-face/crossing-cost) remain open.
-
-### 7.0-PREV Mechanism telemetry + single-exit aim — 2026-09-11 (0.9.14-dev)
-
-0.9.13 shipped as the correctness checkpoint (see the CHANGELOG). 0.9.14-dev is open: the first
-commit is diagnostic-only (below), and the second lands the first fix the telemetry pointed at.
-
-**Single-exit aim + engine-agreement door picks (the rm35 press and the rm33 glass commits).**
-Three aim-layer defects the instrumented run exposed, all the same shape — a selection layer that
-did not ask the router's admission question:
-
-1. `BotResolveRoomAim` bailed on `np < 2`, so a sole-portal room got no aim resolution: the bot's
-   raw goal direction pointed at whatever face stood between it and an out-of-room goal, and it
-   pressed that face forever (batteries rm35 → room 33 via its one door, goal rm84 seen THROUGH
-   solid glass: 460 presses at d=0 in one run). It now aims at the sole portal's node when the
-   target is elsewhere. An in-room target or an impassable sole door still returns false.
-2. The multi-portal exit set (and `BotSkelBuildChain`'s copy of it) was built from
-   `portals[i].croom == next_room` alone, so a wall/window twin beside a real door could win the
-   distance-nearest soft-hop (rm12 → rm3: two solid faces and two breakable-glass doors). Both now
-   filter through `ExitPortalUsable` — BOA passable + cost verdict (DISAGREE union) + wind.
-3. `BotEntryPortalIndex`, the seam guard and hop-commit's door picker, checked our cost and wind
-   but never `BOA_PassablePortal` — the one selection the router's own gate was not applied to.
-   rm33 → rm31 holds twenty-five engine-refused glass panes and one real door; the picker chose the
-   nearest pane and committed 310 crossings through it (NOT-CROSSED at 8.0s, bots firing at glass
-   that never opens). It now requires engine agreement in the same two passes as the router.
-
-All three now share the router's admission policy, so aim, chain export, and route edges cannot
-disagree about which doors exist. The destroyable-grate class is unaffected (all 28 isengard door
-portals read engine_passable=True).
-
-**Mechanism telemetry (log-only).** Four additive lines exist so the Batteries failures can be
-diagnosed per episode instead of from aggregate counts:
-
-- **`via search failed`** now names the blocking face (`face=FR/F`), its texture, breakable/
-  force-field flags, probe distance, and the tier that gave up (`stage=rings|rings-skipped|
-  outdoor-lattice|outdoor-graph|pass3`). The old line ended at `(target room N)`; the analyzer
-  accepts both formats.
-- **`ARRIVED at objective room`** now includes the objective item's identity/objnum, the bot's
-  distance to it (`d_item`), and the aim actually flown (`steer rmN d=`). This answers whether the
-  arrival-stall fires close to the flag or at the room edge.
-- **`hop outcome`** resolves a committed doorway crossing against the bot's later room:
-  `CROSSED` or `NOT-CROSSED ... via portal N`. The isengard doorway-lip press is the class it names.
-- **`item-reach`** now pairs the graph verdict with raw hull-LOS (`los=0|1`) and distance. The
-  contradiction pair to watch is UNREACHABLE-but-LOS-clear; reachable-but-occluded is legitimate.
-
-**First instrumented Batteries read (fa5966ed, 20 rounds, soak-20260911T212808).** 4018 via-fails
-(all pass3, 4013 non-breakable faces), 6288 hop outcomes (67% crossed), 2473 item-reach verdicts
-(87% raw-LOS clear; 226 UNREACHABLE-but-LOS-clear), 4 objective arrivals with `d_item` 71-106u — the
-arrival-stall is confirmed as a room-edge declaration that never closes. Independent reachability
-analysis of the same navdump: of the 4018 via-fails, ~42% occur where a usable route EXISTS (aim
-candidates, the fix above), while ~58% are in rooms with NO passable route to the target at all
-(connectivity dead-ends — a separate workstream). rm8's Red pinning is target-selection (87% of
-item-reach verdicts are LOS-clear and reachable), not a navigation failure.
-
-**Window-misroute fix status:** re-landed in 0.9.14-dev commit `5a94875e` (held from 0.9.13 because
-it was unfavorable standalone: batteries hard stucks 190→607 while eliminating the misroute). Its
-sibling gaps from the implementation review (legacy resolver pass-1 eligibility, cached/memo/forced
-admission revalidation, helper reciprocal-face/crossing-cost) are still open in 0.9.14.
-
-### 7.0-PREV Wider validation - 2026-09-10 (0.9.13-dev)
-
-The operator's acceptance tests are separate:
-
-- **Coverage:** usable navigation through ship-passable space on every map, including arbitrary
-  user-made levels. An asymmetric map must still be navigable.
-- **Symmetry:** roughly symmetric scoring on designed-symmetric CTF maps with bots at the same
-  difficulty. abend2 and Batteries Included are the named symmetric cases. Persistent imbalance
-  is a defect signal there, not an expectation to impose on genuinely asymmetric maps.
-
-Neither test replaces the other. Equal failure is not good coverage. Generated component counts
-describe network output, not proof of physical disconnection. Missing flag activity in a short run
-does not localize its cause. Verify per-bot difficulty and report roster differences before using
-scoring imbalance as evidence. Symmetry is a design declaration, not inferred from portal counts.
-
-The operator accepts abend2 as good enough: its toroid navigation is partly solved, with remaining
-imbalance in the generated skeleton/arterial output despite the map's visual symmetry. Treat this
-as a map-specific limitation, not a reason to redesign the hierarchical navigation model. Retain
-the order and endpoint corrections. No more abend2 fixes or test arms; no build work at this stage.
-The symmetry defect remains documented; accepting it for now does not establish a clean pass.
-
-Nysa's baseline (`soak-20260910T131149.log`, `e967cb48`) completed 20 rounds: 67 bot captures
-(Blue 36, Red 31), 32 stuck escalations, 16 hard. All 16 hard escalations occurred in room 69:
-11 Red carriers and five Blue non-carriers. The Blue flag room, 62, had none. The carrier symptom
-is now localized to its neighboring room, not diagnosed from geometry alone. All 11 carrier
-records have no stored chain, but six have `via_live=yes` and five `no`. Do not infer that every
-pin lacked a live via commitment, or that an absent chain identifies the engine's active goal.
-
-The driver confirms 20 completed rounds plus an 11-second trailing startup with no flag/stuck
-events. The analyzers count 21 level opens. Normalize these capture/stuck counts by 20, but check
-the partial round before normalizing other counters. Captures demonstrate successful travel, not
-complete coverage. Announced resolutions cannot isolate reach versus return failure. Nysa's design
-symmetry is undeclared, and its equal-difficulty roster had unequal hull mixes between teams.
-Earlier abend2 per-team results share that hull confounder, constant within each matched comparison.
-
-The rotating Batteries run was manually stopped after one completed Batteries round. Opus 4.8's
-replacement uses a single-level `batteriesincluded.mn3` derived from `bsidectf.mn3`, without its branch.
-`batteries-loop-20rnd.json` requests 20 rounds, pinned to Batteries, with eight Pyro-GL/Hotshot bots
-on the same binary. `batteries-loop.out` confirms three consecutive Batteries round ends. Do not
-disturb the running test. The restart-per-round proposal is superseded, not another authorized arm.
-This roster and mission packaging define a new baseline, not a comparison with mixed-hull runs.
-A fragmented generated graph and blocked direct portal sight lines do not prove that physical
-winding routes are absent. Retain the geometry checks without predeclaring a play verdict.
-
-Neither target has a suitable matched control for this wider run. Self-comparison checks run
-structure, not improvement. The abend2 history below preserves its failed guard and uncertain
-play result; it no longer defines the next task or blocks moving to other maps.
-
-The operator endorsed a bounded 0.9.13 release decision after Batteries review, not a claim that
-navigation is solved. Meaningful flag play without severe recurring failure supports considering
-stable with limitations. Little/no flag play requires distinguishing existing limitations from a
-new defect, not an automatic verdict. An attributable defect in the current corrections needs a
-specific fix and validation before release. Keep the candidate frozen while the test runs.
-
-The proposed 0.9.14 investigation traces one failed and one successful room-69 carrier crossing:
-position and intended exit, selected route, installed engine goal, movement and recovery. Separate
-construction failure, unsuitable target selection and interrupted handoff before choosing a fix.
-Do not infer a mechanism from component counts or the final stuck snapshot. See `PLAN.md` section 3.0
-for the release rules and sprint boundary. No version bump or new test is authorized by this plan.
-
-**CTF measurement correction:** `netgames/ctf/ctf.cpp:1080` chooses pickup wording by player room,
-not the flag's old state. Earlier home-steal/debris-regrab labels were unjustified. At-home flag
-availability is also unmeasured, so neither wording count establishes reach quality. Captures plus
-announced owner returns are not complete extraction episodes: the 120-second timeout at
-`ctf.cpp:589-633`, home-room touches, spew handling and level resets can return flags silently.
-Use announced-resolution counts and a descriptive capture share only. Exact transitions, exposure
-and boundary censoring need additional authoritative telemetry; none is being added during this run.
-
-### 7.0-PREV Endpoint correction - 2026-09-10 (0.9.13-dev)
-
-The endpoint arm (`soak-20260910T072205.log`, binary SHA prefix `e967cb48`) is complete but inconclusive.
-Its guard failed because Phantom dominated the soft-stuck decrease. Per-bot hard-pin changes were
-mixed, and no whole-arm verdict is claimed. Blue's `picks up` wording counts were 4 -> 5; its
-`finds ... debris` counts were 16 -> 25, with Phantom providing nine of ten extra pickups. Blue conversion 7/20 ->
-3/30 gives two-sided Fisher exact p=0.0673, with further dependence from repeated regrabs. Do not
-claim that reach recovered or that the bottleneck moved to returns. Retain the source corrections
-under `-dev` and seek an attributable episode-level failure before another behavior change or soak.
-
-The implementation and preceding evidence follow; proposed verification below describes the now
-completed arm, not authorization to launch another one.
-
-The matched 20-round order-only arm (`soak-20260909T212422.log`, binary SHA prefix `321c0765`)
-passed its guard against the lifetime candidate. Stored-chain stuck records fell 43 -> 0 and hard
-pins 49 -> 36. Blue flag pickups fell 48 -> 20, including `picks up` wording 19 -> 4. Red pickups
-were 60 -> 63. Blue's logged enemy-base intent starts increased, so do not diagnose lost offensive
-intent from fewer stuck records in the enemy ring. Stable promotion remains blocked.
-
-**Source-proven endpoint error:** a routed query can pair a local aim A with the next room.
-`BotSkelBuildChain` appended A after the actual exit, exporting [A, B, exit, A]. The current
-correction ends cross-room chains at their selected exit and appends a target only for same-room
-routes. At least two skeleton nodes are still required; the caller now counts those nodes without
-the false appended aim. A directly visible exit produces no stored chain and retains single-hop
-fallback. The production-function test reproduces the old endpoint error and passes the correction.
-
-This follows the existing composed-route terminal contract. It does not add a new crossing
-controller: exhaustion clears the via goal and returns to the normal/seam/tray caller in the same
-tick. The 15-unit arrival sphere can still stop short of a portal, so near-lip reissues and pins
-are an explicit test risk. Opus 5 owns the next matched arm against the order-only build. Preserve
-the earlier order correction and do not bundle wind, role tuning, or old engine-node caller changes.
-
-### 7.0-PREV Candidate review - 2026-09-09 (0.9.13-dev)
-
-The candidate baseline is `c8566c37`, not promoted. Stored
-routes retire when their commitment ends, including on respawn. Goal aim reads live chains rather
-than inheriting stale metadata under an unrelated detour's timer. Stuck-state logging now samples
-before cleanup, overlay lines require a live commitment, and AIMSPLIT handles level-clock resets.
-
-The implementer's test results record live play, 20 matched
-abend2 rounds, and roughly 30 further rounds across six modes without reported crashes or asserts.
-The abend2 A/B guard failed on outlier share: escalations rose 141 -> 231 and hard pins 25 -> 49.
-Red conversion rose 9.1% -> 20.0% without establishing recovery, while Blue stayed at 25%.
-Live-chain aim events rose 104 -> 3245, evidence of route use rather than completed crossings.
-
-This is not a clean regression pass. Bedlam hard pins improved, Fellowship
-was mixed, and several modes have only first baselines. The claim that the cost is confined
-to abend2 is stronger than those comparisons establish. QuadSomniac Red conversion is an unresolved
-signal against a comparator spanning two changes. State-transition chain loss remains a possible
-cause of abend2's increased wedging, not a demonstrated one.
-
-**Current fix under test:** `BotSkelBuildChain` reversed an already ordered parent walk. The BFS
-is rooted at the exit, so parents lead from the bot-visible hop toward that exit. The old export
-sent the bot at the far portal first. Preserve that order, accept directly visible exit seeds,
-and reject routes exceeding output capacity rather than truncating them. The isolated test fails
-on the old export and passes on the correction. Repeated cursor-zero skeleton rebuilds in the
-hard-pin traces fit this defect, but the aggregate regression remains unassigned pending a soak.
-
-**Wind hypothesis checked against fresh geometry:** Polaris checksum `526814691` and QuadSomniac
-checksum `484160667` each have 16 directed wind-touching portal edges. Chord and signed-face-normal
-classification agree on every edge. Polaris's side portals (38 to 40, 105 to 103, and their twins)
-are neutral under both tests and engine-impassable. The four-portals explanation is not supported
-by these snapshots. Wind behavior stays unchanged. The wind-off probe also toggled the downwind
-cost discount, and its carrier-nav counter measures goal reissues rather than elapsed travel.
-
-The operator requires diagnosis, justified fixes, and another soak before stable promotion.
-Opus 5 owns the next matched abend2 run against `c8566c37` after build verification. QuadSomniac
-return attribution, Batteries Included connectivity, and the old engine-node target callers remain
-separate open issues. Do not add them to the same behavior arm or infer their causes from this fix.
-
-### 7.0-PREV The sampler was mis-phased — coverage, eligibility, ownership — 2026-09-06
-
-**Locked vocabulary (operator, 2026-09-06).** The **navigation network** is **arterials** (the
-skeleton highway) plus **local streets** (the lattice fill). The **navigator** plans; a **route** is
-the single continuous goal-to-goal path; the **pilot** flies it. The **committee** is the set of extra
-voices that overwrite the pilot's aim, and it is what we are removing. Retire *router*, *composer*,
-*governor*, *capillaries* and *grid nav* as separate concepts.
-
-**The defect was three conflations stacked on each other, each hiding the next.**
-
-**1. Coverage tracked room HEIGHT, not need.** `GrowFromSeeds` phased its lattice at the room bbox
-minimum in fixed 20u steps, so a room one pitch tall got its only two sample planes on the floor and
-the ceiling, where the 6.79u clearance test rejects everything. abend2's ring rooms (365 x 20 x 364)
-held **3 and 9 true lattice cells**; a 106u-tall open hall held **1279**. 54 of that map's 66 interior
-rooms (82%) had no usable plane at all — median 2 nodes against 127 in the 12 tall rooms. Fixed by
-phasing the lattice through the portal-seed centroid (the seeds are flyable air by construction):
-rooms 0 and 30 went to **223 cells each at 100% portal-pair coverage**, with the repair passes falling
-silent (87 and 96 connector nodes to zero) because there was finally a real network to stand in for.
-Not a density increase — abend2 +11% nodes, batteries **-7%**.
-
-**2. The coverage counter was inflated ~10x.** `lattice_nodes` had five writers: the sampler plus
-every repair pass, one commented "rungs are real navigable coverage (clears the degenerate flag)". It
-fed `degenerate` and `complex`, the gates granting routing authority. Room 0's build line reported 97
-lattice nodes against 3 real ones. Split into `lattice_cells` (one writer) and `connector_nodes`.
-
-**3. Eligibility measured SAMPLER FAILURE.** `complex` was `orig_comp_count > 1` — "growth left the
-interior fragmented" — used as a proxy for room difficulty, so **a room became ineligible the moment
-its coverage got good**. When coverage was fixed, abend2's `[COMPLEX]` rooms fell 9 -> 5 and the ring
-rooms lost the flag; measured in that build, rooms 0 and 30 held complete 223-cell networks and served
-**0 roadmap vias against 195 skeleton vias**. Replaced with `routable = !degenerate && lattice_cells
->= 8 && local_pair_coverage >= 75%` (22 of abend2's 66 rooms; rooms 50/53 correctly refused at 9 cells
-/ 33%).
-
-**The honest coverage predicate.** `RoadmapLocalPairCoverage` — the share of portal-seed pairs that
-reach each other WITHOUT a direct seed-to-seed sight line, i.e. through the interior. This is what
-`comp_count` cannot express: room 30 reported `comp_count == 1` both before and after the coverage
-fix while its real coverage went 20% -> 100%. **A starved room reports one component vacuously.** That
-census is what twice told this project connectivity was fine when it was not; do not use component
-counts as coverage evidence again.
-
-**Eligibility alone was not enough (measured, not assumed).** With rooms 0/30 `[ROUTABLE]`, a smoke
-still showed 0 roadmap vias against 92/120 skeleton, because `BotResolveRoomAim` gate (a) consults the
-roadmap only in NON-buried rooms and the ring is buried-center by construction. Three gates in a row,
-each defensible alone, all excluding the same rooms. The navigator now owns the crossing wherever a
-room is `routable`, with the typed-terminal contract and atomic fallback unchanged.
-
-**The committee census now exists** (it says below that it does not — that was true until
-2026-09-06). `BotNavMemberWin` had been recording it all along and nothing parsed it;
-`analyze_bot_log.py` now does. abend2, 8 bots, one round: 2885 episodes, **1930 contention (67%)**.
-`via` takes 53% of grabs and holds 97% of the time; `path_pnt` and `seam` take 36% of grabs and hold
-**1%**. Top handovers are symmetric (`via<->path_pnt` 126/107, `seam<->via` 115/100) — arguments, not
-handoffs. Same shape across the bedlam pool (59-76% contention). **Next: collapse by subtraction,
-deleting only members the census shows going silent under route ownership — never on the argument
-that they should.**
-
-**Superseded:** the dense-lattice-is-the-wrong-tool verdict of 2026-09-06. The operator's flight was
-correct about what he saw (dense where useless, connecting nothing new) but the cause was the phase
-bug, not the technique. With the phase fixed he confirmed in flight: "everything is now connected."
-
-### 7.0-PREV One network: arterials plus local streets — 2026-09-05
-
-The roadmap-authority experiment is reverted. It moved its own metrics exactly as intended (room 0:
-6,389 roadmap vs 4 skeleton waypoints; via failures 88 -> 4) while play cratered: abend2 captures
-fell from 14/10 rounds to 1/9 and flag pickups from roughly 49 to 4. The dense local grid wandered
-near the goal after bypassing the sparse arterial chain and typed tray descent that actually reach
-the hanging flag pockets. Substrate ownership is the wrong architecture.
-
-The known-good buried-room ordering is restored. The approved replacement is one query-time union
-network: skeleton links are **arterials**, roadmap links are **local streets**, and one weighted A*
-returns a complete route with a typed same-room/exit/tray terminal or returns NONE without changing
-state. It will land first as a shadow composer; execution remains gated on goal completion metrics,
-not substrate usage. No new `$nav` toggle.
-
-Room 30 has dense coverage but was split across two roadmap components. The first bounded connector
-failed closed in its smoke (`+0 nodes, 0 joined, 5 failed`): its portal-to-portal tangent fan filled
-the scratch budget before tracing the curve. The current revision seeds both search sides from the
-closest existing nodes on the two component frontiers, expands both each cycle with controlled
-branching, and retains atomic validation/fallback. Build validation passes; a room-30 smoke is pending.
-
-### 7.0.1 Committee-collapse consolidation — 2026-08-30
-
-Branch `feature/multiplayer-bots` @ `fe3445df`, `0.9.12-dev`. The "one bot, one mind, piloting a
-ship" arc: the accreted nav committee is being collapsed into one resolver by **subtraction**, not
-by adding fixes. Prior sessions kept adding per-hop improvements that play never cashed; the thesis
-this session validated is that the committee's real defect was **statelessness** (voices
-re-deciding every ~20u with no shared memory), not the number of voices.
-
-Shipped this session (each committed + built + deployed):
-- **Step A** (`4a8e63b2`) — per-entry-portal aim: `BotWaypointAimPos` answered a per-entry question
-  with a room-level boolean; now bot/entry-aware. Measured population real (Batteries 14.4% of
-  traversable entries blind, 74 rooms; abend2 4/108).
-- **Step 1** (`d5bd0a33`) — deleted 9 always-on interior toggles (`gridroute, objective_commit,
-  seam_guard, entry_commit, reach_gate, hard_cost, pseudo_bnodes, soft_hop, reach_door`), −37 lines.
-  Kept 6 real switches. Behaviour-neutral by construction.
-- **Step 2** (`55bce413`) — collapsed 3 duplicated skeleton-BFS loops into one `SkelBfs` kernel,
-  deleted dead `BotSkelBuildPath`, folded Step A in as a kernel caller. −115 lines. Verified
-  behaviour-identical.
-- **Step 3** (`fe3445df`, UNVALIDATED-for-play) — **committed multi-hop in-room intent**: the via
-  layer (`BotViaPointTick`) stores an ordered `BotSkelBuildChain` and advances a cursor per arrival
-  instead of re-deriving one hop each time. `via_chain[0]` is bit-identical to `BotResolveRoomAim`;
-  activation is narrow (indoor + `RoomBuriedCenter` + chain_len≥3). Avoids all three committed-leg
-  failure modes (broad activation / stay-in-room cancel / global stand-down) and the $softfollow
-  oscillation. No new toggle.
-
-**Step 3 smoke result (abend2, 1 round, bots-only): the toroid ORBIT is eliminated** — 0 hard
-stucks in rings 0/30 (baseline ~25), 0 `via suspended`, 0 `skeleton via room 0` re-picks; chains
-build and complete (bots cross the ring instead of wall-pressing). No crash. **BUT 0 caps** — and
-operator flew it live: bots now reach the ring but wall-press on the FAR side, needing to "go
-around."
-
-**Root cause found (live `$botstat`/`$nav contend` + navdump `abend2-step3-stuck`):** the wall-press
-is a **routing** failure, not a via failure. Every toroid ring room has one connector portal our
-router prices impassable — rm0→rm20, rm30→rm4, rm51→rm10, rm48→rm36 read
-`type=tight pass=True gcost=1000000 OUR-IMPASS DISAGREE`. The engine says passable and bots fly them
-with a nudge, but `ProbePortalClearance(…, BOT_PORTAL_SHIP_RADIUS)` in `BotPortalGeoCost`
-(bot_steering.cpp ~250) says a ship sphere can't fit → `gcost = BOT_PORTAL_IMPASSABLE (1e6)` → the
-router EXCLUDES the edge. On a toroid the ring only connects around through these, so exclusion =
-`no-route` → beeline into the far bulletproof-glass wall (bots observed nose-to-wall 377s; Hawk
-`no-route`×90). **Next fix target: the tight-portal fit-probe DISAGREE** — relax the probe toward
-the engine's verdict, or price tight-but-engine-passable as a finite penalty (like glass) instead of
-IMPASSABLE, so the router takes the only ring connector. This is upstream of the whole via/chain
-stack and is the same DISAGREE class flagged in the tried-&-reverted ledger. Open decision: push
-Step 3 (a structural win that doesn't move caps until the tight-portal fix lands) vs hold it.
-
-**Tight-connector fix now in test:** the coarse router keeps the strict graph as its first and normal
-answer. Only when that search has no route does it retry with engine-passable `DISAGREE` edges at a
-120-unit last-resort penalty. `BotPortalGeoCost` itself stays strict, so the sealed-room/powerup gates
-and grate diagnostics do not start calling blocked openings flyable. Delivery uses the same fallback
-class when selecting the entry portal, keeping Step A and seam/hop commit aligned with the chosen
-route. No toggle was added. This specifically avoids repeating `6d9c23d3`: that reverted change made
-all 18 abend2 disagreements ordinary 40-unit edges even when a strict route existed. Gate: abend2
-must lose the recurring ring `NO-ROUTE` pairs without restoring the room-4 presses or toroid orbit;
-SewerRat/grate and open-map regression checks still follow before release.
-
-**First smoke (`soak-20260830T173141.log`, one 15-minute abend2 round): mechanism passes; play
-gate remains open.** Against the immediately preceding Step-3 run, recurring `NO-ROUTE` fell 26→0,
-hard stucks 1→0, room-30 chain completions rose 44→107, and via-search failures fell 19→11. The
-cost-model change therefore reconnects the graph and bots keep moving through the ring. It did not
-produce a capture: 2 grabs, 0 caps. The caution signal moved downstream: portal-48 seam pushes rose
-25→164 and room-30 via suspensions 1→16, although total seam churn fell 616→458. Keep `-dev`; do not
-promote this from one short run. The next abend2 run must distinguish useful added ring traffic from
-a new connector loop, then the grate/open-map guards still apply.
-
-**One-mind subtraction (`cddde48c`, IN TEST): the engine's steer node is no longer a routing
-authority on routed legs.** Root cause of the recurring abend2 shaft flip-flop (bots climb to the
-toroid, reverse back down, oscillate, never entering unassisted): on a routed leg `BotSetRoutedGoal`
-resolved the correct entry aim, then `BotGetActiveSteerPoint()` overwrote it with the engine's active
-BOA path node — which points back *down* the shaft — and `BotViaPointTick` committed Step 3's chain
-to that node (`AIMSPLIT 214.9` continuous). The subtraction: on routed/resolved-aim legs the via/chain
-target is our resolved aim, never the engine node; the steer point keeps only its divergence-detection
-job (the seam-guard trigger). Applied at `BotSetRoutedGoal` (~2839) and the explore intent-less
-fallback (~3105); escort/hold/powerup/fallback/outdoor sites unchanged; `BotGetActiveSteerPoint` itself
-untouched; no new toggle. **One-round abend2 smoke (`soak-20260830T205207.log`, cddde48c vs the
-tight-connector `173141` baseline): AIMSPLIT 538→213 (−60%), 1 cap vs 0, hard stucks 0 both — a real
-authority subtraction, kept.** But it did **not** solve the toroid: bots still oscillate, now *between
-ring rooms* — `chain complete rm30→rm48` ×42 with `rm48→rm30` ×0, `rm0→neighbor` ×44 with `→rm0` ×0,
-and the router resolves a ring room's OWN room as the next hop (`target room 30` while in rm30). Room 0
-still logs 29 progress-timeouts. **The remaining toroid failure is upstream in the routing / in-ring
-aim layer — the router won't commit to a direction around the toroid or to the flag-pocket aim — a
-different fix class from the second-authority seam.** Overnight regression sweep (bedlam / fellowship /
-rim / abend2 / batteriesincluded) staged to check the subtraction for regressions before that next
-diagnosis.
-
-**WALL — the arbitration/commitment line is exhausted (2026-09-01). Reverted to `cddde48c`.** Two
-further in-test cuts were tried and REVERTED (commit that follows `c5ff288e`): the seam-guard
-no-crossing gate (`060678fc`) and the routed next-hop commit (`696d51c5`). Each moved its own churn
-metric (seam fires −83%/rnd; `path_pnt↔via` re-pick −40%, rm30→rm48 bounce −64%) and **neither cashed
-into play.** A 4×30-min abend2 soak (`soak-20260901T102127`) then showed caps had gone the WRONG way
-vs the `cddde48c` overnight — **1 cap / 2 h** vs ~5 caps / 1 h — with rooms 0/30 still the only stuck
-hotspots and Blue side taking 0 picks all round; the next-hop commit in particular held bots on
-unreachable ring exits for its 5 s window (room-progress timeouts up), and operator ground-truth
-confirmed bots back to **stalling at the shaft top, not entering the ring** — the original
-pre-one-mind failure. Lesson, re-confirmed: on this map class, reducing decision-layer churn is NOT
-sufficient for play; we kept optimizing a metric while the map got worse. `cddde48c` (one-mind
-via-target — the FIRST abend2 captures) stands as the known-good baseline.
-
-**Two facts the wall clarified, for the next angle:** (1) ~~the skeleton is NOT the problem — room 0's
-skeleton is one fully-connected component and aim resolves cleanly (277 builds, 0 fails); room 30 is
-connected across 5/6 exits (only the tight rm30→rm4 isolated). Connectivity is solved.~~ **[SUPERSEDED
-2026-09-02 by the overlay finding below — the "one fully-connected component" measurement was a FALSE
-POSITIVE: the graph is connected, but through invalid hub-and-spoke edges, not a ring cycle. The
-skeleton IS the problem.]** (2) The failure
-that remains is the bot committing to and THREADING to a target inside the ring — and every attempt to
-fix it from logs alone produced dead theories. **Next attempt requires the live in-world nav overlay
-(PLAN.md §3.6 / `VISUAL_DEBUG.md`) — stop guessing, watch it.** Do not resume arbitration-layer tuning.
-
-**OVERLAY'S FIRST FINDING (2026-09-02) — the toroid skeleton is hub-and-spoke, not a ring cycle. This
-is the root cause, and it invalidates the "connectivity solved" claim above.** *(See the REFINED note
-just below for the corrected specifics: the hub is ~¾ up the connecting shaft in open air, NOT in a
-buried donut hole, and the skeleton is mostly right — a rework of construction, not a rewrite.)*
-The overlay (built 0.9.12, Ctrl+F7) drew abend2's ring and the operator saw it directly: the ring
-segments are **not** linked neighbour-to-neighbour around the tube — every segment is wired
-hub-and-spoke to a single node sitting in the **hollow centre of the donut**, under the mos shaft. The
-loop drawn at the shaft-top entrance is exactly the path the bots trace before turning around — they
-are faithfully following the topology the skeleton drew; the skeleton simply cannot express "go
-around."
-- **Mechanism, confirmed in code:** `SkelBuild`'s pseudo-bnode step (`bot_steering.cpp` ~487–495) adds
-  a **portal-centroid node** — the arithmetic mean of ALL the room's portal `path_pnt`s — then edges
-  every portal to it wherever the straight leg is hull-clear. On a ring, that centroid lands in the
-  middle of the hole/shaft. The shaft is open air, so those straight legs across the opening ARE
-  hull-clear → the fit test passes → the edges are accepted, and they route through the core. Its own
-  comment admits the blind spot ("lands in airspace for bent/L/**convex** rooms"); a donut is
-  **concave**, the one case where the centroid falls in void.
-- **Why the logs said "connectivity solved":** the graph is one connected component — but connected by
-  **semantically invalid** edges. Straight-line hull-clearance is necessary but NOT sufficient: a leg
-  that crosses the buried centre of a ring is geometrically clear yet useless, because it goes through
-  the hole instead of around the tube. "Fully-connected component" measured the wrong thing.
-- **This is upstream of the entire via/chain/router stack.** The router threads the skeleton
-  faithfully; the skeleton doesn't describe the ring. No amount of arbitration/commitment tuning can
-  fix a graph whose edges are wrong.
-- **Design target (operator):** the ring skeleton must be a **cycle** — each segment linked to the one
-  adjacent to it around the tube — not hub-and-spoke through the centre.
-- **Fix direction (next session — NOT yet built):** for ring/concave rooms, suppress the global
-  portal-centroid hub and instead chain **adjacent** portals (order them around the ring; connect
-  neighbour→neighbour with midpoint pseudo-bnodes placed **inside the tube**). The defect is in
-  **skeleton construction** — building the wrong *connectivity* — so that is where the next work goes;
-  do not resume via/arbitration tuning.
-
-**REFINED 2026-09-02 (operator's second, careful flight — corrects specifics above):** two things in
-the first write-up are wrong and are corrected here.
-- **The skeleton is MOSTLY RIGHT, not fundamentally flawed.** Many segments ARE correctly connected,
-  and since the capture work the inner shaft does connect to the toroid at one point. This is a
-  **re-work** of skeleton *construction*, not a rewrite — and the exact rework is deliberately NOT
-  designed yet: the operator is surveying more maps first to see how general the pattern is.
-- **The hub is NOT in a "buried donut hole"; the room is NOT buried-centre.** The centroid node is drawn
-  roughly **¾ of the way up the angled connecting shaft** (open airspace), and spokes outward to major
-  points on the toroid segments. So `RoomBuriedCenter` is **not** the right trigger for the fix — this
-  room would not flag as buried. (Ignore the "hole/void/buried" language above; the mechanism is a hub
-  in open shaft space, not in solid.)
-  - **Why "the hole" was the easy wrong read — and why the 3D overlay was essential.** In a top-down /
-    2D projection the hub *appears* to sit in the donut hole (invalid space). In 3D it is actually
-    **below** that invalid hole-space, in **valid** air down in the shaft — and the shaft-hub and the
-    ring segments **cannot be traversably joined the way the straight-line spoke edges pretend**. A flat
-    view would have confirmed the wrong diagnosis; only the 6DOF fly-through separates "in the hole"
-    from "below the hole, in the shaft." This is exactly the case the VISUAL_DEBUG "no 2D view" ruling
-    was written for.
-
-**THIS IS A CONNECTIVITY BUG, NOT A BAD-NODE / INVALID-SPACE BUG (operator ruling — do not chase this
-ghost).** Every node here sits in **real, flyable space** — the hub included. Do **not** build machinery
-to detect or reject nodes/edges as being "in invalid/void space": the space is valid, so that check
-always says yes and buys nothing. The whole defect is *which points get connected to which*: the graph
-asserts spokes (segment→shaft-hub) and omits the real adjacency (segment→neighbouring segment). The fix
-is to build the **correct connectivity** (the ring cycle), full stop — a topology fix, not a
-space-validity fix.
-  - **VERIFIED in code (2026-09-02): the space validation already exists — nothing to add there.**
-    `ViaSegmentClear` is a swept ship-radius `fvi_FindIntersection` (false on HIT_WALL/BACKFACE/TERRAIN),
-    and **every** skeleton edge is gated on it in `SkelBuild` (bot_steering.cpp ~456–506): portal↔portal
-    edges, the per-portal offset pseudo-nodes (kept only if reachable from their portal), and all
-    pseudo-node edges incl. the centroid ("an isolated pseudo-node simply gets no edges and is ignored").
-    `BotRoomPathPntReachable`/`RoomBuriedCenter` add further reachability validation. So every spoke to
-    the hub already *passed* a ship-sized clearance test — a ship can fly it. That is the clincher that
-    this is a connectivity bug, not an invalid-space bug: the validity checks ran and passed. (The only
-    unvalidated thing is the centroid node's *position*, added unconditionally in step (b) — harmless,
-    because its edges are hull-gated, so it can never wire a bot into solid.)
-
-**abend2 geometry (operator's precise model — use this):** a **centre room** with two portals per side,
-top and bottom. The **top portal** has a door + a **bulletproof-glass barrier with a side door** leading
-to the toroid. The **bottom portal** is open and feeds a **long shaft on a slight upward incline** toward
-the toroid, whose exit lands on the **far side of the toroid from the centre room**. Each team has this
-system, mirrored exactly. The skeleton's centroid node lands ~¾ up that shaft and spokes to toroid
-segments; **many toroid segments connect to the shaft-centre hub with ZERO edges to their neighbouring
-segments.** So a bot at the shaft exit literally cannot see that the way around is to enter the adjacent
-connecting segment first — it smashes into walls and turns around hunting an exit that the graph never
-offered. That is the wall-press-and-reverse the operator has watched for months.
-
-**SEQUENCING PRINCIPLE (operator ruling, do not violate):** Phase 3 "capillaries" (the fine volumetric
-roadmap filling gaps) would *likely* add abend2's missing segment-to-segment links and paper over the
-symptom — **which is exactly why it must NOT be the fix.** Capillary-filling on top of a wrong base
-skeleton **masks** the base defect and lets it persist across the map pool. So: **fix the base skeleton
-construction FIRST** (correct ring cycles, correct adjacency), **THEN** use the roadmap/capillaries to
-fill the residual gaps — because even a correct builder will not land every map perfectly connected. Base
-skeleton correctness is the prerequisite; gap-filling is the follow-on, never the substitute.
-
-**Related class — maze-like interiors (e.g. the tavern on Town of Bree):** a *different* problem class
-(dense, cell-like interior connectivity, not a ring), but the operator's read is it is **solvable by the
-same programme** — get the base navigation skeleton built correctly, then the roadmap on top. Track it
-alongside the ring-cycle rework, not as a separate effort.
-
-**MULTI-MAP OVERLAY SURVEY (2026-09-02) — the pattern generalises: mostly-correct skeletons with
-BAFFLING MISSING EDGES.** Operator flew four maps with the overlay. The consistent theme is **not** wrong
-nodes or bad space — it is **node pairs that a human sees as connected by an obvious path, but which have
-no edge.** Per map:
-- **abend2** — the most egregious: the shaft-hub spokes (edges that "don't really work" as a route) PLUS
-  the missing ring-adjacency edges. Both faces of the same gap problem in one room.
-- **batteries included** — very well connected overall, BUT specific rooms — including the **blue flag
-  room** — poorly connected (missing edges).
-- **nysa** — the **blue flag room** has the same gap, and *the geometry there is not even difficult from a
-  human perspective* — an obvious connection simply isn't made.
-- **stadium plus** (anarchy, so play is unaffected) — overall very well connected, main room already a
-  dense lattice, but a **side room is left unconnected**.
-- **Operator's conclusion:** the skeleton *principle* is sound; the failure is **incomplete
-  connectivity**, and the **router cannot pick good routes over a graph with these holes.**
-
-**Leading hypothesis for the gaps (grounded in code, TO CONFIRM tomorrow with the overlay on the named
-rooms):** the skeleton only ever connects two nodes when a **single straight** ship-radius leg between
-them is hull-clear (`ViaSegmentClear`), or when the narrow per-room pseudo-bnode synthesis happens to drop
-a bridging node in just the right spot. So **any pair whose obvious real path is BENT / L-shaped / around a
-corner gets no edge** — the straight line between their positions hits a wall, and the pseudo-bnode step
-(fires only on a disconnected pair; adds only per-portal offset nodes + one centroid) often doesn't place a
-node where the bend needs it. abend2's ring is the extreme (a curved tube has no straight adjacency at
-all, so it collapses to the hub); the flag-room / side-room gaps are the milder, same-cause version. If
-this holds, the base-skeleton fix is about **edge/bridge generation completeness** — richer interior-node
-synthesis so bent-but-flyable connections actually get made — which is squarely the "fix base skeleton
-FIRST" work, with the volumetric roadmap as the follow-on gap-fill, never the substitute.
-
-**These four rooms are the verification set** for any construction fix: abend2 rings, batteries blue-flag
-room, nysa blue-flag room, stadium-plus side room. A fix that closes these gaps on the overlay without
-inventing bad edges is the bar. (Survey is a couple of maps deep — more still needed to gauge breadth.)
-
-### 6.9 The consolidation phase — design of record
-
-*Absorbed 2026-08-29 from `NAVIGATION.md §6.9` and `NAVIGATION.md §6.9`, both retired. The
-2,300 lines they held were ~90% dated session narrative; this is what survives as design. Full text
-in git history.*
-
-**The diagnosis (2026-07-22):** the bot *fights* like a pilot and *travels* like a committee.
-Navigation grew into ten-odd cooperating subsystems as game modes were added, and they compete for
-the same decision. This is incoherence, not a routing shortfall — the substrate is sound.
-
-**The north star (operator, 2026-08-04):** *a bot **flying** a ship — not code that **is** the ship,
-taking orders from multiple different vectors.* Two physics rulings constrain everything:
-
-1. **D3 has real drag. Braking is just not thrusting.** Stop thrusting and the ship decelerates on
-   its own. A bot that reverse-thrusts to stop is not flying the way a human flies.
-2. **Bots do not resist weapon knockback.** Near-impossible for a human, and it reads as unnatural.
-   Active braking should be *loosened* generally. Under-fire hold failure is the game as designed.
-
-Both reinforce the standing rule: bots use only legal thrust — no velocity-zeroing, position-snapping
-or knockback immunity, even to fix a park. (The Entropy v6 active park thrusts against residual
-velocity including knockback; flagged as over-reach, untouched, and explicitly **not** a template.)
-
-**What "one authority" means here — one router, two substrates, one contract:**
-
-```
-travel intent (persistent: dest + owner + why)
-        │
-   ONE router entry — decides per leg, records the decision:
-        │      ENGINE substrate  iff BotBnodeNativeActive() && BotBnodeLegOk()
-        │      ROADMAP substrate otherwise:
-        │          indoor  = coarse Dijkstra + volumetric roadmap (0.9.4)
-        │          outdoor = troute composer over the region lattice
-        ▼
-   one engine goal → engine steers → BotApplyThrust flies the vector
-```
-
-The contract is already singular — every mechanism delivers one engine goal. What was missing is a
-single **dispatch point** deciding, once per leg, *who plans it*. The referee layers (seam guard, hop
-commit, via) exist because adjacent-hop delivery lets the engine re-plan through its own BOA; a
-roadmap-owned leg delivered as a same-room-claimed waypoint gives the engine nothing to re-plan, so
-those referees have nothing to referee. The hard split — campaign has BNodes, MP never will — then
-lives in one predicate instead of thirteen call sites' habits.
-
-**Where the staged plan got to:** Step 3 (dispatch consolidation) **closed** for explore-owned
-interior errands — validated across six pools, an independent cross-model review, and the KegD3
-cockpit verdict ("Feels excellent"). Step 4 (campaign-outdoor gate widening) **closed NO-GO** — 99.2%
-of its target legs failed a ship-width clear-line test. Step 5 removed three default-off experiments
-(`gridall`, `outroute`, `replan`) with no behaviour change. Toggle count 36 → 33.
-
-**Never measured, still true:** whether seam/hop go quiet under roadmap-owned delivery on MP maps —
-the MP committee census does not exist. Do not assume it.
-> **Updated 2026-09-06 — the census now exists.** `BotNavMemberWin` had been recording it since 0.9.x
-> and nothing parsed it; `analyze_bot_log.py` does now. First MP reading (abend2, 8 bots, one round):
-> 2885 episodes, 1930 contention (67%); `via` 53% of grabs / 97% of held time; `path_pnt` + `seam` 36%
-> of grabs / 1% of held time. The prediction above is *supported but not yet tested* — whether they go
-> quiet under route ownership is exactly what the post-ownership census measures. See §7.0-CURRENT.
-
-**Where this leads next:** `PLAN.md` §3. The 08-29 work established that routing wins keep cashing
-out as steering failures, and named the prerequisite (per-entry-portal aim) that gates the rest.
+| `BOT_PORTAL_CLASS_NEVER` | wall, opening narrower than the hull (`PortalTooSmallForHull`, :368: smaller in-plane extent against the hull diameter), window onto a wall (`PortalWallBacked`, :419: FQ_BACKFACE rays all blocked within `BOT_PORTAL_WALL_BACKED_DEPTH` 5 u), skybox windows | no skeleton edges, no lattice seed, never an exit goal, never a DISAGREE admission, never glass |
+| `BOT_PORTAL_CLASS_DOOR` | engine-passable, including the DISAGREE class and shattered panes | routable per §4.1 |
+| `BOT_PORTAL_CLASS_PANE` | intact breakable glass on a side that renders it (slice 6c: an unrendered breakable face is a floor grate, not glass) | routable by glass mode only (§4.5) |
+
+`BotPortalGeoCost(room, portal)` (bot_steering.cpp:206) is the strict physical verdict (grates/slits impassable,
+fits-without-margin at `BOT_PORTAL_TIGHT_PENALTY` 40, glass at `BOT_PORTAL_GLASS_PENALTY` 120, open 0), cached per
+level and used by sealed-room, grate and powerup checks. `BotPortalRouteCost` (:294) wraps it with the hull tiers and
+the DISAGREE retry for the router.
+
+**The validated crossing.** `PortalCrossingCompute` (bot_steering.cpp:824), behind `BotPortalCrossing` (:1198) and
+`BotPortalCrossingPath` (:1309), samples the door polygon in its plane and sweeps the hull along the face normal:
+
+- **Columns** of 24, 16 and 8 u either side of the plane, then a **4 u lip** (`BOT_CROSS_DEPTH_MAX` 24 and its
+  thirds and sixth). The lip is Batteries rm80's case: a propped leaf leaves one nose-first line at its free edge.
+- **Two passes:** a coarse grid sized to a budget (so a 69 u doorway is covered edge to edge), then a fine pass half a
+  hull radius apart over the part a hull can occupy, when the coarse pass finds nothing.
+- **Three radius rungs** (`BOT_CROSS_RUNGS`): the comfort hull 6.7, the Phoenix wall sphere `BOT_HULL_PHYS_WIDE`
+  6.42, the Pyro-class wall sphere `BOT_HULL_PHYS` 5.36. A crossing found only below the comfort hull is **TIGHT**
+  (`BotPortalCrossingTight`, :1123) and records its radius (`BotPortalCrossingFitRadius`, :1133). These rungs replaced
+  the earlier 0.92 "door-fit scale", which was the same fact misread as contact slop.
+- **Bent crossing** when no straight column exists: one lateral fan step each side, hull-scaled, with a diagonal.
+- **Honest sweeps:** `CrossSweep` (:656) uses `FQ_BACKFACE` and runs both directions; `SweepStartRoom` (:644) maps an
+  exterior start room to the terrain cell under the point (fvi asserts on an `RF_EXTERNAL` start), and a point off the
+  terrain grid reads blocked.
+- **Near / plane / far.** A door node hands out its approach point (`near`, in this room) while the bot is on its way
+  and its push-through point (`far`) once beside the door; the seam push aims along the normal at `far`. Intact panes
+  get a synthesized square-on crossing so the reactive glass clear fires.
+- **The network keeps the engine point.** Using the crossing point as the skeleton node or lattice seed was measured
+  and rejected (L21).
+
+**Shattered panes.** `BreakGlassFace` clears `PF_RENDER_FACES` when a pane breaks. `PortalPaneShatteredFlip`
+(bot_steering.cpp:675) re-checks a cached PANE against the live flag on every query and flips it to DOOR on both
+sides, retiring dependent caches. `BotPortalEnginePassable()` (:472) returns the engine verdict, or true for a pane
+this code saw shatter (`pf_glass_flipped`). Every admission decision reads it (slice 6d), because the engine's frozen
+table would otherwise leave a broken pane unroutable (the 0.9.14 NO-ROUTE 1 → 299 regression).
+
+### 4.3 Door choice: two hops deep, and one door for every layer
+
+**`BotEntryPortalIndex(obj, wp_room, goal_room, &onward_validated)`** (bot_steering.cpp:2118) picks the door into the
+next room by the leg to it plus the leg from it to the portal the route leaves that room by. The onward leg counts
+only if it is hull-clear from the door's far side (`3ea5fb0a`); when no candidate has a clear onward leg the
+lookahead is blind (log line `entry door lookahead blind`) and the nearest door decides. Verdicts are memoised per
+(room, entry, exit) until the level or roadmap serial changes. Root case: Sigma Base rm19, a non-convex gallery cut by
+the bridge room rm13, where "nearest door" picked the one behind the bot and oscillated.
+
+**One mind at the door (old review queue Q12, ruled 2026-09-22).** `BotRouterExitDoor` (bot_steering.cpp:1613)
+returns the router's door when its pick rests on a hull-clear onward leg; `BotAimExitMask` (bot_steering.h:464) and
+the internal `AimExitMask` (:1363) narrow the aim layer's exit set to it, so the composer, the roadmap via and the
+skeleton chain fly the router's door (`b9b3b2e3`, `7b67fe1b`: only an informed pick binds). The same exit set is the
+router's admission ladder: doors first, then vertical panes, then any pane.
+
+### 4.4 Hull tiers (0.9.16-dev)
+
+| Tier | Radius | Where it applies |
+|---|---|---|
+| Comfort hull | `BOT_ROADMAP_CLEARANCE` 6.7 | lattice, skeleton, strict router edges, network legs |
+| Wall sphere | `BotHullPhys(obj)` (bot_steering.cpp:1143) = size x 0.8; class rungs 6.42 (Phoenix) and 5.36 (Pyro class) | the floor: an opening narrower than this is NEVER |
+| TIGHT | between the two | last resort only, never a shortcut, never for a ship whose wall sphere does not fit (`BOT_HULL_FIT_SLACK` 0.1 u: the rungs are class means) |
+
+Rules (`f1310a81`..`84a3f3d3`):
+- **A TIGHT door leaves the comfort network** (no lattice seed, no live skeleton node) so a cramped hatch cannot
+  starve a room (Batteries rm37's 11.4 u floor hatch had killed its lattice growth).
+- **A room's only cramped door stays in the network.** `BotPortalTightLeavesNetwork` (bot_steering.cpp:1158) keeps a
+  TIGHT door live on both sides when it is the only door of either room it joins, and `BotPortalRouteCost` prices it
+  +40 in the strict pass for every ship, before the ship's size is consulted. Tightness is a price, never a reason to
+  cut a room off. abend2's flag pits went 0 captures → 6 in four rounds with this rule (0.9.15 profile back).
+  "Only door" counts every door-class portal, so a room with two tight hatches and nothing else (Batteries rm38) still
+  reads cut off; that is deliberate until soaked.
+- **The via search retries at the wall sphere** for a leg toward another room's door approach (never an in-room
+  target such as a powerup under a desk), including a target within 3 u of a door's crossing points; a leg found there
+  makes a TIGHT commitment in that room, ended when the bot leaves it (`2d08da76`, `79d06af3`).
+- **The hop commit's fit test** uses the router's slack (`84a3f3d3`).
+- Lattice, skeleton and geocost probes stay at the comfort hull.
+
+### 4.5 Glass: the per-bot mode ladder (`55a8d28f`, 0.9.14)
+
+| Mode | Who | Edges added |
+|---|---|---|
+| OFF | no kinetic breaker, or `$nav glass` off | doors only |
+| SHORTCUT | `BotCanBreakGlass` (bot.cpp:1749): Vauss, Mass Driver, or a loaded missile | vertical panes at +120 (about three hops, so a comparable door wins) |
+| SOLE | after the strict and DISAGREE passes fail | any pane, including horizontal vents |
+
+A horizontal vent can only be a sole route. The FREE form (any pane at low cost for everyone) was measured as a
+regression: 127 of Batteries' 207 panes are ceiling vents (L14). `BotCanBreakGlass` is the one source of truth for
+"can open a pane", mirrored by `BotClearObstacleSafely`'s firing gate (bot.cpp:1685). Pass 5 of the reactive clear,
+`BotClearCommittedGlassHop` (bot.cpp:2096), shoots a pane the router committed the bot to at its own point. A pane
+narrower than the hull is NEVER, not glass (Batteries' 11x6 u decorative grids). Glass gives way only to matter
+weapons; never shoot `TF_DESTROYABLE` cosmetic faces or permanent slits (the discriminator firewall, OBSTACLE_GEOMETRY
+§3).
+
+### 4.6 Dynamic penalty and delivery
+
+`BotBumpPortalPenalty` / `BotPortalDynPenalty`: a room-progress timeout bumps the portal the bot failed to cross by
+`BOT_PORTAL_DYN_BUMP` 80, capped at `BOT_PORTAL_DYN_MAX` 600 (far below impassable, so the only route stays usable),
+decaying `BOT_PORTAL_DYN_DECAY` 4 per second. It is the cost-signal form of "stop pressing this door".
+
+Delivery: the engine ignores our route if handed the far goal (it re-plans with BOA), so `BotSetRoutedGoal`
+(bot.cpp:2977) feeds it the next waypoint as an `AIG_GET_TO_POS` goal and recomputes on room entry. It serves
+objective errands (`BotDoExploreRoaming`, bot.cpp:3488), carriers (`BotDoCarrierNav`, bot.cpp:4053), hoard carriers and
+escort orders. Its outdoor branch is the one outdoor dispatch (§5.4).
 
 ---
 
-### 7.0 Measured result — 2026-08-30: FULL glass routing is a REGRESSION (do not retry)
+## 5. The network: local streets, arterials and the outdoor tier
 
-**Paired A/B, 33 pinned Batteries rounds, arms alternating round-by-round, 28/28 `guard=PASS`.**
-Arm A = stable 0.9.11. Arm B = artery hierarchy + unrestricted glass routing + per-bot break
-capability. Arm B lost decisively:
+### 5.1 One query
 
-| | rounds | picks/rnd | distinct pickers/rnd | caps/rnd | 0-pick rounds | glass clears/rnd |
-|---|---|---|---|---|---|---|
-| A — stable 0.9.11 | 17 | **1.94** | **1.71** | **0.94** | 18% | **30.2** |
-| B — artery + free glass routing | 16 | 0.56 | 0.56 | 0.31 | 50% | 19.4 |
+The in-room planner is one union A* (`ComposeUnionRoute`) over skeleton nodes and bends, lattice cells and the door
+crossings, with the straight line handled as string-pulling inside the plan. Its callers today still choose between
+the composed route, the roadmap via (`BotRoadmapFindVia`, bot_roadmap.cpp:2958, `QueryVia` :2324) and the skeleton
+chain (`BotSkelBuildChain`, bot_steering.cpp:2475) by room type and a blocked-line test, inside `BotResolveRoomAim`
+(:2314). Collapsing that choice into the single query is open work (§7.1 step 1).
 
-Mechanism: **stucks +131%** (409 -> 944 per round) and dyn-penalty bumps +74%, while via/seam/
-hop-commit all FELL — the drop is bots not travelling, not bots travelling better. Glass clears fell
-even though arm B is the arm routing through panes: bots were aimed at glass they then failed to
-cross. **127 of Batteries' 207 breakable portals are CEILING vents**; free routing sends bots at
-horizontal openings they cannot thread, and they pin. Reverted in full
-(`0.9.12-artery-glass-REVERTED.patch`, outside the repo). This CONFIRMS the 0.9.12 revert with a
-proper paired A/B, which that attempt never had.
+Entry is gated on `BotRoadmapRoomRoutable(room)` (bot_roadmap.cpp:3083) or a buried room; the composed drive runs only
+when the straight line is blocked (`!BotSegmentClear(bot, target)`), with a minimum of 3 route points in buried rooms
+and 2 elsewhere.
 
-**Baseline of record (new):** Batteries on stable 0.9.11 = 1.94 picks/rnd, 0.94 caps/rnd, 56%
-conversion over 17 pinned 15-minute rounds, 8 bots, 4v4, PPS=40.
+### 5.2 Local streets: the volumetric roadmap (`bot_roadmap.cpp`, 0.9.4 onward)
 
-**Two corrections to load-bearing numbers in this file and PLAN.md §3.2.**
-1. The "34% of Batteries portal entries are blind" figure counted glass panes and grates as
-   doorways. Restricted to portals a ship can traverse it is **16.7%**, and geodomes collapses
-   77.9% -> 2.9%. Blindness is roughly uniform across maps (7-25%), not a Batteries anomaly.
-   The figure is ALSO derived from `los_from_pathpnt_clear`, which probes FROM the room path_pnt
-   toward the portal — the opposite direction to `BotRoomPathPntReachable`, and the direction its
-   own comment calls untrustworthy. Treat it as indicative only.
-2. "Hub rooms have roadmaps shattered into 17-20 components" is a MISREAD. Those rooms are one
-   giant lattice component plus N-1 orphaned singleton portal seeds, and in rooms 3/22/31/33
-   **55 of the 70 orphaned seeds are intact breakable glass, 8 are grates** — the roadmap is
-   correctly refusing to seed through them. The airspace is not fragmented.
+**Why it exists.** Portal-derived nodes cover the space between portals, not a room's volume. Through-room thrash
+(portal-to-portal oscillation) and in-room target unreachability (no node near an arbitrary point) both follow. The
+geometry is 3D (Town of Bree room 60 is a 186x127x97 buried labyrinth), so the substrate is a deterministic,
+grid-seeded PRM.
 
-**Reach is the metric that matters, not captures.** Across the whole soak corpus, picks/round splits
-maps into two populations with a ~10x gap: quadsomniac 42.8, kegd3 29.8, plutonium 25.2, polaris
-18.8, apparition 16.3 vs batteriesincluded 1.42, abend2 1.15, isengard 0.93, rim 0.33, bree 0.10,
-nightmarecastle 0.00. Distinct pickers/round on Batteries is **1.18 of 8 bots** — one bot per round
-reaches the enemy flag, which is the operator's "spawn lottery" quantified. Batteries' conversion
-(56%) is the BEST in the set: its return leg works, its outbound reach does not. What defines the
-two populations is NOT yet known and is the open question worth answering next.
+**Construction: grow from seed.** Per room indoors and per terrain region outdoors, built on demand or by the
+level-start prewarm, cached, invalidated on `BOA_mine_checksum`, and flushed by `BotRoadmapInvalidate()` when a
+build-time toggle flips.
 
-**Map structure facts (Batteries, operator-corrected).** 207 breakable portals = 127 on horizontal
-faces (ceiling/floor — a VENT NETWORK across 75 rooms, sometimes the only way in, often a shortcut)
-+ 80 vertical (office window/partition panes, incl. the conference room). Do not call these "vent
-offices" — that merges a routing layer with a wall type. Glass = one kinetic shot; grates = several
-shots of anything; both already solved in the CLEARING layer months ago — do not rebuild it.
+1. **Seed** from DOOR-class portal points (provably flyable); NEVER portals and TIGHT doors that leave the network do
+   not seed; pane seeds sit one hull radius into the room.
+2. **Grow** a 3D lattice over the room box (`BOT_ROADMAP_SPACING` 20 u indoors, `BOT_ROADMAP_OUTDOOR_SPACING` 30 u
+   outdoors; coarsens past `BOT_ROADMAP_MAX_LATTICE` 20000). A cell is accepted only when a hull-swept edge reaches it
+   from an accepted node. Never cull a point because a probe from it is clear: a ray from inside solid false-clears.
+   `GrowFromSeeds` (bot_roadmap.cpp:914) grows under **three phases** (seed centroid, centre-anchored, half-pitch shift)
+   and keeps the fullest. Phasing at the box minimum had put a one-pitch-tall room's only sample planes on its floor
+   and ceiling (abend2's ring rooms held 3 and 9 cells; 223 each after the fix).
+3. **Back-face honest build probes.** `RoadmapLOSr` (bot_roadmap.cpp:530) sweeps indoors with `FQ_BACKFACE`
+   (`8b6ee205`): D3 walls are one-sided, and a probe starting behind a partition grew edges through it (Bree rm59).
+   Outdoor edges with an endpoint in an interior room's box must be clear both ways, and the outdoor sweeps are
+   back-face honest too (`c1d34f0a`). The runtime primitive
+   `BotSegmentClear` keeps its old behaviour for runtime callers (L23).
+4. **The void-cell guard** (`22fb70b0`..`dd9876e6`). A cell is kept only if it lies inside this room, a room next door
+   through a portal, or the room beyond an adjacent door room (`InThisOrNeighbourRoom`, bot_roadmap.cpp:1106). "Inside"
+   is the union of the engine's `fvi_QuickRoomCheck` and six axis rays (`fvi_RoomCheckDir`): the first ray whose
+   closest hit is a front face proves an interior point, since rock never sees the inside of a wall. A cell in no room
+   is still kept when it is open outdoor air (under the ceiling and above a solid terrain segment, or anywhere over a
+   `TF_INVISIBLE` one: Bree's sunken streets). Cause: Sigma Base's exit tower lattice had two thirds of its points in
+   rock and routed the exit leg through the shaft wall. A sky-roofed-room exemption for Canyons was tried and reverted
+   (L29); thin rooms are NAV7.
+5. **Heightfield admission outdoors** (0.9.15). Terrain collides from above only, so a sweep that starts underground
+   is clear everywhere. An outdoor cell over a solid segment must stand hull clearance above `GetTerrainGroundPoint`;
+   `TF_INVISIBLE` segments are exempt. Isengard went from 6811 cells (916 real) to the real ones.
+6. **Clearance is a connectivity radius**, not a flight margin (Invariant 6).
+7. **Repairs**, in order: the **corner bridge** (`$nav bridge`): a single midpoint swept laterally/vertically up to
+   `BOT_ROADMAP_CORNER_OFFSET_MAX` 120 u over spans up to `BOT_ROADMAP_CORNER_LEN` 220 u, through the same back-face
+   honest `RoadmapLOS`; **bounded multi-bend repair** (0.9.13): a deterministic bidirectional search from the closest
+   nodes on two component frontiers, string-pulled to legs of 12 u or less and committed atomically only if every leg
+   clears; the **door on-ramp** for a room still below the routable floor: a best-first search along the portal
+   normal with the hull-scaled tangent fan, committed only if it gets 24 u inside (Batteries rm80: 3 → 239 cells at
+   the time); and **tube densification** (`$nav dense`) for thin shafts.
 
-**Objective approach shape (all maps, derived).** Every CTF flag room in the set has exactly ONE
-adjacent room, so flank must be measured between the ANTECHAMBERS, not at the flag room. Node-
-disjoint routes there: batteriesincluded 4, abend2 2 (the two ways round the toroid), rim 2,
-polaris 2, nightmarecastle 1, isengard 1, mysterious_isle 1. On a 1-route map a blocked approach has
-no alternative, so "reroute" is wasted motion and the honest answers are commit, wait, or fight —
-today's committee hunts alternatives there by construction.
+**Routable predicate.** `routable = !degenerate && lattice_cells >= 8 && local_pair_coverage >= 75%`
+(`BOT_ROADMAP_ROUTABLE_MIN_CELLS`, `BOT_ROADMAP_ROUTABLE_MIN_PAIRPCT`). `RoadmapLocalPairCoverage`
+(bot_roadmap.cpp:873) is the share of DOOR-seed pairs that reach each other through the interior, without a direct
+seed-to-seed sight line. `lattice_cells` has one writer (the sampler); repair nodes count as `connector_nodes`.
+**Component counts are not coverage:** a starved room reports one component vacuously (abend2 room 30 read
+`comp_count == 1` while its real coverage went from 20% to 100%). Do not use the census as coverage evidence.
 
-**Arterial model, sharpened (operator).** HALLWAYS are the arteries, specifically the centre of each
-hallway; they branch into rooms and/or the ceiling vent. A vent is only an artery where it is the
-sole way in. This is a MAP-scale, room-level property — per-room node classification approximates a
-hallway centreline but has no concept of which ROOMS are hallways. Derivable and verified across 7
-maps by room BETWEENNESS (traffic concentration), NOT by shape: long-and-narrow is a Batteries
-artifact (it is an office building); Rim's spine is a toroid, abend2's a ring, Isengard's a tower.
-Spine length (rooms carrying 80% of transits) ranges 15% (rim) to 58% (nightmarecastle).
+**Query and delivery.** Lazy Theta\* (any-angle; LOS = the same build sweep, memoised per room). Delivery is the
+furthest path vertex with clear LOS from the bot, as an ordinary `AIG_GET_TO_POS` sub-goal. The ship's own attach
+(`NearestVisibleShip` :2244, `VisibleUnionNodes` :2478) retries the nearest 24 nodes within 80 u with a 2.5 u ray when
+the hull sweep dies within 1.5 u of its start (a ship in contact), and accepts such a leg only if the full hull clears
+somewhere in its first 24 u (`d783cd18`, `f27d247d`). Goal and item attaches never use the thin ray.
 
-### 7.0.0 Investigation notes — 2026-08-29 (NO CODE SHIPPED; tree is 0.9.11)
+**Sliced builds (0.9.15, `455aacbe` for the skeleton in 0.9.16).** Builds run on parked worker threads used as
+coroutines, `BOT_ROADMAP_SLICE_MS` 5 per server frame, fed by a level-start prewarm (terrain regions first) and by
+on-demand requests that jump the queue. Until a room is published the bot flies it by the skeleton. Rules for touching
+this code: `BOT_DEV_REFERENCE.md`, "Frame time / sliced roadmap builds".
 
-**Everything in this section is a FINDING, not a change.** A 0.9.12-dev branch of work was built,
-measured over nine pinned Batteries rounds, and **reverted in full** on operator call: it did not
-improve play, and cleanup that does not improve or preserve play does not earn its place. The tree
-is stable 0.9.11. The engine facts below were verified against source and are worth keeping; the
-code that acted on them is gone (full patch preserved outside the repo).
+**Known limits.** A regular lattice can miss a passage wider than the hull but narrower than the spacing (NAV7). A
+statically clear path is not always flyable at speed; the spacing is a control-loop parameter tuned against observed
+motion. fvi-clear is not traversable for dynamic geometry (doors, forcefields, grate objects: OBSTACLE_GEOMETRY). The
+growth probe can over-reach into a sealed pocket over one lattice step (NAV28).
 
-**Finding 1 — terrain connections are recorded from the terrain side.** `BOA_connect` stores the
-interior room + portal but is discovered from the EXTERNAL side, so a *window* onto the skybox is
-recorded exactly like a hangar door. Batteries Included has 22 external rooms, a terrain region with
-a full 4096-node outdoor roadmap, and **zero** openings a ship can fly out of — an interior-only
-level. `$nav troute` adopted 31 terrain plans in a 15-minute round with no bot ever reaching
-terrain; each redirects the routed goal at its exit room, so exit rooms 16/27/70 were simultaneously
-the top via-search-failure rooms and a carrier held room 70 for 160 seconds. Mechanics and the
-seven-map measurement: `OBSTACLE_GEOMETRY.md` §4b.
+**Prior art** (§9): PRM, HPA\*, Lazy Theta\*; Quake III's AAS is the surface-locomotion contrast. 6DOF makes the
+geometry harder (sample a volume) and the cost model simpler (one edge type, Euclidean cost).
 
-**Finding 2 — intact breakable glass is routable at BOA build time and unroutable at runtime**
-(`OBSTACLE_GEOMETRY.md` §4bb). `BotRouteDijkstra` tests `BOA_PassablePortal` before reading the
-finite glass cost, so `$nav glass` (0.9.6) never let the router *plan* through a pane. Bots do still
-shatter glass opportunistically and fly through — measured, and the reason the stage looked like it
-worked. The Stage 2b premise "BOA already routes through glass" is corrected in place in
-`BOTS_DEVEL.md`.
+### 5.3 Arterials: the skeleton (merged from SKELETON_REWORK.md)
 
-**Why the fixes were reverted.** Both were implemented and measured. Deterministic signals moved as
-designed (`NO-ROUTE rm1 -> rm84` 246 → 0 across three rounds; room-1 via-search failures 412 → 0).
-Play did not: hard stucks ran ~4 (stable) → ~16 (terrain fix) → ~46 (with glass routing) while
-captures stayed flat (1.3 → 0.7 → 1.5). The mechanism was visible — the router planned through panes
-the clearing layer did not shatter, piling bots into rooms 8/35/6 (room 6 is the blue flag room).
-**Routing improvements kept cashing out as steering failures.**
+**What it is.** Per room, a small graph of portal nodes and bend nodes joined by straight hull-clear legs
+(`ViaSegmentClear`, bot_steering.cpp:1451, at `BOT_PSEUDO_BNODE_RADIUS` 6.7). Built by `SkelBuildBase` (:1845) and
+`SkelBuildBridges` (:1899), stored by `SkelStore` (:1937). Portal nodes come from DOOR and PANE portals; NEVER slots
+keep their index but carry no edges, and a TIGHT door that leaves the network is not live. Bridge pairs must include a
+DOOR. Cap `BOT_SKEL_MAX_NODES` 64 per room (64-bit edge masks).
 
-**The likely blocker underneath, unfixed.** `BotRoomPathPntReachable` returns true if ANY ONE portal
-sees the room's `path_pnt`, and `BotWaypointAimPos` uses only that boolean — so a room with one
-clear portal out of thirty-eight hands the raw `path_pnt` to a bot entering through any of the other
-thirty-seven. On Batteries **34% of portal entries** land in a room whose centre the entering bot
-cannot see (Isengard 19%, Nightmare Castle 16%, Polaris 11%, abend2 4%), and the worst rooms are
-exactly the ones bots got stuck in. A room-level boolean is answering a per-entry-portal question.
-Fix this before re-attempting either routing change.
+**The contract** (designed 2026-09-04 with an external reviewer, built as `1d52aa7f`):
+1. **Soundness:** never add an edge that fails `ViaSegmentClear`.
+2. **Bounded completeness:** find every route representable within the candidate resolution and the node budget.
+3. **Fail closed:** if budget or search cannot represent a route, leave it disconnected; never invent an edge.
 
-**Also open, unfixed:** the destination sampler picks `RF_EXTERNAL` window rooms as goals — every
-surviving `NO-ROUTE` pair was one (`rm84->rm85`, `rm80->rm81`, `rm66->rm69`).
+**Construction policy.** No global portal-centroid hub (it manufactured abend2's hub-and-spoke ring, the overlay's
+first finding, 2026-09-02). Offsets and bends are candidates, committed only when a selected chain uses them. The
+bridge search emits a polyline that is string-pulled with `ViaSegmentClear`; only the chain's consecutive legs (and
+safe shortcuts along it) are inserted. No indiscriminate visible-to-visible wiring.
 
-**The forward plan for all of this lives in `PLAN.md` §3** — the arterial/hierarchy model, the
-per-entry-portal aim prerequisite (Step A), and the dependency order. Do not re-attempt either
-reverted routing fix before Step A lands; every routing win so far has been consumed by the aim
-defect.
+**The collision-guided bridge** (`SkelBridge`, bot_steering.cpp:1745). While two portals sit in different components
+and budget remains, take the closest cross-component pair and search bidirectionally: from each frontier point, cast
+toward the other side; on a hit, place candidates around a blocker-relative frame (side = `dir x wallnorm`, up =
+`side x dir`) anchored `BOT_SKEL_BRIDGE_BACKOFF` 6 u in front of the face, admit only swept-clear candidates, and stop
+when the frontiers meet. This is the build-time use of the same tangent geometry `BotFindViaPoint` uses at runtime.
+As built after slice 7 (`6c17d9bd`):
+- ring radii scale with the hull: `BOT_SKEL_BRIDGE_RING_SCALE` {0.6, 1.25, 2, 3.5, 6, 8} R, so the small rings fit
+  an 18 u duct junction and the large ones span a 40 u toroid tube;
+- every lateral candidate is also tried `BOT_SKEL_BRIDGE_DIAG_STEP` 1.5 R forward;
+- budget `BOT_SKEL_BRIDGE_MAX_EXPAND` 64 reached points, at most `BOT_SKEL_BRIDGE_MAX_BENDS` 5 bends per chain,
+  candidates merged within `BOT_SKEL_BRIDGE_DEDUP` 6 u;
+- search and string-pull sweep with `FQ_BACKFACE`; candidate order is fixed, so the build is deterministic;
+- commit is atomic.
 
-### 7.0.1 Previous snapshot — 2026-08-22 (0.9.11-dev consolidation)
+The first version (fixed 12/26/40/54 u fan) was neutral over a 7 h abend2 soak and left ring room 0 in two components
+(L33). The hull-scaled fan closed it: room 0 became one component, Batteries split rooms 33 → 6 and isolated doors
+53 → 11.
 
-**Phase state.** Step 3 is closed for explore-owned interior errands after six-pool measurement,
-independent review, and the KegD3 cockpit verdict ("Feels excellent"). Capture does not explicitly
-complete travel intent, so carry/objective arrival remains conservative telemetry rather than a
-success rate; the analyzer now reports ending outcomes by owner and gates `DEST_CHURN` on explore.
+**Not built:** the **articulation pass** (for each portal pair joined only through a cut vertex, try a bypass that
+avoids it, so a real ring closes into a cycle and a genuine Y-corridor correctly does not). The slice-7 fan made it
+unnecessary on every map read so far. **Approach 2** (a boundary-feature visibility graph over the room mesh) was the
+fallback if Approach 1 could not trace curved tubes, and was not needed; **Approach 3** (convex-cell dual graph) was
+rejected as a project of its own. Both stay closed unless evidence reopens them (NAV53).
 
-**Outdoor ruling.** Step 4's proposed `legacy_accept || BOA-routable` widening is closed-no-go. The
-reclaim probe measured 356 hull-ray-blocked legs vs 3 clear (99.2% blocked), so widening would hand
-almost the entire class to the engine's unproven coarse outdoor fallback. Keep `BotBnodeLegOk`,
-troute, the outdoor roadmap, and the five legacy fallback controls. Region-0 coverage remains a
-post-consolidation construction item.
+**Sliced build (`455aacbe`, 0.9.16-dev).** `BotSkelBuildPrivate` runs the bridge search on the roadmap's slice worker
+and `BotSkelPublish` replaces the base graph a few frames later; a bot that arrives first flies the base graph
+(portal-to-portal legs only). Finished graphs are identical to the synchronous build, node for node. This removed the
+last first-use freeze (1.5-3 s on Sigma Base's hub, Facing Worlds' towers, DownTown's halls).
 
-**Live `$nav` surface: 33 rows.** Defaults are ON for every row except `mjunction` (OFF):
+**Fallbacks inside the skeleton aim.** When no chain resolves, `BotResolveRoomAim` (bot_steering.cpp:2314) branch (c)
+aims at the nearest egress portal (the 0.9.3 reach-the-door and soft-hop behaviour, now unconditional, no toggle). A
+single-exit room aims at its one door (0.9.14).
 
-`grid bridge route grate glass commit outlattice wind seam entry outtier hardroom curve strike dense
-reach troute bnodesp troute2 hardcost heal runner hyper entropy mball mroles mavoid terrain bnodes
-outdoorvia outdoorgraph softhop`
+### 5.4 The outdoor tier
 
-Retired in Step 5 tranche 1: `gridall`, `outroute`, `replan`, including their flat aliases and dead
-state. Default behavior is unchanged because all three were OFF. `BotOutdoorRouteLeg` remains under
-troute, and historical log parsers remain. Later retirements stay evidence-gated.
+**The engine already steers in 3D** (§3.3). Outdoors our job is to hand it a reachable target and not mangle the
+direction. The sky-flatten and soft AGL cap were deleted (L6); the real altitude rails are the absolute
+`Ceiling_height` cap in `BotApplyThrust` and `OF_FORCE_CEILING_CHECK`.
 
-**Open consolidation items:** Nightmarecastle's five-second seam refire loop; the build-independent
-escape-relapse/failure-memory loop; region-0 outdoor coverage; later Step 5 firing-rate audits for
-seam/via/strike/hard-room/fallback machinery. Do not reopen the closed Step 3 or Step 4 measurements
-to chase these separate mechanisms.
+**One outdoor dispatch (`161582cc`, 0.9.15).** Every trip from terrain into a structure (carrier, objective errand,
+explore, last-known chase) is issued by `BotSetRoutedGoal`'s outdoor branch, in one order:
+1. **ENTRY push**, only when the push leg is hull-clear from where the bot is, or the bot is at the standoff;
+2. a **straight leg to the standoff**;
+3. the **lattice waypoint** from the region roadmap (`BotRoadmapFindViaOutdoor`);
+4. the **reactive rescue** as a plain query: `BotFindViaPoint` (bot_steering.cpp:3216) rings, then the outdoor
+   door graph (`OGraphBuild` :1492, `BotOutdoorGraphHop` :2891).
 
-### (superseded) 7.0 snapshot — 2026-07-18 (0.9.8 release)
+The explore ladder's private copies are deleted; outdoor-origin explore is no longer a raw engine goal. The committed
+via tick still serves terrain-to-terrain targets (pursuit, item chases, escort).
 
-> **0.9.8 stamped 2026-07-18** (tag v0.9.8) off the 07-13→18 hosted-server validation campaign:
-> operator ran overnight soaks + live PiccuEngine play on a remote Linux host (metropol_gt 11h CTF,
-> Monsterball dodgeball/PowerHouse, CTF townofbree, plus Entropy on RAGE). Nav-relevant outcomes:
->
-> 1. **Overnight metropol_gt (15 rnds, 5 bots forced 3v2):** Red conversion 30% (in-band); Blue 0%
->    over 24 picks — confounded by the 3v2 roster, but the seam-guard concentration at rooms 55/56
->    (Blue home approach, 4.5K firings) and via-suspension cluster rooms 50/36 (2.2K/1.3K — the
->    wall-press class) say metropolis deserves a navdump pass before it's judged. Run ended at 11h by
->    the `$botstat` SIGSEGV (below), not a nav failure — zero nav crashes.
-> 2. **`$botstat all` SIGSEGV FIXED** — dedicated handler's stale 3-entry lean table indexed with
->    RUNNER/FLEX (3/4); bounds-guarded `BotLeanName()` is now the only lean print path.
-> 3. **Wind-blind Entropy targeting FIXED (RAGE operator report):** `BotGetNearestEntropyRoom` ranked
->    by the wind-blind BOA-chain estimate → router refused → `BotSetRoutedGoal` no-route fallback fed
->    the engine's wind-blind path into the tunnel exhaust. Selection now ranks by `BotComputeRouteCost`
->    under `$nav wind` (blind-best = never-strand fallback); NEW throttled `NO-ROUTE fallback` line
->    instruments the cliff for the RAGE re-test (pending).
-> 4. **Log footprint cut ~90%:** the unthrottled carrier-objective line (1.53M of the 237MB overnight
->    log) deduped to destination-change. Footprint discipline added to §5; full `$nav` telemetry
->    consolidation registered in §7.2 (post-0.9.8 track, sequenced with Stage 4).
-> 5. **townofbree (1 rnd, human present):** 12/15 outdoor stucks = entrance-miss into a structure —
->    the known approach-leg class (piece-1-proper owner); no new class.
->
-> Open (non-gating, carried): Veins finisher conversion, Inversion refused-pickup spam, Rim toroidal
-> orbit (§7.2), Polaris approach-leg cluster, interior-pane heal coverage, abend2 stacked-room arrival.
+**Door rules.** `BotResolveOutdoorEntrance` (:3754) resolves the terrain-facing door from `BOA_connect`. An ENTRY push
+shallower than the engine goal's arrival circle (about 10 u) gets a 2 u circle (Isengard's pipe mouths rm20/rm21).
+An ENTRY commit needs a hull-clear push leg (Doors of Moria's roof hatch). On a terrain-to-structure leg the entrance
+stage owns the aim and the via does not compete (`39058770`).
 
-### (superseded) 7.0 snapshot — 2026-07-14 (gridall validation battery: NEGATIVE on both gate maps; toroidal-traversal problem registered)
+**troute: the terrain composer** (`edaba249`, toggles `troute` and `troute2`, both default on). A cross-terrain route
+is three segments: interior (bot room → exit door E), terrain (E → entry door B over the region lattice), interior
+(B → goal). Door pairs from `BOA_connect`; score = `BotComputeRouteCost` + Theta\* path length over the region lattice
++ `BotComputeRouteCost`; lattice costs cached per region per roadmap serial. v1 composes only when no interior route
+exists or an endpoint is outdoors; v2 (`troute2`) composes both and takes the cheaper. Execution rules: the plan is
+accepted only if the string-pull reaches within R of the target approach at plan time (never "best effort toward");
+every waypoint must shrink distance to the segment target, else replan the segment once; a hull-clear beeline skips
+lattice following (the bedlam lesson, L10). The composer still refuses a goal while the bot is `OBJECT_OUTSIDE`
+(COL10).
 
-> **THE DEFERRED `$nav gridall` VALIDATION BATTERY RAN OVERNIGHT 2026-07-13→14** (operator-ordered after
-> discovering Rim; the lever was created 2026-07-06 as the Stage-4 A/B skeleton and its battery was never
-> run). Two chained A/B soaks, both on build `9198c6e6` (0.9.8-dev), driver `soakctl.py`, clean SOAK_DONE:
->
-> 1. **Rim (CHAOS.MN3 CTF rotation, 6+6 rounds): NEGATIVE.** Rim conversion 0% in BOTH arms (grabs 2→1);
->    gridall made it *worse* — stucks 1.0→4.5/rnd (room 36 = 78%), HARD chase-timeouts 3→23, Mega
->    troll-retired. Control regression: Wishbone 0.3 caps/rnd→0, grabs halved (the 0.9.4-era easy-pool
->    class); Inversion held (2.0→2.5). The lever engaged (Rim detours 132→184, DIVERGE 9→33) but does not
->    produce flyable routes. **The pre-staged blocked-leg-ratio complexity gate is REJECTED** — auto-promoting
->    toroidal rooms into proactive grid routing would bake the regression in for zero benefit.
-> 2. **abend2 (4+4 rounds): NEGATIVE.** Flag-tray grabs 0 in both arms; the false-arrival loop is unchanged
->    (~317 vs ~270 objective-nav issues/rnd, 0 picks). The tray's fix class remains **indoor floor-hatch
->    entry commit** (the abend2-slot ledger item), not routing density.
->
-> **What Rim actually taught us (navdump rim.json + soak decode):** the map is 4 giant single-component
-> TOROIDAL quadrant rooms (676u, 16–18 portals, 94% of portal-to-portal legs LOS-blocked). Room-to-room
-> routing is trivially correct on a ring — the failure is **intra-room traversal**: bots orbit the quadrant
-> lattice (skeleton hops 1683/rm25, 1150–1444/rm36, 943/rm46 *per two rounds*; via-reach 66–68%, worst in
-> pool) because path straightening keeps pulling legs into the inner wall. This is the **steering/straightening
-> layer** (`$nav curve` territory, the isengard-corkscrew class), now filed as §7.2 "toroidal-room orbit."
-> Denser routing (gridall) cannot fix it, which is exactly what the battery showed.
->
-> **Disposition:** `gridall` stays **OFF** — a diagnostic lever only, now validated-negative as a default.
-> No code change ships from this battery. Next nav work on the toroidal class = instrument-first at the
-> straightening layer (POV + navdump on Rim quadrants; candidate: annulus-aware straightening clearance or
-> arc-following), **sequenced AFTER the Monsterball/Entropy 0.9.8 validation era** per operator priority.
+**Not outdoor maps.** Canyons CTF and DownTown have exterior portals at or above the flight ceiling and zero terrain
+presence. Do not list their problems as lattice defects. Facing Worlds' "void" is two giant interior rooms (an
+indoor-planner case).
 
-### (superseded) 7.0 snapshot — 2026-07-06 (0.9.7-dev: entrance stack validated by overnight battery; seam latch; PIECE-1-PROPER staged)
-
-> **STAGED NEXT BLOCK (written 2026-07-06 morning — piece-1-proper: routed approach legs):**
->
-> **The one remaining outdoor failure class** after the 07-05/06 fixes: the APPROACH leg from
-> terrain to an entrance standoff is still a beeline with reactive-only rescue. Evidence: Polaris
-> attempt rate lever-independent (~2 picks/rnd, all 35 entrance-miss events at ONE structure,
-> cells ~117-119,103-109), shirebaggins 18/19 entrance-miss, isengard 24/24 (cells 133-135,112),
-> Plutonium room-17 via-fail noise. Entry-commit fixed the last 30u; this is the last 300u.
-> **Design:** route the approach leg over the region lattice PROACTIVELY at goal-issue (reuse the
-> outroute delivery skeleton) but under two hard correctness rules — (1) **coverage-verified
-> FOUND**: string-pull must reach within R of the standoff, never "best-effort toward" (the orbit
-> class); (2) **monotone progress**: every handed-out waypoint strictly shrinks distance to the
-> standoff. If isengard-A's navdump shows valley coverage gaps, add the lattice-extent fix first
-> (widen `BOT_ROADMAP_OUTDOOR_MARGIN` / seed from terrain-region hull — build-param, cache-flush).
-> **Decision gate first: isengard-A/B manifests** (tools/manifests/battery/) — outroute ON vs
-> defaults on towerofisengard + the outdoor_roadmap coverage dump. If A converges legs, outroute's
-> machinery becomes piece-1-proper's follower and re-defaults ON; if not, the lattice-extent fix
-> precedes it. **Acceptance:** Polaris >5 picks/30min at the cluster; Plutonium red conv holds
-> >=20%; isengard leg convergence or first caps; bedlam+fellowship battery no-regression.
-> (The 07-04 triage plan below is EXECUTED: A/B verdicts in the toggle table; kept for history.)
-
-### (superseded) 7.0 snapshot — 2026-07-05 (bedlam outdoor-CTF regression found; outroute defaulted OFF; `$nav outlattice` triage lever added)
-
-> **BEDLAM FORENSICS (2026-07-05, log archaeology across 9 soaks May 26 → Jul 5):** the Jul-5 Windows
-> CTF soak (0.9.7-dev `135d2443`, 5 bots 3v2) collapsed the outdoor bedlam maps — **Plutonium 16 flag
-> grabs → 0 carrier returns (0% conversion, carriers lost not killed), Polaris 3 grabs / 0 caps / 0
-> kills** — while the indoor maps hit career highs (Apparition 11.0 caps/rnd, QuadSomniac conversion
-> UP vs 0.9.3) and per-bot kill rates stayed flat (combat NOT regressed). **Gold reference = 0.9.3
-> `57ea814a` (testing0622, Jun 21-22): Polaris 15.6 caps/rnd at 0.8 stucks/rnd**, Apparition 7.9;
-> conversion Polaris 56-69% (239 grabs → 140 caps). The Polaris unlock dates to Phase 11 + 12.1-12.3
-> (0.9.1 May 26: 1.2/rnd → Jun 13: 11+/rnd); bedlam was never soaked between 0.9.3 (Jun 22) and Jul 5
-> — the grid/outroute era shipped blind on it. Suspects, in order: (1) `outroute` (shipped ON
-> untested; owns exactly the leg that died — carrier home runs + entrance seeks outdoors) →
-> **defaulted OFF 2026-07-05**; (2) the 0.9.4 lattice-first ordering in the outdoor via rescue →
-> new **`$nav outlattice`** lever (off = 0.9.3 rescue order, indoor grid untouched). **Triage soak
-> (Linux Debug build — the Windows Release logs have ZERO nav telemetry, analyzer stucks=0 there is
-> a blind spot): bedlam CTF ~2h, three-way live A/B:** as-deployed (outroute off) → `$nav outroute
-> on` → `$nav outlattice off`; grab `$nav dump` on Plutonium/Polaris AFTER bots fly outdoors (repo-
-> root bedlam navdumps predate `outdoor_roadmap[]` — lattice coverage there is unverified). Judge by
-> flag-grab → capture conversion per map, vs 0.9.3 above. Full matrix: session scratchpad
-> `bedlam-compare/` + memory `project-bedlam-regression`.
-
-> **NEXT-SESSION TRIAGE PLAN (written 2026-07-04 eve, operator usage-limited — execute in order):**
->
-> **A. A/B the replan suspicion (the deployed build IS the A side).** `$nav replan` now defaults
-> OFF; everything else (outroute + both first-flight fixes, grate/glass/commit, swept probe) is
-> live. Test isengard: do bots fight outside again / does Zed's hill re-entry loop and Shadow's
-> tunnel turn-around stop? Then `$nav replan on` mid-session for the B side. Three outcomes:
-> churn gone with replan off = replan is the driver → make ALL of replan indoor-only (fast window
-> too, not just the slow one — it's indoor-validated, outdoor-suspect); churn persists with
-> replan off = replan exonerated, the driver is the entrance-seek/outroute/stuck-escape loop →
-> focus on B/C; mixed = both.
-> **B. Validate the outroute first-flight fixes in isolation (replan off).** Watch Zed-class legs
-> on isengard: `outdoor-route wp` leg distances must now SHRINK monotonically-ish (they orbited
-> ~150u pre-fix). If hops still collapse ("N arrivals without crossing" outdoors), the next
-> suspect is **lattice coverage**: the outdoor lattice's extent = structure bboxes + 60u margin
-> (`BOT_ROADMAP_OUTDOOR_MARGIN`) — the RIDGE between tower and valley may simply be outside the
-> lattice's scoped airspace, making every cross-ridge path detour through covered space or fail.
-> Check: `$nav dump` AFTER bots have flown outdoors (region roadmap is lazily built — the old
-> isengard dump has no `outdoor_roadmap[]`), then `visualize_navdump.py` to see node coverage vs
-> the ridge. If coverage is the gap: widen margin / seed from terrain-region hull instead of
-> structure bboxes (build-time param → cache flush on toggle). **Operator map intent (2026-07-04)
-> makes this THE pivotal check for isengard:** the room-20 door is the MAIN door; the map's low
-> invisible ceiling deliberately forbids flying over the hill — the intended route is THROUGH THE
-> VALLEY and around (a designed battle bottleneck). The ceiling-capped lattice is the right tool
-> *iff* its extent (structure bboxes + 60u) actually nodes the valley; a node-less valley means no
-> around-route exists to string-pull, and the bot can only nose the hill. Bree = same class but
-> worse (vertical wall bisects the map, structures meet the high ceiling with vertical walls) —
-> yet its lattice measured comp_count=1, so routes should exist there; judge by leg convergence.
-> Operator framing to keep: **Fellowship.mn3 is near worst-case for custom D3 maps — make these
-> work and almost any community map will** (the generality benchmark, not an outlier).
-> **C. Zed's hill re-entry loop is a GOAL problem, not a steering problem.** Entrance resolver
-> picks door room 20 across the hill; every escape is followed by re-acquiring the same
-> unreachable-by-beeline target. Durable fix is the terrain track proper: **piece 1** (terrain
-> regions as coarse-router nodes over `BOA_connect`) so the route itself goes around/through, and
-> **grate-route awareness** — the operator-confirmed natural entry is THROUGH a blastable grate
-> into the tunnels (finite grate cost like 0.9.6 glass + proactive clear en route; grate portals
-> already read geometrically passable, so this is mostly entrance-resolver + router cost work).
-> **D. Only after A-C: re-default replan per its A/B verdict, re-run the Fellowship regression
-> soak (0.9.6 baseline: 2.67 capt/rnd), and gate 0.9.7 on no-regression + isengard/bree improved.**
->
-> **Early A-side result (operator, 2026-07-04 eve, replan-off build):** positive — bots on BOTH
-> teams got outside and did things (the pre-replan outdoor behavior back). Zed still nosed the
-> hill (expected — that's the B/C goal-and-coverage problem, not replan). **NEW tracked gap:
-> `!follow` did not work OUTDOORS** (operator tried it to shepherd Zed off the hill) — the escort
-> router presumably has no outdoor leg handling (outdoor target room / outdoor bot roomnum falls
-> through). Triage alongside B: escort nav should reuse the same `BotOutdoorRouteLeg` treatment
-> as objective legs.
->
-> **BsideCTF full-run verdict (2026-07-04, 3 maps, user in lobby):** the circling pathology is
-> **isolated to large terrain maps with disconnected interiors** (isengard, bree). Indoor/enclosed
-> (Nightmare Castle, L3) and *open* outdoor (Mysterious Isle: 0 outdoor hard-stucks) are healthy —
-> L3 hit 2 bot caps in a single round (equal to its all-time best), replan v3 circle-window had
-> **zero false positives**, HARD chase-timeout share 5–11% (was ~50%). Root of the outdoor failure:
-> **the coarse router has no outdoor tier** — cross-terrain legs beeline and only get lattice help
-> as a blocked-line rescue after the wedge. **Terrain track piece 2 (`$nav outroute`) built** (see
-> toggle table); piece 1 (terrain regions as coarse-router nodes via `BOA_connect`) is next.
->
-> **0.9.6 release soak (2026-07-04, 8h48m Fellowship 9-map, 27 rnds):** **2.67 capt/rnd — best
-> ever** (+8.5% vs 0.9.4); khazaddum 1.0→3.0, shirebaggins 9.0; 0 crashes; strike discipline
-> near-silent on healthy maps; 0 false grate/glass fires. First autonomous captures on bsidectf
-> L3 (2026-07-04). Remaining outdoor fronts: isengard 0/0 TOTAL_BREAKDOWN, townofbree 0 caps with
-> the room-56–60 house cluster dominating (121 moving-slow stucks, 148 HARD chase timeouts, 27
-> item retirements — all confined there). ~~Log artifact: via lines print raw outdoor roomnums~~
-> (fixed — `OBJECT_OUTSIDE` guards).
-
-*A scannable checkpoint so we stop re-deriving state. Update the date + toggle table + ledger whenever a soak
-or a toggle default changes. The narrative subsections below explain the "why"; this is the "what, right now."*
-
-> **Milestone shift (2026-06-22):** the Phase 12 stack below (portal skeleton + pseudo-bnodes + outdoor graph
-> + soft-hop bridge) is **pinned as the stable 0.9.3 baseline** — validated "good enough," bots reach
-> objectives across the map pool. The remaining open issues (#1 indoor 2-component dividers, #2 outdoor
-> fragmentation, #3 alcove trap, and the broader interior-coverage gap) all share **one root: a
-> portal-derived graph that is too sparse to cover a room's interior volume** — confirmed visually on
-> townofbree (room 60 = 186×127×**97** buried labyrinth with ~5 portal-clustered nodes; room 61 = a
-> 57×401×**123** shaft). Rather than keep bolting per-symptom fixes onto the portal graph, **0.9.4 replaces
-> the substrate** with a **volumetric grid-seeded roadmap + hierarchical routing** (**§3.5**; the original
-> spec `GRID_NAV_DESIGN.md` is retired into this doc). The lateral-go-around-waypoint fix (formerly #1's "NEXT FIX") is **dropped** — it
-> would add more portal-derived nodes to the graph that is itself the problem; the roadmap subsumes it.
-
-**Runtime nav toggles (0.9.5 surface: bare `$nav` prints this table live; `$nav <name> on|off` flips one;
-the pre-0.9.5 flat names remain hidden aliases. Defaults in `bot_steering.cpp`/`bot_roadmap.cpp`):**
-
-| `$nav` name | Flat alias | Default | Phase | State |
-|---|---|---|---|---|
-| `terrain` | `$terrainsteer` | ON | 8.1 | validated (outdoor entrance redirect; un-flattened engine `movement_dir`) |
-| `bnodes` | `$pseudobnodes` | ON | 12.5b | validated (doorsofmoria 0→2 caps, 0 indoor hard pins) |
-| `outdoorvia` | `$outdoorvia` | ON | 12.6 A | validated net-positive (reactive ring, ceiling-aware) |
-| `outdoorgraph` | `$outdoorgraph` | ON | 12.6 B | validated net-positive (13.5h soak: 0 crashes, captures +30%) |
-| `softhop` | `$navbridge` | ON | 12.7 | **mechanism validated, PARTIAL** — kills dead-ends but not yet a crossing (see #1) |
-| `grid` | `$gridnav`/`$navgrid` | **ON** | 0.9.4 | **VALIDATED** — volumetric grid roadmap + Lazy Theta\* (replaces the skeleton via-pass indoors; degenerate rooms fall back to the skeleton). `off` = 0.9.3. See §3.5. |
-| `bridge` | `$gridbridge` | **ON** | 0.9.4 | **VALIDATED** — corner-rounding component bridge (one swept midpoint to connect components split by a wall; hull-gated, spatial-hashed). Collapsed townofbree/khazaddum dividers. **Build-time param: toggling it flushes the roadmap cache (0.9.5 `BotRoadmapInvalidate`) — before 0.9.5 a mid-level toggle was silently inert on already-built rooms.** |
-| `route` | `$gridroute` | **ON** | 0.9.4 | **VALIDATED** — proactive in-room grid routing, gated to genuinely complex rooms (`orig_comp_count>1` AND ≥24 lattice nodes). Fellowship soak: overall captures +58% vs 0.9.3, khazaddum 0.2→1.0. Also drives carrier + `!follow`/`!cover`/`!hold` escort nav. |
-| `gridall` | — | **OFF** | 0.9.7 | **VALIDATED-NEGATIVE AS A DEFAULT (2026-07-13→14 battery — see the 07-14 snapshot).** Bypasses the `route` complexity gate so proactive grid routing runs in EVERY room (`Bot_grid_always`, bot_roadmap.cpp) — created 2026-07-06 as the Stage-4 skeleton-retirement A/B lever; battery deferred, then run against Rim (toroidal quadrants) + abend2 (flag tray). Rim: conversion 0% both arms, stucks 1.0→4.5/rnd under gridall; Wishbone control regressed (caps 0.3→0). abend2: tray grabs 0 both arms. Verdict: ungated proactive routing adds indirection exactly as the 0.9.4 soaks measured, and the failure classes it was hoped to cover are steering-layer (toroidal orbit) or approach-commit (floor tray), not routing density. Keep as a diagnostic lever; do NOT default on; the staged blocked-leg-ratio gate promotion is rejected. |
-| `grate` | `$grateclear` | **ON** | 0.9.6 | **DORMANT-SAFE VALIDATED** (0 false fires across all 0.9.6 soaks; clear path itself still awaits a bot actually flying at a grate) — proactive destroyable-obstacle clearing (§7.1 Stage 2): forward ray hits an `OF_DESTROYABLE` clutter/building object → laser it out *before* the stuck pin; forward ray hits a `TF_BREAKABLE` pane → shatter it on approach (matter weapons only). Gates only the proactive pass; the safe-weapon selection in reactive stuck-clear is unconditional. Gate map: splusv1 (grates; first session: dormant-as-designed, bots never approached). |
-| `commit` | `$objcommit` | **ON** | 0.9.6 | **VALIDATED** (L3: Router Nav 46→962; release soak best-ever 2.67 capt/rnd) — objective commitment: while routing to an objective, powerup candidates must be within `BOT_POWERUP_ONPATH_RADIUS` (120u), **same-or-adjacent room**, AND **visible** (`BotHasLOS` — unseen-item beelines through maze walls were the L3 wall-slamming; occluded/vent/behind-glass items never start a chase). Gear-up (default-laser) bots keep the wide 500u reach but are LOS-gated too — nothing visible → explore-roam's visited-room curiosity moves them to fresh sightlines (emergent room-sweep). Anarchy selection unchanged. |
-| `replan` | `$stallreplan` | **OFF** | 0.9.7 | **DEFAULTED OFF 2026-07-04 (outdoor suspicion — the A/B lever for the next session).** Operator observation on isengard: replan-era bots nav-churn (Zed's hill re-entry loop: beeline → stuck-escape → beeline back; Shadow's tunnel turn-arounds) where pre-replan builds *fought outside more* — suspicion: fast-window release/abort/re-pick churn starves combat + commitment. Machinery kept; `$nav replan on` re-enables live. **v3 — INDOOR-VALIDATED (BsideCTF full run 2026-07-04)**: zero circle-suspension false positives across 3 indoor/enclosed maps, HARD chase-timeout share collapsed to 5–11% (was ~50% on L3) — the release gate passed on that pool. History: **v1 REGRESSED** (48 via releases/2 rnds — a TURNING ship reads as stalled; door-waits too); v2 = fvec·movement_dir ≥0.6 qualification + no-door-ahead + streak thresholds (via 2 / chase 3 / re-pick 4, re-pick free-roam-only); v3 adds the **slow window** (8s/35u) for circling that lives an octave below wall-press — displacement at 1s scale, none at 8s scale (the skeleton-via dance) → suspend via + abort chase/re-pick. Outdoor verdict rides on the terrain track (`outroute`). |
-| `outroute` | `$outdoorroute` | **OFF** | 0.9.7 | **DEFAULTED OFF 2026-07-05 — prime suspect in the bedlam outdoor-CTF collapse** (2026-07-05 forensics: Plutonium 16 flag grabs → 0 returns home, Polaris 3 grabs/0 caps/0 kills on the Jul-5 Windows soak, vs the 0.9.3 gold reference Polaris 15.6 caps/rnd @ 0.8 stucks/rnd; carrier home-runs ride this hook via `BotDoCarrierNav`→`BotSetRoutedGoal`). Re-enable live (`$nav outroute on`) for isengard/bree experiments; re-default only after a bedlam triage soak clears it. **BUILT (2026-07-04, UNTESTED)** — terrain track piece 2: proactive outdoor lattice following on objective legs. The coarse router has no outdoor tier, so an outdoor bot's leg to a cross-terrain goal (entrance approach, carrier run home, order anchor) was a straight beeline, with the region lattice consulted only as a blocked-line rescue *after* the hillside wedge (the isengard/bree wedge→recover→re-acquire circling loop). Now the leg issue point pre-checks the straight line (`BotSegmentClearOutdoor` at hull radius): **clear = beeline exactly as today** (open terrain e.g. mysterious_isle untouched — the regression guard); **blocked = aim at the lattice's furthest-visible waypoint toward the target now, from a healthy position**. Waypoints advance at goal-completion cadence (`AIG_GET_TO_POS` self-clears at `circle_distance` ≈10u) — no early release, no per-tick recompute (the `$softfollow` class). Hooks: `BotSetRoutedGoal` (router/carrier legs) + the Phase 8.1 entrance-seek re-issue. Substrate healthy where it matters: bree region roadmap = 1893 nodes, **1 component**. Log: `outdoor-route wp (goal\|entrance room N, Xu leg)`; analyzer section "Outdoor Lattice Routing". Gate maps: isengard (137/137 entrance-miss, valley circling), bree carrier returns (138 ground-pins). **First flight (isengard, 4min): wiring fired (6 entrance-leg hops, Zed) but leg never converged (~150u orbit) — two defects found+fixed same day:** (1) **string-pull terrain-shadow collapse** — bot hovers ≤ arrive-dist off the start node; from that offset the first edge's far vertex fails hull-LOS (hillside clips the sweep) → via collapses to the start node → instant arrival → the "8 arrivals without crossing" dance. Fix: when collapsed AND bot is at the start node, hand out `path[1]` (edge is hull-swept by construction). (2) **replan v3 circle window fired ~18x/2.5min outdoors** (15–33u/8s = legitimate slow terrain threading, not circling), each trip suspending the via layer — the only outdoor progress mechanism. Fix: slow window is now **indoor-only** (outdoor wedges stay covered by stuck escalation + 12.2c arrival-count suspension, both of which fired correctly in the trace). |
-| `outlattice` | `$outdoorlattice` | **ON** | 0.9.7 | **NEW 2026-07-05 (bedlam triage lever #2)** — gates the outdoor region lattice (`BotRoadmapFindViaOutdoor`) inside the blocked-line via RESCUE, where 0.9.4 Stage 3 runs it AHEAD of the 12.6B connecting graph (a plausible-but-bad FOUND starves the proven fallback). `off` = the 0.9.3 rescue order outdoors (rings → connecting graph — the bedlam gold-reference stack) while the indoor grid stays live. Not a build-time param (lattice still built, just not consulted) — no cache flush. Triage: if bedlam stays broken with `outroute` off, flip this to isolate the lattice-first ordering. |
-| `wind` | `$windroute` | **ON** | 0.9.7 | **NEW 2026-07-05 (bedlam triage session, UNTESTED on gate maps)** — wind-tunnel ("speed tunnel") one-way routing. `Rooms[].wind` is a physics push (wind × drag × 16) stronger than ship thrust: WITH the wind = boosted shortcut, AGAINST = physically impossible. BOA + engine path-follower are wind-blind. Router now excludes against-wind edges (`BotPortalWindDir` −1: exiting an upwind mouth OR entering an exhaust mouth) and discounts with-wind edges ×0.25 (`BOT_WIND_EDGE_DISCOUNT`) so a downwind goal biases toward the intake — operator-confirmed the boost makes tunnels genuine shortcuts. Direction test = portal `path_pnt` vs room `path_pnt`, the `ProbePortalClearance` construction. UNCACHED (scripts can change wind at runtime; runs on room-advance only). `$navdump` now emits per-room `wind`/`wind_mag`. Gate maps: **Polaris, QuadSomniac** (operator: tunnels exist there; carriers observed pinning flying backward into them). Tuning knob: `BOT_WIND_TUNNEL_MIN` 10.0 — check fresh navdump `wind_mag` values against it. |
-| `seam` | `$seamguard` | **ON** | 0.9.7 | **VALIDATED WITH LATCH (2026-07-06 overnight battery).** v1 shipped without a rate limit and the battery caught it churning: on glass-doored maps an unbroken `TF_BREAKABLE` pane is a finite-cost "direct door" the bot can't cross → divergence never clears → goal re-issued every tick (1685 firings/soak on bsidectf, 1054 at ONE portal; zeroed captures on batteriesincluded/doorsofmoria/abend2). Fix `015f54f0`: one redirect per waypoint room per 5s (`BOT_SEAM_RETRY_TIME` latch); rechecks: batteriesincluded seam firings 1685→13 and capturing again, doorsofmoria 2/2. Original repro still fixed (Polaris room-99 carriers capture unassisted). — adjacent-hop seam guard. The engine BOA-paths to our routed ADJACENT waypoint and can detour through a third room: Polaris room-99 carrier deadlock trace (15:12, testing-2026-07-05T18-20-56) — home room 100 adjacent, direct door BOA 93 vs 34+10 wind-tunnel loop, engine steered at rooms 97/27, via layer chased the ENGINE's target, "8 arrivals without crossing" → suspend; operator freed the bot by physically shoving it through the door. Guard: when the engine's active steer room ∉ {current, waypoint}, re-aim the goal `BOT_SEAM_PUSH_DIST` (25u > via-arrive 15u, so arrival = crossing) past the direct portal, claimed in the CURRENT room — a same-room goal gives the engine no BOA path to detour on. Fires on any adjacent hop (also covers Phase-11 DIVERGE hops), wind-gated (won't aim through a portal `BotPortalWindDir` vetoes). Verify: `seam guard:` log lines on Polaris + the room-99 repro capturing unassisted. |
-| `entry` | `$entrycommit` | **ON** | 0.9.7 | **VALIDATED on Plutonium (2026-07-05 night, 30-min agentic soak): red 2 picks/0 caps → 9 picks/2 caps (22% conv), outdoor stucks 5→2, 63 approaches + 11 ENTRY commits.** Polaris result honest-mixed: conversion healthy (33%/100%) but attempt rate flat — its 35 entrance-class events cluster at ONE structure (cells ~117-119,103-109) where bots wedge on the APPROACH leg before reaching commit range; that residue is the piece-1/outroute class (route the leg), not entry's (cross the threshold). **(Phase 8.2)** — stage-2 of the outdoor entrance approach, THE entrance-conversion fix (the shared bedlam/fellowship attempt-rate throttle: Polaris 35/35 outdoor stucks = entrance miss, Plutonium red 78/100 seeks at room 17 → 0% conversion, isengard 137/137). Stage 1 (12.6) aims at a standoff 12u OUTSIDE the door; nothing ever aimed THROUGH it — arrival re-issued the same outside point, entry relied on drift (works for side doors, never top-hatch/shaft: the "fly up then down" pattern). Now within `BOT_ENTRY_COMMIT_DIST` (30u) of the standoff, the goal re-aims seam-style at a point INSIDE the door room (toward its path_pnt — downward for a hatch), push > arrive radius ⇒ arrival = crossing; roomnum flips indoor and the interior router owns the rest. **Also wired into `BotSetRoutedGoal`'s outdoor path: carrier home runs + escort/order legs get the full two-stage approach — they previously had NO entrance resolution at all** (beelined at the goal room's nearest portal point; the Plutonium red carrier 24×-reissue trace). Log: `entrance ENTRY commit` / `outdoor entrance approach\|ENTRY`. Gate: Plutonium red conversion > 0, Polaris attempt rate up. |
-| `outtier` | `$outdoortier` | **ON** | 0.9.7 | **NEW 2026-07-05 night (terrain-track piece 1, first increment — overnight battery A/Bs it)** — outdoor entrance selection scores room+door **jointly** by outdoor approach distance + **`BotComputeRouteCost`** (the router's full cost model: wind one-way gating, glass break cost, graded geometry, dynamic penalties). Replaces the legacy pass-1 `BotEstimatePathCost` BOA-chain estimate, which is blind to ALL of those — on a wind-tunnel map it can pick an entrance whose "cheap" interior route runs backward through a tunnel the ship cannot fly. The chosen door becomes the first hop of the cheapest real route (the coarse outdoor tier in embryo). Entrances with NO finite interior route (sealed/wind-gated/grated) are now skipped entirely instead of chosen blindly. `off` = legacy estimate. |
-| `hardroom` | `$hardroom` | **ON** | 0.9.7 | **VALIDATED (2026-07-06)** — evidence-gated gridroute promotion: 3 via-suspensions convict a room for the level; proactive grid routing engages regardless of the static complexity gate (isengard rm36: 2000+ nodes, comp_count 1, concave — invisible to `orig_comp_count>1`). 12 rooms self-convicted in pain-order in the validation hour. Companion fix (no toggle): the 12.3.2 chain cap now YIELDS TO MEASURED PROGRESS (`BOT_VIA_CHAIN_PROGRESS` 12u — an arrival closer to the target resets the chain; rm36 suspensions 158/hr→2; QueryVia diag was 48:1 FOUND proving the cap was executing legitimate threads). |
-| `curve` | `$curveroute` | **ON** | 0.9.7 | **NEW 2026-07-08, default-on for operator POV testing; VALIDATION PENDING (POV flight test).** The isengard room-36 corkscrew fix, at the STRAIGHTENING layer (diagnostic-confirmed Fork B: soak-20260708T181641 showed room-36 paths 100% straight chords, len/chord 1.04). `ThetaStar` `SetVertex` now requires `BOT_ROADMAP_STRAIGHTEN_CLEARANCE` (13.5, ~2× hull) via `RoadmapLOSr` before shortcutting two nodes — a chord that only clears bare hull over a mound/bend is rejected, keeping the winding node-by-node path. Adjacency/edges stay at 6.7 (tight doorways thread). **Metrics positive-but-confounded** (soak-20260708T190511, continuous 3v3 L2, no clean reset — emergent grate/spawn state uncontrollable w/o engine mods): **2 captures BOTH in curve-on blocks, 0 off; room-36 stucks 5(on) vs 37(off, less time)**. Caveat: the len/chord path-shape metric did NOT move (~1.05 both) → helps by a mechanism other than the designed "winding path", not yet understood; NOT a complete room-36 solution. History: v1 hand-out fix (fatter-clearance via pick) was REVERTED — net-negative because path[] was already a chord (no off-chord node to walk back to). |
-| *(hop-commit)* | — (rides `$nav seam`) | **ON** | 0.9.7 | **BUILT 2026-07-06 eve (capture hour in flight)** — the seam push-through gains a second trigger: `BOT_HOP_PRESS_TRIGGER` (4) consecutive re-issues of the SAME adjacent hop without steer divergence (the 36→38 doorway-lip press: 174 re-issues/hr, path direct and correct, lip never threads — §7.0 0b fine-approach class). Log: `hop commit:`. |
-| `strike` | `$softstrike` | **ON** | 0.9.7 | **VALIDATED (isengard 4v4 defaults A/B, soak-20260709T150856): rm36 chase re-entries 51(OFF)→7(first ON block)→0 for the rest of the run; 7 retirements incl the rm36 magnets (Fusioncannon, Frag) + rm32; over-striking audit vs pre-fix bside baseline CLEAN (8.8 ret/rnd before vs lower now, batteries conv UP to 83%). North-star note (§1.5): demoted to interim safety net — `$nav reach` answers the same question geometrically; expect firing rate →0.** Closes the magnet-powerup loophole: the 0.9.6 hard-pin fairness rule ("a slow chase never strikes the item") protects exactly the items with NO clear approach that bots circle politely — isengard room 36 holds FIVE 0/8-approach items (Vauss/Homing/2×QuadLaser/NapalmRocket) that drew 5640 same-room via dances in one 13.7h soak with ZERO retirements (every abort took a soft "no strike" path: circle-window, stall-replan, mobile chase-timeout). Now a soft chase-abort **while the bot stands in the item's room** accrues `Troll_soft[]` evidence; every `BOT_TROLL_SOFT_PER_STRIKE` (2) converts to one real strike (3 strikes retire, exemptions shared via `BotTrollExempt`). Same-room gate preserves the fairness intent — cross-map aborts still count for nothing. Log: `soft-strike on powerup`. Metric: room-36 dance count + `chasing powerup in room 36` re-entries collapse; retire events appear. |
-| `dense` | `$tubedense` | **ON** (rebuild-flush) | 0.9.7 | **v2 MECHANICALLY VALIDATED, payoff half-proven. v1 falsified on the gate room by the first A/B (rm40 rebuilt with ZERO rungs — walk anchored on the grate-blocked seed; chord clipped walls); v2 (`a14ea2a9`) walks BOTH ends + offers bbox-centerline rung candidates + logs `tube-densify FAILED` (never silent again). Post-v2: rm40 4 rungs, rm41 3, rm29 90; khazaddum rm13 laddered and its via-search-fails went 514/rnd (overnight baseline) → 0 (gate round) = first payoff evidence; isengard nv40 symptom didn't reproduce in either A/B arm (inconclusive there). FAILED lines on d≈20 door-scale rooms are expected noise.** Thin-tube densification: a room thinner than `BOT_ROADMAP_SPACING` (20u) gets ZERO interior lattice — isengard room 40 (21×143×31 grate tunnel 20→36, the sewer shortcut) built as 2 portal seeds / 2 components / DEGENERATE, and its tube-end seeds sit past `BRIDGE_LEN` (55) so no bridge connects them → `VIA_SEARCH_FAIL` ×159 + seam churn 40→38 ×203 in the overnight log. `GrowFromSeeds` step 2c now ladders each still-cross-component portal-seed pair (or every long pair when the lattice never populated) at sub-spacing steps (≤12u), hull-fitting rung nodes with small lateral jitter, chaining edges+unions as it goes; `BOT_ROADMAP_TUBE_RUNG_MAX` (96) caps insertions. Indoor-only. Build log: `tube-densified N rungs`. Gate rooms: isengard 40 (degenerate→connected), shafts 35/38 (9/8 nodes), khazaddum room 13 (514 via-search-fails, same class). |
-| `troute` | `$terrainroute` | **ON** | 0.9.7 | **v1 LADDER-VALIDATED 2026-07-11 (`edaba249`; full verdict + v2 sequencing in §3.7).** The terrain tier: cross-terrain routes composed as 3-segment plans over BOA_connect door pairs scored by interior RouteCost + region-lattice Theta* length (rule 1: no lattice path = no plan) with a monotone-progress follower (rule 2, one-replan latch). Entrance resolve's bot→door term upgraded Euclidean→lattice (killed the isengard room-20 fixation: 87%→4% of seeks); troute owns the lattice follower on ALL entrance legs; `outroute` retired to legacy. Composer fail-open verified at scale (batteries 143 correct REJECTs, cost bounded by negative-cache + resolve memo). Logs: `troute plan:/seg1/REJECT/monotone/complete`, `outdoor-route wp (entrance`. |
-| `heal` | `$roadmapheal` | **ON** | 0.9.7 | **NEW 2026-07-11 (the STALE-GLASS fix; batteries acceptance gate in flight).** Roadmaps build while panes/grates are intact — doorway seeds orphan, legs read blocked — and NOTHING told the model when the world opened ($nav glass smashing works at the ROUTER layer; the roadmap stayed frozen). Diagnosed on batteries: the lobby (rm3) roadmap = one healthy 266-node component + 16 ORPHAN seeds against the conference-room (rm22, 16 glass panes) wall → Red starved to 0 picks while Blue converted (its approach rm44 has no glass dependency); same mechanism = the isengard grate-tube staleness (ledger item, 2 maps deep). Fix: `Build()` records a WATCH LIST (breakable portals that sweep-blocked) + a nearby door-object count; `Get()` rechecks on a 3s throttle and rebuilds the room when a watched pane sweeps open or a door-object died (grates are OBJ_DOOR that die). Rebuild bumps the roadmap serial so reach/troute caches refresh. Log: `roadmap room N HEAL`. Operator decision: RIDES IN 0.9.7. |
-| `reach` | `$reachgate` | **ON** | 0.9.7 | **VALIDATED overnight 2026-07-10 (3-soak chain, build 575bca2d): (1) isengard A/B (strike OFF both arms) — the rm36 "magnets" read REACHABLE and are COLLECTED repeatedly (respawn-handle evidence: Shield ×11, Vauss clip ×8, Vauss ×4; cache serial stable so each new handle = a collection) → delivery via curve+dense works, retirement was overkill for them, exactly the north-star prediction; only 4 items map-wide UNREACHABLE (Blackshark rm34, Superlaser rm32, ImpactMortar rm37, Afterburner rm45) — all matching the navdump approach analysis. (2) 9-map gate: conversion normal bands, 0–12 exclusions/map = surgical. (3) 75-min replica vs decode baseline: shirebaggins 29→37 caps (+28%), Red conv 25→56%; iseng rm36 dances −18% w/ 8 collections and 0 retirements needed. Post-A/B fix: verdict cache now EVICTS dead handles (respawned items were saturating the 128-slot table mid-round; gate stayed correct but uncached).** Single-authority reachability: same-room powerup selection is gated by `BotRoadmapItemReach` — the item must hull-connect to the room roadmap in the bot's own component, i.e. the system that will DELIVER the bot gets the final word, not line-of-sight. Verdicts are geometric (correct from frame one, no learning period), cached per item per roadmap build (`BotRoadmapSerial`), fail-OPEN when the model has no answer (degenerate/no roadmap, outdoor, bot unconnectable). Flags/orbs exempt (`BotTrollExempt`, mirroring strike policy). First smoke reproduced the navdump approach analysis from pure geometry. Log: `item-reach '<name>' (room N): REACHABLE\|UNREACHABLE`. A/B note: run with `strike` OFF in both arms or Fix A's retirement masks the comparison. |
-| `glass` | `$glassroute` | **ON** | 0.9.6 | **VALIDATED** (bsidectf L3: 55 proactive clears, first bot captures; 0 false fires on glass-free maps) — Stage 2b: `TF_BREAKABLE` glass portals get finite `BOT_PORTAL_GLASS_PENALTY` (120) instead of IMPASSABLE, re-aligning the router with BOA (which already routes through glass). Glass-sealed rooms stop reading "sealed" → their powerups become selectable. Toggling flushes the geocost/passability caches (`BotGeoCostInvalidate` — the $gridbridge lesson). Gate map: **bsidectf L3** (207 glass portals, 69 "sealed" powerups). Expect via-fail noise at glass lines (via can't see through the pane; the breaker opens it on press/approach). |
-| `bnodesp` | `$bnodenative` | **ON** | 0.9.9 | **NEW 2026-07-19 (`PLAN-coop-nav-rethink.md`, BOTS_DEVEL 6.20)** — on a BNode-rich map (SP campaign: `BotBnodeNativeActive()` = enabled && `BNode_allocated && BNode_verified`, checked LIVE — mid-level `$nav` flips act immediately; `BotReinitAll` just logs ACTIVE per level), `BotSetRoutedGoal` bypasses our routing/via/seam/grid-route stack entirely and hands the engine ONE far `AIG_GET_TO_POS` goal, letting `AIPathAllocPath`→`AIGenerateBNodePath` build the full multi-room path — the guide-bot's own mechanism. Gated to both ends interior (mirrors the escort far-leg check, `bot.cpp:1794`); `BotPollCoop`'s objective-selection gate switches to `BOA_GetNextRoom` reachability under the bypass. Default ON (no console in client-launched co-op — 9.5.1); **inert by construction on every BNode-less MP map**, so the entire stack above this row is unaffected. SHIPPED 0.9.9: validated by 3 agentic dedicated-co-op runs (bots toured 94-101 rooms, reached the lvl-1 objective room, 0 asserts/pool exhaustion, `NO-ROUTE`/seam/hop/gridroute lines all silent) + operator companion-mode playtest. Two review fixes during hardening: `BotBnodeNativeActive()` live check (was a level-start cached bool) and the `AIPathAllocPath` one-time diag filtered to `OBJ_PLAYER`. |
-
-Watch out for the near-collision: **`$nav bridge` = the 0.9.4 corner bridge; the OLD `$navbridge` = the
-12.7 soft-hop (`$nav softhop`).** The five `[legacy 0.9.3]` rows (terrain/bnodes/outdoorvia/outdoorgraph/
-softhop) gate the fallback substrate and are deleted together with that code in Stage 4.
-
-(`$softfollow` was **removed** — see ledger; do not re-add as target-line early-release.)
-
-> **0.9.4 SHIPPED (2026-06-28).** The volumetric grid-roadmap rewrite is in and validated (`$gridnav`/
-> `$gridbridge`/`$gridroute`, all ON). Indoor + outdoor roadmap (Stages 1+3), corner-bridging across
-> wall-split components, a 6.7u hull-fit clearance, and **selective** proactive in-room routing (engaged only
-> in genuinely complex rooms — `orig_comp_count>1` AND ≥24 lattice nodes — so simple maps keep direct routing).
-> The same router drives objective, carrier, and `!follow`/`!cover`/`!hold` escort nav. A 9-map Fellowship soak
-> measured **overall captures +58% vs 0.9.3** (best build to date; khazaddum 0.2→1.0, several maps at career
-> highs). The 0.9.3 skeleton/pseudo-bnode stack below stays live as the `$gridnav off` fallback for degenerate
-> rooms. More live testing is ongoing.
-
-**Open issues (0.9.4):**
-
-0. **[OPEN — deferred] Thin-geometry disconnected rooms.** khazaddum's divider rooms are *thin* (room 13 = 5
-   nodes) and stay genuinely 2-component after bridging; the lattice is too sparse to route across, and the
-   roadmap can't cross disconnected components. No global gate change recovers it without re-breaking the easy
-   pool (shirebaggins has 22 such tiny fragmented rooms). Fix = a dedicated **thin-room densification** pass —
-   its own track, not a gate tweak. khazaddum remains a chronically-marginal outlier (caps noisy near 0).
-0a. **[OPEN — minor, self-healing] Roadmap growth over-reach into sealed pockets.** On maps with a sealed
-   sub-structure a ship can't enter (nysa room 41's 4 decoration Megas, walled by sub-ship slits), the
-   hull-swept growth probe (`ViaSegmentClear`) can place a *static* sphere into the pocket over a lattice step,
-   so the lattice grows in and *every* geometric reachability check (roadmap, navdump verdict) reads it as
-   reachable — bots chase it briefly. Handled by the **evidence-based troll-powerup backstop** (repeat
-   chase-timeouts retire the item level-wide). A stricter growth probe was **deferred** — too risky to the
-   connectivity gains for a minor, self-healing issue.
-0b. **[OPEN — approach precision] Tight-doorway threading / outdoor fine-threading.** A door barely wider
-   than the hull (townofbree tavern basement) is now *routable* (6.7u clearance) but the engine path-follower
-   still struggles to *thread* it cleanly. Same family outdoors: townofbree 2026-07-02 playtest — bots not
-   stuck, but can't fine-thread outdoor spaces precisely enough → 0 caps. Reachability solved; fine-approach
-   piloting is the edge. **This is grid parameter tuning, not architecture** — keep it a separate track from
-   the §7.1 dynamic-obstacle phase so each can be A/B'd alone.
-0c. **[ROADMAP — Stage 4, from the retired spec] Retire the old substrate.** Once no remaining role exists
-   for it, **delete** the portal-skeleton pseudo-bnode synthesis, the outdoor connecting graph, the soft-hop
-   bridge, and the reach-door fallback (§4.2–§4.3) plus their five `[legacy 0.9.3]` toggles — subsumed by
-   §3.5. This is the net-line-count payoff; §4.2/§4.3 collapse into a pointer when it lands.
-0d. **[ROADMAP — Stage 5] Flanking weights.** The §3.6 exposure-cost A\* mode, wired into the
-   tactical/combat layer. A behavior milestone, sequenced after the substrate is the stable default.
-
-**Superseded Phase-12 issues (historical — the 0.9.4 roadmap is the resolution for #1/#2; kept for context):**
-
-1. **[HEADLINE — soft-hop PARTIAL win] Indoor 2-component rooms.** khazaddum 20/31 + townofbree 60: pseudo-
-   bnode skeleton has two disconnected portal sub-graphs (`buried=0`, open center, BFS dead-ends across a
-   free-standing divider). The 12.7 **soft-hop bridge (`$navbridge`)** soak verdict (`testing-2026-06-21T17-44`,
-   ~5h/21rnds): the **mechanism works — dead-ends collapsed** (khazaddum room 20 via-fails 1083→3, room 31
-   1053→5; hard-pins ~13/rnd→7/rnd), bots now *move* instead of dead-pinning. **BUT it does not yet produce a
-   crossing** — still 0 caps/khazaddum, via-arrival only 40%: the bot drifts at the far exit portal but the
-   engine's avoid-walls **can't thread the divider to completion** (trades dead-pin for grind; total stucks/rnd
-   actually rose 95→106, almost all "moving-but-slow"). **RESOLUTION → 0.9.4 grid roadmap.** The earlier plan
-   here — a lateral go-around *waypoint* placed beside the divider — is **dropped**: it adds more
-   portal-derived nodes to the very graph that's already too sparse. The 0.9.4 volumetric grid-seeded roadmap
-   (§3.5) puts nodes throughout the room *interior* (and edges them hull-clear), which is the
-   actual connector these divider rooms need — and the same substrate fixes #2 and the interior-coverage gap.
-   (Watch-item retained for 0.9.4 validation: townofbree via-arrival dipped 64%→54% under soft-hop.)
-2. **[OPEN] Outdoor connecting-graph fragmentation.** townofbree's region graph = 11 components, only 7/13
-   doors BFS-reachable (bbox-corner anchors bury in geometry; doors 3/8/12 isolated). `$navbridge`'s outdoor
-   greedy hop softens this; if it local-minimum-pins, the deferred fix is **outward-normal anchor placement**
-   (anchors in the street, not at bbox corners) + the node-cap (64 = `uint64` mask; isengard saturates it).
-3. **[OPEN — observed, carrier-critical] Decorative concave-alcove trap.** User FPV (2026-06-21): a townofbree
-   structure has an **aesthetic alcove shaped like a front doorway but with NO actual door/portal** (solid
-   decorative recess). A flag carrier sprinting home flew *into* the alcove and could not escape — a concave
-   pocket is a local-minimum that avoid-walls presses on all sides. Distinct from the divider problem; it cost
-   a near-capture. Likely the carrier home-nav / entrance-resolve / soft-hop aiming at a point in/near the
-   recess. Candidate fixes: reject entrance/approach targets that resolve to a non-portal concavity; or a
-   carrier "backed into a dead pocket" escape (detect no-portal concave + reverse out). Needs a repro/navdump.
-4. **[SCOPED → §7.1] Destroyable-grate maps (towerofisengard).** 0 caps / 7 rounds / 81 hard.
-   Bots won't *shoot* the breakable grates sealing the path, so no routing/bridge helps. Not a nav-layer
-   bug — do **not** chase it with routing changes. **Reframed 2026-07-03 (navdump component analysis):**
-   the "grates partition the map" model is *unsupported by the static data* — isengard's navdump shows both
-   flags reachable (7/7 clear approaches) inside a 35-room main component, **zero `TF_BREAKABLE` portals**
-   on the whole map. The dump is object-blind (§7.1), so the real blocker is grate *objects* in open portals
-   and/or path-follower failure in the fragmented hub (room 34 = 8 portal sub-components). Isengard is too
-   complicated as a first test; the phase gates on **splusv1** first (§7.1), isengard after.
-5. **[DEFERRED] Rigidity / node-to-node feel.** The `$softfollow` early-release attempt was **removed** (it
-   regressed into circling — see ledger). A real fix needs a non-oscillating loosening (hysteresis, or
-   release-once-*after-passing* the via — NOT target-line flicker). Lower priority than 1–3.
-6. **[DEFERRED — from the 12.7 plan] Router traversal penalty (§3 of the plan) + outward-normal anchors (§4).**
-   Validate the soft-hop core (#1) before adding these.
-7. **[DEFERRED] Rough-terrain line-of-flight.** Bots ground-pin into hillsides on open heightfield (Fellowship
-   real-terrain soak). Deferred behind the structured-map work above.
-8. **[ENGINE-LEVEL, ongoing] Intra-room interior-obstacle press** — the long-standing press detailed below;
-   the via/skeleton machinery is the running mitigation.
-
-**Tried & reverted ledger (so we don't re-chase these ghosts):**
-
-- **Committed-leg executor** (0.9.12-dev, 2026-08-29 — never committed; patch preserved as
-  `0.9.12-committed-leg-experiment.patch`) → **DROPPED unbuilt**. A per-bot executor took exclusive
-  ownership of one planner-selected leg and drove it with sequential `AIG_GET_TO_POS` goals
-  (deliberately *not* `AIG_FOLLOW_PATH` — the static-restore crash path stayed avoided). It never
-  passed a smoke: the final build ran 203 `START` → 23 `COMPLETE`, with 163 of 180 cancels as
-  `left-source-room`, and tightening node arrival to 3u made completion *worse*, not better.
-  Three structural reasons, worth knowing before anyone rebuilds it: activation keyed on
-  `BotRoomIsBuried` fires far beyond the intended ring class; requiring the ship to stay in the
-  source room while chasing intermediate in-room nodes cancels on ordinary portal drift; and the
-  global stand-down (`BotViaPointTick` returning 1 whenever a leg is live) is far too blunt — it
-  silences the via layer for callers that have nothing to do with the leg. The Batteries deadlock
-  it was built for turned out to be the terrain-exit bug in §7.0 and needed none of it.
-
-- **Runtime BNode generation** (`f0f39007`/`4d515800`) → **REVERTED** (`730dab37`). The engine's all-or-
-  nothing `BNode_allocated` flag *displaced* working crude-BOA everywhere, and the generator pruned edges to
-  `max_rad 5.0` vs the 6.676 ship hull → unflyable. Pivoted to additive **pseudo-bnodes** instead. Do not
-  retry whole-graph BNode generation.
-- **`$softfollow` early via-release** (`09d70cd2`) → disabled (`a2cb681e`) → **REMOVED entirely** (code +
-  toggle + `BotStraightLineClear` helper deleted). Fired inside the commit window → target-line flicker →
-  release/recommit **circling** (darkjourney via-arrival 73%→18%, recovered to 65% once off). User verdict:
-  "didn't work at all." Any future rigidity fix must be non-oscillating (release-once-after-passing), not
-  target-line early-release.
-- **Goal-ward escape + strafe-through-lip** (2026-05-30 batch) → **REVERTED** (back to Phase-10 base). Felt
-  broadly worse; the strafe path never actually fired. Do not resurrect.
+**Engine limit.** The engine caps a room at 40 portals; Kartoon Kanyon has 45 in rooms 1 and 14, Isengard's door
+table 47. Our per-portal caches treat portals at or past `BOT_MAX_PORTALS` as impassable (NAV57, accepted).
 
 ---
 
-### 7.1 Next phase — dynamic-obstacle response (scoped 2026-07-03; Stages 1+2+2b + arbitration BUILT — **FIRST AUTONOMOUS BOT CAPTURES on bsidectf L3, 2026-07-04**)
+## 6. Execution layer and diagnostics
 
-> **Milestone (2026-07-04, 45-min L3 4v4 run):** `Sixgun` and `Squid` each captured a flag with
-> minimal human presence — the first bot captures ever on the 324-room glass-maze benchmark, which
-> was fully sealed to bots before 0.9.6. Scorecard vs the pre-arbitration run: Router Nav 46 →
-> **962** (objective routing now dominates), 91% via-arrival, 55 proactive glass clears, carrier
-> ticks 0 → 41. **Remaining refinement target (feeds Stage 3):** 428 of 860 chase timeouts were
-> HARD (bot visible-locked on an item its flight path can't reach — rad-0 LOS passes where the
-> 6.7u hull can't follow) → 13 items mass-retired (see the analyzer's new `TROLL_MASS_RETIRE`
-> tripwire). The Stage 3 progress-monitor replan is the designed fix: abort/reroute on stall in
-> ~1s instead of an 8s wall-press. Hot rooms: 1 (200 via-fails), 35, 116; top item class: Shield.
+### 6.1 The execution layer
 
-> **As-built deltas from the plan below (all deliberate):**
-> - **Stage 1 grew a third fix — `BotHasLOS` tightening:** `HIT_OBJECT` now counts as
->   line-of-sight only when the hit object IS the target (it used to accept *any* object hit as
->   "clear" — the literal see-through≠passable bug). Bots no longer fire *any* weapon at enemies
->   behind grate objects, and no longer fire through stationary teammates. Broadest-reach change
->   of the batch (8 call sites: firing, follow-beeline, combat state, aim facing) — the -dev
->   playtest judges it.
-> - **The splash guard now covers ALL secondaries** (dropped the six-weapon `is_splash` list —
->   Concussion/Homing/Guided/Cyclone carry blast damage too). Closest-range secondary combat
->   inside 30u is gone with it; deliberate (it was self-damage).
-> - **Stage 2's proactive trigger is a forward-ray, not the route-portal scan** the plan
->   sketched: reuse the stuck-clear 40u fvec ray every frame (`BotProactiveObstacleClear`),
->   allowlist `OBJ_CLUTTER`/`OBJ_BUILDING` + `OF_DESTROYABLE`. Fires exactly when the bot is
->   flying at the obstacle, needs no route state, and covers every nav layer (engine path, grid
->   waypoint, via) — strictly more general than portal lookup, still dormant with no such objects.
-> - **The toggle gates only the proactive pass.** The safe-weapon rework of reactive stuck-clear
->   (laser for objects, no point-blank secondaries for glass) is an unconditional bug fix —
->   `$nav grate off` must not resurrect the suicide.
-> - **Stage 2b (2026-07-03, after the first splusv1 session): glass break-cost routing built** —
->   `$nav glass`, default ON. Grates turned out to be a deliberate rarity on MP maps (operator:
->   two known testable maps, one incidental; no client-side destroyable feedback in MP), so the
->   phase's routing-through effort went to **glass** instead, where it's clean: `TF_BREAKABLE` is
->   a static face flag the navdump already sees (bsidectf L3 = **207 glass portals**, a fifth of
->   the map's doorways — unplayable for bots without this). `BotPortalGeoCost` returns
->   `BOT_PORTAL_GLASS_PENALTY` (120, ~3 hops of detour tolerance) for a swept-blocked portal whose
->   face (either side) is `TF_BREAKABLE`; the proactive clearer also shatters panes on approach
->   (matter option required — no laser-spam at glass). Routing-through-**grates** stays deferred
->   (dynamic objects, asymmetric probe, no payoff map).
-> - **Objective arbitration + strike discipline (2026-07-03, after the first bsidectf L3 session):**
->   the 7-min L3 log proved the substrate (18 proactive glass clears, 56% DIVERGE, 86% via-reach)
->   but exposed **objective starvation** — only 34 objective waypoint issues vs 20 chase-timeouts,
->   with **8 legitimate powerups troll-retired in 7 minutes** by the time-based timeout strike.
->   Fixes: **`$nav commit`** (on-objective powerup candidates must be same-or-adjacent room, not
->   just inside the wall-blind 120u radius; default-laser bots exempt until armed) and **strike
->   discipline** (timeout strikes only when chase net-displacement < 25u — the hard-pin signature;
->   mobile slow chases get the personal 60s blacklist only. The via-seal geometric strike is
->   unchanged). New log lines: `objective detour — chasing powerup in room R`, and timeout lines
->   now carry `disp=N HARD|mobile`. Watch item: items behind breakable glass could seal-strike if
->   the pane outlives `BOT_VIA_SEALED_TICKS` — L3 showed 0 sealed abandons, so not yet observed.
-> - **Stage 3 BUILT (2026-07-04, 0.9.7-dev — `$nav replan`; v3 INDOOR-VALIDATED same day, see
->   §7.0 toggle table).** As-built: a per-bot
->   1s-window displacement monitor (EXPLORE only; hold-order and escort bots exempt) with three
->   gentlest-first actions on stall — (1) release the committed via (`via_expires = 0`; the next
->   `BotViaPointTick` cleans its own goal slot and re-searches from the CURRENT pose), (2) after 2
->   stalled windows, abort a powerup chase (personal blacklist, **no strike** — retires the 8s
->   wall-press window that produced the mass false retirements), (3) re-pick the explore/routed
->   destination. 3s action cooldown (hysteresis). Non-oscillating by construction: the trigger is
->   displacement ≈ 0, a failure signal — a via the bot is actually flying toward moves 30–60u per
->   window and is never released mid-flight (contrast the $softfollow target-line flicker).
->   **v1 field regression + v2 fix (same day):** first flight produced circling — 48 via releases
->   in two rounds. Root cause: displacement ≈ 0 is ALSO a bot turning in place toward a fresh via
->   (translation is along fvec; a big heading change is ~1s of zero displacement) or nosing a door
->   while it opens — the exact phases the 4s via commit window exists to survive. v2 counts a
->   stalled window only when fvec‖movement_dir (dot ≥ 0.6) and no OBJ_DOOR within 30u ahead;
->   thresholds: via release ≥2 qualified windows, chase abort ≥3, re-pick ≥4 and free-roam-only.
->   Lesson for the ledger: "non-oscillating" must be checked against EVERY zero-displacement
->   state, not just the target-line flicker — turning IS stationary.
->   **v3 (same day): the slow window — circling detection.** v2's residual "confusion" was traced
->   live (isengard room 37, Viper): a **skeleton-via dance on a same-room target in a
->   grid-degenerate room** — hop→arrive→re-probe→hop, 15–45u legs netting ~40u/12s. The fast 1s
->   window reads that as progress (each second moves >8u); circling is displacement at small
->   timescales, none at large ones. v3 adds an 8s window (<35u net = circling) → suspend the via
->   layer in this room (the 12.2c mechanism, displacement-triggered — the arrival-count trigger
->   is skeleton-exempt and never fired) + abort the danced chase (no strike) / re-pick a free-roam
->   dest. This is the pre-existing bree-room-56 "moving-but-slow" class detected live — NOT a
->   Stage-3 regression; the durable fix for those rooms remains grid densification (§7.0 #0).
-> - **Also 0.9.7: swept grate-detection ray.** Isengard field data (operator killed THROUGH a
->   grate by a bot; grate died to stray fire; detector logged nothing) proved grate bars have
->   gaps a zero-width ray threads. The proactive probe now runs a second pass at
->   `BOT_GRATE_PROBE_RADIUS` (5.0, sub-hull) so it collides like a ship, not a bullet. Plus: via
->   log lines print room −1 outdoors instead of the raw 0x8000xxxx cell encoding.
-> - **Terrain track piece 2 BUILT (2026-07-04, 0.9.7-dev, UNTESTED — `$nav outroute`).** Proactive
->   outdoor lattice following on objective legs (`BotOutdoorRouteLeg` in bot.cpp; hooks in
->   `BotSetRoutedGoal` + the Phase 8.1 entrance-seek re-issue). Full rationale and behavior in
->   the §7.0 toggle-table row. Piece 1 (terrain regions as coarse-router nodes over `BOA_connect`
->   edges, so `BotComputeRoute` can plan interior→terrain→interior) remains next.
+These deliver the plan and handle what the engine's follower gets wrong at a door. They are the members the committee
+collapse (§7.1) turns into one commitment rule.
 
-**Theme: the bot responds to the world *as it is now*, not as the load-time roadmap said.** The 0.9.4
-static substrate is validated (§3.5); the remaining game-breaking failures are things the roadmap's
-probes physically **cannot see** — grate objects, breakable glass, blastable doors — plus reacting to a
-blocked route *before* pinning. This matters structurally for CTF today and Entropy next (room access is
-the game mechanic there). Three stages, one toggle-gated feature each.
+- **Via point** (`BotViaPointTick`, bot.cpp:2412). The one resolved aim (since `cddde48c`, the routed via/chain target
+  is our resolved aim, never the engine's active path node; that subtraction gave abend2 its first captures). A
+  side-committed via is issued as an `AIG_GET_TO_POS` sub-goal; chain cap, suspend and reroute bound it.
+- **Seam push and hop commit.** At a door the engine may re-plan through BOA; the seam push (`BOT_SEAM_RETRY_TIME`
+  latch, bot.h:157) and the hop commit (same hop re-issued past the press trigger) push through to the crossing's far
+  point. A commit needs the door approach in hull view or it is refused (`09c40a72`). A TIGHT hop commits at the
+  wall-sphere radius. `hop outcome` lines log CROSSED / NOT-CROSSED per committed crossing.
+- **Spawn egress** (C1-C3, E1-E2, 0.9.16-dev). A ship that starts in contact sees no route (every sweep dies at 0 u).
+  For the first `BOT_SPAWN_EGRESS_WINDOW` 45 s of a life, within `BOT_SPAWN_EGRESS_RADIUS` 25 u of the start, with no
+  network attach, the via is the start's own facing as far as a thin ray measured clear (capped at 50 u). It runs
+  before the composed drive and the skeleton chain, at most `BOT_SPAWN_EGRESS_MAX_FIRES` 2 times a life, and while it
+  is live (`via_is_egress`, `BotSpawnEgressLive` bot.cpp:840) `BotApplyThrust` thrusts along the facing directly,
+  because inside a 13 u toy box the engine's wall avoidance swamps any goal. The round-start spawn records its start on
+  the life's first frame. Batteries: lives pinned at spawn 35% → 1%, hard pins 391 → 32 over two 12-round gates.
+- **Stuck ladder.** The room-progress timeout (`BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT` 12 s, displacement-based) bumps
+  the failed portal (§4.6) and picks a new destination; escalation forces a physical escape. At a hard pin the burst
+  is **directional**: five body directions (reverse, down, up, left, right) are swept 16 u at hull radius and the
+  burst takes the longest clear one, reverse winning ties (slice 9c). In a one-door room the excluded door is the
+  fallback escape. The destination that forced an escape is demoted. The escape pick is still not goal-aware (NAV24).
+- **Glass back-off.** A pane inside the 30 u self-splash guard, with a missile but no matter primary: one second of
+  straight reverse, then fire from the guard distance (slice 9b; vent-only spawn rooms).
+- **Proactive clearing.** `BotProactiveObstacleClear` (bot.cpp:1908) uses the 40 u forward ray to shatter panes and
+  clear `OF_DESTROYABLE` objects on approach; `BotClearObstacleSafely` never fires a splash secondary within range.
+- **Hunt needs a route.** A hunt of a target in another room needs our router to find a route under this bot's glass
+  authority; `BotSetPursuitGoal` (bot.cpp:908) pre-validates the same way. Pursuit steering itself still rides the
+  engine path (COL9).
+- **CTF errand last leg.** Arrival in the objective room is not the end: attackers touch an enemy flag at home;
+  others take station by the flag and hold within 40 u with the progress clock at zero. A flag-touch goal never
+  completes by distance (`BOT_TOUCH_GOAL_CIRCLE_DIST`, bot.h:40; `5d46e532`): bedlam re-aims per pickup fell from
+  about nine to under one.
 
-**Grounding facts (verified against code + navdumps, 2026-07-02/03):**
-- **All our static tooling is object-blind.** `ProbePortalClearance` casts with
-  `FQ_IGNORE_MOVING_OBJECTS` and no `FQ_CHECK_OBJS` (`bot_steering.cpp:88`) — it hits walls only. The
-  navdump inherits this. A destroyable grate **object** sitting in a geometrically-open portal is
-  invisible to the roadmap, the geocost layer, and every offline analysis.
-- **Test map = splusv1** (small anarchy map, 2 grates: room 10→3 and 10→4). The grates are
-  `OF_DESTROYABLE` **objects** in open portals — the map has **zero** `TF_BREAKABLE` faces. The 10→3/4
-  portals read tight/DISAGREE from the room-10 side for *geometric* reasons (buried `path_pnt` →
-  asymmetric swept-hull), so that impassability **persists after the grate breaks** — which is why
-  routing-through is deferred (below). Rooms 3/4 are 20×20×10 dead-end closets (no powerups in the dump;
-  snapshot caveat).
-- **The missile-suicide mechanism is in the combat loop, not stuck-clear.** Stuck-clear priority 2
-  (`OF_DESTROYABLE` blocker) fires the **primary** only (`BotFireAtObject`, `bot.cpp`); the
-  secondary-first branch of `BotBreakGlassObstacle` is reachable only via a `TF_BREAKABLE` face —
-  absent on splusv1. The actual kill path: grates are **see-through ≠ passable** (`OBSTACLE_GEOMETRY.md`)
-  → a pinned bot acquires an enemy *behind* the grate → `BotDoSecondaryFiring` launches a homing/smart —
-  the splash self-guard (`bot.cpp:732`) measures distance to the **target** (far), not to the **first
-  obstruction** (the grate at the nose) → point-blank detonation, repeatedly. Also: the `is_splash` list
-  omits Concussion/Homing/Guided/Cyclone (all carry blast damage), and `BotFireSecondaryAtPosition` has
-  no guard at all (latent, glass path).
+### 6.2 Face-travel aim and explore
+`BotUpdateAimDirection()` faces the bot along `movement_dir` rather than locking on a far enemy, and afterburner is
+suppressed when facing diverges from travel. `BotDoExploreRoaming` samples rooms, validates candidates with
+`BotComputeRoute` (the engine calls intact glass and skybox windows passable), filters NEVER portals in its neighbour
+fallback, and favours unvisited, uncrowded rooms.
 
-**Stage 1 — firing-layer obstruction guard (fixes the suicide everywhere).** Before releasing any
-splash secondary, ray-cast the aim line; if the first hit (wall **or** object) is inside the
-splash-guard radius, hold fire or fall back to primary. One check covers grate-adjacent,
-glass-adjacent, and pillar-adjacent suicide in combat *and* clearing. Extend the `is_splash` list to
-every blast-damage secondary. Smallest diff, unconditional win — ship first.
+### 6.3 Diagnostics
 
-**Stage 2 — safe + proactive obstacle clearing (`$nav grate`, default ON).**
-- `BotClearObstacleSafely(bot, target, need_matter)`: within splash range **never** a secondary.
-  Grate object → **Laser** (always owned, zero splash, works on any destroyable); glass
-  (`need_matter`) → Vauss → MassDriver. Rework `BotBreakGlassObstacle` to drop the secondary-first
-  branch and route stuck-clear priorities 2+3 through it. *(Landed: `BotClearObstacleSafely`,
-  `bot.cpp:1645`. `BotBreakGlassObstacle` no longer exists — this paragraph is the design record.)*
-- **Proactive trigger:** `BotPortalBreakableObstacle(room, portal, &obj)` scans the committed route's
-  next portal for an `OF_DESTROYABLE` object; when found and the bot is approaching, start clearing
-  *before* the 1.5s stuck pin. No object found → dormant (self-verifying on every other map).
-- **Discriminator firewall (the no-regress line): only shoot things that actually open.**
-  `TF_BREAKABLE` glass → matter weapon only; `OF_DESTROYABLE` object / `DF_BLASTABLE` door → any
-  weapon; **never** `TF_DESTROYABLE` cosmetic faces (never open) or permanent tight slits (DISAGREE
-  `pf_too_small` bars — shoot-through but unbreakable → infinite ammo-dump pin).
-- **Gate:** splusv1 — bot clears both grates with laser, **zero self-damage deaths**, and proceeds.
-  Glass no-regress: **bsidectf level 3** (Outrage-offices rendition, real `TF_BREAKABLE` glass
-  walling off rooms/vents — the map was totally broken pre-0.9.6; few tested maps have true
-  breakable glass, doorsofmoria does NOT). Official maps unaffected (no grate objects → dormant).
-
-**Stage 3 — progress-monitor replan (replan-from-current-pose).** Move the replan trigger from
-"stuck timer expired" (reactive) to a stall detector: **net displacement below threshold over N ticks**
-(the same hard criterion as the analyzer's `net_disp<10` hard-pin discriminator) → re-query the roadmap
-from the current pose → re-aim; fall through to `BotDoStuckClear` if replanning can't progress. This
-*generalizes* the existing chain-cap → suspend → reroute machinery into a continuous monitor — a wiring
-change, not a substrate change. Natural consumer of Stage 2: a replan that finds the blocker breakable
-hands it to the clearing logic instead of routing around.
-- **Event-driven, not polled** — robotics stacks re-plan at fixed 200ms because the sensed world
-  changes continuously; ours changes only when something breaks/opens/blocks. Trigger on stall.
-- **HARD CONSTRAINT (the `$softfollow` tombstone, ledger above): non-oscillating.** The stall
-  criterion must be displacement-based only — never route-quality or target-line re-checks inside a
-  commit window (that exact mechanism cratered via-arrival 73%→18%). Hysteresis: once a replan fires,
-  commit to the new route for a minimum window.
-
-**Deferred out of this phase (decided 2026-07-03):**
-- **Routing-through grates** (finite break-cost in `BotPortalGeoCost`): requires the asymmetric-probe
-  fix (splusv1 10→3/4 stays geo-impassable after the grate dies) + a non-cached dynamic overlay + a map
-  where something worth reaching sits behind a grate (splusv1's closets are empty). Bundle all three
-  when a payoff map appears.
-- **"Frontier exploration" → correctly named: visit-recency patrol bias.** The robotics concept (seek
-  *unknown* space — Yamauchi 1997, §9) doesn't transfer: BSP is ground truth, the roadmap covers the
-  level at load, D3 has no unknown. What remains is a behavior-layer roam-variety heuristic —
-  anarchy-only if ever (in CTF it's a detour tax on a fixed objective). Not navigation; file with
-  game-mode/behavior work.
-- **Anti-adopt list (from the 2026-06-30 ExynAI/robotics synthesis — keep verbatim):** no
-  OctoMap/probabilistic occupancy (BSP is noiseless binary truth); no Nav2 port (borrow the costmap
-  layer/recovery-behavior *patterns*, never the ROS stack); no sensor-fusion loop (nothing drifts).
-  Secondary tier (later, maybe): spline-smoothed trajectories, behavior-tree FSM refactor, costmap
-  layer formalization.
-
-*(Provenance: ExynAI research synthesis 2026-06-30 — production mine-drone SLAM stack, same
-perception→volumetric-map→planner→local-steering family as §3.5. Its gap analysis ranked frontier +
-replan as the top steals; the 2026-07-02/03 code/navdump review re-ranked dynamic-obstacle awareness
-above both, corrected the frontier framing, and fixed two citations — frontier = Yamauchi 1997, not
-Yamaguchi 1998 (formation control); Lazy Theta\* = Nash/Koenig/Tovey 2010, not Incremental Phi\* 2009.)*
-
-### 7.2 Long-standing open problems (narrative)
-
-- **`$nav` diagnostic footprint / telemetry consolidation — REGISTERED 2026-07-18 (post-0.9.8 track).**
-  The nav stack's debug surface grew a line at a time across the 0.9.x campaigns and is now the
-  server's dominant log producer: the 2026-07-18 overnight metropolis_gt soak wrote a **237 MB**
-  log, ~90% of it a single unthrottled carrier-objective line (1.53M repeats — deduped to
-  change-only that same day). What remains is organic, not designed: per-event `LOG_DEBUG` lines
-  with hand-rolled throttles (`Gametime` latches, change-dedupe, per-bot arrays) added
-  investigation-by-investigation, with no shared cadence policy, no verbosity tiering, and
-  analyzer greps (`soak_report.py` / `analyze_bot_log.py` `RE_*` patterns) coupled to exact
-  wording. Deferred deliberately while the modes era validated — nav was too fluid to freeze a
-  telemetry contract. **Consolidation sketch (when taken up):** (1) a `$nav verbosity 0..2` tier
-  (0 = transitions + anomalies only, 1 = today's investigative lines, 2 = firehose) with every
-  emit site classified; (2) one shared throttled-emit helper replacing the hand-rolled latches
-  (self-healing across `Gametime` resets); (3) a stable machine-readable event vocabulary the
-  analyzers parse instead of prose greps — co-versioned with `D3_PYRODECK_SPEC.md`; (4) the
-  Windows/Release telemetry gap closed or explicitly documented per-line (today Release builds
-  log **nothing**, which reads as false health). Sequencing: after the 0.9.8 modes era, alongside
-  Stage 4 skeleton retirement — both are "delete accumulated scaffolding" jobs and touch the same
-  files.
-
-- **Toroidal-room orbit (Rim class) — OPEN, registered 2026-07-14 (steering/straightening layer).**
-  A giant single-component annulus room (Rim's 4 quadrants: 676u, 16–18 portals, 94% of portal-to-portal
-  legs LOS-blocked around the central core) defeats intra-room traversal even though routing is trivially
-  correct: bots orbit the lattice without progressing (skeleton hops in the thousands per round, via-reach
-  66–68%, CTF conversion 0%). **Refuted fixes (2026-07-13→14 battery):** `$nav gridall` (denser proactive
-  routing — made it worse, stucks ×4.5) and by extension the staged blocked-leg-ratio complexity-gate
-  promotion. The mechanism is that Lazy Theta\* straightening + via steering keep pulling the flown leg
-  toward the inner wall chord; the `$nav curve` clearance-gated straightening (isengard-corkscrew fix)
-  is the nearest relative but did not save Rim at its current clearance. Candidate fix classes, all
-  instrument-first at POV/navdump level: annulus-aware straightening (reject chords whose midpoint is
-  hull-blocked *radially*, not just along the sweep), or arc-following (walk the winding node path
-  without shortcutting in rooms flagged annular). Affects: Rim CTF + Entropy (same starvation geometry).
-  Sequenced after the 0.9.8 modes-validation era.
-
-- **Intra-room interior-obstacle press — KNOWN ENGINE LIMITATION (Phase 12, ongoing mitigation).**
-  *This was the original headline nav problem; the via-point / pseudo-bnode / soft-hop stack (§4.2, §7.0 #1)
-  is the running mitigation — it ends the dead-pins but not yet every crossing.* Earlier notes filed this
-  under a speculative "portal-transition wobble" and guessed the obstacle was a `FPF_SOLID|FPF_PORTAL` glass
-  *portal*. The `pumphouse.json` navdump (2026-06-08) **disproves that** and pins it precisely:
-
-  - **It is an interior FACE, not a portal.** pumphouse (`pumphouse.d3m` → `small.d3l`) has **zero**
-    glass portals — all 48 portals are `solid=0 portal=1` (open) plus 8 fly-through forcefields
-    (`engine_passable=1`). The "glass cover" panels are free-standing room *faces* (counted in
-    `num_faces`), invisible to portal-based routing.
-  - **Diagnostic: `los_from_pathpnt_clear=0`.** In the press rooms the engine's own path node can't see
-    the exit portal: room 0 & room 2 (mirror) → r1 blocked at `los_dist=10.3` (hull radius 6.68);
-    rooms 10 & 18 (5-portal central rooms, 20/20 blocked legs) blocked at `los_dist=138`.
-  - **Purely steering, not routing.** Every affected portal is `engine_passable=1, gcost=0,
-    DISAGREE=false` — the router picks the right door and is powerless to help; the bot simply can't
-    cross the room to it. The press is **93% in EXPLORE** (8543/9362 d≈0 presses, navmapping7), so
-    `BotDoExploreRoaming`/the waypoint-injection path (§3.4) is live at the press moment.
-  - **It is a limit cycle, not a hard pin.** The dynamic penalty (§3.3) bounces the bot off the
-    correct-but-blocked door onto the wrong ones and back (wp 14/3/0/8 for the same goal). Threading
-    the right door **once** breaks the cycle; the penalty climb stops on its own. Do **not** try to fix
-    the flap directly — it is downstream of the press.
-  - **Engine-level / not a fork regression.** Reproduces in **vanilla retail D3 with robot enemies**
-    (Outrage scripted single-player paths around it). It is the specific blocker keeping multiplayer
-    bots off Q3A/UT-era parity: pumphouse = **0 captures across 43 rounds** purely from this.
-
-  **Phase 12 fix — intra-room via-point steering (IMPLEMENTED 0.9.2-dev — rotation validation
-  pending; do not claim fixed until the §test-rotation gate passes).** One mechanism, keyed on
-  the bot's **active local steering target** — generalized from "next portal" to *any* in-room goal: the
-  objective-routing next portal (pumphouse), **a powerup being chased**, or an explore destination. The
-  same interior face that blocks a portal line blocks a powerup line; one go-around serves both.
-
-  1. **Detect** (indoor): before steering to the active local target, cast a hull-radius ray bot→target.
-     Blocked by a solid interior face ⇒ occluded (runtime form of `los_from_pathpnt_clear=0`).
-  2. **Round it — target reachable (analyzer `review`):** probe offsets to *both* sides of the blocking
-     face; choose the side whose via-point has clear LOS to **both** the bot and the target. **Commit to
-     that side for N frames** — per-frame re-selection *is* the `net_disp` 28–43 circling already seen.
-  3. **Deliver via §3.4:** feed the via-point as an `AIG_GET_TO_POS` sub-goal so the engine path-follows
-     to it *first*, then resumes the target. We change what the engine steers **toward**, never
-     `movement_dir` — consistent with Invariant #1; a finer-grained waypoint, not a new steering layer.
-  4. **Give up — target unreachable (analyzer `sealed_troll`):** if the side-probe finds **no** clear
-     via-point *and* the only approach is through impassable (grate/glass/blocked) geometry, the target
-     is sealed → abandon + blacklist immediately, **without** waiting for a stuck-escape. PLUS a
-     *proactive* filter in `BotFindBestPowerup`: never select a powerup whose room is unroutable
-     (`BotComputeRoute == -1` / impassable-only approach) — a troll powerup is skipped before any chase.
-     This is the runtime answer to the pre-0.9.2 "troll powerup" planning (supersedes the reverted
-     `$navprobe`); the via-point search's *failure* is the natural, conservative give-up trigger.
-
-  **As built (deltas from the plan above — all deliberate):**
-  - **Detection target = the engine's *current path node*** (`AIPathGetCurrentNodePos`, bounds-guarded
-    against the navrouting23 dead-path read) when a live path exists, else the handed goal position.
-    This is the exact point `AIPathMoveTurnTowardsNode` beelines `movement_dir` at — the runtime
-    equivalent of `los_from_pathpnt_clear=0` — so the probe fires precisely where the engine presses,
-    not on every legitimately-curved room crossing. Probe + via search live in
-    `BotFindViaPoint` (`bot_steering.cpp`); commitment + delivery in `BotViaPointTick` (`bot.cpp`).
-  - **Three wiring sites:** `BotSetRoutedGoal` (carriers + objective waypoint issue), the
-    still-en-route hold branch of `BotDoExploreRoaming` (where 93% of presses happen — the hold
-    branch otherwise never re-examines the line), and the powerup-chase branch of `BotUpdateState`.
-  - **Via candidates are 6DOF:** rings of 4 (±side along the blocking face plane, ±perpendicular —
-    over/under) at 15/30/45u, anchored just on the bot's side of the hit face; first candidate with
-    hull-radius LOS to both ends wins; commitment is `BOT_VIA_COMMIT_TIME` (4s) or arrival.
-  - **The unreachable-gate is a *local sealed-room* test (`BotRoomSealedForShip`), not
-    `BotComputeRoute == -1`:** a powerup is skipped only when *every entry portal of its own room*
-    is geo-impassable (grate/slit/locked). A full interior-route verdict would false-positive on
-    outdoor-linked rooms (the analyzer's OUTDOOR-LINKED `sealed_troll` caveat); the local test
-    cannot. Multi-hop seals still fall to the runtime sealed counter (`BOT_VIA_SEALED_TICKS`
-    consecutive no-via verdicts on a same-room item → immediate abandon + 60s blacklist) and the
-    existing 8s chase-timeout backstop.
-  - **Diagnostics:** `$botstat` nav line gains ` via:d=<dist> t=<commit-left>` while a via is
-    active; log lines `via-point detour in room R`, `via-point reached`, `via search failed in
-    room R` (throttled ~5s/bot), `powerup sealed in room R` (all under `BOT NAV:`) feed
-    `tools/analyze_bot_log.py`.
-  - **12.2 (IMPLEMENTED 2026-06-10, UNTESTED — plan finalized after navmapping10/11/12):** 12.1
-    verdict = **keep** (hard pins 19→0; **first-ever abend2 bot capture**). The pyroplace headless
-    soak (navmapping11, 10.7h) + user ground truth then reframed the powerup-guard work — two new
-    troll classes the current guards miss:
-    - **Adjacent-room alcove troll (Mega/Blackshark, rooms 71/72 off room 2):** a
-      bulletproof-glass face *deep inside room 2* walls off a pocket that **contains both alcove
-      portals**. `ProbePortalClearance` is an *aperture* test (±5u swept-sphere window centered on
-      the portal — correct for the grate/slit-AT-the-portal class): probed from the room-2 side
-      the whole segment lies *inside* the pocket (geocost **0.0**, "wide open"); from the alcove
-      side only the alcove's own walls register (geocost 40). Neither cast can ever touch the
-      glass. "Can a ship REACH this portal from the room's main volume" is a volumetric
-      reachability question no straight-line probe answers — and lengthening the probe would
-      false-IMPASSABLE bendy-but-legit approaches, which is soft for routing but would make the
-      sealed-powerup gate retire *real* items. The sealed counter also never fired
-      (`pu_same_room` gate — bot is in room 2), hence all-night 8s-timeout/60s-blacklist churn
-      (~7,580 via fails in room 2 targeting 71/72). *Geometry keeps its aperture job; this class
-      is handled behaviorally (see 12.2b).*
-    - **Glass-split corridor (room 6-class):** ONE room physically split by a bulletproof-glass
-      wall, powerups on both sides. Signature in the navdump: portal-to-portal LOS blocked 2/2,
-      `los_from_pathpnt_clear=false` both portals. The right move (human-obvious) is *out one
-      portal, around, in the other* — the via search can never find this (no single point has LOS
-      to both ends), so the sealed counter **falsely abandons reachable powerups** (666 abandons
-      in room 6 overnight; same mechanism likely behind the room 76/35 "review" abandons, which
-      the user believes are all collectible).
-
-    Plan, in implementation order:
-    1. **12.2b — global troll memory (behavioral, handle-keyed):** per-level table objnum →
-       strike count, shared across all bots. Every 8s chase-timeout and every genuine-seal abandon
-       = 1 strike; at ~3 strikes the powerup is suppressed for the rest of the level (all bots).
-       Kills the Mega/Blackshark churn in minutes; also matches the user's point that map authors
-       troll with *ultra-high-value* items our prioritization loves. Smallest diff, biggest win.
-       **Plus: widen the seal counter from `pu_same_room` to same-OR-adjacent room** — the
-       detection signal for the alcove trolls was always firing (via-NONE every tick), only the
-       gate suppressed it. Rescue-aware: on trip, run the 12.2a portal-LOS check; if the
-       rescue-neighbor is the room the bot is already in, there is nowhere left to reroute →
-       genuine seal → abandon + strike.
-    2. **12.2a — wrong-side rescue (portal-LOS reroute):** when the same-room sealed counter
-       trips, do NOT abandon yet — hull-probe from each entry portal's `path_pnt` of the powerup's
-       room to the powerup. If a portal P→neighbor N sees it (and the bot's line is blocked), the
-       bot is on the wrong side of an intra-room divider: issue a one-hop detour
-       (`AIG_GET_TO_POS` at N's path_pnt, ~15s commit or until room==N), then resume the chase —
-       re-entry through P lands on the powerup's side. If NO portal sees it → genuinely sealed →
-       abandon + strike (12.2b). One rescue per chase; second seal-trip = abandon. Fixes the glass
-       corridor and the false abandons in one mechanism.
-    3. **12.2c — via cycle cap:** progress credit lets a detour↔arrival dance spin endlessly in a
-       room it never exits (abend2 mirror rooms 30/0: 232/171 detours, blue team visibly trapped).
-       After ~3 via arrivals without a room change: stop crediting, suspend via in that room
-       10–15s so timeout/dyn-bump/escape resumes. *A via must lead to a room change or yield.*
-    4. **12.2d — escort-branch via support:** `BotNavigateToFollowTarget` has no via tick, so
-       `!follow` (command layer verified working) can't extract a bot wedged in a broken room.
-
-    **As built (12.2 deltas):** the rescue is spent **per powerup handle**, not per chase — a
-    re-selected item that seals again goes straight to abandon+strike (no rescue ping-pong). The
-    8s chase timer is held at zero while a rescue is in flight (the 15s rescue commit is the
-    watchdog — a reroute legitimately outlives the chase window). The cycle cap withholds the
-    12.1 progress credit on the capping arrival ("via-point reached" still logs, so analyzer
-    reach-rates are comparable across versions) and suspension is room-keyed, surviving goal
-    clears but not level init. Strikes come from the chase timeout and the genuine-seal abandon;
-    the table holds 32 suspects/level, resets in `BotInitAll`/`BotReinitAll`, and retirement logs
-    once (`powerup troll-retired: 'name' (room R)`). New log lines (`wrong-side rescue in room A —
-    rerouting via room B` / `rescue arrived in room R` / `via suspended in room R`) feed
-    `analyze_bot_log.py`'s "Troll Guards / Cycle Cap (Phase 12.2)" table.
-
-  - **12.3 — PORTAL-SKELETON TRAVERSAL (IMPLEMENTED 2026-06-12, UNTESTED — step-zero detector
-    validated offline first: 13/14 ground-truth pin rooms flagged across 5 maps, the miss being
-    pyroplace room 62, the documented residual).** As built: pass 3 lives inside
-    `BotFindViaPoint` — when both ring passes fail, build the room's portal skeleton (nodes =
-    portal path_pnts, edges = hull-clear legs at ship radius, cached per level, ≤16 nodes), pick
-    the exit set (portals toward `BotComputeRoute`'s next room, or target-visible nodes for
-    same-room targets), BFS from the exit set to the nearest bot-visible node, return that node
-    as the via (`skeleton_out` flag → `BOT NAV: skeleton via in room R` log → analyzer
-    "Skeleton Hops" column). **No runtime detector gating** — pass 3 runs wherever rings fail;
-    over-flagging costs nothing. The 12.2c cycle cap was refined to count only BOUNCE arrivals
-    (within 40u of the previous arrival): skeleton chains arrive repeatedly in the same room
-    while making real arc progress and must not be suspended mid-traversal. `$navdump` gains
-    `path_pnt_reachable` (probed FROM portals — the annulus detector; false = buried/void center,
-    LOS readings from that point are untrustworthy).
-    Subsumes every deferred 12.2 item (split-room routing, pass-2 `VIA_SEARCH_FAIL` rooms, the
-    pyroplace room-62 mystery, the navdump approach-probe gap).
-
-    **The unified diagnosis (abend2 case study + cross-map navdump analysis + user automap
-    screenshots):** the engine assumes rooms are convex — that a straight line between its path
-    nodes inside a room is flyable. Custom maps break this in three topologies, all sharing one
-    signature (*buried center*: the room's bbox-center path_pnt is occluded from, or not even
-    inside, the playable space):
-    1. **Ring/annulus** — abend2's mirror discs (rooms 0/30): hollow octagonal doughnuts,
-       364×364×20u, flag pockets (h10, ONE portal) underneath. Correct traversal follows the
-       ring arc to a specific exit (under-corridor → central chamber, or door corridor → glass
-       halls); the engine chords across the hollow and presses. **Caution: the navdump reported
-       the disc path_pnts as seeing 5–6/6 portals — a FALSE CLEAR.** The path_pnt sits in the
-       non-playable core, and probes cast from inside it exit through one-sided inner-ring faces
-       unobstructed (the same fvi blind spot as the pyroplace glass pocket).
-    2. **Labyrinth** — nysa 41/69 (98–100% blocked legs), pumphouse 2/3/4.
-    3. **Divided** — bulletproof-glass corridors (pyroplace room 6 class).
-
-    **The mechanism (invariant-derived, not shape-derived):** on *any* map, the portals are the
-    only points guaranteed flyable (a ship physically entered through each), and hull-clear
-    portal-to-portal legs are guaranteed flyable corridors. So:
-    1. **Detector:** a room is *skeleton-traversal* when its path_pnt is not actually contained
-       in the room (annulus/buried-core test — also fixes the navdump false-clears at the
-       source) or its portal-leg blockage ratio is high. Lazy, cached per level.
-    2. **Skeleton:** nodes = the room's portal path_pnts (+ the path_pnt itself when contained);
-       edges = hull-clear legs (≤66 one-time probes for a 12-portal room, cached).
-    3. **Traversal:** when the steer line chords into a wall in a skeleton room, BFS from the
-       bot's nearest *visible* skeleton node to the exit portal's node and issue the **first
-       hop** as an ordinary via sub-goal. Rings yield tangential arc-hops, labyrinths thread,
-       divided rooms correctly report no-path → existing sealed/strike logic. Composes unchanged
-       with via commitment, the cycle cap, progress credit, and Invariants #1/#3/#5; exit
-       *choice* stays with the Phase 11 router; skeleton-BFS failure degrades to today's
-       behavior. (Framing: SP maps author dense intra-room node graphs the Guide-Bot rides; MP
-       maps don't — the skeleton synthesizes the minimal one from data every map must have.)
-    4. **Wrong-side rescue demoted to verdict-only** (the portal-LOS seal test feeding troll
-       strikes stays; the 15s reroute goes — 3 arrivals in ~190 attempts across three sessions).
-       *(As built in 12.3.3: removed entirely, verdict included — seal trips go straight to
-       abandon + strike; see below.)*
-
-    **Step zero — validate the detector offline BEFORE writing engine code:** run it against
-    every navdump on hand; it must flag exactly the soak-log pin rooms (abend2 0/30, nysa 41/69,
-    pumphouse 2/3/4, pyroplace 2/6/62/76) and near-nothing else. The five soak logs are a
-    labeled dataset; the model is falsifiable in an afternoon.
-
-    **Generality gate (the project-goal test — "arbitrary player-made maps"):**
-    (a) an official Outrage map soak (bedlam-class, convex, well-noded) where skeleton activity
-    must be ≈0 — the regression guard; (b) **two fresh community maps never previously tested**
-    (user picks from the archives), dumped + soaked + read blind. Success = `VIA_SEARCH_FAIL`
-    rooms convert to skeleton hops and room crossings on maps we never tuned against. Accepted
-    residual: rooms with mutually-invisible portals fall back to the timeout machinery; outdoor
-    nav untouched.
-
-    **Tooling alongside:** `tools/visualize_navdump.py` (new, committed — top-down SVG of the
-    nav geometry) gains a side-view panel + annulus-suspect tag; navdump gains the
-    path_pnt-containment flag; analyzer gains skeleton-hop counters. The JSON↔automap-screenshot
-    loop (user flies the map, captures the automap; we cross-read against the dump) is now a
-    standard diagnostic — it resolved the disc topology in an hour after three soaks couldn't.
-
-    **12.3.1–12.3.3 — live-test fixes (navmapping19/20 abend2 soaks, 2026-06-12):** the 12.3.0
-    overnight soak regressed captures (0.77/rnd vs the 1.11 pre-skeleton baseline) despite 4,708
-    healthy-looking hops — the funnel lied; chains were stationary. Three fixes, each trace-driven:
-    1. **12.3.1 — hop self-selection:** a bot standing at node *i* trivially "sees" *i* while the
-       off-node probe to the next node fails, so the BFS returned the node under the bot
-       (issue → "reached" 1s later → re-issue → bounce-suspend; chains parked at portals).
-       Standing nodes now contribute their skeleton *neighbors* to the visible set (the cached
-       edge proves the leg) and are excluded as hops.
-    2. **12.3.2 — bounce-cap exemption:** vestibule portal pairs sit 20–30u apart, so legitimate
-       skeleton hops read as bounces and suspended mid-crossing. Skeleton arrivals are exempt
-       from bounce counting and carry their own per-room chain cap (`BOT_VIA_SKEL_CHAIN_CAP` 8,
-       reset on room change).
-    3. **12.3.3 — buried-center ring-pass gate + rescue removal:** the 14.5h 12.3.2 soak
-       (navmapping20: 0.98 capt/rnd, 0 crashes, perfect 28/29 team balance) showed the *skeleton*
-       healthy (10,034 hops, only 27 chain-cap suspends) but 97% of stucks and ~6.5k suspends
-       still in the disc rooms — produced by the **ring passes**, whose candidates hug the core
-       wall ("reached" in 0.5s → 3-arrival suspend → 12s wall-press). Fix: `RoomBuriedCenter()`
-       (cached `BotRoomPathPntReachable` == false — the annulus detector, now gating at runtime)
-       skips passes 1–2 entirely and goes straight to the skeleton. Rings remain the tool for
-       pillar/glass presses in normal rooms. **Wrong-side rescue removed outright** (0 arrivals
-       in ~226 firings across nm17/nm19/nm20 — the troll-strike table and sealed abandon cover
-       its job); the `rescue_*` fields, `BOT_RESCUE_COMMIT_TIME`, and `BotFindRescueNeighbor`
-       are gone. Analyzer keeps its rescue parsing for historical logs.
-  - **12.1 (first live test, navmapping9 — pumphouse):** detection + execution validated (1524
-    detours, 85% reached, in exactly the navdump-predicted rooms 0/1/2; defenders hold flag rooms
-    correctly), but **17/19 hard presses got a silent no-via verdict** — nose-on contact puts the
-    fvi hit at d≈0, the anchor at the bot, and the 15-45u rings inside a wide panel's span. Three
-    fixes: (a) **pressed-state second search pass** — anchor backed off 25u toward the bot, rings
-    30/60/90; (b) the no-via verdict is now **logged** (throttled) → analyzer `VIA_SEARCH_FAIL`;
-    (c) **via arrival resets the room-progress anchor** — the dance's 15-45u legs sat under the 50u
-    progress threshold, so the 12s timeout fired mid-crossing and dyn-penalty-bumped the *correct*
-    door (61 bumps on room 2 portal 0 = the route-flap engine).
-
-  **Mode scope (important — pyroplace is team-anarchy):**
-  - The **portal via-point** rides the objective-only Phase 11 waypoint plumbing (§3.4) → inert in
-    anarchy/team (Invariant #4 holds for that branch).
-  - The **powerup go-around + unreachable-gate are GLOBAL** — powerups are chased in *every* mode, so
-    these run in anarchy/team too. This is a **deliberate exception to Invariant #4**; both are
-    additive/fallback-safe (fire only on an occluded/unreachable powerup, else current behavior), but
-    per Invariant #5 they **must be validated in non-objective modes** (pyroplace) before `-dev` drops.
-
-  **Gate/safety:** indoor-only (no outdoor work in 0.9.2); side-committed against oscillation; additive
-  (reachable + no clear via-point ⇒ fall back to today's behavior; unreachable ⇒ abandon, strictly
-  better than wedge-then-blacklist). **Do NOT** (a) restore the deleted flow-field LOS gate alone — the
-  engine's own `path_pnt` can't see the portal, so there is nothing to defer to; (b) resurrect
-  strafe-through-lip (`movement_dir` seam, 0 fires) or goal-blind escape (regressed feel); (c) gate the
-  powerup branches on objective mode (breaks pyroplace).
-
-  **Test rotation — all user-made INDOOR maps:**
-  | Map | Mode | Exercises |
-  |-----|------|-----------|
-  | **abend2** | CTF | long-standing room-30 glass press (portal via-point) |
-  | **pumphouse** | CTF | free-standing center glass cover panels; navdump `los_from_pathpnt_clear=0` rooms 0/2/10/18 (portal via-point) |
-  | **nysa** | (per setup) | troll powerups sealed behind a **grate** (unreachable-gate / `sealed_troll`) |
-  | **pyroplace** | **team-anarchy** | troll powerups behind **glass** + powerups blocked by **ledge** obstacles depending on beeline origin (GLOBAL powerup go-around + unreachable-gate in a *non-objective* mode) |
-
-  **Success metrics:** pumphouse/abend2 captures > 0 (from 0) and clean crossing of the
-  `los_from_pathpnt_clear=0` rooms; nysa/pyroplace bots stop wedging on or re-chasing sealed powerups
-  (no stuck-escape loop, no 60 s re-chase) and smoothly round ledge/glass-occluded *reachable* powerups;
-  **and anarchy/team otherwise feel unchanged** (pyroplace regression check). A separate, smaller
-  *genuine* portal-transition wobble on truly passable portals may remain — keep distinct, don't claim
-  solved here.
-- **Goal-blind stuck-escape.** The escape portal pick in `BotApplyThrust` still ignores goal
-  direction and can flee backward. The dynamic penalty (§3.3) addresses the *intent* (reroute forward
-  on repeated failure) but only when an alternate route exists. A goal-aware escape may still be
-  warranted — but it caused regressions before; treat carefully.
-- **Outdoor navigation — redesigned subtractively (§4.1), VALIDATED.** Root cause was *us*: the engine
-  already produces a full-3D `movement_dir` to elevated targets, but `BotFlattenSkyDirection` (a
-  vestigial band-aid for the Phase-10-deleted flow field) zeroed the climb. Fix = delete the flatten +
-  soft AGL cap + the entrance-seek override, and redirect the outdoor goal to the **near door's
-  `path_pnt`** (`BotResolveOutdoorEntrance`); the engine flies the 3D approach. Validated on real
-  terrain — bedlam: captures +70%/+32%, outdoor hard-pins 57→1; Fellowship: **0 sky-fly** (all 2397
-  outdoor stuck events were agl<150, avg 8). Remaining frontier → rough-terrain line-of-flight (below).
-- **Rough-terrain line-of-flight — the deferred terrain tier.** On *continuous rough terrain* (hills,
-  pits, cavern mouths — not discrete posts) the engine flies the bot a straight 3D line to its target;
-  when terrain rises between them the line goes **into the hillside** and the bot ground-pins (it avoids
-  walls, not bare terrain). Signature: outdoor stucks dominated by `ground-pin` (agl<12) / under-terrain
-  (agl<0), not the high-post stall (Fellowship's Isengard pit + town surfaces were the proof). Fix tier:
-  sample the heightfield along the steer line → lift the aim over the crest, and/or a cached outdoor
-  anchor graph (nodes = entrances + ridge-saddle waypoints, edges = heightfield-LOS-clear legs). Build
-  when a target map needs it (a full parallel terrain nav-grid was scoped and rejected as too costly —
-  git history of `NAV_OVERHAUL_3.md`; this is the minimal form).
-- **Cramped concave room clusters with constrained egress — pseudo-BNodes shipped (12.5b), pending
-  soak.** A small volume densely subdivided into many non-convex chambers joined by tight portals, where
-  the goal lies *outside* the cluster and is reachable only through one (or few) egress portal(s). The
-  cluster's own interior faces occlude the steer line in every direction, so the intra-room via/skeleton
-  go-around searches and gives up — the bot churns inside, never threading back out. Stacked chambers /
-  vertical shafts compound it. Signature: a large `via-search-fail` count piled in one room with **0 hard
-  pins** (soft search-and-fail) — the worst single room across the Fellowship soak logged **703**.
-  **Root cause = §2.2 (MP maps carry no baked BNodes; runtime engine generation was tried and reverted).**
-  Fix shipped: **pseudo-BNode interior waypoints** (§4.2, `SkelBuild`, `Bot_pseudo_bnodes_enabled`) — when
-  a portal pair has no direct hull-clear leg, synthesize offset + centroid interior nodes (hull-aware
-  edges) so the skeleton BFS hops *around* the obstacle; the **reactive reach-the-door fallback**
-  (`Bot_reach_door_enabled`) remains the backstop for rooms where even those find no route. Both deliver
-  goal waypoints (`AIG_GET_TO_POS`), never steering forces, governed by the chain-cap → suspend → dyn-bump
-  → reroute machinery. Surfaced by a custom map that dressed the cluster as a multi-storey building, but
-  the geometry is generic: any cramped, concave, single-chokepoint room pocket in a mine. **A/B with
-  `$pseudobnodes`; the gate is doorsofmoria no-regression + townofbree via-fail collapse.**
-- **Breakable-grate / destructible-obstacle passability — SCOPED, see §7.1.** Bots treat a destructible
-  grate / breakable pane as a permanent wall and never *shoot it open* to pass. Now the next phase's
-  Stage 2, with the 2026-07-03 corrections: the blockers are `OF_DESTROYABLE` *objects* (dump-blind),
-  the suicide risk is the combat loop's splash secondaries at see-through targets, and the first test
-  map is splusv1 (not Isengard). Geometry flags in `OBSTACLE_GEOMETRY.md`.
-- **Multi-flag CTF.** In 4-team CTF, deliberately hoarding multiple enemy flags before cashing in is
-  not implemented (bots only do it opportunistically).
+- **`$botstat [index|all]`**: a status line and a nav line per bot (`route:` shows our next hop against BOA's, with
+  `[DIVERGE]` when they differ; `intent:` shows destination, owner and hold time). `[DIVERGE]` at a wide-open portal
+  with no penalty means the base cost is not reproducing BOA: a bug.
+- **`$nav`** (bare): the live toggle table with descriptions, from `Nav_toggles[]` (dedicated_server.cpp:748). That
+  output is the reference; this doc deliberately does not copy it. `$nav <name> on|off` flips one; build-time toggles
+  flush cached roadmaps.
+- **`$nav dump [file]`**: the navdump JSON (per-room lattice cells, connectors, components, routable, skeleton nodes,
+  per-portal `class`, `crossing`, `crossing_depth`, `crossing_tight`, `wall_backed`, `engine_passable`,
+  `crossing_trace`). Format changes must be reflected in the Pyrodeck contract.
+- **`$nav probe`**, **`$nav sweep x y z room portal`** (hull sweeps from a point to a door's crossing points at both
+  radii plus a reverse leg, with the face each hits; `BotNavSweepReport`, bot_steering.cpp:1071), **`$nav roomfaces`**
+  (with `tools/render_room.py`, the `render-room` skill). Run them bot-free on a second instance via
+  `tools/navdump_geometry.py`.
+- **Overlay (Ctrl+F7)**, host-only, `bot_navdebug.cpp`: skeleton by component, portal verdicts, per-bot chain and
+  goal, and the roadmap layer. See `VISUAL_DEBUG.md`.
+- **Analyzers:** `tools/analyze_bot_log.py` (stuck severity by `net_disp<10` hard counts, the committee census from
+  `BotNavMemberWin` lines, hop outcomes), `tools/analyze_navdump.py` (door crossings section, DISAGREE, troll
+  classification), `tools/compare_navdumps.py` (the bot-free geometry gate), `tools/flag_conversion.py`.
+- **Log lines worth knowing:** `via search failed` (blocking face, tier), `ARRIVED at objective room` (`d_item`),
+  `hop outcome`, `item-reach`, `entry door lookahead blind`, `roadmap attach from contact [REFUSED]`, `spawn egress in
+  room`, `pane ... shattered`, `NO-ROUTE` (with hull), `[Perf]`.
+- **Footprint discipline:** per-tick paths log on state change or through a self-healing `Gametime` throttle. One
+  unthrottled carrier line once wrote 90% of a 237 MB overnight log. Release builds log no nav telemetry (WAT1).
 
 ---
 
-## 8. History & lessons (why the design is what it is)
+## 7. Open problems
 
-Condensed from the retired `NAV_OVERHAUL.md` / `_2` / `_3` / `NAV_CONSOLIDATION.md` (full text in git).
+Every row carries its registry id (PLAN.md §4; buckets: B pre-reveal, D decision owed, E open not blocking, F
+deferred, X closed). Status changes found while writing this doc are in the docs-rewrite status-changes file for the
+registry owner to apply.
 
-- **Phase 4.0 — engine-integrated BOA/BNode.** Established the durable foundation: hand the engine a
-  goal (`AIG_GET_TO_OBJ/POS`), let it build the BOA+BNode path; BOA repair; explore sampling;
-  room-progress stuck detection. Still in force.
-- **Phase 7 — bot-side steering layers (REMOVED).** Potential field (5-ray wall repulsion + portal
-  attraction), flow-field-as-steering, occupancy dispersal, Dijkstra-as-steering. Each fixed a symptom
-  the previous one caused. **Lessons:** (a) potential-field **portal attraction pulled bots toward the
-  very glass portal BOA had excluded**; (b) flow-as-steering swapped the steering source frame-to-frame
-  at barrier thresholds → oscillation; (c) the engine already does wall avoidance (`AIF_AVOID_WALLS`)
-  and friend avoidance (`AIF_AUTO_AVOID_FRIENDS`, with `avoid_friends_distance=40`) — our versions
-  duplicated and fought it.
-- **Phase 9 — "flow routes, engine steers."** Established the split that became the architecture:
-  routing may pick rooms, but steering stays with the engine.
-- **Phase 10 — consolidation to two layers.** Deleted all Phase-7 steering layers and their toggles
-  (`$potentialfield`/`$flowfield`/`$navrouting`/`$botpathfind`/`$botdispersal`). A/B-validated that the
-  lean stack plays as well or better. Confirmed the glass stall is **engine-level and
-  toggle-independent**. This is the base Phase 11 builds on.
-- **Phase 11 — cost-aware router (this doc, §3.1–3.4).** Rebuilt Dijkstra as routing-only, with graded
-  soft-cost geometry, dynamic obstacle penalties, and waypoint-injection delivery — adding the route
-  intelligence the engine lacks **without** re-introducing a steering override.
-- **Phase 12 (0.9.2–0.9.3) — the portal-derived substrate.** Intra-room via-points, troll-powerup
-  guards, the portal skeleton, pseudo-bnodes, the outdoor connecting graph, and the soft-hop bridge
-  (§4.2–§4.3, §7.0 "superseded" issues). Validated "good enough" and pinned as the stable 0.9.3
-  baseline (2026-06-22) — but every remaining failure shared one root: **a portal-derived graph is
-  too sparse to cover a room's interior volume.** Also in this era: runtime *engine* BNode
-  generation tried and **reverted** (displaced working crude-BOA; pruned edges below the hull —
-  §7.0 ledger), which settled the "no BNodes is universal, never a per-map root cause" guard (§2.2).
-- **0.9.4 (2026-06-28) — the volumetric grid-roadmap rewrite (§3.5).** Replaced the portal-derived
-  substrate with a deterministic grid-seeded PRM + hierarchical (HPA\*-pattern) routing, per the
-  now-retired `GRID_NAV_DESIGN.md` spec (folded into this doc; original in git history). The spec's
-  headline framing held up: *a replacement, not an addition* — the roadmap subsumes the skeleton,
-  pseudo-bnodes, outdoor graph, soft-hop, and reach-door mechanisms (five bolt-ons → one substrate
-  + one router; the physical deletion is Stage 4, §7.0 0c). Its Stage-1 gate was **dynamic, not
-  boolean** — "reaches an arbitrary interior point *cleanly*, at flight speed, no oscillation" —
-  precisely because the soft-hop era proved reachability-on-paper ≠ a crossing. Shipped `$gridnav`/
-  `$gridbridge`/`$gridroute` default ON; Fellowship 9-map soak captures +58% vs 0.9.3 (best build
-  to date). 0.9.5 followed with the `$nav` console namespace + the `$gridbridge` cache-flush fix
-  (mid-level A/B toggles are now trustworthy).
+### 7.1 The committee collapse (COL1-COL3, COL5, COL9): design
 
-**The throughline:** every regression came from overriding the engine's steering; every durable win
-came from feeding it better goals. Keep that line.
+**Where it stands, measured (2026-09-13 census, Batteries).** Share of bots' ACTIVE-held time: `via` (our resolved
+aim) 54% → 96% from the 0.9.14 sprint start to `57aaa31f`; `no-route` 39% → 0%; `stuck-escape` 4.5% → 1.9%; the
+flicker members `seam`, `path_pnt`, `gridroute`, `hop-commit` 2.6% → 2.5% of time while taking about 40% of the
+episodes. The portal-model sprint made every member agree on the facts; what remains is policy. Collapsing before that
+would have collapsed onto wrong geometry (the 2026-09-01 wall, L16).
+
+**Measured 2026-09-19: the indoor ladder no longer gates play.** Indoor stuck escalations: 5 in 12 abend2 rounds;
+55 in 12 bedlam rounds (49 of them carriers waiting at home, fixed in `8031ffbf`). No in-room voice is
+over-represented at the remaining escalations (composed 20% of issues, ring 15%, skeleton 11%, roadmap 9%, grid route
+25%). The steps below are a code-quality project now.
+
+**The order, by subtraction, one member per slice, each gated by bot-free dumps and both soak maps:**
+1. **One in-room planner (COL1).** The three sub-voices inside `via` (skeleton via, roadmap via, composed route,
+   chosen by room type and a line-blocked test) become one query on the union graph, with the straight line as
+   string-pulling inside the plan. Plan caching is the first design question (the composed drive once stalled errands
+   on an unthrottled per-tick search): plan once, re-plan only on invalidation. Gate: flat on bedlam, fellowship,
+   Sigma Base and the HAVOC trio against same-minute controls. Design input: Facing Worlds' Theta\* storms (COL4).
+2. **Seam push and hop commit become the plan's commitment rule (COL2).** A committed plan that re-plans only on
+   invalidation (room changed, leg blocked, goal moved) does not re-pick at a door. Absorbs the old "hop granularity on
+   the home-flag approach".
+3. **Waypoint aim (`path_pnt`) and grid route fold into step 1**; they are the same graph queried from another branch.
+4. **Stuck escape becomes an invalidation signal** plus the physical burst, instead of an actor with its own portal
+   chooser (part of COL2).
+5. **Combat pursuit and powerup chase request destinations from the planner (COL9)** instead of driving the engine
+   path. The hunt-needs-a-route gate is the first half. Remaining engine-path-node callers (escort, hold, powerup,
+   fallback, outdoor sites untouched by `cddde48c`) are COL5.
+
+Success is fewer committed-but-not-crossed hops and no rise in pins, per map and per team, never substrate usage. The
+room router stays untouched. Nothing here is a `$nav` toggle or a per-map fix. Cleanup riding steps 1-2 (COL3): the
+duplicated dispatch in `BotSetRoutedGoal` / `BotDoExploreRoaming`, stale toggle descriptions, and treating skeleton +
+roadmap as one network outside the in-room case.
+
+> **DECISION NEEDED (Q20)** — drafted on the default; the operator's second pass settles it.
+> Default applied here: the 0.9.4 "Stage 4, delete the 0.9.3 substrate" is closed as superseded by the one-network
+> ruling (the skeleton is the arterials). The legacy toggles `terrain`, `outdoorvia`, `outdoorgraph`, `grid off` and
+> the validated-negative `mjunction` are retired inside the COL3 cleanup, each retirement inside the must-read-flat
+> gate (COL7, COL8). Outdoor Phases 2-4 (§7.2) come after the reveal (E). Alternative: keep Stage 4 as written and
+> make the outdoor phases pre-reveal.
+
+### 7.2 Outdoor collapse, Phases 2-4 (COL10, COL11): design
+
+Phase 1 (the entrance-miss class) shipped in 0.9.15; Phase 4's first cut (one outdoor dispatch, `161582cc`) landed
+2026-09-19.
+
+- **Phase 2: one outdoor network per region (COL10).** `EnsureUnionGraph` for an outdoor region: door-graph nodes as
+  arterials, the region lattice as local streets, ramps as indoors; the outdoor via query attaches to the hull-visible
+  nearest node, as indoors. Lift `BotComposeRoomRoute`'s `OBJECT_OUTSIDE` guard (bot_roadmap.cpp:2790) so the composer
+  plans the terrain leg to the validated door crossing; rings stay the reactive rescue. Gate: region union components
+  on the bot-free dump, then paired arms. Prediction: `outdoor-leg`/`gridroute` episodes fall into the composed route;
+  Bree facade presses fall. Also owed: `BOT_OGRAPH_RADIUS` is still 6.0 against the 6.7 network hull (COL13).
+- **Phase 3: one route across the boundary (COL11).** troute's three-segment plan becomes the planner's cross-tier
+  route; its door-pair scorer stays; its executor (segments, monotone watermark, forced entry door) becomes the plan's
+  commitment rule, as seam/hop-commit do indoors (§7.1 step 2). Region-to-region terrain edges only if cross-region legs
+  appear (fellowship). Prediction: troute completions rise toward the adoption count; carrier outdoor seconds per grab
+  fall on Bree.
+- **Phase 4 remainder: collapse the outdoor dispatch (COL11).** The ladder's, explore's and the via's outdoor branches
+  fold into the one planner; `outdoor-entry`, `outdoor-leg` and `troute` stop being census members and become plan
+  segments; the committed via tick for terrain-to-terrain legs joins them; `BotResolveOutdoorEntrance` is replaced by
+  the composer (partial today). Success: one census member outdoors, entrance-miss and ground pins not rising.
+- **Sequencing:** Phases 1-2 are independent of indoor step 1; Phases 3-4 are the outdoor half of steps 2-5 and land
+  with them.
+
+### 7.3 Open navigation problems (NAV)
+
+| Id | Problem | State |
+|---|---|---|
+| NAV1 | Sigma Base rm37 (no in-room path) and bridge room rm13 (via fails 33/31 on 09-30); `FLAG_PICKUP_FAILURE`; closet pockets rm2→rm1, rm27→rm28; re-read hubs rm19/rm37 | open; render first; operator: not a priority yet |
+| NAV2 | Carrier station point is the room box centre (Sigma rm17 `goal=none` pin, 4 min); a station must be a reachable lattice node | unconfirmed; render rm17 |
+| NAV3 | Slave Pit zero flag picks (hub rm1→rm5/rm11 hops fail ~55%, via fails on tmap 1374); DownTown wandering (parking structure, one team's start) | open |
+| NAV4 | DownTown-class build cost: skip lattice phases 1-2 when phase 0 exceeds ~1,500 cells (rm31 97 s); time-budget attach probes | not built |
+| NAV5 | DownTown rm37: a portal whose crossing the sampler refuses is neither a relay node nor priced as a door; outdoor-exit legality | not built |
+| NAV6 | The last-resort pass admits a DISAGREE portal whose far side is a wall-backed NEVER window (abend2); Sigma rm22→rm37 antechamber windows escaped the wall-backed rule (portal class is per side, see NAV26) | open |
+| NAV7 | Thin rooms under-sampled: a floor-hugging sample row for rooms thinner than the spacing (Canyons rm4 22 cells, rm13 not routable; khazaddum rm13 5 nodes); gap-directed sampling | open, after 0.9.16 |
+| NAV8 | Toroid refinements: Rim's 45° alcoves, ceiling-exit flag rooms, the 2,048 lattice cap; toroidal-room orbit (Lazy Theta\* straightening pulls legs to the inner chord; candidates: annulus-aware straightening, arc-following); Entropy on Rim | open (point-in-room probe now exists) |
+| NAV9 | Isengard outdoor pin class (cells 123,149 / 127,112), long carries rm45→rm34; Doors of Moria rm7 commits and per-team divergence; Bree outdoor fine-threading; outdoor idling when the entrance stage fails | partly improved by 0.9.15; re-measure |
+| NAV10 | Items the hull cannot reach are never chased (a level-load unreachable verdict) | open |
+| NAV11 | A nook the hull cannot occupy is never entered (Batteries rm35) | E (verify): likely closed by E2 |
+| NAV13 | `BotPortalGeoCost` prices solid faces free (geodomes 504, Batteries 32 walls); no navdump field | open |
+| NAV14 | Batteries rm80 propped-leaf office (11.37 u): lattice never grows past the door plane; bookcase wedges; seed relocation when the seed's hull is in contact; a second seeding source for degenerate door seeds; seed-isolated door census (Batteries rm80 p0, rm46 p10, rm55 p0; Sigma rm19 p14-16, rm37 p2) | deferred with its geometry (three squeeze attempts, L31) |
+| NAV15 | Batteries rm118 Shield chase pins; rm12 powerup-chase circling class | known class, open |
+| NAV16 | Overlapping-portal merge: strip-tiled boundaries become one opening for crossing and commit (fixes Canyons rm12 p1 at the root) | D (Q22, default E after the collapse) |
+| NAV17 | A chain's first node can be the door behind the bot, flown as a crossing (log the router's next hop first) | not built, not measured |
+| NAV18 | Window-misroute fix's sibling gaps: legacy resolver pass-1 eligibility; cached/memo/forced admission revalidation; helper reciprocal-face and crossing cost | no closure since 0.9.14 |
+| NAV19 | Escape-relapse loop (a freed bot heads back to the spot that beat it) | E (verify): destination demotion may fix it |
+| NAV20 | Nightmare Castle five-second seam refire; its 6-seed region lattice | E (verify) |
+| NAV21 | One Plutonium room where bots reliably wedge | E (verify) |
+| NAV22 | Decorative concave-alcove trap (a Bree carrier flew into a doorless recess) | open, carrier-critical |
+| NAV23 | Rigidity / node-to-node feel (any loosening must be non-oscillating, L3) | E (propose close) |
+| NAV24 | Goal-blind stuck escape (escape pick ignores the goal) | partial (slice 6b, 9c, destination demotion) |
+| NAV25 | Corridor (multi-point) hand-out for bent crossings | deferred; no Batteries door needs it after the lip rungs |
+| NAV26 | Portal class is computed per side (a sky room's window reads as a door from the sky side) | no fix |
+| NAV27 | A trunk node per room | E (propose close) |
+| NAV28 | Roadmap growth over-reach into sealed pockets (stricter growth probe deferred, L32; troll strikes are the backstop) | open; the void-cell guard covers rock, not pockets |
+| NAV29 | North-star step 2: path-cost detour budget | not built |
+| NAV30 | Grate-route awareness (finite grate cost; Isengard's blastable grate tunnels) | F: needs asymmetric-probe fix, a dynamic overlay and a payoff map |
+| NAV31 | Nysa room-69 carrier pins; carrier return-leg stall | E (verify) |
+| NAV32 | Verification set never re-checked: nysa blue-flag room, stadium-plus side room | open, cheap (overlay) |
+| NAV33 | Stacked-room arrival (invisible horizontal seam on the final leg) | E (verify): abend2 pits fixed, class unverified |
+| NAV34 | July leftovers: interior-pane heal coverage; metropolis_gt navdump pass (rooms 55/56/50/36) | E (propose close) |
+| NAV35 | What defines the two reach populations (~10x picks/round gap) | E (propose close) |
+| NAV36 | Lattice ~2 s re-issue while routing around a partition: a defect in itself? | open |
+| NAV37 | Indoor-item chases fail at the rm60 sealed pocket | E (verify): likely superseded by E2 |
+| NAV38 | Objective-owned degradation (old row 6.28) | E (propose close) |
+| NAV39 | Flag-carrier sprint-home speed | E (propose close) |
+| NAV40 | abend2 per-team asymmetry vs the symmetry acceptance test | D (Q21) |
+| NAV41 | Corner-bridge sweep honouring back faces | E (verify); code reads done (§5.2 item 7) |
+| NAV42 | The door on-ramp admits points outside the room (two rm80 nodes in the hallway) | E (verify); the void-cell guard does not test on-ramp nodes |
+
+> **DECISION NEEDED (Q21, Q22)** — drafted on the default; the operator's second pass settles it.
+> Default: NAV19, NAV20, NAV21, NAV31, NAV33, NAV37 are verified in one soak or flight; NAV23, NAV27, NAV34, NAV35,
+> NAV38, NAV39 close as "not reproduced, reopen on evidence"; NAV40 and NAV22 become README limitations; NAV16 is E,
+> after the collapse.
+
+**Closed on evidence (kept for the record):** NAV12 explore sampler picking `RF_EXTERNAL` window rooms (slices 5/5b);
+NAV43 Polaris 08-31 regression and the wind-axis hypothesis (bedlam Polaris 15.5 caps/rnd; hypothesis refuted);
+NAV44 QuadSomniac wind-20 and the §3.0.1 threads (superseded; engine-node callers carried as COL5); NAV45 isengard/bree
+"0 captures on every build" and the Bree tavern maze (both score); NAV46 flag-room arrival stall and connectivity
+dead-ends (`8031ffbf`, portal model NO-ROUTE 0); NAV47 the entrance-miss class (0.9.15 Phase 1); NAV48 the 0.9.14
+sprint staged items (`8b6ee205`, `c1d34f0a`, `fe1dc474`); NAV49 Isengard rm36, rm20 pipe mouth, valley strands; NAV50
+abend2 vestibules, floor-hatch tray entry and ring-threshold hesitation (`0126b884`..`84a3f3d3`); NAV51 troute through
+windows on interior-only maps (`BotPortalClass` NEVER); NAV52 OBSTACLE_GEOMETRY §5 gaps 1-3; NAV53 articulation pass,
+Approach 2 and the skeleton rework risk list (not needed); NAV54 outdoor altitude OOB and sky-fly; NAV55 dual-goal combat
+strategy (declined); NAV56 robo-anarchy battery config; NAV57 the engine's 40-door cap (accepted).
+
+### 7.4 Collapse and cleanup rows (COL)
+
+| Id | Item | State |
+|---|---|---|
+| COL1 | One in-room planner (§7.1 step 1) | B, not built |
+| COL2 | Seam/hop-commit as the commitment rule; stuck as invalidation (§7.1 steps 2, 4) | B, depends on COL1 |
+| COL3 | Cleanup riding COL1-2 (duplicated dispatch, stale toggle tags, one network outside the in-room case) | B (Q20) |
+| COL4 | Facing Worlds' Theta\* storms as COL1 design input | B |
+| COL5 | Remaining engine-path-node target callers | B |
+| COL6 | Workaround-retirement audit (strike, hardroom, hardcost, blacklist, via-dance firing rates) | B |
+| COL7 | Stage 4 vs the one-network ruling; legacy toggles `terrain`, `outdoorvia`, `outdoorgraph`, `grid off` | D (Q20) |
+| COL8 | Retire `$nav mjunction` | D (Q20) |
+| COL9 | Pursuit and powerup chases request routed destinations (§7.1 step 5) | B |
+| COL10 | Outdoor Phase 2 (§7.2) | D (Q20) |
+| COL11 | Outdoor Phases 3-4 remainder (§7.2) | D (Q20) |
+| COL12 | The 0.9.6 grate-DOOR clutter/building allowlist "aimed at a class that may not exist" | E |
+| COL13 | Code hygiene owed: post-Hyper-Anarchy objective-carrier/powerup-suppression/hunt-leash helpers (not yet written); goal-attachment rework and `BOT_OGRAPH_RADIUS` 6.0 → 6.7; resolve-memo serial keying, interior non-portal pane watching, v1-plan vs heal-opened routes | E |
+| COL14 | Stale code comments (bot_chat.cpp, dedicated_server.cpp list in the registry) | B |
+
+Closed: COL15 open-the-line cleanup (`ea291c29`); COL16 the router's door is the via layers' door (`b9b3b2e3`,
+`7b67fe1b`); COL17 sliced skeleton build (`455aacbe`); COL18 powerup chase asks the routed goal, as re-scoped to E2
+(remainder is COL9); COL19 flag-touch goals run until contact (`5d46e532`); COL20 analyzer kills column (`c580d612`);
+COL21 bedlam spread repeat pair; COL22 Sigma attackers leave their bunker (`d9f6d9d4`, `22fb70b0`, Q12); COL23 Sigma
+carry home; COL24 pseudo-bnode Stage 2, outdoor-graph fragmentation, ridge/anchor graph (superseded; leftover code is
+COL7); COL25 troute v2 (built as `troute2`).
+
+**Related rows owned by other themes:** POP11 (non-Pyro hulls against a Pyro-class network; Phoenix wall sphere 6.42,
+comfort hull 8.0), MODE6 (Entropy park against knockback), MODE11 (multi-flag CTF hoarding), CBT5 (flanking cost term,
+the reserved exposure weight on roadmap edges), CBT8 (one-route maps: commit, wait or fight), CBT14/CBT15
+(visit-recency patrol bias; spline trajectories, behaviour-tree FSM), WAT1 (telemetry consolidation), WAT2 (overlay
+labels), WAT3 (navdump ship sizes vs `BotHullPhys`), WAT10 (mysterious_isle conversion), WAT11 (pumphouse/pyroplace).
+
+### 7.5 Tried and reverted: the ledger
+
+One line each: what, commit, lesson, do-not-retry scope. Full narratives are in the archive.
+
+1. **L1 Committed-leg executor** (0.9.12-dev, never committed; `0.9.12-committed-leg-experiment.patch`): buried-room
+   activation fires too broadly, stay-in-room cancels on portal drift, a global via stand-down is too blunt. Do not
+   rebuild with those three properties.
+2. **L2 Runtime engine BNode generation** (`f0f39007`/`4d515800` → `730dab37`, `69fa0b7b`): the all-or-nothing
+   `BNode_allocated` flag displaced crude BOA everywhere, and `max_rad 5.0` sat below the hull. Never retry
+   whole-graph engine BNode generation.
+3. **L3 `$softfollow` early via release** (`09d70cd2` → `a2cb681e` → removed in `6a85347c`): target-line flicker inside the commit
+   window caused circling (via arrival 73% → 18%). Any loosening must release once, after passing.
+4. **L4 Goal-ward escape plus strafe-through-lip** (2026-05-30 batch, reverted to the Phase 10 base; commit: none in history, the batch was discarded): felt worse; the
+   strafe never fired. Do not resurrect that form.
+5. **L5 Phase 7 bot-side steering** (potential field, flow-as-steering, occupancy dispersal, Dijkstra-as-steering;
+   removed in Phase 10, `423bb055`): every regression came from overriding steering. Never write a steering vector.
+6. **L6 Phase 8.1b altitude band, mode decision, entrance seek; sky-flatten and soft AGL cap** (`342aa4a8`; flatten
+   deleted in `847e705e`): flattening the engine's +Y pinned bots under elevated entrances. Never flatten the engine's 3D
+   direction.
+7. **L7 `$navprobe` setting `PF_TOO_SMALL_FOR_ROBOT` globally** (pre-Phase 11; commit: none, a console experiment): one false positive walled off a hub
+   for all pathing. Never mutate engine flags (Invariant 3).
+8. **L8 Blanket DISAGREE demotion to tight cost** (`6d9c23d3` → `a19a95da`): regressed abend2. DISAGREE stays a last
+   resort after the strict pass.
+9. **L9 `$nav gridall` and the blocked-leg-ratio complexity-gate promotion** (verdict `fb3fd5c9`; lever removed in `4ba84394`):
+   negative on Rim (stucks x4.5) and abend2. Denser proactive routing does not fix orbit.
+10. **L10 `outroute` shipped on untested** (07-04 → default off 07-05 → removed in `4ba84394`): prime suspect in the bedlam
+    outdoor collapse. A bedlam no-regression soak is mandatory before any outdoor default.
+11. **L11 `$nav replan`, Stage 3 progress-monitor** (built 07-04, default off, removed in `4ba84394`): turning in place
+    reads as zero displacement. Any stall detector must be checked against every zero-displacement state.
+12. **L12 Step 4 campaign-outdoor gate widening** (`legacy_accept || BOA-routable`; `4678c30e`, A/B corrected in
+    `3fc593f8`): closed NO-GO, 99.2% of target legs hull-blocked. Routable is not flyable.
+13. **L13 Terrain-exit level classifier plus glass exemption from the Dijkstra veto** (0.9.12-dev 08-29;
+    commit: none, reverted before commit; record in the archive §7.0.0): signals moved, play did not; hard stucks
+    4 → 16 → 46. Prerequisite named: per-entry aim (since built as `4a8e63b2`).
+14. **L14 Artery hierarchy plus FREE glass routing** (08-30, 33-round paired A/B; recorded in `8a69e0c6`): picks 1.94 → 0.56 per round,
+    stucks +131%; 127 of 207 Batteries panes are ceiling vents. Do not retry the FREE form; the mode ladder `55a8d28f`
+    is the sanctioned successor.
+15. **L15 Sole-route glass crossing** (`8a69e0c6` → `5e7ec697`, never soaked): the revert left the router's BOA gate killing
+    all glass routing until `55a8d28f`. When dropping a glass path, check the cost model still reaches the edge.
+16. **L16 Seam-guard no-crossing gate plus routed next-hop commit** (`060678fc`, `696d51c5` → `8464deb6`): churn
+    metrics fell, captures fell (1 per 2 h). Do not resume arbitration-layer tuning before the geometry agrees.
+17. **L17 `AIG_FOLLOW_PATH` ring experiment** (`a6c891cc`): dropped; the static-restore crash path. Do not drive bots
+    with `AIG_FOLLOW_PATH`.
+18. **L18 Threshold commit at the shaft mouth; buried-room hop aimed at the entry door's first skeleton hop**
+    (`a79cc95a`, `d6efc603`): reverted. Not a substitute for a connected skeleton.
+19. **L19 Roadmap-authority experiment** (`3c6ef9f6` → `20518aab`, 09-05): own metrics moved, abend2 captures 14/10 → 1/9 rounds.
+    Substrate ownership is the wrong architecture; one union network.
+20. **L20 "Dense lattice is the wrong tool" verdict** (09-06, retracted in `8db6efdb`): the cause was the phase bug. Check sampling
+    before blaming a technique.
+21. **L21 Crossing point as skeleton node and lattice seed** (slice 2, 09-12, measured and rejected): split rooms
+    37 → 44, isolated doors 58 → 72. The network keeps the engine point; the crossing is hand-out geometry only.
+22. **L22 Slice 3: corner-bridge vertex bounded to the room box** (09-12; commit: none, reverted before commit; the NOTE at bot_roadmap.cpp:1590 records it): broke abend2's ring
+    connectors 4 and 20. A legitimate vertex can sit just outside a small room.
+23. **L23 Slice 8: honest back-face sweep in the runtime primitive** (`13611c33` → `800f5678`): Batteries Blue 17/13
+    → 5/2 grabs/captures. Back-face honesty belongs at build time (done, `8b6ee205`); change runtime callers one at a
+    time.
+24. **L24 The in-room lattice admission rule (the sewer cure)** (withdrawn 09-15; record `9396478e`): Bree 5+5 captures
+    without it vs 1-2-0-2 with it; the cure was the back-face probe. Do not throw away foreign cells grown through
+    doors (the void-cell guard keeps them).
+25. **L25 Wrong-side rescue, 12.2a portal-LOS reroute** (`9f509b6f` → removed in `bbef9123`, 12.3.3): 0 arrivals in about 226 firings.
+26. **L26 Lateral go-around waypoint beside a divider** (12.7 plan, dropped 06-22; commit: none, never built): adds nodes to a graph that is itself
+    too sparse.
+27. **L27 Runner and curve work** (`edc82c6b`, 2026-07-08): net-negative A/Bs and removed. The live `runner` and
+    `curve` toggles are later, different implementations; do not read this entry as covering them.
+28. **L28 3.12p friend-avoidance and stuck-timer changes** (`9a960f71`): reverted regressions. Do not duplicate the
+    engine's friend avoidance.
+29. **L29 Sky-roofed-room lattice exemption for Canyons** (`b444f936` → `4b4e78f4`): Canyons' recovery was the hull
+    fit slack; the exemption measured nothing. The cure for thin rooms is NAV7.
+30. **L30 Returning rock cells to Canyons' lattice** (09-29/30; commit: none, never shipped): measured nothing further.
+31. **L31 Three ways to make bots squeeze Batteries' 11 u propped-leaf door** (0.9.16-dev; commit: none, the arms were never merged): read no
+    better than blundering through. rm80 waits for NAV14's geometry work.
+32. **L32 Stricter roadmap growth probe for sealed pockets** (0.9.4; commit: none, never tried): judged too risky to
+    connectivity. Reopen only with a connectivity gate (NAV28).
+33. **L33 Skeleton rework #1, fixed-fan collision-guided bridge** (`1d52aa7f`, 7 h abend2 soak): neutral, kept; did
+    not close ring room 0. The hull-scaled fan (`6c17d9bd`) did.
+
+---
+
+## 8. History and lessons (one paragraph per release)
+
+**Before 0.9 (Phases 4-12).** Phase 4.0 established the foundation still in force: hand the engine a goal, let it
+build the BOA path, repair BOA, sample explore rooms, detect stalls by room progress. Phases 7-9 added bot-side
+steering layers and removed them (L5); Phase 9's "flow routes, engine steers" became the architecture, and Phase 10
+consolidated to two layers. Phase 11 rebuilt Dijkstra as routing only, with soft geometry costs, dynamic penalties
+and waypoint delivery. Phase 12 (0.9.2-0.9.3) built the portal-derived substrate: via points, troll-powerup guards,
+the portal skeleton, pseudo-bnodes, the outdoor connecting graph and the soft-hop bridge. It was pinned stable on
+2026-06-22, and every remaining failure shared one root: a portal-derived graph is too sparse to cover a room's
+volume. Engine BNode generation was tried and reverted in this era (L2).
+
+**0.9.4 (2026-06-28).** The volumetric grid roadmap: a deterministic grid-seeded PRM plus HPA\*-pattern routing,
+Lazy Theta\* local search, the corner bridge, selective in-room engagement, outdoor region lattices. Fellowship 9-map
+captures +58% against 0.9.3. Its gate was dynamic, not boolean: reach an arbitrary interior point cleanly, at speed,
+without oscillation.
+
+**0.9.5-0.9.6 (07-01, 07-04).** The `$nav` console namespace and the build-time cache flush (mid-level A/B toggles
+became trustworthy). Then destructible-obstacle response: the firing-layer splash guard, safe proactive clearing, glass
+break-cost routing, objective arbitration and strike discipline; the first bot captures on the bsidectf L3 glass maze.
+
+**0.9.7-0.9.9 (07-12 to 07-19).** One spatial model kept honest: `$nav reach` item gating, the terrain tier `troute`
+(`edaba249`), hop commit and seam push, wind and glass-aware entrance choice. Then the game-modes and co-op releases,
+which rode this stack.
+
+**0.9.10-0.9.11 (08-08, 08-24).** The navigation cleanup: the committee was measured, a persistent travel intent
+survives interruption, self-directed interior travel routes through one decision point, and Step 5 removed `gridall`,
+`outroute` and `replan`. Step 4 (campaign-outdoor widening) closed NO-GO (L12).
+
+**0.9.12 (in test, late August to early September).** The one-mind subtraction (`cddde48c`: the via target is our
+resolved aim, never the engine node) gave abend2 its first captures. Further arbitration cuts moved metrics and lost
+play (L16, the wall). The in-world overlay (Ctrl+F7) found the skeleton's hub-and-spoke defect; skeleton rework #1
+(`1d52aa7f`) landed neutral. The 09-05 one-network ruling and the 09-06 sampler fixes (three-phase growth, honest
+coverage, the `routable` predicate) came on this line.
+
+**0.9.13 (2026-09-11).** A correctness checkpoint: route-lifetime fixes, bounded multi-bend repair, the pseudo-bnode
+radius raised to the hull (6.0 → 6.7), sharper diagnostics. Explicitly not "navigation solved".
+
+**0.9.14 (2026-09-18).** The portal model: a door is a validated crossing, not a point, and a wall is never a door.
+Portal class, crossing search with lip and fit rungs, shattered-pane flip, too-small-for-hull and wall-backed rules,
+two-hop door pricing, the per-bot glass mode ladder, the hull-scaled skeleton fan (abend2 ring room 0 one component),
+directional burst and glass back-off, back-face-honest build probes. Batteries route failures went to zero and the
+spawn-room traps the operator found are gone.
+
+**0.9.15 (2026-09-20).** Outdoors and a smooth server: heightfield admission for the region lattice, one outdoor
+dispatch, the router no longer routes through exterior shells, CTF errands fly their last leg, and roadmap builds run
+in slices on worker coroutines (no frame stalls; the HAVOC level 6 off-grid sweep crash fixed).
+
+**0.9.16-dev (in test, code complete at `4b4e78f4`).** Q12 settled (one door for every layer, informed picks only);
+spawn egress (Batteries lives pinned at spawn 35% → 1%); flag-touch goals until contact; the sliced skeleton build
+(no first-use freeze); the hull tiers (wall sphere floor, comfort hull, TIGHT last resort; Canyons captures doubled);
+the void-cell lattice guard (Sigma Base's exit towers; six-ray room test after Bree lost a building's grid to the
+one-axis test); a room's only cramped door stays in the network (abend2's flag pits back to the 0.9.15 profile); the
+outdoor window sweep for powerup chases. The Canyons sky-roof exemption was reverted (L29).
+
+**The throughline:** every regression came from overriding the engine's steering or from layers disagreeing about
+geometry; every durable win came from feeding the engine better goals over one shared model. Keep that line.
 
 ---
 
 ## 9. References
 
-- **PRM:** Kavraki, Švestka, Latombe & Overmars (1996), "Probabilistic Roadmaps for Path Planning in
-  High-Dimensional Configuration Spaces," *IEEE Trans. Robotics and Automation* 12(4):566–580.
-  (Our variant is the deterministic / grid-seeded, resolution-complete form — §3.5.)
-- **HPA\*:** Botea, Müller & Schaeffer (2004), "Near Optimal Hierarchical Path-Finding," *Journal of
-  Game Development* 1(1):7–28. (D3's rooms/portals *are* the cluster/entrance decomposition — §3.)
-- **Lazy Theta\*:** Nash, Koenig & Tovey (2010), "Lazy Theta\*: Any-Angle Path Planning and Path
-  Length Analysis in 3D," *AAAI 2010*. (The §3.5 local search.)
-- **Quake III AAS:** van Waveren (2001), "The Quake III Arena Bot" (MSc thesis) — the
-  surface-locomotion contrast case for the §3.5 novelty claim.
-- **Frontier exploration:** Yamauchi (1997), "A Frontier-Based Approach for Autonomous Exploration,"
-  *IEEE CIRA 1997*. (§7.1 — evaluated and **deferred**: D3 has no unknown space; the transferable
-  residue is a behavior-layer visit-recency patrol bias. Cite Yamauchi, not Yamaguchi 1998 — that
-  paper is multi-robot formation control.)
-- **Recovery/replan patterns:** ROS 2 Nav2 (docs.nav2.org — costmap layers, recovery behaviors) and
-  Move Base Flex — *pattern* references for §7.1 Stage 3 (replan-from-current-pose). Borrow the
-  patterns, never port the stacks.
-- `OBSTACLE_GEOMETRY.md` — how the engine represents passable geometry (what `fvi` probes must respect).
-- `PATHFINDING_CODEBASE_EXPLORE.md` — Guide-bot navigation analysis (engine pathfinding deep dive).
-- `townofbree.json` / `.svg` / `.png` — the canonical worst-case geometry the 0.9.4 substrate was
-  designed against.
+- **PRM:** Kavraki, Švestka, Latombe and Overmars (1996), "Probabilistic Roadmaps for Path Planning in
+  High-Dimensional Configuration Spaces," *IEEE Trans. Robotics and Automation* 12(4):566-580. Ours is the
+  deterministic, grid-seeded, resolution-complete form (§5.2).
+- **HPA\*:** Botea, Müller and Schaeffer (2004), "Near Optimal Hierarchical Path-Finding," *Journal of Game
+  Development* 1(1):7-28. D3's rooms and portals are the cluster/entrance decomposition (§4).
+- **Lazy Theta\*:** Nash, Koenig and Tovey (2010), "Lazy Theta\*: Any-Angle Path Planning and Path Length Analysis in
+  3D," *AAAI 2010* (§5.2).
+- **Quake III AAS:** van Waveren (2001), "The Quake III Arena Bot" (MSc thesis): the surface-locomotion contrast case.
+- **Frontier exploration:** Yamauchi (1997), "A Frontier-Based Approach for Autonomous Exploration," *IEEE CIRA*.
+  Evaluated and deferred: D3 has no unknown space; the residue is a visit-recency patrol bias (CBT14). Cite Yamauchi,
+  not Yamaguchi 1998 (formation control).
+- **Recovery and replan patterns:** ROS 2 Nav2 and Move Base Flex, as pattern references only. Anti-adopt (from the
+  2026-06-30 robotics synthesis): no probabilistic occupancy maps (BSP is noiseless truth), no Nav2 port, no sensor
+  fusion loop.
+- Matcen docs: `OBSTACLE_GEOMETRY.md` (passability facts), `PATHFINDING_CODEBASE_EXPLORE.md` (engine AI pathing),
+  `BOT_DEV_REFERENCE.md` (fields, constants, sliced builds), `VISUAL_DEBUG.md` (overlay), `D3_MOVEMENT_PHYSICS.md`,
+  `PLAN.md` §4 (the registry), `BOTS_DEVEL.md` (engineering log), `archive/NAVIGATION-history-2026-06_to_09.md`,
+  `archive/SKELETON_REWORK.md`.
