@@ -10,6 +10,35 @@ including the CTF, Hyper and Hoard write-ups) is preserved verbatim in
 `matcen-docs/archive/BOTS_DEVEL-phases-0_to_0.9.12.md`. The engine-files audit (single-player, Robo-Anarchy and
 co-op impact) now lives in `matcen-docs/BOT_DEV_REFERENCE.md`.
 
+### 2026-10-01 (night): the first soak reads, and NAV42 — 0.9.16 scores a tenth of 0.9.15 on Glasshouse
+
+abend2, same-minute pair, fix vs `4b4e78f4`, 3v3 fifteen-minute rounds, three rounds in: the zoned router made ZERO
+decisions that differed from the zone-blind one (its two sealed rooms are the spawn rooms' wall-backed windows, which
+our geometry already refuses), captures 5 vs 5, stucks 0 vs 8, hops crossed 891/235 vs 977/281 — no regression, by
+construction and by count. Glasshouse, fix arm rounds 1-4 against the two 8-round controls run the same evening:
+rm1 stuck episodes 13 / 11 / 8 / 5 against 42 / 17 / 20 / 4 / 65 / 9 / 11 / 36 (0.9.16) and 25 / 19 / 10 / 33 / 6 /
+38 / 3 / 49 (0.9.15); refused door approaches 0 / 0 / 1 / 1 against 17-109 a round; escapes into the hatch or chimney
+2 of 37 against 164 of 170. Captures: 10 in four rounds (1, 1, 8, 0).
+
+Those controls also found something older. **0.9.16 scores 2 captures in 8 rounds on Glasshouse; 0.9.15 scores 23**
+(NAV42). On 0.9.15 a carrier goes home `rm14 -> 16 -> 9 -> 0 -> 10` and scores in about 30 s; on 0.9.16 one carrier
+is routed `rm0 -> rm1 -> rm2` — through the pyramid — and sits under the roof with the leg re-issued 310 times (NAV41's
+trap, which is why the zoned build scores again), while the other stalls at the `rm16 -> rm14` approach, 353
+re-issues, until the round ends with both carriers alive. Bot-free: every portal verdict on the map is identical
+between the two builds; what differs is the lattice — the void-cell guard cut rm9 from 2,066 cells to 156, rm10
+2,055 to 137, rm16 423 to 156, rm12 222 to 36, rm5 222 to 71, and those are rock cells (rm9/rm10/rm16 have no
+transparent faces; the rooms' boxes are mostly rock), so the guard was right. Hard-room evidence (via suspensions)
+names rm1, rm8, rm3, rm0 — not rm9/rm10 — so the +800 promotion is not the reroute's cause. What in 0.9.16 chooses
+the pyramid hop out of rm0 for a carrier is the open question; the method is the abend2 one — a bot-free read of the
+carrier's first hop across the lab's labelled binaries of the series, one round each. Glasshouse was never in the
+soak set until tonight; it is now (`C-glasshouse-8rnd`).
+
+The fix arm also showed two things the zone rule does not cover. A gallery carrier was handed **rm8 as a waypoint**
+(reachable only up the chimney) by the carrier's waypoint chain, which is zone-blind, so the zoned router took it the
+long way round for a bad reason. And at the hall corner outside its gallery the `rm2 -> rm3` hop commit refused
+"door approach not in hull view" every few seconds without the in-room leg along the hall being flown, and the bot
+drifted back into the gallery (Hawk, round 1, eight minutes). Both are logged on NAV41.
+
 ### 2026-10-01 (evening): NAV41 built — zones, the router over (room, zone), 0.9.17-dev opens
 
 Built the same evening, bot-free first. The zone is the lattice's answer to "which space of this room am I in", and
