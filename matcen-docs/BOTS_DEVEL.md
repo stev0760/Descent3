@@ -23,17 +23,20 @@ whole interior lies behind one of them (Isengard's four tower rooms, Sigma rm4/r
 read as zoned). The definition that holds: a zone is what a seed reaches over lattice edges that do not cross one of
 the room's own portal polygons — the only way out of a room — with a point on the door plane (the seed) counting as
 inside so the seed's own leg to its far point crosses. No ray test, no node classification. Zones no seed reaches are
-nobody's. Census over the fourteen soak maps: Glasshouse rm1 ten zones (hatch, chimney mouth, and each gallery's two
-door pockets apart — the lattice does not cross the gallery's hip ridge; harmless), its ramp rooms rm5/rm12 (a
-coverage gap in a steep middle), abend2 rm4/rm20 (the spawn rooms' wall-backed windows, already impassable), Sigma
-rm19/rm37 (the hub galleries, two pieces joined through rm13 — NAV1's hub), rm4/rm26, Batteries rm46, Facing Worlds
-rm0 (portals already impassable), DownTown rm110 (unclassified); none on Bedlam, Bree, Canyons, KegD3, Moria,
-Isengard, Rim.
+nobody's. The census over the fourteen soak maps then showed the last distinction the rule needs: a zone split
+inside ONE lattice component (the room's own nodes never reached one door's pocket, but the lattice joined it through
+the next room's nodes) is common — Isengard 8 rooms, DownTown 4, Rim 4, KegD3 3, Batteries 3, Glasshouse's ramp rooms
+rm5/rm12, Sigma rm4/rm26, Moria rm14 — and is a coverage gap, not a wall; a split across components (the lattice could
+not join the two even through the next room) is the seal: Glasshouse rm1 (ten zones: hatch, chimney mouth, each
+gallery's two door pockets apart across its hip ridge — harmless, both exit to the hall), Sigma rm19/rm37 (the hub
+galleries, two pieces joined through rm13 — NAV1's hub), abend2 rm4/rm20 (the spawn rooms' wall-backed windows,
+already impassable), DownTown rm110, Facing Worlds rm0 (portals already impassable). None on Bedlam, Bree, Canyons.
 
 The router: `BotRouteDijkstra`'s node is (room, zone), states created on first touch; the zone a route holds in a room
-is the zone of the portal it entered by, the start zone the bot's own. A cross-zone exit is disagree-class: no edge in
-the strict pass, +400 in the last-resort pass — the same no-stranding guarantee the DISAGREE pass gives, which is what
-lets a coverage gap (rm5/rm12) cost a detour and never a trap. `BotEntryPortalIndex` skips other-zone doors in its
+is the zone of the portal it entered by, the start zone the bot's own. A cross-zone exit costs +400 in every pass, and
+when the two zones lie in different components (the seal) it is no edge in the strict pass — disagree-class, the
+same no-stranding guarantee the DISAGREE pass gives; a same-component split (the gap) is priced, never cut, so the
+model's silence costs a detour at most (`BotRoadmapZoneComp`, commit after `b9d86dcd`). `BotEntryPortalIndex` skips other-zone doors in its
 strict pass; the stuck escape ranks own-zone portals first. Bot-free gate: Glasshouse and abend2 networks byte-identical
 to 0.9.16 (cells 2,179 / 2,992, connectors, bends, split rooms). Controls, 3v3 fifteen-minute rounds on Glasshouse
 tonight: 0.9.16 logged 42 / 17 / 20 / 4 stuck episodes in rm1 a round with 23-69 refused door approaches and escapes

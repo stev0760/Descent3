@@ -165,7 +165,8 @@ struct RoadmapRoom {
   std::vector<int> seed_portal;      // node index -> portal index for the seeds (indoor; size = n_seed)
   int comp_count = 0;
   int orig_comp_count = 0; // components BEFORE the bridges merged them (>1 = non-convex / multi-level)
-  std::vector<int> zone;   // zone id per node (NAV41): components over the room's OWN nodes; -1 = a node next door
+  std::vector<int> zone;      // zone id per node (NAV41): what a seed reaches without crossing a portal face; -1 = none
+  std::vector<int> zone_comp; // zone id -> the lattice component it lies in (a zone never spans two)
   int zone_count = 0;
   bool routable = false;   // route-ownership gate: this room HAS a usable local-street network
                            // (cell floor + portal pairs that reach through the interior). Replaces the
@@ -1822,9 +1823,12 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
       if (zone_label.find(r) == zone_label.end())
         zone_label[r] = rr->zone_count++;
     }
+    rr->zone_comp.assign(rr->zone_count, -1);
     for (int i = 0; i < N; i++) {
       auto it = zone_label.find(UFFind(zuf, i));
       rr->zone[i] = (it == zone_label.end()) ? -1 : it->second;
+      if (rr->zone[i] >= 0 && i < (int)rr->comp.size())
+        rr->zone_comp[rr->zone[i]] = rr->comp[i];
     }
   }
 
@@ -2992,6 +2996,13 @@ int BotRoadmapRoomComps(int room_idx) {
 static bool ZoneTrusted(const RoadmapRoom *rr) {
   return rr && !rr->outdoor && !rr->degenerate && rr->lattice_cells >= BOT_ROADMAP_ROUTABLE_MIN_CELLS &&
          rr->zone_count > 1 && rr->zone.size() == rr->node.size();
+}
+
+int BotRoadmapZoneComp(int room_idx, int zone) {
+  RoadmapRoom *rr = PeekCached(room_idx);
+  if (!rr || zone < 0 || zone >= (int)rr->zone_comp.size())
+    return -1;
+  return rr->zone_comp[zone];
 }
 
 int BotRoadmapRoomZones(int room_idx) {

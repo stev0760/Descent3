@@ -375,23 +375,28 @@ need `routable` (Glasshouse rm1 is not).
 
 **The router's node is (room, zone).** `BotRouteDijkstra` carries the zone a route holds in each room — the zone of
 the portal it entered by — and `start_zone` is the bot's own (`BotComputeRoute` passes `BotRoadmapZoneAt`). Leaving a
-room by a portal in another zone is a **disagree-class edge**: absent from the strict pass, priced at
-`BOT_ZONE_CROSS_PENALTY` (400) in the last-resort pass, so a lattice gap in a connected room (Glasshouse's ramp rooms
-rm5/rm12, whose steep middle has no cells) lengthens a route and never strands a bot — the guarantee the DISAGREE
-pass already gives. The goal is reached in any zone; a route to the goal's own zone, and a same-room goal in another
+room by a portal in another zone costs `BOT_ZONE_CROSS_PENALTY` (400) in every pass, and it is **sealed** — no edge
+at all in the strict pass, disagree-class — when the two zones lie in different lattice **components**
+(`BotRoadmapZoneComp`): the lattice could not join them even through the next room's nodes, so the wall between them
+is real as far as the model can see. A split inside one component is a **gap** in the room's own nodes (one door's
+pocket the body never reached — Glasshouse's ramp rooms rm5/rm12, whose steep middle has no cells) and is priced,
+never cut: the model's silence costs a detour at most, and either way a bot is never stranded — the guarantee the
+DISAGREE pass already gives. The goal is reached in any zone; a route to the goal's own zone, and a same-room goal in another
 zone, are the next step. A room with one zone — nearly every room — routes exactly as before; the bot-free diff
 against 0.9.16 is byte-identical on Glasshouse and abend2 (cells, connectors, bends, split rooms). The door picker
 (`BotEntryPortalIndex`) skips doors outside the bot's zone in its strict pass, and the stuck escape ranks own-zone
 portals first. Log: `zone route rm<a> zone <z> -> rm<b>: hop rm<x> (zone-blind rm<y>)` whenever the two differ;
 `stuck escape via portal → room N (…, own zone | OTHER zone)`.
 
-**Census, 2026-10-01, all fourteen soak maps bot-free:** door-zoned rooms are rare — Glasshouse rm1 (ten zones: the
-hatch, the chimney mouth, and each gallery's two door pockets separately, because the lattice does not cross the
-gallery's hip ridge; harmless, both pockets exit to the hall) and its ramp rooms rm5/rm12 (a coverage gap);
-abend2 rm4/rm20 (the spawn rooms' wall-backed windows onto the ring, already impassable to our geometry); Sigma Base
-rm19/rm37 (the hub galleries), rm4/rm26 (a floor-level channel each); Batteries rm46 and Facing Worlds rm0 (one
-portal each that our geometry already calls impassable); DownTown rm110 (a 500 u tall shaft room, unclassified).
-Bedlam, Bree, Canyons, KegD3, Moria, Isengard, Rim: none.
+**Census, 2026-10-01, all fourteen soak maps bot-free (`tools/zoned_rooms.py`):** **sealed, 7 rooms** — Glasshouse
+rm1 (ten zones: the hatch, the chimney mouth, and each gallery's two door pockets separately, because the lattice
+does not cross the gallery's hip ridge; harmless, both pockets exit to the hall), Sigma Base rm19/rm37 (the hub
+galleries, two pieces joined through the bridge room rm13), abend2 rm4/rm20 (the spawn rooms' wall-backed windows
+onto the ring, already impassable to our geometry), DownTown rm110 (a 500 u shaft room, floor door vs top doors),
+Facing Worlds rm0 (two portals our geometry already calls impassable). **Gap, 27 rooms** — Isengard 8 (its four
+tower rooms and four more), DownTown 4, Rim 4 (one isolated door in each 5,000-cell ring room), Batteries 3, KegD3 3,
+Glasshouse rm5/rm12, Sigma rm4/rm26, Moria rm14. None on Bedlam, Bree, Canyons. A sealed room is where the fix acts;
+a gap room pays 400 for the direct exit and keeps it when nothing cheaper exists.
 
 ## 5. The network: local streets, arterials and the outdoor tier
 

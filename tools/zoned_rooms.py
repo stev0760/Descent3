@@ -18,6 +18,21 @@ def groups(room):
     return by
 
 
+def sealed(room):
+    """Sealed vs gap: the router cuts a cross-zone exit from its strict pass only when the two zones lie in different
+    lattice COMPONENTS (the lattice could not join them even through the next room's nodes); zones in one component
+    are a coverage gap in the room's own nodes and are priced, never cut. The seeds are the first nodes of the dump
+    and carry both ids, so the door zones' components are read off them even when the node sample is truncated."""
+    zones = room.get('roadmap_zone') or []
+    comps = room.get('roadmap_comp') or []
+    ports = room.get('portals') or []
+    by_zone = {}
+    for p, po in enumerate(ports):
+        if p < len(zones) and p < len(comps) and zones[p] >= 0 and po.get('class') == 'door':
+            by_zone.setdefault(zones[p], comps[p])
+    return len(set(by_zone.values())) > 1
+
+
 def door_zoned(room):
     """The router's question: do the DOOR-class portals span more than one zone? Windows and panes have seeds
     the lattice cannot reach (they sit in glass), so they fall in zones of their own on every glass room; the
@@ -34,7 +49,8 @@ def main():
         rooms = d['rooms']
         zoned = [r for r in rooms if r.get('roadmap_zoned')]
         dz = [r for r in zoned if door_zoned(r)]
-        print('%s: %d rooms, %d zoned, %d DOOR-zoned' % (fn, len(rooms), len(zoned), len(dz)))
+        sz = [r for r in dz if sealed(r)]
+        print('%s: %d rooms, %d zoned, %d DOOR-zoned, %d SEALED (cut), %d gap (priced)' % (fn, len(rooms), len(zoned), len(dz), len(sz), len(dz) - len(sz)))
         for r in zoned:
             by = groups(r)
             parts = []
@@ -46,7 +62,7 @@ def main():
                     desc.append('p%d%s->rm%s' % (p, {'door': '', 'pane': '(pane)', 'never': '(never)'}.get(po.get('class'), '(?)'),
                                                  po.get('croom', '?')))
                 parts.append('zone %s: %s' % (z, ' '.join(desc)))
-            print('  %s' % ('DOOR-ZONED' if door_zoned(r) else 'windows only'))
+            print('  %s' % (('SEALED' if sealed(r) else 'gap') if door_zoned(r) else 'windows only'))
             print('  rm%-3d comps=%d cells=%d routable=%s  %s' % (r['id'], r.get('roadmap_comp_count', 0),
                                                                  r.get('roadmap_lattice_cells', 0),
                                                                  r.get('roadmap_routable'), ' | '.join(parts)))

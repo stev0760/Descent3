@@ -3350,9 +3350,10 @@ int BotPortalWindDir(int room_idx, int portal_idx) {
 // in a door gallery was sent to the hatch under the pyramid, 20 u away through the glass, and pressed into the
 // narrowing wedge until its stuck escape freed it (72 of 76 stucks in one flight). The zone a route holds in a
 // room is the zone of the portal it entered by; `start_zone` is the bot's own (BotRoadmapZoneAt), or -1 when
-// unknown, which constrains nothing. Leaving by a portal in another zone is a disagree-class edge: no edge in
-// the strict pass, BOT_ZONE_CROSS_PENALTY in the last-resort pass. A room with one zone — nearly every room —
-// routes exactly as before. The goal is reached in any zone; routing to a goal's own zone is a later step.
+// unknown, which constrains nothing. Leaving by a portal in another zone costs BOT_ZONE_CROSS_PENALTY, and when
+// the two zones are in different lattice components (a seal, not a gap) it is no edge at all in the strict pass.
+// A room with one zone — nearly every room — routes exactly as before. The goal is reached in any zone; routing
+// to a goal's own zone is a later step.
 static float BotRouteDijkstra(int from_room, int goal_room, int *first_hop_out, bool allow_disagree, float hull_phys,
                               int glass_mode = GLASS_ROUTE_OFF, int start_zone = -1) {
   if (first_hop_out)
@@ -3411,10 +3412,15 @@ static float BotRouteDijkstra(int from_room, int goal_room, int *first_hop_out, 
       int nr = rm.portals[p].croom;
       if (nr < 0 || nr > Highest_room_index || !Rooms[nr].used)
         continue;
-      // Leaving through a portal in another zone of this room is a route through a wall: disagree-class.
+      // Leaving through a portal in another zone of this room. SEALED when the two zones lie in different lattice
+      // components — the lattice could not join them even through the next room's nodes (Glasshouse's hatch vs its
+      // galleries, Sigma Base's hub vs its galleries): disagree-class, no edge in the strict pass. A same-component
+      // split is a coverage gap in this room's own nodes (one door's pocket the body never reached — Isengard's
+      // towers, Rim's ring rooms): priced, never cut, so the model's silence costs a detour at most.
       const int pz = BotRoadmapPortalZone(r, p);
       const bool cross_zone = (z >= 0 && pz >= 0 && pz != z);
-      if (cross_zone && !allow_disagree)
+      const bool sealed = cross_zone && BotRoadmapZoneComp(r, z) != BotRoadmapZoneComp(r, pz);
+      if (sealed && !allow_disagree)
         continue;
       const int cportal_z = rm.portals[p].cportal;
       const int nz = (cportal_z >= 0 && cportal_z < BOT_MAX_PORTALS) ? BotRoadmapPortalZone(nr, cportal_z) : -1;

@@ -15,9 +15,11 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
 
 - **A room that is really several sealed spaces is routed as such.** Glasshouse's central pyramid is one room to the
   engine but five spaces to a ship (the known issue of 0.9.16 below). A bot now plans from the part of the room it is
-  actually in: a route that would enter a room by one space and leave by another is treated as a route through a wall
-  and taken only as a last resort, so a bot in a gallery is sent out by its own door and around, and a bot under the
-  pyramid is sent down through the hatch. The stuck escape prefers doors its own part of the room can reach, where it
+  actually in: where its route network shows the wall (the parts of the room are separate pieces of the network), a
+  route that would enter the room by one part and leave by another is taken only as a last resort, so a bot in a
+  gallery is sent out by its own door and around, and a bot under the pyramid is sent down through the hatch; where
+  the network merely failed to join two doors inside one room, that route is priced, not forbidden, so no map pays
+  more than a detour for it. The stuck escape prefers doors its own part of the room can reach, where it
   used to pick the hatch or the chimney two times in three. Rooms that are one space — nearly every room on every map —
   route exactly as before, and the route networks are unchanged on every map checked. In test: on Glasshouse (3 vs 3,
   fifteen-minute rounds) the build before it logged 4 to 42 stuck episodes a round in that room and 23 to 69 refused

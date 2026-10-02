@@ -157,6 +157,10 @@ int BotRoadmapRoomComps(int room_idx);
 // through a wall. Zone ids are dense per room; -1 = no answer (no lattice, outdoor, degenerate, starved, or no
 // seed), and no answer never constrains anything — like BotRoadmapItemReach, the model speaks only when it has one.
 int BotRoadmapPortalZone(int room_idx, int portal);
+// The lattice component a zone lies in (-1 = unknown). Two zones in different components could not be joined even
+// through the next room's nodes: the wall between them is real as far as the model can see. Two zones in one
+// component are a coverage gap in this room's own nodes.
+int BotRoadmapZoneComp(int room_idx, int zone);
 // Zone count over the room's own nodes (0 = no lattice / outdoor).
 int BotRoadmapRoomZones(int room_idx);
 // Zone id per node, in BotRoadmapDumpRoom's node order (-1 = a node next door); returns the count written.
