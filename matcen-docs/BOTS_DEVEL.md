@@ -10,6 +10,43 @@ including the CTF, Hyper and Hoard write-ups) is preserved verbatim in
 `matcen-docs/archive/BOTS_DEVEL-phases-0_to_0.9.12.md`. The engine-files audit (single-player, Robo-Anarchy and
 co-op impact) now lives in `matcen-docs/BOT_DEV_REFERENCE.md`.
 
+### 2026-10-01 (evening): NAV41 built — zones, the router over (room, zone), 0.9.17-dev opens
+
+Built the same evening, bot-free first. The zone is the lattice's answer to "which space of this room am I in", and
+getting its definition right took three rejected tries, each caught by the dump before any bot flew: (1) the
+component id — the lattice grows door-approach nodes into the next room on purpose, and in Glasshouse's open ring
+hall those nodes joined all eight gallery doors into one component; (2) a per-node six-ray in-room test — its rays
+leave through the doorways (the void guard's 2026-09-28 lesson again) and it called 55 gallery nodes and 330 of
+Sigma's hub nodes "next door", fragmenting Glasshouse rm1 into 14 zones and Sigma rm19 into 8; (3) a behind-the-
+door-plane test with a 48 u depth bound — right for Glasshouse, wrong for every narrow room with facing doors, whose
+whole interior lies behind one of them (Isengard's four tower rooms, Sigma rm4/rm26, Batteries rm17, KegD3, Moria
+read as zoned). The definition that holds: a zone is what a seed reaches over lattice edges that do not cross one of
+the room's own portal polygons — the only way out of a room — with a point on the door plane (the seed) counting as
+inside so the seed's own leg to its far point crosses. No ray test, no node classification. Zones no seed reaches are
+nobody's. Census over the fourteen soak maps: Glasshouse rm1 ten zones (hatch, chimney mouth, and each gallery's two
+door pockets apart — the lattice does not cross the gallery's hip ridge; harmless), its ramp rooms rm5/rm12 (a
+coverage gap in a steep middle), abend2 rm4/rm20 (the spawn rooms' wall-backed windows, already impassable), Sigma
+rm19/rm37 (the hub galleries, two pieces joined through rm13 — NAV1's hub), rm4/rm26, Batteries rm46, Facing Worlds
+rm0 (portals already impassable), DownTown rm110 (unclassified); none on Bedlam, Bree, Canyons, KegD3, Moria,
+Isengard, Rim.
+
+The router: `BotRouteDijkstra`'s node is (room, zone), states created on first touch; the zone a route holds in a room
+is the zone of the portal it entered by, the start zone the bot's own. A cross-zone exit is disagree-class: no edge in
+the strict pass, +400 in the last-resort pass — the same no-stranding guarantee the DISAGREE pass gives, which is what
+lets a coverage gap (rm5/rm12) cost a detour and never a trap. `BotEntryPortalIndex` skips other-zone doors in its
+strict pass; the stuck escape ranks own-zone portals first. Bot-free gate: Glasshouse and abend2 networks byte-identical
+to 0.9.16 (cells 2,179 / 2,992, connectors, bends, split rooms). Controls, 3v3 fifteen-minute rounds on Glasshouse
+tonight: 0.9.16 logged 42 / 17 / 20 / 4 stuck episodes in rm1 a round with 23-69 refused door approaches and escapes
+aimed at the hatch or chimney; 0.9.15 logged 25 / 19 / 10 / 33 the same way — the defect is as old as the router. One
+ten-minute round on the zoned build (`soak-20261001T203209.log`): 5 stuck episodes in rm1 (one hard), 0 refusals, 22
+room-progress timeouts there against 168 in the operator's two rounds, hops out of rm1 crossed 46 of 50 (the flight:
+322 of 393), escapes 5 of 6 "room 2, own zone" (the flight: 7 of 76 to a reachable room), 2 captures, and 601 routes
+that differed from the zone-blind answer (a gallery bot bound for room 0 sent out through the hall; a bot under the
+roof bound for the hall sent down the hatch). In soak: the Glasshouse 8-round arm, and an abend2 same-minute pair (the operator's
+stated worry — abend2's two zoned rooms are the windows the leaf-door series already found); Sigma Base and Canyons
+pairs follow. Open: route to the goal's own zone, and a same-room goal in another zone (today: no hop, the in-room
+layer fails and the escape takes over).
+
 ### 2026-10-01: Glasshouse — a room that is five spaces; the router's one-volume assumption (NAV41)
 
 The operator's flight on `4b4e78f4` (Glasshouse, 6v6 CTF, two 15-minute rounds): "very fun", a stalemate (3 bot captures

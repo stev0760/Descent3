@@ -346,6 +346,53 @@ escort orders. Its outdoor branch is the one outdoor dispatch (§5.4).
 
 ---
 
+### 4.7 Zones: a room that is several spaces (NAV41, 0.9.17-dev)
+
+A room can be several spaces to a ship. Glasshouse's central pyramid (rm1) is a hollow pyramid open only through its
+whole-floor portal to the room below and a chimney to the room above, plus four wedge galleries on its glass faces,
+each with two doors to the ring hall and walled off from its neighbours; Sigma Base's hub rm19 has a gallery at y=50
+that is two pieces joined only through the bridge room rm13. Routing over rooms sent a gallery bot to the hatch 20 u
+away through the glass (72 of 76 stucks in one flight, 69 of 76 stuck escapes aimed at the hatch or the chimney).
+The engine's BOA has the same one-volume model, so vanilla robots route the same way.
+
+**The zone is a product of the lattice** (bot_roadmap.cpp, after the component labelling): the set of nodes a portal
+seed reaches over lattice edges **that do not cross one of the room's own portal faces**. Three definitions were
+tried and rejected bot-free before this one: the component id (the door-approach nodes the lattice grows into the
+next room on purpose join every door of a neighbouring room through an open hall — Glasshouse's four galleries read
+as one); a six-ray in-room test per node (its rays leave through the doorways, like the void guard's first cut, and
+called 55 gallery nodes and 330 of Sigma's hub nodes "next door"); and a behind-the-door-plane test with a depth
+bound (a narrow room's whole interior lies behind its facing doors — Isengard's four tower rooms, Sigma rm4/rm26,
+Batteries rm17 read as zoned). An edge that crosses a portal polygon leaves the room; nothing else does. A seed sits
+on its door plane and counts as inside, so its own leg to the far point crosses. Zones that hold no seed are nobody's
+(-1). Dump fields: `roadmap_zoned`, `roadmap_zone_count`, `portal_zones`, per-node `roadmap_zone`, per-portal `zone`;
+`tools/zoned_rooms.py` lists every door-zoned room of a dump; `render_room.py --by zone` colours by zone.
+
+**API** (bot_roadmap.h): `BotRoadmapPortalZone(room, portal)` (-1 = no answer), `BotRoadmapZoneAt(room, pos)` (the
+zone of the nearest hull-visible zoned node), `BotRoadmapRoomZoned(room)` (door-class seeds span more than one zone).
+All read the cached roadmap and never build; a room without one has no zones and constrains nothing, like
+`BotRoadmapItemReach`. Zones need a populated lattice (`lattice_cells >= BOT_ROADMAP_ROUTABLE_MIN_CELLS`); they do not
+need `routable` (Glasshouse rm1 is not).
+
+**The router's node is (room, zone).** `BotRouteDijkstra` carries the zone a route holds in each room — the zone of
+the portal it entered by — and `start_zone` is the bot's own (`BotComputeRoute` passes `BotRoadmapZoneAt`). Leaving a
+room by a portal in another zone is a **disagree-class edge**: absent from the strict pass, priced at
+`BOT_ZONE_CROSS_PENALTY` (400) in the last-resort pass, so a lattice gap in a connected room (Glasshouse's ramp rooms
+rm5/rm12, whose steep middle has no cells) lengthens a route and never strands a bot — the guarantee the DISAGREE
+pass already gives. The goal is reached in any zone; a route to the goal's own zone, and a same-room goal in another
+zone, are the next step. A room with one zone — nearly every room — routes exactly as before; the bot-free diff
+against 0.9.16 is byte-identical on Glasshouse and abend2 (cells, connectors, bends, split rooms). The door picker
+(`BotEntryPortalIndex`) skips doors outside the bot's zone in its strict pass, and the stuck escape ranks own-zone
+portals first. Log: `zone route rm<a> zone <z> -> rm<b>: hop rm<x> (zone-blind rm<y>)` whenever the two differ;
+`stuck escape via portal → room N (…, own zone | OTHER zone)`.
+
+**Census, 2026-10-01, all fourteen soak maps bot-free:** door-zoned rooms are rare — Glasshouse rm1 (ten zones: the
+hatch, the chimney mouth, and each gallery's two door pockets separately, because the lattice does not cross the
+gallery's hip ridge; harmless, both pockets exit to the hall) and its ramp rooms rm5/rm12 (a coverage gap);
+abend2 rm4/rm20 (the spawn rooms' wall-backed windows onto the ring, already impassable to our geometry); Sigma Base
+rm19/rm37 (the hub galleries), rm4/rm26 (a floor-level channel each); Batteries rm46 and Facing Worlds rm0 (one
+portal each that our geometry already calls impassable); DownTown rm110 (a 500 u tall shaft room, unclassified).
+Bedlam, Bree, Canyons, KegD3, Moria, Isengard, Rim: none.
+
 ## 5. The network: local streets, arterials and the outdoor tier
 
 ### 5.1 One query
@@ -706,7 +753,7 @@ Phase 1 (the entrance-miss class) shipped in 0.9.15; Phase 4's first cut (one ou
 | NAV38 | Objective-owned degradation (old row 6.28) | X: not reproduced, reopen on evidence (Q21b) |
 | NAV39 | Flag-carrier sprint-home speed | X: not reproduced, reopen on evidence (Q21b) |
 | NAV40 | abend2 per-team asymmetry vs the symmetry acceptance test | X: operator, "not asymmetrical from my testing" (Q21c) |
-| NAV41 | Glasshouse rm1 is five sealed spaces (a hollow pyramid open only below and above; four door galleries on its faces) routed as one volume: `BotRouteDijkstra` is any-portal-in, any-portal-out; the stuck escape ranks portals its space cannot reach; 72 of 76 stucks in the galleries' narrowing wedges | open; designed: route over (room, lattice zone), strict pass forbids, last-resort pass prices, no zoning at the node cap; BOTS_DEVEL 2026-10-01 |
+| NAV41 | Glasshouse rm1 is five sealed spaces (a hollow pyramid open only below and above; four door galleries on its faces) routed as one volume: `BotRouteDijkstra` was any-portal-in, any-portal-out; the stuck escape ranked portals its space cannot reach; 72 of 76 stucks in the galleries' narrowing wedges | BUILT 2026-10-01 on 0.9.17-dev (§4.7): zones over (room, lattice zone); in soak (Glasshouse 8-round arm vs the 0.9.16 and 0.9.15 controls, abend2 same-minute pair); open: route to the goal's own zone, same-room cross-zone goals |
 | NAV41 | Corner-bridge sweep honouring back faces | X: code read (`RoadmapLOS` indoor sweeps pass `FQ_BACKFACE` since `8b6ee205`; §5.2 item 7) |
 | NAV42 | The door on-ramp admits points outside the room (two rm80 nodes in the hallway) | E (verify); the void-cell guard does not test on-ramp nodes |
 

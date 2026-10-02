@@ -165,6 +165,8 @@ struct RoadmapRoom {
   std::vector<int> seed_portal;      // node index -> portal index for the seeds (indoor; size = n_seed)
   int comp_count = 0;
   int orig_comp_count = 0; // components BEFORE the bridges merged them (>1 = non-convex / multi-level)
+  std::vector<int> zone;   // zone id per node (NAV41): components over the room's OWN nodes; -1 = a node next door
+  int zone_count = 0;
   bool routable = false;   // route-ownership gate: this room HAS a usable local-street network
                            // (cell floor + portal pairs that reach through the interior). Replaces the
                            // old `complex`, which measured how badly the sampler did — see the header.
@@ -1747,6 +1749,85 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     }
   }
 
+  // Zones (NAV41): what each portal seed reaches without leaving the room. The lattice grows door-approach nodes
+  // into the next room on purpose (the route THROUGH a door), and in an open hall those nodes join every door of a
+  // neighbouring room into one component: Glasshouse's four sealed galleries read as one. So the zone union skips
+  // every edge whose segment crosses one of this room's own portal faces — the only way out of a room — and keeps
+  // all others. No ray test (its rays leave through the doorways too) and no node classification (a narrow room's
+  // whole interior lies "behind" its facing doors). A zone no seed reaches is not a zone: its nodes read -1.
+  rr->zone.assign(N, -1);
+  rr->zone_count = 0;
+  if (!rr->outdoor && rr->probe_room >= 0) {
+    const room &prm = Rooms[rr->probe_room];
+    struct DoorPoly {
+      vector n;
+      float d;
+      int ax; // dominant axis of n, dropped for the 2-D point-in-polygon test
+      std::vector<vector> v;
+    };
+    std::vector<DoorPoly> doors;
+    for (int p = 0; p < prm.num_portals; p++) {
+      const int fi = prm.portals[p].portal_face;
+      if (fi < 0 || fi >= prm.num_faces || prm.faces[fi].num_verts < 3)
+        continue;
+      const face &fc = prm.faces[fi];
+      DoorPoly dp;
+      dp.n = fc.normal;
+      dp.d = vm_DotProduct(&fc.normal, &prm.verts[fc.face_verts[0]]);
+      const float ax = fabsf(dp.n.x()), ay = fabsf(dp.n.y()), az = fabsf(dp.n.z());
+      dp.ax = (ax >= ay && ax >= az) ? 0 : (ay >= az ? 1 : 2);
+      for (int k = 0; k < fc.num_verts; k++)
+        dp.v.push_back(prm.verts[fc.face_verts[k]]);
+      doors.push_back(dp);
+    }
+    auto Coord = [](const vector &v, int i) { return i == 0 ? v.x() : (i == 1 ? v.y() : v.z()); };
+    auto InPoly = [&](const DoorPoly &dp, const vector &x) -> bool {
+      const int u = (dp.ax + 1) % 3, w = (dp.ax + 2) % 3;
+      const float px = Coord(x, u), py = Coord(x, w);
+      bool in = false;
+      for (size_t i = 0, j = dp.v.size() - 1; i < dp.v.size(); j = i++) {
+        const float xi = Coord(dp.v[i], u), yi = Coord(dp.v[i], w), xj = Coord(dp.v[j], u), yj = Coord(dp.v[j], w);
+        if ((yi > py) != (yj > py) && px < (xj - xi) * (py - yi) / (yj - yi) + xi)
+          in = !in;
+      }
+      return in;
+    };
+    auto LeavesRoom = [&](const vector &a, const vector &b) -> bool {
+      for (const DoorPoly &dp : doors) {
+        const float da = vm_DotProduct(&dp.n, &a) - dp.d, db = vm_DotProduct(&dp.n, &b) - dp.d;
+        // A point on the door plane (the seam seed) is inside: the seed's own leg to its far point crosses.
+        if ((da < -0.1f) == (db < -0.1f))
+          continue;
+        const float t = da / (da - db);
+        const vector x = a + (b - a) * t;
+        if (InPoly(dp, x))
+          return true;
+      }
+      return false;
+    };
+    std::vector<int> zuf(N);
+    for (int i = 0; i < N; i++)
+      zuf[i] = i;
+    for (int i = 0; i < N; i++) {
+      for (int j : rr->adj[i])
+        if (j > i && !LeavesRoom(rr->node[i], rr->node[j]))
+          UFUnion(zuf, i, j);
+      if ((i & 255) == 255)
+        SliceYield();
+    }
+    // Dense ids for the zones that hold a seed; every other node is nobody's zone.
+    std::unordered_map<int, int> zone_label;
+    for (int i = 0; i < n_seed && i < N; i++) {
+      const int r = UFFind(zuf, i);
+      if (zone_label.find(r) == zone_label.end())
+        zone_label[r] = rr->zone_count++;
+    }
+    for (int i = 0; i < N; i++) {
+      auto it = zone_label.find(UFFind(zuf, i));
+      rr->zone[i] = (it == zone_label.end()) ? -1 : it->second;
+    }
+  }
+
   // Degenerate = the lattice never populated (interior thinner than the spacing): no coverage gained over
   // the seeds, so defer to the 0.9.3 skeleton (indoor) / connecting graph (outdoor).
   rr->degenerate = (rr->lattice_cells + rr->connector_nodes == 0);
@@ -2904,6 +2985,83 @@ int BotRoadmapSerial() { return g_build_serial; }
 int BotRoadmapRoomComps(int room_idx) {
   RoadmapRoom *rr = Get(room_idx);
   return rr ? rr->comp_count : 0;
+}
+
+// A lattice is trusted to split a room only when it populated: the components of a degenerate or starved room
+// (the Canyons thin-strip class) say nothing about its walls. Outdoor regions have no portal seeds.
+static bool ZoneTrusted(const RoadmapRoom *rr) {
+  return rr && !rr->outdoor && !rr->degenerate && rr->lattice_cells >= BOT_ROADMAP_ROUTABLE_MIN_CELLS &&
+         rr->zone_count > 1 && rr->zone.size() == rr->node.size();
+}
+
+int BotRoadmapRoomZones(int room_idx) {
+  RoadmapRoom *rr = PeekCached(room_idx);
+  return (rr && !rr->outdoor) ? rr->zone_count : 0;
+}
+
+int BotRoadmapDumpRoomZones(int room_idx, int *zone_out, int max_nodes) {
+  RoadmapRoom *rr = Get(room_idx);
+  if (!rr || rr->zone.size() != rr->node.size())
+    return 0;
+  int n = (int)rr->node.size();
+  if (n > max_nodes)
+    n = max_nodes;
+  for (int i = 0; i < n; i++)
+    zone_out[i] = rr->zone[i];
+  return n;
+}
+
+int BotRoadmapPortalZone(int room_idx, int portal) {
+  RoadmapRoom *rr = PeekCached(room_idx); // never builds: a room not yet built has no zones, which constrains nothing
+  if (!ZoneTrusted(rr) || portal < 0 || portal >= (int)rr->portal_seed.size())
+    return -1;
+  int n = rr->portal_seed[portal];
+  return (n >= 0 && n < (int)rr->zone.size()) ? rr->zone[n] : -1;
+}
+
+int BotRoadmapZoneAt(int room_idx, const vector &pos) {
+  RoadmapRoom *rr = PeekCached(room_idx);
+  if (!ZoneTrusted(rr))
+    return -1;
+  // Nearest hull-visible node of the room's own (zoned) nodes: a door-approach node next door says nothing
+  // about which space of THIS room the position is in.
+  const int N = (int)rr->node.size();
+  std::vector<std::pair<float, int>> cand;
+  for (int i = 0; i < N; i++) {
+    if (rr->zone[i] < 0)
+      continue;
+    float d = Dist(pos, rr->node[i]);
+    if (d <= 120.0f)
+      cand.emplace_back(d, i);
+  }
+  std::sort(cand.begin(), cand.end());
+  int tried = 0;
+  for (auto &c : cand) {
+    if (++tried > 24)
+      break;
+    if (RoadmapLOS(rr, pos, rr->node[c.second]))
+      return rr->zone[c.second];
+  }
+  return -1;
+}
+
+bool BotRoadmapRoomZoned(int room_idx) {
+  RoadmapRoom *rr = PeekCached(room_idx);
+  if (!ZoneTrusted(rr))
+    return false;
+  // Doors only: a window's seed sits in glass the lattice cannot reach, so it is a zone of its own on every
+  // glass room, and the router never routes through one in its strict pass anyway.
+  int seen = -1;
+  for (int p = 0; p < (int)rr->portal_seed.size(); p++) {
+    int n = rr->portal_seed[p];
+    if (n < 0 || n >= (int)rr->zone.size() || BotPortalClass(room_idx, p) != BOT_PORTAL_CLASS_DOOR)
+      continue;
+    if (seen < 0)
+      seen = rr->zone[n];
+    else if (rr->zone[n] != seen)
+      return true;
+  }
+  return false;
 }
 
 // $nav reach (architecture north star, increment 1): SINGLE-AUTHORITY reachability. "Can our

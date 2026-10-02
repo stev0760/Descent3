@@ -6764,7 +6764,11 @@ static void BotApplyThrust(int bot_index) {
       // Try to find a portal leading to a room we haven't visited recently
       int best_portal = -1;
       bool best_is_unvisited = false;
+      bool best_own_zone = false;
       int only_way_in = -1; // the excluded portal, kept in case it is the room's only door
+      // The bot's zone of this room (NAV41): a portal in another zone is the one it cannot reach from here —
+      // on Glasshouse 69 of 76 escapes aimed at the hatch or the chimney from a gallery. Own zone first.
+      const int bot_zone = BotRoadmapZoneAt(obj->roomnum, obj->pos);
       for (int p = 0; p < cur.num_portals; p++) {
         int croom = cur.portals[p].croom;
         if (croom < 0 || !Rooms[croom].used)
@@ -6787,10 +6791,16 @@ static void BotApplyThrust(int bot_index) {
         }
 
         bool unvisited = !BotHasVisitedRoom(bot_index, croom);
-        // Prefer unvisited over visited; among same category, pick randomly
-        if (best_portal < 0 || (unvisited && !best_is_unvisited) || (unvisited == best_is_unvisited && (rand() % 2))) {
+        const int pz = BotRoadmapPortalZone(obj->roomnum, p);
+        const bool own_zone = (bot_zone < 0 || pz < 0 || pz == bot_zone);
+        // Own zone first, then unvisited over visited; among equals, pick randomly.
+        const bool better = (own_zone != best_own_zone)        ? own_zone
+                            : (unvisited != best_is_unvisited) ? unvisited
+                                                               : (rand() % 2) != 0;
+        if (best_portal < 0 || better) {
           best_portal = p;
           best_is_unvisited = unvisited;
+          best_own_zone = own_zone;
         }
       }
 
@@ -6813,8 +6823,9 @@ static void BotApplyThrust(int bot_index) {
         BotSetRoutedGoal(bot_index, dest_room, dest_pos, &esc_reissued, TRAVEL_OWNER_EXPLORE);
         Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MIN;
         escaped_via_portal = true;
-        LOG_DEBUG.printf("BOT: '%s' stuck escape via portal → room %d (%s)", Bots[bot_index].callsign, dest_room,
-                         best_is_unvisited ? "unvisited" : "visited");
+        LOG_DEBUG.printf("BOT: '%s' stuck escape via portal → room %d (%s%s)", Bots[bot_index].callsign, dest_room,
+                         best_is_unvisited ? "unvisited" : "visited",
+                         (bot_zone >= 0) ? (best_own_zone ? ", own zone" : ", OTHER zone") : "");
       }
     }
 
@@ -7321,7 +7332,13 @@ bool BotNavRoomFacesDump(int room_idx, const char *filename) {
     fprintf(fp, "],\n  \"roadmap_comp\": [");
     for (int i = 0; i < rn; i++)
       fprintf(fp, "%s%d", i ? ", " : "", rcomp[i]);
-    fprintf(fp, "],\n  \"roadmap_comp_count\": %d\n}\n", rcc);
+    static int rzone[2048];
+    const int rzn = BotRoadmapDumpRoomZones(room_idx, rzone, 2048);
+    fprintf(fp, "],\n  \"roadmap_zone\": [");
+    for (int i = 0; i < rzn; i++)
+      fprintf(fp, "%s%d", i ? ", " : "", rzone[i]);
+    fprintf(fp, "],\n  \"roadmap_zone_count\": %d,\n  \"roadmap_comp_count\": %d\n}\n", BotRoadmapRoomZones(room_idx),
+            rcc);
   }
   fclose(fp);
   LOG_INFO.printf("[NavDump] room %d faces written to '%s' (%d faces, %d portals)", room_idx, path, rm.num_faces,
@@ -7455,6 +7472,13 @@ bool BotNavDump(const char *filename) {
               "      \"roadmap_lattice_cells\": %d, \"roadmap_connector_nodes\": %d, "
               "\"roadmap_local_pair_pct\": %d, \"roadmap_routable\": %s,\n",
               rcells, rconn, rlpair, rroutable ? "true" : "false");
+      // Zones (NAV41): the component of each portal's seed from the engine's complete labelling — the node
+      // sample below is capped at 2,048, so a big room's components cannot be read off it.
+      fprintf(fp, "      \"roadmap_zoned\": %s, \"roadmap_zone_count\": %d, \"portal_zones\": [",
+              BotRoadmapRoomZoned(r) ? "true" : "false", BotRoadmapRoomZones(r));
+      for (int p = 0; p < rm.num_portals; p++)
+        fprintf(fp, "%s%d", p ? "," : "", BotRoadmapPortalZone(r, p));
+      fprintf(fp, "],\n");
       fprintf(fp, "      \"roadmap_nodes\": [");
       for (int i = 0; i < rn; i++)
         fprintf(fp, "%s[%.2f,%.2f,%.2f]", i ? "," : "", rpos[i].x(), rpos[i].y(), rpos[i].z());
@@ -7462,6 +7486,12 @@ bool BotNavDump(const char *filename) {
       fprintf(fp, "      \"roadmap_comp\": [");
       for (int i = 0; i < rn; i++)
         fprintf(fp, "%s%d", i ? "," : "", rcomp[i]);
+      fprintf(fp, "],\n");
+      static int rzone[2048];
+      const int rzn = BotRoadmapDumpRoomZones(r, rzone, 2048);
+      fprintf(fp, "      \"roadmap_zone\": [");
+      for (int i = 0; i < rzn; i++)
+        fprintf(fp, "%s%d", i ? "," : "", rzone[i]);
       fprintf(fp, "],\n");
     }
 
@@ -7559,7 +7589,8 @@ bool BotNavDump(const char *filename) {
       {
         static const char *class_names[] = {"never", "door", "pane"};
         int pc = BotPortalClass(r, p);
-        fprintf(fp, "\"class\": \"%s\", ", (pc >= 0 && pc <= 2) ? class_names[pc] : "?");
+        fprintf(fp, "\"class\": \"%s\", \"zone\": %d, ", (pc >= 0 && pc <= 2) ? class_names[pc] : "?",
+                BotRoadmapPortalZone(r, p));
         vector cpnt = po.path_pnt, cnear = po.path_pnt, cfar = po.path_pnt;
         float cdepth = 0.0f;
         bool cbent = false;

@@ -9,6 +9,21 @@ Versioning: `0.8.x` = feature releases; `0.9.x` = the navigation-milestone serie
 series (bot management, feel and the chat and console commands around the public release, not started yet).
 A `-dev` suffix marks an in-test build that has not yet passed its validation gate.
 
+## [0.9.17-dev] - in test
+
+*Development series. Do not run this as a release.*
+
+- **A room that is really several sealed spaces is routed as such.** Glasshouse's central pyramid is one room to the
+  engine but five spaces to a ship (the known issue of 0.9.16 below). A bot now plans from the part of the room it is
+  actually in: a route that would enter a room by one space and leave by another is treated as a route through a wall
+  and taken only as a last resort, so a bot in a gallery is sent out by its own door and around, and a bot under the
+  pyramid is sent down through the hatch. The stuck escape prefers doors its own part of the room can reach, where it
+  used to pick the hatch or the chimney two times in three. Rooms that are one space — nearly every room on every map —
+  route exactly as before, and the route networks are unchanged on every map checked. In test: on Glasshouse (3 vs 3,
+  fifteen-minute rounds) the build before it logged 4 to 42 stuck episodes a round in that room and 23 to 69 refused
+  door approaches; one ten-minute round on this build logged 5 and none, and nine in ten of its room-to-room moves out of that room
+  succeeded where four in five had before.
+
 ## [0.9.16] - 2026-10-01
 
 *The navigation series continues: one layer decides where a bot aims, and each step landed with the map that needed it

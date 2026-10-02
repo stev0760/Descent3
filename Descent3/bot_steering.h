@@ -52,6 +52,11 @@ struct fvi_info;
 #define BOT_PORTAL_WALL_BACKED_DEPTH 5.0f
 // Engine-passable probe rejection, used only if the strict graph has no route.
 #define BOT_PORTAL_DISAGREE_PENALTY 120.0f
+// Zones (NAV41): a route that enters a room through one lattice zone and leaves through another is a route
+// through a wall (Glasshouse's pyramid: a hollow pyramid open only below and above, four door galleries on its
+// faces; Sigma Base's hub galleries). Cross-zone edges are disagree-class: absent from the strict pass, priced
+// at this in the last-resort pass, so a lattice gap in a connected room can never strand a bot.
+#define BOT_ZONE_CROSS_PENALTY 400.0f
 #define BOT_PORTAL_GLASS_PENALTY 120.0f // TF_BREAKABLE glass: crossable after a shatter (~3 hops detour tolerance)
 
 // Pseudo-bnode (interior-waypoint) synthesis — Phase 12.5b. Edges among synthesized nodes are tested at

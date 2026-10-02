@@ -27,6 +27,7 @@ def main():
     pins = []
     view = "both"
     width = 1600
+    by = "comp"  # --by zone: colour lattice nodes by in-room zone (NAV41) instead of component
     overlay = None
     region = 0
     center = None
@@ -37,6 +38,8 @@ def main():
             out = args[i + 1]; i += 2
         elif args[i] == "--overlay":
             overlay = args[i + 1]; i += 2
+        elif args[i] == "--by":
+            by = args[i + 1]; i += 2
         elif args[i] == "--region":
             region = int(args[i + 1]); i += 2
         elif args[i] == "--center":
@@ -114,7 +117,9 @@ def main():
             x, y = P(n).split(",")
             parts.append(f'<path d="M{float(x)},{float(y)-6} L{float(x)+6},{y} L{x},{float(y)+6} L{float(x)-6},{y} Z" fill="#000" fill-opacity="0.7"/>')
         for k, n in enumerate(d.get("roadmap_nodes", [])):
-            c = PALETTE[d["roadmap_comp"][k] % len(PALETTE)] if d.get("roadmap_comp") else PALETTE[0]
+            key = "roadmap_zone" if by == "zone" else "roadmap_comp"
+            lab = d[key][k] if d.get(key) and k < len(d[key]) else 0
+            c = "#999" if lab < 0 else PALETTE[lab % len(PALETTE)]  # -1 = a node next door (no zone)
             x, y = P(n).split(",")
             parts.append(f'<circle cx="{x}" cy="{y}" r="2.2" fill="{c}" fill-opacity="0.8"/>')
         for n in d.get("skel_nodes", []):
@@ -131,7 +136,7 @@ def main():
         for pn in pins:
             x, y = P(pn).split(",")
             parts.append(f'<path d="M{float(x)-8},{float(y)-8} L{float(x)+8},{float(y)+8} M{float(x)-8},{float(y)+8} L{float(x)+8},{float(y)-8}" stroke="#d62728" stroke-width="3"/>')
-        label = f'rm{d["room"]} {vw} view — x right, {"y up" if flip else "z down"}; {d["num_faces"]} faces, {d["num_portals"]} portals, lattice {len(d.get("roadmap_nodes", []))} nodes / {d.get("roadmap_comp_count", "?")} comps'
+        label = f'rm{d["room"]} {vw} view — x right, {"y up" if flip else "z down"}; {d["num_faces"]} faces, {d["num_portals"]} portals, lattice {len(d.get("roadmap_nodes", []))} nodes / {d.get("roadmap_comp_count", "?")} comps / {d.get("roadmap_zone_count", "?")} zones'
         parts.append(f'<text x="8" y="18" font-size="15" fill="#000">{label}</text>')
         parts.append("</svg>")
         panels.append((vw, "\n".join(parts), height))

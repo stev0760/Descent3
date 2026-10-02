@@ -2082,8 +2082,8 @@ bool BotEntryCenterClear(int room_idx, int portal_idx) {
 // pane — 310 committed crossings timed out at 8.0s in one run, bots firing at glass that never
 // opened. Requiring engine agreement in the same two passes as the router (strict first, DISAGREE
 // last resort) keeps the seam's own selection and the route's edge set from ever disagreeing.
-static int BotComputeRoutePasses(int from_room, int goal_room, int glass_mode, float hull_phys,
-                                 float *out_cost); // the router, below
+static int BotComputeRoutePasses(int from_room, int goal_room, int glass_mode, float hull_phys, float *out_cost,
+                                 int start_zone = -1); // the router, below
 
 // The lookahead's onward leg is a straight line, and a straight line is a path length only where a hull can fly
 // it. Sigma Base's Blue exit: rm26 opens into the cavern rm37 by five doors, and the one directly under rm35's
@@ -2168,6 +2168,9 @@ int BotEntryPortalIndex(object *obj, int wp_room, int goal_room, bool *onward_va
   // Doors-first: the strict pass admits only engine-agreeing portals, the fallback pass adds the
   // router's DISAGREE class. Intact panes are a THIRD class, tried only when no door exists — the
   // same sole-route discipline the router and the aim exit set apply.
+  // The bot's zone of its room (NAV41): a door into wp_room that lies in another zone is behind a wall from here
+  // (Glasshouse: another gallery's door, 92 refusals in one flight). Disagree-class, like the router's edge.
+  const int bot_zone = BotRoadmapZoneAt(cur, obj->pos);
   for (int pass = 0; pass < 3 && best_p < 0; pass++) {
     const bool allow_disagree = (pass >= 1);
     const bool panes_only = (pass == 2);
@@ -2176,6 +2179,11 @@ int BotEntryPortalIndex(object *obj, int wp_room, int goal_room, bool *onward_va
     for (int p = 0; p < crm.num_portals; p++) {
       if (crm.portals[p].croom != wp_room)
         continue;
+      if (bot_zone >= 0 && !allow_disagree) {
+        const int pz = BotRoadmapPortalZone(cur, p);
+        if (pz >= 0 && pz != bot_zone)
+          continue;
+      }
       // A wall/window "portal" is never a door to pick: its geocost probe can read finite (the
       // sweep runs along the plane toward a skybox room's centre), and without this gate the
       // picker committed crossings through Batteries rm80's window portals into skybox room 81.
@@ -3336,8 +3344,17 @@ int BotPortalWindDir(int room_idx, int portal_idx) {
 // runs these as a ladder. The 2026-08-30 paired A/B (NAVIGATION.md §7.0) proved the free form a hard
 // regression — picks/rnd 1.94→0.56, stucks +131% — because 127 of Batteries' 207 panes are CEILING
 // vents and free routing aimed bots at horizontal openings they cannot thread. Hence the split.
+//
+// Zones (NAV41, 2026-10-01): the node is (room, zone), not the room. A room's lattice can hold several zones —
+// spaces its own nodes do not connect — and Glasshouse's pyramid showed what routing over rooms does there: a bot
+// in a door gallery was sent to the hatch under the pyramid, 20 u away through the glass, and pressed into the
+// narrowing wedge until its stuck escape freed it (72 of 76 stucks in one flight). The zone a route holds in a
+// room is the zone of the portal it entered by; `start_zone` is the bot's own (BotRoadmapZoneAt), or -1 when
+// unknown, which constrains nothing. Leaving by a portal in another zone is a disagree-class edge: no edge in
+// the strict pass, BOT_ZONE_CROSS_PENALTY in the last-resort pass. A room with one zone — nearly every room —
+// routes exactly as before. The goal is reached in any zone; routing to a goal's own zone is a later step.
 static float BotRouteDijkstra(int from_room, int goal_room, int *first_hop_out, bool allow_disagree, float hull_phys,
-                              int glass_mode = GLASS_ROUTE_OFF) {
+                              int glass_mode = GLASS_ROUTE_OFF, int start_zone = -1) {
   if (first_hop_out)
     *first_hop_out = -1;
   if (from_room < 0 || from_room > Highest_room_index || !Rooms[from_room].used)
@@ -3347,45 +3364,62 @@ static float BotRouteDijkstra(int from_room, int goal_room, int *first_hop_out, 
   if (from_room == goal_room)
     return 0.0f;
 
-  const int max_nodes = Highest_room_index + 1;
-
   struct DNode {
     float cost;
     int first_hop; // first room stepped into from from_room along the cheapest path
     bool visited;
   };
-  DNode nodes[MAX_ROOMS];
-  for (int i = 0; i < max_nodes; i++) {
-    nodes[i].cost = 1e30f;
-    nodes[i].first_hop = -1;
-    nodes[i].visited = false;
-  }
-  nodes[from_room].cost = 0.0f;
+  // (room, zone) states, created on first touch; a zoned room holds one per zone it is entered by.
+  std::unordered_map<int, DNode> nodes;
+  auto key = [](int room, int zone) { return room * 64 + (zone < 0 ? 0 : std::min(zone, 62) + 1); };
+  auto node = [&](int room, int zone) -> DNode & {
+    auto it = nodes.find(key(room, zone));
+    if (it == nodes.end())
+      it = nodes.emplace(key(room, zone), DNode{1e30f, -1, false}).first;
+    return it->second;
+  };
+  node(from_room, start_zone).cost = 0.0f;
 
   struct PQEntry {
     float cost;
     int room;
+    int zone;
     bool operator>(const PQEntry &o) const { return cost > o.cost; }
   };
   std::priority_queue<PQEntry, std::vector<PQEntry>, std::greater<PQEntry>> pq;
-  pq.push({0.0f, from_room});
+  pq.push({0.0f, from_room, start_zone});
+  float goal_cost = 1e30f;
+  int goal_hop = -1;
 
   while (!pq.empty()) {
     PQEntry cur = pq.top();
     pq.pop();
-    int r = cur.room;
-    if (nodes[r].visited)
+    const int r = cur.room;
+    const int z = cur.zone;
+    DNode &cn = node(r, z);
+    if (cn.visited)
       continue;
-    nodes[r].visited = true;
-    if (r == goal_room)
+    cn.visited = true;
+    if (r == goal_room) {
+      goal_cost = cn.cost;
+      goal_hop = cn.first_hop;
       break;
+    }
 
     room &rm = Rooms[r];
     for (int p = 0; p < rm.num_portals; p++) {
       int nr = rm.portals[p].croom;
       if (nr < 0 || nr > Highest_room_index || !Rooms[nr].used)
         continue;
-      if (nodes[nr].visited)
+      // Leaving through a portal in another zone of this room is a route through a wall: disagree-class.
+      const int pz = BotRoadmapPortalZone(r, p);
+      const bool cross_zone = (z >= 0 && pz >= 0 && pz != z);
+      if (cross_zone && !allow_disagree)
+        continue;
+      const int cportal_z = rm.portals[p].cportal;
+      const int nz = (cportal_z >= 0 && cportal_z < BOT_MAX_PORTALS) ? BotRoadmapPortalZone(nr, cportal_z) : -1;
+      DNode &nn = node(nr, nz);
+      if (nn.visited)
         continue;
       // AN EXTERIOR SHELL IS NOT A ROOM TO ROUTE THROUGH (2026-09-19). A structure's RF_EXTERNAL shell touches every
       // one of its terrain doors, so as a graph node it made "interior" routes that leave by one door and come back in
@@ -3460,20 +3494,25 @@ static float BotRouteDijkstra(int from_room, int goal_room, int *first_hop_out, 
           edge = 1.0f;
       }
 
-      float nc = nodes[r].cost + edge;
-      if (nc < nodes[nr].cost) {
-        nodes[nr].cost = nc;
-        nodes[nr].first_hop = (r == from_room) ? nr : nodes[r].first_hop;
-        pq.push({nc, nr});
+      if (cross_zone)
+        edge += BOT_ZONE_CROSS_PENALTY;
+
+      float nc = cn.cost + edge;
+      if (nc < nn.cost) {
+        nn.cost = nc;
+        // The start state alone seeds first_hop: a route may re-enter the start room in another zone
+        // (Glasshouse: out of a gallery, around the ring, in through the hatch) and that is not a first hop.
+        nn.first_hop = (r == from_room && z == start_zone) ? nr : cn.first_hop;
+        pq.push({nc, nr, nz});
       }
     }
   }
 
-  if (!nodes[goal_room].visited)
+  if (goal_cost >= 1e30f)
     return 1e30f;
   if (first_hop_out)
-    *first_hop_out = nodes[goal_room].first_hop;
-  return nodes[goal_room].cost;
+    *first_hop_out = goal_hop;
+  return goal_cost;
 }
 
 // The router's pass ladder, shared by BotComputeRoute and the aim layers.
@@ -3488,7 +3527,8 @@ static float BotRouteDijkstra(int from_room, int goal_room, int *first_hop_out, 
 //   kinetic:   A) strict doors + vertical panes   B) + DISAGREE   C) + any pane (no door route left)
 //   unkinetic: 1) strict doors                   2) + DISAGREE  (the unchanged legacy ladder)
 // Returns the hop of the first pass that found a route, or -1; out_cost carries that pass's cost.
-static int BotComputeRoutePasses(int from_room, int goal_room, int glass_mode, float hull_phys, float *out_cost) {
+static int BotComputeRoutePasses(int from_room, int goal_room, int glass_mode, float hull_phys, float *out_cost,
+                                 int start_zone) {
   BotPerfScope perf(BPERF_ROUTE);
   int hop = -1;
   if (from_room == goal_room) {
@@ -3498,19 +3538,19 @@ static int BotComputeRoutePasses(int from_room, int goal_room, int glass_mode, f
   }
   float cost;
   if (glass_mode == GLASS_ROUTE_SHORTCUT) {
-    cost = BotRouteDijkstra(from_room, goal_room, &hop, false, hull_phys, GLASS_ROUTE_SHORTCUT);
+    cost = BotRouteDijkstra(from_room, goal_room, &hop, false, hull_phys, GLASS_ROUTE_SHORTCUT, start_zone);
     if (cost < 1e30f) {
       if (out_cost)
         *out_cost = cost;
       return hop;
     }
-    cost = BotRouteDijkstra(from_room, goal_room, &hop, true, hull_phys, GLASS_ROUTE_OFF);
+    cost = BotRouteDijkstra(from_room, goal_room, &hop, true, hull_phys, GLASS_ROUTE_OFF, start_zone);
     if (cost < 1e30f) {
       if (out_cost)
         *out_cost = cost;
       return hop;
     }
-    cost = BotRouteDijkstra(from_room, goal_room, &hop, true, hull_phys, GLASS_ROUTE_SOLE);
+    cost = BotRouteDijkstra(from_room, goal_room, &hop, true, hull_phys, GLASS_ROUTE_SOLE, start_zone);
     if (cost < 1e30f) {
       if (out_cost)
         *out_cost = cost;
@@ -3521,13 +3561,13 @@ static int BotComputeRoutePasses(int from_room, int goal_room, int glass_mode, f
     return hop;
   }
   // Unkinetic (or bot-independent): the unchanged doors-only ladder.
-  cost = BotRouteDijkstra(from_room, goal_room, &hop, false, hull_phys, GLASS_ROUTE_OFF);
+  cost = BotRouteDijkstra(from_room, goal_room, &hop, false, hull_phys, GLASS_ROUTE_OFF, start_zone);
   if (cost < 1e30f) {
     if (out_cost)
       *out_cost = cost;
     return hop;
   }
-  cost = BotRouteDijkstra(from_room, goal_room, &hop, true, hull_phys, GLASS_ROUTE_OFF);
+  cost = BotRouteDijkstra(from_room, goal_room, &hop, true, hull_phys, GLASS_ROUTE_OFF, start_zone);
   if (cost < 1e30f) {
     if (out_cost)
       *out_cost = cost;
@@ -3540,10 +3580,22 @@ static int BotComputeRoutePasses(int from_room, int goal_room, int glass_mode, f
 
 int BotComputeRoute(int from_room, int goal_room, int bot_index) {
   const int glass_mode = (bot_index >= 0) ? BotGlassBudgetForBot(bot_index) : GLASS_ROUTE_OFF;
-  const float hull = (bot_index >= 0 && Bots[bot_index].active)
-                         ? BotHullPhys(&Objects[Players[Bots[bot_index].player_slot].objnum])
-                         : BOT_HULL_PHYS;
-  return BotComputeRoutePasses(from_room, goal_room, glass_mode, hull, nullptr);
+  const object *bobj =
+      (bot_index >= 0 && Bots[bot_index].active) ? &Objects[Players[Bots[bot_index].player_slot].objnum] : nullptr;
+  const float hull = bobj ? BotHullPhys(bobj) : BOT_HULL_PHYS;
+  // The bot's own zone of from_room (NAV41). -1 unless from_room is zoned and one of its own nodes is in hull view
+  // of the bot — a bot elsewhere (the onward-validation callers) gets the zone of the nearest door pocket, or none.
+  const int start_zone = bobj ? BotRoadmapZoneAt(from_room, bobj->pos) : -1;
+  const int hop = BotComputeRoutePasses(from_room, goal_room, glass_mode, hull, nullptr, start_zone);
+  if (start_zone >= 0) {
+    // Evidence for the soak read: the hop the zone-blind router would have given, when it differs.
+    const int blind = BotComputeRoutePasses(from_room, goal_room, glass_mode, hull, nullptr, -1);
+    if (blind != hop) {
+      LOG_DEBUG.printf("BOT NAV: '%s' zone route rm%d zone %d -> rm%d: hop rm%d (zone-blind rm%d)",
+                       Bots[bot_index].callsign, from_room, start_zone, goal_room, hop, blind);
+    }
+  }
+  return hop;
 }
 
 // Full routed path cost under OUR cost model (BOA base + graded geometry + wind one-way gating +

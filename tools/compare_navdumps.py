@@ -34,6 +34,7 @@ def stats(d):
     rooms = [r for r in d['rooms'] if not r['external'] and 'skel_edges' in r]
     out = {}
     split = []; iso = 0; routable = 0; with_door = 0; cap = 0; conn = 0; cells = 0; bends = 0; multi = 0
+    zoned = []
     for r in rooms:
         c, k = comps(r, usable)
         if k >= 2 and c > 1: split.append(r['id'])
@@ -43,18 +44,20 @@ def stats(d):
             with_door += 1
             if r.get('roadmap_routable'): routable += 1
         if r.get('skel_node_count', 0) >= 32: cap += 1
+        if r.get('roadmap_zoned'): zoned.append(r['id'])
         conn += r.get('roadmap_connector_nodes', 0); cells += r.get('roadmap_lattice_cells', 0)
         bends += r.get('skel_node_count', 0) - r.get('skel_portal_count', 0)
         if r.get('roadmap_comp_count', 1) > 1: multi += 1
     return dict(rooms=len(rooms), split_rooms=len(split), split_ids=split, isolated_doors=iso, routable=routable,
-                rooms_with_door=with_door, at_cap=cap, connectors=conn, cells=cells, bends=bends, roadmap_multi=multi,
+                rooms_with_door=with_door, at_cap=cap, connectors=conn, cells=cells, bends=bends, roadmap_multi=multi, zoned_rooms=len(zoned), zoned_ids=zoned,
                 summary=d.get('summary', {}))
 sa, sb = stats(A), stats(B)
 print('%-28s %10s %10s' % ('metric', 'before', 'after'))
-for k in ('rooms', 'rooms_with_door', 'split_rooms', 'isolated_doors', 'routable', 'at_cap', 'bends', 'cells', 'connectors', 'roadmap_multi'):
+for k in ('rooms', 'rooms_with_door', 'split_rooms', 'zoned_rooms', 'isolated_doors', 'routable', 'at_cap', 'bends', 'cells', 'connectors', 'roadmap_multi'):
     print('%-28s %10s %10s' % (k, sa[k], sb[k]))
 print('summary before:', sa['summary']); print('summary after: ', sb['summary'])
 print('split rooms before:', sa['split_ids']); print('split rooms after: ', sb['split_ids'])
+print('zoned rooms before:', sa.get('zoned_ids', [])); print('zoned rooms after: ', sb.get('zoned_ids', []))
 ra = {r['id']: r for r in A['rooms']}; rb = {r['id']: r for r in B['rooms']}
 for rid in focus:
     for tag, r in (('before', ra.get(rid)), ('after', rb.get(rid))):

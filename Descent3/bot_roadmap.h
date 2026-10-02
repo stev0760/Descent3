@@ -151,6 +151,20 @@ float BotRoadmapOutdoorPathCost(int region, const vector &a, const vector &b);
 int BotRoadmapSerial();
 // Roadmap component count for a room (0 = none). Do NOT cache reach-style verdicts when > 1.
 int BotRoadmapRoomComps(int room_idx);
+// Zones (NAV41): the lattice component each portal's seam seed belongs to. A room whose seeds fall in more than
+// one component is several spaces to a ship (Glasshouse's pyramid: a hollow pyramid open only below and above,
+// and four door galleries on its faces), and a route in through one zone and out through another is a route
+// through a wall. Zone ids are dense per room; -1 = no answer (no lattice, outdoor, degenerate, starved, or no
+// seed), and no answer never constrains anything — like BotRoadmapItemReach, the model speaks only when it has one.
+int BotRoadmapPortalZone(int room_idx, int portal);
+// Zone count over the room's own nodes (0 = no lattice / outdoor).
+int BotRoadmapRoomZones(int room_idx);
+// Zone id per node, in BotRoadmapDumpRoom's node order (-1 = a node next door); returns the count written.
+int BotRoadmapDumpRoomZones(int room_idx, int *zone_out, int max_nodes);
+// The zone a position is in: the component of the nearest hull-visible node; -1 when none connects.
+int BotRoadmapZoneAt(int room_idx, const vector &pos);
+// True when the room's portal seeds span more than one component of a lattice that actually populated.
+bool BotRoadmapRoomZoned(int room_idx);
 
 // Stage 3 (outdoor): the SAME roadmap grown over a terrain REGION's airspace, so the local search threads
 // laterally around outdoor structures (the Bree-wall class) instead of beelining into them. Seeds = the
