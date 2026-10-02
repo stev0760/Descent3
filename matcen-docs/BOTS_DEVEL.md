@@ -12,10 +12,10 @@ co-op impact) now lives in `matcen-docs/BOT_DEV_REFERENCE.md`.
 
 ### 2026-10-01 (night): the first soak reads, and NAV42 — 0.9.16 scores a tenth of 0.9.15 on Glasshouse
 
-abend2, same-minute pair, fix vs `4b4e78f4`, 3v3 fifteen-minute rounds, three rounds in: the zoned router made ZERO
-decisions that differed from the zone-blind one (its two sealed rooms are the spawn rooms' wall-backed windows, which
-our geometry already refuses), captures 5 vs 5, stucks 0 vs 8, hops crossed 891/235 vs 977/281 — no regression, by
-construction and by count. Glasshouse, fix arm rounds 1-4 against the two 8-round controls run the same evening:
+abend2, same-minute pair, fix vs `4b4e78f4`, 3v3 fifteen-minute rounds, all four rounds: the zoned router made ZERO
+decisions that differed from the zone-blind one in any round (its two sealed rooms are the spawn rooms' wall-backed
+windows, which our geometry already refuses), captures 6 vs 5 (1/2/2/1 vs 2/3/0/0), stucks 0 vs 8 — no regression,
+by construction and by count. Glasshouse, fix arm rounds 1-4 against the two 8-round controls run the same evening:
 rm1 stuck episodes 13 / 11 / 8 / 5 against 42 / 17 / 20 / 4 / 65 / 9 / 11 / 36 (0.9.16) and 25 / 19 / 10 / 33 / 6 /
 38 / 3 / 49 (0.9.15); refused door approaches 0 / 0 / 1 / 1 against 17-109 a round; escapes into the hatch or chimney
 2 of 37 against 164 of 170. Captures: 10 in four rounds (1, 1, 8, 0).
