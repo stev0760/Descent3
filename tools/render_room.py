@@ -4,15 +4,54 @@
     render_room.py <roomfaces.json> [--out room.png] [--pin x,y,z ...] [--view top|side|both] [--width 1600]
                    [--overlay navdump.json --region N]   # draw the OUTDOOR region lattice + OGraph nodes on top
                    [--center x,y,z --radius R]           # crop the view to a box around a point (exterior shells are huge)
+                   [--with other_roomfaces.json ...]     # also draw a neighbour room's faces (grey) and test edges on them
 
 Two projections: top (x right, z down) and side (x right, y UP). Faces: floors (normal.y > 0.5) filled green,
 ceilings (normal.y < -0.5) filled blue, walls drawn as their outline; portal faces red; transparent (grate/glass)
 faces dashed. Roadmap lattice nodes are small dots coloured by component, skeleton nodes orange, portal crossing
-points (near = magenta, far = cyan), the room path_pnt a green cross, and each --pin an X. Needs rsvg-convert for
+points (near = magenta, far = cyan), the room path_pnt a green cross, and each --pin an X. Lattice edges (dumps
+from 2026-10-03 on) are thin grey lines; an edge whose straight segment passes through a solid face of this room or
+of any --with room is drawn thick magenta and counted in the label (a ray test: the engine sweeps a hull, so a
+flagged edge is a real one through a wall, not a near miss). Needs rsvg-convert for
 the PNG; without it the SVG is left next to the output path. The instrument for the in-room threading class:
 render the room a bot pins in BEFORE reasoning about why (BOTS_DEVEL 2026-09-15, Isengard rm36).
 """
-import json, os, subprocess, sys
+import json, math, os, subprocess, sys
+
+def _sub(a, b):
+    return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+
+
+def _dot(a, b):
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+def _cross(a, b):
+    return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+
+
+def segment_hits_face(a, b, f):
+    """True if segment a-b passes through the interior of convex face f (strictly between the endpoints)."""
+    n, v = f["n"], f["v"]
+    d = _sub(b, a)
+    den = _dot(n, d)
+    if abs(den) < 1e-9:
+        return False
+    t = _dot(n, _sub(v[0], a)) / den
+    if t <= 1e-3 or t >= 1 - 1e-3:
+        return False
+    p = [a[k] + d[k] * t for k in range(3)]
+    sign = 0
+    for k in range(len(v)):
+        c = _dot(_cross(_sub(v[(k + 1) % len(v)], v[k]), _sub(p, v[k])), n)
+        if abs(c) < 1e-6:
+            continue
+        if sign == 0:
+            sign = 1 if c > 0 else -1
+        elif (c > 0) != (sign > 0):
+            return False
+    return True
+
 
 PALETTE = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
 
@@ -32,6 +71,7 @@ def main():
     region = 0
     center = None
     radius = 0.0
+    withs = []
     i = 1
     while i < len(args):
         if args[i] == "--out":
@@ -48,6 +88,8 @@ def main():
             radius = float(args[i + 1]); i += 2
         elif args[i] == "--pin":
             pins.append(tuple(float(v) for v in args[i + 1].split(","))); i += 2
+        elif args[i] == "--with":
+            withs.append(args[i + 1]); i += 2
         elif args[i] == "--view":
             view = args[i + 1]; i += 2
         elif args[i] == "--width":
@@ -56,6 +98,23 @@ def main():
             i += 1
     d = json.load(open(path))
     out = out or os.path.splitext(path)[0] + ".png"
+    other_faces = [f for w in withs for f in json.load(open(w))["faces"]]
+    nodes = d.get("roadmap_nodes", [])
+    edges = [e for e in d.get("roadmap_edges", []) if max(e) < len(nodes)]
+    solid = [f for f in d["faces"] + other_faces if f["portal"] < 0]
+    through = set()
+    for k, (ia, ib) in enumerate(edges):
+        a, b = nodes[ia], nodes[ib]
+        lo = [min(a[c], b[c]) for c in range(3)]
+        hi = [max(a[c], b[c]) for c in range(3)]
+        for f in solid:
+            if any(max(v[c] for v in f["v"]) < lo[c] or min(v[c] for v in f["v"]) > hi[c] for c in range(3)):
+                continue
+            if segment_hits_face(a, b, f):
+                through.add(k)
+                break
+    if edges:
+        print(f"rm{d['room']}: {len(edges)} lattice edges, {len(through)} through a solid face")
     mn, mx = d["bbox_min"], d["bbox_max"]
     if center and radius > 0:
         mn = [c - radius for c in center]
@@ -109,6 +168,18 @@ def main():
                 parts.append(f'<polygon points="{pts}" fill="#1f77b410" stroke="#1f77b4" stroke-width="0.5"/>')
             else:
                 parts.append(f'<polygon points="{pts}" fill="none" stroke="#333" stroke-width="0.8"{dash}/>')
+        for f in other_faces:  # --with rooms: outline only, grey, under this room's own faces
+            if abs(f["n"][1]) > 0.5 and vw == "top":
+                continue
+            pts = " ".join(P(v) for v in f["v"])
+            col = "#d62728" if f["portal"] >= 0 else "#888"
+            parts.append(f'<polygon points="{pts}" fill="none" stroke="{col}" stroke-width="0.7" stroke-opacity="0.8"/>')
+        for k, (ia, ib) in enumerate(edges):
+            (x1, y1), (x2, y2) = P(nodes[ia]).split(","), P(nodes[ib]).split(",")
+            if k in through:
+                parts.append(f'<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" stroke="#e377c2" stroke-width="3"/>')
+            else:
+                parts.append(f'<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" stroke="#bbb" stroke-width="0.6"/>')
         for k, n in enumerate(onodes):  # outdoor region lattice (overlay): hollow dots by component
             c = PALETTE[ocomp[k] % len(PALETTE)] if ocomp else "#555"
             x, y = P(n).split(",")
@@ -137,6 +208,8 @@ def main():
             x, y = P(pn).split(",")
             parts.append(f'<path d="M{float(x)-8},{float(y)-8} L{float(x)+8},{float(y)+8} M{float(x)-8},{float(y)+8} L{float(x)+8},{float(y)-8}" stroke="#d62728" stroke-width="3"/>')
         label = f'rm{d["room"]} {vw} view — x right, {"y up" if flip else "z down"}; {d["num_faces"]} faces, {d["num_portals"]} portals, lattice {len(d.get("roadmap_nodes", []))} nodes / {d.get("roadmap_comp_count", "?")} comps / {d.get("roadmap_zone_count", "?")} zones'
+        if "roadmap_edges" in d:
+            label += f'; {len(edges)} edges, {len(through)} through a solid face'
         parts.append(f'<text x="8" y="18" font-size="15" fill="#000">{label}</text>')
         parts.append("</svg>")
         panels.append((vw, "\n".join(parts), height))

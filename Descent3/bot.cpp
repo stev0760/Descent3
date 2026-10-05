@@ -7337,6 +7337,12 @@ bool BotNavRoomFacesDump(int room_idx, const char *filename) {
     fprintf(fp, "],\n  \"roadmap_zone\": [");
     for (int i = 0; i < rzn; i++)
       fprintf(fp, "%s%d", i ? ", " : "", rzone[i]);
+    // The lattice edges as node-index pairs: a render can only say an edge crosses a wall if it has the edges.
+    static int ea[16384], eb[16384];
+    const int ne = BotRoadmapDumpRoomEdges(room_idx, ea, eb, 16384, rn);
+    fprintf(fp, "],\n  \"roadmap_edges\": [");
+    for (int i = 0; i < ne; i++)
+      fprintf(fp, "%s[%d, %d]", i ? ", " : "", ea[i], eb[i]);
     fprintf(fp, "],\n  \"roadmap_zone_count\": %d,\n  \"roadmap_comp_count\": %d\n}\n", BotRoadmapRoomZones(room_idx),
             rcc);
   }

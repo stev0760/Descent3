@@ -15,7 +15,10 @@ kills by command line. Wait for the JSON to PARSE before moving it — the write
 Usage:
   navdump_geometry.py --cfg geom2-batteries-loop.cfg --out /tmp/batteries.json [--binary Descent3-diag]
         [--console 2093] [--useport 2094] [--gamespyport 20143] [--tempdir /tmp/d3tmp2] [--bots]
-        [--server-dir DIR] [--password test]
+        [--server-dir DIR] [--password test] [--cmd '$nav roomfaces 36 rm36.json' ...] [--cmd-settle 8]
+--cmd-settle is the wait after each extra command; the dump has built every room's lattice by then, so a per-room
+sweep of `$nav roomfaces` over a whole map runs at 0.5 (eight seconds a command is hours on a 300-room map). The driver
+then waits for a `$servercaps` sentinel to answer before it stops the server, so queued commands all run.
 Server dir precedence: --server-dir > $SOAK_SERVER_DIR > tools/soak.local.json (see soakctl.py).
 """
 import argparse
@@ -43,6 +46,7 @@ def main():
     ap.add_argument("--password", default="test")
     ap.add_argument("--cmd", action="append", default=[],
                     help="extra console command(s) to send after the dump, e.g. '$nav roomfaces 36 rm36.json'")
+    ap.add_argument("--cmd-settle", type=float, default=8.0, help="seconds to wait after each --cmd (default 8)")
     ap.add_argument("--useport", type=int, help="game UDP port (-useport) for a second instance")
     ap.add_argument("--gamespyport", type=int, help="gamespy UDP port (-gamespyport) for a second instance")
     ap.add_argument("--tempdir", help="-tempdir for a second instance")
@@ -91,7 +95,17 @@ def main():
         con.send("$nav dump %s" % short, settle=20.0)
         for extra in a.cmd:
             print("sending", extra, flush=True)
-            con.send(extra, settle=8.0)
+            con.send(extra, settle=a.cmd_settle)
+        if a.cmd:
+            # The console runs commands in order, so the answer to a sentinel sent last means every command before
+            # it has run. Without this a short --cmd-settle let the driver kill the server with room dumps still
+            # queued (DownTown: 59 of 143 written).
+            seen = con.send("$servercaps", settle=1.0)
+            deadline = time.time() + 900
+            while "SERVERCAPS" not in seen and time.time() < deadline:
+                seen += con._drain()
+            if "SERVERCAPS" not in seen:
+                print("extra commands still running after 900 s; the dump may be missing rooms", flush=True)
         cands = [os.path.join(USER_DATA, short)] + ([os.path.join(a.tempdir, short)] if a.tempdir else [])
         src = None
         for _ in range(48):

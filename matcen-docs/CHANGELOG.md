@@ -25,6 +25,19 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
   fifteen-minute rounds) the build before it logged 4 to 42 stuck episodes a round in that room and 23 to 69 refused
   door approaches; one ten-minute round on this build logged 5 and none, and nine in ten of its room-to-room moves out of that room
   succeeded where four in five had before.
+- **Route networks no longer reach through the walls of the room next door.** A room's route network continues a
+  short way through its doors into the next room, which lets a route run through a door instead of stopping at it.
+  Those borrowed points were tested against the wrong room's walls, so on Glasshouse the network of the hall around
+  the pyramid ran straight through the thin walls inside the pyramid, and bots were handed waypoints on the far side
+  of them. Each test now starts in the room its point is in. On Glasshouse the network's links through walls fell from
+  140 to 5. Across thirteen maps such links fell from 12,753 to 4,421, nine in ten of what is left on one
+  city map whose network has points inside no room at all (a separate issue); the door-to-door network is unchanged
+  on every map. In test.
+- **A room's route network is laid out for the room itself.** Each room's network is tried on three slightly shifted
+  grids and one is kept. The choice used to go to the grid with the most points, counting points that had spilled
+  through a doorway into the next room, so a neighbouring room could decide a room's layout: on Tower of Isengard a
+  change next door shifted one hall's whole network, bots began missing its doors, and carriers were sent home the
+  long way. The grid with the most points inside the room now wins. In test.
 
 ## [0.9.16] - 2026-10-01
 

@@ -10,6 +10,196 @@ including the CTF, Hyper and Hoard write-ups) is preserved verbatim in
 `matcen-docs/archive/BOTS_DEVEL-phases-0_to_0.9.12.md`. The engine-files audit (single-player, Robo-Anarchy and
 co-op impact) now lives in `matcen-docs/BOT_DEV_REFERENCE.md`.
 
+### 2026-10-05: the overnight pairs; door coverage leaves the phase score (NAV61)
+
+Ten same-minute pairs, control `d081952e` against rule A (door pairs joined, own cells, all cells), lab
+`d04n-20261004`, guard PASS on all twenty arms (Canyons' two with the pin `CanyonsCTF`). Captures, then stuck episodes
+with the hard ones in brackets, control first:
+
+| Map | Rounds | Captures | Stucks (hard) |
+|---|---|---|---|
+| abend2 | 6 | 10 vs 7 | 1 (1) vs 0 (0) |
+| Glasshouse | 8 | 44 vs 50 | 68 (6) vs 41 (3), all in rm1 |
+| Sigma Base | 4 x 45 min | 6 vs 6 | 35 (4) vs 230 (10) |
+| Doors of Moria | 6 x 20 min | 26 vs 24 | 64 (3) vs 60 (6) |
+| Bree | 6 | 32 vs 33 | 51 (21) vs 38 (10) |
+| Canyons | 8 | 19 vs 25 | 6 (1) vs 18 (3) |
+| Chaos set | 6 | 6 vs 9 | 6 vs 12 |
+| bedlam 4-team | 8 | 111 vs 111 | 0 vs 2 |
+| HAVOC | 8 | 36 vs 35 | 62 vs 40 |
+| Facing Worlds | 6 | 5 vs 4 | 0 vs 0 |
+
+Nine maps read flat or better, the watch items among them: abend2's pits score (7 captures, no stuck episode), Moria
+rm7 has no stuck episode on either arm, Glasshouse rm1 falls from 68 episodes to 41. Apparition, where the door key
+moved four rooms, reads 45 vs 30 on two rounds inside a bedlam total of 111 on both arms.
+
+Sigma Base is the failure, and it is the door key's. rm22, the Blue antechamber, logs 211 stuck escalations on A
+(3 hard) and none on control, in every round (23, 79, 63, 46), 185 of them a Red carrier on its way out with the
+flag. rm22's three phases read doors joined 100 / 60 / 30 and own cells 43 / 52 / 46. Base and NAV60 keep phase 1,
+and the repair passes finish it: 63 cells plus 34 connectors, 102 nodes, every door pair joined. The door key kept
+phase 0: 44 cells, no connectors, 49 nodes, every door pair joined. The join read before the repairs said phase 0 was
+the better lattice, and after them the two join the same doors and phase 0 holds half the nodes. Rule B has the same
+key and the same rm22. Captures hide it (6 vs 6, Red 2 vs 2).
+
+So door coverage leaves the score until it can be read after the repair passes; that is the open part of NAV61, and
+the pre-repair key is ledger entry L34. The rule as built: the most cells inside the room, then the most cells (lab
+`Descent3-ownall`). Bot-free on the thirteen maps against NAV60 alone it changes no portal verdict and no door-pair
+coverage but one: 24 rooms of 8 cells or more keep another phase, 21 of them a phase neither base nor NAV60 keeps,
+and every one of those 21 flew last night on the same grid in the A arms. Isengard differs from NAV60 alone in rm33
+only. What the own-cell key costs is unchanged from A: Facing Worlds rm2 and rm3 and DownTown rm33 fall under the
+cell floor, and Doors of Moria rm7 is two components and zoned (its pair read 26 vs 24 with no stuck episode in the
+room). What the door key had regained is given back: Batteries rm16 stays at 33% as under NAV60 alone, and
+Apparition's four rooms and Sigma Base rm4 and rm26 stay as on base.
+
+Two combinations have not flown: Sigma Base (rm22 back on phase 1, the two big rooms rm19 and rm37 on NAV60's phase)
+and Isengard (rm33 on phase 0 with rm34 and rm37 as under NAV60 alone); bedlam has not flown on NAV60 without the
+door key. Pairs started 11:47, control vs the rule: Sigma Base 4 x 45 min (`soak-20261005T114657` / `T114703`),
+Isengard 8 x 20 min (`T114709` / `T114715`), bedlam 4-team 8 rounds (`T114721` / `T114727`).
+
+The read (guard PASS on all six; captures / pickups / stucks with the hard ones in brackets, control first). Sigma
+Base: 4 / 35 / 13 (4) vs 13 / 63 / 32 (5); rm22 logs 0 and 1 stuck escalations, where last night's arm logged 211;
+Red scores 11 of the 13. The stucks that remain on the rule are spread thin (rm19 6, rm20 5, rm37 4 in three hours).
+Isengard: 27 / 77 / 74 (18) vs 28 / 79 / 67 (11); rm33 is not promoted to HARD on either arm, and the sewer's
+episodes fall from 39 to 20. bedlam: 97 vs 81 captures, and the whole gap is Plutonium (35 vs 22 on two rounds;
+Apparition 31 vs 30, QuadSomniac 14 vs 13, Polaris 17 vs 16). Plutonium is the map's swing, not the rule: the rule
+keeps the same phase as last night's rule A in every one of the 18 rooms the two logs built there, so the two nights
+are two samples of one pair of networks, and last night's read 30 vs 41 the other way (65 vs 63 over the four
+rounds). The door key had moved four rooms on Apparition, six on QuadSomniac and five on Polaris; without it those
+three levels read level with control.
+
+NAV60 and the phase rule pass their gate together: every map of the census set has flown on the rule's grids
+against a same-minute control, and no map reads worse. Left open and registered: door coverage read after the repair
+passes (NAV61), the sewer hatch (NAV62), the promotion cliff (NAV63), and Doors of Moria rm7's split.
+
+### 2026-10-04: NAV60's soaks, and which grid phase a room keeps (NAV61)
+
+NAV60's same-minute pairs against `d081952e` (10-03; captures, then stuck episodes with the hard ones in brackets, fix
+first): Glasshouse 48 vs 50, 33 (3) vs 45 (3); abend2 5 vs 3, 0 vs 2; Batteries 34 vs 35, 94 (19) vs 120 (15); Bree
+29 vs 27, 22 (6) vs 46 (7); the Chaos Rim set 9 vs 17 on a small sample, stucks flat apart from one bot's loop in a
+room the fix does not change. Isengard regressed in both of its runs: 17 vs 25 and 16 vs 29 captures, stucks 57 (12)
+vs 45 (8) and 130 (37) vs 62 (8) (`soak-20261003T151427` vs `T151421`, `T173221` vs `T173215`). NAV60 stays
+uncommitted.
+
+The chain on Isengard. `GrowFromSeeds` grows every room's lattice under three grid phases and kept the fullest, and
+cells that spilled through a door into the next room counted toward the total. On base rm33 kept phase 0 on a count
+that included some 240 cells in rm29, the through-wall ones among them. Grown honestly the three phases hold 1,218 /
+1,198 / 1,233 cells, phase 2 wins by 15, and every node in rm33 moves. Bots then fail the room's doors often enough
+for three via suspensions (`BOT_HARD_ROOM_SUSPENDS`): both fix runs log `room 33 promoted to HARD`, neither control
+does. A hard room adds 800 to a route (`BOT_HARD_ROOM_ROUTE_PENALTY`), so the router sends home-bound carriers
+through the sewer (rm36) instead, and the hatch above its upper hall (the 09-15 trap) pins them. Control never routes
+that way. Three defects in a row: the phase rule (NAV61), the hatch (NAV62), the promotion cliff (NAV63).
+
+The phase rule was measured before it was chosen. The build logs, per room, what each phase produced: door pairs
+joined through the lattice (`RoadmapLocalPairCoverage`, read straight after growth), cells whose accepting sweep ended
+in the room itself, and all cells. Bot-free on the thirteen census maps (696 rooms with a lattice, 283 of them with 8
+cells or more):
+
+- Isengard rm33: own cells 1,093 / 1,092 / 1,067, all cells 1,218 / 1,198 / 1,233, doors 100 / 100 / 100. Counting only
+  the room's own cells keeps phase 0, the base grid, by 26 cells over phase 2.
+- Batteries rm16 (lost routability under NAV60): own cells 136 / 137 / 150, doors joined 100 / 100 / 33. An own-cell
+  count still keeps the phase that misses the rm4 and rm18 doors, so the door join has to lead.
+- In 19 rooms the fullest phase joins fewer door pairs than another phase on offer: Apparition rm5 / rm19 (16% kept,
+  100% on offer) and rm6 / rm20 (50 vs 100), Bree rm56 / rm59 (0 vs 100), Sigma Base rm4 / rm26 (20 vs 66) and rm22
+  (60 vs 100), Isengard rm37 (0 vs 100) and rm34 (27 vs 58), Chaos Rim rm33 / rm35, DownTown rm3, Doors of Moria rm8 /
+  rm18, Batteries rm16.
+
+Two rules were built on NAV60, each a lexicographic score with ties keeping the earliest phase. A (the working tree,
+lab `Descent3-doorown`): doors joined, then own cells, then all cells. B (lab `Descent3-doorall`): doors joined, then
+all cells. Bot-free against NAV60 alone, both gain the same seven routable rooms (Batteries rm16 back at 100%;
+Apparition rm5, rm6, rm19, rm20 and Sigma Base rm4, rm26 at 100%, none of them routable on base) and change no portal
+verdict. B changes nothing else. A also loses four: Facing Worlds rm2 and rm3 (5 u slabs between two doors, one own
+cell each, whose nine cells were all spill), DownTown rm33 (a one-door room, own cells 1 / 0 / 0) and Doors of Moria
+rm7 (own cells 10 / 9 / 9: the repair passes join its two doors on the fuller phase and not on this one, so the room
+is two components, zoned, and NAV41 reads it as sealed). Rooms of 8 cells or more whose phase differs from base's:
+NAV60 alone 34, B 45, A 61. A's own-cell key returns three rooms to the base grid where spill had decided (Isengard
+rm33, abend2 rm23, DownTown rm26) and re-rolls about twenty that base and NAV60 agree on, abend2's flag pits (rm37,
+rm38) and Glasshouse rm16 among them. The choice is made before the repair passes, so the join it reads is the
+growth's own: Moria rm7 reads 0 / 0 / 0 there and differs only after repair.
+
+The dumps cannot say which rule clears Isengard: A restores rm33's grid and B does not. Seven arms started at 18:39,
+the same minute. Isengard, 8 x 20 min: control (`soak-20261004T183905`), NAV60 alone (`T183911`), A (`T183917`), B
+(`T183923`). Batteries, 6 x 15 min: control (`T183929`), A (`T183935`), B (`T183941`). The prediction, written before
+the read: if rm33's grid is the cause, A reads like control, and B and NAV60 alone promote rm33 and lose captures.
+
+The read (guard PASS on all seven). Isengard, captures / pickups / stucks (hard): control 24 / 60 / 52 (10), NAV60
+alone 31 / 80 / 71 (16), A 26 / 87 / 44 (11), B 31 / 82 / 77 (12). `room 33 promoted to HARD`: never on control or A;
+on B in round 7 (123 min in), on NAV60 alone in round 8 (146 min). Over the two days the grid decides it: four runs
+on the phase-2 grid and four promotions (36, 51, 123 and 146 min in), four runs on the phase-0 grid (three controls
+and A) and none. The promotion is where the captures go. On the phase-2 grid the arms scored 62 captures in the 16
+rounds before it (3.9 a round) and 33 in the 14 rounds from it on (2.4); control scored 78 in 22 rounds (3.5) and A
+26 in 8 (3.3). Yesterday's regressions were promotions that landed in rounds 3 and 2. Today's landed in the last two
+rounds and cost nothing visible, which is why NAV60 alone reads 31 against 24: it does not regress Isengard until
+rm33 is marked. Not shown by this run: the route the carriers lose to. The sewer's stucks do not step up after the
+mark (B's rm36 escalations by round: 7, 5, 0, 4, 1, 10, 4, 6, the mark in round 7), so NAV62 rests on the 10-03 logs.
+
+Batteries: control 29 / 60 / 70 (6), A 36 / 76 / 60 (7), B 20 / 58 / 74 (19). A and B differ on this map in three
+rooms (rm5, rm35, rm306), and in those B keeps the phases that base and NAV60 keep (34 vs 35 on 10-03), so the
+16-capture gap between them is the map's swing at six rounds, not a rule. B's extra hard stucks are spread over all
+eight bots, with 25 hard powerup-chase pins against control's 15. rm80 is the stuck room in all three (48 to 58
+episodes).
+
+A is the candidate: it is the rule that keeps rm33 off the mark, and nothing on Batteries reads against it. Its
+re-rolled rooms are unproven, so the overnight set (lab `d04n-20261004`, same-minute pairs, control vs A, started
+21:25) runs abend2 (6 rounds), Glasshouse (8), Sigma Base (4 x 45 min), Doors of Moria (6 x 20 min), Bree (6), Canyons
+(8), the Chaos set (6), the bedlam 4-team set (8), HAVOC (8) and Facing Worlds (6). Watch items: Moria rm7 (split),
+abend2's pits, Glasshouse rm16. Read: the 2026-10-05 entry.
+
+### 2026-10-03: a lattice grown through a door, swept from the wrong room (NAV60)
+
+The operator flew 0.9.17-dev (`d081952e`) on Glasshouse. It plays far better than 0.9.16: bots recover, and the
+pyramid trap is rare. Two things showed. On a server-side flight (`testing-2026-10-03T16-17-33.log`) Blue's carrier Zed
+looped `rm3 <-> rm7` at the last door before its home room rm13: `hop commit REFUSED rm7 -> rm13: door approach not in
+hull view`, then a chain built in rm7 for rm13 that ends `chain complete rm7 -> rm3`, then the carrier waypoint sends
+it back. Every Glasshouse soak has that loop (refusals / chains ending back in rm3: 0.9.15 210 / 421, 0.9.16 138 / 366,
+the NAV41 arm 178 / 642), and the captures by team are Blue 12 / 0 / 6 against Red 11 / 2 / 12, so NAV42 is mostly
+Blue's trip home through rm7. The chain's hop positions are not logged, so its cause is open on NAV42. Then, flying
+client-side with Ctrl+F7, the operator saw the via legs pass through the thin walls of the pyramid's alcoves.
+
+The renders came first, from a bot-free dump of every room. `$nav roomfaces` now writes the lattice edges;
+`tools/render_room.py --with <room>` draws the room next door and marks any edge through a solid face; and
+`tools/wall_edges.py` counts those edges over a whole map. On Glasshouse 140 lattice edges ran through walls, and every
+one through a wall of a room OTHER than the lattice's own. The ring hall (rm2) held 38 of its 114 nodes inside the
+pyramid, with 33 edges through the alcove walls. rm16, the corridor where 0.9.16's carriers stall, had grown through rm4
+and the hall into the pyramid: 67 edges through walls.
+
+The mechanism: the void-cell guard keeps cells grown through a door on purpose (L24: Bree's captures depend on them),
+but `RoadmapLOSr` swept every leg from the room being built. A sweep meets only the faces of the room it starts in and
+of the rooms it crosses into through a portal, so a leg from a cell inside the pyramid never met the pyramid's walls.
+The back-face probe (`8b6ee205`) covers only the start room's walls. The fix: a node's room is the room the sweep that
+placed it ended in, as the engine tracked it through portals (fvi's `hit_room`); the build records it by the node's
+exact position (`RoadmapRoom::foreign_room`), the repair passes record their connectors by a ray from the node before
+them, and `RoadmapStartRoom` hands that room to `RoadmapLOSr` and `RoadmapTrace`. A node in a building shell's box or
+in outdoor air keeps the old start room. The first build took the room from the void guard's point-in-room search
+instead, and the census caught it: that search is a union of permissive tests, nested rooms both claim a point, and
+the first one listed won. Facing Worlds rm9 then held 15 cells in no room and 176 edges through its own walls (the
+map went from 330 edges through walls to 682). Only rooms a sweep actually entered are candidates for its end room.
+
+Bot-free on Glasshouse: edges through walls 140 -> 5, lattice cells 2,179 -> 1,996, and the network is otherwise
+identical (portal verdicts, split and zoned rooms, routability). Of the five left, three come from a cell the guard
+admitted from inside the wall between the pyramid and the hall, and two from multibend connectors whose placing sweep
+started at a point that was not yet a node.
+
+All thirteen census maps, bot-free, base `d081952e` plus the edge dump against the fix (edges through walls):
+Glasshouse 140 -> 5, Batteries 1,231 -> 1, Sigma Base 1,103 -> 20, Isengard 1,357 -> 0, Chaos Rim 2,147 -> 4, Moria
+467 -> 2, Bree 260 -> 0, Bedlam 29 -> 0, abend2 25 -> 0, KegD3 3 -> 2, Canyons 2 -> 1, Facing Worlds 330 -> 308, DownTown
+5,659 -> 4,078. Portal classes, split rooms, main components and powerup verdicts are unchanged on every map (the only
+powerup differences are spawned items at other positions). Lattice cells fall wherever foreign cells had leaked
+through walls: Chaos Rim 22,780 -> 5,158, DownTown 72,463 -> 43,614, Isengard 18,633 -> 13,771, Bree 1,130 -> 699,
+Moria 4,963 -> 3,862. Five rooms change routability. DownTown rm110 (33% -> 100% door-pair coverage; also no longer
+zoned) and Canyons rm6 gain it. abend2 rm40 (9 nodes) loses one cell and with it the cell floor. Two lose it because
+honest growth exposes a gap the fake edges had hidden. Batteries rm16 joined its doors at 100%, but through 207 edges
+inside rm17's furniture; without them another of the three grid phases holds more cells, and that phase misses the
+rm4 and rm18 doors (33%; the phase is chosen by cell count, not by door coverage). Isengard rm43, the tower, never grew
+up its spire: base joined the top door to the chamber by edges through rm34's walls outside it. Honestly built it is
+two components, so NAV41 now reads it as sealed and the strict pass no longer routes `rm34 -> rm43 -> rm37` (rm37 has a
+second door; the last-resort pass keeps the spire). DownTown's residue is void cells: most of rm84's lattice lies in no
+room's shell, admitted by the void guard (not this class).
+
+Also fixed: the registry held NAV41 and NAV42 twice (the 10-01 consolidation's rows, and the Glasshouse rows added that
+evening). The older two are now NAV58 (corner-bridge back faces, X) and NAV59 (door on-ramp, E). The dump driver
+`tools/navdump_geometry.py` gained `--cmd-settle` and waits for a console sentinel before stopping the server, so a
+per-room dump of a 300-room map takes minutes, not hours, and loses no rooms.
+
 ### 2026-10-01 (night): the first soak reads, and NAV42 — 0.9.16 scores a tenth of 0.9.15 on Glasshouse
 
 abend2, same-minute pair, fix vs `4b4e78f4`, 3v3 fifteen-minute rounds, all four rounds: the zoned router made ZERO

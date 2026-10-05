@@ -52,6 +52,8 @@
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
+#include <cstdint>
+#include <cstring>
 #include <deque>
 #include <functional>
 #include <memory>
@@ -155,6 +157,29 @@ struct UnionNode {
   std::vector<UnionEdge> adj;
 };
 
+// A point's exact coordinates as a hash key (bit patterns, no rounding): the lattice hands its node positions around
+// by copy, so a leg that starts at a node passes that node's own floats.
+struct PosKey {
+  uint32_t x, y, z;
+  bool operator==(const PosKey &o) const { return x == o.x && y == o.y && z == o.z; }
+};
+struct PosKeyHash {
+  size_t operator()(const PosKey &k) const {
+    uint64_t h = k.x * 0x9E3779B97F4A7C15ull;
+    h ^= (h >> 29) + k.y * 0xBF58476D1CE4E5B9ull;
+    h ^= (h >> 31) + k.z * 0x94D049BB133111EBull;
+    return (size_t)(h ^ (h >> 32));
+  }
+};
+PosKey KeyOf(const vector &p) {
+  PosKey k;
+  const float f[3] = {p.x(), p.y(), p.z()};
+  memcpy(&k.x, &f[0], 4);
+  memcpy(&k.y, &f[1], 4);
+  memcpy(&k.z, &f[2], 4);
+  return k;
+}
+
 // Per-room/region roadmap. Lazily built on first need, cached, freed/rebuilt on BOA_mine_checksum change.
 struct RoadmapRoom {
   std::vector<vector> node;          // node world positions (seeds first, then accepted lattice cells)
@@ -164,13 +189,13 @@ struct RoadmapRoom {
   std::vector<int> portal_seed;      // portal index -> node index of its seam seed (indoor; size = num_portals)
   std::vector<int> seed_portal;      // node index -> portal index for the seeds (indoor; size = n_seed)
   int comp_count = 0;
-  int orig_comp_count = 0; // components BEFORE the bridges merged them (>1 = non-convex / multi-level)
+  int orig_comp_count = 0;    // components BEFORE the bridges merged them (>1 = non-convex / multi-level)
   std::vector<int> zone;      // zone id per node (NAV41): what a seed reaches without crossing a portal face; -1 = none
   std::vector<int> zone_comp; // zone id -> the lattice component it lies in (a zone never spans two)
   int zone_count = 0;
-  bool routable = false;   // route-ownership gate: this room HAS a usable local-street network
-                           // (cell floor + portal pairs that reach through the interior). Replaces the
-                           // old `complex`, which measured how badly the sampler did — see the header.
+  bool routable = false; // route-ownership gate: this room HAS a usable local-street network
+                         // (cell floor + portal pairs that reach through the interior). Replaces the
+                         // old `complex`, which measured how badly the sampler did — see the header.
   // COVERAGE vs REPAIR — keep these apart. Conflating them is what let a room with 3 real sample
   // cells report "97 lattice" and earn routing authority it could not honour (see NAVIGATION.md).
   int lattice_cells = 0;        // TRUE accepted lattice cells: the volumetric sampler's own output, and the
@@ -183,6 +208,13 @@ struct RoadmapRoom {
   bool degenerate = false;      // no usable interior roadmap -> caller falls back to the skeleton
   bool outdoor = false;         // false: indoor room (probe from probe_room); true: terrain region
   int probe_room = -1;          // indoor fvi start room for the segment probe (unused when outdoor)
+  // The interior room each FOREIGN node lies in: a cell the growth reached through a door into the room next door
+  // (kept on purpose, see CellInRoom), or a repair connector placed there. A sweep only meets the faces of the room it
+  // starts in and the rooms it crosses into through portals, so a leg from such a node must start in ITS room
+  // (RoadmapStartRoom). Started in probe_room it met none of that room's walls: Glasshouse's ring hall (rm2) grew
+  // through the pyramid's gallery doors and on through every thin wall inside the pyramid (rm1) — 140 lattice edges
+  // through other rooms' faces on that map, and the via legs bots were handed ran through the alcove walls.
+  std::unordered_map<PosKey, int, PosKeyHash> foreign_room;
 
   // $nav heal (0.9.7, the stale-glass fix): roadmaps build while panes/grates are intact — their
   // doorway seeds orphan and their legs read blocked — and nothing ever told the model when the
@@ -530,10 +562,22 @@ bool HasEdge(const std::vector<int> &al, int v) {
 // via it was handed was the node beside it ("via-point reached" every second, 93 refused commits). The steering
 // sweeps (crossing sampler, pseudo-bnodes, the door search) were already FQ_BACKFACE; the roadmap was the one probe
 // that was not, and every layer must agree on what a wall is.
+// Indoors a leg starts in the room its start point lies in: probe_room, or for a foreign node the room recorded when
+// the node was placed (RoadmapRoom::foreign_room). Back-face honesty (above) covers the walls of the room a sweep
+// starts in; this makes it start in the right one.
+int RoadmapStartRoom(const RoadmapRoom *rr, const vector &a) {
+  if (!rr->foreign_room.empty()) {
+    auto it = rr->foreign_room.find(KeyOf(a));
+    if (it != rr->foreign_room.end())
+      return it->second;
+  }
+  return rr->probe_room;
+}
+
 bool RoadmapLOSr(const RoadmapRoom *rr, const vector &a, const vector &b, float radius) {
   SliceYield();
   return rr->outdoor ? BotSegmentClearOutdoor(a, b, radius)
-                     : BotSegmentClear(rr->probe_room, a, b, radius, nullptr, FQ_BACKFACE);
+                     : BotSegmentClear(RoadmapStartRoom(rr, a), a, b, radius, nullptr, FQ_BACKFACE);
 }
 bool RoadmapLOS(const RoadmapRoom *rr, const vector &a, const vector &b) {
   return RoadmapLOSr(rr, a, b, BOT_ROADMAP_CLEARANCE);
@@ -543,7 +587,27 @@ bool RoadmapLOS(const RoadmapRoom *rr, const vector &a, const vector &b) {
 // The outdoor roadmap never enters that pass.
 bool RoadmapTrace(const RoadmapRoom *rr, const vector &a, const vector &b, fvi_info *hit_out) {
   SliceYield();
-  return !rr->outdoor && BotSegmentClear(rr->probe_room, a, b, BOT_ROADMAP_CLEARANCE, hit_out, FQ_BACKFACE);
+  return !rr->outdoor && BotSegmentClear(RoadmapStartRoom(rr, a), a, b, BOT_ROADMAP_CLEARANCE, hit_out, FQ_BACKFACE);
+}
+
+// Record that node `p` lies in `room` when that is an interior room other than probe_room. `room` is where the sweep
+// that placed the node ended, as the engine tracked it (fvi's hit_room): only the rooms the sweep actually started in
+// or entered through a portal are candidates. A point-in-room search over every room whose box holds the point let
+// nested rooms claim each other's cells (Facing Worlds rm9: 15 cells in no room, 176 edges through its own walls).
+void NoteNodeRoom(RoadmapRoom *rr, int room, const vector &p) {
+  if (rr->outdoor || room < 0 || room > Highest_room_index || room == rr->probe_room || !Rooms[room].used ||
+      (Rooms[room].flags & RF_EXTERNAL))
+    return;
+  rr->foreign_room[KeyOf(p)] = room;
+}
+
+// The room a clear leg from `a` to `b` ends in (a ray: it only tracks rooms), or -1. For the repair passes, whose
+// connectors are placed by sweeps that do not report a room.
+int RoadmapLegEndRoom(const RoadmapRoom *rr, const vector &a, const vector &b) {
+  fvi_info hit{};
+  if (rr->outdoor || !BotSegmentClear(RoadmapStartRoom(rr, a), a, b, 0.0f, &hit, FQ_BACKFACE))
+    return -1;
+  return hit.hit_room;
 }
 
 // The point a bot is told to fly for roadmap node `node`: a portal seed hands out the portal's
@@ -792,6 +856,7 @@ bool RoadmapCommitMultiBend(RoadmapRoom *rr, std::vector<int> &uf, int a_idx, in
   for (size_t i = 1; i + 1 < dense.size(); i++) {
     int w = (int)rr->node.size();
     rr->node.push_back(dense[i]);
+    NoteNodeRoom(rr, RoadmapLegEndRoom(rr, dense[i - 1], dense[i]), dense[i]);
     rr->adj.emplace_back();
     rr->tweight.push_back(0.0f);
     uf.push_back(w);
@@ -1032,6 +1097,7 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
   int od_reject_blocked = 0, od_reject_interior = 0, od_reject_underground = 0, od_ok_terrain = 0, od_ok_shell = 0,
       od_ok_none = 0;
   int in_reject_void = 0; // indoor cells inside no room at all (rock / sky), 2026-09-28
+  int own_cells = 0;      // indoor lattice cells whose accepting sweep ended in the room being built
   // Two-way outdoors (2026-09-15, $nav probe): the exterior shell's faces are FRONT faces from outside and
   // nothing at all from inside (Isengard rm2 face 38 blocks (2007,294,2192) -> (2037,294,2222) at 4 u; the reverse
   // leg is CLEAR at every radius, with or without FQ_BACKFACE), so an edge probed from the node INSIDE the tower
@@ -1122,7 +1188,9 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     in_reject_void++;
     return false;
   };
-  auto CellInRoom = [&](const vector &from, const vector &cell) {
+  // `*end_room_out` = the room the accepting sweep ended in (indoor), for NoteNodeRoom.
+  auto CellInRoom = [&](const vector &from, const vector &cell, int *end_room_out) {
+    *end_room_out = -1;
     if (rr->outdoor) {
       fvi_info hit{};
       if (!OutdoorLeg2(from, cell, &hit)) {
@@ -1168,7 +1236,8 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     // (no edges through one-sided walls) keeps those grids from bridging rooms through solid. A door-transition
     // zone (cells within 48 u of the door, admitted as leaves) was tried and restores too little (Bree +24 cells).
     // The principled replacement — one route across the boundary — is Phase 3.
-    if (!RoadmapLOS(rr, from, cell))
+    fvi_info hit{};
+    if (!RoadmapTrace(rr, from, cell, &hit))
       return false;
     // 2026-09-28 (Sigma Base rm1 / rm28, the exit-room loop): the sweep alone also admits cells in ROCK. A cell hugging
     // a wall (pitch 20 on a 90 u chamber puts the grid 5 u from the shell) sweeps on with the hull already through the
@@ -1178,7 +1247,10 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     // away the foreign cells grown through doors and cost Bree its captures): a cell stays if it lies inside THIS
     // room, a room adjacent through one of its portals, or the room beyond an adjacent door room. Only cells inside
     // no room at all — the void grid — are rejected.
-    return InThisOrNeighbourRoom(cell);
+    if (!InThisOrNeighbourRoom(cell))
+      return false;
+    *end_room_out = hit.hit_room;
+    return true;
   };
   auto ResetToSeeds = [&]() {
     rr->node.resize(n_seed);
@@ -1188,7 +1260,9 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     for (int i = 0; i < n_seed; i++)
       uf[i] = i;
     rr->lattice_cells = 0;
+    own_cells = 0;
     rr->connector_nodes = 0;
+    rr->foreign_room.clear();
     cell_node.clear();
     // Seed<->seed edges (the portal graph the skeleton already had) — off-lattice, so done explicitly.
     for (int i = 0; i < n_seed; i++)
@@ -1239,10 +1313,12 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
               continue;
             }
             // Un-accepted candidate: accept it iff a hull-clear swept edge reaches it from u AND it lies in this room.
-            if (!CellInRoom(pu, vp))
+            int end_room = -1;
+            if (!CellInRoom(pu, vp, &end_room))
               continue;
             int w = (int)rr->node.size();
             rr->node.push_back(vp);
+            NoteNodeRoom(rr, end_room, vp);
             rr->adj.emplace_back();
             rr->tweight.push_back(0.0f);
             uf.push_back(w);
@@ -1251,6 +1327,8 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
             rr->adj[w].push_back(u);
             UFUnion(uf, u, w);
             rr->lattice_cells++; // the ONE true lattice writer
+            if (end_room == rr->probe_room)
+              own_cells++;
             q.push(w);
           }
     }
@@ -1263,7 +1341,6 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     for (int i = 0; i < n_seed; i++)
       q.push(i);
     GrowBfs(q);
-    return rr->lattice_cells;
   };
   auto LogOutdoorAdmission = [&]() {
     if (!rr->outdoor && in_reject_void > 0)
@@ -1282,25 +1359,32 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
           org.x(), mx.x(), org.y(), mx.y(), org.z(), mx.z(), sp, Nx, Ny, Nz, BotOutdoorCeilingCap());
   };
 
-  // Grow under three phases and keep the fullest lattice (ties keep the earliest). Cell count is the
-  // honest proxy for how much of the room's free volume the grid managed to sample at this pitch; a
-  // room's coverage must not hinge on where its door seed happens to sit relative to a 20u grid (the
-  // same room read 123 or 6 cells depending on a 10u seed move). The extra growth costs a few
-  // thousand sweeps per room, once, on first use.
-  int best_attempt = 0, best_cells = GrowAttempt(0);
+  // Grow under three phases and keep the one with the most cells inside THIS room, then the fullest (ties keep the
+  // earliest). The count is the honest proxy for how much of the room's free volume the grid managed to sample at
+  // this pitch; a room's coverage must not hinge on where its door seed happens to sit relative to a 20u grid (the
+  // same room read 123 or 6 cells depending on a 10u seed move). Only the room's own cells lead. Growth continues
+  // through a door into the room beyond (kept on purpose, see CellInRoom), and while that spill counted, the room
+  // next door chose this room's grid: Isengard rm33's phase was decided by some 240 cells in rm29, a change to what
+  // may grow there moved every node in rm33, and on the new grid the room was marked HARD. Door coverage does not
+  // lead either. Read here, before the repair passes, it kept a thin grid that already joined Sigma Base rm22's
+  // doors (44 cells) over the one the repairs complete (63 cells and 34 connectors), and carriers milled in the room.
+  GrowAttempt(0);
   if (phase_on_seeds) {
+    using PhaseScore = std::pair<int, int>; // {cells in this room, all cells}, compared in that order
+    auto Score = [&]() { return PhaseScore(own_cells, rr->lattice_cells); };
+    PhaseScore score[3];
+    int best_attempt = 0;
+    score[0] = Score();
     for (int attempt = 1; attempt < 3; attempt++) {
-      int cells = GrowAttempt(attempt);
-      if (cells > best_cells) {
-        best_cells = cells;
+      GrowAttempt(attempt);
+      score[attempt] = Score();
+      if (score[attempt] > score[best_attempt])
         best_attempt = attempt;
-      }
     }
     if (best_attempt != 2) // rebuild the winner (attempt 2 is the one standing)
       GrowAttempt(best_attempt);
-    if (best_attempt != 0) {
-      LOG_DEBUG.printf("BOT: roadmap %s %d: phase %d kept, %d cells", kind, id, best_attempt, best_cells);
-    }
+    LOG_DEBUG.printf("BOT: roadmap %s %d: phase %d kept, own cells %d/%d/%d, all %d/%d/%d", kind, id, best_attempt,
+                     score[0].first, score[1].first, score[2].first, score[0].second, score[1].second, score[2].second);
   }
   LogOutdoorAdmission();
 
@@ -1413,6 +1497,7 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
       for (size_t i = 1; i < pulled.size(); i++) {
         int w = (int)rr->node.size();
         rr->node.push_back(pulled[i]);
+        NoteNodeRoom(rr, RoadmapLegEndRoom(rr, pulled[i - 1], pulled[i]), pulled[i]);
         rr->adj.emplace_back();
         rr->tweight.push_back(0.0f);
         uf.push_back(w);
@@ -1606,6 +1691,7 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
 
         int w = (int)rr->node.size();
         rr->node.push_back(M);
+        NoteNodeRoom(rr, RoadmapLegEndRoom(rr, A, M), M);
         rr->adj.emplace_back();
         rr->tweight.push_back(0.0f);
         uf.push_back(w);
@@ -1698,6 +1784,7 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
                 continue;
               int w = (int)rr->node.size();
               rr->node.push_back(cand);
+              NoteNodeRoom(rr, RoadmapLegEndRoom(rr, prev_pos, cand), cand);
               rr->adj.emplace_back();
               rr->tweight.push_back(0.0f);
               uf.push_back(w);

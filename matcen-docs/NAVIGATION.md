@@ -429,13 +429,33 @@ build-time toggle flips.
    outdoors; coarsens past `BOT_ROADMAP_MAX_LATTICE` 20000). A cell is accepted only when a hull-swept edge reaches it
    from an accepted node. Never cull a point because a probe from it is clear: a ray from inside solid false-clears.
    `GrowFromSeeds` (bot_roadmap.cpp:914) grows under **three phases** (seed centroid, centre-anchored, half-pitch shift)
-   and keeps the fullest. Phasing at the box minimum had put a one-pitch-tall room's only sample planes on its floor
-   and ceiling (abend2's ring rooms held 3 and 9 cells; 223 each after the fix).
+   and keeps the one with the most cells inside the room, then the fullest; ties keep the earliest (NAV61,
+   0.9.17-dev). The first rule was the fullest lattice alone. It counted cells spilled through a door into the next
+   room, so a neighbour chose a room's grid: on Isengard a change to what may grow in rm29 moved every node in rm33,
+   and on the new grid the room was marked HARD in four runs of four. Door coverage is not in the score: it can only
+   be read before the repair passes there, and that reading is wrong where the repairs finish the job (ledger L34).
+   Phasing at the box minimum had put a one-pitch-tall room's only sample planes on its floor and ceiling (abend2's
+   ring rooms held 3 and 9 cells; 223 each after the fix).
 3. **Back-face honest build probes.** `RoadmapLOSr` (bot_roadmap.cpp:530) sweeps indoors with `FQ_BACKFACE`
    (`8b6ee205`): D3 walls are one-sided, and a probe starting behind a partition grew edges through it (Bree rm59).
    Outdoor edges with an endpoint in an interior room's box must be clear both ways, and the outdoor sweeps are
    back-face honest too (`c1d34f0a`). The runtime primitive
    `BotSegmentClear` keeps its old behaviour for runtime callers (L23).
+   **Each leg starts in the room its start point lies in** (NAV60, 0.9.17-dev). A sweep meets only the faces of the
+   room it starts in and of the rooms it crosses into through portals; back-face honesty covers the walls of the
+   start room only. The void-cell guard (item 4) keeps cells grown through a door into the next room, and every leg
+   from such a cell used to start in the room being built, so it met none of the next room's walls: Glasshouse's ring
+   hall grew through the pyramid's gallery doors and on through every thin wall inside it (140 lattice edges through
+   other rooms' faces on that map, none through their own room's), and the via legs bots were handed ran through
+   the alcove walls. A node's room is the room the sweep that placed it ended in, as the engine tracked it through
+   portals (fvi's `hit_room`, `NoteNodeRoom`); the build records it by the node's exact position
+   (`RoadmapRoom::foreign_room`), and `RoadmapStartRoom` hands it to `RoadmapLOSr` / `RoadmapTrace` for any leg
+   starting there. The repair passes record their connectors by a ray from the node before them
+   (`RoadmapLegEndRoom`). Not the void guard's point-in-room search: it is a union of permissive tests, so nested rooms
+   both claim a point, and the first one listed won (Facing Worlds rm9: 15 cells in no room, 176 edges through its own
+   walls). A node in a building shell's box or in outdoor air keeps the old start room. Not covered: a repair pass's
+   own sweeps between points that are not nodes yet (they start in the room being built), and cells the guard admits
+   in no room at all (inside a wall; DownTown rm84, where most of the lattice lies in no room's shell).
 4. **The void-cell guard** (`22fb70b0`..`dd9876e6`). A cell is kept only if it lies inside this room, a room next door
    through a portal, or the room beyond an adjacent door room (`InThisOrNeighbourRoom`, bot_roadmap.cpp:1106). "Inside"
    is the union of the engine's `fvi_QuickRoomCheck` and six axis rays (`fvi_RoomCheckDir`): the first ray whose
@@ -760,8 +780,12 @@ Phase 1 (the entrance-miss class) shipped in 0.9.15; Phase 4's first cut (one ou
 | NAV40 | abend2 per-team asymmetry vs the symmetry acceptance test | X: operator, "not asymmetrical from my testing" (Q21c) |
 | NAV41 | Glasshouse rm1 is five sealed spaces (a hollow pyramid open only below and above; four door galleries on its faces) routed as one volume: `BotRouteDijkstra` was any-portal-in, any-portal-out; the stuck escape ranked portals its space cannot reach; 72 of 76 stucks in the galleries' narrowing wedges | BUILT 2026-10-01 on 0.9.17-dev (§4.7). abend2 pair: zero differing decisions, play flat. Glasshouse: rm1 stucks halved, refusals and wall-escapes gone. Open: zone-blind carrier waypoints; the hall-corner hop refusal (rm2->rm3) without an in-room leg; route to the goal's own zone; same-room cross-zone goals |
 | NAV42 | 0.9.16 scores a tenth of 0.9.15 on Glasshouse (2 vs 23 captures in 8 rounds): carriers routed through the pyramid or stalled at rm16->rm14; portal verdicts identical, the void guard cut rm9/rm10/rm16/rm12/rm5 by 63-93% (rock); cause of the route change unknown | open; bot-free bisect across the 0.9.16-series binaries next |
-| NAV41 | Corner-bridge sweep honouring back faces | X: code read (`RoadmapLOS` indoor sweeps pass `FQ_BACKFACE` since `8b6ee205`; §5.2 item 7) |
-| NAV42 | The door on-ramp admits points outside the room (two rm80 nodes in the hallway) | E (verify); the void-cell guard does not test on-ramp nodes |
+| NAV60 | Lattice legs from a cell grown through a door were swept from the room being built, so they met none of the next room's walls (Glasshouse: 140 edges through other rooms' faces) | BUILT 2026-10-03, §4 item 3; gate passed with NAV61 on 2026-10-05 |
+| NAV61 | The grid phase a room keeps was the fullest of three: spill into the next room counted, door coverage did not (Isengard rm33, Batteries rm16) | BUILT: own cells, then all cells (§4 item 2); gate passed 2026-10-05. Open: a score read after the repair passes, so door coverage can lead (ledger L34) |
+| NAV62 | Isengard: a carrier routed home through the sewer (rm36) is pinned at the hatch above its upper hall | open, latent; confirm the route, then render |
+| NAV63 | Hard-room promotion is a cliff: three via suspensions add 800 to every route through the room until the level changes | open |
+| NAV58 | Corner-bridge sweep honouring back faces | X: code read (`RoadmapLOS` indoor sweeps pass `FQ_BACKFACE` since `8b6ee205`; §5.2 item 7) |
+| NAV59 | The door on-ramp admits points outside the room (two rm80 nodes in the hallway) | E (verify); the void-cell guard does not test on-ramp nodes |
 
 **Decided 2026-10-01 (Q21, Q22).** NAV19, NAV20, NAV21, NAV31, NAV33 and NAV37 are verified in one soak or flight.
 NAV23, NAV27, NAV34, NAV35, NAV38 and NAV39 close as "not reproduced, reopen on evidence". NAV22 is accepted as a
@@ -886,6 +910,11 @@ One line each: what, commit, lesson, do-not-retry scope. Full narratives are in 
     connectivity. Reopen only with a connectivity gate (NAV28).
 33. **L33 Skeleton rework #1, fixed-fan collision-guided bridge** (`1d52aa7f`, 7 h abend2 soak): neutral, kept; did
     not close ring room 0. The hull-scaled fan (`6c17d9bd`) did.
+34. **L34 Door coverage, read before the repair passes, leading the grid-phase choice** (0.9.17-dev, 2026-10-04/05;
+    commit: none, lab binaries only): the phase joining the most door pairs straight after growth won, ahead of any
+    cell count. Bot-free it regained seven routable rooms. In play it kept a 49-node grid for Sigma Base rm22 over the
+    102-node one the repairs complete (both join every door afterwards), and a Red carrier milled there: 211 stuck
+    escalations in four 45-minute rounds against none. Retry only with the score read after the repair passes.
 
 ---
 

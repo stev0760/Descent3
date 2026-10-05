@@ -14,13 +14,19 @@ neighbouring rooms through the open doors. Rendering costs three minutes. Guessi
 
 1. **`$nav roomfaces <room> [file]`** (dedicated console, any build from `92998ff9`): writes one room's faces
    (vertices, normal, portal number, texture, solid/transparent physics class), its portals with crossing
-   points (near/far), skeleton nodes and the roadmap lattice (positions + component ids) to JSON. The file lands
-   in the server's user-data dir (`~/.local/share/Outrage Entertainment/Descent 3/`), not the server dir.
+   points (near/far), skeleton nodes and the roadmap lattice (positions, component and zone ids, and from
+   2026-10-03 the edges as node-index pairs) to JSON. The file lands in the server's user-data dir
+   (`~/.local/share/Outrage Entertainment/Descent 3/`), not the server dir.
 2. **`tools/render_room.py <roomfaces.json> [--out x.png] [--pin x,y,z ...] [--view top|side|both] [--width 1600]`**:
    SVG → PNG via `rsvg-convert` (installed). Two projections: **top** (x right, z down) and **side** (x right,
    y up). Floors filled green, ceilings blue, walls as outlines, portal faces red, transparent faces (grates,
    glass) dashed; lattice nodes = small dots coloured by component; skeleton nodes = orange; portal crossing
-   points near = magenta, far = cyan; the room path_pnt = green cross; each `--pin` = red X.
+   points near = magenta, far = cyan; the room path_pnt = green cross; each `--pin` = red X. Lattice edges are thin
+   grey lines; an edge through a solid face is thick magenta and counted in the title. `--with <other.json>` (repeat)
+   draws a neighbour room's faces in grey and tests the edges against them too: a room's lattice continues through
+   its doors, and the wall such an edge crosses can belong to the room next door. `--by zone` colours by zone.
+   **`tools/wall_edges.py <prefix>`** runs that test over every room of a map at once (dump all rooms in one run with
+   `navdump_geometry.py --cmd-settle 0.5`; its docstring has the loop).
 3. **Look at the PNGs with the Read tool** (it renders images). Both views: the top view stacks floors, so a
    multi-level room needs the side view to place a pin in y.
 
@@ -46,8 +52,10 @@ python3 tools/render_room.py "~/.local/share/Outrage Entertainment/Descent 3/<ma
 
 - **Where the pin sits relative to walls and portals.** A pin against a face is a wall press; read the face's
   normal in the JSON (`n`) — a one-sided partition has no face on its back side.
-- **Lattice dots outside the room's own outline** — before `7f8d0c1d` the lattice grew through portals into
-  neighbouring rooms; on a current build any dot outside the drawn geometry is a bug worth a report.
+- **Lattice dots outside the room's own outline** are cells grown through a door into the next room, kept on
+  purpose (the void-cell guard, NAVIGATION §4; L24: removing them cost Bree its captures). A dot in no room at all
+  (rock, inside a wall) is a bug. Render with `--with` the room next door: an edge from those cells through ITS walls
+  was the NAV60 defect (Glasshouse 2026-10-03: legs from a foreign cell were swept from the wrong room).
 - **Component colours**: more than one colour = a split lattice; the Theta* route cannot cross colours.
 - **Portal crossing points (magenta/cyan)** in solid or on the wrong side of the door = a crossing-sampler
   defect (`$nav sweep` from the pin to that portal gives the face that blocks each leg).
