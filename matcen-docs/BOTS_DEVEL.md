@@ -10,6 +10,58 @@ including the CTF, Hyper and Hoard write-ups) is preserved verbatim in
 `matcen-docs/archive/BOTS_DEVEL-phases-0_to_0.9.12.md`. The engine-files audit (single-player, Robo-Anarchy and
 co-op impact) now lives in `matcen-docs/BOT_DEV_REFERENCE.md`.
 
+### 2026-10-07: the close-out docs pass
+
+Docs only. The day's code work left the README, the plan's status prose and a few reference docs describing as
+unbuilt what had been built that day, and recorded loose ends for this pass.
+
+**README.md.** The Matcen section now leads with what the project is: bots in every multiplayer mode, on any map,
+from a route network built out of the level geometry, nothing scripted per map, open source; CTF is one mode in the
+list. "Seats (planned)" said bots could fill every seat, which `BotAdd` has refused since POP2; it became one line for
+the reserve and the yield and one for `BotTargetPlayers` and `$botpopulation`. The F10 order menu (UX4) and the
+listen-host `$` path (UX2) get a line each, the status line says these are 0.9.17-dev (0.9.16 is still the stable
+release), the population and client-UX roadmap bullets went, and the 1.0 line (REL15) came in. The claim that
+free-for-all bots "taunt back" went too: at `4d2eb318` a free-for-all verb other than `ping`/`hunt` is dropped
+(bot_chat.cpp:560, :632) and the taunt reply is CMD10, still open. No map is named (DOC14).
+
+**PLAN.md.** §2 and §3 had population and seats, the client UX set, the Entropy park (MODE6) and the packaging as work
+that did not exist. Each Stage B and C item now says what is built and what its exit still owes: a real human join
+(POP3), a cockpit flight (UX1), the operator's Entropy flight (MODE3), the first workflow run (REL2). The §2 table
+splits into built and not-done rows. Registry: REL7, REL9 and the Pyrodeck half of REL8 built on Pyrodeck's unmerged
+`release/0.4.20` branch (checked in that checkout: app 0.4.20, spec v2.8, its CHANGELOG and DEVLOG); REL16 and REL17
+done locally (`git tag` and `git branch` confirm the five tags and the five deletions) with the push commands owed to
+the operator; REL3 notes that the packages are RelWithDebInfo and so probably log the bot telemetry. Two item texts
+changed, on instruction, beyond the status cells: REL13's "#6 (MODE15)" is MODE14, and COL28's dead-code checklist
+names `BotInitAll()` (declared at bot.h:776, defined at bot.cpp:8445, no caller; a multi_ui.cpp comment still says it
+runs after level load). New rows: WAT15, `analyze_bot_log.py` counts no `Assertion failed` lines (no "assert" in the
+script at all); WAT16, `soak_battery.sh` clears up with `pkill -9 -x Descent3`, which takes any `Descent3` process,
+the operator's client included.
+
+**PYRODECK_CONTRACT.md.** Two output facts from the Pyrodeck 0.4.20 work, both read in the code: `BotAdd`'s team
+out-of-range warning formats `name`, the base name it was given, not the callsign, so it carries no `[BOT]`; and
+`$botstat` prints the status line whenever the slot has an object, which a dead bot waiting to respawn still has, so
+`shields=` reads zero or below. `$botpopulation` and the `population` flag were already specified. §8 and §9 now say
+the Pyrodeck branch fixes the Tier 1 drift and that no Pyrodeck control drives `$botpopulation` yet (its spec v2.8:
+"Not built yet; the flag is parsed and kept").
+
+**QUICKSTART.md, samples, ANNOUNCEMENT.md.** `bedlam.mn3` is named as a retail mission. Its header (the lab copy)
+reads `KEYWORDS GOALS4,GOALPERTEAM` and four `MINE` lines, `Apparition.d3l`, `Plutonium.d3l`, `QuadSomniac.d3l` and
+`Polaris.d3l`. Monsterball joins the quickstart's team-mode list: orders gate on `Num_teams > 1` (bot_chat.cpp:105,
+:421) and Monsterball runs two teams. The quickstart gains the F10 line; the announcement leads with every mode and
+any map and names the one prior art, SuperSheep's DescentForum bots, closed source and scripted per map.
+
+**Index and CLAUDE.md.** `matcen-docs/README.md` no longer calls BOT_MANAGEMENT's population section a design or the
+overlay an any-client tool, and lists the release battery checklist (`tools/manifests/battery/README.md`) once;
+every file in `matcen-docs/` is listed and every link resolves. CLAUDE.md's CI paragraph says `release.yml` is wired.
+
+**doc_audit.** 24 findings before, 21 after. The three fixed were `ctf.cpp` citations (two in this log, one in PLAN's
+MODE14 row) qualified to `netgames/ctf/ctf.cpp`: the audit looks for a bare file name only directly inside its source
+directories, so a file under `netgames/<module>/` reads as missing. The same false positive remains in
+BOT_DEV_REFERENCE, ENTROPY_MODE, MONSTERBALL_MODE and PLAN's CMD table, owned elsewhere today. PLAN's COL13 row names
+three helper functions that it says are proposed, not existing; the toggle and symbol findings in CHANGELOG,
+NAVIGATION and CHAT_COMMANDS are history or another owner's. Left for the CHANGELOG's owner: the version legend still
+calls 0.10.x "bot management, feel ... not started yet".
+
 ### 2026-10-07: the skeleton-chain harness compiles again
 
 `tools/test_bot_skel_chain.py` (ctest `D3.BotSkelChain`) extracts six production functions from `bot_steering.cpp`
@@ -34,11 +86,11 @@ a second time. The constant is deleted.
 whether a dying carrier stood in a flag's home goal by reading `dObjects[pnum]`, a player number used as an object
 index, so the home-goal return almost never fired and an unrelated object in a goal room could send a flag home from
 anywhere. It now reads `dObjects[dPlayers[pnum].objnum]`, guarded `>= 0` for the disconnect path, the idiom the pickup
-handler already uses (ctf.cpp:1080); the patch text in UPSTREAM_PATCHES #6 is the tree's text. Two things a reader of
-CTF logs needs: that return path calls `DoFlagReturnedHome`, which plays a sound and prints no HUD line, so the
-analyzer sees no return for it; and the function runs on every machine, so a client on the stock module keeps the
-flag marked away from base until the next flag event or the 120 s timeout corrects its copy (the server's flag object
-is home either way). REL20 rides along: UPSTREAM_PATCHES' assessment list now names `fvi_RoomCheckDir` as fork-only.
+handler already uses (netgames/ctf/ctf.cpp:1080); the patch text in UPSTREAM_PATCHES #6 is the tree's text. Two things a
+reader of CTF logs needs: that return path calls `DoFlagReturnedHome`, which plays a sound and prints no HUD line, so
+the analyzer sees no return for it; and the function runs on every machine, so a client on the stock module keeps the
+flag marked away from base until the next flag event or the 120 s timeout corrects its copy (the server's flag object is
+home either way). REL20 rides along: UPSTREAM_PATCHES' assessment list now names `fvi_RoomCheckDir` as fork-only.
 
 **COOP5, the congestion penalty counts robots in co-op.** `BotSelectTarget` adds 80 per other bot already on a
 candidate (`BOT_TARGET_CONGESTION_PENALTY`, the literal it replaces), but the count only looked at `OBJ_PLAYER`
@@ -1495,27 +1547,27 @@ and none of them is a door point.
 **Follow-up batch, 2026-09-15 (five commits, one soak chain each; the operator's direction: "bots should be trying
 harder to pick up a dropped flag ... then the role fixes ... continue working through these problems").**
 *Reframe first (`7e2747a2`, `tools/flag_conversion.py --timeline`):* the CTF module's 120 s timeout runs only while
-NOBODY holds the flag (ctf.cpp:591); a carried flag never times out. The timeline had labelled every grab+120 s with no
-capture a "silent return" — on Bree that hid the real class: of the Phase 1 arm's 19 Blue episodes, **11 were carriers
-still ALIVE at level end, pinned** (5 returned by Red, 2 captures, 1 true drop-timeout). Ten of the eleven pins were at
-one door, the tavern partition rm59 → rm58 (29 refused crossings); `$nav sweep` from the pin: every leg to the door
-blocked within 5-7 u by rm59 face 757, reverse leg clear. Mechanism (`BotSetRoutedGoal`): the lattice route re-issued
-the same hop every ~2 s while routing AROUND the partition, the hop-commit counted the re-issues as presses, and after
-four it committed a push straight through the wall — NOT-CROSSED 8 s later, reset, repeat for the rest of the round.
-*Fix (`09c40a72`):* a commit is a push THROUGH a door the bot can reach — the crossing's approach point must be in hull
-view (`BotSegmentClear`) or the commit is REFUSED, the press count restarts and the route that was working keeps the
-wheel (log: `hop commit REFUSED rm%d -> rm%d`). *Dropped-flag recovery (`74103737`, `BotGetObjectiveItem`):* the
-objective branch now chases the team's own dropped flag (unless the runner is pressing) or the nearest dropped enemy
-flag when its own is home; within `BOT_FLAG_TOUCH_DIST` (150 u) and hull-clear it is an engine `AIG_GET_TO_OBJ`, else a
-routed goal. Read on `recover-20260915/` (Bree): 3 of 3 outdoor drops recovered in ~25 s — it works, and it is the
-1-in-19 class, not the bottleneck. *Runner fix (`b84eff2d`):* the FREELANCE and ATTACK branches return no objective
-while the team's own flag is CARRIED unless the bot's lean is RUNNER — the whole team no longer camps its own flag room
-after the first enemy grab. The recover arm still showed Reaper issuing explore errands inside carried windows with no
-line to say why, so `db7d9c46` logs what the attack branch answers (lean, indoors/outdoors, enemy flag room, cost).
-*Entry-commit gate (`37eef03b`):* the ladder's outdoor branch no longer lets `BotViaPointTick` overwrite a fresh
-terrain-door ENTRY commit (the Isengard rm20/rm21 "occluded → detour → press" trace); read on the Isengard leg of the
-running chain. Chain `<lab>/refusal-20260915/` on `7e2747a2` (Bree 12 → Isengard 6) is the read for the batch; the
-first three refusals fired within a minute of the level loading (rm61 → rm25, rm69 → rm15, rm60 → rm17).
+NOBODY holds the flag (netgames/ctf/ctf.cpp:591); a carried flag never times out. The timeline had labelled every
+grab+120 s with no capture a "silent return" — on Bree that hid the real class: of the Phase 1 arm's 19 Blue episodes,
+**11 were carriers still ALIVE at level end, pinned** (5 returned by Red, 2 captures, 1 true drop-timeout). Ten of the
+eleven pins were at one door, the tavern partition rm59 → rm58 (29 refused crossings); `$nav sweep` from the pin: every
+leg to the door blocked within 5-7 u by rm59 face 757, reverse leg clear. Mechanism (`BotSetRoutedGoal`): the lattice
+route re-issued the same hop every ~2 s while routing AROUND the partition, the hop-commit counted the re-issues as
+presses, and after four it committed a push straight through the wall — NOT-CROSSED 8 s later, reset, repeat for the
+rest of the round. *Fix (`09c40a72`):* a commit is a push THROUGH a door the bot can reach — the crossing's approach
+point must be in hull view (`BotSegmentClear`) or the commit is REFUSED, the press count restarts and the route that was
+working keeps the wheel (log: `hop commit REFUSED rm%d -> rm%d`). *Dropped-flag recovery (`74103737`,
+`BotGetObjectiveItem`):* the objective branch now chases the team's own dropped flag (unless the runner is pressing) or
+the nearest dropped enemy flag when its own is home; within `BOT_FLAG_TOUCH_DIST` (150 u) and hull-clear it is an engine
+`AIG_GET_TO_OBJ`, else a routed goal. Read on `recover-20260915/` (Bree): 3 of 3 outdoor drops recovered in ~25 s — it
+works, and it is the 1-in-19 class, not the bottleneck. *Runner fix (`b84eff2d`):* the FREELANCE and ATTACK branches
+return no objective while the team's own flag is CARRIED unless the bot's lean is RUNNER — the whole team no longer
+camps its own flag room after the first enemy grab. The recover arm still showed Reaper issuing explore errands inside
+carried windows with no line to say why, so `db7d9c46` logs what the attack branch answers (lean, indoors/outdoors,
+enemy flag room, cost). *Entry-commit gate (`37eef03b`):* the ladder's outdoor branch no longer lets `BotViaPointTick`
+overwrite a fresh terrain-door ENTRY commit (the Isengard rm20/rm21 "occluded → detour → press" trace); read on the
+Isengard leg of the running chain. Chain `<lab>/refusal-20260915/` on `7e2747a2` (Bree 12 → Isengard 6) is the read for
+the batch; the first three refusals fired within a minute of the level loading (rm61 → rm25, rm69 → rm15, rm60 → rm17).
 
 **Early read of the refusal arm (rounds 1-2) and the finding it surfaced — powerup chase churn (`fe1dc474`).**
 Round 2: Gregg grabbed at 711 s and CAPTURED at 827 s — carrier nav rm59 → rm58 → rm72 straight through the tavern
