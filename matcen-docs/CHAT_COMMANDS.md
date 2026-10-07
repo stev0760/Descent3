@@ -92,8 +92,10 @@ Everything the bots say goes through one queue in `bot_chat.cpp`, emptied once p
   ate the answer to a second order given within 2 s, is gone.
 - **Reports are paced, not dropped (CMD14).** Arrival, BLOCKED, a hunted player down and the co-op announcements are
   reports: each bot volunteers at most one per 2 s (`BOT_CHAT_REPORT_SPACING`, bot_chat.h), and a report inside that
-  window waits its turn. Before, reports shared the reply cooldown, so an arrival within 2 s of the acknowledgement was
-  lost.
+  window waits its turn. When a line goes out, any line with the same text for the same recipient that is still
+  waiting out its pacing goes with it, so one event is one line (`3 bots: Phantom left the game. Going freelance.`)
+  whatever each bot said last. Before, reports shared the reply cooldown, so an arrival within 2 s of the
+  acknowledgement was lost.
 - **A report is news once per order.** An order report that repeats the bot's last report to the same player since
   its current order is not sent again: an escort that reaches its slot each time the player stops says
   `Right behind you.` once, and says it again only after another report (`Can't reach you!`) or a new order. The
@@ -388,7 +390,9 @@ compatibility pass (REL12) re-checks this before release.
 
 - **The polish floor in a cockpit.** The parser, the mode rule, the help text, the grouped lines and the roll call are
   covered by `bot_chat_tests`; the server ran clean through bot spawn, a level change and `$bothelp` in Anarchy and
-  CTF. What only a client in a match shows: the replies arriving after the order line (UX7), the grouped line and the
+  CTF; and a scratch build that let the console speak as the server's own slot drove every verb, the taunts, the hunt
+  report, the lab and ball verbs and the level-change notice through the real code (BOTS_DEVEL 2026-10-07). What only
+  a client in a match shows: the replies arriving after the order line (UX7), the grouped line and the
   roll call on the HUD, the taunt in Anarchy, the tip arriving once, the level-change notice, and a hunter's report
   when its target dies.
 - **`!hunt` in Anarchy** is moot: free-for-all modes take no orders. The same team-0 lookup governs co-op `!hunt`,

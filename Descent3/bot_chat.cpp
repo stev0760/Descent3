@@ -66,6 +66,8 @@
 //   one answer per bot.
 // - Pacing of reports. A bot volunteers at most one report per BOT_CHAT_REPORT_SPACING; a report inside
 //   that window waits its turn and is never dropped. Answers are not paced: one order, one answer.
+//   When a line goes out, the same text for the same recipient still waiting out its pacing goes with
+//   it: several hunters seeing their target die report it in one line, whatever each said last.
 // Times are timer_GetTime(), which runs on across a level change (Gametime restarts).
 
 struct BotChatLine {
@@ -123,7 +125,7 @@ static void BotChatFlush(float now) {
   bool done[BOT_CHAT_QUEUE_LEN] = {};
   for (int i = 0; i < Chat_queue_len; i++) {
     const BotChatLine &line = Chat_queue[i];
-    if (line.due > now || line.bot < 0)
+    if (line.bot < 0)
       continue;
     if (!Bots[line.bot].active || strcmp(Bots[line.bot].callsign, line.speaker) != 0) {
       done[i] = true;
@@ -137,9 +139,10 @@ static void BotChatFlush(float now) {
     const BotChatLine &first = Chat_queue[i];
     const char *speakers[BOT_CHAT_QUEUE_LEN];
     int num_speakers = 0;
-    for (int j = i; j < Chat_queue_len; j++) {
+    for (int j = 0; j < Chat_queue_len; j++) {
       const BotChatLine &line = Chat_queue[j];
-      if (done[j] || line.due > now || line.to != first.to || strcmp(line.text, first.text) != 0)
+      if (done[j] || line.due > now + BOT_CHAT_REPORT_SPACING || line.to != first.to ||
+          strcmp(line.text, first.text) != 0)
         continue;
       done[j] = true;
       if (!line.speaker[0])

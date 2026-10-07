@@ -102,6 +102,45 @@ Dedicated server, lab binary `Descent3-cmd`, ports 2102/2112/20202, roster of si
 `$botmode` CTF teams=2, `endlevel` to Apparition, six bots back, `$bothelp`): no assert, no crash, no `BOT CHAT` line
 (no human sent chat). Not verified: anything a player sees, which needs a client in a match (CHAT_COMMANDS §B.7).
 
+**Driven by hand, on a scratch build.** Chat cannot be sent from the console, so a scratch binary (not committed)
+added `$chatas <team> <towho> <text>`, which puts the dedicated server's own slot on a team, marks it connected and
+calls `BotOnChatMessage` with `-Server-: <text>`, treated slot 0 as a human for the tip and the notice, and printed
+every line `BotChatFlush` sent. The server's slot is an observer, so this exercises the parse, the gates, the handlers,
+the queue and the reports, not what a client's HUD shows. Exact lines, roster of six (Reaper, Shadow, Hawk on team 0):
+
+- CTF (bedlam, Polaris): `hello there` then 10 s: `Tip: the bots on your team take orders in chat, like !follow
+  and !attack. Type !help for the list.`; `!help`: the two CTF lines of CHAT_COMMANDS §A.10 with `!follow Reaper`;
+  `!dance now`: `Unknown order !dance. Type !help for the list.`; team chat `!follow`: `3 bots: Following!` to the
+  red team; `!follow all`: `3 bots: Following!` and `3 bots: Not taking orders from you!`; `!status`: `Reaper (Follow)
+  100% exploring, en route | Shadow (Follow) 100% exploring, en route` / `Hawk (Follow) 100% exploring, en route`;
+  `!status reaper`: `Reaper[BOT]: Follow, HP 100%, exploring, en route`; `!attack flag`: `3 bots: On the flag!`;
+  `!defend flag hawk`: `Hawk[BOT]: Guarding the flag!`; `!hunt nobody`: `3 bots: No enemy called nobody.`;
+  `!hunt phantom`: `3 bots: Hunting Phantom!`, then `$removebot 3`: `Reaper[BOT]: Phantom left the game. Going
+  freelance.` and `2 bots: Phantom left the game. Going freelance.`, and `!status` showed all three Freelance;
+  `!hold reaper`: `Reaper[BOT]: Holding position!`, `Reaper[BOT]: In position.`; `!attack`, `endlevel`: on Apparition,
+  `3 bots: New level, orders cleared.` to slot 0.
+- The split hunt report was the pacing: Reaper had reported something since its last order (escort reports to an
+  observer it could not reach), so its line was due earlier than the other two. `BotChatFlush` now sends, with a line
+  that goes out, every queued line with the same text and recipient that is still waiting out its pacing (up to
+  `BOT_CHAT_REPORT_SPACING` early), so one event is one line whatever each bot said last.
+- Entropy (dementia; Red labs 11, 18, 21; Blue 31, 38, 41): `!help` gives the Labs line; `!defend lab`:
+  `3 bots: Guarding our lab!`, then `Reaper[BOT]: In position.` with `$botstat` showing `role=Defend`, `intent:room=10
+  owner=order`, room 10 being the guard room next to lab 11 (`BOT ORDER: 'Reaper[BOT]' on station (room 10)`);
+  `!attack lab shadow`: `Shadow[BOT]: Attacking their labs!`; `!attack ball hawk` (wrong mode): `Hawk[BOT]:
+  Attacking!`; `!hunt phantom` then `$removebot 3`, with the merge in: one line, `3 bots: Phantom left the game. Going
+  freelance.`
+- Monsterball (frenzy): `!help` gives the Ball line; `!attack ball reaper`: `Reaper[BOT]: On the ball!`, `$botobj`
+  Reaper STRIKER (was SUPPORT); `!defend goal shadow`: `Shadow[BOT]: Guarding their goal!`, `BOT MBALL: 'Shadow[BOT]'
+  role -> KEEPER (order)`; `!defend lab hawk` (wrong mode): `Hawk[BOT]: Defending!`, `role -> field (order)`;
+  `!attack`: Reaper and Shadow `role -> field (order)`; `!freelance`: the assigner took all three back within 5 s
+  (Reaper STRIKER, Hawk SUPPORT, Shadow KEEPER).
+- Anarchy (bedlam): no tip after `hello`; `!follow`, `!ping`, `!hunt viper`, `!help`, `!attack flag shadow`, `!dance`,
+  `!status` each drew one taunt, the six in turn and then the first again, voiced by Reaper, Shadow, Hawk, Phantom,
+  Shadow (named), Ninja, Viper; `wow !!!` drew nothing; `$botstat all` showed every bot still Freelance.
+
+After the scratch hook was removed and the merge change built, CTF on the real binary again: spawn, `endlevel` to
+Apparition, six bots back, `$bothelp`; no assert. `ctest` 31 of 32 as above.
+
 ### 2026-10-06: HEAD against 0.9.16, the comparison the week had skipped
 
 Every pair this week ran against `d081952e`, which already carries NAV41; the operator's baseline is 0.9.16
