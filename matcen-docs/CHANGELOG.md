@@ -42,6 +42,12 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
   it over used to thrust against any push, weapon knockback included, which no human pilot can do. It now lets go of
   the controls the way a player does: drag stops the ship, and a hit moves it exactly as it would move you. A hit that
   knocks it out of the room ends the attempt, and it flies back in to try again. In test.
+- **CTF: a carrier killed in a flag's home base sends that flag home.** The CTF module tested the wrong object when a
+  flag carrier died, so a flag whose carrier was killed inside that flag's own base dropped loose there instead of
+  going home, and a flag dropped elsewhere could occasionally jump home. The bug is in the original game module; it is
+  fixed here and written up for other Descent 3 projects (`UPSTREAM_PATCHES.md` #6). A flag sent home this way plays
+  the return sound and prints no message. A player whose client runs the original module can see that flag as away
+  from its base until it is next touched or its two-minute timeout runs out. In test.
 
 ## [0.9.16] - 2026-10-01
 

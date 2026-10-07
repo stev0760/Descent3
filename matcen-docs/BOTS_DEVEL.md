@@ -1777,3 +1777,13 @@ stop. A knock that leaves the ship in the room costs the DLL clock only (it rest
 point in the room counts); a knock out of the room trips the existing ABORT, and the invade leg flies the ship back to
 the hold point under its own thrust. No return-to-post inside the room was added: flying back would reset the clock
 a second time. The constant is deleted.
+
+**MODE14, the CTF module's spew test (UPSTREAM_PATCHES #6).** `HandlePlayerSpew` (netgames/ctf/ctf.cpp) decided
+whether a dying carrier stood in a flag's home goal by reading `dObjects[pnum]`, a player number used as an object
+index, so the home-goal return almost never fired and an unrelated object in a goal room could send a flag home from
+anywhere. It now reads `dObjects[dPlayers[pnum].objnum]`, guarded `>= 0` for the disconnect path, the idiom the pickup
+handler already uses (ctf.cpp:1080); the patch text in UPSTREAM_PATCHES #6 is the tree's text. Two things a reader of
+CTF logs needs: that return path calls `DoFlagReturnedHome`, which plays a sound and prints no HUD line, so the
+analyzer sees no return for it; and the function runs on every machine, so a client on the stock module keeps the
+flag marked away from base until the next flag event or the 120 s timeout corrects its copy (the server's flag object
+is home either way). REL20 rides along: UPSTREAM_PATCHES' assessment list now names `fvi_RoomCheckDir` as fork-only.

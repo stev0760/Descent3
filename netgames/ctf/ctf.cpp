@@ -1751,8 +1751,10 @@ void HandlePlayerSpew(int pnum) {
 
       play_lose = true;
 
-      // now check to see if they are in the flag's home goal
-      if (GoalRooms[color] == dObjects[pnum].roomnum) {
+      // now check to see if they are in the flag's home goal (the player's ship: a player
+      // number is not an object number)
+      int pobjnum = dPlayers[pnum].objnum;
+      if (pobjnum >= 0 && GoalRooms[color] == dObjects[pobjnum].roomnum) {
         // we are!
         // so remove the flag from the inventory (so it don't get spewed)
         DLLInvRemove(pnum, OBJ_POWERUP, FlagIDs[color]);

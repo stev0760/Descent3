@@ -937,7 +937,9 @@ log line (cosmetic, all modes).
 
 **Upstream-bug candidates** (they would help vanilla too; see `UPSTREAM_PATCHES.md`): the `GameLoop.cpp`
 `grtext_Reset` (dedicated-server buffer overflow), the `bnode.cpp` assert hardening (retail D3 asserts on a room
-lacking BNode data), the Linux mouse buttons, and the mission-download fixes.
+lacking BNode data), the Linux mouse buttons, the mission-download fixes, and the CTF module's `HandlePlayerSpew`
+goal-room test (`netgames/ctf/ctf.cpp`, a gameplay fix inside the CTF module; every machine in a game should run the
+same module).
 
 ---
 
@@ -957,9 +959,10 @@ lacking BNode data), the Linux mouse buttons, and the mission-download fixes.
   matched carrier success. Neither measures exact reach or at-home exposure.
 - Bot-poll return logs can overlap HUD endings and miss fast or simultaneous transitions. Do not sum them into an
   allegedly exhaustive outcome ledger. Unknown reset and boundary counts stay unknown.
-- CTF module defect: `HandlePlayerSpew` checks the flag's home room with `dObjects[pnum]`, indexing by player slot
-  instead of `dPlayers[pnum].objnum` (ctf.cpp:1755). It can mis-test the goal room when a carrier dies. Open as
-  MODE14; it is a module bug, not a navigation diagnosis.
+- CTF module defect, fixed 2026-10-07 (MODE14, UPSTREAM_PATCHES #6): `HandlePlayerSpew` checked the flag's home room
+  with `dObjects[pnum]`, indexing by player slot instead of `dPlayers[pnum].objnum`, and mis-tested the goal room when
+  a carrier died. Since the fix a carrier killed in the flag's home goal sends that flag home at once, with the return
+  sound and no HUD line (ctf.cpp:1754-1757): logs before and after the fix count that event differently.
 - Compare teams only on like rosters. Several past abend2 and Nysa runs had unequal hull mixes between teams, and
   capture splits on a map whose design symmetry is undeclared say nothing about bot fairness.
 
@@ -983,8 +986,8 @@ lacking BNode data), the Linux mouse buttons, and the mission-download fixes.
 ## Open items referenced in this doc
 
 All are rows in the `PLAN.md` §4 registry: COL7 (retire the `$nav grid off` fallback), MODE14 (CTF
-`HandlePlayerSpew`), MODE6 (the Entropy park's counter-thrust against knockback, removed 2026-10-07), MODE15 (gunboys
-fire; closed 2026-10-01), MODE16 (flare chaff fallback; decided intended 2026-10-01),
+`HandlePlayerSpew`, fixed 2026-10-07), MODE6 (the Entropy park's counter-thrust against knockback, removed
+2026-10-07), MODE15 (gunboys fire; closed 2026-10-01), MODE16 (flare chaff fallback; decided intended 2026-10-01),
 CBT13 (no "investigate noise" behaviour), UX5 (overlay reachable by any client). Items from the retired status
 log, now in `archive/BOT_DEV_REFERENCE-status-log.md`: NAV18 (window-misroute fix's sibling gaps) and NAV31
 (Nysa room-69 carrier pins).
