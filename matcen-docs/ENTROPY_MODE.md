@@ -242,7 +242,7 @@ What follows is the code at HEAD. Constants live in `Descent3/bot_objective.h:52
 
 | Id | Item | State at HEAD |
 |---|---|---|
-| MODE2 | Do takeovers happen on the release build? The 0.9.8 campaign confirmed takeovers; the 0.9.13 CHANGELOG known limitations say none were observed in that testing, and the README repeats "not completed". | Open. Decided 2026-10-01: one Entropy run on `dementia.mn3` with the release build is owed before the README line is final. |
+| MODE2 | Do takeovers happen on the release build? The 0.9.8 campaign confirmed takeovers; the 0.9.13 CHANGELOG known limitations say none were observed in that testing, and the README repeats "not completed". | Open. Decided 2026-10-01: one Entropy run on `dementia.mn3` with the release build is owed before the README line is final. 2026-10-07, with every bot force-loaded by a scratch build: GeoDomes holds started and converted; on SteelVapor none started in two 6-minute levels, the loaded bots circling inside the target room at 16-40 u/s, never under the 5 u/s start gate (BOTS_DEVEL, mode polish). |
 | MODE4 | Inversion produces refused-pickup spam (bots chase viruses the server refuses). | Open. The analyzer flags it as `ENTROPY_REFUSED_PICKUP_SPAM` (`tools/analyze_bot_log.py:1503-1511`). |
 | MODE5 | RAGE wind-tunnel counter-fly fix (`9e602d7f`, routed-cost room selection in `BotGetNearestEntropyRoom`). | In code since 0.9.8; never verified on RAGE. |
 | NAV8 | Rim is nav-hostile for this mode (part of the toroid refinements row). | Open; tracked in `NAVIGATION.md` §7. |

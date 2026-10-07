@@ -1824,12 +1824,33 @@ distance from the Hotshot row and a Hotshot bot plays exactly as before. Which c
 Not scaled, left on MODE1/MODE7: Entropy denial appetite, smarter invasion, the drill command, shield-knob iteration;
 Monsterball wall/ceiling play, banks, pass-backs. The `!` verbs for both modes are the CMD branch's.
 
-**The hold ends when the invade nav loses its target.** A force-loaded test run (every bot given 5 viruses by a
-scratch build, never committed) showed parked bots sitting still for seconds after the hold should have ended: Gregg
-(Insane) took a hit at 51 shields that left him at 7, under his floor of 10, and `BotDoEntropyInvadeNav` got a target
-of -1 (by the code, the retreat branch found no repair or energy room of his team's), called `BotDoExploreRoaming`
-and returned without clearing `entropy_holding`, so the park went on holding the "roaming" bot at zero thrust; Phantom
-showed the same signature for 4.4 s after his takeover (an explore pick while the park trace ran on) until the
-room-progress timeout cleared his goals. The target check now runs after the
-ABORT block, so a -1 target logs `takeover hold ABORT (... -> target -1 ...)` and drops the flag before the bot roams.
-The braking park had the same hole; the zero-thrust park only made it visible in the trace.
+**The hold ends when the invade nav loses its target.** A force-loaded test run (every bot given 5 viruses by a scratch
+build, never committed) showed parked bots sitting still for seconds after the hold should have ended: Gregg (Insane)
+took a hit at 51 shields that left him at 7, under his floor of 10, and `BotDoEntropyInvadeNav` got a target of -1 (by
+the code, the retreat branch found no repair or energy room of his team's), called `BotDoExploreRoaming` and returned
+without clearing `entropy_holding`, so the park went on holding the "roaming" bot at zero thrust; Phantom showed the
+same signature for 4.4 s after his takeover (an explore pick while the park trace ran on) until the room-progress
+timeout cleared his goals. The target check now runs after the ABORT block, so a -1 target logs `takeover hold ABORT
+(... -> target -1 ...)` and drops the flag before the bot roams. The braking park had the same hole; the zero-thrust
+park only made it visible in the trace.
+
+**Smokes (Debug, lab, 4v4 with every tier on the field: each team Trainee, Rookie, Ace or Hotshot, Insane).** No
+assert in any run; every stop was our SIGTERM.
+
+- Entropy, `dementia.mn3`, 6-minute levels, stock build: SteelVapor full level and the GeoDomes load, 20 bot deaths, 0
+  stucks, 5 pickups, 0 holds (as in every Entropy soak since 0.9.14: the analyzer's hold count has read 0).
+- Entropy, the force-loaded scratch build: the park trace (thrust and speed every 0.25 s while holding) read thrust 0.00
+  on all 113 samples. A hold that starts at 4.9 u/s coasts down 4.92, 2.28, 1.06, 0.49 u/s; Gregg, parked at 3.3 u/s,
+  took a hit (51 to 7 shields) and the next sample read 85.8 u/s, then 39.7, thrust 0.00 throughout: the knock carried
+  him, nothing pushed back. Holds convert: Phantom's hold in GeoDomes room 0 took the room (5 points to him). On
+  SteelVapor no hold started in either force-loaded run (first run: 807 invade legs, 302 of them re-issued from inside
+  the target room), with the bots at 16-40 u/s there and `movement_dir` swinging each half second, so the 5 u/s start
+  gate never passed. That is the arrival side of MODE2, navigation and out of scope here; it is evidence on the row. The
+  second force-loaded run, on the build with the -1 hold release, started no hold on either level, so that fix is
+  checked by reading only.
+- Monsterball, `frenzy.mn3` (PowerHouse, then the level-2 load): 4 goals, 0 blunders, 67 fires at the ball, 58
+  ball-avoid detours, 0 stucks. Every goal line (`knocks the ball in for a point!`) is followed by
+  `BOT MBALL: kickoff (ball on its spawn point in rm1)`, plus one at each level start (the level-2 load re-armed it);
+  `'Shadow[BOT]' kickoff reaction 0.3s (Rookie)` and `'Phantom[BOT]' kickoff reaction 0.6s (Trainee)` fired, and no
+  Hotshot-or-better striker waited. `MBALL_ROLE_THRASH` (149 role changes in the round) matches the 09-13 PowerHouse
+  rate and predates this work.
