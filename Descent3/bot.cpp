@@ -359,8 +359,7 @@ char Bot_config_file[260] = {};         // CVar storage — set by "BotConfig=<f
 static bool Bot_roster_spawned = false; // true after first level auto-spawn
 
 // --- Delayed UI bot spawn (Phase 5.4) ---
-// Listen server bots spawn a few seconds after level load so the host has time to manage teams.
-#define BOT_UI_SPAWN_DELAY 3.0f
+// Listen server bots spawn BOT_UI_SPAWN_DELAY after level load so the host has time to manage teams.
 static bool Bot_ui_spawn_pending = false;
 static float Bot_ui_spawn_time = 0.0f;
 
@@ -9958,8 +9957,7 @@ void BotUISettingsInit() {
     strncpy(e->ship_alias, "Pyro-GL", sizeof(e->ship_alias) - 1);
     e->ship_alias[sizeof(e->ship_alias) - 1] = '\0';
     e->difficulty = BOT_DIFF_COUNT; // sentinel = "use default"
-    e->enabled = true;
-    e->team = -1; // auto-balance
+    e->team = -1;                   // auto-balance
   }
 }
 
@@ -9980,6 +9978,7 @@ void BotSpawnFromUI() {
 // Actually spawn the bots from UI roster data. Called from BotDoFrame() after delay.
 static void BotDoUISpawn() {
   Bot_ui_spawn_pending = false;
+  HostConsoleEcho echo; // the host has no console: BotAdd's refusals reach its HUD
   LOG_INFO.printf("BOT UI: Spawning %d bots from UI roster", Bot_ui_settings.bot_count);
   for (int i = 0; i < Bot_ui_settings.bot_count; i++) {
     BotUIRosterEntry *e = &Bot_ui_settings.roster[i];
@@ -9993,7 +9992,9 @@ static void BotDoUISpawn() {
     if (idx >= 0)
       LOG_INFO.printf("BOT UI: Bot '%s' spawned (ship=%s, diff=%s, slot=%d)", Bots[idx].callsign,
                       Ships[Bots[idx].ship_index].name, BotDifficultyName(Bots[idx].difficulty), Bots[idx].player_slot);
-    else
+    else {
       LOG_WARNING.printf("BOT UI: Failed to spawn bot '%s'", name);
+      PrintDedicatedMessage("Failed to add bot '%s'\n", name);
+    }
   }
 }

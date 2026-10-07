@@ -289,6 +289,9 @@ int MultiLoadSettings(const std::filesystem::path &filename) {
         Bot_ui_settings.bot_count = 0;
       if (Bot_ui_settings.bot_count > BOT_UI_MAX_BOTS)
         Bot_ui_settings.bot_count = BOT_UI_MAX_BOTS;
+      // BOTTEAM<n> is written only for a chosen team, so a bot without one is Auto, not the team it had before.
+      for (BotUIRosterEntry &e : Bot_ui_settings.roster)
+        e.team = -1;
     } else if (stricmp(toklabel, "BOTDEFAULTDIFF") == 0) {
       int d = atoi(tokval);
       if (d >= 0 && d < BOT_DIFF_COUNT)

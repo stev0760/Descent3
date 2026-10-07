@@ -21,8 +21,8 @@ There are two ways to get a starting roster, and one console path for live chang
 | Server type | Source | Spawn point |
 |---|---|---|
 | Dedicated | the file named by `BotConfig=` in `dedicated.cfg` | `BotLoadRosterFile()` (bot.cpp:9683), called from `MultiStartNewLevel()` (multi.cpp:6465) |
-| Listen (client-hosted) | the Bot Settings menu, saved in `.mps` presets | `BotSpawnFromUI()` (bot.cpp:9929, called at multi.cpp:6467); bots join 3 s after the level loads (`BOT_UI_SPAWN_DELAY`, bot.cpp:363) |
-| Dedicated console or telnet | `$addbot` and the other `$` commands in section 3 | `DedicatedHandleBotCommand()` (dedicated_server.cpp:855) |
+| Listen (client-hosted) | the Bot Settings menu, saved in `.mps` presets | `BotSpawnFromUI()` (bot.cpp:9929, called at multi.cpp:6467); bots join 3 s after the level loads (`BOT_UI_SPAWN_DELAY`, bot.h:27) |
+| Dedicated console, telnet, or a listen-server host's chat line | `$addbot` and the other `$` commands in section 3 | `RunBotConsoleCommand()` → `DedicatedHandleBotCommand()` (dedicated_server.cpp) |
 
 All three call the same `BotAdd()` (bot.cpp:8701). If `BotConfig=` is set, the UI roster is skipped
 (bot.cpp:9933).
@@ -31,8 +31,8 @@ The starting roster spawns **once per game session**: `Bot_roster_spawned` is se
 only by `BotShutdownAll()` (bot.cpp:8422). Bots then persist across level changes through `BotReinitAll()`
 (bot.cpp:8494). A bot removed with `$removebot` is not replaced.
 
-A listen-server host has no `$` bot commands: they are handled on the dedicated console (dedicated_server.cpp:1228)
-and telnet (:1482) only.
+A listen-server host types the same `$` commands mid-match on the chat line (F8), and the replies come back on the
+HUD (section 3).
 
 ## 2. Config file reference (dedicated server)
 
@@ -109,8 +109,21 @@ limitation: Pyro-class hulls fly best.
 
 ## 3. Console reference
 
-All bot commands start with `$` and are matched before the game DLL sees the line. This table follows the `$bothelp`
-text (dedicated_server.cpp:1169-1186) and the handlers it describes.
+All bot commands start with `$` and are matched before the game DLL sees the line. One entry point,
+`RunBotConsoleCommand()` (dedicated_server.cpp), serves the dedicated console, telnet and the host of a listen
+server: there, a `$` line typed on the chat line (F8) runs here first (hudmessage.cpp, `SendOffHUDInputMessage`), and
+a line that is not a bot command goes on to the game DLL as before. A `$` line typed on a client always goes to the
+game DLL.
+
+On a listen server the replies go to the host's HUD: `HostConsoleEcho` (dedicated_server.h) turns
+`PrintDedicatedMessage` into one HUD line per console line while the command runs, so `BotAdd`'s refusals arrive too.
+The HUD shows three lines at a time; Shift+F9 opens the message log with the whole reply (`$bothelp` is 23 lines).
+The console's two UTF-8 glyphs are spelled `->` and `-` on the HUD, whose font is 8-bit. The roster from the Bot
+Settings menu spawns inside the same echo, so a bot the server refuses at the start of the game is reported to the host
+as `Failed to add bot '<name>'`, after `BotAdd`'s reason.
+
+This table follows the `$bothelp` text (dedicated_server.cpp, `DedicatedHandleBotCommand`) and the handlers it
+describes. `$bothelp` prints the everyday commands first and the diagnostics in their own group.
 
 | Command | What it does and prints | Code |
 |---|---|---|
@@ -125,11 +138,11 @@ text (dedicated_server.cpp:1169-1186) and the handlers it describes.
 | `$botmov on\|off` | Movement debug logging. | :1107 |
 | `$nav` | Navigation diagnostics (see below). | :980 |
 | `$servercaps` | Capability line for remote-admin tools (section 6). | :1156 |
-| `$bothelp` | Prints the command list. | :1169 |
+| `$bothelp` | Prints the command list: the everyday commands, then a Diagnostics group (`$botstat`, `$botmov` and every `$nav` verb). | :1170 |
 
 **`$nav` is a diagnostic namespace, not an operator surface or a compatibility contract.** Bare `$nav` lists the
 25 navigation toggles (`Nav_toggles[]`, dedicated_server.cpp:748-804) and then six sub-verbs: `mtenure`, `dump`,
-`roomfaces`, `probe`, `sweep`, `contend` (:988-1006). `$nav <toggle> on|off` flips one; `$nav dump [file]` writes the
+`roomfaces`, `probe`, `sweep`, `contend` (:988-1007). `$nav <toggle> on|off` flips one; `$nav dump [file]` writes the
 level's navigation geometry as JSON (hidden alias `$navdump`, :1098). Remote-admin tools must gate on `$servercaps`,
 not on which `$nav` rows exist. NAVIGATION.md documents what the toggles do.
 
@@ -163,21 +176,32 @@ Set it globally with `BotDifficulty=`, per bot with `BotDifficulty<n>=` or the `
 
 The host of a client-hosted game sets bots up before the match in **Bot Settings**, a button in the Direct TCP/IP
 "Start a New Game" menu (`netcon/includes/con_dll.h:1166-1173`, DLL export `fp[115]` at multi_dll_mgr.cpp:526). The
-screen is `MultiBotSettingsMenu()` (multi_ui.cpp:1602-1990).
+screen is `MultiBotSettingsMenu()` (multi_ui.cpp:1736-2093).
 
-- **Bot Count:** numbers only, applied on Enter or Done, clamped to 16 and to `max_players − 1` (multi_ui.cpp:1891,
-  :1927).
+- **Bot Count:** numbers only, applied on Enter or Done, clamped to 16 and to `max_players − 1`.
 - **Default Difficulty:** cycles Trainee to Insane.
 - **Roster list:** `n. Name`, one row per bot; click to select.
-- **Detail panel** for the selected bot: Name, Ship (Pyro-GL, Phoenix, Magnum-AHT, Black Pyro), and a per-bot
-  Difficulty that cycles Default, Trainee ... Insane. An empty name falls back to a built-in name (Reaper, Phantom,
-  Viper, ...; bot.cpp:9908).
+- **Detail panel** for the selected bot:
+  - **Name.** An empty name falls back to a built-in name (Reaper, Phantom, Viper, ...; bot.cpp:9944).
+  - **Ship** cycles the ships this install offers: Pyro-GL, Phoenix, Magnum-AHT, and the Black Pyro only when
+    Mercenary is installed (`BotShipOffered`, the same `MercInstalled()` rule as the pilot's ship list in
+    pilot.cpp:2378). On opening, the menu resets to Pyro-GL any roster ship this install does not offer, such as a
+    Black Pyro loaded from a preset made on a Mercenary install.
+  - **Difficulty** cycles Default, Trainee ... Insane.
+  - **Team** cycles Auto, Red, Blue, Green, Yellow and sets `roster[].team` (Auto = -1, the smallest team at join).
+    It applies in team games only; a team the game does not have joins the smallest team, and `BotAdd` says so on the
+    host's HUD.
+- **Server block** under the detail panel:
+  - **Free seats: N of M**, where M is `max_players` and N is M less the host and the bot count
+    (`BotFreeSeats`). It updates when the bot count is applied. The host is the only connected player while the menu
+    is open. The reserve-seat rule (POP2) is not in this count yet.
+  - **Bots join 3 s after the first level loads** (`BOT_UI_SPAWN_DELAY`, bot.h).
 - **Done / Cancel.**
 
-There is no team control (the roster entry has a `team` field and `.mps` saves it, but nothing in the menu sets it),
-no free-seat readout, and no host feedback if `BotAdd` refuses a bot. The `enabled` field (bot.h:876) is set and never
-read. Black Pyro is offered without a Mercenary check. The host cannot add, remove or retune bots after the match
-starts. These are client UX items in the registry (UX ids).
+After the match starts the host adds, removes and retunes bots with the `$` commands on the chat line (section 3);
+the menu itself is pre-game only. If the server refuses a roster bot when the game starts, the host sees
+`BOT: cannot add '<name>' — server full (n/m players)` (the dash shows as `-` on the HUD) and then
+`Failed to add bot '<name>'` on the HUD.
 
 Bot settings are saved in `.mps` multiplayer presets (multi_save_setting.cpp:125-140 write, :286-340 read), one
 tab-separated key per line:
@@ -191,7 +215,8 @@ tab-separated key per line:
 | `BOTDIFF<n>` | difficulty 0-4, or 5 for "use the default" |
 | `BOTTEAM<n>` | team 1-4; written only when set |
 
-Older presets without these keys load as before.
+Older presets without these keys load as before. Reading `BOTCOUNT` resets every roster team to Auto first, so a bot
+the preset saved without a `BOTTEAM<n>` line loads as Auto, not as the team it had before the preset was loaded.
 
 ## 6. Capacity rules as built
 
@@ -201,8 +226,8 @@ Older presets without these keys load as before.
   The count includes every `NPF_CONNECTED` slot: humans, bots, and the server's own slot 0, which `MultiStartServer()`
   marks connected on dedicated and listen servers alike (multi_server.cpp:757-758). A bot can therefore take the
   last free seat.
-- The Bot Settings menu clamps the bot count to `max_players − 1` (multi_ui.cpp:1891, :1927). On a listen server the
-  host is the other seat, so a full UI roster also leaves no seat free.
+- The Bot Settings menu clamps the bot count to `max_players − 1` (multi_ui.cpp:1978, :2018). On a listen server the
+  host is the other seat, so a full UI roster also leaves no seat free; the menu's free-seat readout then shows 0.
 - On a dedicated server, `BotCount = MaxPlayers − 1` fills every seat, because slot 0 counts. Example: co-op missions
   commonly cap at 4 players, and `BotCount=3` seals a 4-player co-op server.
 - A human who then tries to join gets the vanilla server-full answer (multi.cpp:3791,
@@ -325,7 +350,9 @@ Bots obey the server's allowed-ship list. When a bot's configured ship (`BotShip
 the Bot Settings menu) is not allowed on the server, the bot falls back to Pyro-GL, with a log line naming the
 skipped ship. No bot code reads ship permissions today; the engine check is `PlayerIsShipAllowed`
 (player.h:557-558); the natural place to apply it is after `BotResolveShipAlias` (bot.cpp:9642), whose callers are the
-config roster (bot.cpp:9794), `$addbot` (dedicated_server.cpp:878) and the Bot Settings menu (multi_ui.cpp:1618). Registry row POP9.
+config roster (bot.cpp:9794), `$addbot` (dedicated_server.cpp:878) and the Bot Settings menu (`BotShipOffered` and
+`BotShipListIndex`, multi_ui.cpp:1615-1640; the menu already withholds the Black Pyro without Mercenary). Registry row
+POP9.
 
 ## Related documents
 

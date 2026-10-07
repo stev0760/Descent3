@@ -24,6 +24,7 @@
 
 #define MAX_BOTS 16
 #define BOT_UI_MAX_BOTS 16
+#define BOT_UI_SPAWN_DELAY 3.0f         // seconds after level load before the Bot Settings roster joins
 #define BOT_RESPAWN_DELAY 3.0f          // seconds after death before respawn
 #define BOT_TARGET_UPDATE_INTERVAL 0.5f // seconds between target search runs
 #define BOT_THINKERS_PER_FRAME 2        // decision ticks allowed per server frame (the rest run next frame)
@@ -513,8 +514,9 @@ struct bot_info {
   int target_blacklist[MAX_NET_PLAYERS]; // player slots blacklisted as targets
   float target_blacklist_timer;          // countdown until blacklist expires
 
-  // Countermeasure deployment — reserved for future inventory-item countermeasures (not flares)
-  float countermeasure_timer; // cooldown between inventory countermeasure uses (future use)
+  // Countermeasure cooldown: BotDeployChaff (while evading or fleeing) drops chaff, or fires a flare when the bot
+  // carries none, at most once per BOT_COUNTERMEASURE_INTERVAL.
+  float countermeasure_timer; // seconds until BotDeployChaff may fire again
 
   // Powerup interrupt cooldown — prevents COMBAT→EXPLORE→HUNT→COMBAT oscillation.
   // Set to BOT_POWERUP_INTERRUPT_COOLDOWN after any divert/interrupt fires.
@@ -873,7 +875,6 @@ struct BotUIRosterEntry {
   char name[CALLSIGN_LEN];
   char ship_alias[32];
   BotDifficulty difficulty;
-  bool enabled;
   int team; // 0-indexed team (0–3), or -1 for auto-balance
 };
 

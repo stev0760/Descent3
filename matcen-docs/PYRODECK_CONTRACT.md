@@ -13,10 +13,11 @@ Code facts below are true at `ee6e6525` (0.9.16-dev). `dedicated_server.cpp` and
 
 ## 1. Where the commands work
 
-`DedicatedHandleBotCommand` (dedicated_server.cpp:855) runs for input from the dedicated console
-(dedicated_server.cpp:1228) and from the telnet remote console (dedicated_server.cpp:1482). A listen-server host has
-no `$` bot commands. Input that matches no bot command falls through to the game DLL. Every reply is plain text,
-one `PrintDedicatedMessage` call per line, with no terminator line.
+`DedicatedHandleBotCommand` (dedicated_server.cpp:855) runs through one entry point, `RunBotConsoleCommand`
+(dedicated_server.cpp:1211), for input from the dedicated console, from the telnet remote console, and from the chat
+line of a listen-server host (hudmessage.cpp:834), whose replies go to its HUD instead of a console. Input that matches
+no bot command falls through to the game DLL. Every telnet reply is plain text, one `PrintDedicatedMessage` call per
+line, with no terminator line. Nothing Pyrodeck reads changed when the listen-server path was added (2026-10-07).
 
 ## 2. `$servercaps`, the anchor
 
@@ -126,6 +127,11 @@ name up to ` (scriptname=`.
 **`$botobj`** prints `Game mode: %s` and then the objective state, all to the console (bot_objective.cpp:1349-1497):
 flags and carriers, orbs, Hoard counts, Monsterball roles, Entropy labs, the co-op goal, per-bot roles and leans.
 The v2.6 spec said most detail went to the server log; that is no longer true.
+
+**`$bothelp`** (dedicated_server.cpp:1170-1207) prints `Bot commands:`, the `$addbot` usage with three indented
+argument lines, one line per everyday command, then `Diagnostics:` and one line per diagnostic command (`$botstat`,
+`$botmov` and every `$nav` verb), 23 lines in all. Each command line is `  %-36s %s` (usage, then description). The
+2026-10-07 rewrite changed every line of it: show it as text, never parse it.
 
 ## 6. Tier 3, aliases and removed commands
 

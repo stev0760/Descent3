@@ -38,6 +38,21 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
   through a doorway into the next room, so a neighbouring room could decide a room's layout: on Tower of Isengard a
   change next door shifted one hall's whole network, bots began missing its doors, and carriers were sent home the
   long way. The grid with the most points inside the room now wins. In test.
+- **The host of a listen server can manage bots mid-match.** `$addbot`, `$removebot`, `$botlist`, `$botdifficulty`
+  and every other bot command typed on the chat line (F8) now run on the host, with the reply on the HUD (Shift+F9
+  shows the whole of a long one). When the server refuses a bot, at the start of the game or later, the host is told
+  why. Other `$` commands, and anything a client types, go to the game as before.
+- **Bot Settings shows more and offers only what works.** Each bot has a Team setting (Auto, Red, Blue, Green, Yellow;
+  saved in presets; ignored in free-for-all games). The screen shows how many seats are left for players and says that
+  bots join 3 seconds after the first level loads. The Black Pyro is offered only when Mercenary is installed, like the
+  pilot's ship list, and a preset that names it on an install without Mercenary loads with the Pyro-GL instead.
+- **`$bothelp` reads like a manual.** Every command is listed with a plain description, the diagnostic commands
+  (including every `$nav` verb) in their own group. The listing changed throughout; anything that parsed it should not.
+- **The Ctrl+F7 navigation overlay works only where the bots run** (a local game or a listen-server host) and draws
+  only what the bots have already worked out, so turning it on can no longer stall a frame on a large room. A room no
+  bot has needed yet shows nothing.
+- **Co-op bots no longer claim to head for an objective they will not fly to.** The announcement now names the next
+  objective and the order that sends the bots there: `Next objective: <item>. Say !goal to send us there.`
 
 ## [0.9.16] - 2026-10-01
 

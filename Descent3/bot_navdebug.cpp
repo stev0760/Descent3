@@ -37,6 +37,7 @@
 #include "object.h"
 #include "player.h"
 #include "game.h"
+#include "multi.h"
 #include "3d.h"
 #include "grtext.h"
 #include "gamefont.h"
@@ -50,9 +51,22 @@ int Bot_navdebug_mode = 0;
 // (the lattice fill); a ROUTE is the single composed path and the PILOT flies it.
 static const char *NAVDBG_MODE_NAMES[] = {"off", "arterials+portals", "+bot intent", "+local streets"};
 
-bool BotNavDebugActive() { return !Dedicated_server && Bot_navdebug_mode > 0; }
+// The bots and their navigation state live in the process that runs them: a local game, or the host of a listen
+// server. A remote client has the level but none of that state, and the dedicated server has no renderer.
+static bool NavDbgIsHost() {
+  if (Dedicated_server)
+    return false;
+  return !(Game_mode & GM_MULTI) || Netgame.local_role == LR_SERVER;
+}
 
-void BotNavDebugCycle() { Bot_navdebug_mode = (Bot_navdebug_mode + 1) % 4; }
+bool BotNavDebugActive() { return Bot_navdebug_mode > 0 && NavDbgIsHost(); }
+
+bool BotNavDebugCycle() {
+  if (!NavDbgIsHost())
+    return false;
+  Bot_navdebug_mode = (Bot_navdebug_mode + 1) % 4;
+  return true;
+}
 
 const char *BotNavDebugModeName() { return NAVDBG_MODE_NAMES[Bot_navdebug_mode & 3]; }
 
@@ -129,52 +143,60 @@ static int NavDbgFind(int *parent, int i) {
 }
 
 // --- static layer: skeleton + portals + buried-center (mode >= 1) ------------------------------
+// Cached-only, like the lattice layer: a room draws only once navigation has built its skeleton, and then only the
+// verdicts already computed. Building a skeleton classifies every door and samples every live crossing, so a drawn
+// room has its markers; a door the router has not priced yet has none, and the buried X waits for its first query.
 static void NavDbgDrawRoomStatic(int room_idx) {
   vector pos[BOT_SKEL_MAX_NODES];
   uint64_t edges[BOT_SKEL_MAX_NODES];
   int portal_count = 0;
-  int n = BotSkelDumpRoom(room_idx, pos, edges, &portal_count);
-  const uint64_t live = BotSkelLivePortalMask(room_idx);
-  if (n > 0) {
-    // Label components so the ring's severed halves get distinct colors.
-    int parent[BOT_SKEL_MAX_NODES];
-    for (int i = 0; i < n; i++)
-      parent[i] = i;
-    for (int i = 0; i < n; i++)
-      for (int j = i + 1; j < n; j++)
-        if (edges[i] & (1ull << j)) {
-          int ri = NavDbgFind(parent, i), rj = NavDbgFind(parent, j);
-          if (ri != rj)
-            parent[ri] = rj;
-        }
+  int n = BotSkelDumpRoomCached(room_idx, pos, edges, &portal_count);
+  if (n <= 0)
+    return; // no skeleton yet: nothing of this room is drawn
+  const uint64_t live = BotSkelLivePortalMaskCached(room_idx);
 
-    // Edges first (so nodes draw on top).
-    for (int i = 0; i < n; i++)
-      for (int j = i + 1; j < n; j++)
-        if (edges[i] & (1ull << j))
-          NavDbgLine(pos[i], pos[j], NAVDBG_COMPONENT_COLORS[NavDbgFind(parent, i) % NAVDBG_NUM_COMPONENT_COLORS]);
+  // Label components so the ring's severed halves get distinct colors.
+  int parent[BOT_SKEL_MAX_NODES];
+  for (int i = 0; i < n; i++)
+    parent[i] = i;
+  for (int i = 0; i < n; i++)
+    for (int j = i + 1; j < n; j++)
+      if (edges[i] & (1ull << j)) {
+        int ri = NavDbgFind(parent, i), rj = NavDbgFind(parent, j);
+        if (ri != rj)
+          parent[ri] = rj;
+      }
 
-    // Nodes: portal nodes [0,portal_count) drawn larger than synthesized pseudo-bnodes. A dead
-    // (wall/window) portal slot is not a node — it is drawn only as its grey portal marker below.
-    for (int i = 0; i < n; i++) {
-      if (i < portal_count && !(live & (1ull << i)))
-        continue;
-      NavDbgSphere(pos[i], (i < portal_count) ? 1.3f : 0.7f,
-                   NAVDBG_COMPONENT_COLORS[NavDbgFind(parent, i) % NAVDBG_NUM_COMPONENT_COLORS]);
-    }
+  // Edges first (so nodes draw on top).
+  for (int i = 0; i < n; i++)
+    for (int j = i + 1; j < n; j++)
+      if (edges[i] & (1ull << j))
+        NavDbgLine(pos[i], pos[j], NAVDBG_COMPONENT_COLORS[NavDbgFind(parent, i) % NAVDBG_NUM_COMPONENT_COLORS]);
+
+  // Nodes: portal nodes [0,portal_count) drawn larger than synthesized pseudo-bnodes. A dead
+  // (wall/window) portal slot is not a node — it is drawn only as its grey portal marker below.
+  for (int i = 0; i < n; i++) {
+    if (i < portal_count && !(live & (1ull << i)))
+      continue;
+    NavDbgSphere(pos[i], (i < portal_count) ? 1.3f : 0.7f,
+                 NAVDBG_COMPONENT_COLORS[NavDbgFind(parent, i) % NAVDBG_NUM_COMPONENT_COLORS]);
   }
 
   // Portal markers colored by our passability verdict vs. the engine's (DISAGREE = the mismatch that
   // strands bots at a door the engine calls open but our hull probe rejects).
   room &rm = Rooms[room_idx];
   for (int p = 0; p < rm.num_portals; p++) {
-    if (BotPortalClass(room_idx, p) == BOT_PORTAL_CLASS_NEVER) {
+    int pclass = BOT_PORTAL_CLASS_NEVER;
+    vector marker;
+    float cost = -1.0f;
+    if (!BotPortalVerdictCached(room_idx, p, &pclass, &marker, &cost))
+      continue;
+    if (pclass == BOT_PORTAL_CLASS_NEVER) {
       NavDbgSphere(rm.portals[p].path_pnt, 0.8f, NAVDBG_PORTAL_NEVER); // a wall the level calls a portal
       continue;
     }
-    vector marker = rm.portals[p].path_pnt;
-    BotPortalCrossing(room_idx, p, &marker, nullptr); // the validated crossing point (slice 2)
-    float cost = BotPortalGeoCost(room_idx, p);
+    if (cost < 0.0f)
+      continue; // not priced yet
     ddgr_color c;
     if (cost >= BOT_PORTAL_IMPASSABLE)
       c = BotPortalEnginePassable(room_idx, p) ? NAVDBG_PORTAL_DISAGREE : NAVDBG_PORTAL_BLOCKED;
@@ -187,7 +209,7 @@ static void NavDbgDrawRoomStatic(int room_idx) {
 
   // Buried-center: the room path_pnt sits in void/core space (the "fly into the wall toward the
   // center" trap). Mark it so the class is visible on sight.
-  if (BotRoomIsBuried(room_idx))
+  if (BotRoomBuriedCached(room_idx) == 1)
     NavDbgCross(rm.path_pnt, 2.5f, NAVDBG_BURIED);
 }
 

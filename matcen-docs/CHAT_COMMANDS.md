@@ -137,9 +137,11 @@ In co-op, bots are companions and never pursue objectives on their own (operator
 `BotCoopUpdateEscort` (bot_objective.cpp:1092-1135) puts every bot with no order on `!follow` to the nearest human,
 with no issuer, so it makes no reports. If that human leaves, the bot picks the next nearest. `!freelance` opts a bot
 out until it gets any other order. The first active bot voices objective announcements to everyone
-(bot_objective.cpp:1225-1262): `Heading to: <item>`, `All primary objectives complete. On your wing.`, and
-`Can't reach the goal yet. Covering you.` The first of these names an objective no bot is flying to; registry item UX6
-proposes rewording it to point at `!goal`.
+(bot_objective.cpp:1225-1264): `Next objective: <item>. Say !goal to send us there.`,
+`All primary objectives complete. On your wing.`, and `Can't reach the goal yet. Covering you.` The first names the
+objective and the order that sends the bots to it; it used to read `Heading to: <item>`, a move no bot made (UX6,
+2026-10-07). The `!goal` reply with no reachable objective, `No objective right now. Covering you.`, still promises
+cover it does not change (CMD27).
 
 ### A.8 Corrections to the earlier version of this doc
 

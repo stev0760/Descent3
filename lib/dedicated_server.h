@@ -70,6 +70,21 @@ void DoDedicatedServerFrame();
 // Prints a message to the console if the dedicated server is active
 void PrintDedicatedMessage(const char *fmt, ...);
 
+// A listen-server host has no console window. While a HostConsoleEcho is alive, PrintDedicatedMessage in a
+// non-dedicated process writes each line to the HUD instead (Shift+F9 keeps the scrollback), so the bot console's
+// replies and BotAdd's refusals reach the host. A dedicated server prints to its console as always.
+class HostConsoleEcho {
+public:
+  HostConsoleEcho();
+  ~HostConsoleEcho();
+  HostConsoleEcho(const HostConsoleEcho &) = delete;
+  HostConsoleEcho &operator=(const HostConsoleEcho &) = delete;
+};
+
+// Runs one "$..." line through the bot console, the handler behind the dedicated console, telnet, and a listen-server
+// host's chat line. Returns true if the line was a bot command; anything else belongs to the game DLL.
+bool RunBotConsoleCommand(const char *line);
+
 // Reads incoming data from the telnet connection to the server
 void DedicatedReadTelnet(void);
 

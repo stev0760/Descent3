@@ -1001,8 +1001,9 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
       PrintDedicatedMessage(
           "  %-13s      hull sweeps from a point to a door's crossing: $nav sweep <x> <y> <z> <room> <portal>\n",
           "sweep");
-      PrintDedicatedMessage(
-          "  %-13s      §7 committee contention counts (NAVIGATION.md §6.9): $nav contend [index|all]\n", "contend");
+      PrintDedicatedMessage("  %-13s      which navigation layer steered each bot, and for how long: $nav contend "
+                            "[index|all]\n",
+                            "contend");
       return true;
     }
     if (stricmp(sub, "dump") == 0)
@@ -1167,26 +1168,59 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     return true;
   }
   if (stricmp(command, "bothelp") == 0) {
+    struct HelpLine {
+      const char *usage;
+      const char *what;
+    };
+    static const HelpLine commands[] = {
+        {"$removebot <index>", "Remove one bot (index from $botlist)"},
+        {"$removebots", "Remove every bot"},
+        {"$botlist", "List the bots"},
+        {"$botdifficulty <index|all> <level>", "Change difficulty; all also sets the default"},
+        {"$botmode", "Show the game mode as the bots read it"},
+        {"$botobj", "Show objective state: flags, orbs, goals, roles"},
+        {"$servercaps", "Show this server's capabilities"},
+        {"$bothelp", "Show this list"},
+    };
+    static const HelpLine diagnostics[] = {
+        {"$botstat [index|all]", "Bot state, target and route"},
+        {"$botmov on|off", "Log bot movement"},
+        {"$nav", "List navigation toggles; $nav <toggle> on|off sets one"},
+        {"$nav dump [file]", "Write the level's navigation data as JSON"},
+        {"$nav roomfaces <room> [file]", "Write one room's faces, doors and lattice as JSON"},
+        {"$nav probe <x y z> <x y z>", "Hull sweeps along a segment"},
+        {"$nav sweep <x y z> <room> <portal>", "Hull sweeps from a point to a door"},
+        {"$nav contend [index|all]", "Which navigation layer steered each bot, and for how long"},
+        {"$nav mtenure <seconds>", "Monsterball role commitment period, 2-120 s"},
+    };
     PrintDedicatedMessage("Bot commands:\n");
-    PrintDedicatedMessage("  $addbot <name> [ship] [difficulty] [team] - Add a bot (team: 1-4)\n");
-    PrintDedicatedMessage("    ships: pyro, phoenix, magnum, blackpyro\n");
-    PrintDedicatedMessage("    difficulty: trainee, rookie, hotshot, ace, insane\n");
-    PrintDedicatedMessage("  $removebot <index>     - Remove a specific bot\n");
-    PrintDedicatedMessage("  $removebots            - Remove all bots\n");
-    PrintDedicatedMessage("  $botlist               - List active bots\n");
-    PrintDedicatedMessage("  $botdifficulty <index|all> <level> - Change difficulty\n");
-    PrintDedicatedMessage("  $botstat [index|all]   - Show bot status details\n");
-    PrintDedicatedMessage("  $nav                   - Navigation toggles & status ($nav <name> on|off; bare = list)\n");
-    PrintDedicatedMessage("  $nav dump [file]       - Dump current level nav geometry to JSON (alias: $navdump)\n");
-    PrintDedicatedMessage("  $nav contend [index|all] - §7 nav-committee contention counts (NAVIGATION.md §6.9)\n");
-    PrintDedicatedMessage("  $botmov on|off         - Toggle movement debug logging\n");
-    PrintDedicatedMessage("  $botmode               - Show detected game mode\n");
-    PrintDedicatedMessage("  $botobj                - Show objective state (CTF flags, orbs, etc.)\n");
-    PrintDedicatedMessage("  $servercaps            - Print server capabilities\n");
-    PrintDedicatedMessage("  $bothelp               - Show this help\n");
+    PrintDedicatedMessage("  $addbot <name> [ship] [difficulty] [team]  Add a bot\n");
+    PrintDedicatedMessage("      ship: pyro, phoenix, magnum, blackpyro\n");
+    PrintDedicatedMessage("      difficulty: trainee, rookie, hotshot, ace, insane\n");
+    PrintDedicatedMessage("      team: 1-4 in team games; leave it out to join the smallest team\n");
+    for (const HelpLine &h : commands)
+      PrintDedicatedMessage("  %-36s %s\n", h.usage, h.what);
+    PrintDedicatedMessage("Diagnostics:\n");
+    for (const HelpLine &h : diagnostics)
+      PrintDedicatedMessage("  %-36s %s\n", h.usage, h.what);
     return true;
   }
   return false;
+}
+
+bool RunBotConsoleCommand(const char *line) {
+  if (!line || line[0] != '$')
+    return false;
+  // ParseLine tokenizes in place: parse a copy, so a line that is not ours reaches the game DLL intact.
+  char parse_buf[255] = {};
+  strncpy(parse_buf, line + 1, sizeof(parse_buf) - 1);
+  char command[255] = {};
+  char operand[255] = {};
+  ParseLine(parse_buf, command, operand, sizeof(command), sizeof(operand));
+  if (!command[0])
+    return false;
+  HostConsoleEcho echo;
+  return DedicatedHandleBotCommand(command, operand);
 }
 
 // Called once per frame for the dedicated server
@@ -1217,15 +1251,8 @@ void DoDedicatedServerFrame() {
     return;
 
   if (str[0] == '$') {
-    // Try bot commands first (they live in the engine, not the game DLL)
-    // Copy before ParseLine — strtok() inserts null bytes into srcline,
-    // which would truncate str before the game DLL sees it.
-    char bot_parse_buf[255] = {};
-    strncpy(bot_parse_buf, str + 1, sizeof(bot_parse_buf) - 1);
-    char bot_cmd[255] = {};
-    char bot_operand[255] = {};
-    ParseLine(bot_parse_buf, bot_cmd, bot_operand, 255, 255);
-    if (bot_cmd[0] && DedicatedHandleBotCommand(bot_cmd, bot_operand))
+    // Bot commands first (they live in the engine, not the game DLL)
+    if (RunBotConsoleCommand(str))
       return;
     // Not a bot command — pass to game DLL
     DLLInfo.input_string = str;
@@ -1250,10 +1277,59 @@ void DoDedicatedServerFrame() {
   SetCVar(CVars[index].varname, operand, false);
 }
 
-// Prints a message to the console if the dedicated server is active
+// --- Host console echo (HostConsoleEcho in dedicated_server.h) -------------------------------------------------------
+// Console text arrives in pieces (a line can be printed in several calls) and the HUD takes whole lines, so a line is
+// held until its newline. The HUD font is 8-bit: the two UTF-8 glyphs the console replies use are spelled in ASCII.
+static int Host_console_echo_depth = 0;
+static char Host_console_echo_line[CON_MAX_STRINGLEN];
+static int Host_console_echo_len = 0;
+
+static void HostConsoleEchoFlush() {
+  if (Host_console_echo_len > 0)
+    AddHUDMessage("%s", Host_console_echo_line);
+  Host_console_echo_len = 0;
+  Host_console_echo_line[0] = '\0';
+}
+
+static void HostConsoleEchoAppend(const char *s) {
+  for (; *s; s++) {
+    if (Host_console_echo_len >= (int)sizeof(Host_console_echo_line) - 1)
+      HostConsoleEchoFlush();
+    Host_console_echo_line[Host_console_echo_len++] = *s;
+    Host_console_echo_line[Host_console_echo_len] = '\0';
+  }
+}
+
+static void HostConsoleEchoWrite(const char *text) {
+  for (const char *c = text; *c; c++) {
+    if (*c == '\n') {
+      HostConsoleEchoFlush();
+    } else if (*c == '\r') {
+      continue;
+    } else if (strncmp(c, "\xE2\x86\x92", 3) == 0) { // U+2192 RIGHTWARDS ARROW
+      HostConsoleEchoAppend("->");
+      c += 2;
+    } else if (strncmp(c, "\xE2\x80\x94", 3) == 0) { // U+2014 EM DASH
+      HostConsoleEchoAppend("-");
+      c += 2;
+    } else {
+      const char one[2] = {*c, '\0'};
+      HostConsoleEchoAppend(one);
+    }
+  }
+}
+
+HostConsoleEcho::HostConsoleEcho() { Host_console_echo_depth++; }
+
+HostConsoleEcho::~HostConsoleEcho() {
+  if (--Host_console_echo_depth == 0)
+    HostConsoleEchoFlush();
+}
+
+// Prints a message to the console if the dedicated server is active, or to the HUD inside a HostConsoleEcho
 
 void PrintDedicatedMessage(const char *fmt, ...) {
-  if (!Dedicated_server)
+  if (!Dedicated_server && Host_console_echo_depth == 0)
     return;
 
   char buf[CON_MAX_STRINGLEN];
@@ -1262,6 +1338,11 @@ void PrintDedicatedMessage(const char *fmt, ...) {
   va_start(args, fmt);
   std::vsnprintf(buf, CON_MAX_STRINGLEN, fmt, args);
   va_end(args);
+
+  if (!Dedicated_server) {
+    HostConsoleEchoWrite(buf);
+    return;
+  }
 
   con_Printf(buf);
   DedicatedSocketputs(buf);
@@ -1471,15 +1552,8 @@ void DedicatedReadTelnet(void) {
               // Process the string
               PrintDedicatedMessage("[%s] %s\n", inet_ntoa(conn->addr.sin_addr), conn->input);
               if (conn->input[0] == '$') {
-                // Try bot commands first (they live in the engine, not the game DLL)
-                // Copy input before ParseLine — strtok() inserts null bytes into srcline,
-                // which would truncate conn->input before the game DLL sees it.
-                char bot_parse_buf[255] = {};
-                strncpy(bot_parse_buf, conn->input + 1, sizeof(bot_parse_buf) - 1);
-                char bot_cmd[255] = {};
-                char bot_operand[255] = {};
-                ParseLine(bot_parse_buf, bot_cmd, bot_operand, 255, 255);
-                if (bot_cmd[0] && DedicatedHandleBotCommand(bot_cmd, bot_operand)) {
+                // Bot commands first (they live in the engine, not the game DLL)
+                if (RunBotConsoleCommand(conn->input)) {
                   conn->input[0] = '\0';
                   return;
                 }

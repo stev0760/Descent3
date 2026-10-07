@@ -1306,6 +1306,23 @@ bool BotPortalCrossing(int room_idx, int portal_idx, vector *pnt_out, float *dep
   return state == 1;
 }
 
+bool BotPortalVerdictCached(int room_idx, int portal_idx, int *class_out, vector *pnt_out, float *cost_out) {
+  if (room_idx < 0 || room_idx > Highest_room_index || !Rooms[room_idx].used || portal_idx < 0 ||
+      portal_idx >= Rooms[room_idx].num_portals || portal_idx >= BOT_MAX_PORTALS)
+    return false;
+  if (pf_class_level_checksum != BOA_mine_checksum || pf_portal_class[room_idx][portal_idx] < 0)
+    return false;
+  if (class_out)
+    *class_out = pf_portal_class[room_idx][portal_idx];
+  if (pnt_out) {
+    const bool crossed = pf_cross_level_checksum == BOA_mine_checksum && pf_cross_state[room_idx][portal_idx] >= 0;
+    *pnt_out = crossed ? pf_cross_pnt[room_idx][portal_idx] : Rooms[room_idx].portals[portal_idx].path_pnt;
+  }
+  if (cost_out)
+    *cost_out = pf_geocost_level_checksum == BOA_mine_checksum ? pf_portal_geocost[room_idx][portal_idx] : -1.0f;
+  return true;
+}
+
 bool BotPortalCrossingPath(int room_idx, int portal_idx, vector *near_out, vector *plane_out, vector *far_out,
                            bool *bent_out) {
   vector p;
@@ -2780,6 +2797,20 @@ uint64_t BotSkelLivePortalMask(int room_idx) {
     return 0;
   SkelEnsure(room_idx);
   return skel_live[room_idx];
+}
+
+uint64_t BotSkelLivePortalMaskCached(int room_idx) {
+  SkelLevelReset();
+  if (room_idx < 0 || room_idx > Highest_room_index || !skel_built[room_idx])
+    return 0;
+  return skel_live[room_idx];
+}
+
+int BotRoomBuriedCached(int room_idx) {
+  SkelLevelReset();
+  if (room_idx < 0 || room_idx > Highest_room_index)
+    return -1;
+  return room_buried[room_idx];
 }
 
 // --- Outdoor connecting graph (Stage B, 12.6) ---------------------------------------------------

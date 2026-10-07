@@ -1242,8 +1242,10 @@ static void BotPollCoop() {
         char iname[64] = "";
         if (Level_goals.GoalGetItemName(Bot_objective.coop_goal_index, iname, sizeof(iname)) <= 0 || !iname[0])
           Level_goals.GoalGetName(Bot_objective.coop_goal_index, iname, sizeof(iname));
+        // Bots escort in co-op and never take an objective on their own: name it, and the order that sends them.
         char line[128];
-        snprintf(line, sizeof(line), "Heading to: %s", iname[0] ? iname : "the next objective");
+        snprintf(line, sizeof(line), "Next objective: %s. Say !goal to send us there.",
+                 iname[0] ? iname : "the next objective");
         BotBroadcastAnnounce(spokesman, line);
         LOG_DEBUG.printf("BOT OBJ: coop goal -> '%s' (goal %d item %d, room %d)", iname,
                          Bot_objective.coop_goal_index, Bot_objective.coop_item_index, Bot_objective.coop_goal_room);

@@ -286,6 +286,16 @@ bool BotSkelRoomBridged(int room_idx);
 // is never bridged, seeded, or counted. Builds the skeleton lazily.
 uint64_t BotSkelLivePortalMask(int room_idx);
 
+// Cached-only reads for the nav debug overlay (bot_navdebug.cpp): they return what navigation has already computed
+// and never build, sample or probe, so drawing a room cannot change when or how its graph is made.
+// BotSkelLivePortalMaskCached: the live mask of a built skeleton, 0 when the room has none yet.
+// BotRoomBuriedCached: the buried-centre verdict, 1 or 0, or -1 when nothing has asked yet.
+// BotPortalVerdictCached: false when the portal has not been classified yet; otherwise its class, its crossing
+// point (the engine's path point until the sampler has run) and its geometric cost (-1 until the router prices it).
+uint64_t BotSkelLivePortalMaskCached(int room_idx);
+int BotRoomBuriedCached(int room_idx);
+bool BotPortalVerdictCached(int room_idx, int portal_idx, int *class_out, vector *pnt_out, float *cost_out);
+
 // $navdump diagnostic (12.6 Stage B): dump a terrain region's outdoor connecting graph — node positions
 // (entrance approach nodes [0,*ent_count_out), then perimeter anchors) and per-node hull-clear edge
 // bitmasks (uint64). Builds the graph lazily; returns total node count (0 if region out of range).

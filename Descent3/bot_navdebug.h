@@ -28,26 +28,25 @@
 // via_chain polyline, current cursor, exit arrow, via_point, goal), and the dense volumetric roadmap
 // (the PRIMARY indoor substrate — small dots/lines colored by component). It is a DEBUG-RENDER
 // toggle: it changes NOTHING a bot does, only what the screen draws, so it stays out of the $nav
-// census and $servercaps. It is usable only when THIS process hosts the bots (SP / listen-server with
-// bots via the in-game Bot menu) — a remote client / dedicated server has no local nav state and no
-// renderer, so every entry point below no-ops there.
+// census and $servercaps. It works only where the bots run: a local game or the host of a listen
+// server. On a remote client the hotkey does nothing, and the dedicated server has no renderer.
 //
 // One cycling hotkey (Ctrl+F7): 0 off -> 1 skeleton+portals -> 2 +bot intent -> 3 +roadmap -> 0.
-// Layer 3 draws the cached per-room roadmap (nodes + lattice edges by component). It reads the
-// roadmap CACHED-only — never builds/heals from the render frame — so a room no bot has queried yet
-// draws nothing there until the sim builds it.
+// Every layer is CACHED-only: it draws the skeletons, verdicts and roadmaps navigation has already
+// built and never builds, samples or heals from the render frame, so a room no bot has queried yet
+// draws nothing until the sim builds it.
 // -------------------------------------------------------------------------------------------------
 
 // Cycling overlay mode: 0=off, 1=skeleton+portals, 2=+bot intent, 3=+roadmap.
 extern int Bot_navdebug_mode;
 
-// True only when this process hosts the bots (has a local renderer, not the dedicated server) AND
-// the overlay is on. Every render path below is gated on this; on a remote client / dedicated
-// server it is always false.
+// True only when this process runs the bots (a local game or a listen-server host) AND the overlay is
+// on. Every render path below is gated on this.
 bool BotNavDebugActive();
 
-// Advance the overlay mode 0->1->2->3->0. Bound to Ctrl+F7 in ProcessNormalKey().
-void BotNavDebugCycle();
+// Advance the overlay mode 0->1->2->3->0. Bound to Ctrl+F7 in ProcessNormalKey(). Returns false, and
+// changes nothing, where the overlay cannot run (a remote client).
+bool BotNavDebugCycle();
 
 // Human-readable name of the current mode ("off", "skeleton+portals", ...) — for a HUD confirmation
 // message on keypress, so the operator sees the toggle fire even before any geometry is in view.

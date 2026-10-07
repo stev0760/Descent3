@@ -1604,26 +1604,51 @@ void MultiGameOptionsMenu(int alloptions) {
 // Populates Bot_ui_settings; bots spawn via BotSpawnFromUI() at level load.
 
 #include "bot.h"
+#include "init.h"
 
 // Ship cycling order for the UI
 static const char *kBotShipNames[] = {"Pyro-GL", "Phoenix", "Magnum-AHT", "Black Pyro"};
 static const int kBotShipCount = 4;
 
-static int BotCycleShipIndex(const char *current_alias) {
+// The ships the menu offers: those the game has loaded, and the Black Pyro only with Mercenary installed (the same
+// rule as the pilot's ship list in pilot.cpp).
+static bool BotShipOffered(const char *name) {
+  int idx = BotResolveShipAlias(name);
+  if (idx < 0)
+    return false;
+  return stricmp(Ships[idx].name, "Black Pyro") != 0 || MercInstalled();
+}
+
+// Position of a roster ship (full name or short alias) in kBotShipNames, or -1.
+static int BotShipListIndex(const char *alias) {
   for (int i = 0; i < kBotShipCount; i++) {
-    if (stricmp(current_alias, kBotShipNames[i]) == 0)
-      return (i + 1) % kBotShipCount;
+    if (stricmp(alias, kBotShipNames[i]) == 0)
+      return i;
   }
-  // Also try short aliases
-  int resolved = BotResolveShipAlias(current_alias);
-  if (resolved >= 0) {
-    for (int i = 0; i < kBotShipCount; i++) {
-      int si = BotResolveShipAlias(kBotShipNames[i]);
-      if (si == resolved)
-        return (i + 1) % kBotShipCount;
-    }
+  int resolved = BotResolveShipAlias(alias);
+  for (int i = 0; resolved >= 0 && i < kBotShipCount; i++) {
+    if (BotResolveShipAlias(kBotShipNames[i]) == resolved)
+      return i;
+  }
+  return -1;
+}
+
+// The next offered ship after the current one; Pyro-GL when the current one is unknown.
+static int BotCycleShipIndex(const char *current_alias) {
+  int cur = BotShipListIndex(current_alias);
+  for (int step = 1; step <= kBotShipCount; step++) {
+    int i = (cur + step + kBotShipCount) % kBotShipCount;
+    if (BotShipOffered(kBotShipNames[i]))
+      return i;
   }
   return 0;
+}
+
+// Team cycling: Auto (smallest team at join) then the four D3 teams. Stored 0-indexed, -1 = Auto.
+static const char *kBotTeamNames[MAX_TEAMS] = {"Red", "Blue", "Green", "Yellow"};
+
+static const char *BotTeamDisplayName(int team) {
+  return (team >= 0 && team < MAX_TEAMS) ? kBotTeamNames[team] : "Auto";
 }
 
 static bool bot_ui_initialized = false;
@@ -1662,6 +1687,12 @@ static void BotEnsureUIDefaults() {
 #define BOT_SET_NAME_OFS 0
 #define BOT_SET_SHIP_OFS 38
 #define BOT_SET_PDIFF_OFS 68
+#define BOT_SET_TEAM_OFS 98
+
+// Server block under the detail panel: a header, the free-seat readout and the spawn note (18px rows)
+#define BOT_SET_SERVER_HDR_OFS 136
+#define BOT_SET_SEATS_OFS 154
+#define BOT_SET_SPAWN_NOTE_OFS 172
 
 // Controls row
 #define BOT_SET_COUNT_LBL_X 40
@@ -1682,6 +1713,7 @@ static void BotEnsureUIDefaults() {
 #define BOT_SET_NAME_EDIT_ID 210
 #define BOT_SET_SHIP_HS_ID 211
 #define BOT_SET_PDIFF_HS_ID 212
+#define BOT_SET_TEAM_HS_ID 213
 
 // Difficulty display names (for per-bot cycling — includes "Default" sentinel)
 static const char *BotDiffDisplayName(BotDifficulty d) {
@@ -1694,8 +1726,24 @@ static const char *BotDiffDisplayName(BotDifficulty d) {
 extern int UI_frame_result;
 static void BotRosterSelChanged(int index) { UI_frame_result = BOT_SET_ROSTER_LB_ID; }
 
+// Seats left for human players: the game's maximum less the host and the bots. The host is the only connected player
+// while this menu is open. The reserve-seat rule (BotReservedSlots) lands separately and will lower this clamp.
+static int BotFreeSeats(int bot_count) {
+  int free_seats = Netgame.max_players - 1 - bot_count;
+  return free_seats > 0 ? free_seats : 0;
+}
+
 void MultiBotSettingsMenu() {
   BotEnsureUIDefaults();
+
+  // A preset can name a ship this install does not offer (the Black Pyro without Mercenary): fly the default instead.
+  for (int i = 0; i < BOT_UI_MAX_BOTS; i++) {
+    BotUIRosterEntry &e = Bot_ui_settings.roster[i];
+    if (!BotShipOffered(e.ship_alias)) {
+      strncpy(e.ship_alias, kBotShipNames[0], sizeof(e.ship_alias) - 1);
+      e.ship_alias[sizeof(e.ship_alias) - 1] = '\0';
+    }
+  }
 
   // Save current state for Cancel restore
   BotUISettings saved = Bot_ui_settings;
@@ -1795,6 +1843,37 @@ void MultiBotSettingsMenu() {
   pdiff_hs.Create(&main_wnd, BOT_SET_PDIFF_HS_ID, 0, &pdiff_off, &pdiff_on, BOT_SET_DETAIL_VAL_X,
                   BOT_SET_CONTENT_Y + BOT_SET_PDIFF_OFS, 120, 18, UIF_FIT);
 
+  // Team row (label + hotspot). Honoured in team games; a team the game does not have joins the smallest one.
+  UITextItem team_lbl_text("Team:", UICOL_TEXT_NORMAL);
+  UIText team_lbl;
+  team_lbl.Create(&main_wnd, &team_lbl_text, BOT_SET_DETAIL_LBL_X, BOT_SET_CONTENT_Y + BOT_SET_TEAM_OFS, 0);
+
+  UITextItem team_on("---", UICOL_HOTSPOT_HI);
+  UITextItem team_off("---", UICOL_HOTSPOT_LO);
+  UIHotspot team_hs;
+  team_hs.Create(&main_wnd, BOT_SET_TEAM_HS_ID, 0, &team_off, &team_on, BOT_SET_DETAIL_VAL_X,
+                 BOT_SET_CONTENT_Y + BOT_SET_TEAM_OFS, 120, 18, UIF_FIT);
+
+  // --- Server block: free seats and when the bots join ---
+  UITextItem hdr_server("Server", UICOL_WINDOW_TITLE);
+  UIText hdr_server_txt;
+  hdr_server_txt.Create(&main_wnd, &hdr_server, BOT_SET_DETAIL_LBL_X, BOT_SET_CONTENT_Y + BOT_SET_SERVER_HDR_OFS, 0);
+
+  char seats_str[64];
+  auto FormatSeats = [&](int bot_count) {
+    snprintf(seats_str, sizeof(seats_str), "Free seats: %d of %d", BotFreeSeats(bot_count), Netgame.max_players);
+  };
+  FormatSeats(Bot_ui_settings.bot_count);
+  UITextItem seats_text(seats_str, UICOL_TEXT_NORMAL);
+  UIText seats_txt;
+  seats_txt.Create(&main_wnd, &seats_text, BOT_SET_DETAIL_LBL_X, BOT_SET_CONTENT_Y + BOT_SET_SEATS_OFS, 0);
+
+  char spawn_str[64];
+  snprintf(spawn_str, sizeof(spawn_str), "Bots join %.0f s after the first level loads.", BOT_UI_SPAWN_DELAY);
+  UITextItem spawn_text(spawn_str, UICOL_TEXT_AUX);
+  UIText spawn_txt;
+  spawn_txt.Create(&main_wnd, &spawn_text, BOT_SET_DETAIL_LBL_X, BOT_SET_CONTENT_Y + BOT_SET_SPAWN_NOTE_OFS, 0);
+
   // Track currently selected bot (-1 = none)
   int selected_bot = -1;
 
@@ -1820,6 +1899,9 @@ void MultiBotSettingsMenu() {
       pdiff_on = UITextItem("---", UICOL_HOTSPOT_HI);
       pdiff_off = UITextItem("---", UICOL_HOTSPOT_LO);
       pdiff_hs.SetStates(&pdiff_off, &pdiff_on);
+      team_on = UITextItem("---", UICOL_HOTSPOT_HI);
+      team_off = UITextItem("---", UICOL_HOTSPOT_LO);
+      team_hs.SetStates(&team_off, &team_on);
       return;
     }
     name_edit.SetText(Bot_ui_settings.roster[sel].name);
@@ -1833,6 +1915,11 @@ void MultiBotSettingsMenu() {
     pdiff_on = UITextItem(dname, UICOL_HOTSPOT_HI);
     pdiff_off = UITextItem(dname, UICOL_HOTSPOT_LO);
     pdiff_hs.SetStates(&pdiff_off, &pdiff_on);
+
+    const char *tname = BotTeamDisplayName(Bot_ui_settings.roster[sel].team);
+    team_on = UITextItem(tname, UICOL_HOTSPOT_HI);
+    team_off = UITextItem(tname, UICOL_HOTSPOT_LO);
+    team_hs.SetStates(&team_off, &team_on);
   };
 
   // Select first bot if available
@@ -1910,6 +1997,10 @@ void MultiBotSettingsMenu() {
       // Update the edit field with clamped value
       snprintf(buf, sizeof(buf), "%d", count);
       count_edit.SetText(buf);
+
+      FormatSeats(count);
+      seats_text = UITextItem(seats_str, UICOL_TEXT_NORMAL);
+      seats_txt.SetTitle(&seats_text);
       continue;
     }
 
@@ -1980,6 +2071,18 @@ void MultiBotSettingsMenu() {
       pdiff_on = UITextItem(dname, UICOL_HOTSPOT_HI);
       pdiff_off = UITextItem(dname, UICOL_HOTSPOT_LO);
       pdiff_hs.SetStates(&pdiff_off, &pdiff_on);
+      continue;
+    }
+
+    // --- Per-bot team cycling (detail panel): Auto -> Red -> Blue -> Green -> Yellow -> Auto ---
+    if (res == BOT_SET_TEAM_HS_ID && selected_bot >= 0) {
+      int cur = Bot_ui_settings.roster[selected_bot].team;
+      int next = (cur >= 0 && cur < MAX_TEAMS - 1) ? cur + 1 : (cur < 0 ? 0 : -1);
+      Bot_ui_settings.roster[selected_bot].team = next;
+      const char *tname = BotTeamDisplayName(next);
+      team_on = UITextItem(tname, UICOL_HOTSPOT_HI);
+      team_off = UITextItem(tname, UICOL_HOTSPOT_LO);
+      team_hs.SetStates(&team_off, &team_on);
       continue;
     }
   }

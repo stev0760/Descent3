@@ -1765,3 +1765,69 @@ source edits, and build verification remain with this session. Stable promotion 
   before the 2026-10-01 consolidation; those dated reads are preserved verbatim in
   `matcen-docs/archive/PLAN-2026-08-29_to_10-01.md`.
 - The engine-files impact audit: `matcen-docs/BOT_DEV_REFERENCE.md`.
+
+## 2026-10-07: client UX (UX2, UX3, UX5, UX6, UX8)
+
+The four client items the operator put before the reveal on 10-01 (Q3, Q5), less UX4 (the squad-order HUD overlay,
+a separate piece of work), plus the `$bothelp` cleanup and COL27's two comments. No navigation code changed: the three
+accessors added to bot_steering.cpp only read caches.
+
+**UX2, the host's `$` commands.** The dedicated console and telnet each carried a copy of the parse-then-dispatch
+block in front of `DedicatedHandleBotCommand`; both now call `RunBotConsoleCommand(line)`, and so does the listen-server
+host: `SendOffHUDInputMessage` (hudmessage.cpp) offers a `$` line to it when `Netgame.local_role == LR_SERVER` and
+passes anything it declines to the game DLL as before, so DMFC's own `$` commands are untouched and a client's `$` line
+never reaches the bot console. The replies are the harder half. Every bot reply, and `BotAdd`'s refusal, is a
+`PrintDedicatedMessage` call, which returns at once off the dedicated server. A second print function would have
+meant touching every reply site, and any new command written the old way would have been silent on the host again.
+Instead `HostConsoleEcho`, a scope object in dedicated_server.h, makes `PrintDedicatedMessage` in a non-dedicated
+process write to the HUD while it is open. It has to be a scope, not a mode: `PrintDedicatedMessage` is exported to
+the game DLL and called by engine code on every level load, and none of that may reach a listen host's HUD.
+`RunBotConsoleCommand` opens the scope around the handler, and `BotDoUISpawn` opens it around the menu roster's spawn,
+so a bot the server refuses when the game starts is reported as `BotAdd`'s reason followed by
+`Failed to add bot '<name>'`. The echo holds text until its newline (`BotPrintObjectiveState` builds lines in several
+calls; the HUD takes whole lines), flushes a partial line when the outermost scope closes, and spells the console's two
+UTF-8 glyphs, the arrow in `$botdifficulty` and the em dash in `BotAdd`'s refusal, as `->` and `-`, since the HUD font
+is 8-bit; Latin-1 bytes in callsigns pass through. The HUD shows three lines; Shift+F9 holds the rest.
+
+**UX3, Bot Settings.** A Team hotspot per roster entry cycles Auto, Red, Blue, Green, Yellow into `roster[].team`,
+which `.mps` already saved. Saving writes `BOTTEAM<n>` only for a chosen team, and loading never cleared the field, so
+a preset loaded after editing kept the previous team for an Auto bot; reading `BOTCOUNT` now resets every team to Auto
+first. A "Server" block under the detail panel shows `Free seats: N of M` (`max_players` less the host and the bots,
+refreshed when the count is applied; the POP2 reserve will lower it when that work merges) and the spawn note, which
+prints `BOT_UI_SPAWN_DELAY`, moved from bot.cpp to bot.h for the purpose. The ship cycle skips ships the install does not
+offer, using the pilot ship list's rule (`Ships[].used`, and `MercInstalled()` for the Black Pyro); opening the menu
+resets a preset's unoffered ship to Pyro-GL. `BotUIRosterEntry::enabled` was written and never read; it is gone.
+
+**UX5, the overlay.** `NavDbgIsHost()` (not the dedicated server; a local game or the listen-server host) now gates
+both drawing and Ctrl+F7, and `BotNavDebugCycle` returns false on a remote client so the key does nothing there, not
+even the HUD line; a mode left on from hosting stops drawing on someone else's server. Layer 1 used to call
+`BotSkelDumpRoom`, which runs `SkelEnsure(room, full=true)`: the whole build including the bridge search, the part the
+sliced worker exists to keep off the main thread (1.4 s on Sigma Base rm19), for every room in scope that lacked a
+bridged skeleton, inside the render frame. It now reads `BotSkelDumpRoomCached`, and the portal markers and the buried
+X read three new cached-only accessors (`BotSkelLivePortalMaskCached`, `BotPortalVerdictCached`,
+`BotRoomBuriedCached`). A room with no skeleton draws nothing; a built one has every door classified and every live
+crossing sampled by the build, so its markers are cache hits; a door the router has not priced has no coloured marker.
+This also takes the overlay out of a state change it used to make: `BotPortalClass` flips a shattered pane to a door
+when read, and that read is no longer the overlay's.
+
+**UX6.** The co-op announcement `Heading to: <item>` promised a move the escort ruling forbids. It now reads
+`Next objective: <item>. Say !goal to send us there.`, which names the one order that does send them. The `!goal`
+reply when nothing is reachable (`No objective right now. Covering you.`, CMD27) is in bot_chat.cpp, which the
+chat-commands work owns this week; it is left for that branch.
+
+**UX8.** `$bothelp` is now a table: the `$addbot` usage with its argument lines, the everyday commands, then a
+Diagnostics group with `$botstat`, `$botmov` and all six `$nav` verbs (`dump`, `roomfaces`, `probe`, `sweep`,
+`contend`, `mtenure`), one `  %-36s %s` line each, with the section and file references gone. The bare `$nav` listing's
+`contend` line carried the same references and was rewritten too. The `$nav` toggle descriptions still name versions,
+maps and design-doc sections; they are COL28's.
+
+**COL27.** `countermeasure_timer` was documented as "future use" while it gates `BotDeployChaff`; the comment now
+says what it does. The GameLoop.cpp Ctrl+F7 comment matches the host-only, cached-only overlay.
+
+**Tested.** Debug build clean (only warnings that were there before). A dedicated server on bedlam CTF, 6 bots,
+`MaxPlayers=8`, driven over telnet: `$bothelp` printed the 23-line listing; `$servercaps`, `$botmode` and `$botlist`
+printed their Tier 1 lines unchanged; `$addbot Tester phoenix ace 2` added the bot (`team=2`); `$addbot Overflow` then
+printed `BOT: cannot add 'Overflow' — server full (8/8 players)` and `Failed to add bot (server full or max bots
+reached)`; `$removebot 6`, `$removebot 9`, `$botdifficulty 1 rookie` and bare `$nav` printed as documented; `$scores`
+still reached DMFC. The echo's line assembly was checked in isolation (split lines, both glyphs, a Latin-1 byte, a
+trailing partial line). Not verified here: the host path, the menu on screen and the overlay, which need a client.

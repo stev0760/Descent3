@@ -829,8 +829,12 @@ void SendOffHUDInputMessage() {
   if (Game_mode & GM_MULTI) {
     if (HudInputMessage[0] == '$') // special command
     {
-      DLLInfo.input_string = HudInputMessage;
-      CallGameDLL(EVT_CLIENT_INPUT_STRING, &DLLInfo);
+      // A listen-server host runs the bot console's commands here, with the replies on its HUD; any other "$" line,
+      // and every "$" line typed on a client, goes to the game DLL.
+      if (Netgame.local_role != LR_SERVER || !RunBotConsoleCommand(HudInputMessage)) {
+        DLLInfo.input_string = HudInputMessage;
+        CallGameDLL(EVT_CLIENT_INPUT_STRING, &DLLInfo);
+      }
     } else {
       char str[255];
       snprintf(str, sizeof(str), TXT_HUDSAY, Players[Player_num].callsign, HudInputMessage);

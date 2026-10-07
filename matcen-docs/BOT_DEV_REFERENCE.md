@@ -119,8 +119,8 @@ int     mine_dump_remaining;  // mines left in the current dump burst
 float   gunboy_cooldown;      // cooldown between gunboy placements
 ```
 
-The `bot.h:517` comment on `countermeasure_timer` still reads "(future use)"; the field is live and gates
-`BotDeployChaff()`.
+`countermeasure_timer` gates `BotDeployChaff()`: chaff, or a flare when the bot carries none, at most once per
+`BOT_COUNTERMEASURE_INTERVAL` while evading or fleeing (the bot.h comment said "future use" until COL27).
 
 ### Per-Frame Call Chain (BotDoFrame)
 
@@ -905,22 +905,26 @@ mode DLLs `netgames/{anarchy,tanarchy,ctf,hoard,entropy,hyperanarchy,roboanarchy
 multiplayer code path and the game-mode modules, not executed by the single-player campaign. In DMFC,
 `dmfcclient.cpp` turns the `OnPlayerReconnect` team-mismatch assert into a log line (dmfcclient.cpp:903-906) and
 `dmfcinputcommand.cpp` raises the `$setpps` clamp from `[1, 20]` to `[2, 40]` (dmfcinputcommand.cpp:730-733).
-`hudmessage.cpp` adds the bot-chat hook (`BotOnChatMessage`) inside the `LR_SERVER` send path (hudmessage.cpp:857,
-884). `mission_download.cpp` fixes the multiplayer mission-download reply (URL test, mission name on the wire,
+`hudmessage.cpp` adds the bot-chat hook (`BotOnChatMessage`) inside the `LR_SERVER` send path (hudmessage.cpp:861,
+888), and offers a listen-server host's `$` chat line to the bot console first (`RunBotConsoleCommand`,
+hudmessage.cpp:834); a line it declines, and every client's `$` line, reaches the game DLL as before.
+`lib/dedicated_server.h` declares `RunBotConsoleCommand` and `HostConsoleEcho`; inside an echo scope
+`PrintDedicatedMessage` writes to the HUD in a non-dedicated process, and outside one it is unchanged (a no-op off the
+dedicated server), so engine and DLL callers are unaffected. `mission_download.cpp` fixes the multiplayer mission-download reply (URL test, mission name on the wire,
 retail missions never advertised, case-insensitive local-mission lookup); client and server join path only.
 
 `GameLoop.cpp` has three touches:
 - `grtext_Reset()` on a **dedicated server** each frame (GameLoop.cpp:2584), so queued console text cannot overflow
   `Grtext_buffer`. Dedicated server only.
-- The nav debug overlay: one `BotNavDebugRender(viewer_roomnum)` call in `GameRenderWorld()` (GameLoop.cpp:2492),
+- The nav debug overlay: one `BotNavDebugRender(viewer_roomnum)` call in `GameRenderWorld()` (GameLoop.cpp:2493),
   inside the live g3 viewer frame, and one `case KEY_CTRLED + KEY_F7:` in `ProcessNormalKey()`
-  (GameLoop.cpp:1269-1278) that calls `BotNavDebugCycle()` and confirms the mode on the HUD. The hotkey is
-  **Ctrl+F7**: Alt+F7 is the window-move shortcut on most Linux desktops and never reaches the game.
-- **Draw-only, no gameplay path.** The render call self-guards on `BotNavDebugActive()`
-  (`!Dedicated_server && Bot_navdebug_mode > 0`, bot_navdebug.cpp:53), so it is a cheap early-out at mode 0 and
-  never runs on the dedicated server. The guard does not check for a host: any non-dedicated instance, including a
-  remote client, can toggle it, and its geometry layers build skeletons synchronously in the render frame (UX5).
-  It changes nothing a bot does and is kept out of the `$nav` census and `$servercaps`.
+  (GameLoop.cpp:1269-1278) that calls `BotNavDebugCycle()` and, when it cycled, confirms the mode on the HUD. The
+  hotkey is **Ctrl+F7**: Alt+F7 is the window-move shortcut on most Linux desktops and never reaches the game.
+- **Draw-only, no gameplay path.** The render call self-guards on `BotNavDebugActive()` (`Bot_navdebug_mode > 0` and
+  `NavDbgIsHost()`: not the dedicated server, and a local game or the listen-server host; bot_navdebug.cpp:56-62), so
+  it is a cheap early-out at mode 0, never runs on the dedicated server, and does nothing on a remote client, where
+  the key does nothing either (UX5). Every layer reads caches only: no skeleton build, crossing sample or probe runs
+  in the render frame. It changes nothing a bot does and is kept out of the `$nav` census and `$servercaps`.
 
 ### Tier D: Platform input (all modes, no gameplay logic)
 
