@@ -10,6 +10,371 @@ including the CTF, Hyper and Hoard write-ups) is preserved verbatim in
 `matcen-docs/archive/BOTS_DEVEL-phases-0_to_0.9.12.md`. The engine-files audit (single-player, Robo-Anarchy and
 co-op impact) now lives in `matcen-docs/BOT_DEV_REFERENCE.md`.
 
+### 2026-10-07: the skeleton-chain harness compiles again
+
+`tools/test_bot_skel_chain.py` (ctest `D3.BotSkelChain`) extracts six production functions from `bot_steering.cpp`
+and compiles them against stubbed geometry. The glasshouse zone work (NAV41) made those functions call `SkelEnsure`
+and `AimNarrowToRouterDoor`, which the harness did not stub, so the test had been failing to compile since 10-01.
+Two inert stubs (the harness pre-builds its graph; its rooms have one exit, so the router-door narrowing passes the
+exit set through) bring it back: `Ran 1 test, OK`. Test-only; no navigation code changed.
+
+### 2026-10-07: mode polish (MODE6, MODE14, COOP5, Entropy E4 and Monsterball M4 difficulty)
+
+**MODE6, the Entropy park obeys knockback.** The takeover park in `BotApplyThrust` thrust against any velocity above
+2 u/s (`BOT_ENTROPY_PARK_BRAKE_SPEED`), so a defender's hits barely moved a holding bot: the one place the code broke
+physics ruling 2. The park now holds zero thrust. It still returns before the FSM thrust path, which keeps juke and
+the combat overrides off the pad; the reason it was built (the old no-nav-dir fallback drove the parked ship forward
+at full throttle) is gone since that fallback coasts. The hold starts only at 5 u/s or less, so drag finishes the
+stop. A knock that leaves the ship in the room costs the DLL clock only (it restarts wherever the ship rests, and any
+point in the room counts); a knock out of the room trips the existing ABORT, and the invade leg flies the ship back to
+the hold point under its own thrust. No return-to-post inside the room was added: flying back would reset the clock
+a second time. The constant is deleted.
+
+**MODE14, the CTF module's spew test (UPSTREAM_PATCHES #6).** `HandlePlayerSpew` (netgames/ctf/ctf.cpp) decided
+whether a dying carrier stood in a flag's home goal by reading `dObjects[pnum]`, a player number used as an object
+index, so the home-goal return almost never fired and an unrelated object in a goal room could send a flag home from
+anywhere. It now reads `dObjects[dPlayers[pnum].objnum]`, guarded `>= 0` for the disconnect path, the idiom the pickup
+handler already uses (ctf.cpp:1080); the patch text in UPSTREAM_PATCHES #6 is the tree's text. Two things a reader of
+CTF logs needs: that return path calls `DoFlagReturnedHome`, which plays a sound and prints no HUD line, so the
+analyzer sees no return for it; and the function runs on every machine, so a client on the stock module keeps the
+flag marked away from base until the next flag event or the 120 s timeout corrects its copy (the server's flag object
+is home either way). REL20 rides along: UPSTREAM_PATCHES' assessment list now names `fvi_RoomCheckDir` as fork-only.
+
+**COOP5, the congestion penalty counts robots in co-op.** `BotSelectTarget` adds 80 per other bot already on a
+candidate (`BOT_TARGET_CONGESTION_PENALTY`, the literal it replaces), but the count only looked at `OBJ_PLAYER`
+targets, and the robot loop scored distance plus the LOS penalty alone. Bots escorting one human stand close
+together, so their nearest robot was the same robot and nothing pushed them apart. The counting pass now also
+collects the other bots' robot target handles when the mode is co-op, and the robot loop adds the same 80 per match.
+Robo-Anarchy is deliberately unchanged: every bot there is an enemy of every other, so "spread across targets" is not
+a team behaviour there, and the row asked for a co-op-gated fix. Unflown; COOP2's fresh co-op flight is where it gets
+read (one-robot pile-ups in the escort fights, not a metric of its own).
+
+**MODE1 / MODE7, Entropy E4 and Monsterball M4 difficulty.** Both modes now read the existing difficulty table
+(`kDiffParams`) instead of adding columns: `BotGetDiffParams` is exported and `BotDiffParamsFor(tier)` gives any row.
+The rule is the same in both modes: their constants were tuned on Hotshot bots, so each scaling is the tier's
+distance from the Hotshot row and a Hotshot bot plays exactly as before. Which column goes where:
+
+- Entropy invasion aggression: the abort floor is a flee threshold, so `BotEntropyRetreatShields` multiplies it by
+  `flee_pct_scale` (Trainee 45, Rookie 35, Hotshot 25, Ace 17.5, Insane 10). The re-engage floor keeps its fixed +20
+  (the hold's 15 shields of room damage plus slack is a cost, not temperament), and the mid-hold flee threshold in
+  `BotUpdateState` reads the same floor. DEPART (80) stays above the highest re-engage floor (65).
+- Entropy lab-defence reaction: the intruder, takeover-threat and loaded-enemy biases are multiplied by
+  `dodge_percent`, the table's threat-reaction column (0.2, 0.5, then 1.0 from Hotshot up). Above Hotshot it stays at
+  full strength on purpose: the loaded-intruder bias (-700) already outbids the 500 LOS penalty, and more would let a
+  far intruder pull every bot off nearer enemies.
+- Monsterball cones: `aim_error_deg` beyond Hotshot's 3 degrees widens the alignment cone (fire gate and the slam's
+  contact-range gate) and narrows the blunder refusal cone by the same angle; striker, keeper clears and the
+  contact-avoid detour all read the bot's own blunder gate. Trainee 0.70 / 0.49, Insane 0.83 / 0.30.
+- Monsterball timing: `fire_delay` beyond Hotshot's 0.2 s is perception lag, clamped at zero. The prediction horizon
+  shrinks by it (0.7 s to 0.4 s Rookie, 0.1 s Trainee), and it is the kickoff delay: the striker keeps flying its
+  previous order that long after the ball reappears on its spawn point. Kickoff had no detection before; the spawn
+  point is found at init the way the DLL finds it (first `RF_SPECIAL1` room, its computed center) and
+  `BotMballKickoffAge` calls it a kickoff when the ball is on that point after a jump the 120 u/s cap cannot explain
+  (or on the level's first look). It runs from the striker's think, not the 0.5 s poll, so the hold starts before the
+  striker has re-aimed at the new ball. Logs: `BOT MBALL: kickoff (...)` and `'<bot>' kickoff reaction <s>s (<tier>)`.
+
+Not scaled, left on MODE1/MODE7: Entropy denial appetite, smarter invasion, the drill command, shield-knob iteration;
+Monsterball wall/ceiling play, banks, pass-backs. The `!` verbs for both modes are the CMD branch's.
+
+**The hold ends when the invade nav loses its target.** A force-loaded test run (every bot given 5 viruses by a scratch
+build, never committed) showed parked bots sitting still for seconds after the hold should have ended: Gregg (Insane)
+took a hit at 51 shields that left him at 7, under his floor of 10, and `BotDoEntropyInvadeNav` got a target of -1 (by
+the code, the retreat branch found no repair or energy room of his team's), called `BotDoExploreRoaming` and returned
+without clearing `entropy_holding`, so the park went on holding the "roaming" bot at zero thrust; Phantom showed the
+same signature for 4.4 s after his takeover (an explore pick while the park trace ran on) until the room-progress
+timeout cleared his goals. The target check now runs after the ABORT block, so a -1 target logs `takeover hold ABORT
+(... -> target -1 ...)` and drops the flag before the bot roams. The braking park had the same hole; the zero-thrust
+park only made it visible in the trace.
+
+**Smokes (Debug, lab, 4v4 with every tier on the field: each team Trainee, Rookie, Ace or Hotshot, Insane).** No
+assert in any run; every stop was our SIGTERM.
+
+- Entropy, `dementia.mn3`, 6-minute levels, stock build: SteelVapor full level and the GeoDomes load, 20 bot deaths, 0
+  stucks, 5 pickups, 0 holds (as in every Entropy soak since 0.9.14: the analyzer's hold count has read 0).
+- Entropy, the force-loaded scratch build: the park trace (thrust and speed every 0.25 s while holding) read thrust 0.00
+  on all 113 samples. A hold that starts at 4.9 u/s coasts down 4.92, 2.28, 1.06, 0.49 u/s; Gregg, parked at 3.3 u/s,
+  took a hit (51 to 7 shields) and the next sample read 85.8 u/s, then 39.7, thrust 0.00 throughout: the knock carried
+  him, nothing pushed back. Holds convert: Phantom's hold in GeoDomes room 0 took the room (5 points to him). On
+  SteelVapor no hold started in either force-loaded run (first run: 807 invade legs, 302 of them re-issued from inside
+  the target room), with the bots at 16-40 u/s there and `movement_dir` swinging each half second, so the 5 u/s start
+  gate never passed. That is the arrival side of MODE2, navigation and out of scope here; it is evidence on the row. The
+  second force-loaded run, on the build with the -1 hold release, started no hold on either level, so that fix is
+  checked by reading only.
+- Monsterball, `frenzy.mn3` (PowerHouse, then the level-2 load): 4 goals, 0 blunders, 67 fires at the ball, 58
+  ball-avoid detours, 0 stucks. Every goal line (`knocks the ball in for a point!`) is followed by
+  `BOT MBALL: kickoff (ball on its spawn point in rm1)`, plus one at each level start (the level-2 load re-armed it);
+  `'Shadow[BOT]' kickoff reaction 0.3s (Rookie)` and `'Phantom[BOT]' kickoff reaction 0.6s (Trainee)` fired, and no
+  Hotshot-or-better striker waited. `MBALL_ROLE_THRASH` (149 role changes in the round) matches the 09-13 PowerHouse
+  rate and predates this work.
+
+### 2026-10-07: the quick-order overlay (UX4)
+
+The squad-order HUD shortcut the operator put before the reveal on 10-01 (Q3d): on the Matcen client, and it
+degrades to chat. New `Descent3/bot_quickorder.{h,cpp}` and `bot_quickorder_menu.cpp`; engine touches in
+`GameLoop.cpp`, `hud.cpp`, `hud.h` and `hudmessage.cpp`. No server-side or navigation code changed, and `bot_chat.cpp`
+was not touched: the menu only emits chat lines the parser already reads.
+
+**Two halves.** `bot_quickorder_menu.cpp` holds the order table, the mode rule, the open/pick/page/back state machine
+and the line composer, as plain data with no engine globals, so `Descent3/tests/bot_quickorder_tests.cpp` builds it
+alone and checks every row and every line. `bot_quickorder.cpp` reads the mode and the player list, routes keys, draws
+and sends. The order table holds the canonical verbs of CHAT_COMMANDS §A.5 in a fixed order, so Follow, Cover,
+Attack, Defend and Hold keep keys 1-5 in every mode. Three verbs are left out where the server would not carry them
+out: `!hunt` in co-op (`BotFindPlayerByName` skips the sender's team and co-op has one), `!goal` outside co-op, and the
+flag verbs outside CTF. CTF offers eleven rows, so key 0 turns the page; the same rule pages a second step longer than
+nine (more than eight bots on a side).
+
+**The key.** F10, hard-bound. The binding table (`Controller_needs`, `NUM_CONTROLLER_FUNCTIONS = 73`) does accept a
+new function, and the key-config screen would list it, but `pilot::write_controls` saves the table as a counted block
+and `pilot::read_controls` matches each saved id with `for (y = 0; y < temp_b; y++) if (Controller_needs[y].id == id)`,
+bounded by the file's count, not its own. A pilot saved with 74 functions and loaded by a 73-function client (retail,
+upstream, PiccuEngine) reads `Controller_needs[73]` and writes `controls[74]`, past both arrays. Players keep one
+pilot directory across clients, so the menu takes a fixed key instead. F10 was free in play: `ProcessNormalKey` and
+the netgame DLLs (F6, F7, Page Up/Down, Escape) do not use it, and the Debug test key F10 needs `KEY_DEBUGGED`. The
+grave key moves between keyboard layouts (the SDL map is by keycode), and F11 is a desktop shortcut on some systems.
+
+**Keys while open.** `ProcessKeys()` offers each key to `BotQuickOrderHandleKey()` after the chat line and the game DLL
+and before `ProcessNormalKey()`. After the DLL, because DMFC's F6 menu takes every key while it is up (`iRet = 1`), so
+F10 cannot open over it and the digits stay with it; before the normal keys, because digits select weapons there. The
+menu consumes 1-9 and 0 even when they match no row, so a missed pick never switches weapons, plus Backspace, Escape
+and F10. Every other key passes, so the player flies and fires with the menu up; a function key or Pause also closes
+it, since each opens another screen or the chat line. It closes itself after 8 s without a key (`timer_GetTime()`;
+`Gametime` restarts with the level), when the chat line opens, and when the game leaves `GAME_INTERFACE`.
+
+**The send.** The chat half of `SendOffHUDInputMessage` (the line after a `$` check: general chat with its `name:`
+direct-message parse, or team chat, and on a listen-server host `BotOnChatMessage` before the rebroadcast) is now
+`SendHUDChatText(text, style)`, unchanged; the chat line and the Ctrl+1..8 taunt macros reach it as before, and
+`SendHUDChatLine` is the menu's entry, which skips the input-line bookkeeping (key flush, controls resume, typing
+icon). A squad order is the bare verb on team chat in team modes, so the other side never sees it, and on general
+chat in co-op. One bot is a direct message by full callsign, `Reaper[BOT]: !follow`: `GetMessageDestination` stops
+at an exact callsign, so it reaches that slot, where `!follow Reaper` reaches the first bot whose base name starts
+that way (`BotBaseNameMatch`). `!hunt` takes the target's first word without the suffix, since the parser reads one
+word and prefix-matches it. A callsign with a colon would split the direct-message form and falls back to `!verb
+<name>`. A line that names a player is not sent if that player has left since the menu opened: a direct message to a
+missing callsign falls through `GetMessageDestination` as general chat, which the parser reads as a squad order.
+
+**Who is listed.** `NPF_BOT` is the server's flag and never reaches a client, so a client tells bots by the `[BOT]`
+suffix every client is sent. The side is `Players[].team` (every bot in co-op); a team of -1 is the dedicated server's
+own slot (DMFC's `IsPlayerDedicatedServer`), and enemy observers are not offered for `!hunt`. The mode comes from the
+same state the server's gate reads: `NF_COOP` (sent in the join packet), `Num_teams` (DMFC's `SetNumberOfTeams` runs on
+the client too), and the script name for CTF, read as `BotDetectGameMode` reads it. Monsterball runs two teams, so
+the server takes orders there and the menu offers them; CHAT_COMMANDS §A.3 lists it among the one-team modes, which
+the code does not bear out (reported, not changed here).
+
+**The draw.** HUD font text at the netgame F6 menu's place (x 10, eight lines down), drawn in `RenderHUDFrame()` after
+`EVT_CLIENT_HUD_INTERVAL`, as DMFC draws that menu, so the cockpit model never covers it. Title pale green, rows HUD
+green with the chat command in the bots' reply yellow, a dimmed row for Hunt when nobody can be hunted, and a hint
+line (`Esc close`, plus `Backspace back` on the second step).
+
+**Tested.** Debug build clean (no warnings from the new files or the changed ones beyond those already there).
+`bot_quickorder_tests`: 8 of 8, covering the mode rule (co-op, the one-team modes, CTF by `CTF`, `ctf.d3m` and
+`CTF.D3M`, the other team modes), the reasons it will not open, the rows of each mode, both pages of CTF, the second
+step and Backspace, the one-bot and Ping shortcuts, Hunt with and without enemies, a 13-row paged squad, and every
+line for every verb in every mode (printed in the test log: `!follow` team, `Reaper[BOT]: !follow` direct,
+`!hunt Kestrel` team, co-op squad lines on general chat). Each line was read against the parser: `BotFindCommand`
+takes the `!` after the space in `[Name]: !follow` and `<Name>: !follow`, the direct message takes the DM branch of
+`BotResolveAndDispatch`, and `!hunt Kestrel` matches through `BotFindPlayerByName`. `ctest`: 21 of 22; the one failure,
+`D3.BotSkelChain`, compiles functions out of `bot_steering.cpp` (untouched here) and fails on `SkelEnsure` and
+`AimNarrowToRouterDoor` not being declared, as it does without this change. Not verified: the menu on screen, the keys
+in a live game and the lines reaching a server, which need a client in a match.
+
+### 2026-10-07: release packaging, samples, quickstart (REL2, REL4, REL11, REL15)
+
+The release-package plumbing decided on 10-01 (Q14a: binary packages on a GitHub Release, mirrored to ModDB by the
+operator). No engine code changed.
+
+**REL2, `release.yml`.** The upstream workflow drafted a CPack source tarball on any tag. It now runs on `v*` tags
+and on a manual dispatch, in four jobs. `version` reads `MATCEN_VERSION_*` from CMakeLists.txt and fails a tag that is
+not `v<X.Y.Z>` of that version or that still carries a suffix, because the binaries print that version and a stale
+`-dev` would ship under a release name; a dispatch names its packages `v<version>-<sha8>`. `package` is a three-entry
+matrix (Windows MSVC, Linux GCC on ubuntu-22.04, macOS universal on macos-14) that repeats build.yml's toolchain and
+vcpkg steps and its configure flags, with `RelWithDebInfo` as the build type and the editor off (it is never
+installed); build.yml itself is untouched. Each package is the `cmake --install` tree (`FORCE_PORTABLE_INSTALL`, so
+the executable, `d3-<os>.hog`, `netgames/*.d3m`, `online/*.d3c` and the upstream docs sit at the root) plus
+`samples/dedicated.cfg`, `samples/bots.cfg` and an `INSTALL.txt` filled in from `matcen-docs/samples/INSTALL.txt`.
+The stage step fails if `online/Direct TCP~IP.d3c` or the `.d3m` files are missing. The Windows PDB and the Linux
+debug info go to a `-symbols` archive (`objcopy --only-keep-debug`, then `--strip-debug --add-gnu-debuglink`), so the
+player package stays small and a crash can still be symbolised. The macOS package is unsigned and named
+`...-macOS-universal-community-tested.zip`. `source` replaces the CPack tarball with `git archive` plus
+`git-hash.txt` (what cmake/CheckGit.cmake reads in a tree without git): the old job ran `cmake --preset linux` on a
+runner with no vcpkg and no SDL3, glm, plog or httplib, so by reading it fails at configure. `release` runs only for
+a tag, gathers every artifact, adds `SHA256SUMS.txt` and drafts the release; publishing it stays a manual step.
+
+Build type consequences, read from the code: RelWithDebInfo defines `NDEBUG` but not `RELEASE`, so `ASSERT` stays
+compiled (ddebug/pserror.h) and logs `Assertion failed (...)` at error level, while `SDL_assert` is off at
+`SDL_ASSERT_LEVEL` 1 and the server carries on; the plog level defaults to debug (sdlmain.cpp), and every bot
+telemetry line is a run-time-filtered `LOG_DEBUG` with no build-type `#if`, so a RelWithDebInfo server log feeds the
+analyzer like a Debug one. "Release logs are blind" (REL3) is the Release config's info default, which
+`-loglevel DEBUG` lifts. The MSVC CRT link workaround in CMakeLists.txt applies to Release only; it exists because of
+`/GL`, which RelWithDebInfo's default flags do not use.
+
+Verified locally: the YAML of all four workflows loads; the version step's shell, run against this CMakeLists.txt
+(`-dev`: tag refused, dispatch named `v0.9.17-dev-5594163b`) and a copy with the suffix stripped (`v0.9.17` passes,
+`v0.9.18` refused); the Linux stage, symbol split and archive steps, run on the RelWithDebInfo build output arranged as
+`install_manifest.txt` lays out the install tree: 85 MB staged, a 16 MB `.tar.xz` and a 21 MB symbols archive (the
+executable goes from 111 MB to 14 MB, and its `.gnu_debuglink` names `Descent3.debug`). Inferred, not run: every
+Windows and macOS step (the PDB name, `7z` on the Windows runner's PATH, `zip` on macOS), the GitHub-side upload,
+download and release actions, and the vcpkg build under RelWithDebInfo. The first dispatch from the Actions tab is the
+test. A tag pushed on an older commit (REL16's backfill) runs that commit's old workflow, not this one.
+
+**Samples.** `matcen-docs/samples/dedicated.cfg` and `bots.cfg` follow BOT_MANAGEMENT §2: CTF on Bedlam with two
+teams, `MaxPlayers=14`, `PPS=40`, `ConnectionName=Direct TCP~IP`, the remote console on with a placeholder password;
+four named bots, `BotTargetPlayers=12`, `BotReservedSlots=1`, `BotDifficulty=hotshot`. Comments are on their own
+lines in both. In dedicated.cfg a `;` line is skipped because `InfFile::ParseLine` reads `;` as an unknown command
+(the lab's Monsterball cfg relies on the same thing). Both files were run through a Python copy of the two parsers
+(the `[server config file]` tag check, the `" \t=:"` and `",;"` tokenising and the CVar table; `BotLoadRosterFile`'s
+rules): every key lands with its value and no value carries a `;`. The tag check also showed that BOT_MANAGEMENT §2's
+dedicated.cfg example began with a `; dedicated.cfg` label line, which the engine would refuse as a first line; the
+example now starts with the tag. `.gitignore` ignores `dedicated.cfg` everywhere, so it gains a negation for
+`matcen-docs/samples/*.cfg`.
+
+**REL11.** `QUICKSTART.md` is the user-facing page: install over a 1.4+ install, the `Direct TCP~IP.d3c` check (without
+it `RunServerConfigs` cannot load the connection and the dedicated server stops), the samples, the start lines
+(Windows needs `-winconsole`: the dedicated console is stdout, and `WinMain` attaches none without it), `$bothelp`,
+the `!` orders, Bot Settings, Pyrodeck, the known limitations by registry id with no map names, and a bug report
+checklist. `ANNOUNCEMENT.md` is a ~270-word draft with link placeholders for the operator.
+
+**REL4.** `tools/manifests/battery/README.md` lists the release battery as a checklist with the runtime-dir files each
+stage needs and the `soakctl.py` and `soak_battery.sh` invocations. Bedlam and co-op had no tracked manifest:
+`reg-bedlam.json` (the lab's `soak-dedicated-bedlam4t.cfg`, 12 rounds, `expect_rounds` 12) and `reg-coop.json`
+(`soak-dedicated-coop.cfg`, 30 minutes, a crash net; co-op play is judged by the operator's flight). Fellowship,
+Monsterball, Entropy and the anarchy family reuse existing manifests. Found on the way: the analyzer has no count of
+`Assertion failed` lines, which an optimised build turns into log lines instead of stops; the README says to count
+them by hand.
+
+**REL15.** PLAN §3 now carries the definition verbatim; the README line belongs to the README pass.
+
+### 2026-10-07: population and seats (POP1-POP3, POP6, POP9, POP10, POP14)
+
+The operator's 2026-10-01 seat rulings, built on 0.9.17-dev. New module `Descent3/bot_population.{h,cpp}`; the
+checks it needs sit in `BotAdd()`, so every add path obeys them without a second copy. Navigation untouched.
+
+**One census, three rules.** The census counts `NPF_CONNECTED` slots exactly as the engine's join answer does
+(`MultiCountPlayers`), so the server's own slot 0 occupies a seat on both server kinds and the seat the reserve keeps
+is the one `MultiDoAskToJoin` hands a human. The reserve (POP2): a bot joins only if `BotReservedSlots` seats (default
+1, minimum 1) stay free after it; `BotAdd()` asks `BotPopulationBotsAllowed()` and refuses with the numbers. The
+yield (POP3): when the free seats drop below the reserve because a human took one, a bot leaves once that human is
+in the game. The target (POP1): with `BotTargetPlayers` above 0, bots join or leave one at a time to keep humans +
+bots at the target, never past the reserve.
+
+**Where the yield hooks.** Not into the join answer, which the old §9 design proposed: with a reserve there is always
+a free seat, so the vanilla path seats the human, and the work is to free a seat again afterwards. The manager runs
+from `BotDoFrame()` (inside `MultiDoServerFrame`), takes the census every frame (one pass over 32 slots) and holds
+completely while any human is short of `NETSEQ_PLAYING`: a joining client is being sent the player list
+(`NETSEQ_REQUEST_PLAYERS` and the rest), and a bot's disconnect or arrival packet under it is the one moment a change
+could reach it half-built. Any census change (a human reaching `PLAYING` or leaving, a bot coming or going,
+`MaxPlayers` moving) triggers a check at once; a 5 s periodic check backs it up; every change waits 5 s after the last
+one (`BOT_POP_COOLDOWN`). Both clocks are `timer_GetTime()`, because `Gametime` restarts with each level. No engine
+join or disconnect function was touched. The yield runs with the target off too, since it is the reserve's other
+half; without a target a yielded bot does not come back.
+
+**Which bot leaves.** In team modes, a bot from the team with the most players among teams that still have one, then
+the lowest score, then the newest arrival (an arrival serial kept per `Bots[]` index). The score is `Multi_kills`, the
+server's per-slot frag count (the GameSpy number), since DMFC keeps each mode's real score DLL-side. `BotAdd()` now
+clears `Multi_kills`/`Multi_deaths` for the bot's slot, as `MultiDoMyInfo` does for a joining human: a bot taking a
+slot a human had left inherited that human's frags, which would have skewed the pick (and GameSpy's report).
+
+**Who joins.** The first bots.cfg entry whose callsign is free, with its ship and difficulty; the roster is every
+entry the file names, not only the first `BotCount`. Then the first free built-in name, borrowing the roster's ships
+and difficulties in turn. The team is always `BotAdd()`'s balance: the manager refills whichever side was left.
+
+**Smaller rows.** POP9: `BotAllowedShip()` in `BotAdd()` checks the server slot's ship permissions (the list
+`MultiDoMyInfo` checks humans against) and falls back to Pyro-GL, or the first allowed ship, with a log and console
+line. POP10: `BotParseDifficulty()` reports an unknown word; `BotResolveDifficulty()` falls back to the configured
+default, the roster keeps unknown per-bot values on the default resolved at spawn (so the `BotDifficulty=` line may
+come anywhere), and `$addbot` prints a line. POP14 and the menu: `BotPopulationRosterLimit(max_players)` =
+`max_players − 1 − reserve`, applied by the Bot Settings menu and by the `.mps` loader after the whole file is read.
+The config roster spawns while seats allow and prints how many it skipped. POP6: `features=` gains `teams`,
+`squad_orders`, `population`. COL14 (two of its items): the `BotAdd` suffix comment and the `$addbot` parse comment.
+
+**Console.** `$botpopulation [on|off|status|target <n>|reserve <n>]`; status is one `key=value` line
+(`Population: manager=on target=6 reserve=1 humans=0 bots=6 seats=7/8 bot_limit=6`). Formats in
+PYRODECK_CONTRACT.md §4; `$botpopulation` joins Tier 1.
+
+**Exit test** (Debug, lab binary `Descent3-pop`, bedlam level 4 CTF 2 teams, `MaxPlayers=8`, target 6, reserve 1,
+4-entry roster, Phoenix banned by `.mps` `SHIPBAN`). Roster spawn 11:27:30.6; `Viper[BOT]` joined 35.6 and
+`Blaze[BOT]` 40.6 (built-in names after the roster); status `bots=6 seats=7/8`. `$addbot Extra pyro`:
+`BOT: cannot add 'Extra': 7 of 8 seats in use and 1 kept free for players`. `$removebot 0` at 56.8, `Reaper[BOT]`
+back at 01.8 (5.0 s). `$botpopulation target 3`: removals at 26.7, 31.8, 36.8; status `bots=3 seats=4/8`.
+`$botpopulation reserve 3` with two seats free exercised the yield branch: `Shadow[BOT] left to make room for a
+player.`, taken from the three-bot blue side, not the two-bot red one. `Shadow` fell back to Pyro-GL at spawn,
+`BotDifficulty3=junk` spawned Ace with a warning, `$addbot Junky pyro junk` printed the fallback line, and `.mps`
+`BOTCOUNT 16` loaded as 6. A second run at `MaxPlayers=4` (the co-op cap) spawned two of four roster bots with
+`2 of 4 bots skipped` and logged the target of 6 once as out of reach. Verbs `on`/`off`/`target 0`/`on` without a
+target/`reserve 0`/unknown all printed as specified.
+
+**Not verified live:** a human joining or leaving; the console cannot join a client. By code reading, the join path
+is unchanged (the free seat answers `JOIN_ANSWER_OK`, `MultiCheckListen` connects the human into it), the hold covers
+the whole `NETSEQ_WAITING_FOR_LEVEL` to `NETSEQ_WORLD` sequence, and the census change at `NETSEQ_PLAYING` fires the
+same `free < reserve` branch the reserve test drove. A second human asking while the first is still loading gets the
+vanilla full answer until the yield frees a seat; a larger `BotReservedSlots` covers bursts. The first flight with a
+human client should confirm the yield and the refill.
+
+### 2026-10-07: client UX (UX2, UX3, UX5, UX6, UX8)
+
+The four client items the operator put before the reveal on 10-01 (Q3, Q5), less UX4 (the squad-order HUD overlay,
+a separate piece of work), plus the `$bothelp` cleanup and COL27's two comments. No navigation code changed: the three
+accessors added to bot_steering.cpp only read caches.
+
+**UX2, the host's `$` commands.** The dedicated console and telnet each carried a copy of the parse-then-dispatch
+block in front of `DedicatedHandleBotCommand`; both now call `RunBotConsoleCommand(line)`, and so does the listen-server
+host: `SendOffHUDInputMessage` (hudmessage.cpp) offers a `$` line to it when `Netgame.local_role == LR_SERVER` and
+passes anything it declines to the game DLL as before, so DMFC's own `$` commands are untouched and a client's `$` line
+never reaches the bot console. The replies are the harder half. Every bot reply, and `BotAdd`'s refusal, is a
+`PrintDedicatedMessage` call, which returns at once off the dedicated server. A second print function would have
+meant touching every reply site, and any new command written the old way would have been silent on the host again.
+Instead `HostConsoleEcho`, a scope object in dedicated_server.h, makes `PrintDedicatedMessage` in a non-dedicated
+process write to the HUD while it is open. It has to be a scope, not a mode: `PrintDedicatedMessage` is exported to
+the game DLL and called by engine code on every level load, and none of that may reach a listen host's HUD.
+`RunBotConsoleCommand` opens the scope around the handler, and `BotDoUISpawn` opens it around the menu roster's spawn,
+so a bot the server refuses when the game starts is reported as `BotAdd`'s reason followed by
+`Failed to add bot '<name>'`. The echo holds text until its newline (`BotPrintObjectiveState` builds lines in several
+calls; the HUD takes whole lines), flushes a partial line when the outermost scope closes, and spells the console's two
+UTF-8 glyphs, the arrow in `$botdifficulty` and the em dash in `BotAdd`'s refusal, as `->` and `-`, since the HUD font
+is 8-bit; Latin-1 bytes in callsigns pass through. The HUD shows three lines; Shift+F9 holds the rest.
+
+**UX3, Bot Settings.** A Team hotspot per roster entry cycles Auto, Red, Blue, Green, Yellow into `roster[].team`,
+which `.mps` already saved. Saving writes `BOTTEAM<n>` only for a chosen team, and loading never cleared the field, so
+a preset loaded after editing kept the previous team for an Auto bot; reading `BOTCOUNT` now resets every team to Auto
+first. A "Server" block under the detail panel shows `Free seats: N of M` (`max_players` less the host and the bots,
+refreshed when the count is applied; the POP2 reserve will lower it when that work merges) and the spawn note, which
+prints `BOT_UI_SPAWN_DELAY`, moved from bot.cpp to bot.h for the purpose. The ship cycle skips ships the install does not
+offer, using the pilot ship list's rule (`Ships[].used`, and `MercInstalled()` for the Black Pyro); opening the menu
+resets a preset's unoffered ship to Pyro-GL. `BotUIRosterEntry::enabled` was written and never read; it is gone.
+
+**UX5, the overlay.** `NavDbgIsHost()` (not the dedicated server; a local game or the listen-server host) now gates
+both drawing and Ctrl+F7, and `BotNavDebugCycle` returns false on a remote client so the key does nothing there, not
+even the HUD line; a mode left on from hosting stops drawing on someone else's server. Layer 1 used to call
+`BotSkelDumpRoom`, which runs `SkelEnsure(room, full=true)`: the whole build including the bridge search, the part the
+sliced worker exists to keep off the main thread (1.4 s on Sigma Base rm19), for every room in scope that lacked a
+bridged skeleton, inside the render frame. It now reads `BotSkelDumpRoomCached`, and the portal markers and the buried
+X read three new cached-only accessors (`BotSkelLivePortalMaskCached`, `BotPortalVerdictCached`,
+`BotRoomBuriedCached`). A room with no skeleton draws nothing; a built one has every door classified and every live
+crossing sampled by the build, so its markers are cache hits; a door the router has not priced has no coloured marker.
+This also takes the overlay out of a state change it used to make: `BotPortalClass` flips a shattered pane to a door
+when read, and that read is no longer the overlay's.
+
+**UX6.** The co-op announcement `Heading to: <item>` promised a move the escort ruling forbids. It now reads
+`Next objective: <item>. Say !goal to send us there.`, which names the one order that does send them. The `!goal`
+reply when nothing is reachable (`No objective right now. Covering you.`, CMD27) is in bot_chat.cpp, which the
+chat-commands work owns this week; it is left for that branch.
+
+**UX8.** `$bothelp` is now a table: the `$addbot` usage with its argument lines, the everyday commands, then a
+Diagnostics group with `$botstat`, `$botmov` and all six `$nav` verbs (`dump`, `roomfaces`, `probe`, `sweep`,
+`contend`, `mtenure`), one `  %-36s %s` line each, with the section and file references gone. The bare `$nav` listing's
+`contend` line carried the same references and was rewritten too. The `$nav` toggle descriptions still name versions,
+maps and design-doc sections; they are COL28's.
+
+**COL27.** `countermeasure_timer` was documented as "future use" while it gates `BotDeployChaff`; the comment now
+says what it does. The GameLoop.cpp Ctrl+F7 comment matches the host-only, cached-only overlay.
+
+**Tested.** Debug build clean (only warnings that were there before). A dedicated server on bedlam CTF, 6 bots,
+`MaxPlayers=8`, driven over telnet: `$bothelp` printed the 23-line listing; `$servercaps`, `$botmode` and `$botlist`
+printed their Tier 1 lines unchanged; `$addbot Tester phoenix ace 2` added the bot (`team=2`); `$addbot Overflow` then
+printed `BOT: cannot add 'Overflow' — server full (8/8 players)` and `Failed to add bot (server full or max bots
+reached)`; `$removebot 6`, `$removebot 9`, `$botdifficulty 1 rookie` and bare `$nav` printed as documented; `$scores`
+still reached DMFC. The echo's line assembly was checked in isolation (split lines, both glyphs, a Latin-1 byte, a
+trailing partial line). Not verified here: the host path, the menu on screen and the overlay, which need a client.
+
 ### 2026-10-06: HEAD against 0.9.16, the comparison the week had skipped
 
 Every pair this week ran against `d081952e`, which already carries NAV41; the operator's baseline is 0.9.16
@@ -1765,357 +2130,3 @@ source edits, and build verification remain with this session. Stable promotion 
   before the 2026-10-01 consolidation; those dated reads are preserved verbatim in
   `matcen-docs/archive/PLAN-2026-08-29_to_10-01.md`.
 - The engine-files impact audit: `matcen-docs/BOT_DEV_REFERENCE.md`.
-
-## 2026-10-07: client UX (UX2, UX3, UX5, UX6, UX8)
-
-The four client items the operator put before the reveal on 10-01 (Q3, Q5), less UX4 (the squad-order HUD overlay,
-a separate piece of work), plus the `$bothelp` cleanup and COL27's two comments. No navigation code changed: the three
-accessors added to bot_steering.cpp only read caches.
-
-**UX2, the host's `$` commands.** The dedicated console and telnet each carried a copy of the parse-then-dispatch
-block in front of `DedicatedHandleBotCommand`; both now call `RunBotConsoleCommand(line)`, and so does the listen-server
-host: `SendOffHUDInputMessage` (hudmessage.cpp) offers a `$` line to it when `Netgame.local_role == LR_SERVER` and
-passes anything it declines to the game DLL as before, so DMFC's own `$` commands are untouched and a client's `$` line
-never reaches the bot console. The replies are the harder half. Every bot reply, and `BotAdd`'s refusal, is a
-`PrintDedicatedMessage` call, which returns at once off the dedicated server. A second print function would have
-meant touching every reply site, and any new command written the old way would have been silent on the host again.
-Instead `HostConsoleEcho`, a scope object in dedicated_server.h, makes `PrintDedicatedMessage` in a non-dedicated
-process write to the HUD while it is open. It has to be a scope, not a mode: `PrintDedicatedMessage` is exported to
-the game DLL and called by engine code on every level load, and none of that may reach a listen host's HUD.
-`RunBotConsoleCommand` opens the scope around the handler, and `BotDoUISpawn` opens it around the menu roster's spawn,
-so a bot the server refuses when the game starts is reported as `BotAdd`'s reason followed by
-`Failed to add bot '<name>'`. The echo holds text until its newline (`BotPrintObjectiveState` builds lines in several
-calls; the HUD takes whole lines), flushes a partial line when the outermost scope closes, and spells the console's two
-UTF-8 glyphs, the arrow in `$botdifficulty` and the em dash in `BotAdd`'s refusal, as `->` and `-`, since the HUD font
-is 8-bit; Latin-1 bytes in callsigns pass through. The HUD shows three lines; Shift+F9 holds the rest.
-
-**UX3, Bot Settings.** A Team hotspot per roster entry cycles Auto, Red, Blue, Green, Yellow into `roster[].team`,
-which `.mps` already saved. Saving writes `BOTTEAM<n>` only for a chosen team, and loading never cleared the field, so
-a preset loaded after editing kept the previous team for an Auto bot; reading `BOTCOUNT` now resets every team to Auto
-first. A "Server" block under the detail panel shows `Free seats: N of M` (`max_players` less the host and the bots,
-refreshed when the count is applied; the POP2 reserve will lower it when that work merges) and the spawn note, which
-prints `BOT_UI_SPAWN_DELAY`, moved from bot.cpp to bot.h for the purpose. The ship cycle skips ships the install does not
-offer, using the pilot ship list's rule (`Ships[].used`, and `MercInstalled()` for the Black Pyro); opening the menu
-resets a preset's unoffered ship to Pyro-GL. `BotUIRosterEntry::enabled` was written and never read; it is gone.
-
-**UX5, the overlay.** `NavDbgIsHost()` (not the dedicated server; a local game or the listen-server host) now gates
-both drawing and Ctrl+F7, and `BotNavDebugCycle` returns false on a remote client so the key does nothing there, not
-even the HUD line; a mode left on from hosting stops drawing on someone else's server. Layer 1 used to call
-`BotSkelDumpRoom`, which runs `SkelEnsure(room, full=true)`: the whole build including the bridge search, the part the
-sliced worker exists to keep off the main thread (1.4 s on Sigma Base rm19), for every room in scope that lacked a
-bridged skeleton, inside the render frame. It now reads `BotSkelDumpRoomCached`, and the portal markers and the buried
-X read three new cached-only accessors (`BotSkelLivePortalMaskCached`, `BotPortalVerdictCached`,
-`BotRoomBuriedCached`). A room with no skeleton draws nothing; a built one has every door classified and every live
-crossing sampled by the build, so its markers are cache hits; a door the router has not priced has no coloured marker.
-This also takes the overlay out of a state change it used to make: `BotPortalClass` flips a shattered pane to a door
-when read, and that read is no longer the overlay's.
-
-**UX6.** The co-op announcement `Heading to: <item>` promised a move the escort ruling forbids. It now reads
-`Next objective: <item>. Say !goal to send us there.`, which names the one order that does send them. The `!goal`
-reply when nothing is reachable (`No objective right now. Covering you.`, CMD27) is in bot_chat.cpp, which the
-chat-commands work owns this week; it is left for that branch.
-
-**UX8.** `$bothelp` is now a table: the `$addbot` usage with its argument lines, the everyday commands, then a
-Diagnostics group with `$botstat`, `$botmov` and all six `$nav` verbs (`dump`, `roomfaces`, `probe`, `sweep`,
-`contend`, `mtenure`), one `  %-36s %s` line each, with the section and file references gone. The bare `$nav` listing's
-`contend` line carried the same references and was rewritten too. The `$nav` toggle descriptions still name versions,
-maps and design-doc sections; they are COL28's.
-
-**COL27.** `countermeasure_timer` was documented as "future use" while it gates `BotDeployChaff`; the comment now
-says what it does. The GameLoop.cpp Ctrl+F7 comment matches the host-only, cached-only overlay.
-
-**Tested.** Debug build clean (only warnings that were there before). A dedicated server on bedlam CTF, 6 bots,
-`MaxPlayers=8`, driven over telnet: `$bothelp` printed the 23-line listing; `$servercaps`, `$botmode` and `$botlist`
-printed their Tier 1 lines unchanged; `$addbot Tester phoenix ace 2` added the bot (`team=2`); `$addbot Overflow` then
-printed `BOT: cannot add 'Overflow' — server full (8/8 players)` and `Failed to add bot (server full or max bots
-reached)`; `$removebot 6`, `$removebot 9`, `$botdifficulty 1 rookie` and bare `$nav` printed as documented; `$scores`
-still reached DMFC. The echo's line assembly was checked in isolation (split lines, both glyphs, a Latin-1 byte, a
-trailing partial line). Not verified here: the host path, the menu on screen and the overlay, which need a client.
-## 2026-10-07: population and seats (POP1-POP3, POP6, POP9, POP10, POP14)
-
-The operator's 2026-10-01 seat rulings, built on 0.9.17-dev. New module `Descent3/bot_population.{h,cpp}`; the
-checks it needs sit in `BotAdd()`, so every add path obeys them without a second copy. Navigation untouched.
-
-**One census, three rules.** The census counts `NPF_CONNECTED` slots exactly as the engine's join answer does
-(`MultiCountPlayers`), so the server's own slot 0 occupies a seat on both server kinds and the seat the reserve keeps
-is the one `MultiDoAskToJoin` hands a human. The reserve (POP2): a bot joins only if `BotReservedSlots` seats (default
-1, minimum 1) stay free after it; `BotAdd()` asks `BotPopulationBotsAllowed()` and refuses with the numbers. The
-yield (POP3): when the free seats drop below the reserve because a human took one, a bot leaves once that human is
-in the game. The target (POP1): with `BotTargetPlayers` above 0, bots join or leave one at a time to keep humans +
-bots at the target, never past the reserve.
-
-**Where the yield hooks.** Not into the join answer, which the old §9 design proposed: with a reserve there is always
-a free seat, so the vanilla path seats the human, and the work is to free a seat again afterwards. The manager runs
-from `BotDoFrame()` (inside `MultiDoServerFrame`), takes the census every frame (one pass over 32 slots) and holds
-completely while any human is short of `NETSEQ_PLAYING`: a joining client is being sent the player list
-(`NETSEQ_REQUEST_PLAYERS` and the rest), and a bot's disconnect or arrival packet under it is the one moment a change
-could reach it half-built. Any census change (a human reaching `PLAYING` or leaving, a bot coming or going,
-`MaxPlayers` moving) triggers a check at once; a 5 s periodic check backs it up; every change waits 5 s after the last
-one (`BOT_POP_COOLDOWN`). Both clocks are `timer_GetTime()`, because `Gametime` restarts with each level. No engine
-join or disconnect function was touched. The yield runs with the target off too, since it is the reserve's other
-half; without a target a yielded bot does not come back.
-
-**Which bot leaves.** In team modes, a bot from the team with the most players among teams that still have one, then
-the lowest score, then the newest arrival (an arrival serial kept per `Bots[]` index). The score is `Multi_kills`, the
-server's per-slot frag count (the GameSpy number), since DMFC keeps each mode's real score DLL-side. `BotAdd()` now
-clears `Multi_kills`/`Multi_deaths` for the bot's slot, as `MultiDoMyInfo` does for a joining human: a bot taking a
-slot a human had left inherited that human's frags, which would have skewed the pick (and GameSpy's report).
-
-**Who joins.** The first bots.cfg entry whose callsign is free, with its ship and difficulty; the roster is every
-entry the file names, not only the first `BotCount`. Then the first free built-in name, borrowing the roster's ships
-and difficulties in turn. The team is always `BotAdd()`'s balance: the manager refills whichever side was left.
-
-**Smaller rows.** POP9: `BotAllowedShip()` in `BotAdd()` checks the server slot's ship permissions (the list
-`MultiDoMyInfo` checks humans against) and falls back to Pyro-GL, or the first allowed ship, with a log and console
-line. POP10: `BotParseDifficulty()` reports an unknown word; `BotResolveDifficulty()` falls back to the configured
-default, the roster keeps unknown per-bot values on the default resolved at spawn (so the `BotDifficulty=` line may
-come anywhere), and `$addbot` prints a line. POP14 and the menu: `BotPopulationRosterLimit(max_players)` =
-`max_players − 1 − reserve`, applied by the Bot Settings menu and by the `.mps` loader after the whole file is read.
-The config roster spawns while seats allow and prints how many it skipped. POP6: `features=` gains `teams`,
-`squad_orders`, `population`. COL14 (two of its items): the `BotAdd` suffix comment and the `$addbot` parse comment.
-
-**Console.** `$botpopulation [on|off|status|target <n>|reserve <n>]`; status is one `key=value` line
-(`Population: manager=on target=6 reserve=1 humans=0 bots=6 seats=7/8 bot_limit=6`). Formats in
-PYRODECK_CONTRACT.md §4; `$botpopulation` joins Tier 1.
-
-**Exit test** (Debug, lab binary `Descent3-pop`, bedlam level 4 CTF 2 teams, `MaxPlayers=8`, target 6, reserve 1,
-4-entry roster, Phoenix banned by `.mps` `SHIPBAN`). Roster spawn 11:27:30.6; `Viper[BOT]` joined 35.6 and
-`Blaze[BOT]` 40.6 (built-in names after the roster); status `bots=6 seats=7/8`. `$addbot Extra pyro`:
-`BOT: cannot add 'Extra': 7 of 8 seats in use and 1 kept free for players`. `$removebot 0` at 56.8, `Reaper[BOT]`
-back at 01.8 (5.0 s). `$botpopulation target 3`: removals at 26.7, 31.8, 36.8; status `bots=3 seats=4/8`.
-`$botpopulation reserve 3` with two seats free exercised the yield branch: `Shadow[BOT] left to make room for a
-player.`, taken from the three-bot blue side, not the two-bot red one. `Shadow` fell back to Pyro-GL at spawn,
-`BotDifficulty3=junk` spawned Ace with a warning, `$addbot Junky pyro junk` printed the fallback line, and `.mps`
-`BOTCOUNT 16` loaded as 6. A second run at `MaxPlayers=4` (the co-op cap) spawned two of four roster bots with
-`2 of 4 bots skipped` and logged the target of 6 once as out of reach. Verbs `on`/`off`/`target 0`/`on` without a
-target/`reserve 0`/unknown all printed as specified.
-
-**Not verified live:** a human joining or leaving; the console cannot join a client. By code reading, the join path
-is unchanged (the free seat answers `JOIN_ANSWER_OK`, `MultiCheckListen` connects the human into it), the hold covers
-the whole `NETSEQ_WAITING_FOR_LEVEL` to `NETSEQ_WORLD` sequence, and the census change at `NETSEQ_PLAYING` fires the
-same `free < reserve` branch the reserve test drove. A second human asking while the first is still loading gets the
-vanilla full answer until the yield frees a seat; a larger `BotReservedSlots` covers bursts. The first flight with a
-human client should confirm the yield and the refill.
-
-## 2026-10-07: release packaging, samples, quickstart (REL2, REL4, REL11, REL15)
-
-The release-package plumbing decided on 10-01 (Q14a: binary packages on a GitHub Release, mirrored to ModDB by the
-operator). No engine code changed.
-
-**REL2, `release.yml`.** The upstream workflow drafted a CPack source tarball on any tag. It now runs on `v*` tags
-and on a manual dispatch, in four jobs. `version` reads `MATCEN_VERSION_*` from CMakeLists.txt and fails a tag that is
-not `v<X.Y.Z>` of that version or that still carries a suffix, because the binaries print that version and a stale
-`-dev` would ship under a release name; a dispatch names its packages `v<version>-<sha8>`. `package` is a three-entry
-matrix (Windows MSVC, Linux GCC on ubuntu-22.04, macOS universal on macos-14) that repeats build.yml's toolchain and
-vcpkg steps and its configure flags, with `RelWithDebInfo` as the build type and the editor off (it is never
-installed); build.yml itself is untouched. Each package is the `cmake --install` tree (`FORCE_PORTABLE_INSTALL`, so
-the executable, `d3-<os>.hog`, `netgames/*.d3m`, `online/*.d3c` and the upstream docs sit at the root) plus
-`samples/dedicated.cfg`, `samples/bots.cfg` and an `INSTALL.txt` filled in from `matcen-docs/samples/INSTALL.txt`.
-The stage step fails if `online/Direct TCP~IP.d3c` or the `.d3m` files are missing. The Windows PDB and the Linux
-debug info go to a `-symbols` archive (`objcopy --only-keep-debug`, then `--strip-debug --add-gnu-debuglink`), so the
-player package stays small and a crash can still be symbolised. The macOS package is unsigned and named
-`...-macOS-universal-community-tested.zip`. `source` replaces the CPack tarball with `git archive` plus
-`git-hash.txt` (what cmake/CheckGit.cmake reads in a tree without git): the old job ran `cmake --preset linux` on a
-runner with no vcpkg and no SDL3, glm, plog or httplib, so by reading it fails at configure. `release` runs only for
-a tag, gathers every artifact, adds `SHA256SUMS.txt` and drafts the release; publishing it stays a manual step.
-
-Build type consequences, read from the code: RelWithDebInfo defines `NDEBUG` but not `RELEASE`, so `ASSERT` stays
-compiled (ddebug/pserror.h) and logs `Assertion failed (...)` at error level, while `SDL_assert` is off at
-`SDL_ASSERT_LEVEL` 1 and the server carries on; the plog level defaults to debug (sdlmain.cpp), and every bot
-telemetry line is a run-time-filtered `LOG_DEBUG` with no build-type `#if`, so a RelWithDebInfo server log feeds the
-analyzer like a Debug one. "Release logs are blind" (REL3) is the Release config's info default, which
-`-loglevel DEBUG` lifts. The MSVC CRT link workaround in CMakeLists.txt applies to Release only; it exists because of
-`/GL`, which RelWithDebInfo's default flags do not use.
-
-Verified locally: the YAML of all four workflows loads; the version step's shell, run against this CMakeLists.txt
-(`-dev`: tag refused, dispatch named `v0.9.17-dev-5594163b`) and a copy with the suffix stripped (`v0.9.17` passes,
-`v0.9.18` refused); the Linux stage, symbol split and archive steps, run on the RelWithDebInfo build output arranged as
-`install_manifest.txt` lays out the install tree: 85 MB staged, a 16 MB `.tar.xz` and a 21 MB symbols archive (the
-executable goes from 111 MB to 14 MB, and its `.gnu_debuglink` names `Descent3.debug`). Inferred, not run: every
-Windows and macOS step (the PDB name, `7z` on the Windows runner's PATH, `zip` on macOS), the GitHub-side upload,
-download and release actions, and the vcpkg build under RelWithDebInfo. The first dispatch from the Actions tab is the
-test. A tag pushed on an older commit (REL16's backfill) runs that commit's old workflow, not this one.
-
-**Samples.** `matcen-docs/samples/dedicated.cfg` and `bots.cfg` follow BOT_MANAGEMENT §2: CTF on Bedlam with two
-teams, `MaxPlayers=14`, `PPS=40`, `ConnectionName=Direct TCP~IP`, the remote console on with a placeholder password;
-four named bots, `BotTargetPlayers=12`, `BotReservedSlots=1`, `BotDifficulty=hotshot`. Comments are on their own
-lines in both. In dedicated.cfg a `;` line is skipped because `InfFile::ParseLine` reads `;` as an unknown command
-(the lab's Monsterball cfg relies on the same thing). Both files were run through a Python copy of the two parsers
-(the `[server config file]` tag check, the `" \t=:"` and `",;"` tokenising and the CVar table; `BotLoadRosterFile`'s
-rules): every key lands with its value and no value carries a `;`. The tag check also showed that BOT_MANAGEMENT §2's
-dedicated.cfg example began with a `; dedicated.cfg` label line, which the engine would refuse as a first line; the
-example now starts with the tag. `.gitignore` ignores `dedicated.cfg` everywhere, so it gains a negation for
-`matcen-docs/samples/*.cfg`.
-
-**REL11.** `QUICKSTART.md` is the user-facing page: install over a 1.4+ install, the `Direct TCP~IP.d3c` check (without
-it `RunServerConfigs` cannot load the connection and the dedicated server stops), the samples, the start lines
-(Windows needs `-winconsole`: the dedicated console is stdout, and `WinMain` attaches none without it), `$bothelp`,
-the `!` orders, Bot Settings, Pyrodeck, the known limitations by registry id with no map names, and a bug report
-checklist. `ANNOUNCEMENT.md` is a ~270-word draft with link placeholders for the operator.
-
-**REL4.** `tools/manifests/battery/README.md` lists the release battery as a checklist with the runtime-dir files each
-stage needs and the `soakctl.py` and `soak_battery.sh` invocations. Bedlam and co-op had no tracked manifest:
-`reg-bedlam.json` (the lab's `soak-dedicated-bedlam4t.cfg`, 12 rounds, `expect_rounds` 12) and `reg-coop.json`
-(`soak-dedicated-coop.cfg`, 30 minutes, a crash net; co-op play is judged by the operator's flight). Fellowship,
-Monsterball, Entropy and the anarchy family reuse existing manifests. Found on the way: the analyzer has no count of
-`Assertion failed` lines, which an optimised build turns into log lines instead of stops; the README says to count
-them by hand.
-
-**REL15.** PLAN §3 now carries the definition verbatim; the README line belongs to the README pass.
-## 2026-10-07: the quick-order overlay (UX4)
-
-The squad-order HUD shortcut the operator put before the reveal on 10-01 (Q3d): on the Matcen client, and it
-degrades to chat. New `Descent3/bot_quickorder.{h,cpp}` and `bot_quickorder_menu.cpp`; engine touches in
-`GameLoop.cpp`, `hud.cpp`, `hud.h` and `hudmessage.cpp`. No server-side or navigation code changed, and `bot_chat.cpp`
-was not touched: the menu only emits chat lines the parser already reads.
-
-**Two halves.** `bot_quickorder_menu.cpp` holds the order table, the mode rule, the open/pick/page/back state machine
-and the line composer, as plain data with no engine globals, so `Descent3/tests/bot_quickorder_tests.cpp` builds it
-alone and checks every row and every line. `bot_quickorder.cpp` reads the mode and the player list, routes keys, draws
-and sends. The order table holds the canonical verbs of CHAT_COMMANDS §A.5 in a fixed order, so Follow, Cover,
-Attack, Defend and Hold keep keys 1-5 in every mode. Three verbs are left out where the server would not carry them
-out: `!hunt` in co-op (`BotFindPlayerByName` skips the sender's team and co-op has one), `!goal` outside co-op, and the
-flag verbs outside CTF. CTF offers eleven rows, so key 0 turns the page; the same rule pages a second step longer than
-nine (more than eight bots on a side).
-
-**The key.** F10, hard-bound. The binding table (`Controller_needs`, `NUM_CONTROLLER_FUNCTIONS = 73`) does accept a
-new function, and the key-config screen would list it, but `pilot::write_controls` saves the table as a counted block
-and `pilot::read_controls` matches each saved id with `for (y = 0; y < temp_b; y++) if (Controller_needs[y].id == id)`,
-bounded by the file's count, not its own. A pilot saved with 74 functions and loaded by a 73-function client (retail,
-upstream, PiccuEngine) reads `Controller_needs[73]` and writes `controls[74]`, past both arrays. Players keep one
-pilot directory across clients, so the menu takes a fixed key instead. F10 was free in play: `ProcessNormalKey` and
-the netgame DLLs (F6, F7, Page Up/Down, Escape) do not use it, and the Debug test key F10 needs `KEY_DEBUGGED`. The
-grave key moves between keyboard layouts (the SDL map is by keycode), and F11 is a desktop shortcut on some systems.
-
-**Keys while open.** `ProcessKeys()` offers each key to `BotQuickOrderHandleKey()` after the chat line and the game DLL
-and before `ProcessNormalKey()`. After the DLL, because DMFC's F6 menu takes every key while it is up (`iRet = 1`), so
-F10 cannot open over it and the digits stay with it; before the normal keys, because digits select weapons there. The
-menu consumes 1-9 and 0 even when they match no row, so a missed pick never switches weapons, plus Backspace, Escape
-and F10. Every other key passes, so the player flies and fires with the menu up; a function key or Pause also closes
-it, since each opens another screen or the chat line. It closes itself after 8 s without a key (`timer_GetTime()`;
-`Gametime` restarts with the level), when the chat line opens, and when the game leaves `GAME_INTERFACE`.
-
-**The send.** The chat half of `SendOffHUDInputMessage` (the line after a `$` check: general chat with its `name:`
-direct-message parse, or team chat, and on a listen-server host `BotOnChatMessage` before the rebroadcast) is now
-`SendHUDChatText(text, style)`, unchanged; the chat line and the Ctrl+1..8 taunt macros reach it as before, and
-`SendHUDChatLine` is the menu's entry, which skips the input-line bookkeeping (key flush, controls resume, typing
-icon). A squad order is the bare verb on team chat in team modes, so the other side never sees it, and on general
-chat in co-op. One bot is a direct message by full callsign, `Reaper[BOT]: !follow`: `GetMessageDestination` stops
-at an exact callsign, so it reaches that slot, where `!follow Reaper` reaches the first bot whose base name starts
-that way (`BotBaseNameMatch`). `!hunt` takes the target's first word without the suffix, since the parser reads one
-word and prefix-matches it. A callsign with a colon would split the direct-message form and falls back to `!verb
-<name>`. A line that names a player is not sent if that player has left since the menu opened: a direct message to a
-missing callsign falls through `GetMessageDestination` as general chat, which the parser reads as a squad order.
-
-**Who is listed.** `NPF_BOT` is the server's flag and never reaches a client, so a client tells bots by the `[BOT]`
-suffix every client is sent. The side is `Players[].team` (every bot in co-op); a team of -1 is the dedicated server's
-own slot (DMFC's `IsPlayerDedicatedServer`), and enemy observers are not offered for `!hunt`. The mode comes from the
-same state the server's gate reads: `NF_COOP` (sent in the join packet), `Num_teams` (DMFC's `SetNumberOfTeams` runs on
-the client too), and the script name for CTF, read as `BotDetectGameMode` reads it. Monsterball runs two teams, so
-the server takes orders there and the menu offers them; CHAT_COMMANDS §A.3 lists it among the one-team modes, which
-the code does not bear out (reported, not changed here).
-
-**The draw.** HUD font text at the netgame F6 menu's place (x 10, eight lines down), drawn in `RenderHUDFrame()` after
-`EVT_CLIENT_HUD_INTERVAL`, as DMFC draws that menu, so the cockpit model never covers it. Title pale green, rows HUD
-green with the chat command in the bots' reply yellow, a dimmed row for Hunt when nobody can be hunted, and a hint
-line (`Esc close`, plus `Backspace back` on the second step).
-
-**Tested.** Debug build clean (no warnings from the new files or the changed ones beyond those already there).
-`bot_quickorder_tests`: 8 of 8, covering the mode rule (co-op, the one-team modes, CTF by `CTF`, `ctf.d3m` and
-`CTF.D3M`, the other team modes), the reasons it will not open, the rows of each mode, both pages of CTF, the second
-step and Backspace, the one-bot and Ping shortcuts, Hunt with and without enemies, a 13-row paged squad, and every
-line for every verb in every mode (printed in the test log: `!follow` team, `Reaper[BOT]: !follow` direct,
-`!hunt Kestrel` team, co-op squad lines on general chat). Each line was read against the parser: `BotFindCommand`
-takes the `!` after the space in `[Name]: !follow` and `<Name>: !follow`, the direct message takes the DM branch of
-`BotResolveAndDispatch`, and `!hunt Kestrel` matches through `BotFindPlayerByName`. `ctest`: 21 of 22; the one failure,
-`D3.BotSkelChain`, compiles functions out of `bot_steering.cpp` (untouched here) and fails on `SkelEnsure` and
-`AimNarrowToRouterDoor` not being declared, as it does without this change. Not verified: the menu on screen, the keys
-in a live game and the lines reaching a server, which need a client in a match.
-## 2026-10-07: mode polish (MODE6, MODE14, COOP5, Entropy E4 and Monsterball M4 difficulty)
-
-**MODE6, the Entropy park obeys knockback.** The takeover park in `BotApplyThrust` thrust against any velocity above
-2 u/s (`BOT_ENTROPY_PARK_BRAKE_SPEED`), so a defender's hits barely moved a holding bot: the one place the code broke
-physics ruling 2. The park now holds zero thrust. It still returns before the FSM thrust path, which keeps juke and
-the combat overrides off the pad; the reason it was built (the old no-nav-dir fallback drove the parked ship forward
-at full throttle) is gone since that fallback coasts. The hold starts only at 5 u/s or less, so drag finishes the
-stop. A knock that leaves the ship in the room costs the DLL clock only (it restarts wherever the ship rests, and any
-point in the room counts); a knock out of the room trips the existing ABORT, and the invade leg flies the ship back to
-the hold point under its own thrust. No return-to-post inside the room was added: flying back would reset the clock
-a second time. The constant is deleted.
-
-**MODE14, the CTF module's spew test (UPSTREAM_PATCHES #6).** `HandlePlayerSpew` (netgames/ctf/ctf.cpp) decided
-whether a dying carrier stood in a flag's home goal by reading `dObjects[pnum]`, a player number used as an object
-index, so the home-goal return almost never fired and an unrelated object in a goal room could send a flag home from
-anywhere. It now reads `dObjects[dPlayers[pnum].objnum]`, guarded `>= 0` for the disconnect path, the idiom the pickup
-handler already uses (ctf.cpp:1080); the patch text in UPSTREAM_PATCHES #6 is the tree's text. Two things a reader of
-CTF logs needs: that return path calls `DoFlagReturnedHome`, which plays a sound and prints no HUD line, so the
-analyzer sees no return for it; and the function runs on every machine, so a client on the stock module keeps the
-flag marked away from base until the next flag event or the 120 s timeout corrects its copy (the server's flag object
-is home either way). REL20 rides along: UPSTREAM_PATCHES' assessment list now names `fvi_RoomCheckDir` as fork-only.
-
-**COOP5, the congestion penalty counts robots in co-op.** `BotSelectTarget` adds 80 per other bot already on a
-candidate (`BOT_TARGET_CONGESTION_PENALTY`, the literal it replaces), but the count only looked at `OBJ_PLAYER`
-targets, and the robot loop scored distance plus the LOS penalty alone. Bots escorting one human stand close
-together, so their nearest robot was the same robot and nothing pushed them apart. The counting pass now also
-collects the other bots' robot target handles when the mode is co-op, and the robot loop adds the same 80 per match.
-Robo-Anarchy is deliberately unchanged: every bot there is an enemy of every other, so "spread across targets" is not
-a team behaviour there, and the row asked for a co-op-gated fix. Unflown; COOP2's fresh co-op flight is where it gets
-read (one-robot pile-ups in the escort fights, not a metric of its own).
-
-**MODE1 / MODE7, Entropy E4 and Monsterball M4 difficulty.** Both modes now read the existing difficulty table
-(`kDiffParams`) instead of adding columns: `BotGetDiffParams` is exported and `BotDiffParamsFor(tier)` gives any row.
-The rule is the same in both modes: their constants were tuned on Hotshot bots, so each scaling is the tier's
-distance from the Hotshot row and a Hotshot bot plays exactly as before. Which column goes where:
-
-- Entropy invasion aggression: the abort floor is a flee threshold, so `BotEntropyRetreatShields` multiplies it by
-  `flee_pct_scale` (Trainee 45, Rookie 35, Hotshot 25, Ace 17.5, Insane 10). The re-engage floor keeps its fixed +20
-  (the hold's 15 shields of room damage plus slack is a cost, not temperament), and the mid-hold flee threshold in
-  `BotUpdateState` reads the same floor. DEPART (80) stays above the highest re-engage floor (65).
-- Entropy lab-defence reaction: the intruder, takeover-threat and loaded-enemy biases are multiplied by
-  `dodge_percent`, the table's threat-reaction column (0.2, 0.5, then 1.0 from Hotshot up). Above Hotshot it stays at
-  full strength on purpose: the loaded-intruder bias (-700) already outbids the 500 LOS penalty, and more would let a
-  far intruder pull every bot off nearer enemies.
-- Monsterball cones: `aim_error_deg` beyond Hotshot's 3 degrees widens the alignment cone (fire gate and the slam's
-  contact-range gate) and narrows the blunder refusal cone by the same angle; striker, keeper clears and the
-  contact-avoid detour all read the bot's own blunder gate. Trainee 0.70 / 0.49, Insane 0.83 / 0.30.
-- Monsterball timing: `fire_delay` beyond Hotshot's 0.2 s is perception lag, clamped at zero. The prediction horizon
-  shrinks by it (0.7 s to 0.4 s Rookie, 0.1 s Trainee), and it is the kickoff delay: the striker keeps flying its
-  previous order that long after the ball reappears on its spawn point. Kickoff had no detection before; the spawn
-  point is found at init the way the DLL finds it (first `RF_SPECIAL1` room, its computed center) and
-  `BotMballKickoffAge` calls it a kickoff when the ball is on that point after a jump the 120 u/s cap cannot explain
-  (or on the level's first look). It runs from the striker's think, not the 0.5 s poll, so the hold starts before the
-  striker has re-aimed at the new ball. Logs: `BOT MBALL: kickoff (...)` and `'<bot>' kickoff reaction <s>s (<tier>)`.
-
-Not scaled, left on MODE1/MODE7: Entropy denial appetite, smarter invasion, the drill command, shield-knob iteration;
-Monsterball wall/ceiling play, banks, pass-backs. The `!` verbs for both modes are the CMD branch's.
-
-**The hold ends when the invade nav loses its target.** A force-loaded test run (every bot given 5 viruses by a scratch
-build, never committed) showed parked bots sitting still for seconds after the hold should have ended: Gregg (Insane)
-took a hit at 51 shields that left him at 7, under his floor of 10, and `BotDoEntropyInvadeNav` got a target of -1 (by
-the code, the retreat branch found no repair or energy room of his team's), called `BotDoExploreRoaming` and returned
-without clearing `entropy_holding`, so the park went on holding the "roaming" bot at zero thrust; Phantom showed the
-same signature for 4.4 s after his takeover (an explore pick while the park trace ran on) until the room-progress
-timeout cleared his goals. The target check now runs after the ABORT block, so a -1 target logs `takeover hold ABORT
-(... -> target -1 ...)` and drops the flag before the bot roams. The braking park had the same hole; the zero-thrust
-park only made it visible in the trace.
-
-**Smokes (Debug, lab, 4v4 with every tier on the field: each team Trainee, Rookie, Ace or Hotshot, Insane).** No
-assert in any run; every stop was our SIGTERM.
-
-- Entropy, `dementia.mn3`, 6-minute levels, stock build: SteelVapor full level and the GeoDomes load, 20 bot deaths, 0
-  stucks, 5 pickups, 0 holds (as in every Entropy soak since 0.9.14: the analyzer's hold count has read 0).
-- Entropy, the force-loaded scratch build: the park trace (thrust and speed every 0.25 s while holding) read thrust 0.00
-  on all 113 samples. A hold that starts at 4.9 u/s coasts down 4.92, 2.28, 1.06, 0.49 u/s; Gregg, parked at 3.3 u/s,
-  took a hit (51 to 7 shields) and the next sample read 85.8 u/s, then 39.7, thrust 0.00 throughout: the knock carried
-  him, nothing pushed back. Holds convert: Phantom's hold in GeoDomes room 0 took the room (5 points to him). On
-  SteelVapor no hold started in either force-loaded run (first run: 807 invade legs, 302 of them re-issued from inside
-  the target room), with the bots at 16-40 u/s there and `movement_dir` swinging each half second, so the 5 u/s start
-  gate never passed. That is the arrival side of MODE2, navigation and out of scope here; it is evidence on the row. The
-  second force-loaded run, on the build with the -1 hold release, started no hold on either level, so that fix is
-  checked by reading only.
-- Monsterball, `frenzy.mn3` (PowerHouse, then the level-2 load): 4 goals, 0 blunders, 67 fires at the ball, 58
-  ball-avoid detours, 0 stucks. Every goal line (`knocks the ball in for a point!`) is followed by
-  `BOT MBALL: kickoff (ball on its spawn point in rm1)`, plus one at each level start (the level-2 load re-armed it);
-  `'Shadow[BOT]' kickoff reaction 0.3s (Rookie)` and `'Phantom[BOT]' kickoff reaction 0.6s (Trainee)` fired, and no
-  Hotshot-or-better striker waited. `MBALL_ROLE_THRASH` (149 role changes in the round) matches the 09-13 PowerHouse
-  rate and predates this work.

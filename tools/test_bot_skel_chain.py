@@ -80,6 +80,10 @@ int BotGlassBudgetForBot(int) { return 0; }
 int BotFindBySlot(int botid) { return botid; }
 void SkelLevelReset() {}
 void SkelBuild(int) {}
+void SkelEnsure(int, bool = false) {} // the harness pre-builds its graph; nothing to build lazily
+// The router-door narrowing is routing (which exit leads toward the target room); the harness has a
+// single exit per room, so every exit set passes through unchanged.
+uint64_t AimNarrowToRouterDoor(object *, int, int, int, uint64_t exits) { return exits; }
 int SkelPortalCount(const room &rm) { return rm.num_portals; }
 int BotComputeRoute(int, int target_room, int) { return target_room; }
 float vm_VectorDistanceQuick(const vector *a, const vector *b) { return std::fabs(a->x - b->x); }
