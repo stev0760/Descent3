@@ -23,9 +23,10 @@ a human joins, and come back when one leaves. One seat always stays free for a h
 levels, chat orders in the team modes (`!attack`, `!defend`, `!follow`, `!attackflag`), and a Bot Settings screen if
 you host from the game.
 
-Until now the only bots for Descent 3 multiplayer were SuperSheep's DescentForum bots: closed source, and scripted
-map by map. Matcen is eight months of work and is GPL-3.0 like the engine; the engine fixes we found along
-the way are written up for upstream.
+Earlier attempts at Descent 3 bots exist: SuperSheep's admin-side bots, and the 1v1 "PiccuBot" servers on the
+Piccu tracker today. As far as we know, none is open source and general-purpose; Matcen's bots are the first
+open-source, engine-side bots we are aware of. Matcen is eight months of work and is GPL-3.0 like the engine; the
+engine fixes we found along the way are written up for upstream.
 
 - Download (Windows and Linux; macOS community-tested): [GitHub Release link]
 - ModDB: [ModDB link]
