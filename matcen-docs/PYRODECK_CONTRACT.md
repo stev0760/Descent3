@@ -3,7 +3,8 @@
 Decided 2026-10-01: the Matcen copy of the Pyrodeck spec (v2.6) is retired to `archive/D3_PYRODECK_SPEC-v2.6.md`,
 and this short contract replaces it.
 
-**The spec of record is the Pyrodeck repo** (`stev0760/d3-pyrodeck`, its `D3_PYRODECK_SPEC.md` v2.7, app v0.4.19).
+**The spec of record is the Pyrodeck repo** (`stev0760/d3-pyrodeck`, its `D3_PYRODECK_SPEC.md` v2.7, app v0.4.19; v2.8
+and app 0.4.20, synced to this contract, are on its `release/0.4.20` branch, not yet merged).
 That spec owns the tool: architecture, session model, UI, API, packaging, phases, the vanilla commands it parses.
 This file owns only what Matcen promises to print. When a `$` bot command or its output changes, update this file in
 the same commit, and raise the change with the Pyrodeck repo if the command is Tier 1.
@@ -82,7 +83,9 @@ difficulty is read only when a ship was given, team only when a difficulty was g
   0.9.16 used Hotshot silently).
 - Team: `1`-`4`, 1-based (bot.cpp:9840-9847). Anything else means auto-balance. In a team game, a team number above
   the game's team count prints `BOT: team %d out of range for %d-team game — auto-balancing '%s'` first
-  (bot.cpp:8795-8796). In a free-for-all game the team is always 0 (bot.cpp:8783-8785).
+  (bot.cpp:8795-8796). Its `%s` is the base name as given, without the `[BOT]` suffix the success line shows, so
+  match the two lines by the name before the suffix. In a free-for-all game the team is always 0
+  (bot.cpp:8783-8785).
 - Success (:901): `Bot '%s' added in slot %d (ship=%s, diff=%s, team=%d)`. The team field is 1-based
   (`Players[].team + 1`), so a free-for-all bot prints `team=1`. Example:
   `Bot 'Phantom[BOT]' added in slot 2 (ship=Pyro-GL, diff=Hotshot, team=2)`.
@@ -154,6 +157,8 @@ name up to ` (scriptname=`.
 - `state`: `EXPLORE`, `HUNT`, `COMBAT`, `FLEE`, `EVADE` (:940).
 - `role`: `Freelance`, `Attack`, `Defend`, `Follow`, `Cover`, in that case (bot.cpp:9856-9869).
 - `lean`: `balanced`, `attack`, `defend`, `runner`, `flex`, or `?` for an out-of-range value (bot.cpp:9871-9885).
+- `shields`: the ship's shields, rounded. A dead bot keeps its object until it respawns, so it still gets this line,
+  with `shields` at zero or below (`shields=-1` has been seen); read that as dead, not as a parse error.
 - `target`: a player callsign (which ends in `[BOT]` for a bot), `(robot)`, or `(none)`.
 - A bot with no object prints `  Bot %d '%s' slot=%d (no object — respawning?)` instead (:954).
 - The nav line (`      %s`, :974) is Tier 3. Skip it.
@@ -203,11 +208,17 @@ space (`'Phantom [BOT]'`), the old `$botmode` names (`TeamAnarchy`, `HyperAnarch
 It also predates the `teams`, `squad_orders` and `population` flags, `$botpopulation`, and the `roster` meaning
 settled in §2. The fix belongs in the Pyrodeck repo; it is tracked as REL8 in the registry (PLAN.md §4).
 
+Pyrodeck 0.4.20 (spec v2.8, on its `release/0.4.20` branch, not merged or pushed as of 2026-10-07) fixes that drift:
+it parses `$addbot` and `$botmode` as §4 specifies, uses `Name[BOT]`, keeps feature flags it does not know, offers a
+team when `teams` is advertised, and keeps a dead bot in its `$botstat` view. It does not drive `$botpopulation`
+yet: it parses and keeps the `population` flag only.
+
 ## 9. Open fork-side items
 
-- REL8: Tier 1 drift above; the Pyrodeck side of the population controls and the team field (the fork side is built:
-  §2 and §4).
+- REL8: Tier 1 drift above, fixed on Pyrodeck's unmerged `release/0.4.20` branch; the Pyrodeck side of the
+  population controls is not built (the fork side is: §2 and §4).
 - POP6: done on 0.9.17-dev; the `features=` list in §2 is the one the code prints.
 - REL7: the mission-download link refresh (rewrite the URL lines inside the `.mn3`; the engine `MissionURL` cvar was
-  reverted on 07-19). Decided, not built. See the registry row in PLAN.md §4.
+  reverted on 07-19). Built in Pyrodeck 0.4.20 on its unmerged branch; it touches no `$` command. See the registry row
+  in PLAN.md §4.
 - The pre-0.9.16 spec text (features by phase, API, deployment, Addendum A) is in `archive/D3_PYRODECK_SPEC-v2.6.md`.
