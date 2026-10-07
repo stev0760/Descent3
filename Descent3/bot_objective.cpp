@@ -97,6 +97,8 @@ static void BotResetObjectiveState() {
   Bot_objective.monsterball_goal_rooms[0] = Bot_objective.monsterball_goal_rooms[1] = -1;
   Bot_objective.monsterball_progress[0] = Bot_objective.monsterball_progress[1] = -1.0f;
   Bot_objective.monsterball_prev_room = -1;
+  Bot_objective.monsterball_spawn_room = -1;
+  vm_MakeZero(&Bot_objective.monsterball_spawn_pos);
   for (int i = 0; i < MAX_BOTS; i++)
     Bot_objective.mball_role[i] = 0;
   Bot_objective.entropy_owned_rooms[0] = Bot_objective.entropy_owned_rooms[1] = 0;
@@ -182,8 +184,18 @@ void BotInitObjectiveState() {
     Obj_monsterball_id = FindObjectIDName("Monsterball");
     Bot_objective.monsterball_goal_rooms[0] = GetGoalRoomForTeam(0);
     Bot_objective.monsterball_goal_rooms[1] = GetGoalRoomForTeam(1);
-    LOG_DEBUG.printf("BOT OBJ: Monsterball ID: %d, goals: red=room%d blue=room%d", Obj_monsterball_id,
-                     Bot_objective.monsterball_goal_rooms[0], Bot_objective.monsterball_goal_rooms[1]);
+    // The ball's spawn, found the way the DLL finds it (GetMonsterballInfo: the first RF_SPECIAL1 room,
+    // its computed center). The ball sits there at rest at level start and after every goal.
+    for (int r = 0; r <= Highest_room_index; r++) {
+      if (Rooms[r].used && (Rooms[r].flags & RF_SPECIAL1)) {
+        Bot_objective.monsterball_spawn_room = r;
+        ComputeRoomCenter(&Bot_objective.monsterball_spawn_pos, &Rooms[r]);
+        break;
+      }
+    }
+    LOG_DEBUG.printf("BOT OBJ: Monsterball ID: %d, goals: red=room%d blue=room%d, spawn room%d", Obj_monsterball_id,
+                     Bot_objective.monsterball_goal_rooms[0], Bot_objective.monsterball_goal_rooms[1],
+                     Bot_objective.monsterball_spawn_room);
     break;
 
   case BGM_COOP:
@@ -718,6 +730,13 @@ bool BotEntropyIsLoaded(int bot_index) {
   return Bot_objective.entropy_virus_count[slot] >= BOT_ENTROPY_TAKEOVER_LOAD;
 }
 
+// Invasion aggression by difficulty: the abort floor is a flee threshold, so it takes the same
+// multiplier the generic flee threshold does (Hotshot 1.0). A Trainee breaks off a takeover at 45
+// shields, an Insane bot runs one down to 10.
+float BotEntropyRetreatShields(int bot_index) {
+  return BOT_ENTROPY_RETREAT_SHIELDS * BotGetDiffParams(bot_index)->flee_pct_scale;
+}
+
 // $nav entropy — E3 takeover execution. OFF = economy-only bots (E2 still collects/denies);
 // the A/B lever for the invade/hold/retreat layer. See ENTROPY_MODE.md §3.3.
 bool Bot_entropy_takeover_enabled = true;
@@ -957,8 +976,13 @@ static int BotGetObjectiveRoom_Entropy(int bot_index) {
     bool on_heal_pad = cur_room >= 0 && cur_room < BOT_ENTROPY_MAX_ROOMS &&
                        Bot_objective.entropy_room_owner[cur_room] == my_owner &&
                        (Bot_objective.entropy_room_kind[cur_room] == 3 || Bot_objective.entropy_room_kind[cur_room] == 2);
-    bool retreat = obj->shields < BOT_ENTROPY_RETREAT_SHIELDS ||
-                   (!Bots[bot_index].entropy_holding && obj->shields < BOT_ENTROPY_REENGAGE_SHIELDS) ||
+    // The floor moves with difficulty; the re-engage floor keeps its fixed margin above it, because
+    // that margin is the hold's cost (3s of room damage, 15 shields) plus slack, not temperament.
+    // DEPART stays above every tier's re-engage floor (the highest is 45 + 20).
+    const float floor_shields = BotEntropyRetreatShields(bot_index);
+    const float reengage_shields = floor_shields + (BOT_ENTROPY_REENGAGE_SHIELDS - BOT_ENTROPY_RETREAT_SHIELDS);
+    bool retreat = obj->shields < floor_shields ||
+                   (!Bots[bot_index].entropy_holding && obj->shields < reengage_shields) ||
                    (on_heal_pad && !Bots[bot_index].entropy_holding && obj->shields < BOT_ENTROPY_DEPART_SHIELDS);
     if (retreat) {
       int rep = BotGetNearestEntropyRoom(bot_index, my_owner, 3); // repair room (+5 shields/s)
@@ -1851,7 +1875,10 @@ float BotGetObjectiveTargetBias(int bot_index, int target_slot) {
     } else if (loaded) {
       bias += BOT_ENTROPY_LOADED_BIAS;
     }
-    return bias;
+    // Lab-defence reaction by difficulty: the bias scales with the table's threat-reaction column
+    // (dodge_percent, how often the bot answers incoming fire). A Trainee weighs an intruder at a fifth
+    // of the Hotshot bias, a Rookie at half; Hotshot and above react in full.
+    return bias * BotGetDiffParams(bot_index)->dodge_percent;
   }
 
   return 0.0f;

@@ -386,7 +386,8 @@ static const BotDifficultyParams kDiffParams[BOT_DIFF_COUNT] = {
 static BotDifficulty Bot_default_difficulty = BOT_DIFF_HOTSHOT;
 static bool BotParseDifficulty(const char *str, BotDifficulty *out); // false (out untouched) on an unknown word
 
-static const BotDifficultyParams *BotGetDiffParams(int bot_index) { return &kDiffParams[Bots[bot_index].difficulty]; }
+const BotDifficultyParams *BotGetDiffParams(int bot_index) { return &kDiffParams[Bots[bot_index].difficulty]; }
+const BotDifficultyParams *BotDiffParamsFor(BotDifficulty d) { return &kDiffParams[d]; }
 
 // Forward declarations for functions not exposed in headers
 static void BotDoUISpawn();
@@ -4156,18 +4157,16 @@ static void BotDoHoardCarrierNav(int bot_index) {
 // Entropy E3 invade/hold nav (ENTROPY_MODE.md §3.3). Returns true while HOLDING: parked in an
 // enemy special room waiting out the DLL's takeover clock (3.0s, resets if the ship moves >~5u
 // or leaves the room). The park is two-part: this function clears all movement goals (no live
-// goal = no engine movement_dir), and BotApplyThrust's entropy_holding block (hold v6) takes
-// over thrust — active brake against residual velocity, then dead-still. Goal-clear ALONE is
-// not a park: with movement_dir empty, BotApplyThrust's fallback drives forward=1.0 and the
-// ship throttles itself out of the room (the 07-15 soak's 39-52 u/s aborts from a <5 u/s
-// start). We deliberately hold near the ENTRY
-// side of the room, not the room's path_pnt: any in-room repositioning risks the >5u reset,
-// and buried-center rooms (12.3 class) would make a path_pnt approach strictly worse. The
-// nav point is the entry portal pushed BOT_ENTROPY_HOLD_DEPTH into the room — parking on the
-// portal plane itself makes roomnum flap between the two rooms (the 2026-07-13 zero-takeover
-// soak) — and the hold only STARTS at BOT_ENTROPY_HOLD_MIN_DEPTH past the plane, because
-// roomnum flips at the plane itself and parking there re-creates the flap regardless of where
-// the goal points (the 2026-07-14 zero-takeover re-soak).
+// goal = no engine movement_dir), and BotApplyThrust's entropy_holding block holds zero thrust,
+// so drag stops the ship and weapon knockback moves it as it moves any player. A knock out of
+// the room ends the hold below, and the en-route branch flies the ship back in. We deliberately
+// hold near the ENTRY side of the room, not the room's path_pnt: any in-room repositioning
+// risks the >5u reset, and buried-center rooms (12.3 class) would make a path_pnt approach
+// strictly worse. The nav point is the entry portal pushed BOT_ENTROPY_HOLD_DEPTH into the
+// room — parking on the portal plane itself makes roomnum flap between the two rooms (the
+// 2026-07-13 zero-takeover soak) — and the hold only STARTS at BOT_ENTROPY_HOLD_MIN_DEPTH past
+// the plane, because roomnum flips at the plane itself and parking there re-creates the flap
+// regardless of where the goal points (the 2026-07-14 zero-takeover re-soak).
 // Room choice, shield-floor retreat, and re-engage hysteresis all live in
 // BotGetObjectiveRoom_Entropy — this function only executes what it returns.
 static bool BotDoEntropyInvadeNav(int bot_index) {
@@ -4177,12 +4176,6 @@ static bool BotDoEntropyInvadeNav(int bot_index) {
     return false;
 
   int target_room = BotGetObjectiveRoom(bot_index);
-  if (target_room < 0) {
-    // Enemy owns nothing (game ending) or no repair room to retreat to — roam.
-    BotDoExploreRoaming(bot_index);
-    return false;
-  }
-
   int cur_room = OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum;
   int my_team = Players[slot].team;
   int enemy_owner = 2 - my_team;
@@ -4226,7 +4219,8 @@ static bool BotDoEntropyInvadeNav(int bot_index) {
   }
 
   if (Bots[bot_index].entropy_holding) {
-    // Left the room (chased off / retreat floor flipped the target to a repair room).
+    // Left the room (chased off / retreat floor flipped the target to a repair room), or the
+    // target went away (-1: the enemy owns nothing reachable, or there is no room to retreat to).
     // Success/spend is logged separately by the poll's inventory-delta line. depth/spd are
     // measured against the CURRENT room — an abort with positive depth and near-zero speed
     // means roomnum flipped while the ship was physically parked (multi-portal boundary
@@ -4236,6 +4230,13 @@ static bool BotDoEntropyInvadeNav(int bot_index) {
                      Bots[bot_index].callsign, cur_room, target_room, obj->shields,
                      cur_room >= 0 ? BotPortalPenetration(obj, cur_room) : -1.0f,
                      vm_GetMagnitude(&obj->mtype.phys_info.velocity));
+  }
+
+  if (target_room < 0) {
+    // Enemy owns nothing (game ending) or no repair room to retreat to — roam. A hold in progress
+    // has ended just above (target -1): left set, the park would hold the roaming bot at zero thrust.
+    BotDoExploreRoaming(bot_index);
+    return false;
   }
 
   // En route (invade or retreat leg): carrier-grade routed goal. Like the CTF/Hoard carrier
@@ -4288,6 +4289,55 @@ static bool BotMballAimPoint(int ball_room, int goal_room, vector *out) {
   return false;
 }
 
+// Monsterball skill by difficulty (MONSTERBALL_MODE.md §3.8). The ball-play gates were tuned on
+// Hotshot bots, so each one moves by the bot's distance from the Hotshot row of the difficulty table.
+// Extra aim error widens the alignment cone and narrows the blunder cone by the same angle: a
+// sloppier pilot shoots from further off the push line and refuses fewer shots that help the other
+// team; a pilot more accurate than Hotshot tightens both. Extra reaction time is perception lag: the
+// bot extrapolates the ball from where it was that long ago, and starts its kickoff run that much
+// late. No tier reacts faster than the Hotshot timing the constants already assume.
+static float BotMballAimSlackRad(int bot_index) {
+  const float slack_deg =
+      BotGetDiffParams(bot_index)->aim_error_deg - BotDiffParamsFor(BOT_DIFF_HOTSHOT)->aim_error_deg;
+  return slack_deg * (3.14159f / 180.0f);
+}
+// Fire gate: the shot must advance the ball our way, dot(dir(bot->ball), push line) at least this.
+static float BotMballAlignDot(int bot_index) {
+  return cosf(acosf(BOT_MBALL_ALIGN_DOT) + BotMballAimSlackRad(bot_index));
+}
+// Blunder gate: a shot or bump whose dot with the enemy goal's direction exceeds this helps THEM.
+static float BotMballBlunderDot(int bot_index) {
+  return cosf(acosf(BOT_MBALL_BLUNDER_DOT) - BotMballAimSlackRad(bot_index));
+}
+static float BotMballReactionLag(int bot_index) {
+  return std::max(0.0f, BotGetDiffParams(bot_index)->fire_delay - BotDiffParamsFor(BOT_DIFF_HOTSHOT)->fire_delay);
+}
+
+// Kickoff detection. The ball starts each level at rest on its spawn point, and after every goal the
+// DLL teleports it back there with zero velocity. A kickoff is the ball seen on that point after a
+// jump no flight could make (further than the speed cap allows since the last look), or on the
+// level's first look. Returns seconds since the current kickoff, -1 if none. The striker calls it
+// every think, so a striker that has been away from the ball (HUNT) does not see an old teleport as
+// new. Gametime restarts each level: a last look from the future means a new level.
+static float BotMballKickoffAge(const object *ball) {
+  static float seen_t = -1.0f, kickoff_t = -1.0f;
+  static vector seen_pos;
+  if (Gametime < seen_t)
+    seen_t = kickoff_t = -1.0f;
+  if (Bot_objective.monsterball_spawn_room < 0)
+    return -1.0f;
+  const bool on_spawn = vm_VectorDistanceQuick(&ball->pos, &Bot_objective.monsterball_spawn_pos) < BOT_MBALL_SPAWN_SNAP;
+  const bool jumped = seen_t < 0.0f || vm_VectorDistanceQuick(&ball->pos, &seen_pos) >
+                                           BOT_MBALL_MAX_SPEED * (Gametime - seen_t) + BOT_MBALL_SPAWN_SNAP;
+  if (on_spawn && jumped) {
+    kickoff_t = Gametime;
+    LOG_DEBUG.printf("BOT MBALL: kickoff (ball on its spawn point in rm%d)", Bot_objective.monsterball_spawn_room);
+  }
+  seen_pos = ball->pos;
+  seen_t = Gametime;
+  return kickoff_t >= 0.0f ? Gametime - kickoff_t : -1.0f;
+}
+
 // Contact-blunder discipline (2026-07-13 soak: ALL 21 own-goals across 22 rounds were body
 // bumps — none had a fire within 4s; 10 keeper-role, 10 striker-role. Mechanism: the role navs
 // place points on the FAR side of the ball — the striker approach point sits enemy-goal-side by
@@ -4328,7 +4378,7 @@ static vector BotMballAvoidBallOnRoute(int bot_index, object *obj, object *ball,
     return nav_target;
   vm_NormalizeVector(&enemy_dir);
   float bump_dot = vm_DotProduct(&bump, &enemy_dir);
-  if (bump_dot <= BOT_MBALL_BLUNDER_DOT)
+  if (bump_dot <= BotMballBlunderDot(bot_index))
     return nav_target; // bump is sideways or toward our goal — ram on through
   // Detour point: pass the ball on the side the leg is already offset toward (minimal
   // deviation); when dead-on, any perpendicular to the leg works.
@@ -4376,6 +4426,21 @@ static void BotDoMonsterballStrikerNav(int bot_index) {
   int my_goal = Bot_objective.monsterball_goal_rooms[my_team];
   int enemy_goal = Bot_objective.monsterball_goal_rooms[1 - my_team];
 
+  // Kickoff reaction: the first touch is a race, and a bot slower than Hotshot keeps flying its last
+  // order for its extra reaction time after the ball reappears on the spot.
+  const float kickoff_age = BotMballKickoffAge(ball);
+  const float reaction_lag = BotMballReactionLag(bot_index);
+  if (kickoff_age >= 0.0f && kickoff_age < reaction_lag) {
+    static float kickoff_logged[MAX_BOTS]; // the kickoff each bot last logged (one line per kickoff)
+    const float kickoff_t = Gametime - kickoff_age;
+    if (fabsf(kickoff_logged[bot_index] - kickoff_t) > 0.01f) {
+      kickoff_logged[bot_index] = kickoff_t;
+      LOG_DEBUG.printf("BOT MBALL: '%s' kickoff reaction %.1fs (%s)", Bots[bot_index].callsign, reaction_lag,
+                       BotDifficultyName(Bots[bot_index].difficulty));
+    }
+    return;
+  }
+
   vector aim_pt;
   if (!BotMballAimPoint(ball_room, my_goal, &aim_pt)) {
     // No route from the ball to our goal (goal rooms unset / disconnected): legacy chase.
@@ -4389,15 +4454,18 @@ static void BotDoMonsterballStrikerNav(int bot_index) {
     return;
   }
 
-  // Approach point behind the predicted ball, opposite the push line.
-  vector bpos = ball->pos + ball->mtype.phys_info.velocity * BOT_MBALL_PREDICT_T;
+  // Approach point behind the predicted ball, opposite the push line. A bot slower than Hotshot reads
+  // the ball late: extrapolating from where it was reaction_lag ago shortens the horizon by that much.
+  vector bpos = ball->pos + ball->mtype.phys_info.velocity * std::max(0.0f, BOT_MBALL_PREDICT_T - reaction_lag);
   vector push_dir = aim_pt - bpos;
   if (vm_GetMagnitude(&push_dir) < 1.0f)
     return; // ball effectively AT the aim point — momentum finishes the job
   vm_NormalizeVector(&push_dir);
   vector approach = bpos - push_dir * (ball->size + BOT_MBALL_STANDOFF);
 
-  // Alignment geometry (shared by fire gates and the finisher).
+  // Alignment geometry (shared by fire gates and the finisher); the gates scale with difficulty.
+  const float align_dot = BotMballAlignDot(bot_index);
+  const float blunder_dot = BotMballBlunderDot(bot_index);
   vector to_ball = ball->pos - obj->pos;
   float d = vm_GetMagnitude(&to_ball);
   if (d > 1.0f)
@@ -4458,7 +4526,7 @@ static void BotDoMonsterballStrikerNav(int bot_index) {
   // to the approach point, which repositions BEHIND the ball for a clean line.
   bool was_finishing = Bots[bot_index].mball_finish_mode != 0;
   float slam_gate = (d < BOT_MBALL_SLAM_CONTACT_R)
-                        ? BOT_MBALL_ALIGN_DOT
+                        ? align_dot
                         : (was_finishing ? BOT_MBALL_SLAM_ALIGN - BOT_MBALL_SLAM_HYST : BOT_MBALL_SLAM_ALIGN);
   bool finishing = Bot_objective.monsterball_progress[my_team] >= 0.0f &&
                    Bot_objective.monsterball_progress[my_team] < BOT_MBALL_FINISH_COST &&
@@ -4510,14 +4578,14 @@ static void BotDoMonsterballStrikerNav(int bot_index) {
   // doubles as the facing order; the blunder gate still guards the trigger.
   if (!dry || finishing) {
     if (d > 1.0f) {
-      bool aligned = align >= BOT_MBALL_ALIGN_DOT || (finishing && align >= BOT_MBALL_SLAM_ALIGN);
+      bool aligned = align >= align_dot || (finishing && align >= BOT_MBALL_SLAM_ALIGN);
       bool blunder = false;
       vector enemy_aim;
       if (BotMballAimPoint(ball_room, enemy_goal, &enemy_aim)) {
         vector enemy_dir = enemy_aim - ball->pos;
         if (vm_GetMagnitude(&enemy_dir) > 1.0f) {
           vm_NormalizeVector(&enemy_dir);
-          blunder = vm_DotProduct(&to_ball, &enemy_dir) > BOT_MBALL_BLUNDER_DOT;
+          blunder = vm_DotProduct(&to_ball, &enemy_dir) > blunder_dot;
         }
       }
       if (aligned && !blunder && junction_ok)
@@ -4602,7 +4670,7 @@ static void BotDoMonsterballKeeperNav(int bot_index) {
       vector enemy_dir = enemy_aim - ball->pos;
       if (vm_GetMagnitude(&enemy_dir) > 1.0f) {
         vm_NormalizeVector(&enemy_dir);
-        blunder = vm_DotProduct(&to_ball, &enemy_dir) > BOT_MBALL_BLUNDER_DOT;
+        blunder = vm_DotProduct(&to_ball, &enemy_dir) > BotMballBlunderDot(bot_index);
       }
     }
     if (!blunder)
@@ -5479,8 +5547,10 @@ static void BotUpdateState(int bot_index) {
     if (BotEntropyIsLoaded(bot_index)) {
       if (Bots[bot_index].entropy_holding) {
         // Mid-takeover: fleeing IS the abort. Only below the hard floor (mirrors the retreat
-        // policy in BotGetObjectiveRoom_Entropy) — the 15-shield room-damage cost is planned.
-        flee_pct = std::min(flee_pct, BOT_ENTROPY_RETREAT_SHIELDS / (max_shields > 1.0f ? max_shields : 100.0f));
+        // policy in BotGetObjectiveRoom_Entropy, difficulty-scaled floor included) — the
+        // 15-shield room-damage cost is planned.
+        flee_pct =
+            std::min(flee_pct, BotEntropyRetreatShields(bot_index) / (max_shields > 1.0f ? max_shields : 100.0f));
       } else {
         // Loaded en route: the whole load dies with the ship — retreat sooner, like DEFEND.
         flee_pct = std::min(flee_pct * 1.5f, 0.60f);
@@ -6355,23 +6425,17 @@ static void BotApplyThrust(int bot_index) {
   if (!obj->ai_info)
     return;
 
-  // Entropy E3 hold v6: a takeover hold must be an ACTIVE park. The v3 goal-clear park empties
-  // movement_dir, and the no-nav-dir fallback below then drives forward = 1.0f — the "parked"
-  // ship throttles itself out of the room (07-15 12-round soak, both holds: START at <5 u/s,
-  // ABORT at 39-52 u/s within 1.5s, one with zero combat damage). While holding, bypass the
-  // FSM thrust path entirely: thrust straight against residual velocity (weapon knockback
-  // included) until near-still, then hold zero thrust. Turning and firing are untouched — the
-  // bot still shoots from the pad; position drift is what resets the DLL's 3.0s takeover clock
-  // (>5u), so velocity is the only thing this block manages. EXPLORE-gated: if the FSM leaves
-  // EXPLORE while the flag is still set (FLEE below the hard floor — fleeing IS the abort),
-  // the park must release or it pins a dying ship inside a 5/s damage room.
+  // Entropy takeover hold: the park is zero thrust, the pilot's hands off the stick. The hold only
+  // starts near rest (BOT_ENTROPY_HOLD_MAX_SPEED), and drag stops the ship from there. Weapon
+  // knockback moves a parked bot exactly as it moves a player (physics ruling 2, no exception):
+  // the bot never thrusts against it. The DLL restarts its 3.0s clock wherever the ship comes to
+  // rest, so a knock that leaves the ship inside the room costs clock time only; a knock out of
+  // the room ends the hold, and BotDoEntropyInvadeNav flies the ship back in under normal thrust.
+  // Bypassing the FSM thrust path keeps juke and the combat overrides off the pad; turning and
+  // firing are untouched. EXPLORE-gated: if the FSM leaves EXPLORE while the flag is still set
+  // (FLEE below the hard floor; fleeing IS the abort), the park releases.
   if (Bots[bot_index].entropy_holding && Bots[bot_index].state == BOT_STATE_EXPLORE) {
-    vector vel = obj->mtype.phys_info.velocity;
-    float spd = vm_GetMagnitude(&vel);
-    vector park_thrust = {0.0f, 0.0f, 0.0f};
-    if (spd > BOT_ENTROPY_PARK_BRAKE_SPEED)
-      park_thrust = vel * (-Bots[bot_index].ship_full_thrust / spd);
-    obj->mtype.phys_info.thrust = park_thrust;
+    vm_MakeZero(&obj->mtype.phys_info.thrust);
     obj->mtype.phys_info.flags |= PF_USES_THRUST;
     Players[slot].flags &= ~(PLAYER_FLAGS_AFTERBURN_ON | PLAYER_FLAGS_THRUSTED);
     Bots[bot_index].stuck_timer = 0.0f; // parked, not stuck — keep the escape system quiet
@@ -6432,9 +6496,8 @@ static void BotApplyThrust(int bot_index) {
     // displaced, re-approached, and repeated. The 08-04 smoke caught that loop as `BOT PRESS ...
     // goal=none spd=0.0` and a stuck-escape member that fired on a bot which was never wedged.
     //
-    // Deliberately NOT the Entropy v6 active park (5204-5215): that thrusts against residual velocity,
-    // which would slam a moving bot to a halt on a transient movement_dir dropout and resists weapon
-    // knockback in a way no human could. Coast, don't brake.
+    // Coast, don't brake: a reverse-thrust brake would slam a moving bot to a halt on a transient
+    // movement_dir dropout and resist weapon knockback in a way no human could.
     forward = 0.0f;
   }
 
@@ -7974,8 +8037,13 @@ static void BotSelectTarget(int bot_index) {
   int best_obj_num = -1;
   float best_score = 1e30f; // lower is better (distance + congestion penalty)
 
-  // Count bots already targeting each player slot (for congestion penalty)
+  // Count the other bots already on each target (the congestion penalty). In co-op the bots are one
+  // team against the level's robots, so their robot targets count too: counting players alone let
+  // every bot escorting the same human converge on the nearest robot.
+  const bool count_robot_targets = BotGetGameMode() == BGM_COOP;
   int slot_bot_count[MAX_NET_PLAYERS] = {};
+  int robot_target_handles[MAX_BOTS];
+  int num_robot_targets = 0;
   for (int b = 0; b < MAX_BOTS; b++) {
     if (!Bots[b].active || b == bot_index)
       continue;
@@ -7983,8 +8051,12 @@ static void BotSelectTarget(int bot_index) {
     if (!bobj->ai_info)
       continue;
     object *btgt = ObjGet(bobj->ai_info->target_handle);
-    if (btgt && btgt->type == OBJ_PLAYER && btgt->id >= 0 && btgt->id < MAX_NET_PLAYERS)
+    if (!btgt)
+      continue;
+    if (btgt->type == OBJ_PLAYER && btgt->id >= 0 && btgt->id < MAX_NET_PLAYERS)
       slot_bot_count[btgt->id]++;
+    else if (count_robot_targets && btgt->type == OBJ_ROBOT)
+      robot_target_handles[num_robot_targets++] = btgt->handle;
   }
 
   // --- Player targets ---
@@ -8020,7 +8092,7 @@ static void BotSelectTarget(int bot_index) {
     float dist = vm_VectorDistanceQuick(&obj->pos, &Objects[Players[i].objnum].pos);
     // Outdoor maps: reduce perceived distance for scoring (wider engagement)
     float effective_dist = OBJECT_OUTSIDE(obj) ? dist * BOT_OUTDOOR_TARGET_DIST_SCALE : dist;
-    float score = effective_dist + slot_bot_count[i] * 80.0f; // penalize congested targets
+    float score = effective_dist + slot_bot_count[i] * BOT_TARGET_CONGESTION_PENALTY;
 
     // LOS penalty: targets behind walls are much less desirable than visible ones.
     // This prevents bots from locking onto through-wall enemies they can't reach,
@@ -8078,6 +8150,9 @@ static void BotSelectTarget(int bot_index) {
       // huntable but never preferred over a visible one. The raw nearest-by-distance pick made
       // fresh co-op spawns swing their noses into walls at matcen robots a room away.
       float score = dist;
+      for (int k = 0; k < num_robot_targets; k++) // co-op only: the list is empty in robo-anarchy
+        if (robot_target_handles[k] == t->handle)
+          score += BOT_TARGET_CONGESTION_PENALTY;
       if (!BotHasLOS(obj, t))
         score += BOT_NO_LOS_TARGET_PENALTY;
       if (score < best_score) {

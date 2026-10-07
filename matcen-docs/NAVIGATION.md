@@ -80,8 +80,8 @@ vectors. Two physics rulings constrain everything:
 
 Both reinforce the standing rule: bots use only legal thrust, with no velocity zeroing, position snapping or
 knockback immunity, even to fix a park. The rule is absolute (operator, 2026-10-01, Q10d: "NO physics violations:
-knockback must affect bots the same as players, always"). The Entropy active park still thrusts against residual
-velocity including knockback (bot.cpp:6363-6375); that thrust is to be removed (MODE6, B).
+knockback must affect bots the same as players, always"). The Entropy takeover park, the last exception, holds zero
+thrust since 2026-10-07 (MODE6).
 
 **One router, two substrates, one contract.** Every mechanism delivers one engine goal. On a level with baked BNodes
 (the campaign) the engine's own pipeline can plan a leg (`$nav bnodesp`, inert on every BNode-less MP map); otherwise
@@ -830,7 +830,7 @@ carry home; COL24 pseudo-bnode Stage 2, outdoor-graph fragmentation, ridge/ancho
 COL7); COL25 troute v2 (built as `troute2`).
 
 **Related rows owned by other themes:** POP11 (non-Pyro hulls against a Pyro-class network; Phoenix wall sphere 6.42,
-comfort hull 8.0), MODE6 (remove the Entropy park's thrust against knockback, B), MODE11 (multi-flag CTF hoarding), CBT5 (flanking cost term,
+comfort hull 8.0), MODE6 (the Entropy park's thrust against knockback, removed 2026-10-07), MODE11 (multi-flag CTF hoarding), CBT5 (flanking cost term,
 the reserved exposure weight on roadmap edges), CBT8 (one-route maps: commit, wait or fight), CBT14/CBT15
 (visit-recency patrol bias; spline trajectories, behaviour-tree FSM), WAT1 (telemetry consolidation), WAT2 (overlay
 labels), WAT3 (navdump ship sizes vs `BotHullPhys`), WAT10 (mysterious_isle conversion), WAT11 (pumphouse/pyroplace).

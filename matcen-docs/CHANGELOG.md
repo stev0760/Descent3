@@ -85,6 +85,27 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
   that extract straight over a Descent 3 install: the engine, the game modules, the sample configs and an
   INSTALL.txt, with the debug symbols in a separate download. The game data stays with your own copy of Descent 3.
   Not yet run.
+- **Entropy: a bot taking over a room no longer brakes against hits.** A bot holding still in an enemy room to take
+  it over used to thrust against any push, weapon knockback included, which no human pilot can do. It now lets go of
+  the controls the way a player does: drag stops the ship, and a hit moves it exactly as it would move you. A hit that
+  knocks it out of the room ends the attempt, and it flies back in to try again. A bot whose attempt ends with no room
+  left to attack or to retreat to no longer sits frozen in place. In test.
+- **CTF: a carrier killed in a flag's home base sends that flag home.** The CTF module tested the wrong object when a
+  flag carrier died, so a flag whose carrier was killed inside that flag's own base dropped loose there instead of
+  going home, and a flag dropped elsewhere could occasionally jump home. The bug is in the original game module; it is
+  fixed here and written up for other Descent 3 projects (`UPSTREAM_PATCHES.md` #6). A flag sent home this way plays
+  the return sound and prints no message. A player whose client runs the original module can see that flag as away
+  from its base until it is next touched or its two-minute timeout runs out. In test.
+- **Co-op: bots spread their fire across the level's robots.** When picking a target, a bot already counted how many
+  other bots were on each player and preferred a less crowded one, but it never counted robots, so in co-op every bot
+  escorting you could pick the same nearest robot. Robots other bots are already shooting now count the same way, in
+  co-op only. In test.
+- **Entropy and Monsterball play scale with bot difficulty.** Until now a Trainee and an Insane bot played these two
+  modes' objectives identically. A Hotshot bot plays them exactly as before; the other levels move from there. In
+  Entropy, a lower-level bot breaks off a room takeover with more shields left and reacts less strongly to enemies in
+  its team's rooms, and a higher-level bot pushes a takeover further. In Monsterball, a lower-level bot takes shots at
+  the ball from a worse angle, refuses fewer shots that would score for the other team, reads where the ball is going
+  later and is slower off the mark at each kickoff; Ace and Insane bots wait for a cleaner line. In test.
 
 ## [0.9.16] - 2026-10-01
 

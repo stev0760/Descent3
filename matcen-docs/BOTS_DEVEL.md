@@ -2031,3 +2031,91 @@ takes the `!` after the space in `[Name]: !follow` and `<Name>: !follow`, the di
 `D3.BotSkelChain`, compiles functions out of `bot_steering.cpp` (untouched here) and fails on `SkelEnsure` and
 `AimNarrowToRouterDoor` not being declared, as it does without this change. Not verified: the menu on screen, the keys
 in a live game and the lines reaching a server, which need a client in a match.
+## 2026-10-07: mode polish (MODE6, MODE14, COOP5, Entropy E4 and Monsterball M4 difficulty)
+
+**MODE6, the Entropy park obeys knockback.** The takeover park in `BotApplyThrust` thrust against any velocity above
+2 u/s (`BOT_ENTROPY_PARK_BRAKE_SPEED`), so a defender's hits barely moved a holding bot: the one place the code broke
+physics ruling 2. The park now holds zero thrust. It still returns before the FSM thrust path, which keeps juke and
+the combat overrides off the pad; the reason it was built (the old no-nav-dir fallback drove the parked ship forward
+at full throttle) is gone since that fallback coasts. The hold starts only at 5 u/s or less, so drag finishes the
+stop. A knock that leaves the ship in the room costs the DLL clock only (it restarts wherever the ship rests, and any
+point in the room counts); a knock out of the room trips the existing ABORT, and the invade leg flies the ship back to
+the hold point under its own thrust. No return-to-post inside the room was added: flying back would reset the clock
+a second time. The constant is deleted.
+
+**MODE14, the CTF module's spew test (UPSTREAM_PATCHES #6).** `HandlePlayerSpew` (netgames/ctf/ctf.cpp) decided
+whether a dying carrier stood in a flag's home goal by reading `dObjects[pnum]`, a player number used as an object
+index, so the home-goal return almost never fired and an unrelated object in a goal room could send a flag home from
+anywhere. It now reads `dObjects[dPlayers[pnum].objnum]`, guarded `>= 0` for the disconnect path, the idiom the pickup
+handler already uses (ctf.cpp:1080); the patch text in UPSTREAM_PATCHES #6 is the tree's text. Two things a reader of
+CTF logs needs: that return path calls `DoFlagReturnedHome`, which plays a sound and prints no HUD line, so the
+analyzer sees no return for it; and the function runs on every machine, so a client on the stock module keeps the
+flag marked away from base until the next flag event or the 120 s timeout corrects its copy (the server's flag object
+is home either way). REL20 rides along: UPSTREAM_PATCHES' assessment list now names `fvi_RoomCheckDir` as fork-only.
+
+**COOP5, the congestion penalty counts robots in co-op.** `BotSelectTarget` adds 80 per other bot already on a
+candidate (`BOT_TARGET_CONGESTION_PENALTY`, the literal it replaces), but the count only looked at `OBJ_PLAYER`
+targets, and the robot loop scored distance plus the LOS penalty alone. Bots escorting one human stand close
+together, so their nearest robot was the same robot and nothing pushed them apart. The counting pass now also
+collects the other bots' robot target handles when the mode is co-op, and the robot loop adds the same 80 per match.
+Robo-Anarchy is deliberately unchanged: every bot there is an enemy of every other, so "spread across targets" is not
+a team behaviour there, and the row asked for a co-op-gated fix. Unflown; COOP2's fresh co-op flight is where it gets
+read (one-robot pile-ups in the escort fights, not a metric of its own).
+
+**MODE1 / MODE7, Entropy E4 and Monsterball M4 difficulty.** Both modes now read the existing difficulty table
+(`kDiffParams`) instead of adding columns: `BotGetDiffParams` is exported and `BotDiffParamsFor(tier)` gives any row.
+The rule is the same in both modes: their constants were tuned on Hotshot bots, so each scaling is the tier's
+distance from the Hotshot row and a Hotshot bot plays exactly as before. Which column goes where:
+
+- Entropy invasion aggression: the abort floor is a flee threshold, so `BotEntropyRetreatShields` multiplies it by
+  `flee_pct_scale` (Trainee 45, Rookie 35, Hotshot 25, Ace 17.5, Insane 10). The re-engage floor keeps its fixed +20
+  (the hold's 15 shields of room damage plus slack is a cost, not temperament), and the mid-hold flee threshold in
+  `BotUpdateState` reads the same floor. DEPART (80) stays above the highest re-engage floor (65).
+- Entropy lab-defence reaction: the intruder, takeover-threat and loaded-enemy biases are multiplied by
+  `dodge_percent`, the table's threat-reaction column (0.2, 0.5, then 1.0 from Hotshot up). Above Hotshot it stays at
+  full strength on purpose: the loaded-intruder bias (-700) already outbids the 500 LOS penalty, and more would let a
+  far intruder pull every bot off nearer enemies.
+- Monsterball cones: `aim_error_deg` beyond Hotshot's 3 degrees widens the alignment cone (fire gate and the slam's
+  contact-range gate) and narrows the blunder refusal cone by the same angle; striker, keeper clears and the
+  contact-avoid detour all read the bot's own blunder gate. Trainee 0.70 / 0.49, Insane 0.83 / 0.30.
+- Monsterball timing: `fire_delay` beyond Hotshot's 0.2 s is perception lag, clamped at zero. The prediction horizon
+  shrinks by it (0.7 s to 0.4 s Rookie, 0.1 s Trainee), and it is the kickoff delay: the striker keeps flying its
+  previous order that long after the ball reappears on its spawn point. Kickoff had no detection before; the spawn
+  point is found at init the way the DLL finds it (first `RF_SPECIAL1` room, its computed center) and
+  `BotMballKickoffAge` calls it a kickoff when the ball is on that point after a jump the 120 u/s cap cannot explain
+  (or on the level's first look). It runs from the striker's think, not the 0.5 s poll, so the hold starts before the
+  striker has re-aimed at the new ball. Logs: `BOT MBALL: kickoff (...)` and `'<bot>' kickoff reaction <s>s (<tier>)`.
+
+Not scaled, left on MODE1/MODE7: Entropy denial appetite, smarter invasion, the drill command, shield-knob iteration;
+Monsterball wall/ceiling play, banks, pass-backs. The `!` verbs for both modes are the CMD branch's.
+
+**The hold ends when the invade nav loses its target.** A force-loaded test run (every bot given 5 viruses by a scratch
+build, never committed) showed parked bots sitting still for seconds after the hold should have ended: Gregg (Insane)
+took a hit at 51 shields that left him at 7, under his floor of 10, and `BotDoEntropyInvadeNav` got a target of -1 (by
+the code, the retreat branch found no repair or energy room of his team's), called `BotDoExploreRoaming` and returned
+without clearing `entropy_holding`, so the park went on holding the "roaming" bot at zero thrust; Phantom showed the
+same signature for 4.4 s after his takeover (an explore pick while the park trace ran on) until the room-progress
+timeout cleared his goals. The target check now runs after the ABORT block, so a -1 target logs `takeover hold ABORT
+(... -> target -1 ...)` and drops the flag before the bot roams. The braking park had the same hole; the zero-thrust
+park only made it visible in the trace.
+
+**Smokes (Debug, lab, 4v4 with every tier on the field: each team Trainee, Rookie, Ace or Hotshot, Insane).** No
+assert in any run; every stop was our SIGTERM.
+
+- Entropy, `dementia.mn3`, 6-minute levels, stock build: SteelVapor full level and the GeoDomes load, 20 bot deaths, 0
+  stucks, 5 pickups, 0 holds (as in every Entropy soak since 0.9.14: the analyzer's hold count has read 0).
+- Entropy, the force-loaded scratch build: the park trace (thrust and speed every 0.25 s while holding) read thrust 0.00
+  on all 113 samples. A hold that starts at 4.9 u/s coasts down 4.92, 2.28, 1.06, 0.49 u/s; Gregg, parked at 3.3 u/s,
+  took a hit (51 to 7 shields) and the next sample read 85.8 u/s, then 39.7, thrust 0.00 throughout: the knock carried
+  him, nothing pushed back. Holds convert: Phantom's hold in GeoDomes room 0 took the room (5 points to him). On
+  SteelVapor no hold started in either force-loaded run (first run: 807 invade legs, 302 of them re-issued from inside
+  the target room), with the bots at 16-40 u/s there and `movement_dir` swinging each half second, so the 5 u/s start
+  gate never passed. That is the arrival side of MODE2, navigation and out of scope here; it is evidence on the row. The
+  second force-loaded run, on the build with the -1 hold release, started no hold on either level, so that fix is
+  checked by reading only.
+- Monsterball, `frenzy.mn3` (PowerHouse, then the level-2 load): 4 goals, 0 blunders, 67 fires at the ball, 58
+  ball-avoid detours, 0 stucks. Every goal line (`knocks the ball in for a point!`) is followed by
+  `BOT MBALL: kickoff (ball on its spawn point in rm1)`, plus one at each level start (the level-2 load re-armed it);
+  `'Shadow[BOT]' kickoff reaction 0.3s (Rookie)` and `'Phantom[BOT]' kickoff reaction 0.6s (Trainee)` fired, and no
+  Hotshot-or-better striker waited. `MBALL_ROLE_THRASH` (149 role changes in the round) matches the 09-13 PowerHouse
+  rate and predates this work.

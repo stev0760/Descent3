@@ -3,8 +3,8 @@
 **Status: M1-M3 built and shipped in 0.9.8 (released 2026-07-18; built 2026-07-12 as commits
 `c0db0728`/`9cbf16c1`/`8bf0b4fe`).** §3 describes what the bots do at HEAD, including the
 `$nav mball / mroles / mavoid / mjunction / mtenure` controls. The contact own-goal fix holds; role
-tenure stays at 10 s (longer tenure halved scoring in A/B). M4 polish is not built (MODE7); it is pre-reveal work,
-decided 2026-10-01. Open items
+tenure stays at 10 s (longer tenure halved scoring in A/B). M4's difficulty scaling is built (2026-10-07, §3.8); its
+`!attack ball` / `!defend goal` verbs come with the `!` order work, and the rest of M4 is open (MODE7). Open items
 are in §3.7 "Known open"; the main one is weak finisher conversion on Veins-class corridor maps
 (MODE8). The pre-M1 §3, the junction-feature narrative and the original §6 questions are preserved in
 `archive/MODE-docs-history.md`, Part 2. (This document began as spec-only on 2026-06-12.)
@@ -133,26 +133,26 @@ target.)
 
 This replaces the pre-M1 inventory that stood here (bots were then pure ball-chasers with no way to
 shoot a non-player object); that text is in `archive/MODE-docs-history.md`, Part 2a. Constants live in
-`Descent3/bot_objective.h:110-170`. Where §4's original spec and this section differ, this section
+`Descent3/bot_objective.h:106-168`. Where §4's original spec and this section differ, this section
 is the code.
 
 ### 3.1 Polling and dispatch
 
-- `BotPollMonsterball()` (`Descent3/bot_objective.cpp:519`) finds the ball (`OBJ_ROBOT` or
+- `BotPollMonsterball()` (`Descent3/bot_objective.cpp:531`) finds the ball (`OBJ_ROBOT` or
   `OBJ_BUILDING` with the Monsterball id), records its room, computes each team's "ball progress"
   (`BotEstimatePathCost` from the ball's room to that team's goal room) and logs every ball room
   change as `BOT MBALL: ball room A -> B (cost to red-goal ..., blue-goal ...)`.
-- Dispatch (`Descent3/bot.cpp:5573-5600`, EXPLORE state): role 1 runs the striker, role 2 the support,
+- Dispatch (`Descent3/bot.cpp:5641-5668`, EXPLORE state): role 1 runs the striker, role 2 the support,
   role 3 the keeper. Role 0 ("field") bots play normal anarchy with the turnover target bias (§3.5).
   With `$nav mroles off` every bot runs the striker; with `$nav mball off` bots fall back to the
-  legacy ball-chase (`BotGetObjectiveRoom_Monsterball`, `bot_objective.cpp:1761`, returns the ball's
+  legacy ball-chase (`BotGetObjectiveRoom_Monsterball`, `bot_objective.cpp:1785`, returns the ball's
   room).
 - `$botobj` prints the ball's room, size and speed, both goal rooms with the ball's route cost to each,
-  and each bot's role (`bot_objective.cpp:1415-1432`).
+  and each bot's role (`bot_objective.cpp:1439-1456`).
 
 ### 3.2 Roles
 
-`BotAssignMonsterballRoles()` (`bot_objective.cpp:755`) runs every `BOT_MBALL_ROLE_INTERVAL` (2 s),
+`BotAssignMonsterballRoles()` (`bot_objective.cpp:774`) runs every `BOT_MBALL_ROLE_INTERVAL` (2 s),
 per team:
 
 - Candidates are bots with no squad order (`SQUAD_FREELANCE`); a bot under a chat order keeps its
@@ -169,18 +169,19 @@ per team:
 
 ### 3.3 The striker
 
-`BotDoMonsterballStrikerNav()` (`bot.cpp:4355`):
+`BotDoMonsterballStrikerNav()` (`bot.cpp:4403`):
 
-- **Aim point** (`BotMballAimPoint`, `bot.cpp:4261`): the `path_pnt` of the portal from the ball's room
+- **Aim point** (`BotMballAimPoint`, `bot.cpp:4260`): the `path_pnt` of the portal from the ball's room
   to the next room on the BOA route toward the bot's **own** goal room (Monsterball scores into your
   own goal), or the goal room's `path_pnt` when the ball is already there. No route falls back to
   chasing the ball's room.
-- **Approach point**: the ball position predicted `BOT_MBALL_PREDICT_T` (0.7 s) ahead, minus the push
-  direction times (ball radius + `BOT_MBALL_STANDOFF` 25 u). It is an ordinary routed goal.
+- **Approach point**: the ball position predicted `BOT_MBALL_PREDICT_T` (0.7 s at Hotshot, shorter below it, §3.8)
+  ahead, minus the push direction times (ball radius + `BOT_MBALL_STANDOFF` 25 u). It is an ordinary routed goal.
 - **Fire gates**: the ball moves exactly away from the shooter, so the next ball direction is
   `dir(bot->ball)`. The striker fires only when that direction's dot with the push line is at least
   `BOT_MBALL_ALIGN_DOT` (0.80) and its dot with the direction toward the **enemy** goal's aim point
-  is not above `BOT_MBALL_BLUNDER_DOT` (0.35). The blunder gate is the own-goal refusal.
+  is not above `BOT_MBALL_BLUNDER_DOT` (0.35). The blunder gate is the own-goal refusal. Both values are Hotshot's;
+  each bot's gates move with its difficulty (§3.8).
 - **Dry ram**: with no energy and no Vauss ammo, the striker reaches the approach point and then
   targets the ball itself once within `BOT_MBALL_RAM_SWITCH` (12 u).
 - **The slam finisher**: weapon hits clamp to 10-20 u/s, a ram does not. The finisher arms when the
@@ -189,9 +190,9 @@ per team:
   to stay armed; the full 0.80 inside `BOT_MBALL_SLAM_CONTACT_R` 60 u). A striker with more than 25
   Vauss rounds in range finishes by sustained Vauss fire instead. Otherwise it flies a slam run to a
   point `BOT_MBALL_SLAM_THROUGH` (30 u) through the ball along the push line, and the afterburner
-  facing gate times the burn (`bot.cpp:4444-4502`). Transitions log as
+  facing gate times the burn (`bot.cpp:4510-4568`). Transitions log as
   `FINISH slam|vauss ARM` and `FINISH DISARM`.
-- **Junction veto** (`$nav mjunction`, default **off**, `bot.cpp:4402-4441`): in a ball room with 3 or
+- **Junction veto** (`$nav mjunction`, default **off**, `bot.cpp:4468-4507`): in a ball room with 3 or
   more passable portals, holds the shot or slam when the induced ball line points at some other portal
   better than at the on-route portal by more than `BOT_MBALL_JUNCTION_MARGIN` (0.25). Validated negative on
   2026-07-16 (goals fell on every map tested, Veins included); kept as an experiment lever. The design
@@ -199,10 +200,10 @@ per team:
 
 ### 3.4 Support and keeper
 
-- **Support** (`BotDoMonsterballSupportNav`, `bot.cpp:4529`): holds a point `BOT_MBALL_SUPPORT_STANDOFF`
+- **Support** (`BotDoMonsterballSupportNav`, `bot.cpp:4595`): holds a point `BOT_MBALL_SUPPORT_STANDOFF`
   (60 u) from the ball along the push line toward its own goal, where a striker's overshoot sends the
   ball. It never shoots the ball (one toucher at a time) and engages enemies normally.
-- **Keeper** (`BotDoMonsterballKeeperNav`, `bot.cpp:4563`): shadow defence of the **enemy** goal room
+- **Keeper** (`BotDoMonsterballKeeperNav`, `bot.cpp:4629`): shadow defence of the **enemy** goal room
   (where the other team scores). Its station is the portal point on the route out of the enemy goal
   room toward the ball, or the goal room's `path_pnt` when there is no route. It shoots the ball within
   `BOT_FIRE_RANGE` whenever the shot passes the blunder gate, so a sideways clear is always allowed.
@@ -210,20 +211,20 @@ per team:
 ### 3.5 Own-goal discipline, weapons and combat
 
 - **Two layers against own goals.** The fire blunder gate (striker and keeper, §3.3-3.4), and the
-  contact gate `BotMballAvoidBallOnRoute()` (`bot.cpp:4295`, `$nav mavoid`, default on): when a nav leg
+  contact gate `BotMballAvoidBallOnRoute()` (`bot.cpp:4343`, `$nav mavoid`, default on): when a nav leg
   would pass within contact clearance (ball radius + ship radius + `BOT_MBALL_AVOID_MARGIN` 8 u) and
   the bump would push the ball toward the enemy goal, the bot detours to the side. All three roles route
   their nav points through it; the slam run bypasses it, since its contact is safe by the arming
   geometry. Detours log as `ball-avoid detour`.
 - **Fire at the ball.** A role sets `mball_fire_handle`; in EXPLORE, `BotDoFiring` takes the ball as its
-  target over any player (`bot.cpp:8089-8094`), aim leads the ball by projectile speed
-  (`bot.cpp:6249-6266`), and difficulty aim jitter applies unchanged. `BotSelectBallWeapon()`
-  (`bot.cpp:8064`) picks Vauss when owned with ammo, otherwise the laser; secondaries are held while
-  shooting the ball (`bot.cpp:1288`).
+  target over any player (`bot.cpp:8199-8204`), aim leads the ball by projectile speed
+  (`bot.cpp:6317-6334`), and difficulty aim jitter applies unchanged. `BotSelectBallWeapon()`
+  (`bot.cpp:8174`) picks Vauss when owned with ammo, otherwise the laser; secondaries are held while
+  shooting the ball (`bot.cpp:1289`).
 - **Combat.** The striker drops into HUNT only for a visible enemy within 40 u; the keeper for a visible
   enemy within `BOT_COMBAT_CIRCLE_DIST` (120 u). `BotGetObjectiveTargetBias` gives
   `BOT_MBALL_STRIKER_BIAS` (-250) to any enemy within `BOT_MBALL_TB_NEAR_BALL` (150 u) of the ball:
-  killing the enemy's ball player is a turnover (`bot_objective.cpp:1817-1828`).
+  killing the enemy's ball player is a turnover (`bot_objective.cpp:1841-1852`).
 
 ### 3.6 Console controls
 
@@ -243,10 +244,42 @@ Soak manifests: `tools/manifests/monsterball-smoke.json`, `monsterball-soak.json
 | Id | Item | State at HEAD |
 |---|---|---|
 | MODE8 | Finisher conversion on Veins-class corridor maps is weak; Monster Arena's 42% via-arrival rate is unverified; whether the "fury" results generalise. | Open. |
-| MODE7 | M4 polish (§4.4). | Not built. |
+| MODE7 | M4 polish (§4.4). | Difficulty scaling built 2026-10-07 (§3.8); the mode verbs come with the `!` order work; wall and ceiling play, banks and pass-backs stay out of scope. |
 | MODE9 | Analyzer anomalies `MBALL_BLUNDER_HEAVY` and `MBALL_BALL_STUCK` named in §5. | Not built (§5 note). |
 | COL8 | Retire `$nav mjunction`. | Toggle present; decided 2026-10-01 (Q20 a): retire it in the toggle cleanup. |
 | MODE12 | Crossfire bunker outlier. | Accepted for the first release (operator ruling). |
+
+### 3.8 Difficulty (M4, built 2026-10-07)
+
+The ball-play gates reuse the bot difficulty table (`kDiffParams`, BOT_MANAGEMENT.md §4) instead of adding columns.
+They were tuned on Hotshot bots, so a Hotshot bot plays exactly as before and every other tier moves by its distance
+from the Hotshot row (`BotMballAimSlackRad`, `BotMballReactionLag` and their callers, `bot.cpp`):
+
+- **Alignment and blunder cones** take the tier's aim error beyond Hotshot's 3 degrees. The alignment cone (the fire
+  gate, and the slam's contact-range gate) widens by that angle, and the blunder refusal cone narrows by it: a
+  sloppier pilot shoots from further off the push line and refuses fewer shots, and fewer body bumps, that help the
+  other team. The striker, the keeper's clears and the contact-avoid detour all use the bot's own blunder gate. A tier
+  more accurate than Hotshot tightens both cones. The aim jitter on the shot itself (§3.5) applies on top, as before.
+- **Prediction** takes the tier's fire delay beyond Hotshot's 0.2 s as perception lag: the striker extrapolates the
+  ball from where it was that long ago, so its prediction horizon shrinks by the lag.
+- **Kickoff reaction** uses the same lag. The ball starts each level on its spawn point (the center of the
+  `RF_SPECIAL1` room, found at init the way the DLL finds it), and the DLL teleports it back there after every goal.
+  The striker detects that (`BotMballKickoffAge`: the ball on its spawn point after a jump faster than the 120 u/s cap
+  allows) and, for the lag, keeps flying its previous order. The detection logs `BOT MBALL: kickoff (...)`, and a
+  bot that waits logs `BOT MBALL: '<bot>' kickoff reaction <s>s (<tier>)`.
+
+No tier reacts faster than Hotshot: the 0.7 s horizon and the immediate kickoff already assume Hotshot's timing.
+
+| Tier | Alignment dot (cone) | Blunder dot (refusal cone) | Prediction | Kickoff delay |
+|---|---|---|---|---|
+| Trainee | 0.70 (45.9 deg) | 0.49 (60.5 deg) | 0.1 s | 0.6 s |
+| Rookie | 0.76 (40.9 deg) | 0.41 (65.5 deg) | 0.4 s | 0.3 s |
+| Hotshot | 0.80 (36.9 deg) | 0.35 (69.5 deg) | 0.7 s | none |
+| Ace | 0.82 (34.9 deg) | 0.32 (71.5 deg) | 0.7 s | none |
+| Insane | 0.83 (33.9 deg) | 0.30 (72.5 deg) | 0.7 s | none |
+
+Unmeasured in play: no Monsterball soak has run on this build, so whether the Ace and Insane cones score more or less
+than Hotshot's is open.
 
 ---
 
@@ -330,14 +363,13 @@ state bumps (4/21 in the soak) are accepted residual. Role tenure is runtime-tun
 
 ### 4.4 Phase M4 (polish): see MODE7
 
-M4 is not built and is tracked as registry row MODE7 (`PLAN.md` §4, the master registry). Decided
-2026-10-01: M4's mode verbs and difficulty scaling are pre-reveal work. Its content, unchanged from the original §4.4: difficulty
-scaling of the alignment threshold, prediction quality, blunder-cone width and kickoff reaction;
-wall and ceiling play, deliberate banks, supporter pass-backs and multi-touch dribbling, all out of
-scope until soaks demand them; and the `!attack ball` / `!defend goal` chat verbs (Tier 2 pattern).
-Junction-aware pushing was built and tested as part of this phase and is validated negative (§3.3);
-its full narrative is in `archive/MODE-docs-history.md`, Part 2b. The Veins finishing problem it was
-meant to solve is MODE8.
+M4's difficulty scaling is built (§3.8). The rest of M4 is not built and is tracked as registry row MODE7 (`PLAN.md` §4,
+the master registry). Decided 2026-10-01: M4's mode verbs and difficulty scaling are pre-reveal work. Its content,
+unchanged from the original §4.4: difficulty scaling of the alignment threshold, prediction quality, blunder-cone width
+and kickoff reaction; wall and ceiling play, deliberate banks, supporter pass-backs and multi-touch dribbling, all out
+of scope until soaks demand them; and the `!attack ball` / `!defend goal` chat verbs (Tier 2 pattern). Junction-aware
+pushing was built and tested as part of this phase and is validated negative (§3.3); its full narrative is in
+`archive/MODE-docs-history.md`, Part 2b. The Veins finishing problem it was meant to solve is MODE8.
 
 ---
 
@@ -376,18 +408,18 @@ blocking; the answers below come from the code and the recorded soaks, and the r
 historical (never measured, and nothing in play has needed the answer).
 
 1. **Ship-ramming moves the ball usefully.** Answered by the as-built finisher: the slam run exists
-   because a ram is unclamped momentum (`bot_objective.h:117-119`), and the 07-15 decode recorded one
-   misaligned contact sending the ball from route cost 93 to 1360 (`bot_objective.h:124-129`). The
+   because a ram is unclamped momentum (`bot_objective.h:115-117`), and the 07-15 decode recorded one
+   misaligned contact sending the ball from route cost 93 to 1360 (`bot_objective.h:122-127`). The
    dry-bot ram fallback (§3.3) is live.
 2. **Ball mass and size at runtime.** Size is read from the object at poll time and drives the approach,
    avoid and slam math; `$botobj` prints it. Mass was never logged. Historical.
 3. **Impulse direction fidelity.** Not measured directly, but the model held in play: in the first clean
    overnight soak the fire blunder gate produced no own goals, and every own goal was a body contact
-   (CHANGELOG 0.9.8; `bot.cpp:4285-4290`). The before/after velocity spot-check was never run. Historical.
+   (CHANGELOG 0.9.8; `bot.cpp:4334-4339`). The before/after velocity spot-check was never run. Historical.
 4. **Ball versus bot probes.** Never checked explicitly; no soak has reported the ball blocking a
    via or skeleton leg. Historical.
 5. **The ball's OBJ_ROBOT type in bot scans.** Target selection and the target bias consider players
-   only (`bot_objective.cpp:1817-1828`); dodge and stuck-clear handling of the ball was never checked
+   only (`bot_objective.cpp:1841-1852`); dodge and stuck-clear handling of the ball was never checked
    explicitly. Historical.
 6. **`LastHitPnum` mirror accuracy.** Answered by the analyzer: it parses the DLL's goal and blunder HUD
    broadcasts from the server log (`tools/analyze_bot_log.py:956-978`) instead of mirroring the last

@@ -1,14 +1,14 @@
 # Entropy Mode — Mechanics Reference + Bot Implementation Spec
 
 **Status: E1-E3 built and shipped in 0.9.8 (released 2026-07-18; built 2026-07-12 as commits
-`d18cebb0`/`bed6db43`/`19266727`).** Working takeovers were confirmed during the 2026-07-13 to 07-18
-hosted-server campaign, after the hold-behavior ladder landed (doorway-plane park, then depth and
-near-rest gates, then active braking; see the 0.9.8 CHANGELOG entry). The 0.9.13 CHANGELOG
-"known limitations" says the opposite for that release's testing: "Entropy room takeover has not been
-observed in testing." Both statements stand in the record, and a re-check on the release build is owed
-(MODE2, see "Known open" below). `$nav entropy` gates the E3 invasion layer. E4 polish is not built
-(MODE1); it is pre-reveal work, decided 2026-10-01. The active park's counter-thrust against knockback is to be
-removed before the reveal (MODE6, §3.4). The as-built summary is §3; the original E1-E3 build spec is in
+`d18cebb0`/`bed6db43`/`19266727`).** Working takeovers were confirmed during the 2026-07-13 to 07-18 hosted-server
+campaign, after the hold-behavior ladder landed (doorway-plane park, then depth and near-rest gates, then active
+braking; see the 0.9.8 CHANGELOG entry). The 0.9.13 CHANGELOG "known limitations" says the opposite for that release's
+testing: "Entropy room takeover has not been observed in testing." Both statements stand in the record, and a re-check
+on the release build is owed (MODE2, see "Known open" below). `$nav entropy` gates the E3 invasion layer. E4's
+difficulty scaling is built (2026-10-07, §3.5); its `!attack lab` / `!defend lab` verbs come with the `!` order work,
+and the rest of E4 is open (MODE1). The takeover park holds zero thrust and obeys knockback like a player (MODE6, built
+2026-10-07, §3.3). The as-built summary is §3; the original E1-E3 build spec is in
 `archive/MODE-docs-history.md`, Part 1.
 Source of truth: `netgames/entropy/` (EntropyBase.cpp, EntropyAux.h, EntropyPackets.cpp,
 EntropyRoom.cpp), read in full for this document. Line references are to those files.
@@ -167,66 +167,74 @@ they describe is reconstructable:
 
 The phased spec this section replaced (E1 scaffolding, E2 economy, E3 takeover, including the
 2026-07-13 hold-point correction) is preserved verbatim in `archive/MODE-docs-history.md`, Part 1.
-What follows is the code at HEAD. Constants live in `Descent3/bot_objective.h:52-108`.
+What follows is the code at HEAD. Constants live in `Descent3/bot_objective.h:52-104`.
 
 ### 3.1 Polling and observability (E1)
 
-- `BotPollEntropy()` (`Descent3/bot_objective.cpp:599`) rebuilds the Entropy block of
+- `BotPollEntropy()` (`Descent3/bot_objective.cpp:611`) rebuilds the Entropy block of
   `BotObjectiveState` (`bot_objective.h:224-236`) every poll: room owner and kind from the
   `RF_SPECIAL1..6` scan, owned-room counts, up to `BOT_ENTROPY_MAX_LABS` (4) labs per team, per-player
   carried virus count from inventory, and the free-virus list with an inferred team. Nothing is
   cached across polls, because the DLL flips room flags in place on takeover.
 - The virus object id is resolved once at init with `FindObjectIDName("EntropyVirus")`
-  (`bot_objective.cpp:196-200`).
-- `BotEntropyMirrorStreaks()` (`bot_objective.cpp:578`) mirrors the DLL's unexported
+  (`bot_objective.cpp:208-212`).
+- `BotEntropyMirrorStreaks()` (`bot_objective.cpp:590`) mirrors the DLL's unexported
   kills-since-death counter from deltas of `num_kills_level` / `num_deaths_level`. A kill and a death
   in the same poll count as a death (under-count is safer than over-count), and counters running
-  backwards resync to zero. `BotEntropyCarryCapacity()` (`:701`) returns 2 x streak.
+  backwards resync to zero. `BotEntropyCarryCapacity()` (`:713`) returns 2 x streak.
 - `$botobj` prints owned rooms, labs and each player's `carrying N [cap C, streak S]`
-  (`bot_objective.cpp:1435-1455`).
-- `EntropyVirus` is on the troll-strike exemption list with flags and orbs (`Descent3/bot.cpp:4869-4873`).
+  (`bot_objective.cpp:1459-1479`).
+- `EntropyVirus` is on the troll-strike exemption list with flags and orbs (`Descent3/bot.cpp:4935-4939`).
 
 ### 3.2 Virus economy (E2)
 
-- Powerup selection (`bot.cpp:5199-5214`): an own-team virus gets objective priority 25 only while the
+- Powerup selection (`bot.cpp:5265-5280`): an own-team virus gets objective priority 25 only while the
   mirrored load is below capacity. An enemy virus in the bot's own room gets priority 4 (denial by
   touch, in passing only). A virus of unknown team (drifted out of any special room) is skipped.
 - A bot with streak 0 has capacity 0 and simply fights; kills are the currency.
-- Streak banking (`bot_objective.cpp:974-988`, commit `76549be3`): a wounded bot with a streak of 1 or
+- Streak banking (`bot_objective.cpp:998-1012`, commit `76549be3`): a wounded bot with a streak of 1 or
   more retreats to its own repair room below `BOT_ENTROPY_HEAL_START` (50) and stays until
-  `BOT_ENTROPY_HEAL_DONE` (95). Its flee threshold also rises with the streak (`bot.cpp:5484-5494`).
+  `BOT_ENTROPY_HEAL_DONE` (95). Its flee threshold also rises with the streak (`bot.cpp:5552-5562`).
 - DEFEND lean anchors one room out from the own lab along the BOA hop toward the enemy lab, never inside
-  a lab (`bot_objective.cpp:990-1006`). A zero-capacity defender parked in the lab collided with
+  a lab (`bot_objective.cpp:1014-1030`). A zero-capacity defender parked in the lab collided with
   viruses it could not carry.
 
 ### 3.3 Takeover execution (E3, `$nav entropy`)
 
-- Loaded branch (`bot.cpp:5567`): a bot carrying `BOT_ENTROPY_TAKEOVER_LOAD` (5) or more runs
-  `BotDoEntropyInvadeNav()` (`bot.cpp:4168`). Its target comes from `BotGetObjectiveRoom_Entropy()`
-  (`bot_objective.cpp:928`): the nearest enemy special room of any kind, chosen by
-  `BotGetNearestEntropyRoom()` (`:882`) on the wind- and glass-aware routed cost (commit `9e602d7f`,
+- Loaded branch (`bot.cpp:5635`): a bot carrying `BOT_ENTROPY_TAKEOVER_LOAD` (5) or more runs
+  `BotDoEntropyInvadeNav()` (`bot.cpp:4167`). Its target comes from `BotGetObjectiveRoom_Entropy()`
+  (`bot_objective.cpp:947`): the nearest enemy special room of any kind, chosen by
+  `BotGetNearestEntropyRoom()` (`:901`) on the wind- and glass-aware routed cost (commit `9e602d7f`,
   the RAGE wind-tunnel fix).
-- Shield policy (`bot_objective.cpp:941-972`): retreat to an own repair room (energy room as fallback)
+- Shield policy (`bot_objective.cpp:960-996`): retreat to an own repair room (energy room as fallback)
   below `BOT_ENTROPY_RETREAT_SHIELDS` (25), or below `BOT_ENTROPY_REENGAGE_SHIELDS` (45) when not yet
-  holding. A loaded bot on its own heal pad stays until `BOT_ENTROPY_DEPART_SHIELDS` (80).
+  holding. A loaded bot on its own heal pad stays until `BOT_ENTROPY_DEPART_SHIELDS` (80). The two lower floors are
+  the Hotshot values; they move with difficulty (§3.5).
 - Hold point: the entry portal pushed `BOT_ENTROPY_HOLD_DEPTH` = **24 u** into the room
-  (`bot_objective.h:64`, used at `bot.cpp:4250`). 24 u clears the engine's roughly 10 u goal-arrive
+  (`bot_objective.h:64`, used at `bot.cpp:4251`). 24 u clears the engine's roughly 10 u goal-arrive
   radius, so the ship does not stop back on the portal plane. (The original as-built correction used
   12 u; the 2026-07-14 re-soak showed holds at 12 u still flapping between rooms.)
-- Hold start (`bot.cpp:4197-4199`): only when the ship is at least `BOT_ENTROPY_HOLD_MIN_DEPTH` (8 u)
+- Hold start (`bot.cpp:4190-4192`): only when the ship is at least `BOT_ENTROPY_HOLD_MIN_DEPTH` (8 u)
   past the nearest portal plane and moving at `BOT_ENTROPY_HOLD_MAX_SPEED` (5 u/s) or less. Once
-  holding, only leaving the room aborts. START and ABORT are logged as `BOT ENTROPY: ... takeover hold`.
-- Active park (`bot.cpp:6353-6373`): while holding in EXPLORE, thrust is replaced by a counter-thrust
-  against any velocity above `BOT_ENTROPY_PARK_BRAKE_SPEED` (2 u/s), and zero thrust below it. Turning
-  and firing are untouched. This thrusting against knockback violates the "bots never resist knockback" physics
-  ruling, and the operator ruled on 2026-10-01 that there are no exceptions: knockback must affect bots exactly as
-  it affects players, always. The counter-thrust is to be removed (MODE6, see below).
-- Flee while loaded (`bot.cpp:5468-5484`): mid-hold, fleeing is the abort and is allowed only below the
-  hard floor; loaded and en route, the flee threshold is raised (x1.5, capped at 60%). A loaded bot in
-  idle combat snaps back to EXPLORE after the CTF carrier combat timeout (`bot.cpp:6038-6040`).
-- Defense bias (`BotGetObjectiveTargetBias`, `bot_objective.cpp:1830-1851`): an enemy inside one of our
+  holding, only leaving the room or losing the target aborts; a target of -1 (the enemy owns nothing, or there is
+  no own repair or energy room to retreat to) ends the hold before the bot roams, since before 2026-10-07 the
+  roaming bot kept the hold flag and sat in the park. START and ABORT are logged as `BOT ENTROPY: ... takeover
+  hold`.
+- Park (`bot.cpp:6423-6438`): while holding in EXPLORE, thrust is zero and the FSM thrust path (juke, combat
+  overrides) is skipped. Turning and firing are untouched. The hold starts only near rest (5 u/s or less), and drag
+  stops the ship from there. Weapon knockback moves a parked bot exactly as it moves a player (physics ruling 2; the
+  operator ruled on 2026-10-01 that there are no exceptions): the bot never thrusts against it. The DLL restarts its
+  3 s clock wherever the ship comes to rest, so a knock that leaves the ship inside the room costs clock time only. A
+  knock out of the room ends the hold (ABORT), and the invade leg flies the ship back to the hold point under normal
+  thrust, where the hold restarts at depth and near rest. Before 2026-10-07 (MODE6) the park thrust against any
+  velocity above 2 u/s, knockback included.
+- Flee while loaded (`bot.cpp:5534-5552`): mid-hold, fleeing is the abort and is allowed only below the hard floor (the
+  bot's own, §3.5); loaded and en route, the flee threshold is raised (x1.5, capped at 60%). A loaded bot in idle combat
+  snaps back to EXPLORE after the CTF carrier combat timeout (`bot.cpp:6106-6108`).
+- Defense bias (`BotGetObjectiveTargetBias`, `bot_objective.cpp:1854-1879`): an enemy inside one of our
   special rooms gets `BOT_ENTROPY_INTRUDER_BIAS` (-300), plus `BOT_ENTROPY_TAKEOVER_THREAT_BIAS` (-400)
-  when it carries 5 or more. A loaded enemy anywhere else gets `BOT_ENTROPY_LOADED_BIAS` (-200).
+  when it carries 5 or more. A loaded enemy anywhere else gets `BOT_ENTROPY_LOADED_BIAS` (-200). These are the
+  Hotshot magnitudes; lower tiers weigh them less (§3.5).
 - `$nav entropy off` (`Descent3/dedicated_server.cpp:785`) leaves the E2 economy running and stops the
   invade, hold, retreat and streak-banking branches.
 
@@ -234,22 +242,48 @@ What follows is the code at HEAD. Constants live in `Descent3/bot_objective.h:52
 
 | Id | Item | State at HEAD |
 |---|---|---|
-| MODE2 | Do takeovers happen on the release build? The 0.9.8 campaign confirmed takeovers; the 0.9.13 CHANGELOG known limitations say none were observed in that testing, and the README repeats "not completed". | Open. Decided 2026-10-01: one Entropy run on `dementia.mn3` with the release build is owed before the README line is final. |
+| MODE2 | Do takeovers happen on the release build? The 0.9.8 campaign confirmed takeovers; the 0.9.13 CHANGELOG known limitations say none were observed in that testing, and the README repeats "not completed". | Open. Decided 2026-10-01: one Entropy run on `dementia.mn3` with the release build is owed before the README line is final. 2026-10-07, with every bot force-loaded by a scratch build: GeoDomes holds started and converted; on SteelVapor none started in two 6-minute levels, the loaded bots circling inside the target room at 16-40 u/s, never under the 5 u/s start gate (BOTS_DEVEL, mode polish). |
 | MODE4 | Inversion produces refused-pickup spam (bots chase viruses the server refuses). | Open. The analyzer flags it as `ENTROPY_REFUSED_PICKUP_SPAM` (`tools/analyze_bot_log.py:1503-1511`). |
 | MODE5 | RAGE wind-tunnel counter-fly fix (`9e602d7f`, routed-cost room selection in `BotGetNearestEntropyRoom`). | In code since 0.9.8; never verified on RAGE. |
 | NAV8 | Rim is nav-hostile for this mode (part of the toroid refinements row). | Open; tracked in `NAVIGATION.md` §7. |
-| MODE6 | The active park thrusts against knockback, contrary to physics ruling 2. | In code (`bot.cpp:6363-6374`; the counter-thrust is `bot.cpp:6367-6368`). Decided 2026-10-01, absolute: knockback must affect bots exactly as it affects players, always, so the counter-thrust is to be **removed**. Pre-reveal code change, not made yet. The park still has to hold zero thrust, or the no-nav-dir fallback drives the ship forward at 1.0 (the v3 failure the park was built to fix). |
+| MODE6 | The active park thrusts against knockback, contrary to physics ruling 2. | **Built 2026-10-07.** The counter-thrust is removed: the park holds zero thrust and still bypasses the FSM thrust path, so no juke or combat thrust reaches the pad (§3.3). Takeover rate under fire is unmeasured on this build; MODE2's Dementia run reads it. |
 | MODE3 | Operator in-person Entropy flight ("is this mode fun against bots", §4). | No record. Decided 2026-10-01: the operator will fly Entropy. |
 
 ### 3.5 Phase E4 (polish): see MODE1
 
-E4 is not built and is tracked as registry row MODE1 (`PLAN.md` §4, the master registry). Decided 2026-10-01: E4 is
-pre-reveal work ("Entropy will be polished pre-release"), the mode verbs and difficulty scaling first. Its content, unchanged from the original §3.4: `!attack lab` /
-`!defend lab` squad verbs; difficulty scaling of the abort shield floor, denial appetite and
-target-bias magnitudes; smarter invasion (strand the enemy's last lab, coordinated raids) only with
-soak evidence; mirror hardening for `entropy_kill_streak` (resync on an observed refused pickup);
-re-evaluating "combat light" (`76549be3`) and loaded-bot aggression; a force-load or empty-net drill
-command; and further iteration on the shield knobs.
+**Difficulty scaling, built 2026-10-07.** The mode reuses the bot difficulty table (`kDiffParams`, BOT_MANAGEMENT.md
+§4) instead of adding columns. Its constants were tuned on Hotshot bots, so a Hotshot bot plays exactly as before
+and every other tier moves by its distance from the Hotshot row:
+
+- **Invasion aggression.** The hard abort floor is a flee threshold, so it takes the table's flee multiplier, the one
+  the generic flee threshold already uses (`BotEntropyRetreatShields`, `bot_objective.cpp`). The re-engage floor keeps
+  its fixed 20 above it: that margin is the hold's cost (3 s of room damage, 15 shields) plus slack, not temperament.
+  The mid-hold flee threshold in `BotUpdateState` uses the same floor. `BOT_ENTROPY_DEPART_SHIELDS` (80) stays above
+  every tier's re-engage floor.
+- **Lab-defence reaction.** The three target-bias terms (intruder, takeover threat, loaded enemy) are multiplied by
+  the table's threat-reaction column, `dodge_percent` (how often the bot answers incoming fire), in
+  `BotGetObjectiveTargetBias`.
+
+| Tier | Abort floor | Re-engage floor | Bias scale | Intruder / loaded intruder / loaded elsewhere |
+|---|---|---|---|---|
+| Trainee | 45 | 65 | 0.2 | -60 / -140 / -40 |
+| Rookie | 35 | 55 | 0.5 | -150 / -350 / -100 |
+| Hotshot | 25 | 45 | 1.0 | -300 / -700 / -200 |
+| Ace | 17.5 | 37.5 | 1.0 | -300 / -700 / -200 |
+| Insane | 10 | 30 | 1.0 | -300 / -700 / -200 |
+
+Above Hotshot the bias stays at full strength (the dodge column tops out at 100%), so in the mode's own behaviour Ace
+and Insane differ from Hotshot by the abort floor alone; a stronger bias would let an intruder across the map outbid
+the line-of-sight penalty for every nearer enemy. Denial appetite (the enemy-virus pickup priority) does not scale.
+Unmeasured in play: no Entropy soak has run on this build.
+
+The rest of E4 is not built and is tracked as registry row MODE1 (`PLAN.md` §4, the master registry). Decided
+2026-10-01: E4 is pre-reveal work ("Entropy will be polished pre-release"), the mode verbs and difficulty scaling first.
+Its content, unchanged from the original §3.4: `!attack lab` / `!defend lab` squad verbs; difficulty scaling of the
+abort shield floor, denial appetite and target-bias magnitudes; smarter invasion (strand the enemy's last lab,
+coordinated raids) only with soak evidence; mirror hardening for `entropy_kill_streak` (resync on an observed refused
+pickup); re-evaluating "combat light" (`76549be3`) and loaded-bot aggression; a force-load or empty-net drill command;
+and further iteration on the shield knobs.
 
 ### 3.6 Explicit non-goals (first release)
 

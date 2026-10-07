@@ -23,7 +23,7 @@ the patch text in this document is sufficient; there is no need to merge from Ma
 | 3 | BNode lookup asserts (crashes) on a room with no BNode data | `Descent3/bnode.cpp` | Hardened (Matcen 0.8.0; first tag v0.8.13) | Not submitted |
 | 4 | SDL mouse regression vs retail: wheel-down unbindable, mouse-4 aliases wheel-down, mouse-5 dead | `ddio/lnxmouse.cpp` | Fixed (Matcen 0.9.9, tag v0.9.9) | Not submitted (fixed independently in PiccuEngine) |
 | 5 | Mission-download system: spurious "missing mission" prompt at join, garbage in the URL reply, dead retail copy-protection gate | `Descent3/mission_download.cpp` | Fixed (Matcen 0.9.9, tag v0.9.9) | Not submitted |
-| 6 | CTF: a carrier who dies in a flag's home goal does not send that flag home (wrong object tested) | `netgames/ctf/ctf.cpp` | Open (fix planned before the public release) | Not submitted |
+| 6 | CTF: a carrier who dies in a flag's home goal does not send that flag home (wrong object tested) | `netgames/ctf/ctf.cpp` | Fixed (Matcen 0.9.17 development series; not yet in a release or tag) | Not submitted |
 
 Version labels: the Matcen version is the first release that carried the fix. Not every release was
 tagged, so the index also gives the first git tag that contains the fix (`git tag --contains <commit>`).
@@ -493,7 +493,7 @@ as intended:
 array with it directly:
 
 ```cpp
-// netgames/ctf/ctf.cpp, HandlePlayerSpew() (line 1755 in Matcen; 1750 in DescentDevelopers/Descent3)
+// netgames/ctf/ctf.cpp, HandlePlayerSpew() (line 1755 in Matcen before the fix; 1750 in DescentDevelopers/Descent3)
 if (GoalRooms[color] == dObjects[pnum].roomnum) {
 ```
 
@@ -519,6 +519,8 @@ Look up the player's object number first and test that object's room:
 if (GoalRooms[color] == dObjects[pnum].roomnum) {
 
 // After
+// now check to see if they are in the flag's home goal (the player's ship: a player
+// number is not an object number)
 int pobjnum = dPlayers[pnum].objnum;
 if (pobjnum >= 0 && GoalRooms[color] == dObjects[pobjnum].roomnum) {
 ```
@@ -530,8 +532,10 @@ drop-and-timer path, which is the safe fallback.
 ### Caveats
 
 - Play changes slightly: a carrier killed in the flag's own base now returns
-  that flag at once, with the normal "returned" announcement, as the original
-  design intended. Players used to the loose flag in the goal room will notice.
+  that flag at once, as the original design intended. The module plays its
+  flag-returned sound but prints no HUD line for this path, so a server log
+  shows no "returned" message. Players used to the loose flag in the goal room
+  will notice.
 - The function runs on the server and on every client. All machines must run
   the fixed module, or the server and clients disagree about where the flag
   went for that one event. Ship it as a new netgame module, not as a
@@ -544,9 +548,9 @@ any D3 fork shipping the original Outrage CTF source.
 
 ### Status
 
-- **Matcen:** Open. A code audit found it. The tree does not have the fix yet
-  (the current development build, 0.9.16-dev, still has the original line).
-  We will fix it in Matcen before the public release and list the fix here.
+- **Matcen:** Fixed in the 0.9.17 development series (`HandlePlayerSpew`,
+  `netgames/ctf/ctf.cpp:1754-1757`), the exact change shown above. A code audit
+  found it. It ships in the first release after 0.9.16; no tag carries it yet.
 - **DescentDevelopers/Descent3:** Not submitted. Same line at
   `netgames/ctf/ctf.cpp:1750`.
 - **PiccuEngine:** Not checked. Same netgame lineage, so the same fix should
@@ -567,4 +571,5 @@ real upstream defect and not only a Matcen need.
 | Reconnect assert | `netgames/dmfc/dmfcclient.cpp` (`OnPlayerReconnect`) | A reconnecting player whose team was never saved logs a message instead of asserting | Does this assert fire for plain human reconnects? |
 | Collision warning flood | `physics/physics.cpp` | "Too many collisions" warnings are limited to one per second at both sites | Log hygiene only; useful to any server operator |
 | `$setpps` range | `netgames/dmfc/dmfcinputcommand.cpp` | The packets-per-second clamp is `[2, 40]` instead of `[1, 20]` | A behaviour change, not a bug fix; offer as an option, if at all |
+| Directional room test | `physics/findintersection.cpp/.h` | A new function, `fvi_RoomCheckDir()`: a ray from a point along one direction against one room's shell faces says whether the point is inside that room (front face hit), outside it (back face) or undecided (no face). Only the Matcen route-network builder calls it, to accept grid points beside doorways | None: fork-only. It is additive, no engine code calls it, and it fixes no upstream defect. Listed so the review does not mistake it for a patch |
 | 40-portal room limit | engine BOA tables (`MAX_PATH_PORTALS` = 40) | Some community maps have rooms with more than 40 portals (Kartoon Kanyon has 45). The engine's per-room portal cost table then overruns its row. Matcen routes around this in its own files and does not change the engine | Needs a minimal fix and a test map before it can be offered |

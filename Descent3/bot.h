@@ -208,6 +208,7 @@
 #define BOT_RAMPAGE_AGRO_BONUS 60.0f     // score reduction: elite bot vs weak target (prefer easy prey)
 #define BOT_OUTGUNNED_PENALTY 80.0f      // score increase: weak bot vs elite target (avoid the beast)
 #define BOT_NO_LOS_TARGET_PENALTY 500.0f // score increase for targets not visible (behind walls)
+#define BOT_TARGET_CONGESTION_PENALTY 80.0f // score increase per other bot already on the target (spreads fire)
 
 // Close-quarters dynamic turn rate (Phase 3.11)
 // Tighter tracking at close range improves hit accuracy in dogfights.
@@ -746,6 +747,12 @@ int BotResolveTeam(const char *str);
 
 // Returns the display name for a difficulty level.
 const char *BotDifficultyName(BotDifficulty d);
+
+// The difficulty table (bot.cpp): a bot's row, and any tier's row. Game-mode skill reads these columns
+// instead of adding its own: the mode constants were tuned on Hotshot bots, so a mode scales a constant
+// by the bot's distance from the Hotshot row (ENTROPY_MODE.md §3.5, MONSTERBALL_MODE.md §3.8).
+const BotDifficultyParams *BotGetDiffParams(int bot_index);
+const BotDifficultyParams *BotDiffParamsFor(BotDifficulty d);
 
 // Remove a specific bot by its Bots[] index.
 void BotRemove(int bot_index);
