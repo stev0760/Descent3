@@ -71,6 +71,7 @@
 #include <filesystem>
 
 #include "bot.h"
+#include "bot_population.h"
 #include "cfile.h"
 #include "log.h"
 #include "multi.h"
@@ -344,5 +345,14 @@ int MultiLoadSettings(const std::filesystem::path &filename) {
       LOG_WARNING.printf("Unknown line in multiplayer config file %s\t%s", toklabel, tokval);
     }
   };
+
+  // Clamp once both BOTCOUNT and MAXPLAYERS are known, whatever their order in the file: the roster never
+  // asks for the host's seat or the seats kept free for humans (the Bot Settings menu clamps the same way).
+  const int bot_limit = BotPopulationRosterLimit(Netgame.max_players);
+  if (Bot_ui_settings.bot_count > bot_limit) {
+    LOG_INFO.printf("BOT UI: preset BOTCOUNT %d lowered to %d for MAXPLAYERS %d", Bot_ui_settings.bot_count, bot_limit,
+                    Netgame.max_players);
+    Bot_ui_settings.bot_count = bot_limit;
+  }
   return 1;
 }

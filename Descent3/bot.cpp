@@ -24,6 +24,7 @@
 #include "bot_objective.h"
 #include "bot_steering.h"
 #include "bot_roadmap.h"
+#include "bot_population.h"
 #include <climits>
 #include <cmath>
 #include <filesystem>
@@ -63,6 +64,10 @@
 
 bot_info Bots[MAX_BOTS];
 int Num_bots = 0;
+
+// The server's per-slot frag and death counters (multi.cpp); BotAdd clears them for the bot's slot.
+extern int16_t Multi_kills[MAX_NET_PLAYERS];
+extern int16_t Multi_deaths[MAX_NET_PLAYERS];
 bool Bot_debug_movement = false;     // Toggle with "$botmov on/off" console command
 bool Bot_grate_clear_enabled = true; // $nav grate — proactive destroyable-obstacle clearing (0.9.6 Stage 2)
 bool Bot_soft_strike_enabled = true; // $nav strike — same-room soft chase-aborts accrue troll strikes (0.9.7)
@@ -379,6 +384,7 @@ static const BotDifficultyParams kDiffParams[BOT_DIFF_COUNT] = {
     {0.0f, 0.0f, 0.4f, 1.5f, 1.5f, 1.0f, 1.2f},
 };
 static BotDifficulty Bot_default_difficulty = BOT_DIFF_HOTSHOT;
+static bool BotParseDifficulty(const char *str, BotDifficulty *out); // false (out untouched) on an unknown word
 
 static const BotDifficultyParams *BotGetDiffParams(int bot_index) { return &kDiffParams[Bots[bot_index].difficulty]; }
 
@@ -8455,6 +8461,7 @@ void BotInitAll() {
 
 void BotShutdownAll() {
   BotRemoveAll();
+  BotPopulationReset();         // the next session's bots.cfg sets the target and reserve again
   Bot_roster_spawned = false;   // allow re-spawn in next game session
   Bot_ui_spawn_pending = false; // cancel any pending delayed spawn
 }
@@ -8734,17 +8741,39 @@ void BotReinitAll() {
   BotAssignObjectiveLeans();
 }
 
-int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desired_team) {
-  // Refuse when the server is at capacity — a bot must never consume a seat past Netgame.max_players
-  // (matters most in co-op, where missions commonly cap at 3-4 players).
-  int connected = 0;
-  for (int i = 0; i < MAX_NET_PLAYERS; i++) {
-    if (NetPlayers[i].flags & NPF_CONNECTED)
-      connected++;
+// Bots obey the server's allowed-ship list as a joining human does (MultiDoMyInfo): a ship the server
+// does not allow falls back to Pyro-GL, or to the first allowed ship when Pyro-GL is not allowed either.
+// The list is the server's own slot's permissions, which the options menu or the .mps SHIPBAN lines set.
+static int BotAllowedShip(int ship_index, const char *name) {
+  if (ship_index < 0 || ship_index >= MAX_SHIPS || !Ships[ship_index].used)
+    ship_index = std::max(0, FindShipName(DEFAULT_SHIP));
+  if (PlayerIsShipAllowed(Player_num, ship_index))
+    return ship_index;
+
+  int fallback = FindShipName(DEFAULT_SHIP);
+  if (fallback < 0 || !Ships[fallback].used || !PlayerIsShipAllowed(Player_num, fallback)) {
+    fallback = -1;
+    for (int i = 0; i < MAX_SHIPS && fallback < 0; i++) {
+      if (Ships[i].used && PlayerIsShipAllowed(Player_num, i))
+        fallback = i;
+    }
   }
-  if (connected >= Netgame.max_players) {
-    PrintDedicatedMessage("BOT: cannot add '%s' — server full (%d/%d players)\n", name, connected, Netgame.max_players);
-    LOG_WARNING.printf("BOT: BotAdd refused, server at max_players (%d)", Netgame.max_players);
+  if (fallback < 0) {
+    LOG_WARNING.printf("BOT: the server allows no ship; '%s' keeps %s", name, Ships[ship_index].name);
+    return ship_index;
+  }
+  LOG_WARNING.printf("BOT: ship %s is not allowed on this server; '%s' flies %s", Ships[ship_index].name, name,
+                     Ships[fallback].name);
+  PrintDedicatedMessage("BOT: ship %s is not allowed on this server; '%s' flies %s\n", Ships[ship_index].name, name,
+                        Ships[fallback].name);
+  return fallback;
+}
+
+int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desired_team) {
+  // Every add path (the bots.cfg roster, $addbot, the Bot Settings roster, the population manager) ends
+  // here, so this is where the seats kept free for humans are enforced (bot_population.h).
+  if (BotPopulationBotsAllowed() <= 0) {
+    BotPopulationPrintRefusal(name);
     return -1;
   }
 
@@ -8774,9 +8803,7 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
     return -1;
   }
 
-  // Validate ship index
-  if (ship_index < 0 || ship_index >= MAX_SHIPS)
-    ship_index = 0;
+  ship_index = BotAllowedShip(ship_index, name);
 
   // --- Set up NetPlayers slot ---
   memset(&NetPlayers[slot], 0, sizeof(netplayer));
@@ -8799,11 +8826,16 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   NetPlayers[slot].addr.address[3] = 0x01;
   NetPlayers[slot].addr.port = 0;
 
+  // A joining human's frag and death counters are cleared by MultiDoMyInfo; a bot never sends one, and a
+  // reused slot would otherwise hand it the previous occupant's score.
+  Multi_kills[slot] = 0;
+  Multi_deaths[slot] = 0;
+
   // --- Set up Players slot ---
-  // Append " [BOT]" suffix to the callsign so bots are identifiable in the scoreboard.
+  // Append the "[BOT]" suffix (no space) to the callsign so bots are identifiable in the scoreboard.
   // Suffix (not prefix) so DM routing ("<name>: ...") prefix-matches the bot's actual name.
-  // Truncate the base name to leave room for the 6-char suffix; snprintf alone would truncate
-  // the suffix off the tail instead of the name.
+  // Truncate the base name to leave room for the BOT_NAME_SUFFIX_LEN-char suffix; snprintf alone
+  // would truncate the suffix off the tail instead of the name.
   snprintf(Players[slot].callsign, CALLSIGN_LEN + 1, "%.*s%s", CALLSIGN_LEN - BOT_NAME_SUFFIX_LEN, name,
            BOT_NAME_SUFFIX);
   Players[slot].ship_index = ship_index;
@@ -9001,6 +9033,7 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   BotCacheShipPhysics(bot_index);
   BotSelectBestSecondary(bot_index); // equip best secondary weapon at spawn
   Num_bots++;
+  BotPopulationNoteAdded(bot_index);
 
   LOG_INFO.printf("BOT: Added '%s' in player slot %d (bot index %d)", name, slot, bot_index);
   return bot_index;
@@ -9046,6 +9079,7 @@ void BotRemove(int bot_index) {
   Bots[bot_index].active = false;
   Bots[bot_index].player_slot = -1;
   Num_bots--;
+  BotPopulationNoteRemoved(bot_index);
 }
 
 void BotRemoveAll() {
@@ -9074,6 +9108,9 @@ void BotDoFrame() {
   if (Bot_ui_spawn_pending && Gametime >= Bot_ui_spawn_time) {
     BotDoUISpawn();
   }
+
+  // Seats: a bot yields a seat a human took, and the population target adds or removes bots.
+  BotPopulationFrame();
 
   // Objective state polling — shared across all bots, runs on a 0.5s interval.
   // Gametime resets to 0 on level transitions, so detect that and force an immediate poll.
@@ -9739,13 +9776,13 @@ void BotLoadRosterFile() {
 
   // Parse Key=Value entries — same format as dedicated.cfg
   int bot_count = 0;
-  char names[MAX_BOTS][CALLSIGN_LEN + 1] = {};
-  char ships[MAX_BOTS][32] = {};
-  BotDifficulty diffs[MAX_BOTS];
-  int teams[MAX_BOTS];
+  int target_players = 0;
+  int reserved_slots = BOT_POP_RESERVE_DEFAULT;
+  int roster_size = 0; // highest entry number any BotName/BotShip/BotDifficulty/BotTeam key names
+  BotRosterEntry roster[MAX_BOTS] = {};
   for (int i = 0; i < MAX_BOTS; i++) {
-    diffs[i] = BOT_DIFF_COUNT; // sentinel = "not set"
-    teams[i] = -1;             // sentinel = auto-balance
+    roster[i].difficulty = BOT_DIFF_COUNT; // sentinel = the configured default
+    roster[i].team = -1;                   // sentinel = auto-balance
   }
   char line[256];
 
@@ -9774,68 +9811,98 @@ void BotLoadRosterFile() {
            (val[vlen - 1] == ' ' || val[vlen - 1] == '\t' || val[vlen - 1] == '\r' || val[vlen - 1] == '\n'))
       val[--vlen] = '\0';
 
+    // Roster keys carry their entry number (BotName3=...); `entry` is it, 0-indexed, or -1.
+    auto roster_entry = [&](int prefix_len) {
+      if (key[prefix_len] < '1' || key[prefix_len] > '9')
+        return -1;
+      const int num = atoi(&key[prefix_len]);
+      if (num < 1 || num > MAX_BOTS)
+        return -1;
+      roster_size = std::max(roster_size, num);
+      return num - 1;
+    };
+
+    int entry;
     if (stricmp(key, "BotCount") == 0) {
-      bot_count = atoi(val);
-      if (bot_count < 0)
-        bot_count = 0;
-      if (bot_count > MAX_BOTS)
-        bot_count = MAX_BOTS;
-    } else if (strnicmp(key, "BotName", 7) == 0 && key[7] >= '1' && key[7] <= '9') {
-      int num = atoi(&key[7]);
-      if (num >= 1 && num <= MAX_BOTS) {
-        strncpy(names[num - 1], val, CALLSIGN_LEN - BOT_NAME_SUFFIX_LEN);
-        names[num - 1][CALLSIGN_LEN - BOT_NAME_SUFFIX_LEN] = '\0';
+      bot_count = std::clamp(atoi(val), 0, MAX_BOTS);
+    } else if (stricmp(key, "BotTargetPlayers") == 0) {
+      target_players = std::max(0, atoi(val));
+    } else if (stricmp(key, "BotReservedSlots") == 0) {
+      reserved_slots = atoi(val);
+      if (reserved_slots < BOT_POP_RESERVE_DEFAULT) {
+        LOG_WARNING.printf("BOT CONFIG: BotReservedSlots=%s raised to the minimum, %d", val, BOT_POP_RESERVE_DEFAULT);
+        reserved_slots = BOT_POP_RESERVE_DEFAULT;
       }
-    } else if (strnicmp(key, "BotShip", 7) == 0 && key[7] >= '1' && key[7] <= '9') {
-      int num = atoi(&key[7]);
-      if (num >= 1 && num <= MAX_BOTS) {
-        strncpy(ships[num - 1], val, 31);
-        ships[num - 1][31] = '\0';
-      }
+    } else if (strnicmp(key, "BotName", 7) == 0 && (entry = roster_entry(7)) >= 0) {
+      strncpy(roster[entry].name, val, BOT_POP_BASE_NAME_LEN);
+      roster[entry].name[BOT_POP_BASE_NAME_LEN] = '\0';
+    } else if (strnicmp(key, "BotShip", 7) == 0 && (entry = roster_entry(7)) >= 0) {
+      strncpy(roster[entry].ship, val, sizeof(roster[entry].ship) - 1);
+      roster[entry].ship[sizeof(roster[entry].ship) - 1] = '\0';
     } else if (stricmp(key, "BotDifficulty") == 0) {
-      // Global default difficulty for all bots
-      Bot_default_difficulty = BotResolveDifficulty(val);
+      // Global default difficulty for all bots; an unknown word keeps the current default
+      if (!BotParseDifficulty(val, &Bot_default_difficulty)) {
+        LOG_WARNING.printf("BOT CONFIG: Unknown difficulty '%s', default stays %s", val,
+                           BotDifficultyName(Bot_default_difficulty));
+      }
       LOG_INFO.printf("BOT CONFIG: Default difficulty set to %s", BotDifficultyName(Bot_default_difficulty));
-    } else if (strnicmp(key, "BotDifficulty", 13) == 0 && key[13] >= '1' && key[13] <= '9') {
-      // Per-bot difficulty override (e.g., BotDifficulty1=ace)
-      int num = atoi(&key[13]);
-      if (num >= 1 && num <= MAX_BOTS)
-        diffs[num - 1] = BotResolveDifficulty(val);
-    } else if (strnicmp(key, "BotTeam", 7) == 0 && key[7] >= '1' && key[7] <= '9') {
+    } else if (strnicmp(key, "BotDifficulty", 13) == 0 && (entry = roster_entry(13)) >= 0) {
+      // Per-bot override (BotDifficulty1=ace). An unknown word leaves the entry on the configured default,
+      // resolved at spawn so the BotDifficulty= line may come anywhere in the file.
+      if (!BotParseDifficulty(val, &roster[entry].difficulty)) {
+        LOG_WARNING.printf("BOT CONFIG: Unknown difficulty '%s' for bot %d, using the default", val, entry + 1);
+      }
+    } else if (strnicmp(key, "BotTeam", 7) == 0 && (entry = roster_entry(7)) >= 0) {
       // Per-bot team assignment (e.g., BotTeam1=2 means Team 2, stored as 0-indexed 1)
-      int num = atoi(&key[7]);
-      if (num >= 1 && num <= MAX_BOTS)
-        teams[num - 1] = BotResolveTeam(val);
+      roster[entry].team = BotResolveTeam(val);
     }
   }
   fclose(fp);
+
+  // The population manager cycles through every entry the file describes, not only the first BotCount.
+  roster_size = std::max(roster_size, bot_count);
+  for (int i = 0; i < roster_size; i++) {
+    if (!roster[i].name[0])
+      snprintf(roster[i].name, sizeof(roster[i].name), "Bot%d", i + 1);
+  }
+  BotPopulationSetRoster(roster, roster_size);
+  BotPopulationSetReserve(reserved_slots);
+  BotPopulationSetTarget(target_players);
+  LOG_INFO.printf("BOT CONFIG: %d seat(s) kept free for players; population target %d%s", BotPopulationGetReserve(),
+                  BotPopulationGetTarget(), BotPopulationIsOn() ? "" : " (manager off)");
+  if (target_players > 0)
+    PrintDedicatedMessage("Population manager on: target %d players, %d seat(s) kept free\n", target_players,
+                          BotPopulationGetReserve());
 
   if (bot_count <= 0) {
     LOG_INFO << "BOT CONFIG: BotCount=0 or missing, no bots to spawn";
     return;
   }
 
-  // Spawn bots via BotAdd() — same function the "$addbot" console command calls
+  // Spawn bots via BotAdd() — same function the "$addbot" console command calls. A BotCount larger than
+  // the seats allow spawns up to the limit; the reserve has no bypass.
   LOG_INFO.printf("BOT CONFIG: Spawning %d bots", bot_count);
   for (int i = 0; i < bot_count; i++) {
-    char name[CALLSIGN_LEN + 1];
-    if (names[i][0])
-      strncpy(name, names[i], sizeof(name) - 1);
-    else
-      snprintf(name, sizeof(name), "Bot%d", i + 1);
-    name[sizeof(name) - 1] = '\0';
+    if (BotPopulationBotsAllowed() <= 0) {
+      PrintDedicatedMessage("  %d of %d bots skipped: MaxPlayers=%d keeps %d seat(s) free for players\n", bot_count - i,
+                            bot_count, Netgame.max_players, BotPopulationGetReserve());
+      LOG_WARNING.printf("BOT CONFIG: %d of %d bots skipped, MaxPlayers=%d with %d reserved seat(s)", bot_count - i,
+                         bot_count, Netgame.max_players, BotPopulationGetReserve());
+      break;
+    }
 
+    const char *name = roster[i].name;
     int ship_index = 0;
-    if (ships[i][0]) {
-      int resolved = BotResolveShipAlias(ships[i]);
+    if (roster[i].ship[0]) {
+      int resolved = BotResolveShipAlias(roster[i].ship);
       if (resolved >= 0)
         ship_index = resolved;
       else
-        LOG_WARNING.printf("BOT CONFIG: Unknown ship '%s' for bot %d, using default", ships[i], i + 1);
+        LOG_WARNING.printf("BOT CONFIG: Unknown ship '%s' for bot %d, using default", roster[i].ship, i + 1);
     }
 
-    BotDifficulty diff = (diffs[i] < BOT_DIFF_COUNT) ? diffs[i] : Bot_default_difficulty;
-    int idx = BotAdd(name, ship_index, diff, teams[i]);
+    BotDifficulty diff = (roster[i].difficulty < BOT_DIFF_COUNT) ? roster[i].difficulty : Bot_default_difficulty;
+    int idx = BotAdd(name, ship_index, diff, roster[i].team);
     if (idx >= 0)
       PrintDedicatedMessage("  Bot '%s' spawned (ship=%s, diff=%s, team=%d, slot=%d)\n", Bots[idx].callsign,
                             Ships[Bots[idx].ship_index].name, BotDifficultyName(Bots[idx].difficulty),
@@ -9847,13 +9914,15 @@ void BotLoadRosterFile() {
 
 // --- Difficulty utilities (Phase 5.2) ---
 
-BotDifficulty BotResolveDifficulty(const char *str) {
+static bool BotParseDifficulty(const char *str, BotDifficulty *out) {
   if (!str || !str[0])
-    return Bot_default_difficulty;
+    return false;
 
   // Accept numeric "0"–"4"
-  if (str[0] >= '0' && str[0] <= '4' && str[1] == '\0')
-    return (BotDifficulty)(str[0] - '0');
+  if (str[0] >= '0' && str[0] <= '4' && str[1] == '\0') {
+    *out = (BotDifficulty)(str[0] - '0');
+    return true;
+  }
 
   static const struct {
     const char *name;
@@ -9863,10 +9932,23 @@ BotDifficulty BotResolveDifficulty(const char *str) {
       {"ace", BOT_DIFF_ACE},         {"insane", BOT_DIFF_INSANE},
   };
   for (auto &n : names) {
-    if (stricmp(str, n.name) == 0)
-      return n.diff;
+    if (stricmp(str, n.name) == 0) {
+      *out = n.diff;
+      return true;
+    }
   }
-  return BOT_DIFF_HOTSHOT; // unrecognized → default
+  return false;
+}
+
+BotDifficulty BotResolveDifficulty(const char *str) {
+  BotDifficulty diff = Bot_default_difficulty; // unrecognized → the configured default
+  BotParseDifficulty(str, &diff);
+  return diff;
+}
+
+bool BotIsDifficultyName(const char *str) {
+  BotDifficulty unused;
+  return BotParseDifficulty(str, &unused);
 }
 
 // --- Team utilities ---
@@ -9934,8 +10016,11 @@ void BotSetDefaultDifficulty(BotDifficulty diff) { Bot_default_difficulty = diff
 BotDifficulty BotGetDefaultDifficulty() { return Bot_default_difficulty; }
 
 void BotPrintServerCaps() {
-  // Build feature list based on what's compiled in
-  PrintDedicatedMessage("SERVERCAPS version=1 fork=%s fork_version=%d.%d.%d features=bots,roster,ships,difficulty\n",
+  // The features= list is the contract remote-admin tools gate on (PYRODECK_CONTRACT.md §2): bots = the $ bot
+  // commands; roster = the bots.cfg roster; ships, difficulty and teams = the $addbot arguments; squad_orders =
+  // the ! chat orders; population = $botpopulation. Every build has all of them, so the list is a literal.
+  PrintDedicatedMessage("SERVERCAPS version=1 fork=%s fork_version=%d.%d.%d "
+                        "features=bots,roster,ships,difficulty,teams,squad_orders,population\n",
                         D3_FORK_NAME, D3_FORK_VER_MAJOR, D3_FORK_VER_MINOR, D3_FORK_VER_PATCH);
 }
 
@@ -9944,6 +10029,8 @@ void BotPrintServerCaps() {
 static const char *kDefaultBotNames[BOT_UI_MAX_BOTS] = {"Reaper",  "Phantom", "Viper",   "Shadow", "Blaze", "Rogue",
                                                         "Havoc",   "Spectre", "Wraith",  "Talon",  "Fury",  "Ghost",
                                                         "Striker", "Nova",    "Tempest", "Apex"};
+
+const char *BotDefaultName(int index) { return kDefaultBotNames[std::clamp(index, 0, BOT_UI_MAX_BOTS - 1)]; }
 
 BotUISettings Bot_ui_settings;
 

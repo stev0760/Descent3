@@ -8,8 +8,9 @@ That spec owns the tool: architecture, session model, UI, API, packaging, phases
 This file owns only what Matcen promises to print. When a `$` bot command or its output changes, update this file in
 the same commit, and raise the change with the Pyrodeck repo if the command is Tier 1.
 
-Code facts below are true at `ee6e6525` (0.9.16-dev). `dedicated_server.cpp` and `bot.cpp` paths are under
-`Descent3/`.
+Code facts below are true at `ee6e6525` (0.9.16-dev), except the `features=` list, the `$botpopulation` command and
+the seat and ship lines, which are 0.9.17-dev and cited by function name. `dedicated_server.cpp`, `bot.cpp` and
+`bot_population.cpp` paths are under `Descent3/`.
 
 ## 1. Where the commands work
 
@@ -21,38 +22,37 @@ line, with no terminator line. Nothing Pyrodeck reads changed when the listen-se
 
 ## 2. `$servercaps`, the anchor
 
-Printed by `BotPrintServerCaps` (bot.cpp:9900-9904):
+Printed by `BotPrintServerCaps` (bot.cpp):
 
 ```
-SERVERCAPS version=1 fork=Matcen fork_version=0.9.16 features=bots,roster,ships,difficulty
+SERVERCAPS version=1 fork=Matcen fork_version=0.9.17 features=bots,roster,ships,difficulty,teams,squad_orders,population
 ```
 
-- Format string: `"SERVERCAPS version=1 fork=%s fork_version=%d.%d.%d features=bots,roster,ships,difficulty\n"`.
+- Format string: `"SERVERCAPS version=1 fork=%s fork_version=%d.%d.%d "
+  "features=bots,roster,ships,difficulty,teams,squad_orders,population\n"` (one line; the literal is split in the
+  source only).
 - `fork` is `D3_FORK_NAME`, `"Matcen"` (lib/d3_version.h.in:29).
 - `fork_version` is numeric only, from `D3_FORK_VER_MAJOR/MINOR/PATCH` (lib/d3_version.h.in:30-32, set from
   CMakeLists.txt:37-39). The `-dev` suffix (CMakeLists.txt:40) is never printed here. Keep it that way: the Pyrodeck
   parser (`packages/server/src/parser/parsers/servercaps.ts`) expects a clean semver.
-- `features` is a hard-coded literal today. It does not depend on the build or the game mode.
+- `features` is a hard-coded literal. It does not depend on the build or the game mode. Up to 0.9.16 it read
+  `bots,roster,ships,difficulty`; `teams`, `squad_orders` and `population` were added on 0.9.17-dev (POP6, decided
+  2026-10-01). Match flags as a comma-separated set, never as a fixed string.
 
-What the four flags mean today:
+What the flags mean:
 
 | Flag | Meaning |
 |---|---|
 | `bots` | the `$` bot commands in §4 exist |
-| `roster` | Pyrodeck reads it as "`$scores` output is parseable"; BOT_MANAGEMENT.md reads it as "config-file roster". Decided: the config-file roster is its one meaning (below) |
+| `roster` | the server reads a bots.cfg roster (`BotConfig=`). This is its one meaning (decided 2026-10-01); older Pyrodeck builds read it as "`$scores` output is parseable" |
 | `ships` | `$addbot` takes a ship argument |
 | `difficulty` | `$addbot` takes a difficulty argument; `$botdifficulty` exists |
+| `teams` | `$addbot` takes a team argument (built in 0.8.6, advertised from 0.9.17) |
+| `squad_orders` | the `!` chat orders exist (CHAT_COMMANDS.md) |
+| `population` | `$botpopulation` exists, and the server keeps seats free for humans (§4) |
 
 A server without the fork does not print a `SERVERCAPS` line. Pyrodeck treats no match as vanilla and hides the
-bot UI.
-
-**Decided 2026-10-01 (POP6), not built yet.** Advertise `teams` and `squad_orders` now, and `population` when the
-population controls (POP1) are built. `roster` has one meaning: the config-file roster. The change ships together
-with a Pyrodeck update. The new line will read
-`SERVERCAPS version=1 fork=Matcen fork_version=X.Y.Z features=bots,roster,ships,difficulty,teams,squad_orders`.
-`teams` = `$addbot` takes a team argument (built in 0.8.6, never advertised). `squad_orders` = the `!` chat orders
-exist. `population` = the `$botpopulation` console controls exist (designed in BOT_MANAGEMENT.md §9.5, not built).
-Gate UI on `features=`, never on `fork_version`.
+bot UI. Gate UI on `features=`, never on `fork_version`.
 
 ## 3. Stability tiers
 
@@ -61,8 +61,8 @@ fine for every tier. Parsing output or building UI against it is allowed for Tie
 
 | Tier | Commands | Pyrodeck may |
 |---|---|---|
-| 1, contract | `$servercaps`, `$addbot`, `$removebot`, `$removebots`, `$botlist`, `$botdifficulty`, `$botmode` | parse, build UI, feature-gate |
-| 2, semi-stable | `$botstat` status line (the first line per bot), `$botobj`, `$bothelp` | show as text; no hard parser |
+| 1, contract | `$servercaps`, `$addbot`, `$removebot`, `$removebots`, `$botlist`, `$botdifficulty`, `$botmode`, `$botpopulation` (the `Population:` status line and the replies in §4) | parse, build UI, feature-gate |
+| 2, semi-stable | `$botstat` status line (the first line per bot), `$botobj`, `$bothelp`, the reason and reminder lines around `$addbot`/`$removebot`, the `$botpopulation` notes, the population chat lines | show as text; no hard parser |
 | 3, diagnostics | `$botstat` nav line, the whole `$nav` namespace, `$botmov` | reference as text only |
 
 A Tier 1 format changes only with a CHANGELOG entry and a matching Pyrodeck change.
@@ -74,16 +74,24 @@ All lines below are copied from the code. `%s` and `%d` are the C format fields.
 **`$addbot <name> [ship] [difficulty] [team]`** (dedicated_server.cpp:856-907). Arguments are positional:
 difficulty is read only when a ship was given, team only when a difficulty was given.
 - Ship: `pyro`, `phoenix`, `magnum`, `blackpyro`, or a full ship name (bot.cpp:9651-9666). An unknown ship prints
-  `Unknown ship '%s', using default. Valid: pyro, phoenix, magnum, blackpyro` first (:882) and uses Pyro-GL.
-- Difficulty: `trainee`, `rookie`, `hotshot`, `ace`, `insane` or `0`-`4`. An unknown word becomes Hotshot silently
-  (bot.cpp:9814-9834), not the configured default.
+  `Unknown ship '%s', using default. Valid: pyro, phoenix, magnum, blackpyro` first (:882) and uses Pyro-GL. A ship
+  the server does not allow prints `BOT: ship %s is not allowed on this server; '%s' flies %s` before the success line
+  (`BotAllowedShip`), and the success line names the ship the bot flies.
+- Difficulty: `trainee`, `rookie`, `hotshot`, `ace`, `insane` or `0`-`4`. An unknown word prints
+  `Unknown difficulty '%s', using the default (%s)` first and uses the configured default (`BotResolveDifficulty`;
+  0.9.16 used Hotshot silently).
 - Team: `1`-`4`, 1-based (bot.cpp:9840-9847). Anything else means auto-balance. In a team game, a team number above
   the game's team count prints `BOT: team %d out of range for %d-team game — auto-balancing '%s'` first
   (bot.cpp:8795-8796). In a free-for-all game the team is always 0 (bot.cpp:8783-8785).
 - Success (:901): `Bot '%s' added in slot %d (ship=%s, diff=%s, team=%d)`. The team field is 1-based
   (`Players[].team + 1`), so a free-for-all bot prints `team=1`. Example:
   `Bot 'Phantom[BOT]' added in slot 2 (ship=Pyro-GL, diff=Hotshot, team=2)`.
-- Failure (:905): `Failed to add bot (server full or max bots reached)`.
+- Failure (:905): `Failed to add bot (server full or max bots reached)`, always preceded by a reason line from
+  `BotPopulationPrintRefusal`: `BOT: cannot add '%s': %d of %d seats in use and %d kept free for players` (the seats
+  kept free for humans; there is no bypass) or `BOT: cannot add '%s': %d bots is the maximum`. Parse the failure line;
+  show the reason line as text.
+- With the population manager on, a success is followed by
+  `Population manager is on (target %d): it adds or removes bots to match`.
 
 Callsigns are `<name>[BOT]`, with **no space** before the suffix (bot.h:725, `BOT_NAME_SUFFIX "[BOT]"`; built at
 bot.cpp:8771 and :8861). The base name is cut to 14 characters so the whole callsign fits in 19
@@ -92,8 +100,33 @@ bot.cpp:8771 and :8861). The base name is cut to 14 characters so the whole call
 
 **`$removebot <index>`** (:908-921). `index` is the `Bots[]` index from `$botlist`, not the player slot.
 - `Removing bot '%s' from slot %d` (:912), `Invalid bot index %d` (:915), `Usage: $removebot <index>` (:918).
+- With the population manager on, a removal is followed by the same `Population manager is on ...` line, and the
+  manager adds a bot back after its 5-second cooldown.
 
-**`$removebots`**: `All bots removed` (:924).
+**`$removebots`**: `All bots removed` (:924), followed by the same reminder line when the manager is on.
+
+**`$botpopulation [on|off|status|target <n>|reserve <n>]`** (`DedicatedHandleBotCommand`; status from
+`BotPopulationPrintStatus`). Bare `$botpopulation` is `status`.
+- Status, one line:
+  `Population: manager=%s target=%d reserve=%d humans=%d bots=%d seats=%d/%d bot_limit=%d`. Example:
+  `Population: manager=on target=6 reserve=1 humans=0 bots=6 seats=7/8 bot_limit=6`. `manager` is `on` or `off`;
+  `target` is `BotTargetPlayers` (0 = none); `reserve` is the seats kept free for humans; `humans` excludes the
+  dedicated server's own slot; `seats` is connected slots over `MaxPlayers` and includes that slot; `bot_limit` is
+  the most bots the seats allow with the humans present. Match the line by its `Population:` prefix and read the
+  fields as `key=value` pairs.
+- After the status line, at most one indented note (Tier 2): `  waiting: %d player(s) still joining` or
+  `  target out of reach: no seat free beyond the %d kept for players`.
+- `on`: `Population manager on (target %d)`, or `Population manager needs a target first: $botpopulation target <n>`
+  when the target is 0.
+- `off`: `Population manager off`.
+- `target <n>`: `Population target set to %d (manager %s)`; 0 switches the manager off, above 0 switches it on.
+- `reserve <n>`: `Reserved seats set to %d`, with ` (minimum 1)` appended when a lower value was raised.
+- Anything else: `Usage: $botpopulation [on|off|status|target <n>|reserve <n>]`.
+
+The manager's changes are server chat, so a remote console sees them unsolicited as HUD echoes, prefixed `*` like
+every other game message (Tier 2): `*%s joined to keep the game at %d players.`,
+`*%s left to keep the game at %d players.` and `*%s left to make room for a player.` (the yield). They can arrive in
+the middle of a command's reply window, as kill messages can.
 
 **`$botlist`** (:926-938). One line per active bot, two leading spaces:
 `  Bot %d: '%s' slot=%d ship=%s diff=%s %s` (:933), where the last field is `(alive)` or `(dead)`. Example:
@@ -101,7 +134,9 @@ bot.cpp:8771 and :8861). The base name is cut to 14 characters so the whole call
 ship name (the game's ship name, which can contain a space: `Black Pyro`, bot.cpp:9654), difficulty name
 (`Trainee`, `Rookie`, `Hotshot`, `Ace`, `Insane`; bot.cpp:9849-9854). No bots: `No bots active` (:929).
 
-**`$botdifficulty <index|all> <level>`** (:1119-1154). Level as for `$addbot`, including `0`-`4`.
+**`$botdifficulty <index|all> <level>`** (:1119-1154). Level as for `$addbot`, including `0`-`4`; an unknown word
+silently means the current default (0.9.16: Hotshot), so `all` with an unknown word sets every bot to the current
+default and leaves the default as it was.
 - Single: `Bot %d '%s' → %s` (:1149). All: `  Bot %d '%s' → %s` per bot (:1142), then
   `Default difficulty set to %s` (:1144). The arrow is the UTF-8 character U+2192, not `->`.
 - Errors: `Usage: $botdifficulty <index|all> <level>` plus `Levels: trainee, rookie, hotshot, ace, insane (or 0-4)`
@@ -165,12 +200,14 @@ the first-chunk wait. `$botstat all` and `$botobj` print many lines in one go an
 The Pyrodeck repo's v2.7 spec still shows the old `$addbot` usage and success line (no team), callsigns with a
 space (`'Phantom [BOT]'`), the old `$botmode` names (`TeamAnarchy`, `HyperAnarchy`, `RoboAnarchy`, `Coop`, no
 `Entropy` or `Unknown`) and `fork_version=0.9.5`. Pyrodeck's `$botlist` regex already accepts both callsign forms.
-The fix belongs in the Pyrodeck repo; it is tracked as REL8 in the registry (PLAN.md §4).
+It also predates the `teams`, `squad_orders` and `population` flags, `$botpopulation`, and the `roster` meaning
+settled in §2. The fix belongs in the Pyrodeck repo; it is tracked as REL8 in the registry (PLAN.md §4).
 
 ## 9. Open fork-side items
 
-- REL8: Tier 1 drift above, plus the population and team fields once POP1 and POP6 land.
-- POP6: the hard-coded `features=` list; the new list is decided (§2), the code change is not made.
+- REL8: Tier 1 drift above; the Pyrodeck side of the population controls and the team field (the fork side is built:
+  §2 and §4).
+- POP6: done on 0.9.17-dev; the `features=` list in §2 is the one the code prints.
 - REL7: the mission-download link refresh (rewrite the URL lines inside the `.mn3`; the engine `MissionURL` cvar was
   reverted on 07-19). Decided, not built. See the registry row in PLAN.md §4.
 - The pre-0.9.16 spec text (features by phase, API, deployment, Addendum A) is in `archive/D3_PYRODECK_SPEC-v2.6.md`.

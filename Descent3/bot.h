@@ -734,8 +734,11 @@ int BotAdd(const char *name, int ship_index = 0, BotDifficulty difficulty = BOT_
 
 // Resolve a difficulty name string to a BotDifficulty enum value.
 // Accepts: "trainee", "rookie", "hotshot", "ace", "insane" (case-insensitive), or "0"–"4".
-// Unrecognized → BOT_DIFF_HOTSHOT.
+// Unrecognized → the configured default (BotDifficulty= in bots.cfg, or $botdifficulty all).
 BotDifficulty BotResolveDifficulty(const char *str);
+
+// True if BotResolveDifficulty recognizes the word (so callers can warn before it falls back).
+bool BotIsDifficultyName(const char *str);
 
 // Resolve a team number string to a 0-indexed team value.
 // Accepts: "1"–"4" (1-indexed, matches bots.cfg convention). Returns -1 (auto-balance) for anything else.
@@ -788,6 +791,8 @@ int BotResolveShipAlias(const char *alias);
 //
 // Ship aliases: pyro, phoenix, magnum, blackpyro (full names also accepted).
 // All bot callsigns are automatically suffixed with "[BOT]".
+// BotTargetPlayers and BotReservedSlots set the population target and the seats kept free for humans
+// (bot_population.h).
 
 // Storage for the BotConfig CVar — set by dedicated.cfg, read after level load.
 // This is extern so the CVar system in dedicated_server.cpp can point to it directly.
@@ -885,6 +890,10 @@ struct BotUISettings {
 };
 
 extern BotUISettings Bot_ui_settings;
+
+// The built-in callsigns (Reaper, Phantom, ...), BOT_UI_MAX_BOTS of them: the Bot Settings menu's defaults
+// and the population manager's names once the bots.cfg roster is used up.
+const char *BotDefaultName(int index);
 
 // Initialize Bot_ui_settings with sensible defaults.
 void BotUISettingsInit();

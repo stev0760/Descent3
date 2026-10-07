@@ -1604,6 +1604,7 @@ void MultiGameOptionsMenu(int alloptions) {
 // Populates Bot_ui_settings; bots spawn via BotSpawnFromUI() at level load.
 
 #include "bot.h"
+#include "bot_population.h"
 #include "init.h"
 
 // Ship cycling order for the UI
@@ -1726,8 +1727,8 @@ static const char *BotDiffDisplayName(BotDifficulty d) {
 extern int UI_frame_result;
 static void BotRosterSelChanged(int index) { UI_frame_result = BOT_SET_ROSTER_LB_ID; }
 
-// Seats left for human players: the game's maximum less the host and the bots. The host is the only connected player
-// while this menu is open. The reserve-seat rule (BotReservedSlots) lands separately and will lower this clamp.
+// Seats left for human players once the host and the bots are seated. The host is the only connected player while
+// this menu is open; the reserved seats (BotReservedSlots) are counted as free here because they exist for humans.
 static int BotFreeSeats(int bot_count) {
   int free_seats = Netgame.max_players - 1 - bot_count;
   return free_seats > 0 ? free_seats : 0;
@@ -1975,8 +1976,8 @@ void MultiBotSettingsMenu() {
         count = 0;
       if (count > BOT_UI_MAX_BOTS)
         count = BOT_UI_MAX_BOTS;
-      if (count > Netgame.max_players - 1)
-        count = Netgame.max_players - 1;
+      if (count > BotPopulationRosterLimit(Netgame.max_players))
+        count = BotPopulationRosterLimit(Netgame.max_players); // the host's seat and the reserve stay free
 
       SaveDetailPanel(selected_bot);
       Bot_ui_settings.bot_count = count;
@@ -2015,8 +2016,8 @@ void MultiBotSettingsMenu() {
         count = 0;
       if (count > BOT_UI_MAX_BOTS)
         count = BOT_UI_MAX_BOTS;
-      if (count > Netgame.max_players - 1)
-        count = Netgame.max_players - 1;
+      if (count > BotPopulationRosterLimit(Netgame.max_players))
+        count = BotPopulationRosterLimit(Netgame.max_players); // the host's seat and the reserve stay free
       Bot_ui_settings.bot_count = count;
       exit_menu = true;
       continue;

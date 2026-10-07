@@ -21,13 +21,14 @@ The dated status log this file used to carry is in `archive/BOT_DEV_REFERENCE-st
 | `Descent3/bot_perf.h/.cpp` | Slow-frame attribution: `BotPerfScope` timers on the bot layer's entry points and the sweep primitive (`BPERF_*` ids, bot_perf.h:20); `[Perf] slow frame` / `[Perf] summary` log lines. Log-only. Add a `BPERF_*` id and name when adding a subsystem worth attributing |
 | `Descent3/bot_navdebug.h/.cpp` | In-world nav debug overlay (`Ctrl+F7`, modes 0-3: off, skeleton and portals, plus bot intent, plus roadmap; bot_navdebug.cpp:55). Draw-only. Usage: `VISUAL_DEBUG.md` |
 | `Descent3/bot_chat.h/.cpp` | Chat command system: `!` verb parsing, squad orders, addressing (all/team/DM), bot replies, announcements |
+| `Descent3/bot_population.h/.cpp` | Seats and population: the seat census, the reserve `BotAdd()` enforces, the yield, the `BotTargetPlayers` manager (`BotPopulationFrame()`, called from `BotDoFrame()`), `$botpopulation status`. Design: `BOT_MANAGEMENT.md` §9 |
 | `Descent3/multi_ui.cpp/.h` | The Bot Settings menu (`MultiBotSettingsMenu()`, multi_ui.cpp:1697); fills `Bot_ui_settings`, and bots spawn from it through `BotSpawnFromUI()` at level load |
 | `Descent3/multi_server.cpp` | `BotDoFrame()` hook in `MultiDoServerFrame()` (multi_server.cpp:2614); NPF_BOT send guards |
 | `Descent3/multi.cpp` | In `MultiStartNewLevel()`: `AIPathResetDynamicPaths()` (multi.cpp:6416), `MakeBOA()` (6421), `BotReinitAll()` (6463); send guards |
 | `Descent3/AImain.cpp` | OBJ_PLAYER guards in `AIDoFrame()`; bot thrust-zeroing skip; multiplayer robot targeting (see the audit below) |
 | `Descent3/AIGoal.cpp` | OBJ_PLAYER guards in `AIG_FIRE_AT_OBJ` and set-animation goals; handle copy for two goal types; 0.5 s path-failure retry throttle |
 | `Descent3/GameLoop.cpp` | Nav overlay hook and `Ctrl+F7` key case; dedicated-server `grtext_Reset()` |
-| `Descent3/dedicated_server.cpp` | Console commands: `$addbot`, `$removebot`, `$removebots`, `$botlist`, `$botstat`, `$botmov`, `$botmode`, `$botobj`, `$botdifficulty`, `$navdump`, `$nav` (namespace: toggles plus `dump`, `roomfaces`, `sweep` and other sub-verbs; legacy flat names such as `$gridnav` remain as hidden aliases), `$servercaps`, `$bothelp` |
+| `Descent3/dedicated_server.cpp` | Console commands: `$addbot`, `$removebot`, `$removebots`, `$botlist`, `$botstat`, `$botmov`, `$botmode`, `$botobj`, `$botdifficulty`, `$botpopulation`, `$navdump`, `$nav` (namespace: toggles plus `dump`, `roomfaces`, `sweep` and other sub-verbs; legacy flat names such as `$gridnav` remain as hidden aliases), `$servercaps`, `$bothelp` |
 | `Descent3/aistruct.h` | `MAX_DYNAMIC_PATHS` raised 50 to 200 (aistruct.h:858) |
 | `Descent3/aipath.cpp` | Path pool exhaustion: `ASSERT(0)` replaced by a rate-limited warning and a graceful failure (aipath.cpp:543, 626); `AIPathResetDynamicPaths()` (aipath.cpp:40) |
 | `Descent3/bnode.cpp` | Rooms with no BNodes return -1 instead of asserting (bnode.cpp:387, 457) |
@@ -127,6 +128,10 @@ float   gunboy_cooldown;      // cooldown between gunboy placements
 Simplified. `BotDoFrame()` starts at bot.cpp:9035; read it for the full order.
 
 ```
+once per frame, before the bots:
+  BotDoUISpawn() when the listen-server roster is due
+  BotPopulationFrame()        - seat census; the yield and the population target (bot_population.h)
+
 for each active bot:
   1. NetPlayers[slot].last_packet_time = timer_GetTime()     (keep-alive)
   2. if awaiting_respawn → BotRespawn() after BOT_RESPAWN_DELAY, continue

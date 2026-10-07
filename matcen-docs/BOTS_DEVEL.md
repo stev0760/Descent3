@@ -1831,3 +1831,68 @@ printed `BOT: cannot add 'Overflow' — server full (8/8 players)` and `Failed t
 reached)`; `$removebot 6`, `$removebot 9`, `$botdifficulty 1 rookie` and bare `$nav` printed as documented; `$scores`
 still reached DMFC. The echo's line assembly was checked in isolation (split lines, both glyphs, a Latin-1 byte, a
 trailing partial line). Not verified here: the host path, the menu on screen and the overlay, which need a client.
+## 2026-10-07: population and seats (POP1-POP3, POP6, POP9, POP10, POP14)
+
+The operator's 2026-10-01 seat rulings, built on 0.9.17-dev. New module `Descent3/bot_population.{h,cpp}`; the
+checks it needs sit in `BotAdd()`, so every add path obeys them without a second copy. Navigation untouched.
+
+**One census, three rules.** The census counts `NPF_CONNECTED` slots exactly as the engine's join answer does
+(`MultiCountPlayers`), so the server's own slot 0 occupies a seat on both server kinds and the seat the reserve keeps
+is the one `MultiDoAskToJoin` hands a human. The reserve (POP2): a bot joins only if `BotReservedSlots` seats (default
+1, minimum 1) stay free after it; `BotAdd()` asks `BotPopulationBotsAllowed()` and refuses with the numbers. The
+yield (POP3): when the free seats drop below the reserve because a human took one, a bot leaves once that human is
+in the game. The target (POP1): with `BotTargetPlayers` above 0, bots join or leave one at a time to keep humans +
+bots at the target, never past the reserve.
+
+**Where the yield hooks.** Not into the join answer, which the old §9 design proposed: with a reserve there is always
+a free seat, so the vanilla path seats the human, and the work is to free a seat again afterwards. The manager runs
+from `BotDoFrame()` (inside `MultiDoServerFrame`), takes the census every frame (one pass over 32 slots) and holds
+completely while any human is short of `NETSEQ_PLAYING`: a joining client is being sent the player list
+(`NETSEQ_REQUEST_PLAYERS` and the rest), and a bot's disconnect or arrival packet under it is the one moment a change
+could reach it half-built. Any census change (a human reaching `PLAYING` or leaving, a bot coming or going,
+`MaxPlayers` moving) triggers a check at once; a 5 s periodic check backs it up; every change waits 5 s after the last
+one (`BOT_POP_COOLDOWN`). Both clocks are `timer_GetTime()`, because `Gametime` restarts with each level. No engine
+join or disconnect function was touched. The yield runs with the target off too, since it is the reserve's other
+half; without a target a yielded bot does not come back.
+
+**Which bot leaves.** In team modes, a bot from the team with the most players among teams that still have one, then
+the lowest score, then the newest arrival (an arrival serial kept per `Bots[]` index). The score is `Multi_kills`, the
+server's per-slot frag count (the GameSpy number), since DMFC keeps each mode's real score DLL-side. `BotAdd()` now
+clears `Multi_kills`/`Multi_deaths` for the bot's slot, as `MultiDoMyInfo` does for a joining human: a bot taking a
+slot a human had left inherited that human's frags, which would have skewed the pick (and GameSpy's report).
+
+**Who joins.** The first bots.cfg entry whose callsign is free, with its ship and difficulty; the roster is every
+entry the file names, not only the first `BotCount`. Then the first free built-in name, borrowing the roster's ships
+and difficulties in turn. The team is always `BotAdd()`'s balance: the manager refills whichever side was left.
+
+**Smaller rows.** POP9: `BotAllowedShip()` in `BotAdd()` checks the server slot's ship permissions (the list
+`MultiDoMyInfo` checks humans against) and falls back to Pyro-GL, or the first allowed ship, with a log and console
+line. POP10: `BotParseDifficulty()` reports an unknown word; `BotResolveDifficulty()` falls back to the configured
+default, the roster keeps unknown per-bot values on the default resolved at spawn (so the `BotDifficulty=` line may
+come anywhere), and `$addbot` prints a line. POP14 and the menu: `BotPopulationRosterLimit(max_players)` =
+`max_players − 1 − reserve`, applied by the Bot Settings menu and by the `.mps` loader after the whole file is read.
+The config roster spawns while seats allow and prints how many it skipped. POP6: `features=` gains `teams`,
+`squad_orders`, `population`. COL14 (two of its items): the `BotAdd` suffix comment and the `$addbot` parse comment.
+
+**Console.** `$botpopulation [on|off|status|target <n>|reserve <n>]`; status is one `key=value` line
+(`Population: manager=on target=6 reserve=1 humans=0 bots=6 seats=7/8 bot_limit=6`). Formats in
+PYRODECK_CONTRACT.md §4; `$botpopulation` joins Tier 1.
+
+**Exit test** (Debug, lab binary `Descent3-pop`, bedlam level 4 CTF 2 teams, `MaxPlayers=8`, target 6, reserve 1,
+4-entry roster, Phoenix banned by `.mps` `SHIPBAN`). Roster spawn 11:27:30.6; `Viper[BOT]` joined 35.6 and
+`Blaze[BOT]` 40.6 (built-in names after the roster); status `bots=6 seats=7/8`. `$addbot Extra pyro`:
+`BOT: cannot add 'Extra': 7 of 8 seats in use and 1 kept free for players`. `$removebot 0` at 56.8, `Reaper[BOT]`
+back at 01.8 (5.0 s). `$botpopulation target 3`: removals at 26.7, 31.8, 36.8; status `bots=3 seats=4/8`.
+`$botpopulation reserve 3` with two seats free exercised the yield branch: `Shadow[BOT] left to make room for a
+player.`, taken from the three-bot blue side, not the two-bot red one. `Shadow` fell back to Pyro-GL at spawn,
+`BotDifficulty3=junk` spawned Ace with a warning, `$addbot Junky pyro junk` printed the fallback line, and `.mps`
+`BOTCOUNT 16` loaded as 6. A second run at `MaxPlayers=4` (the co-op cap) spawned two of four roster bots with
+`2 of 4 bots skipped` and logged the target of 6 once as out of reach. Verbs `on`/`off`/`target 0`/`on` without a
+target/`reserve 0`/unknown all printed as specified.
+
+**Not verified live:** a human joining or leaving; the console cannot join a client. By code reading, the join path
+is unchanged (the free seat answers `JOIN_ANSWER_OK`, `MultiCheckListen` connects the human into it), the hold covers
+the whole `NETSEQ_WAITING_FOR_LEVEL` to `NETSEQ_WORLD` sequence, and the census change at `NETSEQ_PLAYING` fires the
+same `free < reserve` branch the reserve test drove. A second human asking while the first is still loading gets the
+vanilla full answer until the yield frees a seat; a larger `BotReservedSlots` covers bursts. The first flight with a
+human client should confirm the yield and the refill.

@@ -6,6 +6,7 @@ set(HEADERS
   bot_chat.h
   bot_objective.h
   bot_perf.h
+  bot_population.h
   bot_roadmap.h
   Briefing.h
   BriefingParse.h
@@ -163,6 +164,7 @@ set(CPPS
   bot_navdebug.cpp
   bot_objective.cpp
   bot_perf.cpp
+  bot_population.cpp
   bot_roadmap.cpp
   bot_steering.cpp
   Briefing.cpp

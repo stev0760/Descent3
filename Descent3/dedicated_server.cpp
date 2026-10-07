@@ -133,6 +133,7 @@
 #include "networking.h"
 #include "bot.h"
 #include "bot_objective.h"
+#include "bot_population.h"
 #include "bot_steering.h"
 #include "bot_roadmap.h"
 #include "object.h"
@@ -860,7 +861,7 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     int desired_team = -1;
 
     if (operand[0]) {
-      // Parse: addbot <name> [ship]
+      // Parse: addbot <name> [ship] [difficulty] [team]; positional, each read only after the one before it
       // Copy operand so we can tokenize it
       char op_copy[255];
       strncpy(op_copy, operand, 254);
@@ -887,6 +888,9 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
           char *diff_tok = strtok(NULL, " \t");
           if (diff_tok) {
             diff = BotResolveDifficulty(diff_tok);
+            if (!BotIsDifficultyName(diff_tok))
+              PrintDedicatedMessage("Unknown difficulty '%s', using the default (%s)\n", diff_tok,
+                                    BotDifficultyName(diff));
 
             // Fourth token (optional) is the team (1-indexed, e.g. "2" = Team 2)
             char *team_tok = strtok(NULL, " \t");
@@ -897,12 +901,14 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
       }
     }
     int idx = BotAdd(botname, ship_index, diff, desired_team);
-    if (idx >= 0)
+    if (idx >= 0) {
       PrintDedicatedMessage("Bot '%s' added in slot %d (ship=%s, diff=%s, team=%d)\n", Bots[idx].callsign,
                             Bots[idx].player_slot, Ships[Bots[idx].ship_index].name,
                             BotDifficultyName(Bots[idx].difficulty), Players[Bots[idx].player_slot].team + 1);
-    else
+      BotPopulationNoteManualChange();
+    } else {
       PrintDedicatedMessage("Failed to add bot (server full or max bots reached)\n");
+    }
     return true;
   }
   if (stricmp(command, "removebot") == 0) {
@@ -911,6 +917,7 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
       if (idx >= 0 && idx < MAX_BOTS && Bots[idx].active) {
         PrintDedicatedMessage("Removing bot '%s' from slot %d\n", Bots[idx].callsign, Bots[idx].player_slot);
         BotRemove(idx);
+        BotPopulationNoteManualChange();
       } else {
         PrintDedicatedMessage("Invalid bot index %d\n", idx);
       }
@@ -922,6 +929,37 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
   if (stricmp(command, "removebots") == 0) {
     BotRemoveAll();
     PrintDedicatedMessage("All bots removed\n");
+    BotPopulationNoteManualChange();
+    return true;
+  }
+  if (stricmp(command, "botpopulation") == 0) {
+    char op_copy[255];
+    strncpy(op_copy, operand, 254);
+    op_copy[254] = '\0';
+    const char *verb = strtok(op_copy, " \t");
+    const char *arg = strtok(NULL, " \t");
+    const bool numeric = arg && arg[0] >= '0' && arg[0] <= '9';
+
+    if (!verb || stricmp(verb, "status") == 0) {
+      BotPopulationPrintStatus();
+    } else if (stricmp(verb, "on") == 0) {
+      if (BotPopulationEnable(true))
+        PrintDedicatedMessage("Population manager on (target %d)\n", BotPopulationGetTarget());
+      else
+        PrintDedicatedMessage("Population manager needs a target first: $botpopulation target <n>\n");
+    } else if (stricmp(verb, "off") == 0) {
+      BotPopulationEnable(false);
+      PrintDedicatedMessage("Population manager off\n");
+    } else if (stricmp(verb, "target") == 0 && numeric) {
+      const int target = BotPopulationSetTarget(atoi(arg));
+      PrintDedicatedMessage("Population target set to %d (manager %s)\n", target, BotPopulationIsOn() ? "on" : "off");
+    } else if (stricmp(verb, "reserve") == 0 && numeric) {
+      const int asked = atoi(arg);
+      const int reserve = BotPopulationSetReserve(asked);
+      PrintDedicatedMessage("Reserved seats set to %d%s\n", reserve, reserve > asked ? " (minimum 1)" : "");
+    } else {
+      PrintDedicatedMessage("Usage: $botpopulation [on|off|status|target <n>|reserve <n>]\n");
+    }
     return true;
   }
   if (stricmp(command, "botlist") == 0) {
@@ -1177,6 +1215,9 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
         {"$removebots", "Remove every bot"},
         {"$botlist", "List the bots"},
         {"$botdifficulty <index|all> <level>", "Change difficulty; all also sets the default"},
+        {"$botpopulation [on|off|status]", "Population manager: keep humans + bots at a target"},
+        {"$botpopulation target <n>", "Players to keep (0 = manager off)"},
+        {"$botpopulation reserve <n>", "Seats always kept free for humans (minimum 1)"},
         {"$botmode", "Show the game mode as the bots read it"},
         {"$botobj", "Show objective state: flags, orbs, goals, roles"},
         {"$servercaps", "Show this server's capabilities"},
