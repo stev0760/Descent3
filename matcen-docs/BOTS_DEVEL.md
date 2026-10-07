@@ -1823,3 +1823,13 @@ distance from the Hotshot row and a Hotshot bot plays exactly as before. Which c
 
 Not scaled, left on MODE1/MODE7: Entropy denial appetite, smarter invasion, the drill command, shield-knob iteration;
 Monsterball wall/ceiling play, banks, pass-backs. The `!` verbs for both modes are the CMD branch's.
+
+**The hold ends when the invade nav loses its target.** A force-loaded test run (every bot given 5 viruses by a
+scratch build, never committed) showed parked bots sitting still for seconds after the hold should have ended: Gregg
+(Insane) took a hit at 51 shields that left him at 7, under his floor of 10, and `BotDoEntropyInvadeNav` got a target
+of -1 (by the code, the retreat branch found no repair or energy room of his team's), called `BotDoExploreRoaming`
+and returned without clearing `entropy_holding`, so the park went on holding the "roaming" bot at zero thrust; Phantom
+showed the same signature for 4.4 s after his takeover (an explore pick while the park trace ran on) until the
+room-progress timeout cleared his goals. The target check now runs after the
+ABORT block, so a -1 target logs `takeover hold ABORT (... -> target -1 ...)` and drops the flag before the bot roams.
+The braking park had the same hole; the zero-thrust park only made it visible in the trace.

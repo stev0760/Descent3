@@ -363,14 +363,13 @@ state bumps (4/21 in the soak) are accepted residual. Role tenure is runtime-tun
 
 ### 4.4 Phase M4 (polish): see MODE7
 
-M4's difficulty scaling is built (§3.8). The rest of M4 is not built and is tracked as registry row MODE7 (`PLAN.md` §4, the master registry). Decided
-2026-10-01: M4's mode verbs and difficulty scaling are pre-reveal work. Its content, unchanged from the original §4.4: difficulty
-scaling of the alignment threshold, prediction quality, blunder-cone width and kickoff reaction;
-wall and ceiling play, deliberate banks, supporter pass-backs and multi-touch dribbling, all out of
-scope until soaks demand them; and the `!attack ball` / `!defend goal` chat verbs (Tier 2 pattern).
-Junction-aware pushing was built and tested as part of this phase and is validated negative (§3.3);
-its full narrative is in `archive/MODE-docs-history.md`, Part 2b. The Veins finishing problem it was
-meant to solve is MODE8.
+M4's difficulty scaling is built (§3.8). The rest of M4 is not built and is tracked as registry row MODE7 (`PLAN.md` §4,
+the master registry). Decided 2026-10-01: M4's mode verbs and difficulty scaling are pre-reveal work. Its content,
+unchanged from the original §4.4: difficulty scaling of the alignment threshold, prediction quality, blunder-cone width
+and kickoff reaction; wall and ceiling play, deliberate banks, supporter pass-backs and multi-touch dribbling, all out
+of scope until soaks demand them; and the `!attack ball` / `!defend goal` chat verbs (Tier 2 pattern). Junction-aware
+pushing was built and tested as part of this phase and is validated negative (§3.3); its full narrative is in
+`archive/MODE-docs-history.md`, Part 2b. The Veins finishing problem it was meant to solve is MODE8.
 
 ---
 

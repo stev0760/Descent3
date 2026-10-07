@@ -4171,12 +4171,6 @@ static bool BotDoEntropyInvadeNav(int bot_index) {
     return false;
 
   int target_room = BotGetObjectiveRoom(bot_index);
-  if (target_room < 0) {
-    // Enemy owns nothing (game ending) or no repair room to retreat to — roam.
-    BotDoExploreRoaming(bot_index);
-    return false;
-  }
-
   int cur_room = OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum;
   int my_team = Players[slot].team;
   int enemy_owner = 2 - my_team;
@@ -4220,7 +4214,8 @@ static bool BotDoEntropyInvadeNav(int bot_index) {
   }
 
   if (Bots[bot_index].entropy_holding) {
-    // Left the room (chased off / retreat floor flipped the target to a repair room).
+    // Left the room (chased off / retreat floor flipped the target to a repair room), or the
+    // target went away (-1: the enemy owns nothing reachable, or there is no room to retreat to).
     // Success/spend is logged separately by the poll's inventory-delta line. depth/spd are
     // measured against the CURRENT room — an abort with positive depth and near-zero speed
     // means roomnum flipped while the ship was physically parked (multi-portal boundary
@@ -4230,6 +4225,13 @@ static bool BotDoEntropyInvadeNav(int bot_index) {
                      Bots[bot_index].callsign, cur_room, target_room, obj->shields,
                      cur_room >= 0 ? BotPortalPenetration(obj, cur_room) : -1.0f,
                      vm_GetMagnitude(&obj->mtype.phys_info.velocity));
+  }
+
+  if (target_room < 0) {
+    // Enemy owns nothing (game ending) or no repair room to retreat to — roam. A hold in progress
+    // has ended just above (target -1): left set, the park would hold the roaming bot at zero thrust.
+    BotDoExploreRoaming(bot_index);
+    return false;
   }
 
   // En route (invade or retreat leg): carrier-grade routed goal. Like the CTF/Hoard carrier

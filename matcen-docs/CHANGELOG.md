@@ -41,7 +41,8 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
 - **Entropy: a bot taking over a room no longer brakes against hits.** A bot holding still in an enemy room to take
   it over used to thrust against any push, weapon knockback included, which no human pilot can do. It now lets go of
   the controls the way a player does: drag stops the ship, and a hit moves it exactly as it would move you. A hit that
-  knocks it out of the room ends the attempt, and it flies back in to try again. In test.
+  knocks it out of the room ends the attempt, and it flies back in to try again. A bot whose attempt ends with no room
+  left to attack or to retreat to no longer sits frozen in place. In test.
 - **CTF: a carrier killed in a flag's home base sends that flag home.** The CTF module tested the wrong object when a
   flag carrier died, so a flag whose carrier was killed inside that flag's own base dropped loose there instead of
   going home, and a flag dropped elsewhere could occasionally jump home. The bug is in the original game module; it is
