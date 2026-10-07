@@ -38,6 +38,10 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
   through a doorway into the next room, so a neighbouring room could decide a room's layout: on Tower of Isengard a
   change next door shifted one hall's whole network, bots began missing its doors, and carriers were sent home the
   long way. The grid with the most points inside the room now wins. In test.
+- **Entropy: a bot taking over a room no longer brakes against hits.** A bot holding still in an enemy room to take
+  it over used to thrust against any push, weapon knockback included, which no human pilot can do. It now lets go of
+  the controls the way a player does: drag stops the ship, and a hit moves it exactly as it would move you. A hit that
+  knocks it out of the room ends the attempt, and it flies back in to try again. In test.
 
 ## [0.9.16] - 2026-10-01
 

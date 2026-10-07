@@ -7,8 +7,8 @@ near-rest gates, then active braking; see the 0.9.8 CHANGELOG entry). The 0.9.13
 "known limitations" says the opposite for that release's testing: "Entropy room takeover has not been
 observed in testing." Both statements stand in the record, and a re-check on the release build is owed
 (MODE2, see "Known open" below). `$nav entropy` gates the E3 invasion layer. E4 polish is not built
-(MODE1); it is pre-reveal work, decided 2026-10-01. The active park's counter-thrust against knockback is to be
-removed before the reveal (MODE6, §3.4). The as-built summary is §3; the original E1-E3 build spec is in
+(MODE1); it is pre-reveal work, decided 2026-10-01. The takeover park holds zero thrust and obeys knockback like a
+player (MODE6, built 2026-10-07, §3.3). The as-built summary is §3; the original E1-E3 build spec is in
 `archive/MODE-docs-history.md`, Part 1.
 Source of truth: `netgames/entropy/` (EntropyBase.cpp, EntropyAux.h, EntropyPackets.cpp,
 EntropyRoom.cpp), read in full for this document. Line references are to those files.
@@ -216,11 +216,14 @@ What follows is the code at HEAD. Constants live in `Descent3/bot_objective.h:52
 - Hold start (`bot.cpp:4197-4199`): only when the ship is at least `BOT_ENTROPY_HOLD_MIN_DEPTH` (8 u)
   past the nearest portal plane and moving at `BOT_ENTROPY_HOLD_MAX_SPEED` (5 u/s) or less. Once
   holding, only leaving the room aborts. START and ABORT are logged as `BOT ENTROPY: ... takeover hold`.
-- Active park (`bot.cpp:6353-6373`): while holding in EXPLORE, thrust is replaced by a counter-thrust
-  against any velocity above `BOT_ENTROPY_PARK_BRAKE_SPEED` (2 u/s), and zero thrust below it. Turning
-  and firing are untouched. This thrusting against knockback violates the "bots never resist knockback" physics
-  ruling, and the operator ruled on 2026-10-01 that there are no exceptions: knockback must affect bots exactly as
-  it affects players, always. The counter-thrust is to be removed (MODE6, see below).
+- Park (`bot.cpp:6351-6366`): while holding in EXPLORE, thrust is zero and the FSM thrust path (juke, combat
+  overrides) is skipped. Turning and firing are untouched. The hold starts only near rest (5 u/s or less), and drag
+  stops the ship from there. Weapon knockback moves a parked bot exactly as it moves a player (physics ruling 2; the
+  operator ruled on 2026-10-01 that there are no exceptions): the bot never thrusts against it. The DLL restarts its
+  3 s clock wherever the ship comes to rest, so a knock that leaves the ship inside the room costs clock time only. A
+  knock out of the room ends the hold (ABORT), and the invade leg flies the ship back to the hold point under normal
+  thrust, where the hold restarts at depth and near rest. Before 2026-10-07 (MODE6) the park thrust against any
+  velocity above 2 u/s, knockback included.
 - Flee while loaded (`bot.cpp:5468-5484`): mid-hold, fleeing is the abort and is allowed only below the
   hard floor; loaded and en route, the flee threshold is raised (x1.5, capped at 60%). A loaded bot in
   idle combat snaps back to EXPLORE after the CTF carrier combat timeout (`bot.cpp:6038-6040`).
@@ -238,7 +241,7 @@ What follows is the code at HEAD. Constants live in `Descent3/bot_objective.h:52
 | MODE4 | Inversion produces refused-pickup spam (bots chase viruses the server refuses). | Open. The analyzer flags it as `ENTROPY_REFUSED_PICKUP_SPAM` (`tools/analyze_bot_log.py:1503-1511`). |
 | MODE5 | RAGE wind-tunnel counter-fly fix (`9e602d7f`, routed-cost room selection in `BotGetNearestEntropyRoom`). | In code since 0.9.8; never verified on RAGE. |
 | NAV8 | Rim is nav-hostile for this mode (part of the toroid refinements row). | Open; tracked in `NAVIGATION.md` §7. |
-| MODE6 | The active park thrusts against knockback, contrary to physics ruling 2. | In code (`bot.cpp:6363-6374`; the counter-thrust is `bot.cpp:6367-6368`). Decided 2026-10-01, absolute: knockback must affect bots exactly as it affects players, always, so the counter-thrust is to be **removed**. Pre-reveal code change, not made yet. The park still has to hold zero thrust, or the no-nav-dir fallback drives the ship forward at 1.0 (the v3 failure the park was built to fix). |
+| MODE6 | The active park thrusts against knockback, contrary to physics ruling 2. | **Built 2026-10-07.** The counter-thrust is removed: the park holds zero thrust and still bypasses the FSM thrust path, so no juke or combat thrust reaches the pad (§3.3). Takeover rate under fire is unmeasured on this build; MODE2's Dementia run reads it. |
 | MODE3 | Operator in-person Entropy flight ("is this mode fun against bots", §4). | No record. Decided 2026-10-01: the operator will fly Entropy. |
 
 ### 3.5 Phase E4 (polish): see MODE1

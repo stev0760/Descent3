@@ -174,6 +174,6 @@ model in §1 and apply to every movement change.
    and it reads as unnatural. Losing a hold under fire is the game as designed.
 
 Both rest on the standing rule that bots use only legal thrust inputs, and the operator ruled on 2026-10-01 that
-there are no exceptions: knockback must affect bots exactly as it affects players, always. The one place that
-still thrusts against residual velocity, the Entropy hold park (`entropy_holding` in `BotApplyThrust()`,
-`bot.cpp:6363-6375`), is scheduled for removal before the release (registry MODE6).
+there are no exceptions: knockback must affect bots exactly as it affects players, always. The Entropy takeover
+park (`entropy_holding` in `BotApplyThrust()`), the last place that thrust against residual velocity, holds zero
+thrust since 2026-10-07 (registry MODE6): drag stops the parked ship and a knock moves it like any player's.

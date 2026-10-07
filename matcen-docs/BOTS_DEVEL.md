@@ -1765,3 +1765,15 @@ source edits, and build verification remain with this session. Stable promotion 
   before the 2026-10-01 consolidation; those dated reads are preserved verbatim in
   `matcen-docs/archive/PLAN-2026-08-29_to_10-01.md`.
 - The engine-files impact audit: `matcen-docs/BOT_DEV_REFERENCE.md`.
+
+## 2026-10-07: mode polish (MODE6, MODE14, COOP5, Entropy E4 and Monsterball M4 difficulty)
+
+**MODE6, the Entropy park obeys knockback.** The takeover park in `BotApplyThrust` thrust against any velocity above
+2 u/s (`BOT_ENTROPY_PARK_BRAKE_SPEED`), so a defender's hits barely moved a holding bot: the one place the code broke
+physics ruling 2. The park now holds zero thrust. It still returns before the FSM thrust path, which keeps juke and
+the combat overrides off the pad; the reason it was built (the old no-nav-dir fallback drove the parked ship forward
+at full throttle) is gone since that fallback coasts. The hold starts only at 5 u/s or less, so drag finishes the
+stop. A knock that leaves the ship in the room costs the DLL clock only (it restarts wherever the ship rests, and any
+point in the room counts); a knock out of the room trips the existing ABORT, and the invade leg flies the ship back to
+the hold point under its own thrust. No return-to-post inside the room was added: flying back would reset the clock
+a second time. The constant is deleted.

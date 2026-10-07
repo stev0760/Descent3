@@ -595,8 +595,8 @@ Both the COMBAT interrupt and the HUNT divert set `powerup_interrupt_cooldown` t
 - **Never suppress forward thrust** in stuck detection. Zeroing forward thrust at spawn is self-perpetuating (the
   bot never builds speed to escape).
 - **Knockback affects bots exactly as it affects players, always** (operator ruling, 2026-10-01, no exceptions):
-  never thrust against weapon knockback; the Entropy active park's counter-thrust (bot.cpp:6367-6368) is the one
-  violation in code and is to be removed (MODE6).
+  never thrust against weapon knockback. The Entropy takeover park holds zero thrust (MODE6, 2026-10-07); a hold
+  that needs the ship still gets it from drag, never from a brake.
 - `max_delta_velocity = 0` prevents AI goals from writing velocity, but goals still drive **rotation** via
   rotthrust. This is intentional.
 - `AIG_MOVE_AROUND_OBJ` and `AIG_GET_AWAY_FROM_OBJ` have no movement implementation in the engine (no handler in
@@ -983,7 +983,7 @@ lacking BNode data), the Linux mouse buttons, and the mission-download fixes.
 ## Open items referenced in this doc
 
 All are rows in the `PLAN.md` §4 registry: COL7 (retire the `$nav grid off` fallback), MODE14 (CTF
-`HandlePlayerSpew`), MODE6 (the Entropy park's counter-thrust against knockback, to be removed), MODE15 (gunboys
+`HandlePlayerSpew`), MODE6 (the Entropy park's counter-thrust against knockback, removed 2026-10-07), MODE15 (gunboys
 fire; closed 2026-10-01), MODE16 (flare chaff fallback; decided intended 2026-10-01),
 CBT13 (no "investigate noise" behaviour), UX5 (overlay reachable by any client). Items from the retired status
 log, now in `archive/BOT_DEV_REFERENCE-status-log.md`: NAV18 (window-misroute fix's sibling gaps) and NAV31
