@@ -1896,3 +1896,69 @@ the whole `NETSEQ_WAITING_FOR_LEVEL` to `NETSEQ_WORLD` sequence, and the census 
 same `free < reserve` branch the reserve test drove. A second human asking while the first is still loading gets the
 vanilla full answer until the yield frees a seat; a larger `BotReservedSlots` covers bursts. The first flight with a
 human client should confirm the yield and the refill.
+
+## 2026-10-07: release packaging, samples, quickstart (REL2, REL4, REL11, REL15)
+
+The release-package plumbing decided on 10-01 (Q14a: binary packages on a GitHub Release, mirrored to ModDB by the
+operator). No engine code changed.
+
+**REL2, `release.yml`.** The upstream workflow drafted a CPack source tarball on any tag. It now runs on `v*` tags
+and on a manual dispatch, in four jobs. `version` reads `MATCEN_VERSION_*` from CMakeLists.txt and fails a tag that is
+not `v<X.Y.Z>` of that version or that still carries a suffix, because the binaries print that version and a stale
+`-dev` would ship under a release name; a dispatch names its packages `v<version>-<sha8>`. `package` is a three-entry
+matrix (Windows MSVC, Linux GCC on ubuntu-22.04, macOS universal on macos-14) that repeats build.yml's toolchain and
+vcpkg steps and its configure flags, with `RelWithDebInfo` as the build type and the editor off (it is never
+installed); build.yml itself is untouched. Each package is the `cmake --install` tree (`FORCE_PORTABLE_INSTALL`, so
+the executable, `d3-<os>.hog`, `netgames/*.d3m`, `online/*.d3c` and the upstream docs sit at the root) plus
+`samples/dedicated.cfg`, `samples/bots.cfg` and an `INSTALL.txt` filled in from `matcen-docs/samples/INSTALL.txt`.
+The stage step fails if `online/Direct TCP~IP.d3c` or the `.d3m` files are missing. The Windows PDB and the Linux
+debug info go to a `-symbols` archive (`objcopy --only-keep-debug`, then `--strip-debug --add-gnu-debuglink`), so the
+player package stays small and a crash can still be symbolised. The macOS package is unsigned and named
+`...-macOS-universal-community-tested.zip`. `source` replaces the CPack tarball with `git archive` plus
+`git-hash.txt` (what cmake/CheckGit.cmake reads in a tree without git): the old job ran `cmake --preset linux` on a
+runner with no vcpkg and no SDL3, glm, plog or httplib, so by reading it fails at configure. `release` runs only for
+a tag, gathers every artifact, adds `SHA256SUMS.txt` and drafts the release; publishing it stays a manual step.
+
+Build type consequences, read from the code: RelWithDebInfo defines `NDEBUG` but not `RELEASE`, so `ASSERT` stays
+compiled (ddebug/pserror.h) and logs `Assertion failed (...)` at error level, while `SDL_assert` is off at
+`SDL_ASSERT_LEVEL` 1 and the server carries on; the plog level defaults to debug (sdlmain.cpp), and every bot
+telemetry line is a run-time-filtered `LOG_DEBUG` with no build-type `#if`, so a RelWithDebInfo server log feeds the
+analyzer like a Debug one. "Release logs are blind" (REL3) is the Release config's info default, which
+`-loglevel DEBUG` lifts. The MSVC CRT link workaround in CMakeLists.txt applies to Release only; it exists because of
+`/GL`, which RelWithDebInfo's default flags do not use.
+
+Verified locally: the YAML of all four workflows loads; the version step's shell, run against this CMakeLists.txt
+(`-dev`: tag refused, dispatch named `v0.9.17-dev-5594163b`) and a copy with the suffix stripped (`v0.9.17` passes,
+`v0.9.18` refused); the Linux stage, symbol split and archive steps, run on the RelWithDebInfo build output arranged as
+`install_manifest.txt` lays out the install tree: 85 MB staged, a 16 MB `.tar.xz` and a 21 MB symbols archive (the
+executable goes from 111 MB to 14 MB, and its `.gnu_debuglink` names `Descent3.debug`). Inferred, not run: every
+Windows and macOS step (the PDB name, `7z` on the Windows runner's PATH, `zip` on macOS), the GitHub-side upload,
+download and release actions, and the vcpkg build under RelWithDebInfo. The first dispatch from the Actions tab is the
+test. A tag pushed on an older commit (REL16's backfill) runs that commit's old workflow, not this one.
+
+**Samples.** `matcen-docs/samples/dedicated.cfg` and `bots.cfg` follow BOT_MANAGEMENT §2: CTF on Bedlam with two
+teams, `MaxPlayers=14`, `PPS=40`, `ConnectionName=Direct TCP~IP`, the remote console on with a placeholder password;
+four named bots, `BotTargetPlayers=12`, `BotReservedSlots=1`, `BotDifficulty=hotshot`. Comments are on their own
+lines in both. In dedicated.cfg a `;` line is skipped because `InfFile::ParseLine` reads `;` as an unknown command
+(the lab's Monsterball cfg relies on the same thing). Both files were run through a Python copy of the two parsers
+(the `[server config file]` tag check, the `" \t=:"` and `",;"` tokenising and the CVar table; `BotLoadRosterFile`'s
+rules): every key lands with its value and no value carries a `;`. The tag check also showed that BOT_MANAGEMENT §2's
+dedicated.cfg example began with a `; dedicated.cfg` label line, which the engine would refuse as a first line; the
+example now starts with the tag. `.gitignore` ignores `dedicated.cfg` everywhere, so it gains a negation for
+`matcen-docs/samples/*.cfg`.
+
+**REL11.** `QUICKSTART.md` is the user-facing page: install over a 1.4+ install, the `Direct TCP~IP.d3c` check (without
+it `RunServerConfigs` cannot load the connection and the dedicated server stops), the samples, the start lines
+(Windows needs `-winconsole`: the dedicated console is stdout, and `WinMain` attaches none without it), `$bothelp`,
+the `!` orders, Bot Settings, Pyrodeck, the known limitations by registry id with no map names, and a bug report
+checklist. `ANNOUNCEMENT.md` is a ~270-word draft with link placeholders for the operator.
+
+**REL4.** `tools/manifests/battery/README.md` lists the release battery as a checklist with the runtime-dir files each
+stage needs and the `soakctl.py` and `soak_battery.sh` invocations. Bedlam and co-op had no tracked manifest:
+`reg-bedlam.json` (the lab's `soak-dedicated-bedlam4t.cfg`, 12 rounds, `expect_rounds` 12) and `reg-coop.json`
+(`soak-dedicated-coop.cfg`, 30 minutes, a crash net; co-op play is judged by the operator's flight). Fellowship,
+Monsterball, Entropy and the anarchy family reuse existing manifests. Found on the way: the analyzer has no count of
+`Assertion failed` lines, which an optimised build turns into log lines instead of stops; the README says to count
+them by hand.
+
+**REL15.** PLAN §3 now carries the definition verbatim; the README line belongs to the README pass.

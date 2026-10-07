@@ -1,30 +1,258 @@
-name: Release source tarball
+name: Release
+
+# A pushed tag v<X.Y.Z> builds the Matcen packages and drafts a GitHub Release that carries them. The draft is
+# published by hand once its assets have been checked. Run the workflow from the Actions tab (workflow_dispatch) for a
+# dry run: everything is built and kept as workflow artifacts, and no release is drafted.
+#
+# The packages are the RelWithDebInfo build of `cmake --install` (executable, d3-<os>.hog, netgames/*.d3m, online/*.d3c
+# and the upstream docs) plus samples/dedicated.cfg, samples/bots.cfg and INSTALL.txt from matcen-docs/samples/.
+# They hold no game data; INSTALL.txt says to extract them over a retail Descent 3 install. The Windows and Linux debug
+# symbols go in a separate -symbols archive so the player package stays small.
+
 on:
   push:
     tags:
-      - '*'
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  build:
+
+  version:
+    name: Check the version
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    outputs:
+      name: ${{ steps.version.outputs.name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # A release tag must name the version CMakeLists.txt builds, with the -dev suffix stripped; the binaries print
+      # that version, so a mismatch would ship one version under another's name. A dry run is named after the commit.
+      - name: Match the tag against MATCEN_VERSION_*
+        id: version
+        shell: bash
+        run: |
+          field() { sed -nE "s/^set\(MATCEN_VERSION_$1 \"?([^\")]*)\"?\)/\1/p" CMakeLists.txt; }
+          version="$(field MAJOR).$(field MINOR).$(field PATCH)"
+          suffix="$(field SUFFIX)"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            if [ -n "$suffix" ] || [ "$GITHUB_REF_NAME" != "v$version" ]; then
+              echo "::error::tag $GITHUB_REF_NAME does not match the CMakeLists.txt version $version$suffix"
+              exit 1
+            fi
+            name="$GITHUB_REF_NAME"
+          else
+            name="v$version$suffix-${GITHUB_SHA::8}"
+          fi
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "Package name: Matcen-$name"
+
+  package:
+    name: Package ${{ matrix.os.name }}
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - runner: windows-latest
+            preset: win
+            cc: cl
+            cxx: cl
+            name: Windows-x64
+          - runner: ubuntu-22.04
+            preset: linux
+            cc: gcc
+            cxx: g++
+            name: Linux-x64
+          - runner: macos-14  # Apple Silicon, but we make a universal binary
+            preset: mac
+            cc: cc
+            cxx: c++
+            name: macOS-universal-community-tested
+
+    runs-on: ${{ matrix.os.runner }}
+
+    env:
+      BUILD_TYPE: RelWithDebInfo
+      PACKAGE: Matcen-${{ needs.version.outputs.name }}-${{ matrix.os.name }}
+
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Generate git hash and tarball
+      # Toolchain and dependencies: the same steps as build.yml.
+      - name: Install macOS Rosetta 2
+        if: ${{ matrix.os.preset == 'mac' }}
+        run: /usr/sbin/softwareupdate --install-rosetta --agree-to-license
+
+      - name: Install macOS dependencies
+        if: ${{ matrix.os.preset == 'mac' }}
+        run: brew bundle install
+
+      - name: Install Linux dependencies
+        if: ${{ matrix.os.preset == 'linux' }}
         run: |
           sudo apt update
-          sudo apt install -y ninja-build cmake g++ zlib1g-dev
-          cmake --preset linux
-          cmake --build --preset linux -t get_git_hash
-          cmake --build --preset linux -t package_source
+          sudo apt install -y --no-install-recommends \
+            ninja-build g++ curl pkg-config autoconf autoconf-archive automake libtool libltdl-dev make python3-jinja2 libx11-dev libxft-dev libxext-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev libibus-1.0-dev libasound2-dev libpulse-dev libaudio-dev libjack-dev libsndio-dev libxcursor-dev libxfixes-dev libxi-dev libxrandr-dev libxss-dev
 
-      - name: Release
+      - name: Setup cmake
+        if: ${{ matrix.os.preset == 'linux' }}
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '3.30.x'
+
+      - name: Install Windows dependencies
+        if: ${{ matrix.os.preset == 'win' }}
+        run: choco install ninja
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: ${{ matrix.os.preset == 'win' }}
+        with:
+          arch: win64
+
+      - uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgJsonGlob: vcpkg.json
+
+      - name: Customize vcpkg to create macOS universal binary
+        if: ${{ matrix.os.preset == 'mac' }}
+        working-directory: ${{ env.VCPKG_ROOT }}/triplets
+        run: |
+          cp ./arm64-osx.cmake ./community/universal-osx.cmake
+          sed -i '' 's/^set(VCPKG_OSX_ARCHITECTURES.*$/set(VCPKG_OSX_ARCHITECTURES "arm64;x86_64")/' ./community/universal-osx.cmake
+
+      # Configure, build, test and install as build.yml does, with two differences: the build type is RelWithDebInfo,
+      # and the editor is off (it is not installed). The macOS build is not code-signed.
+      - name: Configure CMake
+        env:
+          CC: ${{ matrix.os.cc }}
+          CXX: ${{ matrix.os.cxx }}
+        run: cmake --preset ${{ matrix.os.preset }} -DBUILD_TESTING=ON -DENABLE_LOGGER=ON -DFORCE_PORTABLE_INSTALL=ON -DBUILD_EDITOR=OFF -DUSE_EXTERNAL_PLOG=ON
+
+      - name: Build ${{ env.BUILD_TYPE }}
+        run: cmake --build --preset ${{ matrix.os.preset }} --config ${{ env.BUILD_TYPE }}
+
+      - name: Run ${{ env.BUILD_TYPE }} unit tests
+        run: ctest --preset ${{ matrix.os.preset }} -C ${{ env.BUILD_TYPE }}
+
+      - name: Local install
+        run: cmake --install builds/${{ matrix.os.preset }}/ --config ${{ env.BUILD_TYPE }}
+
+      # Package layout: the install tree at the archive root, so it extracts straight over a Descent 3 folder.
+      - name: Stage the package
+        shell: bash
+        run: |
+          stage="dist/$PACKAGE"
+          mkdir -p "$stage/samples" "dist/$PACKAGE-symbols"
+          cp -R "builds/${{ matrix.os.preset }}/installed/." "$stage/"
+          test -f "$stage/online/Direct TCP~IP.d3c"
+          ls "$stage"/netgames/*.d3m
+          cp matcen-docs/samples/dedicated.cfg matcen-docs/samples/bots.cfg "$stage/samples/"
+          docs="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$GITHUB_SHA/matcen-docs"
+          sed -e "s|@VERSION@|${{ needs.version.outputs.name }}|" \
+              -e "s|@DOCS_URL@|$docs|" \
+              -e "s|@ISSUES_URL@|$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/issues|" \
+              matcen-docs/samples/INSTALL.txt > "$stage/INSTALL.txt"
+
+      - name: Split the debug symbols (Windows)
+        if: ${{ matrix.os.preset == 'win' }}
+        shell: bash
+        run: mv "dist/$PACKAGE/Descent3.pdb" "dist/$PACKAGE-symbols/"
+
+      - name: Split the debug symbols (Linux)
+        if: ${{ matrix.os.preset == 'linux' }}
+        run: |
+          objcopy --only-keep-debug "dist/$PACKAGE/Descent3" "dist/$PACKAGE-symbols/Descent3.debug"
+          objcopy --strip-debug --add-gnu-debuglink="dist/$PACKAGE-symbols/Descent3.debug" "dist/$PACKAGE/Descent3"
+
+      - name: Archive
+        shell: bash
+        working-directory: dist
+        run: |
+          case "${{ matrix.os.preset }}" in
+            win)
+              (cd "$PACKAGE" && 7z a -tzip "../$PACKAGE.zip" *)
+              (cd "$PACKAGE-symbols" && 7z a -tzip "../$PACKAGE-symbols.zip" *)
+              ;;
+            linux)
+              tar -C "$PACKAGE" -cJf "$PACKAGE.tar.xz" .
+              tar -C "$PACKAGE-symbols" -cJf "$PACKAGE-symbols.tar.xz" .
+              ;;
+            mac)
+              (cd "$PACKAGE" && zip -r -y -q "../$PACKAGE.zip" .)
+              ;;
+          esac
+          ls -l
+
+      - name: Upload the package
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.os.name }}
+          path: |
+            dist/*.zip
+            dist/*.tar.xz
+          if-no-files-found: error
+
+  source:
+    name: Source tarball
+    needs: version
+    runs-on: ubuntu-latest
+    env:
+      SOURCE: Matcen-${{ needs.version.outputs.name }}-Source
+    steps:
+      - uses: actions/checkout@v4
+
+      # git archive needs no configured build tree. git-hash.txt is what cmake/CheckGit.cmake reads when it builds
+      # from an archive instead of a clone.
+      - name: Archive the tagged source
+        run: |
+          mkdir dist
+          printf '%s' "$(git rev-parse --short HEAD)" > git-hash.txt
+          git archive --format=tar --prefix="$SOURCE/" --add-file=git-hash.txt HEAD | xz -9 > "dist/$SOURCE.tar.xz"
+
+      - name: Upload the source tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-source
+          path: dist/*.tar.xz
+          if-no-files-found: error
+
+  release:
+    name: Draft the GitHub Release
+    needs: [version, package, source]
+    if: ${{ github.ref_type == 'tag' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: package-*
+          merge-multiple: true
+          path: dist
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS.txt
+
+      - name: Draft the release
         uses: ncipollo/release-action@v1.14.0
         with:
-          artifacts: "builds/linux/Descent3-*-Source.tar.xz"
+          name: Matcen ${{ needs.version.outputs.name }}
+          artifacts: "dist/*"
           draft: true
           token: ${{ secrets.GITHUB_TOKEN }}
+          body: |
+            Server-side bots for Descent 3 multiplayer. Extract the package for your system over a Descent 3 install
+            (GOG or Steam, 1.4 or later) and read INSTALL.txt; the game data is not included.
+
+            - Windows and Linux: built and tested.
+            - macOS (universal): community-tested; nobody on the project has a Mac to test it on.
+            - `-symbols` archives: debug symbols for crash reports. `SHA256SUMS.txt`: checksums.
+
+            Quickstart: ${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}/matcen-docs/QUICKSTART.md
+            Release notes: ${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}/matcen-docs/CHANGELOG.md

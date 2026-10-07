@@ -1,0 +1,7 @@
+{
+  "launch": ["./Descent3", "-dedicated", "./soak-dedicated-coop.cfg"],
+  "telnet_port": 2092,
+  "telnet_password": "test",
+  "phases": [{"name": "reg-coop-defaults", "toggles": {}, "minutes": 30}],
+  "max_minutes": 40
+}

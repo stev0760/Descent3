@@ -43,11 +43,15 @@ file; `BotCount`, `BotName1` and the rest are **not** recognised in `dedicated.c
 `BotConfig=` line, or with `BotCount=0`, runs without bots.
 
 ```ini
-; dedicated.cfg
+[server config file]
 MaxPlayers=14
 Scriptname=anarchy.d3m
 BotConfig=bots.cfg
 ```
+
+The first line of `dedicated.cfg` must be `[server config file]` exactly, or the engine refuses the file
+(`InfFile::Open` checks it, cfile/inffile.cpp). Complete commented samples of both files, the ones the release
+packages ship, are `samples/dedicated.cfg` and `samples/bots.cfg`.
 
 ```ini
 ; bots.cfg

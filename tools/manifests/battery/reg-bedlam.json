@@ -1,0 +1,9 @@
+{
+  "launch": ["./Descent3", "-dedicated", "./soak-dedicated-bedlam4t.cfg"],
+  "telnet_port": 2092,
+  "telnet_password": "test",
+  "phases": [{"name": "reg-bedlam-defaults", "toggles": {}, "rounds": 12}],
+  "navdump": {},
+  "max_minutes": 210,
+  "ab": {"expect_rounds": 12}
+}

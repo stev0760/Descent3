@@ -430,6 +430,8 @@ gamespy.cfg
 d3launch.cfg
 d3rmv.cfg
 *.cfg # Catch-all for other config files
+# The sample configs shipped in the release packages
+!/matcen-docs/samples/*.cfg
 
 # Player profile and saved game files
 *.plt

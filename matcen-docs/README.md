@@ -8,6 +8,9 @@ The current version and what shipped are in the top-level [README](../README.md)
 |----------|---------|
 | [PLAN.md](PLAN.md) | The forward plan: goal, honest status, release path and exit criteria, decisions owed, and the registry of every open item (§4) |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes, newest first |
+| [QUICKSTART.md](QUICKSTART.md) | For server operators and players: install over Descent 3, run a dedicated server with bots, the console, chat orders, Bot Settings, known limitations, bug reports |
+| [samples/](samples/) | `dedicated.cfg` and `bots.cfg` samples and the `INSTALL.txt` template, all three shipped in the release packages (`.github/workflows/release.yml` fills in the version and links) |
+| [ANNOUNCEMENT.md](ANNOUNCEMENT.md) | Draft of the reveal post for the operator to edit (REL11) |
 | [NAVIGATION.md](NAVIGATION.md) | The navigation design as built: routing, the portal model, the route network, the execution layer, open navigation problems (§7) and the tried-and-reverted ledger |
 | [OBSTACLE_GEOMETRY.md](OBSTACLE_GEOMETRY.md) | How the engine represents walls, glass, grates, doors and forcefields, which engine functions decide passability, and what the bots do with each |
 | [PATHFINDING_CODEBASE_EXPLORE.md](PATHFINDING_CODEBASE_EXPLORE.md) | Engine AI pathing reference: how the stock engine paths its own single-player AI, and which techniques are worth borrowing |

@@ -1,0 +1,47 @@
+Matcen @VERSION@: server-side bots for Descent 3 multiplayer
+=================================================================
+
+This is the Descent 3 open source engine with Matcen built in. It contains no
+game data: you need your own copy of Descent 3 (GOG or Steam, patched to 1.4
+or later). The game's .hog data files are not redistributable and are not here.
+
+Install
+-------
+1. Find your Descent 3 folder, the one that holds d3.hog. The package replaces
+   the game executable and the modules in netgames/ and online/, so copy the
+   folder first if you want to keep the original.
+2. Extract this archive into that folder and let it overwrite.
+3. Check that online/Direct TCP~IP.d3c is there. Without it the game has no
+   TCP/IP multiplayer: the multiplayer menus and Bot Settings never appear,
+   and a dedicated server will not start.
+
+Run a dedicated server with bots
+--------------------------------
+4. Copy samples/dedicated.cfg and samples/bots.cfg into the Descent 3 folder
+   (keep your own if you already have them) and edit them: server name,
+   console password, mission and mode.
+5. Start it from the Descent 3 folder:
+     Linux:    ./Descent3 -dedicated ./dedicated.cfg
+     Windows:  Descent3.exe -dedicated ./dedicated.cfg -winconsole
+     macOS:    ./Descent3.app/Contents/MacOS/Descent3 -dedicated ./dedicated.cfg
+6. Type $bothelp at the server console, or over the remote console (telnet to
+   port 2092 with the password), for the bot commands.
+
+To host from the game instead, open Multiplayer, Direct TCP/IP, Start a New
+Game, and set the bots up under Bot Settings.
+
+Platform notes
+--------------
+Windows: if VCRUNTIME140.dll or MSVCP140.dll is missing, install the
+  Microsoft Visual C++ Redistributable for Visual Studio 2015-2022 (x64).
+  -winconsole opens the console window; add -logfile to keep Descent3.log.
+Linux: built on Ubuntu 22.04; needs glibc 2.35 or newer.
+macOS: community-tested; nobody on the project has a Mac to test it on. The
+  app is not signed: run  xattr -dr com.apple.quarantine .  once in the
+  Descent 3 folder after extracting.
+
+More
+----
+Quickstart:   @DOCS_URL@/QUICKSTART.md
+Chat orders:  @DOCS_URL@/CHAT_COMMANDS.md
+Bug reports:  @ISSUES_URL@

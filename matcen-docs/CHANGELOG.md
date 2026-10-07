@@ -71,6 +71,14 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
   the `BotDifficulty=` level, with a warning, instead of Hotshot.
 - **`$servercaps` advertises `teams`, `squad_orders` and `population`.** Remote-admin tools can enable the team
   argument, the chat orders and the population controls by feature. In test.
+- **Sample configs and a quickstart.** `matcen-docs/samples/` has a commented `dedicated.cfg` and `bots.cfg` for a
+  12-player server: four named bots, the rest added by the player target, one seat kept free for humans.
+  `matcen-docs/QUICKSTART.md` covers installing over Descent 3, the connection-module file the multiplayer menus need,
+  starting the server, the console, the chat orders and reporting a bug.
+- **Release packages.** A tagged release builds packages for Windows and Linux, and for macOS (community-tested),
+  that extract straight over a Descent 3 install: the engine, the game modules, the sample configs and an
+  INSTALL.txt, with the debug symbols in a separate download. The game data stays with your own copy of Descent 3.
+  Not yet run.
 
 ## [0.9.16] - 2026-10-01
 
