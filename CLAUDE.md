@@ -30,8 +30,8 @@ Read the named doc before changing the code it covers. Do not duplicate doc cont
   touching portal passability, powerup selection or stuck-clear code. See-through is not passable.
 - `matcen-docs/BOT_DEV_REFERENCE.md`: architecture, FSM, constants, engine API patterns, gotchas, the engine-files
   audit, measurement caveats. Read it before modifying bot code.
-- `matcen-docs/BOT_MANAGEMENT.md`: rosters, ships, difficulty, console, the Bot Settings menu, capacity rules, and the
-  population/seat design. `matcen-docs/CHAT_COMMANDS.md`: the `!` orders as built and the finish line.
+- `matcen-docs/BOT_MANAGEMENT.md`: rosters, ships, difficulty, console, the Bot Settings menu, capacity rules, and
+  population and seats as built. `matcen-docs/CHAT_COMMANDS.md`: the `!` orders as built and the finish line.
 - `matcen-docs/ENTROPY_MODE.md`, `MONSTERBALL_MODE.md`: mode rules from the DLL source and the bot behaviour as built.
 - `matcen-docs/PYRODECK_CONTRACT.md`: the telnet surface the D3 Pyrodeck admin tool parses. Update it in the same
   commit as any `$` command or output change; the spec of record is the Pyrodeck repo.
@@ -87,4 +87,5 @@ The operator runs this (or Pyrodeck) in another shell; review the log with the a
 ## CI
 
 Matrix builds for Windows (MSVC), macOS (universal), Linux (GCC) and Linux ARM64 with `BUILD_TESTING=ON` and
-`ENABLE_LOGGER=ON`; workflows in `.github/workflows/`. Release packaging is an open registry item, not yet wired.
+`ENABLE_LOGGER=ON`; workflows in `.github/workflows/`. `release.yml` runs on a `v*` tag (or by hand as a dry run that
+drafts nothing) and builds the Windows, Linux and macOS packages with `SHA256SUMS.txt` into a draft GitHub Release.
