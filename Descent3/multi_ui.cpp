@@ -1604,6 +1604,7 @@ void MultiGameOptionsMenu(int alloptions) {
 // Populates Bot_ui_settings; bots spawn via BotSpawnFromUI() at level load.
 
 #include "bot.h"
+#include "bot_population.h"
 
 // Ship cycling order for the UI
 static const char *kBotShipNames[] = {"Pyro-GL", "Phoenix", "Magnum-AHT", "Black Pyro"};
@@ -1888,8 +1889,8 @@ void MultiBotSettingsMenu() {
         count = 0;
       if (count > BOT_UI_MAX_BOTS)
         count = BOT_UI_MAX_BOTS;
-      if (count > Netgame.max_players - 1)
-        count = Netgame.max_players - 1;
+      if (count > BotPopulationRosterLimit(Netgame.max_players))
+        count = BotPopulationRosterLimit(Netgame.max_players); // the host's seat and the reserve stay free
 
       SaveDetailPanel(selected_bot);
       Bot_ui_settings.bot_count = count;
@@ -1924,8 +1925,8 @@ void MultiBotSettingsMenu() {
         count = 0;
       if (count > BOT_UI_MAX_BOTS)
         count = BOT_UI_MAX_BOTS;
-      if (count > Netgame.max_players - 1)
-        count = Netgame.max_players - 1;
+      if (count > BotPopulationRosterLimit(Netgame.max_players))
+        count = BotPopulationRosterLimit(Netgame.max_players); // the host's seat and the reserve stay free
       Bot_ui_settings.bot_count = count;
       exit_menu = true;
       continue;

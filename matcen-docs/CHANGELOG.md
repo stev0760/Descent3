@@ -38,6 +38,24 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
   through a doorway into the next room, so a neighbouring room could decide a room's layout: on Tower of Isengard a
   change next door shifted one hall's whole network, bots began missing its doors, and carriers were sent home the
   long way. The grid with the most points inside the room now wins. In test.
+- **Bots never fill the server.** One seat always stays free for a human, in every mode, co-op included:
+  `BotReservedSlots=` in bots.cfg (default 1) sets how many. A `BotCount`, a Bot Settings roster or a saved preset
+  larger than the free seats allow is cut down with a message, and `$addbot` refuses with the reason. On a dedicated
+  server the server's own seat counts, so `MaxPlayers=8` holds at most six bots.
+- **A bot gives up its seat to a human.** When a human takes the free seat, a bot leaves once that player is in the
+  game, so the next human finds a seat too. In team games it is a bot from the bigger team, its lowest scorer, and the
+  server says so in chat (`Shadow[BOT] left to make room for a player.`).
+- **Optional target player count.** `BotTargetPlayers=12` in bots.cfg keeps humans plus bots at 12: bots join as
+  humans leave and leave as humans join, one change every five seconds, each announced in chat. Bots take the
+  roster's names, ships and difficulties first, then built-in names. Off by default. `$botpopulation` turns it on and
+  off, changes the target and the free seats live, and prints the current numbers. Size `MaxPlayers` as the target
+  plus the free seats plus one for the server.
+- **Bots fly only ships the server allows.** A bot set to a ship the server has banned flies the Pyro-GL instead,
+  and the console says so.
+- **An unknown difficulty word means the configured default.** A typo in `BotDifficulty1=` or `$addbot` now gives
+  the `BotDifficulty=` level, with a warning, instead of Hotshot.
+- **`$servercaps` advertises `teams`, `squad_orders` and `population`.** Remote-admin tools can enable the team
+  argument, the chat orders and the population controls by feature. In test.
 
 ## [0.9.16] - 2026-10-01
 
