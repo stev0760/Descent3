@@ -106,6 +106,27 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
   its team's rooms, and a higher-level bot pushes a takeover further. In Monsterball, a lower-level bot takes shots at
   the ball from a worse angle, refuses fewer shots that would score for the other team, reads where the ball is going
   later and is slower off the mark at each kickoff; Ace and Insane bots wait for a cleaner line. In test.
+- **Free-for-all bots take no orders, and say so.** In Anarchy, Hyper-Anarchy, Robo-Anarchy and Hoard every `!`
+  order, `!ping` and `!hunt` included, now gets a one-line taunt from one bot and changes nothing. Before, most orders
+  were dropped without a word, while `!hunt` could still aim every bot at one player.
+- **`!help` lists the orders.** It answers you alone with the orders the current mode takes and how to order one bot.
+  An order the bots do not know gets a pointer to `!help` instead of silence, and each player is sent one tip about
+  the chat orders once bots on their side can take them.
+- **Two-word orders work as written.** `!attack flag` and `!defend flag` are the flag orders; before, the second word
+  was read as a bot's name. Add a bot's name after them to order one bot.
+- **Entropy and Monsterball orders.** `!attack lab` sends a bot on the offensive and `!defend lab` posts it at the
+  door of your lab. `!attack ball` makes a bot a striker and `!defend goal` a keeper at the goal the other team scores
+  in. The quick-order menu (F10) offers them in those modes. In test.
+- **The squad answers in one line.** An order to several bots gets one reply, such as `4 bots: Following!`, instead of
+  one line per bot, and `!status` to the squad is a one- or two-line roll call. Replies now show after the order you
+  typed, not before it.
+- **Reports are no longer lost.** A bot's arrival or "can't get there" report used to vanish when it came within two
+  seconds of its last line; reports now wait their turn. A bot escorting you says "Right behind you." once per order,
+  not every time it catches up.
+- **A hunt ends when its target does.** Bots sent after a player with `!hunt` say so when that player dies or leaves,
+  and go back to playing on their own. A name that matches no enemy gets an answer instead of a bot hunting nobody.
+- **A new level tells you your orders were cleared.** Orders still end at a level change; each player who gave one is
+  now told once they are in the new level.
 
 ## [0.9.16] - 2026-10-01
 

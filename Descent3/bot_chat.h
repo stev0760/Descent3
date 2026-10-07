@@ -19,16 +19,26 @@
 #ifndef BOT_CHAT_H
 #define BOT_CHAT_H
 
-#define BOT_CHAT_REPLY_COOLDOWN 2.0f
+// A bot volunteers at most one report (arrival, blocked, a hunted player down, a co-op announcement)
+// per this many seconds; a report inside the window waits its turn. Answers to an order are not paced.
+#define BOT_CHAT_REPORT_SPACING 2.0f
 
+// Every human chat line on the server, before it is relayed: reads a `!` order and carries it out.
 void BotOnChatMessage(int from_pnum, int towho, const char *message);
 
-// Stage 6: order lifecycle reports ("In position." / "Can't get there!") — DM'd to the player
-// who issued the bot's current order (order_issuer_slot). Subject to the per-bot reply throttle.
+// Once per server frame: sends the queued bot lines, reports hunted players who died or left, and
+// delivers the level-change notices and the one-time tip.
+void BotChatFrame();
+
+// At a level change, before the orders are cleared: notes who gave the orders being cleared, so each
+// of them is told once they are in the new level, and drops lines queued in the old one.
+void BotChatLevelReset();
+
+// Order lifecycle report ("In position." / "Can't get there!"), sent by direct message to the player
+// who gave the bot its current order. A report the bot already gave since that order is not repeated.
 void BotOrderReport(int bot_index, const char *text);
 
-// Co-op: broadcast a bot-voiced line to everyone ("<callsign>: <text>", retail clients see a
-// normal HUD chat message). Subject to the per-bot reply throttle.
+// Co-op: a bot-voiced line to everyone ("<callsign>: <text>"; retail clients see a normal chat line).
 void BotBroadcastAnnounce(int bot_index, const char *text);
 
 #endif // BOT_CHAT_H

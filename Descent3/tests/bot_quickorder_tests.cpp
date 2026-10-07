@@ -80,8 +80,10 @@ TEST(D3, QuickOrderClassifyMode) {
   EXPECT_EQ(QuickOrderClassifyMode(false, 2, "CTF.D3M"), QOM_CTF);
   EXPECT_EQ(QuickOrderClassifyMode(false, 2, "ctfx"), QOM_TEAM);
   EXPECT_EQ(QuickOrderClassifyMode(false, 2, "Team Anarchy"), QOM_TEAM);
-  EXPECT_EQ(QuickOrderClassifyMode(false, 2, "Entropy"), QOM_TEAM);
-  EXPECT_EQ(QuickOrderClassifyMode(false, 2, "Monsterball"), QOM_TEAM);
+  EXPECT_EQ(QuickOrderClassifyMode(false, 2, "Entropy"), QOM_ENTROPY);
+  EXPECT_EQ(QuickOrderClassifyMode(false, 2, "entropy.d3m"), QOM_ENTROPY);
+  EXPECT_EQ(QuickOrderClassifyMode(false, 2, "Monsterball"), QOM_MONSTERBALL);
+  EXPECT_EQ(QuickOrderClassifyMode(false, 2, "MONSTERBALL.D3M"), QOM_MONSTERBALL);
   EXPECT_EQ(QuickOrderClassifyMode(false, 2, nullptr), QOM_TEAM);
 }
 
@@ -91,6 +93,8 @@ TEST(D3, QuickOrderUnavailable) {
   EXPECT_STREQ(QuickOrderUnavailableReason(QOM_ORDERS_OFF, &some), "Squad orders are off in this mode.");
   EXPECT_STREQ(QuickOrderUnavailableReason(QOM_TEAM, &none), "No bots on your team.");
   EXPECT_STREQ(QuickOrderUnavailableReason(QOM_CTF, &none), "No bots on your team.");
+  EXPECT_STREQ(QuickOrderUnavailableReason(QOM_ENTROPY, &none), "No bots on your team.");
+  EXPECT_STREQ(QuickOrderUnavailableReason(QOM_MONSTERBALL, &none), "No bots on your team.");
   EXPECT_STREQ(QuickOrderUnavailableReason(QOM_COOP, &none), "No bots in this game.");
   EXPECT_EQ(QuickOrderUnavailableReason(QOM_TEAM, &some), nullptr);
 
@@ -133,6 +137,22 @@ TEST(D3, QuickOrderMenusPerMode) {
   EXPECT_EQ(QuickOrderPress(&menu, 3, &line), QOR_IGNORED); // no third row on this page
   EXPECT_EQ(QuickOrderPress(&menu, 0, &line), QOR_MOVED);   // wraps to the first page
   EXPECT_EQ(RowText(menu)[0], "1 Follow me | !follow");
+
+  // Entropy and Monsterball put their two mode orders where CTF has the flag orders.
+  QuickOrderOpen(&menu, QOM_ENTROPY, &roster);
+  EXPECT_EQ(RowText(menu),
+            (std::vector<std::string>{"1 Follow me | !follow", "2 Cover me | !cover", "3 Attack | !attack",
+                                      "4 Defend | !defend", "5 Hold here | !hold", "6 Hunt a player | !hunt <name>",
+                                      "7 Attack their labs | !attacklab", "8 Defend our lab | !defendlab",
+                                      "9 Freelance | !freelance", "0 More (1/2)"}));
+  QuickOrderOpen(&menu, QOM_MONSTERBALL, &roster);
+  EXPECT_EQ(RowText(menu),
+            (std::vector<std::string>{"1 Follow me | !follow", "2 Cover me | !cover", "3 Attack | !attack",
+                                      "4 Defend | !defend", "5 Hold here | !hold", "6 Hunt a player | !hunt <name>",
+                                      "7 Take the ball | !attackball", "8 Guard their goal | !defendgoal",
+                                      "9 Freelance | !freelance", "0 More (1/2)"}));
+  EXPECT_EQ(QuickOrderPress(&menu, 0, &line), QOR_MOVED);
+  EXPECT_EQ(RowText(menu), (std::vector<std::string>{"1 Report | !status", "2 Ping | !ping", "0 More (2/2)"}));
 }
 
 TEST(D3, QuickOrderPickBot) {
@@ -254,7 +274,11 @@ TEST(D3, QuickOrderComposeEveryLine) {
   struct {
     QuickOrderMode mode;
     const char *name;
-  } modes[] = {{QOM_TEAM, "team"}, {QOM_CTF, "ctf"}, {QOM_COOP, "coop"}};
+  } modes[] = {{QOM_TEAM, "team"},
+               {QOM_CTF, "ctf"},
+               {QOM_ENTROPY, "entropy"},
+               {QOM_MONSTERBALL, "monsterball"},
+               {QOM_COOP, "coop"}};
   for (const auto &m : modes) {
     QuickOrderRoster roster = MakeRoster(2, 1);
     QuickOrderMenu menu{};
