@@ -10,6 +10,23 @@ including the CTF, Hyper and Hoard write-ups) is preserved verbatim in
 `matcen-docs/archive/BOTS_DEVEL-phases-0_to_0.9.12.md`. The engine-files audit (single-player, Robo-Anarchy and
 co-op impact) now lives in `matcen-docs/BOT_DEV_REFERENCE.md`.
 
+### 2026-10-07 (night): the mission auto-download client, read while building its host (ENG8)
+
+D3 Pyrodeck gained a mission host (its `feature/mission-host` branch): a separate listener that serves `*.mn3` files
+from the game's missions directory, so a client that joins without the map downloads it from the server's own machine.
+Shaping the response to what the engine's downloader accepts meant reading `Descent3/mission_download.cpp` with
+cpp-httplib's source beside it, and the read found three ways the client crashes instead of failing the download.
+The rate line divides `received_bytes` by whole elapsed seconds in integer arithmetic, so a host on the same LAN,
+whose first bytes land inside the first second, kills the client with SIGFPE about half the time (the same expression
+in a standalone program: a start at t=100.2 crashes, t=100.7 does not). The six status strings are `sprintf`ed into
+100-byte buffers with the raw link, and the mission parser keeps links up to 95 characters, so an 87-character link
+overflows the stack. The scheme test accepts `https:` but `httplib::Client` throws from its constructor on a scheme
+it cannot serve (this build links no OpenSSL; upper-case schemes too, since httplib matches `[a-z]+`), and nothing
+catches it. All three are fixed in `mission_download.cpp` (rate in float behind `time_elapsed > 0`, `snprintf`, the
+scheme decided before the client exists), in `ModDownloadWithStatus` too; UPSTREAM_PATCHES #7. Not flown: nobody here
+can run a game client against the host, so Pyrodeck keeps its server-side mitigation (`Content-Length` plus a one
+second hold before the first byte) for the clients already in the wild, and caps links at 86 characters.
+
 ### 2026-10-07: the ! polish floor (CMD9-CMD16) and mode verbs
 
 The `!` polish floor the operator put before the reveal on 10-01 (Q2b, Q8), and the Entropy and Monsterball verbs

@@ -13,6 +13,10 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
 
 *Development series. Do not run this as a release.*
 
+- **Mission auto-download no longer crashes the client.** Three defects in the download window: an integer divide by
+  zero when the first bytes arrived inside the first second (a host on the same LAN did this about half the time), a
+  stack overflow on any download link of 87 characters or more, and an uncaught error on an `https:` link in a build
+  without TLS. Links are `http://` only unless the build links OpenSSL.
 - **A room that is really several sealed spaces is routed as such.** Glasshouse's central pyramid is one room to the
   engine but five spaces to a ship (the known issue of 0.9.16 below). A bot now plans from the part of the room it is
   actually in: where its route network shows the wall (the parts of the room are separate pieces of the network), a

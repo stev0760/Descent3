@@ -118,6 +118,8 @@
  *
  */
 
+#include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <future>
 #include <fstream>
@@ -317,10 +319,19 @@ bool msn_DownloadWithStatus(const char *url, const std::filesystem::path &filena
   bool file_is_zip = false;
 
   std::vector<std::string> url_parts = StringSplit(url, "/");
-  if (!(stricmp("http:", (const char*)url_parts.front().c_str()) == 0 || stricmp("https:", (const char*)url_parts.front().c_str()) == 0)) {
-    LOG_WARNING.printf("'%s' scheme is not supported, no download!", (const char*)url_parts.front().c_str());
+  // httplib matches the scheme case-sensitively and throws from the client constructor on one it cannot
+  // serve, so decide here: lower-case it, and take https only when the build links TLS.
+  std::string scheme = url_parts.front();
+  std::transform(scheme.begin(), scheme.end(), scheme.begin(), [](unsigned char c) { return std::tolower(c); });
+  bool scheme_ok = scheme == "http:";
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+  scheme_ok = scheme_ok || scheme == "https:";
+#endif
+  if (!scheme_ok || url_parts.size() < 3) {
+    LOG_WARNING.printf("'%s' scheme is not supported, no download!", (const char *)url_parts.front().c_str());
     return false;
   }
+  url_parts.front() = scheme;
   std::filesystem::path download_file = std::filesystem::path(url_parts.back());
   if (stricmp((const char*)download_file.extension().u8string().c_str(), ".zip") == 0) {
     LOG_DEBUG << "We're downloading a zip file!!!";
@@ -334,13 +345,13 @@ bool msn_DownloadWithStatus(const char *url, const std::filesystem::path &filena
   char fmttimer[MSN_MAX_STRING_LEN];
   char fmtrate[MSN_MAX_STRING_LEN];
 
-  sprintf(fmturl, DOWNLOAD_STATUS_URL_TEXT, url);
+  snprintf(fmturl, sizeof(fmturl), DOWNLOAD_STATUS_URL_TEXT, url);
   msn_ClipURLToWidth(MSN_DWNLD_STATUS_W - (MSN_COL_1 + MSN_BORDER_W), fmturl);
-  sprintf(fmtrcvd, DOWNLOAD_STATUS_RCVD_TEXT, received_bytes);
-  sprintf(fmttotal, DOWNLOAD_STATUS_TOTAL_TEXT, total_bytes);
-  sprintf(fmtelaps, DOWNLOAD_STATUS_ELAPS_TEXT, msn_SecondsToString(time_elapsed));
-  sprintf(fmttimer, DOWNLOAD_STATUS_TIME_R_TEXT, msn_SecondsToString(time_remain));
-  sprintf(fmtrate, DOWNLOAD_STATUS_XFERRATE_TEXT, xfer_rate);
+  snprintf(fmtrcvd, sizeof(fmtrcvd), DOWNLOAD_STATUS_RCVD_TEXT, received_bytes);
+  snprintf(fmttotal, sizeof(fmttotal), DOWNLOAD_STATUS_TOTAL_TEXT, total_bytes);
+  snprintf(fmtelaps, sizeof(fmtelaps), DOWNLOAD_STATUS_ELAPS_TEXT, msn_SecondsToString(time_elapsed));
+  snprintf(fmttimer, sizeof(fmttimer), DOWNLOAD_STATUS_TIME_R_TEXT, msn_SecondsToString(time_remain));
+  snprintf(fmtrate, sizeof(fmtrate), DOWNLOAD_STATUS_XFERRATE_TEXT, xfer_rate);
 
   std::filesystem::path qualfile = std::filesystem::path(D3MissionsDir) / filename;
   if (file_is_zip) {
@@ -460,11 +471,14 @@ bool msn_DownloadWithStatus(const char *url, const std::filesystem::path &filena
     last_refresh = timer_GetTime();
     time_elapsed = timer_GetTime() - starttime;
 
-    if (total_bytes) {
-      time_remain = ((float)(total_bytes - received_bytes)) / ((float)(received_bytes / time_elapsed));
-    }
-    if (time_elapsed && received_bytes) {
-      xfer_rate = ((float)(received_bytes / time_elapsed));
+    // The first bytes can land inside the first second, when time_elapsed is still 0: no division until
+    // both the clock and the byte count have moved.
+    if (time_elapsed > 0 && received_bytes) {
+      float rate = (float)received_bytes / (float)time_elapsed;
+      xfer_rate = (int)rate;
+      if (total_bytes > received_bytes && rate > 0.0f) {
+        time_remain = (int)(((float)(total_bytes - received_bytes)) / rate);
+      }
     }
     texts[1].Destroy();
     texts[2].Destroy();
@@ -473,14 +487,14 @@ bool msn_DownloadWithStatus(const char *url, const std::filesystem::path &filena
     texts[5].Destroy();
     texts[6].Destroy();
 
-    sprintf(fmturl, DOWNLOAD_STATUS_URL_TEXT, url);
+    snprintf(fmturl, sizeof(fmturl), DOWNLOAD_STATUS_URL_TEXT, url);
     msn_ClipURLToWidth(MSN_DWNLD_STATUS_W - (MSN_COL_1 + MSN_BORDER_W), fmturl);
-    sprintf(fmtrcvd, DOWNLOAD_STATUS_RCVD_TEXT, received_bytes);
-    sprintf(fmttotal, DOWNLOAD_STATUS_TOTAL_TEXT, total_bytes);
-    sprintf(fmtelaps, DOWNLOAD_STATUS_ELAPS_TEXT, msn_SecondsToString(time_elapsed));
-    sprintf(fmttimer, DOWNLOAD_STATUS_TIME_R_TEXT, msn_SecondsToString(time_remain));
+    snprintf(fmtrcvd, sizeof(fmtrcvd), DOWNLOAD_STATUS_RCVD_TEXT, received_bytes);
+    snprintf(fmttotal, sizeof(fmttotal), DOWNLOAD_STATUS_TOTAL_TEXT, total_bytes);
+    snprintf(fmtelaps, sizeof(fmtelaps), DOWNLOAD_STATUS_ELAPS_TEXT, msn_SecondsToString(time_elapsed));
+    snprintf(fmttimer, sizeof(fmttimer), DOWNLOAD_STATUS_TIME_R_TEXT, msn_SecondsToString(time_remain));
     msn_ClipURLToWidth(MSN_DWNLD_STATUS_W - (MSN_COL_2 + MSN_BORDER_W), fmttimer);
-    sprintf(fmtrate, DOWNLOAD_STATUS_XFERRATE_TEXT, xfer_rate);
+    snprintf(fmtrate, sizeof(fmtrate), DOWNLOAD_STATUS_XFERRATE_TEXT, xfer_rate);
 
     download_text = UITextItem(fmturl, UICOL_TEXT_NORMAL);
 
@@ -919,13 +933,13 @@ int ModDownloadWithStatus(char *url, char *filename) {
   char fmttimer[MSN_MAX_STRING_LEN];
   char fmtrate[MSN_MAX_STRING_LEN];
 
-  sprintf(fmturl,DOWNLOAD_STATUS_URL_TEXT,url);
+  snprintf(fmturl, sizeof(fmturl), DOWNLOAD_STATUS_URL_TEXT,url);
   msn_ClipURLToWidth(MSN_DWNLD_STATUS_W-(MSN_COL_1+MSN_BORDER_W),fmturl);
-  sprintf(fmtrcvd,DOWNLOAD_STATUS_RCVD_TEXT,received_bytes);
-  sprintf(fmttotal,DOWNLOAD_STATUS_TOTAL_TEXT,total_bytes);
-  sprintf(fmtelaps,DOWNLOAD_STATUS_ELAPS_TEXT,msn_SecondsToString(time_elapsed));
-  sprintf(fmttimer,DOWNLOAD_STATUS_TIME_R_TEXT,msn_SecondsToString(time_remain));
-  sprintf(fmtrate,DOWNLOAD_STATUS_XFERRATE_TEXT,xfer_rate);
+  snprintf(fmtrcvd, sizeof(fmtrcvd), DOWNLOAD_STATUS_RCVD_TEXT,received_bytes);
+  snprintf(fmttotal, sizeof(fmttotal), DOWNLOAD_STATUS_TOTAL_TEXT,total_bytes);
+  snprintf(fmtelaps, sizeof(fmtelaps), DOWNLOAD_STATUS_ELAPS_TEXT,msn_SecondsToString(time_elapsed));
+  snprintf(fmttimer, sizeof(fmttimer), DOWNLOAD_STATUS_TIME_R_TEXT,msn_SecondsToString(time_remain));
+  snprintf(fmtrate, sizeof(fmtrate), DOWNLOAD_STATUS_XFERRATE_TEXT,xfer_rate);
 
   if(file_is_zip)
   {
@@ -1038,13 +1052,14 @@ int ModDownloadWithStatus(char *url, char *filename) {
 
                   time_elapsed = timer_GetTime()-starttime;
 
-                  if(total_bytes)
+                  if(time_elapsed>0&&received_bytes)
                   {
-                          time_remain = ((float)(total_bytes-received_bytes))/((float)(received_bytes/time_elapsed));
-                  }
-                  if(time_elapsed&&received_bytes)
-                  {
-                          xfer_rate = ((float)(received_bytes/time_elapsed));
+                          float rate = (float)received_bytes/(float)time_elapsed;
+                          xfer_rate = (int)rate;
+                          if(total_bytes>received_bytes&&rate>0.0f)
+                          {
+                                  time_remain = (int)(((float)(total_bytes-received_bytes))/rate);
+                          }
                   }
                   texts[1].Destroy();
                   texts[2].Destroy();
@@ -1053,14 +1068,14 @@ int ModDownloadWithStatus(char *url, char *filename) {
                   texts[5].Destroy();
                   texts[6].Destroy();
 
-                  sprintf(fmturl,DOWNLOAD_STATUS_URL_TEXT,url);
+                  snprintf(fmturl, sizeof(fmturl), DOWNLOAD_STATUS_URL_TEXT,url);
                   msn_ClipURLToWidth(MSN_DWNLD_STATUS_W-(MSN_COL_1+MSN_BORDER_W),fmturl);
-                  sprintf(fmtrcvd,DOWNLOAD_STATUS_RCVD_TEXT,received_bytes);
-                  sprintf(fmttotal,DOWNLOAD_STATUS_TOTAL_TEXT,total_bytes);
-                  sprintf(fmtelaps,DOWNLOAD_STATUS_ELAPS_TEXT,msn_SecondsToString(time_elapsed));
-                  sprintf(fmttimer,DOWNLOAD_STATUS_TIME_R_TEXT,msn_SecondsToString(time_remain));
+                  snprintf(fmtrcvd, sizeof(fmtrcvd), DOWNLOAD_STATUS_RCVD_TEXT,received_bytes);
+                  snprintf(fmttotal, sizeof(fmttotal), DOWNLOAD_STATUS_TOTAL_TEXT,total_bytes);
+                  snprintf(fmtelaps, sizeof(fmtelaps), DOWNLOAD_STATUS_ELAPS_TEXT,msn_SecondsToString(time_elapsed));
+                  snprintf(fmttimer, sizeof(fmttimer), DOWNLOAD_STATUS_TIME_R_TEXT,msn_SecondsToString(time_remain));
                   msn_ClipURLToWidth(MSN_DWNLD_STATUS_W-(MSN_COL_2+MSN_BORDER_W),fmttimer);
-                  sprintf(fmtrate,DOWNLOAD_STATUS_XFERRATE_TEXT,xfer_rate);
+                  snprintf(fmtrate, sizeof(fmtrate), DOWNLOAD_STATUS_XFERRATE_TEXT,xfer_rate);
 
                   download_text = UITextItem (fmturl,UICOL_TEXT_NORMAL);;
                   rcvd_text = UITextItem (fmtrcvd,UICOL_TEXT_NORMAL);

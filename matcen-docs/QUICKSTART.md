@@ -102,6 +102,10 @@ D3 Pyrodeck is a separate desktop admin tool for Descent 3 dedicated servers. It
 manages the bots over the remote console, so the server needs `AllowRemoteConsole=1` and a password. Matcen works
 without it.
 
+If players may join without your custom mission, turn on Mission Downloads in Pyrodeck's Launch panel, forward its TCP
+port (default 3002) and click "Host this mission": the game then offers joining players a working `http://` link.
+Links are `http://` only and at most 86 characters.
+
 ## Known limitations
 
 Each limitation has an id in the open-items registry, [PLAN.md](PLAN.md) §4, where its status is kept current:

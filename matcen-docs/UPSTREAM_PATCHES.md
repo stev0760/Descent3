@@ -24,6 +24,7 @@ the patch text in this document is sufficient; there is no need to merge from Ma
 | 4 | SDL mouse regression vs retail: wheel-down unbindable, mouse-4 aliases wheel-down, mouse-5 dead | `ddio/lnxmouse.cpp` | Fixed (Matcen 0.9.9, tag v0.9.9) | Not submitted (fixed independently in PiccuEngine) |
 | 5 | Mission-download system: spurious "missing mission" prompt at join, garbage in the URL reply, dead retail copy-protection gate | `Descent3/mission_download.cpp` | Fixed (Matcen 0.9.9, tag v0.9.9) | Not submitted |
 | 6 | CTF: a carrier who dies in a flag's home goal does not send that flag home (wrong object tested) | `netgames/ctf/ctf.cpp` | Fixed (Matcen 0.9.17 development series; not yet in a release or tag) | Not submitted |
+| 7 | Mission auto-download: divide by zero on a fast start (SIGFPE), status-line buffer overflow from an 87-character link, uncaught throw on an `https:` link without TLS | `Descent3/mission_download.cpp` | Fixed (Matcen 0.9.17 development series; not yet in a release or tag) | Not submitted |
 
 Version labels: the Matcen version is the first release that carried the fix. Not every release was
 tagged, so the index also gives the first git tag that contains the fix (`git tag --contains <commit>`).
@@ -555,6 +556,92 @@ any D3 fork shipping the original Outrage CTF source.
   `netgames/ctf/ctf.cpp:1750`.
 - **PiccuEngine:** Not checked. Same netgame lineage, so the same fix should
   apply.
+
+---
+
+## 7. Mission Auto-Download: Three Ways to Crash the Client
+
+### Bug
+
+When a client joins a server whose mission it lacks, the server answers with
+the mission's `URL` lines and the client fetches the file with a progress
+window (`msn_DownloadWithStatus`). Three defects in that function, all from
+the original 1999 code or the port to cpp-httplib, crash the client rather
+than failing the download:
+
+1. **Divide by zero.** The progress loop computes the rate as
+   `received_bytes / time_elapsed` in integer arithmetic, where `time_elapsed`
+   is whole seconds since the request. A host on the same LAN delivers the
+   first bytes inside the first second, so `time_elapsed` is still 0 and the
+   client dies with SIGFPE about half the time. `ModDownloadWithStatus` has
+   the same line.
+2. **Stack overflow.** The link is formatted into `char fmturl[100]` with
+   `sprintf(fmturl, "Downloading: %s", url)`. The mission parser keeps links up
+   to 95 characters, so any link of 87 characters or more writes past the
+   buffer on every client.
+3. **Uncaught exception.** The scheme check accepts `https:` (case-insensitively),
+   but `httplib::Client` throws `std::invalid_argument` from its constructor for
+   any scheme it cannot serve: `https:` in a build without OpenSSL (the fork's
+   vcpkg build), or any upper-case scheme, since httplib matches `[a-z]+`.
+   Nothing catches it.
+
+### Root cause
+
+`Descent3/mission_download.cpp`, `msn_DownloadWithStatus()`: the rate and
+time-remaining lines (originally around line 464), the six status `sprintf`
+calls (around lines 337 and 476), and the scheme test (around line 320).
+`ModDownloadWithStatus()` repeats the rate arithmetic. The divide and the
+buffers are Outrage 1999 code; the scheme test came with the httplib port.
+The fork point and the current DescentDevelopers/Descent3 `main` have the same
+lines.
+
+### Affected files
+
+| File | Function | Change |
+| :--- | :--- | :--- |
+| `Descent3/mission_download.cpp` | `msn_DownloadWithStatus` | rate and time remaining computed in float only when `time_elapsed > 0` and bytes have arrived; every status `sprintf` is `snprintf` bounded by its buffer; the scheme is lower-cased and `https:` is accepted only under `CPPHTTPLIB_OPENSSL_SUPPORT`, before the client is constructed; a link with fewer than three `/`-separated parts is refused |
+| `Descent3/mission_download.cpp` | `ModDownloadWithStatus` | the same rate arithmetic |
+
+### Fix
+
+```cpp
+// scheme: decided before httplib::Client exists
+std::string scheme = url_parts.front();
+std::transform(scheme.begin(), scheme.end(), scheme.begin(), [](unsigned char c) { return std::tolower(c); });
+bool scheme_ok = scheme == "http:";
+#ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+scheme_ok = scheme_ok || scheme == "https:";
+#endif
+if (!scheme_ok || url_parts.size() < 3) { /* log, return false */ }
+url_parts.front() = scheme;
+
+// rate: no division until the clock and the byte count have both moved
+if (time_elapsed > 0 && received_bytes) {
+  float rate = (float)received_bytes / (float)time_elapsed;
+  xfer_rate = (int)rate;
+  if (total_bytes > received_bytes && rate > 0.0f)
+    time_remain = (int)(((float)(total_bytes - received_bytes)) / rate);
+}
+```
+
+### Caveats
+
+- A server-side mitigation exists in D3 Pyrodeck's mission host (it sends
+  `Content-Length` and holds the first byte for one second) for the clients in
+  the wild that carry the divide. Fixed clients do not need the hold.
+- Links must stay at 86 characters or fewer for unfixed clients; the fork's
+  companion tool enforces that on the server side.
+- The download window still blocks until the first progress callback (the
+  `0 == 0` check in the same loop); unchanged here.
+
+### Status
+
+- **Matcen:** Fixed in the 0.9.17 development series. Found by reading the
+  client while building the Pyrodeck mission host; not reproduced in a game
+  client (the divide was reproduced with the same expression in a standalone
+  program).
+- **DescentDevelopers/Descent3:** Not submitted. Same lines.
+- **PiccuEngine:** Not checked.
 
 ---
 
