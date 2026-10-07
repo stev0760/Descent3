@@ -7960,8 +7960,13 @@ static void BotSelectTarget(int bot_index) {
   int best_obj_num = -1;
   float best_score = 1e30f; // lower is better (distance + congestion penalty)
 
-  // Count bots already targeting each player slot (for congestion penalty)
+  // Count the other bots already on each target (the congestion penalty). In co-op the bots are one
+  // team against the level's robots, so their robot targets count too: counting players alone let
+  // every bot escorting the same human converge on the nearest robot.
+  const bool count_robot_targets = BotGetGameMode() == BGM_COOP;
   int slot_bot_count[MAX_NET_PLAYERS] = {};
+  int robot_target_handles[MAX_BOTS];
+  int num_robot_targets = 0;
   for (int b = 0; b < MAX_BOTS; b++) {
     if (!Bots[b].active || b == bot_index)
       continue;
@@ -7969,8 +7974,12 @@ static void BotSelectTarget(int bot_index) {
     if (!bobj->ai_info)
       continue;
     object *btgt = ObjGet(bobj->ai_info->target_handle);
-    if (btgt && btgt->type == OBJ_PLAYER && btgt->id >= 0 && btgt->id < MAX_NET_PLAYERS)
+    if (!btgt)
+      continue;
+    if (btgt->type == OBJ_PLAYER && btgt->id >= 0 && btgt->id < MAX_NET_PLAYERS)
       slot_bot_count[btgt->id]++;
+    else if (count_robot_targets && btgt->type == OBJ_ROBOT)
+      robot_target_handles[num_robot_targets++] = btgt->handle;
   }
 
   // --- Player targets ---
@@ -8006,7 +8015,7 @@ static void BotSelectTarget(int bot_index) {
     float dist = vm_VectorDistanceQuick(&obj->pos, &Objects[Players[i].objnum].pos);
     // Outdoor maps: reduce perceived distance for scoring (wider engagement)
     float effective_dist = OBJECT_OUTSIDE(obj) ? dist * BOT_OUTDOOR_TARGET_DIST_SCALE : dist;
-    float score = effective_dist + slot_bot_count[i] * 80.0f; // penalize congested targets
+    float score = effective_dist + slot_bot_count[i] * BOT_TARGET_CONGESTION_PENALTY;
 
     // LOS penalty: targets behind walls are much less desirable than visible ones.
     // This prevents bots from locking onto through-wall enemies they can't reach,
@@ -8064,6 +8073,9 @@ static void BotSelectTarget(int bot_index) {
       // huntable but never preferred over a visible one. The raw nearest-by-distance pick made
       // fresh co-op spawns swing their noses into walls at matcen robots a room away.
       float score = dist;
+      for (int k = 0; k < num_robot_targets; k++) // co-op only: the list is empty in robo-anarchy
+        if (robot_target_handles[k] == t->handle)
+          score += BOT_TARGET_CONGESTION_PENALTY;
       if (!BotHasLOS(obj, t))
         score += BOT_NO_LOS_TARGET_PENALTY;
       if (score < best_score) {

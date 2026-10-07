@@ -207,6 +207,7 @@
 #define BOT_RAMPAGE_AGRO_BONUS 60.0f     // score reduction: elite bot vs weak target (prefer easy prey)
 #define BOT_OUTGUNNED_PENALTY 80.0f      // score increase: weak bot vs elite target (avoid the beast)
 #define BOT_NO_LOS_TARGET_PENALTY 500.0f // score increase for targets not visible (behind walls)
+#define BOT_TARGET_CONGESTION_PENALTY 80.0f // score increase per other bot already on the target (spreads fire)
 
 // Close-quarters dynamic turn rate (Phase 3.11)
 // Tighter tracking at close range improves hit accuracy in dogfights.

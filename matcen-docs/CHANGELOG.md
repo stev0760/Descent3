@@ -48,6 +48,10 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
   fixed here and written up for other Descent 3 projects (`UPSTREAM_PATCHES.md` #6). A flag sent home this way plays
   the return sound and prints no message. A player whose client runs the original module can see that flag as away
   from its base until it is next touched or its two-minute timeout runs out. In test.
+- **Co-op: bots spread their fire across the level's robots.** When picking a target, a bot already counted how many
+  other bots were on each player and preferred a less crowded one, but it never counted robots, so in co-op every bot
+  escorting you could pick the same nearest robot. Robots other bots are already shooting now count the same way, in
+  co-op only. In test.
 
 ## [0.9.16] - 2026-10-01
 

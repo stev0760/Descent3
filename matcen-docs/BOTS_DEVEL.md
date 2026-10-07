@@ -1787,3 +1787,12 @@ CTF logs needs: that return path calls `DoFlagReturnedHome`, which plays a sound
 analyzer sees no return for it; and the function runs on every machine, so a client on the stock module keeps the
 flag marked away from base until the next flag event or the 120 s timeout corrects its copy (the server's flag object
 is home either way). REL20 rides along: UPSTREAM_PATCHES' assessment list now names `fvi_RoomCheckDir` as fork-only.
+
+**COOP5, the congestion penalty counts robots in co-op.** `BotSelectTarget` adds 80 per other bot already on a
+candidate (`BOT_TARGET_CONGESTION_PENALTY`, the literal it replaces), but the count only looked at `OBJ_PLAYER`
+targets, and the robot loop scored distance plus the LOS penalty alone. Bots escorting one human stand close
+together, so their nearest robot was the same robot and nothing pushed them apart. The counting pass now also
+collects the other bots' robot target handles when the mode is co-op, and the robot loop adds the same 80 per match.
+Robo-Anarchy is deliberately unchanged: every bot there is an enemy of every other, so "spread across targets" is not
+a team behaviour there, and the row asked for a co-op-gated fix. Unflown; COOP2's fresh co-op flight is where it gets
+read (one-robot pile-ups in the escort fights, not a metric of its own).
