@@ -21,13 +21,14 @@ The dated status log this file used to carry is in `archive/BOT_DEV_REFERENCE-st
 | `Descent3/bot_perf.h/.cpp` | Slow-frame attribution: `BotPerfScope` timers on the bot layer's entry points and the sweep primitive (`BPERF_*` ids, bot_perf.h:20); `[Perf] slow frame` / `[Perf] summary` log lines. Log-only. Add a `BPERF_*` id and name when adding a subsystem worth attributing |
 | `Descent3/bot_navdebug.h/.cpp` | In-world nav debug overlay (`Ctrl+F7`, modes 0-3: off, skeleton and portals, plus bot intent, plus roadmap; bot_navdebug.cpp:55). Draw-only. Usage: `VISUAL_DEBUG.md` |
 | `Descent3/bot_chat.h/.cpp` | Chat command system: `!` verb parsing, squad orders, addressing (all/team/DM), bot replies, announcements |
+| `Descent3/bot_quickorder.h/.cpp`, `bot_quickorder_menu.cpp` | Client-side quick-order menu (F10): the menu state machine and the chat lines it composes (`bot_quickorder_menu.cpp`, no engine state, unit-tested by `Descent3/tests/bot_quickorder_tests.cpp`), and its keys, HUD draw and send (`bot_quickorder.cpp`). Sends ordinary chat through `SendHUDChatLine`. Usage: `CHAT_COMMANDS.md` §A.9 |
 | `Descent3/bot_population.h/.cpp` | Seats and population: the seat census, the reserve `BotAdd()` enforces, the yield, the `BotTargetPlayers` manager (`BotPopulationFrame()`, called from `BotDoFrame()`), `$botpopulation status`. Design: `BOT_MANAGEMENT.md` §9 |
 | `Descent3/multi_ui.cpp/.h` | The Bot Settings menu (`MultiBotSettingsMenu()`, multi_ui.cpp:1697); fills `Bot_ui_settings`, and bots spawn from it through `BotSpawnFromUI()` at level load |
 | `Descent3/multi_server.cpp` | `BotDoFrame()` hook in `MultiDoServerFrame()` (multi_server.cpp:2614); NPF_BOT send guards |
 | `Descent3/multi.cpp` | In `MultiStartNewLevel()`: `AIPathResetDynamicPaths()` (multi.cpp:6416), `MakeBOA()` (6421), `BotReinitAll()` (6463); send guards |
 | `Descent3/AImain.cpp` | OBJ_PLAYER guards in `AIDoFrame()`; bot thrust-zeroing skip; multiplayer robot targeting (see the audit below) |
 | `Descent3/AIGoal.cpp` | OBJ_PLAYER guards in `AIG_FIRE_AT_OBJ` and set-animation goals; handle copy for two goal types; 0.5 s path-failure retry throttle |
-| `Descent3/GameLoop.cpp` | Nav overlay hook and `Ctrl+F7` key case; dedicated-server `grtext_Reset()` |
+| `Descent3/GameLoop.cpp` | Nav overlay hook and `Ctrl+F7` key case; the `F10` quick-order key case and the open menu's key routing in `ProcessKeys()`; dedicated-server `grtext_Reset()` |
 | `Descent3/dedicated_server.cpp` | Console commands: `$addbot`, `$removebot`, `$removebots`, `$botlist`, `$botstat`, `$botmov`, `$botmode`, `$botobj`, `$botdifficulty`, `$botpopulation`, `$navdump`, `$nav` (namespace: toggles plus `dump`, `roomfaces`, `sweep` and other sub-verbs; legacy flat names such as `$gridnav` remain as hidden aliases), `$servercaps`, `$bothelp` |
 | `Descent3/aistruct.h` | `MAX_DYNAMIC_PATHS` raised 50 to 200 (aistruct.h:858) |
 | `Descent3/aipath.cpp` | Path pool exhaustion: `ASSERT(0)` replaced by a rate-limited warning and a graceful failure (aipath.cpp:543, 626); `AIPathResetDynamicPaths()` (aipath.cpp:40) |
@@ -913,12 +914,16 @@ multiplayer code path and the game-mode modules, not executed by the single-play
 `hudmessage.cpp` adds the bot-chat hook (`BotOnChatMessage`) inside the `LR_SERVER` send path (hudmessage.cpp:861,
 888), and offers a listen-server host's `$` chat line to the bot console first (`RunBotConsoleCommand`,
 hudmessage.cpp:834); a line it declines, and every client's `$` line, reaches the game DLL as before.
+The chat half of `SendOffHUDInputMessage` is `SendHUDChatText(text, style)`, unchanged in behaviour, and
+`SendHUDChatLine` (declared in `hud.h`) sends a composed line through it; only the quick-order menu calls it.
+`hud.cpp` calls `BotQuickOrderRender()` in `RenderHUDFrame()` after the game DLL's HUD pass: an early return while the
+menu is closed, and the menu opens only in a multiplayer game, so single player draws nothing new.
 `lib/dedicated_server.h` declares `RunBotConsoleCommand` and `HostConsoleEcho`; inside an echo scope
 `PrintDedicatedMessage` writes to the HUD in a non-dedicated process, and outside one it is unchanged (a no-op off the
 dedicated server), so engine and DLL callers are unaffected. `mission_download.cpp` fixes the multiplayer mission-download reply (URL test, mission name on the wire,
 retail missions never advertised, case-insensitive local-mission lookup); client and server join path only.
 
-`GameLoop.cpp` has three touches:
+`GameLoop.cpp` has four touches:
 - `grtext_Reset()` on a **dedicated server** each frame (GameLoop.cpp:2584), so queued console text cannot overflow
   `Grtext_buffer`. Dedicated server only.
 - The nav debug overlay: one `BotNavDebugRender(viewer_roomnum)` call in `GameRenderWorld()` (GameLoop.cpp:2493),
@@ -930,6 +935,10 @@ retail missions never advertised, case-insensitive local-mission lookup); client
   it is a cheap early-out at mode 0, never runs on the dedicated server, and does nothing on a remote client, where
   the key does nothing either (UX5). Every layer reads caches only: no skeleton build, crossing sample or probe runs
   in the render frame. It changes nothing a bot does and is kept out of the `$nav` census and `$servercaps`.
+- The quick-order menu (UX4): `case KEY_F10:` in `ProcessNormalKey()` calls `BotQuickOrderOpen()`, which returns at
+  once outside a multiplayer game (F10 was unbound before), and `ProcessKeys()` offers each key to
+  `BotQuickOrderHandleKey()` after the game DLL and before `ProcessNormalKey()`; it returns false at once while the
+  menu is closed, so no key changes meaning unless the player opened it.
 
 ### Tier D: Platform input (all modes, no gameplay logic)
 
@@ -940,7 +949,7 @@ single-player as an input fix; it changes no game rule.
 ### Tier E: Build, version, tests, docs (no runtime gameplay code)
 
 `CMakeLists.txt`, `Descent3/CMakeLists.txt`, `Descent3/tests/CMakeLists.txt` (the bot navigation and log-analysis
-test harnesses), `cmake/CheckGit.cmake`, `lib/d3_version.h.in`, `vcpkg.json` (adds `libsystemd`), `.gitignore`,
+test harnesses, and `bot_quickorder_tests`), `cmake/CheckGit.cmake`, `lib/d3_version.h.in`, `vcpkg.json` (adds `libsystemd`), `.gitignore`,
 `README.md`. `mmItem.cpp` and `sdlmain.cpp` add the Matcen fork version to the menu version line and the startup
 log line (cosmetic, all modes).
 

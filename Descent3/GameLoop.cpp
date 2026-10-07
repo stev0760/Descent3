@@ -820,6 +820,7 @@
 #include "gametexture.h"
 #include "AIMain.h"
 #include "bot_navdebug.h"
+#include "bot_quickorder.h"
 #include "ddio.h"
 #include "hud.h"
 #include "terrain.h"
@@ -1276,6 +1277,15 @@ void ProcessNormalKey(int key) {
     if (BotNavDebugCycle())
       AddHUDMessage("Nav debug: %s", BotNavDebugModeName());
     break;
+
+  case KEY_F10:
+    // Matcen: the quick-order menu for the `!` squad orders (bot_quickorder.*). It sends the chat line the player
+    // could have typed, so it works on any server; the dedicated server has no keys and single player no squad. A
+    // hard binding: a new controller function would lengthen the pilot file's controls block, and another Descent 3
+    // client loading that pilot would index past its own table. While the menu is open, ProcessKeys() hands it the
+    // number keys, Backspace, Escape and F10 first.
+    BotQuickOrderOpen();
+    return;
 
     // #ifndef DEMO
   case KEY_F5:
@@ -2419,6 +2429,11 @@ void ProcessKeys() {
       if (!SendKeyToGameDLL(key)) // returns true if should keep processing this key
         continue;                 // the DLL says not process this key
     }
+
+    // An open quick-order menu takes its keys after the DLL, so the netgame's own menu (F6), which takes every key
+    // while it is up, keeps them, and before the normal keys, so a number picks an order rather than a weapon.
+    if (BotQuickOrderHandleKey(key))
+      continue;
 
     // Handle normal key
     ProcessNormalKey(key);

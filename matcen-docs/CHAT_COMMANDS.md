@@ -164,6 +164,57 @@ The previous doc (now in the archive) said these things; the code says otherwise
 | Hook at multi.cpp:4992; functions `BotParseChatCommand` etc. | multi.cpp:5010 plus the two listen-host hooks; the functions are `BotFindCommand`, `BotResolveAndDispatch`, `BotDispatchVerb`. |
 | Reply format `Name [BOT]:` | `Name[BOT]:`, no space, since 0.9.9. |
 
+### A.9 Quick-order overlay (Matcen client)
+
+Built in 0.9.17-dev (UX4): `Descent3/bot_quickorder.{h,cpp}` (keys, HUD, send) and `bot_quickorder_menu.cpp` (the
+menu and the lines it composes, covered by `Descent3/tests/bot_quickorder_tests.cpp`). It is a shortcut for typing the
+orders above and adds nothing chat cannot do (the Piccu rule, §B.6). Not yet seen on screen.
+
+- **Key: F10**, in a multiplayer game, on a client or a listen-server host. It is hard-bound. The controls menu's
+  bindings are saved in the pilot file as a counted block, and a pilot saved with one more function than another
+  Descent 3 client knows makes that client read past its own table when it loads the pilot (`pilot::read_controls`),
+  so a rebindable key would break any other client sharing the pilot. F10 was free: only a Debug-build test key, which
+  needs the debug modifier, used it.
+- **Flow.** F10 opens a list at the left of the screen, where the netgame's F6 menu draws. Keys 1-9 pick a row; 0
+  turns the page when a list has more than nine rows. When the player's side has two or more bots, a second list asks
+  who: 1 is the whole squad, then each bot by name. "Hunt a player" asks whom instead and lists the enemy players
+  (observers aside); it is dimmed when there are none. The pick sends the line and closes the menu. Escape or F10
+  closes it, Backspace steps back, and it closes itself after 8 seconds without a key, when the chat line opens, or on
+  any function key or Pause (each opens another screen). While it is open the number keys pick rows, not weapons;
+  every other key, flight and fire included, works as usual. It takes no keys while the chat line or a menu is open,
+  or while the netgame's F6 menu has the keyboard.
+- **What each mode offers.** Keys in order:
+
+  | Mode | Rows |
+  |---|---|
+  | Team Anarchy, Entropy, Monsterball | 1 Follow me `!follow`, 2 Cover me `!cover`, 3 Attack `!attack`, 4 Defend `!defend`, 5 Hold here `!hold`, 6 Hunt a player `!hunt <name>`, 7 Freelance `!freelance`, 8 Report `!status`, 9 Ping `!ping` |
+  | CTF | 1-6 as above, 7 Get the flag `!attackflag`, 8 Guard our flag `!defendflag`, 9 Freelance; key 0 for the second page: 1 Report, 2 Ping |
+  | Co-op | 1-5 as above, 6 Go to the objective `!goal`, 7 Freelance, 8 Report, 9 Ping |
+  | Anarchy, Hyper-Anarchy, Robo-Anarchy, Hoard | none; F10 prints `Squad orders are off in this mode.` |
+
+  The client tells the modes apart as the server's gate does (§A.3): co-op by its flag, free-for-all by a single team,
+  CTF by its script name. Monsterball runs two teams, so the server takes orders there and the menu offers them.
+  Left out on purpose: `!hunt` in co-op (the name lookup skips the sender's team, and co-op has one team), `!goal`
+  outside co-op (the server answers `No mission objectives in this mode.`), and the flag verbs outside CTF (plain
+  attack and defend with another reply). Only canonical verbs are sent, never aliases. With no bot on the player's
+  side, F10 prints `No bots on your team.` (co-op: `No bots in this game.`).
+- **The lines it sends**, through `SendHUDChatLine` (hudmessage.cpp), the chat line's own send code:
+
+  | Choice | Line | Channel |
+  |---|---|---|
+  | Whole squad, or a squad of one, in a team mode | `!follow` | team chat |
+  | Whole squad in co-op | `!follow` | general chat |
+  | One bot | `Reaper[BOT]: !follow` | a direct message (general chat with the `name:` prefix) |
+  | Hunt | `!hunt Kestrel` (the target's first word, bot suffix dropped) | team chat |
+
+  Team chat keeps squad orders from the other team. A direct message by full callsign reaches exactly that bot (an
+  exact callsign beats a prefix in `GetMessageDestination`), where `!follow Reaper` would go to the first bot whose
+  name starts the same way, and the bot answers by direct message. A bot whose callsign contains `:` is named after
+  the verb instead (`!cover Re:aper`) on the squad's channel. If the bot or the hunt target has left since the menu
+  opened, nothing is sent and the HUD says `<name> is no longer in the game.`
+- **Degrades to chat.** The server sees ordinary chat; nothing server-side changed. A player on retail 1.5,
+  PiccuEngine or any other client types the same lines.
+
 ---
 
 ## Part B. Forward: the finish line

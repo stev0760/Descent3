@@ -24,6 +24,17 @@ target_link_libraries(
 )
 gtest_discover_tests(gamespyutils_tests)
 
+add_executable(
+  bot_quickorder_tests
+  bot_quickorder_tests.cpp
+  ../bot_quickorder_menu.cpp
+)
+target_link_libraries(
+  bot_quickorder_tests
+  GTest::gtest_main
+)
+gtest_discover_tests(bot_quickorder_tests)
+
 # The isolated navigation harness compiles production functions with synthetic geometry stubs.
 if(UNIX AND NOT CMAKE_CROSSCOMPILING)
   find_package(Python3 COMPONENTS Interpreter QUIET)
