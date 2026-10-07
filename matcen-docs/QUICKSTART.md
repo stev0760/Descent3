@@ -2,7 +2,7 @@
 
 Matcen adds bots to Descent 3 multiplayer that play every mode (Anarchy, Team Anarchy, Hyper-Anarchy, Robo-Anarchy,
 CTF, Hoard, Entropy, Monsterball and co-op) on any map, and it is open source. The only Descent 3 bots before it were
-closed and scripted map by map. Matcen's bots build their own route network for each level when it loads.
+closed source and scripted map by map. Matcen's bots build their own route network for each level when it loads.
 
 The bots run on the server and take real player seats. Players connect with an unmodified Descent 3 1.5 client, or a
 compatible engine such as PiccuEngine, and see each bot as an ordinary player called `Name[BOT]`.
@@ -32,7 +32,8 @@ installed. The Linux build needs glibc 2.35 or newer. On macOS the app is not si
 The package carries two sample files in `samples/`. Copy both into the Descent 3 folder and edit them.
 
 **`dedicated.cfg`** is the standard Descent 3 server file. Its first line must be `[server config file]`. The sample
-runs CTF with two teams, and adds three lines Matcen cares about:
+runs CTF with two teams on `bedlam.mn3`, a retail mission of four levels built for four teams (Apparition, Plutonium,
+QuadSomniac and Polaris), and adds three lines Matcen cares about:
 
 - `MaxPlayers=14`: the server's own seat, 12 players and one seat kept free for a human.
 - `PPS=40`: the highest packet rate the server accepts, the rate the bots are tested at.
@@ -79,10 +80,14 @@ to `RemoteConsolePort`, default 2092, with `ConsolePassword`, when `AllowRemoteC
 
 ## Chat orders
 
-In team modes (CTF, Team Anarchy, Entropy) and co-op, players give the bots on their side orders by typing in chat:
-`!attack`, `!defend`, `!hold`, `!follow`, `!cover`, `!attackflag`, `!defendflag`, `!status` and more. A bare order goes
-to every bot on your team, and `reaper: !follow` goes to one bot. In co-op, `!goal` sends the bots to the current
-objective. The free-for-all modes take no orders. The full list is in [CHAT_COMMANDS.md](CHAT_COMMANDS.md).
+In team modes (CTF, Team Anarchy, Entropy, Monsterball) and co-op, players give the bots on their side orders by
+typing in chat: `!attack`, `!defend`, `!hold`, `!follow`, `!cover`, `!attackflag`, `!defendflag`, `!status` and more.
+A bare order goes to every bot on your team, and `reaper: !follow` goes to one bot. In co-op, `!goal` sends the bots
+to the current objective. The free-for-all modes take no orders. The full list is in
+[CHAT_COMMANDS.md](CHAT_COMMANDS.md).
+
+On a Matcen client, F10 opens a menu of the orders the mode takes: a number picks the order, a second number picks the
+whole squad or one bot, and the menu sends the same chat line. Players on other clients type it.
 
 ## Host from the game (listen server)
 
