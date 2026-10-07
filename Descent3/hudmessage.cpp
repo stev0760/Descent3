@@ -821,6 +821,72 @@ const char *GetMessageDestination(const char *message, int *destination) {
   return ret;
 }
 
+// Sends one line of chat as general chat (where a "name:" prefix makes it a direct message) or as team chat. A
+// listen-server host's line reaches the bot chat harness here, as a client's line does on the server.
+static void SendHUDChatText(const char *text, int style) {
+  char str[255];
+  snprintf(str, sizeof(str), TXT_HUDSAY, Players[Player_num].callsign, text);
+
+  switch (style) {
+  case HUD_MESSAGE_GENERAL: {
+    int to_who;
+
+    const char *colon_pos = GetMessageDestination(text, &to_who);
+
+    if (to_who != MULTI_SEND_MESSAGE_ALL) {
+      if (to_who < 0) {
+        // to a team
+        snprintf(str, sizeof(str), "[%s]: %s", Players[Player_num].callsign, colon_pos);
+      } else {
+        // to a player
+        // cut out what's after the colon
+        snprintf(str, sizeof(str), "<%s>:%s", Players[Player_num].callsign, colon_pos);
+        AddHUDMessage("Sent private message to %s", Players[to_who].callsign);
+      }
+    }
+
+    if (Netgame.local_role == LR_SERVER) {
+      BotOnChatMessage(Player_num, to_who, str);
+      MultiSendMessageFromServer(GR_RGB(0, 128, 255), str, to_who);
+    } else
+      MultiSendMessageToServer(0, str, to_who);
+  } break;
+  case HUD_MESSAGE_TEAM: {
+    int team = MULTI_SEND_MESSAGE_ALL;
+    switch (Players[Player_num].team) {
+    case 0:
+      team = MULTI_SEND_MESSAGE_RED_TEAM;
+      break;
+    case 1:
+      team = MULTI_SEND_MESSAGE_BLUE_TEAM;
+      break;
+    case 2:
+      team = MULTI_SEND_MESSAGE_GREEN_TEAM;
+      break;
+    case 3:
+      team = MULTI_SEND_MESSAGE_YELLOW_TEAM;
+      break;
+    }
+
+    if (team != MULTI_SEND_MESSAGE_ALL) {
+      snprintf(str, sizeof(str), "[%s]: %s", Players[Player_num].callsign, text);
+    }
+
+    if (Netgame.local_role == LR_SERVER) {
+      BotOnChatMessage(Player_num, team, str);
+      MultiSendMessageFromServer(GR_RGB(0, 128, 255), str, team);
+    } else
+      MultiSendMessageToServer(0, str, team);
+  } break;
+  }
+}
+
+void SendHUDChatLine(const char *text, bool team) {
+  if (!(Game_mode & GM_MULTI) || !text || !text[0])
+    return;
+  SendHUDChatText(text, (team && Team_game) ? HUD_MESSAGE_TEAM : HUD_MESSAGE_GENERAL);
+}
+
 // Sends off the input message the player was typing
 void SendOffHUDInputMessage() {
   if (Doing_input_message == HUD_MESSAGE_NONE)
@@ -836,61 +902,7 @@ void SendOffHUDInputMessage() {
         CallGameDLL(EVT_CLIENT_INPUT_STRING, &DLLInfo);
       }
     } else {
-      char str[255];
-      snprintf(str, sizeof(str), TXT_HUDSAY, Players[Player_num].callsign, HudInputMessage);
-
-      switch (Doing_input_message) {
-      case HUD_MESSAGE_GENERAL: {
-        int to_who;
-
-        const char *colon_pos = GetMessageDestination(HudInputMessage, &to_who);
-
-        if (to_who != MULTI_SEND_MESSAGE_ALL) {
-          if (to_who < 0) {
-            // to a team
-            snprintf(str, sizeof(str), "[%s]: %s", Players[Player_num].callsign, colon_pos);
-          } else {
-            // to a player
-            // cut out what's after the colon
-            snprintf(str, sizeof(str), "<%s>:%s", Players[Player_num].callsign, colon_pos);
-            AddHUDMessage("Sent private message to %s", Players[to_who].callsign);
-          }
-        }
-
-        if (Netgame.local_role == LR_SERVER) {
-          BotOnChatMessage(Player_num, to_who, str);
-          MultiSendMessageFromServer(GR_RGB(0, 128, 255), str, to_who);
-        } else
-          MultiSendMessageToServer(0, str, to_who);
-      } break;
-      case HUD_MESSAGE_TEAM: {
-        int team = MULTI_SEND_MESSAGE_ALL;
-        switch (Players[Player_num].team) {
-        case 0:
-          team = MULTI_SEND_MESSAGE_RED_TEAM;
-          break;
-        case 1:
-          team = MULTI_SEND_MESSAGE_BLUE_TEAM;
-          break;
-        case 2:
-          team = MULTI_SEND_MESSAGE_GREEN_TEAM;
-          break;
-        case 3:
-          team = MULTI_SEND_MESSAGE_YELLOW_TEAM;
-          break;
-        }
-
-        if (team != MULTI_SEND_MESSAGE_ALL) {
-          snprintf(str, sizeof(str), "[%s]: %s", Players[Player_num].callsign, HudInputMessage);
-        }
-
-        if (Netgame.local_role == LR_SERVER) {
-          BotOnChatMessage(Player_num, team, str);
-          MultiSendMessageFromServer(GR_RGB(0, 128, 255), str, team);
-        } else
-          MultiSendMessageToServer(0, str, team);
-      } break;
-      }
+      SendHUDChatText(HudInputMessage, Doing_input_message);
     }
   }
   HudInputMessage[0] = 0;

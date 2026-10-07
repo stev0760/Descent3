@@ -605,6 +605,11 @@ void ResetHUDMessages();
 // Sends off the input message the player was typing
 void SendOffHUDInputMessage();
 
+// Sends a composed chat line exactly as if the player had typed it on the chat line and pressed Enter: general chat
+// (a "name:" prefix makes it a direct message), or team chat when team is true in a team game. Chat only; a "$" line
+// is sent as text, not run as a command. The quick-order menu (bot_quickorder.cpp) sends its orders through this.
+void SendHUDChatLine(const char *text, bool team);
+
 //	reset hud message list.
 void ResetHUDMessages();
 

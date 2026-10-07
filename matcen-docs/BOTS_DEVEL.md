@@ -1896,3 +1896,73 @@ the whole `NETSEQ_WAITING_FOR_LEVEL` to `NETSEQ_WORLD` sequence, and the census 
 same `free < reserve` branch the reserve test drove. A second human asking while the first is still loading gets the
 vanilla full answer until the yield frees a seat; a larger `BotReservedSlots` covers bursts. The first flight with a
 human client should confirm the yield and the refill.
+
+## 2026-10-07: the quick-order overlay (UX4)
+
+The squad-order HUD shortcut the operator put before the reveal on 10-01 (Q3d): on the Matcen client, and it
+degrades to chat. New `Descent3/bot_quickorder.{h,cpp}` and `bot_quickorder_menu.cpp`; engine touches in
+`GameLoop.cpp`, `hud.cpp`, `hud.h` and `hudmessage.cpp`. No server-side or navigation code changed, and `bot_chat.cpp`
+was not touched: the menu only emits chat lines the parser already reads.
+
+**Two halves.** `bot_quickorder_menu.cpp` holds the order table, the mode rule, the open/pick/page/back state machine
+and the line composer, as plain data with no engine globals, so `Descent3/tests/bot_quickorder_tests.cpp` builds it
+alone and checks every row and every line. `bot_quickorder.cpp` reads the mode and the player list, routes keys, draws
+and sends. The order table holds the canonical verbs of CHAT_COMMANDS §A.5 in a fixed order, so Follow, Cover,
+Attack, Defend and Hold keep keys 1-5 in every mode. Three verbs are left out where the server would not carry them
+out: `!hunt` in co-op (`BotFindPlayerByName` skips the sender's team and co-op has one), `!goal` outside co-op, and the
+flag verbs outside CTF. CTF offers eleven rows, so key 0 turns the page; the same rule pages a second step longer than
+nine (more than eight bots on a side).
+
+**The key.** F10, hard-bound. The binding table (`Controller_needs`, `NUM_CONTROLLER_FUNCTIONS = 73`) does accept a
+new function, and the key-config screen would list it, but `pilot::write_controls` saves the table as a counted block
+and `pilot::read_controls` matches each saved id with `for (y = 0; y < temp_b; y++) if (Controller_needs[y].id == id)`,
+bounded by the file's count, not its own. A pilot saved with 74 functions and loaded by a 73-function client (retail,
+upstream, PiccuEngine) reads `Controller_needs[73]` and writes `controls[74]`, past both arrays. Players keep one
+pilot directory across clients, so the menu takes a fixed key instead. F10 was free in play: `ProcessNormalKey` and
+the netgame DLLs (F6, F7, Page Up/Down, Escape) do not use it, and the Debug test key F10 needs `KEY_DEBUGGED`. The
+grave key moves between keyboard layouts (the SDL map is by keycode), and F11 is a desktop shortcut on some systems.
+
+**Keys while open.** `ProcessKeys()` offers each key to `BotQuickOrderHandleKey()` after the chat line and the game DLL
+and before `ProcessNormalKey()`. After the DLL, because DMFC's F6 menu takes every key while it is up (`iRet = 1`), so
+F10 cannot open over it and the digits stay with it; before the normal keys, because digits select weapons there. The
+menu consumes 1-9 and 0 even when they match no row, so a missed pick never switches weapons, plus Backspace, Escape
+and F10. Every other key passes, so the player flies and fires with the menu up; a function key or Pause also closes
+it, since each opens another screen or the chat line. It closes itself after 8 s without a key (`timer_GetTime()`;
+`Gametime` restarts with the level), when the chat line opens, and when the game leaves `GAME_INTERFACE`.
+
+**The send.** The chat half of `SendOffHUDInputMessage` (the line after a `$` check: general chat with its `name:`
+direct-message parse, or team chat, and on a listen-server host `BotOnChatMessage` before the rebroadcast) is now
+`SendHUDChatText(text, style)`, unchanged; the chat line and the Ctrl+1..8 taunt macros reach it as before, and
+`SendHUDChatLine` is the menu's entry, which skips the input-line bookkeeping (key flush, controls resume, typing
+icon). A squad order is the bare verb on team chat in team modes, so the other side never sees it, and on general
+chat in co-op. One bot is a direct message by full callsign, `Reaper[BOT]: !follow`: `GetMessageDestination` stops
+at an exact callsign, so it reaches that slot, where `!follow Reaper` reaches the first bot whose base name starts
+that way (`BotBaseNameMatch`). `!hunt` takes the target's first word without the suffix, since the parser reads one
+word and prefix-matches it. A callsign with a colon would split the direct-message form and falls back to `!verb
+<name>`. A line that names a player is not sent if that player has left since the menu opened: a direct message to a
+missing callsign falls through `GetMessageDestination` as general chat, which the parser reads as a squad order.
+
+**Who is listed.** `NPF_BOT` is the server's flag and never reaches a client, so a client tells bots by the `[BOT]`
+suffix every client is sent. The side is `Players[].team` (every bot in co-op); a team of -1 is the dedicated server's
+own slot (DMFC's `IsPlayerDedicatedServer`), and enemy observers are not offered for `!hunt`. The mode comes from the
+same state the server's gate reads: `NF_COOP` (sent in the join packet), `Num_teams` (DMFC's `SetNumberOfTeams` runs on
+the client too), and the script name for CTF, read as `BotDetectGameMode` reads it. Monsterball runs two teams, so
+the server takes orders there and the menu offers them; CHAT_COMMANDS §A.3 lists it among the one-team modes, which
+the code does not bear out (reported, not changed here).
+
+**The draw.** HUD font text at the netgame F6 menu's place (x 10, eight lines down), drawn in `RenderHUDFrame()` after
+`EVT_CLIENT_HUD_INTERVAL`, as DMFC draws that menu, so the cockpit model never covers it. Title pale green, rows HUD
+green with the chat command in the bots' reply yellow, a dimmed row for Hunt when nobody can be hunted, and a hint
+line (`Esc close`, plus `Backspace back` on the second step).
+
+**Tested.** Debug build clean (no warnings from the new files or the changed ones beyond those already there).
+`bot_quickorder_tests`: 8 of 8, covering the mode rule (co-op, the one-team modes, CTF by `CTF`, `ctf.d3m` and
+`CTF.D3M`, the other team modes), the reasons it will not open, the rows of each mode, both pages of CTF, the second
+step and Backspace, the one-bot and Ping shortcuts, Hunt with and without enemies, a 13-row paged squad, and every
+line for every verb in every mode (printed in the test log: `!follow` team, `Reaper[BOT]: !follow` direct,
+`!hunt Kestrel` team, co-op squad lines on general chat). Each line was read against the parser: `BotFindCommand`
+takes the `!` after the space in `[Name]: !follow` and `<Name>: !follow`, the direct message takes the DM branch of
+`BotResolveAndDispatch`, and `!hunt Kestrel` matches through `BotFindPlayerByName`. `ctest`: 21 of 22; the one failure,
+`D3.BotSkelChain`, compiles functions out of `bot_steering.cpp` (untouched here) and fails on `SkelEnsure` and
+`AimNarrowToRouterDoor` not being declared, as it does without this change. Not verified: the menu on screen, the keys
+in a live game and the lines reaching a server, which need a client in a match.

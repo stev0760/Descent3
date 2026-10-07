@@ -51,6 +51,12 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
 - **The Ctrl+F7 navigation overlay works only where the bots run** (a local game or a listen-server host) and draws
   only what the bots have already worked out, so turning it on can no longer stall a frame on a large room. A room no
   bot has needed yet shows nothing.
+- **Squad orders from a menu.** In a team game or co-op, F10 opens a short list of the bot orders the mode takes. A
+  number key picks the order, a second number picks the whole squad or one bot, and the menu sends the chat line you
+  could have typed: `!follow` on team chat, or `Reaper[BOT]: !follow` to one bot. Escape closes it, and it closes by
+  itself after a few seconds; while it is open the number keys pick orders, not weapons. In free-for-all modes F10 says
+  orders are off. It is a shortcut on this client only: the server sees ordinary chat, and players on other clients
+  type the same lines. In test.
 - **Co-op bots no longer claim to head for an objective they will not fly to.** The announcement now names the next
   objective and the order that sends the bots there: `Next objective: <item>. Say !goal to send us there.`
 - **Bots never fill the server.** One seat always stays free for a human, in every mode, co-op included:

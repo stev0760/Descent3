@@ -7,6 +7,7 @@ set(HEADERS
   bot_objective.h
   bot_perf.h
   bot_population.h
+  bot_quickorder.h
   bot_roadmap.h
   Briefing.h
   BriefingParse.h
@@ -165,6 +166,8 @@ set(CPPS
   bot_objective.cpp
   bot_perf.cpp
   bot_population.cpp
+  bot_quickorder.cpp
+  bot_quickorder_menu.cpp
   bot_roadmap.cpp
   bot_steering.cpp
   Briefing.cpp

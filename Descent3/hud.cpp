@@ -437,6 +437,7 @@
 #include "gamecinematics.h"
 #include "CtlCfgElem.h"
 #include "ctlconfig.h"
+#include "bot_quickorder.h"
 
 //////////////////////////////////////////////////////////////////////////////
 //	constants
@@ -1254,6 +1255,10 @@ void RenderHUDFrame() {
 
   // Do dll stuff
   CallGameDLL(EVT_CLIENT_HUD_INTERVAL, &DLLInfo);
+
+  // The quick-order menu draws after the netgame's HUD, as the netgame's own F6 menu does, so the cockpit never
+  // covers it.
+  BotQuickOrderRender();
 
   rend_SetZBufferState(1);
 }
