@@ -1796,3 +1796,30 @@ collects the other bots' robot target handles when the mode is co-op, and the ro
 Robo-Anarchy is deliberately unchanged: every bot there is an enemy of every other, so "spread across targets" is not
 a team behaviour there, and the row asked for a co-op-gated fix. Unflown; COOP2's fresh co-op flight is where it gets
 read (one-robot pile-ups in the escort fights, not a metric of its own).
+
+**MODE1 / MODE7, Entropy E4 and Monsterball M4 difficulty.** Both modes now read the existing difficulty table
+(`kDiffParams`) instead of adding columns: `BotGetDiffParams` is exported and `BotDiffParamsFor(tier)` gives any row.
+The rule is the same in both modes: their constants were tuned on Hotshot bots, so each scaling is the tier's
+distance from the Hotshot row and a Hotshot bot plays exactly as before. Which column goes where:
+
+- Entropy invasion aggression: the abort floor is a flee threshold, so `BotEntropyRetreatShields` multiplies it by
+  `flee_pct_scale` (Trainee 45, Rookie 35, Hotshot 25, Ace 17.5, Insane 10). The re-engage floor keeps its fixed +20
+  (the hold's 15 shields of room damage plus slack is a cost, not temperament), and the mid-hold flee threshold in
+  `BotUpdateState` reads the same floor. DEPART (80) stays above the highest re-engage floor (65).
+- Entropy lab-defence reaction: the intruder, takeover-threat and loaded-enemy biases are multiplied by
+  `dodge_percent`, the table's threat-reaction column (0.2, 0.5, then 1.0 from Hotshot up). Above Hotshot it stays at
+  full strength on purpose: the loaded-intruder bias (-700) already outbids the 500 LOS penalty, and more would let a
+  far intruder pull every bot off nearer enemies.
+- Monsterball cones: `aim_error_deg` beyond Hotshot's 3 degrees widens the alignment cone (fire gate and the slam's
+  contact-range gate) and narrows the blunder refusal cone by the same angle; striker, keeper clears and the
+  contact-avoid detour all read the bot's own blunder gate. Trainee 0.70 / 0.49, Insane 0.83 / 0.30.
+- Monsterball timing: `fire_delay` beyond Hotshot's 0.2 s is perception lag, clamped at zero. The prediction horizon
+  shrinks by it (0.7 s to 0.4 s Rookie, 0.1 s Trainee), and it is the kickoff delay: the striker keeps flying its
+  previous order that long after the ball reappears on its spawn point. Kickoff had no detection before; the spawn
+  point is found at init the way the DLL finds it (first `RF_SPECIAL1` room, its computed center) and
+  `BotMballKickoffAge` calls it a kickoff when the ball is on that point after a jump the 120 u/s cap cannot explain
+  (or on the level's first look). It runs from the striker's think, not the 0.5 s poll, so the hold starts before the
+  striker has re-aimed at the new ball. Logs: `BOT MBALL: kickoff (...)` and `'<bot>' kickoff reaction <s>s (<tier>)`.
+
+Not scaled, left on MODE1/MODE7: Entropy denial appetite, smarter invasion, the drill command, shield-knob iteration;
+Monsterball wall/ceiling play, banks, pass-backs. The `!` verbs for both modes are the CMD branch's.

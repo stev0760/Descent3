@@ -80,7 +80,7 @@
                                         // it out the far side within 1s (START rm14 -> ABORT rm12). Require
                                         // near-rest before parking; 5 u/s mirrors the DLL's >5u movement
                                         // reset, so a faster "hold" could never bank clock time anyway
-#define BOT_ENTROPY_RETREAT_SHIELDS 25.0f  // hard abort floor (spec ~25, tunable at E4)
+#define BOT_ENTROPY_RETREAT_SHIELDS 25.0f  // Hotshot hard abort floor (BotEntropyRetreatShields scales it)
 #define BOT_ENTROPY_REENGAGE_SHIELDS 45.0f // don't START an approach below this
 #define BOT_ENTROPY_DEPART_SHIELDS 80.0f   // loaded bot on its own repair/energy pad stays until THIS
                                            // (mirrors HEAL_START/HEAL_DONE): departing at exactly 45
@@ -98,7 +98,8 @@
                                      // showed streak 3 unreachable at 8v8 — bots died mid-economy)
 #define BOT_ENTROPY_HEAL_DONE 95.0f  // leave the repair room near-full (80->95, operator call —
                                      // the pad is free and the streak is the whole economy)
-// Defense target bias (BotGetObjectiveTargetBias): negative = prefer killing.
+// Defense target bias (BotGetObjectiveTargetBias): negative = prefer killing. Hotshot magnitudes;
+// lower tiers weigh them by their dodge_percent (ENTROPY_MODE.md §3.5).
 #define BOT_ENTROPY_INTRUDER_BIAS -300.0f        // any enemy inside one of our special rooms
 #define BOT_ENTROPY_TAKEOVER_THREAT_BIAS -400.0f // extra when that intruder carries >= 5 (kill NOW)
 #define BOT_ENTROPY_LOADED_BIAS -200.0f          // loaded enemy anywhere (kill = -5 enemy tempo)
@@ -110,6 +111,8 @@
 #define BOT_MBALL_STANDOFF 25.0f    // approach-point distance behind the ball (added to ball radius)
 #define BOT_MBALL_PREDICT_T 0.7f    // seconds of linear ball prediction for the approach point
 #define BOT_MBALL_RAM_SWITCH 12.0f  // dry-bot ram: within this of the approach point, target the ball
+#define BOT_MBALL_MAX_SPEED 120.0f  // the DLL's ball speed cap (MAX_MONSTERBALL_VEL): a bigger jump is a teleport
+#define BOT_MBALL_SPAWN_SNAP 2.0f   // a ball this close to its spawn point after a teleport is a kickoff
 // The FINISHER (operator insight, first frenzy session): DLL weapon hits clamp to [10,20] u/s
 // but a physical ram is UNCLAMPED momentum — guns move the ball around the field, the body puts
 // it in the net. Near the goal the striker stops sniping and afterburner-slams through the ball.
@@ -212,6 +215,8 @@ struct BotObjectiveState {
   int monsterball_goal_rooms[2]; // GetGoalRoomForTeam(0/1), cached at init (goals don't move)
   float monsterball_progress[2]; // per poll: route cost ball->goal[t] (logging + striker utility)
   int monsterball_prev_room;     // last polled ball room, for transition logging
+  int monsterball_spawn_room;    // the RF_SPECIAL1 room the ball starts in and returns to after a goal, or -1
+  vector monsterball_spawn_pos;  // its center: the DLL puts the ball exactly here, at rest (the kickoff)
   // M3 roles, indexed by BOT index (16 = MAX_BOTS): 0=none (anarchy + bias), 1=STRIKER
   // (exactly one — the M2 loop), 2=SUPPORT (standoff on the push line, inherits overshoots),
   // 3=KEEPER (3+ bot teams: shadow defense at the enemy goal mouth, safe clears only).
@@ -322,6 +327,10 @@ int BotEntropyVirusTeam(int objnum);
 
 // True when the bot carries enough viruses to convert a room (>= BOT_ENTROPY_TAKEOVER_LOAD).
 bool BotEntropyIsLoaded(int bot_index);
+
+// This bot's hard abort floor for a takeover: BOT_ENTROPY_RETREAT_SHIELDS scaled by its difficulty's
+// flee multiplier (ENTROPY_MODE.md §3.5). The invade policy and the mid-hold flee threshold both use it.
+float BotEntropyRetreatShields(int bot_index);
 
 // $nav entropy — E3 takeover execution (invade/hold/retreat + defense bias). OFF leaves the
 // E2 economy running but bots never invade: the A/B lever for "does takeover play help".

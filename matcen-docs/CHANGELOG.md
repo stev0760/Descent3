@@ -52,6 +52,12 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
   other bots were on each player and preferred a less crowded one, but it never counted robots, so in co-op every bot
   escorting you could pick the same nearest robot. Robots other bots are already shooting now count the same way, in
   co-op only. In test.
+- **Entropy and Monsterball play scale with bot difficulty.** Until now a Trainee and an Insane bot played these two
+  modes' objectives identically. A Hotshot bot plays them exactly as before; the other levels move from there. In
+  Entropy, a lower-level bot breaks off a room takeover with more shields left and reacts less strongly to enemies in
+  its team's rooms, and a higher-level bot pushes a takeover further. In Monsterball, a lower-level bot takes shots at
+  the ball from a worse angle, refuses fewer shots that would score for the other team, reads where the ball is going
+  later and is slower off the mark at each kickoff; Ace and Insane bots wait for a cleaner line. In test.
 
 ## [0.9.16] - 2026-10-01
 

@@ -156,6 +156,12 @@ Where each one applies:
 - **Dodge:** sets the engine's `ai_info->dodge_percent` (bot.cpp:598).
 - **Turn rate:** multiplies the dynamic turn rate (bot.cpp:6446).
 
+The objective modes reuse these columns rather than adding their own, scaled from the Hotshot row their constants were
+tuned on, so a Hotshot bot plays them as before. Entropy: the flee scale moves the takeover abort floor, and the dodge
+column scales how hard a bot goes after intruders in its team's rooms (ENTROPY_MODE.md §3.5). Monsterball: aim error
+beyond Hotshot's widens the shot-alignment cone and narrows the own-goal refusal cone, and fire delay beyond Hotshot's
+shortens the ball prediction and delays the kickoff run (MONSTERBALL_MODE.md §3.8).
+
 Set it globally with `BotDifficulty=`, per bot with `BotDifficulty<n>=` or the `$addbot` third argument, and live with
 `$botdifficulty`. `$botlist` shows each bot's level.
 
