@@ -10,6 +10,62 @@ including the CTF, Hyper and Hoard write-ups) is preserved verbatim in
 `matcen-docs/archive/BOTS_DEVEL-phases-0_to_0.9.12.md`. The engine-files audit (single-player, Robo-Anarchy and
 co-op impact) now lives in `matcen-docs/BOT_DEV_REFERENCE.md`.
 
+### 2026-10-06: HEAD against 0.9.16, the comparison the week had skipped
+
+Every pair this week ran against `d081952e`, which already carries NAV41; the operator's baseline is 0.9.16
+(`4b4e78f4`), which he flew and liked, and his short client-side runs on 10-05 read Sigma Base as worse than it. So
+the overnight set paired 0.9.16 against HEAD (`00ffcd75` = NAV41 + NAV60 + NAV61), same minute, lab `d05n-20261005`,
+guard PASS on every arm; Sigma Base, Batteries and Bree got a second sample in the morning. Captures, pickups, stuck
+episodes (hard), 0.9.16 first:
+
+| Map | Sample 1 | Sample 2 |
+|---|---|---|
+| Glasshouse, 8 rounds | 15 / 45 / 160 (4) vs 45 / 109 / 44 (4) | |
+| Canyons, 8 | 15 / 54 / 9 (1) vs 27 / 61 / 10 (2) | |
+| abend2, 6 | 8 / 46 / 0 vs 12 / 47 / 2 (1) | |
+| Isengard, 8 x 20 min | 31 / 85 / 80 (19) vs 34 / 90 / 74 (11) | |
+| bedlam 4-team, 8 | 106 vs 99; stucks 2 vs 0 | |
+| Bree, 6 | 40 / 63 / 34 (8) vs 31 / 58 / 47 (6) | 23 / 57 / 21 (5) vs 30 / 46 / 35 (10) |
+| Sigma Base, 4 x 45 min | 6 / 51 / 29 (4) vs 8 / 26 / 74 (10) | 8 / 36 / 12 (0) vs 16 / 50 / 31 (6) |
+| Batteries, 6 | 45 / 94 / 65 (7) vs 31 / 75 / 118 (10) | 33 / 68 / 59 (8) vs 24 / 68 / 162 (20) |
+
+Better on HEAD: Glasshouse (0.9.16 is the NAV42 build there), Canyons, abend2, and Sigma Base on captures (14 vs 24
+pooled). Flat: Isengard, bedlam, Bree (63 vs 61 pooled). Sigma Base's first sample is what the operator felt, half
+the pickups and half the deaths, but its second sample reverses both, and HEAD's own runs on consecutive days read
+13 / 63 / 32 and 8 / 26 / 74: at four 45-minute rounds the map's swing is the size of any effect. Sigma Base does
+carry more soft stucks on HEAD in both samples, spread over bots and rooms (rm20, rm13, rm26, rm2, rm27).
+
+Batteries is the one map that reads against HEAD twice (45 and 33 vs 31 and 24; rm80 53 and 42 vs 106 and 100), so
+it was bisected: 0.9.16 against the NAV41-only build, same minute, reads 23 / 59 / 70 (11) vs 26 / 59 / 70 (11),
+identical, and the lattice work read flat against that build three times this week (34 vs 35, 36 vs 29, 20 vs 29).
+Neither half owns the loss. rm80 over all eleven Batteries arms of the week: 0.9.16 53 / 42 / 48, NAV41 96 / 58 /
+58, NAV60 alone 51, rules A and B 51 / 48, HEAD 106 / 100. The two HEAD runs are the highest, and the NAV41 control
+reached 96 once; rm80 is the spawn pocket behind the propped leaf, and its count is how many lives spawn into it and
+how long each is held. It stays the Batteries watch item it has been since 0.9.14; this week's numbers do not pin it
+on a build. Captures over the week: 0.9.16 45 / 33 / 23, NAV41 35 / 29 / 26, HEAD 31 / 24 and the near-identical rule
+arms 34 / 36 / 20.
+
+One correction to 10-04: Isengard's rm33 was marked HARD on HEAD once, at minute 157 of 160 (34 vs 31 captures, no
+cost), so the restored grid is less prone (1 run in 5 against 4 in 4), not immune. NAV63 is where the cliff lives.
+
+Verdict: HEAD is not a regression against 0.9.16 by this set. It is better on four maps and flat on the rest, with
+more soft stucks on Sigma Base and a Batteries spawn-pocket count that two samples put above everything else and a
+bisect cannot attribute. Navigation is frozen here; the operator's next flights on Batteries and Sigma Base are the
+last word, and `v0.9.16` is tagged if they say otherwise.
+
+### 2026-10-05 (night): the lines the operator still sees are skeleton legs (NAV64)
+
+A four-minute Glasshouse flight on `00ffcd75` (`testing-2026-10-06T02-32-44.log`): the lines through the pyramid's
+alcove walls look the same under Ctrl+F7. They are not lattice edges. The overlay's first level draws the skeleton,
+and the ring hall's skeleton has four bridge pairs (`SkelBuildBridges` pseudo-nodes 12-19) placed inside the
+pyramid's galleries, each pair's leg crossing an alcove wall: swept from rm2, the room being built, the leg never
+meets rm1's faces, the mechanism NAV60 fixed in the lattice and nothing fixed in the skeleton. Over the thirteen
+maps' room-face dumps 59 of 3,074 skeleton legs cross a solid face (Glasshouse 8 of 82, DownTown 17, Facing Worlds
+11, Batteries 8, Chaos Rim 8, Sigma Base 6, Moria 1, none on the other six). Registered as NAV64, not built: the
+operator's ruling tonight is to stop stacking navigation fixes and finish the cleanup. The 10-03 entry's "the via
+legs bots were handed ran through the alcove walls" was read as the lattice's doing; the lattice edges were real and
+are gone, and the visible legs were these.
+
 ### 2026-10-05: the overnight pairs; door coverage leaves the phase score (NAV61)
 
 Ten same-minute pairs, control `d081952e` against rule A (door pairs joined, own cells, all cells), lab
