@@ -52,17 +52,20 @@ The wide-mode overnight regression on `4b4e78f4` (`d30n-20260930/`) read flat ag
 found nothing that blocks a release (the operator: Sigma's sticking does not need more attention yet). **0.9.16 is not
 the reveal** (operator, 2026-10-01: "This will be a later build. We're still working on test and polish."): 0.9.16 is
 stamped stable as the next ordinary release after his flights, and the reveal build is a later 0.10.x (0.10.0 or
-higher). What stands between here and the reveal is the B list in §3, most of it work that does not exist yet, with a
-pre-reveal cutoff of **2026-10-20** and the reveal about **2026-10-27** (REL21).
+higher). What stands between here and the reveal is the B list in §3, with a pre-reveal cutoff of **2026-10-20** and
+the reveal about **2026-10-27** (REL21). By 2026-10-07 the seat and population rows, the client UX set, MODE6, MODE14
+and the Entropy and Monsterball difficulty scaling are built on 0.9.17-dev; the committee collapse, the code-quality
+pass, the `!` finish line and the co-op line are not (table below).
 
-| Area | State on 2026-10-01 |
+| Area | State on 2026-10-07 |
 |---|---|
 | Plays well | abend2 (8 captures vs 0 for the parent `dd9876e6` over six same-minute rounds, after the `0126b884`..`84a3f3d3` fix), Batteries Included, the bedlam 4-team set, KegD3, Canyons, Sewer Rat, orbital |
 | Weak, registered | Sigma Base rm37 and the bridge room rm13 (NAV1), Slave Pit with no flag picks and DownTown wandering (NAV3), Khazad-dum with 0 captures (MODE17), Rim's alcoves (NAV8) |
-| Modes | Anarchy, Team Anarchy, Robo-Anarchy, CTF, Hyper-Anarchy, Monsterball and Entropy have bot play; the docs disagree on whether Entropy takeovers happen (MODE2); co-op works and is experimental: the operator's 09-28 read was "it does work, but it doesn't feel good, bots get lost"; on 2026-10-01 he put co-op on the pre-reveal list (COOP1); the Entropy and Monsterball polish is pre-reveal too (MODE1, MODE7) |
+| Modes | Anarchy, Team Anarchy, Robo-Anarchy, CTF, Hyper-Anarchy, Hoard, Monsterball and Entropy have bot play; Entropy takeovers: with every bot force-loaded (a scratch build), holds started and converted on GeoDomes but never started on SteelVapor, where bots cross the target room too fast to begin one, an arrival problem on the nav side (MODE2); co-op works and is experimental: the operator's 09-28 read was "it does work, but it doesn't feel good, bots get lost"; on 2026-10-01 he put co-op on the pre-reveal list (COOP1); Entropy and Monsterball play scales with difficulty since 2026-10-07 (MODE1, MODE7), and their mode verbs ride the `!` work |
 | Shipped surface | config-file rosters, five difficulty levels, the `!` chat orders (12 verbs), `$nav` diagnostics, `$servercaps`, the Bot Settings menu, the Ctrl+F7 overlay |
-| Does not exist yet | population management, a reserved human seat, a bot yielding its seat (POP1-POP3); formation flying (CMD2); the client UX set (UX1-UX5); the co-op fix line (COOP1-COOP6); Entropy and Monsterball polish (MODE1, MODE7); bots obeying knockback in the Entropy park (MODE6) |
-| Companion tool | D3 Pyrodeck v0.4.19 (2026-09-26), its Phases 1-2 done; the reveal needs its Phase 4 (REL6) |
+| Built on 0.9.17-dev, in test | the zoned-room router and two lattice fixes (NAV41, NAV60, NAV61); a seat kept free for humans, the bot that yields it and the player target with `$botpopulation` (POP1-POP3), the allowed-ship rule (POP9), the difficulty default (POP10), the `.mps` clamp (POP14) and the `$servercaps` flags (POP6); host `$` commands with HUD replies, the Bot Settings additions, the host-only cached-only Ctrl+F7, the F10 quick-order menu, the co-op objective line and the new `$bothelp` (UX2-UX6, UX8); the Entropy park at zero thrust (MODE6); the CTF spew fix (MODE14); co-op bots spreading their fire over robots (COOP5); the release workflow, sample configs, quickstart and announcement draft (REL2, REL11). Not yet seen on screen: the UX set (UX1); not yet met by a real human: the yield (POP3) |
+| Not done yet | the `!` finish line, formation flying included (CMD1, CMD2, CMD9-CMD16; under way); the committee collapse (COL1-COL3, COL7, COL8, COL10, COL11) and the code-quality pass (COL28); the co-op fix line (COOP1-COOP4, COOP6); the rest of the Entropy and Monsterball polish (MODE1, MODE7) and the operator's Entropy flight (MODE3) |
+| Companion tool | D3 Pyrodeck v0.4.19 (2026-09-26), its Phases 1-2 done; 0.4.20 (the mission-link rewrite, the log-path checks, the new contract flags, playlist health checks; REL7-REL9) is on its `release/0.4.20` branch, not merged or pushed; the reveal needs its Phase 4 (REL6) |
 
 The history of how the project got here (the navigation blocker, the committee census, the 0.9.13 to 0.9.16 sprints)
 lives in `archive/PLAN-2026-08-29_to_10-01.md`, `BOTS_DEVEL.md` and `CHANGELOG.md`.
@@ -75,7 +78,7 @@ only in §4; the README's known limitations each name a §4 id.
 
 **Overnight wide-mode read, 2026-10-01 (ST1): PASS.** The 0.9.15 baseline's D, C and B sets re-run on `4b4e78f4` (18
 soaks, 23:16 to 03:59) read flat or better on every mode and map against the 09-20 baseline logs; the one failed arm is
-TC's known Debug-only engine assert, which 0.9.15 hit too. Stage A now waits only on the operator's final review.
+TC's known Debug-only engine assert, which 0.9.15 hit too. Stage A closed the same day with the stamp (§3).
 
 ## 3. Release path and exit criteria
 
@@ -113,13 +116,20 @@ code-quality pass (COL28) is an exit criterion with its own checklist.
    (Glasshouse's pyramid galleries); a lattice grown through a door no longer runs through the next room's walls. **Exit:** bot-free dumps on the
    full map set list every zoned room and each is classified sealed or lattice gap; paired soaks on Glasshouse, abend2,
    Sigma Base and Canyons against the 0.9.16 controls read flat or better, Glasshouse's room-1 stucks (38 a round at 6v6)
-   gone from the galleries.
-1. **Population and seats (POP1-POP3, POP5).** A target player count with bots added and removed as humans come and
-   go; a seat nobody but a human can take; a bot that leaves when a human joins a full server; the README's team
-   balance bullet corrected (DMFC `$balance` already works with bots). Spec: `BOT_MANAGEMENT.md`. **Exit:** a scripted
-   join/leave run on a dedicated server: bots fill to the target, a human joining a full server gets a seat at once
-   and a bot leaves with a chat line, the bot returns when the human leaves, and one seat stays free in every mode
-   (co-op included).
+   gone from the galleries. Built: NAV41 on 2026-10-01, NAV60 with NAV61 through their gate on 2026-10-05
+   (`00ffcd75`); against 0.9.16 (BOTS_DEVEL 2026-10-06) Glasshouse, Canyons, abend2 and Sigma Base capture more,
+   Isengard, bedlam and Bree read flat, and Batteries reads worse twice (31 and 24 captures vs 45 and 33, its rm80 spawn
+   pocket's count doubled) with a bisect that pins it on neither half; navigation is frozen and the operator's flights
+   decide.
+1. **Population and seats (POP1-POP3, POP5): built 2026-10-07 on 0.9.17-dev.** `BotTargetPlayers=` keeps humans plus
+   bots at a target, one change every 5 s, announced in chat; `BotReservedSlots=` (default and minimum 1) keeps seats
+   only a human can take, checked in `BotAdd` on every add path; a bot leaves once a human has taken the free seat,
+   the larger team's lowest scorer; `$botpopulation` drives it live (POP6 advertises it). DMFC `$balance` already
+   works with bots (POP5, X). Spec: `BOT_MANAGEMENT.md` §9. **Exit:** a scripted join/leave run on a dedicated server:
+   bots fill to the target, a human joining a full server gets a seat at once and a bot leaves with a chat line, the
+   bot returns when the human leaves, and one seat stays free in every mode (co-op included). The console half passed
+   in the lab on 2026-10-07 (BOT_MANAGEMENT §9.9: fill, refill, target cut, the yield branch, the four-seat server);
+   a real human joining and leaving is owed a flight.
 2. **The committee collapse (COL1, COL2) with its riders (COL3-COL6, COL9, COL14).** Row 4: one in-room planner.
    Row 5: seam and hop-commit become the commitment rule. The operator ruled on 2026-09-28 that the collapse stays in
    the reveal's scope; it ships after 0.9.16 (Q4d). The cleanup also retires the legacy toggles and `mjunction`
@@ -130,20 +140,25 @@ code-quality pass (COL28) is an exit criterion with its own checklist.
    flying v1. Spec: `CHAT_COMMANDS.md`. **Exit:** every verb answers in every mode it is valid in, every verb in a
    free-for-all mode gets a taunt and installs nothing (a scripted chat run
    on a listen and a dedicated server), and a four-follower formation holds its slots through a tunnel and a room.
-4. **Client UX (UX1-UX6).** Bot Settings additions, host-side `$` commands with HUD feedback, Ctrl+F7 host-only and
-   cached-only, the HUD quick-order overlay on the Matcen client (degrades to chat), the co-op objective line
-   reworded. **Exit:** a listen-server host can add, remove and order bots mid-match and sees every refusal; a remote
-   client's Ctrl+F7 does nothing; the quick-order overlay issues the same orders as chat.
+4. **Client UX (UX1-UX6): built 2026-10-07 on 0.9.17-dev.** Bot Settings additions (Team, free seats, the spawn
+   note, the Mercenary check; UX3), host-side `$` commands with HUD feedback (UX2), Ctrl+F7 host-only and cached-only
+   (UX5), the F10 quick-order menu on the Matcen client, which sends ordinary chat (UX4), the co-op objective line
+   reworded (UX6). **Exit:** a listen-server host can add, remove and order bots mid-match and sees every refusal; a
+   remote client's Ctrl+F7 does nothing; the quick-order overlay issues the same orders as chat. Owed: none of it has
+   been seen on screen; the exit is a cockpit flight (UX1).
 5. **Co-op (COOP1-COOP6).** "We inspect and fix co-op" (operator, 2026-10-01). The first input is a fresh Pyrodeck
    co-op flight log (COOP2); then the lattice for region-less campaign terrain and outdoor escort legs (COOP3) and the
-   known-issues list (COOP4-COOP6). **Exit:** a co-op flight where bots keep up outdoors and in tight tunnels.
+   known-issues list (COOP4-COOP6). Built 2026-10-07, unflown: co-op bots spread their fire over the robots (COOP5).
+   **Exit:** a co-op flight where bots keep up outdoors and in tight tunnels.
 6. **Game-mode polish (MODE1, MODE3, MODE6, MODE7).** Entropy E4 and Monsterball M4 (mode verbs, difficulty scaling);
    the operator's own Entropy flight; the Entropy park's thrust against knockback removed (the physics rule is
-   absolute: bots obey knockback like players, always). **Exit:** the mode verbs answer, the park holds without
-   thrusting against knockback, and the operator's Entropy flight is in.
-7. **Small rows.** Bots obey the allowed-ship list, a disallowed ship falls back to Pyro-GL (POP9); the CTF
-   `HandlePlayerSpew` fix listed as upstream patch #6 (MODE14); the optimised build flown before the reveal (REL1); the
-   CLAUDE.md rewrite (DOC7); the README rules (DOC14).
+   absolute: bots obey knockback like players, always). Built 2026-10-07: the park holds zero thrust (MODE6) and the
+   difficulty scaling of both modes (MODE1, MODE7); the mode verbs ride the `!` work; the operator's Entropy flight
+   (MODE3) is owed. **Exit:** the mode verbs answer, the park holds without thrusting against knockback (a
+   force-loaded lab smoke: 113 park samples all at zero thrust), and the operator's Entropy flight is in.
+7. **Small rows.** Bots obey the allowed-ship list, a disallowed ship falls back to Pyro-GL (POP9, built 2026-10-07);
+   the CTF `HandlePlayerSpew` fix listed as upstream patch #6 (MODE14, built 2026-10-07); the optimised build flown
+   before the reveal (REL1); the CLAUDE.md rewrite (DOC7); the README rules (DOC14, applied 2026-10-07).
 8. **Docs (DOC1-DOC5, DOC8, DOC10, DOC12, DOC14).** The consolidation this plan is part of. **Exit:** no registry row is
    dropped or edited beyond status, bucket and Q, and every README limitation maps to a registry id.
 
@@ -165,6 +180,12 @@ one Entropy takeover check on the release build (MODE2), `$bothelp` cleaned (UX8
 merge to `main` and the upstream sync BEFORE the reveal (REL18), the reveal version bump (REL14) with the CHANGELOG
 trim (DOC11). macOS ships community-tested.
 
+Done or built by 2026-10-07: the `$servercaps` flags (POP6); `$bothelp` (UX8); `release.yml` with the sample configs
+and `INSTALL.txt`, not yet run on GitHub (REL2); the battery checklist and its two new manifests, not yet run on a
+release build (REL4); the quickstart and the announcement draft (REL11); the tags backfilled and the merged branches
+deleted, locally (REL16, REL17; pushing them is the operator's); Pyrodeck 0.4.20 with the mission-link rewrite, the
+contract sync and the log-path checks on its own branch (REL7-REL9; merging and tagging it is the operator's).
+
 **Exit:** the release build passes the battery and the compatibility pass, the packages and Pyrodeck release are
 published, the quickstart is written, and the announcement goes out (Reddit r/descent, DDN Discord, DescentBB,
 SectorGame; files on ModDB/GameFront).
@@ -172,10 +193,12 @@ SectorGame; files on ModDB/GameFront).
 ### Exit criteria for the reveal
 
 Entropy and Monsterball playable against bots (**done**); navigation good enough that a human enjoys a full round
-(the 09-30 flight: "almost release ready"); **population management, a free human seat and bot yield (POP1-POP3)**;
-**the committee collapse landed, rows 4 and 5, read flat** (operator ruling 2026-09-28); the `!` harness at its chosen
-finish line; **co-op inspected and fixed (COOP1-COOP6)**; **the Entropy and Monsterball polish (MODE1, MODE7)**; bots obey
-knockback everywhere (MODE6); packaging, quickstart, announcement.
+(the 09-30 flight: "almost release ready"); **population management, a free human seat and bot yield (POP1-POP3)**
+(built 2026-10-07; a human join owed); **the committee collapse landed, rows 4 and 5, read flat** (operator ruling
+2026-09-28); the `!` harness at its chosen finish line; **co-op inspected and fixed (COOP1-COOP6)**; **the Entropy and
+Monsterball polish (MODE1, MODE7)** (difficulty scaling built 2026-10-07; the mode verbs owed); bots obey knockback
+everywhere (MODE6, built 2026-10-07); packaging (the workflow built, its first run owed), quickstart (written),
+announcement (drafted).
 
 **Decided 2026-10-01 (Q11).**
 
@@ -287,7 +310,7 @@ Status text ("Q13", "Q9") is the old PLAN §4.0.1 review queue, kept in the arch
 | COL14 | Stale code comments: bot_chat.cpp:19 ("Stage 3"), :809 (`!objective` "resumes autonomous seeking"), :596 and the `BotAdd` comment (" [BOT]", 6 chars), :556-558 (Monsterball "non-team"), dedicated_server.cpp:863 (`addbot <name> [ship]`) | code audit §6 | open; two of its items done 2026-10-07: the `BotAdd` suffix comment (bot.cpp) and the `$addbot` parse comment (dedicated_server.cpp); bot_chat.cpp:19, :809, :596 (" [BOT]" in `BotBaseNameMatch`) and :556-558 remain | B | NEW | — |
 | COL26 | Stale code comment: bot_roadmap.cpp:1590-1595 (corner-bridge NOTE) says "the sweep ignores back faces"; `RoadmapLOS` has been `FQ_BACKFACE` since `8b6ee205` | EU2 code audit | open; rides COL14 | B | NEW | — |
 | COL27 | Stale code comments: bot.h:517 `countermeasure_timer` "(future use)" (it gates `BotDeployChaff`); GameLoop.cpp:1270-1271 overlay "no-ops on a remote client" (see UX5) | EU5 code read | DONE 2026-10-07: the `countermeasure_timer` comment describes the `BotDeployChaff` cooldown; the GameLoop.cpp Ctrl+F7 comment matches UX5 (host-only, cached-only) | F | NEW | — |
-| COL28 | Codebase quality bar before the reveal: the code reads as deliberate engineering. Checklist: dead code, dead `$nav` toggles and diagnostic scaffolding that will not ship are removed, not disabled; comments explain the design, not the session that wrote them (no dated narrative, no soak codenames, no "2026-09-xx" chatter in code); names are consistent across the bot modules; no stale comments (COL26, COL27 folded in); `clang-format` clean; tests pass; `$bothelp` and every user-visible string read like a product; one reviewer pass over bot*.cpp with the ledger at hand | operator ruling 2026-10-01 ("clean and polished, not AI-slop") | not started; runs after the collapse lands, inside the must-read-flat gate | B | NEW | - |
+| COL28 | Codebase quality bar before the reveal: the code reads as deliberate engineering. Checklist: dead code (known: `BotInitAll()`, declared in bot.h and defined in bot.cpp, never called, and the multi_ui.cpp comment that says it runs after level load), dead `$nav` toggles and diagnostic scaffolding that will not ship are removed, not disabled; comments explain the design, not the session that wrote them (no dated narrative, no soak codenames, no "2026-09-xx" chatter in code); names are consistent across the bot modules; no stale comments (COL26, COL27 folded in); `clang-format` clean; tests pass; `$bothelp` and every user-visible string read like a product; one reviewer pass over bot*.cpp with the ledger at hand | operator ruling 2026-10-01 ("clean and polished, not AI-slop") | not started; runs after the collapse lands, inside the must-read-flat gate; 2026-10-07: the `D3.BotSkelChain` harness (`tools/test_bot_skel_chain.py`), failing to compile since the NAV41 work, is fixed (`4d2eb318`; ctest 22/22); found for the pass on 2026-10-07: the `fvi_RoomCheckDir` comment (physics/findintersection.cpp) carries a date, and `$nav` toggle descriptions and comments in dedicated_server.cpp still cite internal sections ("NAVIGATION 3.7", "§7 contend") | B | NEW | - |
 
 ### DOC: docs
 | ID | Item | Source | Status (evidence) | Bkt | §4.2 | Q |
@@ -297,28 +320,28 @@ Status text ("Q13", "Q9") is the old PLAN §4.0.1 review queue, kept in the arch
 | DOC9 | `RoadmapRoom` lifetime-contract docs (doc debt) | `739f78b6` | never written | E | NEW | — |
 | DOC10 | SOAK_0913 §7 harness facts (dirty build stamps the parent hash; SetLevel does not pin) into the matcen-soak skill / test notes | NAV inventory §6 | doc half done: BOT_DEV_REFERENCE "Measurement caveats > Harness" carries the facts; the matcen-soak skill half is owed (skills are operator-owned) | B | NEW | — |
 | DOC11 | Trim CHANGELOG 0.9.14-0.9.16 to release-note length (detail already in BOTS_DEVEL) | CHANGELOG inventory Q9 | decision; Decided 2026-10-01 (Q23e): trim at the 0.10 bump | C | NEW | Q23 |
-| DOC14 | README rules: short and concise; no custom map named (known limitations stay in this registry by id) | operator answers 2026-10-01 (Q21) | open; Decided 2026-10-01 (Q21): new rules for the README; the next README pass applies them | B | NEW | Q21 |
+| DOC14 | README rules: short and concise; no custom map named (known limitations stay in this registry by id) | operator answers 2026-10-01 (Q21) | DONE 2026-10-07: the close-out docs pass rewrote the README's Matcen section to these rules: it leads with every mode on any map, names no map, lists only what is built (the 0.9.17-dev additions marked as such), and every known limitation carries its registry ids in a comment; Decided 2026-10-01 (Q21): new rules for the README; the next README pass applies them | B | NEW | Q21 |
 
 ### REL: release package and Pyrodeck
 | ID | Item | Source | Status (evidence) | Bkt | §4.2 | Q |
 |---|---|---|---|---|---|---|
 | REL1 | **Windows + Linux release builds**; the operator flies and soaks an optimised build first (Q9: RelWithDebInfo, read `Descent3-opt9` vs Debug); macOS ships community-tested (no test device) | PLAN 848-851, 936, 1387-1400 | CI builds all platforms; Q9 "decided" (936), switch not evidenced; Decided 2026-10-01 (Q13a): the operator is not yet flying the optimised RelWithDebInfo binary; switch before the reveal | B | 11 | Q13 |
 | REL2 | Attach binary packages to a GitHub Release (exe, netgames, the d3c HOG, sample bots.cfg); upstream `release.yml` drafts a source tarball only | archived `project_release_prep` #3; `.github/workflows/release.yml` | **BUILT 2026-10-07**, not yet run on GitHub: `release.yml` builds RelWithDebInfo packages for Windows x64, Linux x64 and macOS universal (marked community-tested) on a `v*` tag, checks the tag against `MATCEN_VERSION_*` (no `-dev`), and drafts a release with the packages, `-symbols` archives, a source tarball and `SHA256SUMS.txt`; each package is the `cmake --install` tree plus `samples/dedicated.cfg`, `samples/bots.cfg` and `INSTALL.txt` (`matcen-docs/samples/`); a manual run from the Actions tab is the dry run (no release). Owed: the first dry run; the ModDB mirror is the operator's. Decided 2026-10-01 (Q14a): yes, mirrored to ModDB | C | NEW | Q14 |
-| REL3 | Release-build judging and a Windows Release validation soak ("THE blind spot"): `LOG_DEBUG` is Debug-only so Release logs are blind; 07-16 Release goal rate 9 vs 20 (~2.2σ) flagged for a Windows-native run | archived `project_release_prep` | open; Decided 2026-10-01 (Q13b): the operator judges the release soak himself (HUD goal lines, his flight, a same-evening Debug control; one Windows-native Release run); 2026-10-07, by code reading, not yet seen in a log: the bot telemetry is run-time-filtered `LOG_DEBUG` with no build-type `#if`, a RelWithDebInfo build defines no `RELEASE` and so logs at debug level by default, and a Release build should log it with `-loglevel DEBUG` (BOTS_DEVEL 2026-10-07, release packaging) | C | NEW | Q13 |
+| REL3 | Release-build judging and a Windows Release validation soak ("THE blind spot"): `LOG_DEBUG` is Debug-only so Release logs are blind; 07-16 Release goal rate 9 vs 20 (~2.2σ) flagged for a Windows-native run | archived `project_release_prep` | open; Decided 2026-10-01 (Q13b): the operator judges the release soak himself (HUD goal lines, his flight, a same-evening Debug control; one Windows-native Release run); 2026-10-07, by code reading, not yet seen in a log: the bot telemetry is run-time-filtered `LOG_DEBUG` with no build-type `#if`, a RelWithDebInfo build defines no `RELEASE` and so logs at debug level by default, and a Release build should log it with `-loglevel DEBUG` (BOTS_DEVEL 2026-10-07, release packaging), so the release logs are probably not blind: the packages are RelWithDebInfo; re-check on a real RelWithDebInfo server log before 0.10.0 | C | NEW | Q13 |
 | REL4 | Release regression battery: `tools/manifests/battery/reg-*` + bedlam, fellowship, Monsterball, co-op stages on the release build | archived `project-099-regression-battery` | scaffold 2026-10-07: `tools/manifests/battery/README.md` is the stage checklist with its `soakctl.py` and `soak_battery.sh` invocations; new manifests `reg-bedlam.json` and `reg-coop.json` for the two stages that had none; not yet run on a release build | C | NEW | — |
 | REL5 | Bot removal during a level transition is untested | BOTS_DEVEL 2734 | no test recorded | C | NEW | — |
-| REL6 | **D3 Pyrodeck for the reveal**: its own Phase 4 "Production Release" (rotation hardening, Windows rotation E2E, history to noreply email, repo public + first tag + CI dry run, Linux tarball + Windows .exe smoke, issue template); remote admin and orchestration are its Phase 6 | D3_PYRODECK_SPEC §7; Pyrodeck repo PLAN.md 304-344; BOTS_DEVEL roadmap row 5 | Pyrodeck v0.4.19 (09-26), Phases 1-2 done; the Matcen spec's phase list is obsolete; Decided 2026-10-01 (Q12a): Pyrodeck's Phase 4 is needed for the reveal | C | 12 | Q12 |
-| REL7 | Pyrodeck mission-download link refresh (rewrite URL lines inside the .mn3; the engine `MissionURL` cvar was reverted on 07-19) | archived `project_release_prep` | decided, not built, not in the spec; Decided 2026-10-01 (Q12b): in before the reveal | C | NEW | Q12 |
-| REL8 | Pyrodeck contract work: population controls and team field once POP1/POP6 land; Tier-1 drift (`$botmode` names, `$addbot` team arg and success line, `Name[BOT]` spacing, role case, `$terrainsteer`, `$botobj` console output) | code audit §7 #28-32; FEATURE §4 | Matcen side documented (every Tier-1 format verified in PYRODECK_CONTRACT §4); the remaining work is Pyrodeck-side: its v2.7 spec still shows the old `$addbot` lines, `Phantom [BOT]`, old `$botmode` names, `fork_version=0.9.5`; 2026-10-07: the fork side of the population controls (`$botpopulation`, now Tier 1) and the `teams`, `squad_orders`, `population` flags are built and specified in PYRODECK_CONTRACT §2 and §4; Pyrodeck has to adopt them | C | NEW | Q7 |
-| REL9 | Pyrodeck: validate the `logPath` parent dir before launch; post-launch write check | archived `project_pyrodeck_log_path` | Pyrodeck repo; fix #1 done, #2-#3 unknown | E | NEW | — |
+| REL6 | **D3 Pyrodeck for the reveal**: its own Phase 4 "Production Release" (rotation hardening, Windows rotation E2E, history to noreply email, repo public + first tag + CI dry run, Linux tarball + Windows .exe smoke, issue template); remote admin and orchestration are its Phase 6 | D3_PYRODECK_SPEC §7; Pyrodeck repo PLAN.md 304-344; BOTS_DEVEL roadmap row 5 | Pyrodeck v0.4.19 (09-26), Phases 1-2 done; the Matcen spec's phase list is obsolete; Decided 2026-10-01 (Q12a): Pyrodeck's Phase 4 is needed for the reveal; 2026-10-07: Pyrodeck 0.4.20, on its `release/0.4.20` branch (not merged or pushed), carries two Phase 4 items, playlist restarts health-checked (120 s, one retry, then a pause with a Resume button) and the bug-report issue form; lint, type check and 153 tests pass, no Windows run, no eyes-on UI check; owed, the operator's: the merge to main, the history rewrite to the noreply address, the public flip, the `v0.4.20` tag, the CI dry run and the Windows smoke | C | 12 | Q12 |
+| REL7 | Pyrodeck mission-download link refresh (rewrite URL lines inside the .mn3; the engine `MissionURL` cvar was reverted on 07-19) | archived `project_release_prep` | **BUILT 2026-10-07** in Pyrodeck 0.4.20, on its `release/0.4.20` branch, not merged or pushed: the Config tab's mission panel lists a mission's URL lines and replaces them with one link, rewriting the `.mn3` only after checking it is a real HOG2 archive, keeping every other byte, saving the original as `<name>.mn3.pyrodeck-orig` and restoring it in one click; the server serves the new link the next time it loads the mission; round-trip over the lab's 108 non-retail missions: payloads identical, restore exact (Pyrodeck DEVLOG); Decided 2026-10-01 (Q12b): in before the reveal | C | NEW | Q12 |
+| REL8 | Pyrodeck contract work: population controls and team field once POP1/POP6 land; Tier-1 drift (`$botmode` names, `$addbot` team arg and success line, `Name[BOT]` spacing, role case, `$terrainsteer`, `$botobj` console output) | code audit §7 #28-32; FEATURE §4 | Matcen side documented (every Tier-1 format verified in PYRODECK_CONTRACT §4); the remaining work is Pyrodeck-side: its v2.7 spec still shows the old `$addbot` lines, `Phantom [BOT]`, old `$botmode` names, `fork_version=0.9.5`; 2026-10-07: the fork side of the population controls (`$botpopulation`, now Tier 1) and the `teams`, `squad_orders`, `population` flags are built and specified in PYRODECK_CONTRACT §2 and §4; Pyrodeck has to adopt them; Pyrodeck side **BUILT 2026-10-07** in 0.4.20 (spec v2.8), on its `release/0.4.20` branch, not merged or pushed: the `$servercaps` parser keeps flags it does not know, `$addbot` (team argument, the new success line) and `$botmode` (exact names) parse to this contract, callsigns are `Name[BOT]`, the Bots tab offers a team when `teams` is advertised and the game has teams, a dead bot (`shields=-1`) stays in the `$botstat` details; not built there: any `$botpopulation` control (the flag is parsed and kept); found, open on the Pyrodeck side: in team modes `$scores` parses the team into the player name | C | NEW | Q7 |
+| REL9 | Pyrodeck: validate the `logPath` parent dir before launch; post-launch write check | archived `project_pyrodeck_log_path` | Pyrodeck repo; fix #1 done; **BUILT 2026-10-07** in Pyrodeck 0.4.20, on its `release/0.4.20` branch, not merged or pushed: the log directory must be an absolute path, Pyrodeck creates it and the log file before every launch and playlist restart, re-checks the log every 30 s and keeps a failure in the Launch panel, and the launcher API reports the log status; found, open on the Pyrodeck side: a server that crashes within about 8 s leaves the log check pending, the legacy `logPath` field is still accepted, and the Logs panel looks beside the global executable rather than a profile's own | E | NEW | — |
 | REL10 | **Cloud-hosted 24/7 server**, sized by a resource-capped soak (Batteries 12-16 player budget as input) | PLAN 1319-1323, 1389-1390, 1398 | not started; Decided 2026-10-01 (Q12c): yes, sized for 12-16 players by a capped soak | C | 13 | Q12 |
 | REL11 | **Quickstart + announcement** (Reddit r/descent, DDN Discord, DescentBB, SectorGame; ModDB/GameFront). Quickstart content: minimal dedicated.cfg + bots.cfg, `$bothelp`, the `online/Direct TCP~IP.d3c` gotcha, PPS=40 | PLAN §4.0; archived `reference_descent_community`, `project_release_prep` #4 | quickstart written 2026-10-07 (`QUICKSTART.md`, with the sample configs in `samples/`); the announcement drafted (`ANNOUNCEMENT.md`, link placeholders) for the operator to edit and post at the reveal | C | 14 | — |
 | REL12 | **Client compatibility pass**: retail 1.5, PiccuEngine, the Matcen client against the release server; every player-facing feature has a chat fallback (Piccu rule); re-check the March "PiccuEngine control takeover in robo-anarchy" | archived `feedback_piccu_compat`, `project_pending_testing`; deleted README line | Piccu compatible as of 0.8.7; re-verify | C | 15 | — |
-| REL13 | **UPSTREAM_PATCHES** shared at the reveal; index "post-0.9.8" → 0.9.9; add #6 (MODE15) if fixed; assess other fork hardening (aipath ASSERT→graceful, `OnPlayerReconnect` ASSERT→warning, physics collision-warning rate limit, `$setpps` clamp, ENG5) | UPSTREAM_PATCHES; FEATURE §3f | UPSTREAM_PATCHES index versions corrected to the tags (#1, #3 v0.8.13; #2 v0.9.7; #4, #5 v0.9.9); #6 drafted on the Q19 default; assessment list added; patches 1-5 unsubmitted; #6 fixed in the fork 2026-10-07 (MODE14), unsubmitted | C | 16 | Q19 |
+| REL13 | **UPSTREAM_PATCHES** shared at the reveal; index "post-0.9.8" → 0.9.9; add #6 (MODE14) if fixed; assess other fork hardening (aipath ASSERT→graceful, `OnPlayerReconnect` ASSERT→warning, physics collision-warning rate limit, `$setpps` clamp, ENG5) | UPSTREAM_PATCHES; FEATURE §3f | UPSTREAM_PATCHES index versions corrected to the tags (#1, #3 v0.8.13; #2 v0.9.7; #4, #5 v0.9.9); #6 drafted on the Q19 default; assessment list added; patches 1-5 unsubmitted; #6 fixed in the fork 2026-10-07 (MODE14), unsubmitted | C | 16 | Q19 |
 | REL14 | Series bump to 0.10.x: timing (is the reveal build 0.10.0?) | PLAN 1387-1391 | decision; Decided 2026-10-01 (Q11a): the reveal build is 0.10.0 or higher (a later 0.10.x) | C | 17 | Q11 |
-| REL15 | Write the 1.0 definition into PLAN/README: 1.0 only after community play marks it production-stable (replaces March's "all modes, client UI, solid nav") | memory `release-roadmap.md`; retired PLAN (`3d5b838c^`) | PLAN half DONE 2026-10-07: §3 carries the line verbatim ("1.0 only after community play marks it production-stable"); the README line is owed (the README pass); Decided 2026-10-01 (Q11b): yes; PLAN §3 carries it, the README line is owed | C | NEW | Q11 |
-| REL16 | Annotated tags: `v0.9.16` on stamp; released 0.8.14, 0.9.3, 0.9.4, 0.9.5, 0.9.6 have none | archived `feedback_git_tags`; `git tag` | open; Decided 2026-10-01 (Q14b): yes, backfill 0.8.14 and 0.9.3-0.9.6, plus `v0.9.16` at the stamp | C | NEW | Q14 |
-| REL17 | Branch hygiene: delete merged/equivalent branches (`fix/mission-exists-check`, `fix/sdl-mouse-controls`, `fix/outdoor-0915`, `fix/sigmabase-window-and-exit`, `fix/vcpkg-libsystemd-gcc16`, `origin/fix/vs2026-release-build`); decide `backup/pre-0530-batch` and `fix/sigmabase-objective-gate` | `git branch -a`, `git cherry` | open; Decided 2026-10-01 (Q14c, Q14d): delete the six merged branches; keep `backup/pre-0530-batch` | C | NEW | Q14 |
+| REL15 | Write the 1.0 definition into PLAN/README: 1.0 only after community play marks it production-stable (replaces March's "all modes, client UI, solid nav") | memory `release-roadmap.md`; retired PLAN (`3d5b838c^`) | DONE 2026-10-07: PLAN §3 carries the line verbatim ("1.0 only after community play marks it production-stable"), and so does the README's roadmap (the close-out docs pass); Decided 2026-10-01 (Q11b): yes | C | NEW | Q11 |
+| REL16 | Annotated tags: `v0.9.16` on stamp; released 0.8.14, 0.9.3, 0.9.4, 0.9.5, 0.9.6 have none | archived `feedback_git_tags`; `git tag` | DONE 2026-10-07, locally: annotated tags `v0.8.14` (`61b218cc`), `v0.9.3` (`743166ef`), `v0.9.4` (`923eb0cd`), `v0.9.5` (`3d284b32`), `v0.9.6` (`e4358604`), each on its version's stamp commit; `v0.9.16` was tagged and pushed at the stamp (ST5); 0.9.2 and 0.8.15 have no tag and are outside this row; owed, the operator's: `git push origin v0.8.14 v0.9.3 v0.9.4 v0.9.5 v0.9.6`; Decided 2026-10-01 (Q14b): yes, backfill 0.8.14 and 0.9.3-0.9.6, plus `v0.9.16` at the stamp | C | NEW | Q14 |
+| REL17 | Branch hygiene: delete merged/equivalent branches (`fix/mission-exists-check`, `fix/sdl-mouse-controls`, `fix/outdoor-0915`, `fix/sigmabase-window-and-exit`, `fix/vcpkg-libsystemd-gcc16`, `origin/fix/vs2026-release-build`); decide `backup/pre-0530-batch` and `fix/sigmabase-objective-gate` | `git branch -a`, `git cherry` | DONE 2026-10-07, locally: deleted `fix/mission-exists-check`, `fix/sdl-mouse-controls`, `fix/outdoor-0915`, `fix/sigmabase-window-and-exit` and `fix/vcpkg-libsystemd-gcc16` (each merged or patch-equivalent); kept `backup/pre-0530-batch` (ruled) and `fix/sigmabase-objective-gate`, which holds one unmerged commit (`05f620dc`) and is still undecided; owed, the operator's: `git push origin --delete fix/mission-exists-check fix/sdl-mouse-controls fix/vcpkg-libsystemd-gcc16` and the remote-only `fix/vs2026-release-build`; Decided 2026-10-01 (Q14c, Q14d): delete the six merged branches; keep `backup/pre-0530-batch` | C | NEW | Q14 |
 | REL18 | Merge the fork into `main` / sync upstream (last fetched 2026-08-20): before or after the reveal | memory `release-roadmap.md` | memory only; Decided 2026-10-01 (Q14e): merge to `main` and sync upstream BEFORE the reveal | C | NEW | Q14 |
 | REL19 | Old commit email reachable on GitHub until a support-requested GC; local `stash@{0}` holds it | archived `project-git-identity-scrub` | operator informed | F | NEW | — |
 | REL20 | UPSTREAM_PATCHES assessment list: note `fvi_RoomCheckDir` (physics/findintersection) as fork-only; the engine-files audit missed six modified files and had a stale aipath.cpp row | EU5: `git diff --name-status 156cba8a..ee6e6525` | DONE 2026-10-07: audit fixed in BOT_DEV_REFERENCE (10-01); UPSTREAM_PATCHES' assessment list carries `fvi_RoomCheckDir` as fork-only (additive, no engine caller, no upstream defect) | C | NEW | — |
@@ -339,7 +362,7 @@ Status text ("Q13", "Q9") is the old PLAN §4.0.1 review queue, kept in the arch
 | MODE9 | Monsterball analyzer anomalies `MBALL_BLUNDER_HEAVY`, `MBALL_BALL_STUCK` | MONSTERBALL_MODE 281-283 | confirmed not built; `MBALL_OWN_GOAL_EXCESS` (analyze_bot_log.py:1513-1538) partly covers the BLUNDER_HEAVY intent; nothing covers BALL_STUCK | E | NEW | — |
 | MODE10 | **CTF role balance**: first grab puts the other team on defence; both-flags-out standoffs on long maps; dropped-flag reaction time (SteelVapor); Bree Red side (rm25→rm61 hatch vs corridor); roster size as a test axis (2v2 Animal House); Q3A 240 s stalemate flip; UT HidePath carrier hiding | PLAN 438-448, 605, 630-635, 723-725, 763-766; retired CTF_ROLES_DESIGN.md | timeline instrument done; policy open | E | 27 | — |
 | MODE11 | Multi-flag CTF hoarding (4-team bonus); the only implementation sits unmerged on `backup/pre-0530-batch` (`36df4cce`) | README 115; BOTS_DEVEL 1944; NAVIGATION 2891 | not built; Decided 2026-10-01 (Q14d): `backup/pre-0530-batch` is kept | F | NEW | Q14 |
-| MODE14 | CTF DLL bug: `HandlePlayerSpew` indexes `dObjects[pnum]` instead of `dPlayers[pnum].objnum` (wrong goal-room test when a carrier dies); fix + UPSTREAM #6 | BDR 97-99; netgames/ctf/ctf.cpp:1755 | **BUILT 2026-10-07**: `HandlePlayerSpew` tests `dObjects[dPlayers[pnum].objnum]` with a `>= 0` guard (ctf.cpp:1754-1757); UPSTREAM_PATCHES #6 reads fixed in the fork, not submitted; a carrier killed in the flag's home goal now sends the flag home with the return sound and no HUD line (BOT_DEV_REFERENCE CTF caveats); per Decided 2026-10-01 (Q19) | B | NEW | Q19 |
+| MODE14 | CTF DLL bug: `HandlePlayerSpew` indexes `dObjects[pnum]` instead of `dPlayers[pnum].objnum` (wrong goal-room test when a carrier dies); fix + UPSTREAM #6 | BDR 97-99; netgames/ctf/ctf.cpp:1755 | **BUILT 2026-10-07**: `HandlePlayerSpew` tests `dObjects[dPlayers[pnum].objnum]` with a `>= 0` guard (netgames/ctf/ctf.cpp:1754-1757); UPSTREAM_PATCHES #6 reads fixed in the fork, not submitted; a carrier killed in the flag's home goal now sends the flag home with the return sound and no HUD line (BOT_DEV_REFERENCE CTF caveats); per Decided 2026-10-01 (Q19) | B | NEW | Q19 |
 
 ### COOP: co-op
 | ID | Item | Source | Status (evidence) | Bkt | §4.2 | Q |
@@ -409,6 +432,8 @@ Status text ("Q13", "Q9") is the old PLAN §4.0.1 review queue, kept in the arch
 | WAT10 | mysterious_isle conversion (6% chronic; troute gate d) | NAVIGATION 443-445; SOAK_0913 | no reading since 09-11 | E | NEW | — |
 | WAT11 | pumphouse captures > 0 and pyroplace no-regression (Phase 12 metrics); cover-glass residual in pumphouse's central room | NAVIGATION 2804-2831; BOTS_DEVEL 1947 | never re-read | E | NEW | — |
 | WAT12 | Teammate clumping check (`$botstat` same-team dead-zone test) after the potential-field removal | retired NAV_CONSOLIDATION §6 | never run | E | NEW | — |
+| WAT15 | `tools/analyze_bot_log.py` does not count `Assertion failed (...)` lines, which an optimised build logs and carries on from instead of stopping, so a release-build soak's asserts go unreported (the battery checklist says to count them by hand) | BOTS_DEVEL 2026-10-07 (release packaging); `tools/manifests/battery/README.md` | open | E | NEW | — |
+| WAT16 | `tools/soak_battery.sh` clears up between stages with `pkill -9 -x Descent3`, killing every process named `Descent3` (another lab server, the operator's client) rather than the server it started | tools/soak_battery.sh:25-27; BOTS_DEVEL 2026-10-07 (the close-out docs pass) | open; the battery checklist warns not to play on the machine while it runs | E | NEW | — |
 
 ### ENG: engine and release hygiene
 | ID | Item | Source | Status (evidence) | Bkt | §4.2 | Q |
