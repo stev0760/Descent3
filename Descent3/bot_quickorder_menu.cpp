@@ -26,7 +26,8 @@
 #include <cstring>
 
 #define QO_MODE_BIT(m) (1u << (m))
-#define QO_TEAM_MODES (QO_MODE_BIT(QOM_TEAM) | QO_MODE_BIT(QOM_CTF))
+#define QO_TEAM_MODES                                                                                                  \
+  (QO_MODE_BIT(QOM_TEAM) | QO_MODE_BIT(QOM_CTF) | QO_MODE_BIT(QOM_ENTROPY) | QO_MODE_BIT(QOM_MONSTERBALL))
 #define QO_ORDER_MODES (QO_TEAM_MODES | QO_MODE_BIT(QOM_COOP))
 
 struct QuickOrderVerb {
@@ -42,7 +43,8 @@ struct QuickOrderVerb {
 // - `!hunt` names a player on another team, and co-op has one team, so there is no one to name.
 // - `!goal` sends the bots to the mission objective, which only co-op has; elsewhere the server
 //   answers "No mission objectives in this mode."
-// - the flag orders outside CTF are plain `!attack` and `!defend` with a different reply.
+// - the flag orders outside CTF are plain `!attack` and `!defend` with a different reply, and the lab and
+//   ball orders outside their modes are plain `!attack` and `!defend`.
 static const QuickOrderVerb Quick_orders[] = {
     {"follow", "Follow me", QOP_BOT, QO_ORDER_MODES},
     {"cover", "Cover me", QOP_BOT, QO_ORDER_MODES},
@@ -53,6 +55,10 @@ static const QuickOrderVerb Quick_orders[] = {
     {"goal", "Go to the objective", QOP_BOT, QO_MODE_BIT(QOM_COOP)},
     {"attackflag", "Get the flag", QOP_BOT, QO_MODE_BIT(QOM_CTF)},
     {"defendflag", "Guard our flag", QOP_BOT, QO_MODE_BIT(QOM_CTF)},
+    {"attacklab", "Attack their labs", QOP_BOT, QO_MODE_BIT(QOM_ENTROPY)},
+    {"defendlab", "Defend our lab", QOP_BOT, QO_MODE_BIT(QOM_ENTROPY)},
+    {"attackball", "Take the ball", QOP_BOT, QO_MODE_BIT(QOM_MONSTERBALL)},
+    {"defendgoal", "Guard their goal", QOP_BOT, QO_MODE_BIT(QOM_MONSTERBALL)},
     {"freelance", "Freelance", QOP_BOT, QO_ORDER_MODES},
     {"status", "Report", QOP_BOT, QO_ORDER_MODES},
     {"ping", "Ping", QOP_NONE, QO_ORDER_MODES},
@@ -68,7 +74,7 @@ static int QuickOrderFindVerb(const char *verb) {
   return -1;
 }
 
-static bool QuickOrderTeamMode(QuickOrderMode mode) { return mode == QOM_TEAM || mode == QOM_CTF; }
+static bool QuickOrderTeamMode(QuickOrderMode mode) { return mode != QOM_ORDERS_OFF && mode != QOM_COOP; }
 
 // The chat parser reads one word as a name and matches it as a prefix, so a name goes into a line
 // as its first word.
@@ -96,7 +102,13 @@ QuickOrderMode QuickOrderClassifyMode(bool coop, int num_teams, const char *scri
     if (n > 4 && strcmp(name + n - 4, ".d3m") == 0)
       name[n - 4] = '\0';
   }
-  return (strcmp(name, "ctf") == 0) ? QOM_CTF : QOM_TEAM;
+  if (strcmp(name, "ctf") == 0)
+    return QOM_CTF;
+  if (strcmp(name, "entropy") == 0)
+    return QOM_ENTROPY;
+  if (strcmp(name, "monsterball") == 0)
+    return QOM_MONSTERBALL;
+  return QOM_TEAM;
 }
 
 const char *QuickOrderUnavailableReason(QuickOrderMode mode, const QuickOrderRoster *roster) {

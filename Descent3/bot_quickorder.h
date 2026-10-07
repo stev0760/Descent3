@@ -36,12 +36,15 @@
 // -------------------------------------------------------------------------------------------------
 
 // What the current game lets the menu offer. Free-for-all modes (one team, not co-op) take no
-// orders at all; CTF adds the two flag orders to the team set; co-op adds the objective order.
+// orders at all, the same set the server's chat gate refuses (BotChatClassifyMode); CTF, Entropy and
+// Monsterball add their two mode orders to the team set; co-op adds the objective order.
 enum QuickOrderMode : uint8_t {
   QOM_ORDERS_OFF = 0,
   QOM_TEAM,
   QOM_CTF,
   QOM_COOP,
+  QOM_ENTROPY,
+  QOM_MONSTERBALL,
 };
 
 // The second step an order takes once picked.
@@ -115,7 +118,7 @@ enum QuickOrderResult : uint8_t {
 };
 
 // Game state to mode: co-op first (it is a flag, not a script), then one team means free-for-all,
-// then the script name tells CTF from the other team modes (Team Anarchy, Entropy, Monsterball).
+// then the script name tells CTF, Entropy and Monsterball from the other team modes (Team Anarchy).
 QuickOrderMode QuickOrderClassifyMode(bool coop, int num_teams, const char *scriptname);
 
 // Text for a mode that takes no orders, or for a squad with no bots; nullptr when the menu can open.

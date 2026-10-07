@@ -4,6 +4,7 @@ set(HEADERS
   BOA.h
   bot.h
   bot_chat.h
+  bot_chat_parse.h
   bot_objective.h
   bot_perf.h
   bot_population.h
@@ -162,6 +163,7 @@ set(CPPS
   BOA.cpp
   bot.cpp
   bot_chat.cpp
+  bot_chat_parse.cpp
   bot_navdebug.cpp
   bot_objective.cpp
   bot_perf.cpp

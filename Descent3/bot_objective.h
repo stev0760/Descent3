@@ -332,6 +332,15 @@ bool BotEntropyIsLoaded(int bot_index);
 // flee multiplier (ENTROPY_MODE.md §3.5). The invade policy and the mid-hold flee threshold both use it.
 float BotEntropyRetreatShields(int bot_index);
 
+// The room a defender of `team` guards: the room next to the team's lab on the way toward the enemy's
+// lab, never a lab itself; the lab when that room cannot be found; -1 when the team owns no lab. The
+// DEFEND lean anchors there, and so does a `!defend lab` order.
+int BotEntropyLabGuardRoom(int team);
+
+// Pins a bot under a chat order to a Monsterball role (1 striker, 3 keeper; 0 for none, the field).
+// The role assigner only ranks bots with no order, so a pinned role stands until the next order.
+void BotMonsterballOrderRole(int bot_index, uint8_t role);
+
 // $nav entropy — E3 takeover execution (invade/hold/retreat + defense bias). OFF leaves the
 // E2 economy running but bots never invade: the A/B lever for "does takeover play help".
 extern bool Bot_entropy_takeover_enabled;

@@ -8614,6 +8614,7 @@ void BotReinitAll() {
   // §7 contend: the counters still hold the finished level's data here — dump before anything
   // resets them, so every level's histogram lands in the log without operator action.
   BotNavContendDumpAll("level-end");
+  BotChatLevelReset(); // before the loop below clears the orders: their issuers are told in the new level
 
   BotDetectGameMode();
   BotInitObjectiveState();
@@ -8726,9 +8727,7 @@ void BotReinitAll() {
     Bots[i].gunboy_cooldown = 0.0f;
     Bots[i].fire_delay_timer = 0.0f;
     Bots[i].fire_delay_target = OBJECT_HANDLE_NONE;
-    Bots[i].last_chat_reply_time =
-        0.0f; // Gametime resets on level transition — must clear or throttle fires permanently
-    // Same trap, full sweep (2026-07-14: mball log throttles carried the previous level's
+    // Gametime resets on a level transition (2026-07-14: mball log throttles carried the previous level's
     // timestamps and silenced every throttled Monsterball log for the whole next round; audit
     // then found the class): every absolute-Gametime latch must reset here or the feature it
     // gates goes quiet for up to a full round after a level transition.
@@ -9099,7 +9098,6 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   Bots[bot_index].mine_dump_timer = 0.0f;
   Bots[bot_index].mine_dump_remaining = 0;
   Bots[bot_index].gunboy_cooldown = 0.0f;
-  Bots[bot_index].last_chat_reply_time = 0.0f;
   Bots[bot_index].squad_role = SQUAD_FREELANCE;
   Bots[bot_index].squad_target_slot = -1;
   Bots[bot_index].coop_auto_escort = false;
@@ -9186,6 +9184,9 @@ void BotDoFrame() {
 
   // Seats: a bot yields a seat a human took, and the population target adds or removes bots.
   BotPopulationFrame();
+
+  // Bot chat: queued replies and reports, hunted players down, level-change notices, the tip.
+  BotChatFrame();
 
   // Objective state polling — shared across all bots, runs on a 0.5s interval.
   // Gametime resets to 0 on level transitions, so detect that and force an immediate poll.

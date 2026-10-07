@@ -277,10 +277,19 @@ and Insane differ from Hotshot by the abort floor alone; a stronger bias would l
 the line-of-sight penalty for every nearer enemy. Denial appetite (the enemy-virus pickup priority) does not scale.
 Unmeasured in play: no Entropy soak has run on this build.
 
+**The squad verbs, built 2026-10-07** (CHAT_COMMANDS.md §A.5). `!attack lab` (also `!attacklab`) gives the attack
+role and lean, as `!attackflag` does: the bot fights for kills and, like every bot, invades the nearest enemy room once
+it carries five viruses; the order adds aggression, not a destination, since an unloaded bot has no lab to go to.
+`!defend lab` (also `!defendlab`) posts the bot, with the `!hold` lifecycle, in the room the DEFEND lean guards
+(`BotEntropyLabGuardRoom`, the lean's lookup moved into a function both use: the room next to the team's first lab
+toward the enemy's, never a lab; the lab when that lookup fails); a team with no lab answers `We have no lab to
+defend.` The post is fixed, so a bot stays put if the lab changes hands. Outside Entropy both are a plain `!attack` or
+`!defend`.
+
 The rest of E4 is not built and is tracked as registry row MODE1 (`PLAN.md` §4, the master registry). Decided
 2026-10-01: E4 is pre-reveal work ("Entropy will be polished pre-release"), the mode verbs and difficulty scaling first.
-Its content, unchanged from the original §3.4: `!attack lab` / `!defend lab` squad verbs; difficulty scaling of the
-abort shield floor, denial appetite and target-bias magnitudes; smarter invasion (strand the enemy's last lab,
+Its content, unchanged from the original §3.4 except that the verbs and the difficulty scaling are built: denial
+appetite scaling; smarter invasion (strand the enemy's last lab,
 coordinated raids) only with soak evidence; mirror hardening for `entropy_kill_streak` (resync on an observed refused
 pickup); re-evaluating "combat light" (`76549be3`) and loaded-bot aggression; a force-load or empty-net drill command;
 and further iteration on the shield knobs.

@@ -156,7 +156,7 @@ is the code.
 per team:
 
 - Candidates are bots with no squad order (`SQUAD_FREELANCE`); a bot under a chat order keeps its
-  order.
+  order and the role that order set: striker or keeper for the ball verbs, the field for any other (§4.4).
 - Utility is room-graph path cost to the ball plus straight-line distance. The current striker's
   cost is multiplied by `BOT_MBALL_ROLE_INCUMBENT` (0.55); other role holders by
   `BOT_MBALL_SET_INCUMBENT` (0.8).
@@ -244,7 +244,7 @@ Soak manifests: `tools/manifests/monsterball-smoke.json`, `monsterball-soak.json
 | Id | Item | State at HEAD |
 |---|---|---|
 | MODE8 | Finisher conversion on Veins-class corridor maps is weak; Monster Arena's 42% via-arrival rate is unverified; whether the "fury" results generalise. | Open. |
-| MODE7 | M4 polish (§4.4). | Difficulty scaling built 2026-10-07 (§3.8); the mode verbs come with the `!` order work; wall and ceiling play, banks and pass-backs stay out of scope. |
+| MODE7 | M4 polish (§4.4). | Difficulty scaling built 2026-10-07 (§3.8); the mode verbs built 2026-10-07 (§4.4); wall and ceiling play, banks and pass-backs stay out of scope. |
 | MODE9 | Analyzer anomalies `MBALL_BLUNDER_HEAVY` and `MBALL_BALL_STUCK` named in §5. | Not built (§5 note). |
 | COL8 | Retire `$nav mjunction`. | Toggle present; decided 2026-10-01 (Q20 a): retire it in the toggle cleanup. |
 | MODE12 | Crossfire bunker outlier. | Accepted for the first release (operator ruling). |
@@ -363,11 +363,16 @@ state bumps (4/21 in the soak) are accepted residual. Role tenure is runtime-tun
 
 ### 4.4 Phase M4 (polish): see MODE7
 
-M4's difficulty scaling is built (§3.8). The rest of M4 is not built and is tracked as registry row MODE7 (`PLAN.md` §4,
+M4's difficulty scaling is built (§3.8), and so are its chat verbs (2026-10-07, CHAT_COMMANDS.md §A.5): `!attack ball`
+(also `!attackball`) pins the bot to the striker role and `!defend goal` (also `!defendgoal`) to the keeper role, through
+`BotMonsterballOrderRole`, under the attack or defend squad role, which keeps the role assigner (it ranks only bots with
+no order) off the bot; the team's own striker is still assigned among the rest. Every other order a Monsterball bot
+obeys sets the field role, and `!freelance` hands it back to the assigner. Outside Monsterball both are a plain
+`!attack` or `!defend`. The rest of M4 is not built and is tracked as registry row MODE7 (`PLAN.md` §4,
 the master registry). Decided 2026-10-01: M4's mode verbs and difficulty scaling are pre-reveal work. Its content,
 unchanged from the original §4.4: difficulty scaling of the alignment threshold, prediction quality, blunder-cone width
 and kickoff reaction; wall and ceiling play, deliberate banks, supporter pass-backs and multi-touch dribbling, all out
-of scope until soaks demand them; and the `!attack ball` / `!defend goal` chat verbs (Tier 2 pattern). Junction-aware
+of scope until soaks demand them; and the `!attack ball` / `!defend goal` chat verbs (Tier 2 pattern), now built. Junction-aware
 pushing was built and tested as part of this phase and is validated negative (§3.3); its full narrative is in
 `archive/MODE-docs-history.md`, Part 2b. The Veins finishing problem it was meant to solve is MODE8.
 

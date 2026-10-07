@@ -10,6 +10,98 @@ including the CTF, Hyper and Hoard write-ups) is preserved verbatim in
 `matcen-docs/archive/BOTS_DEVEL-phases-0_to_0.9.12.md`. The engine-files audit (single-player, Robo-Anarchy and
 co-op impact) now lives in `matcen-docs/BOT_DEV_REFERENCE.md`.
 
+### 2026-10-07: the ! polish floor (CMD9-CMD16) and mode verbs
+
+The `!` polish floor the operator put before the reveal on 10-01 (Q2b, Q8), and the Entropy and Monsterball verbs
+(MODE1, MODE7). `Descent3/bot_chat.cpp` is rewritten; new `bot_chat_parse.{h,cpp}` (the order language, no engine
+state) and `tests/bot_chat_tests.cpp`. Outside them: two hooks and a dead field in `bot.cpp`/`bot.h`, two accessors in
+`bot_objective.{h,cpp}`, and four rows in the F10 overlay's table (`bot_quickorder_menu.cpp`, `bot_quickorder.h`, its
+test). No navigation code changed. CHAT_COMMANDS Part A is rewritten as built.
+
+**The parser.** The old parse was spread over `BotFindCommand`, a chain of `strcmp` alias rewrites in
+`BotOnChatMessage` and the bot-name guess in `BotResolveAndDispatch`, so the first word after any verb was tried as a
+name before anything else: `!attack flag` was a plain `!attack` (CMD13). `BotChatParse` reads a line against two
+tables, one-word forms (17 canonical verbs and their aliases) and two-word forms, and tries the two-word table first;
+the word after the form is the addressee. A `!` counts only when a letter follows it, and trailing sentence punctuation
+is dropped from words. The relay's speaker prefix (`Bob: `, `[Bob]: `, `<Bob>:`) is skipped before the scan: a pilot
+called `!Bang` used to give the order "bang:" on every line, dropped silently while unknown orders went unanswered, and
+would have drawn an "Unknown order" reply on every line once they were answered. The mode comes from
+`BotChatClassifyMode(coop, Num_teams, scriptname)`; a mode verb outside its mode is the plain verb
+(`BotChatVerbForMode`).
+
+**Free-for-all (CMD10, CMD11).** One team and no co-op flag means no orders: every `!` line, whatever its verb, gets
+one taunt from one bot (the addressed bot, else the next active bot in turn; six lines, in turn) and nothing is
+installed. The F10 overlay's orders-off test was already the same predicate; `bot_chat_tests` now checks the two
+classifiers agree over every script and team count, so they cannot drift apart. Hoard is in the set (one team);
+Monsterball is not (two teams).
+
+**The outbound queue (CMD14, CMD15, UX7).** Every bot line now goes through one queue that `BotChatFrame()` empties
+once per server frame (called from `BotDoFrame`, after `BotPopulationFrame`). Answers to an order are queued for the
+next frame, which also puts them after the relayed order: `MultiDoMessageToServer` called `BotOnChatMessage` and then
+relayed the order, and the old immediate send went out between the two, so on the client path too a bot's answer
+printed above the order it answered. Lines due in one frame for one recipient with one text are sent as one,
+`N bots: <text>` (distinct speakers counted; one speaker keeps its name). `!status` to several bots builds one roll call
+of compact entries packed at 100 characters a line (`BotChatPackList`). Reports (`BotOrderReport`,
+`BotBroadcastAnnounce`, the hunt reports) are paced per bot at `BOT_CHAT_REPORT_SPACING` (2 s, the old cooldown's
+value) by delaying them, never by dropping them. The old shared cooldown dropped any line within 2 s of the bot's last,
+which ate arrival reports and the answer to a second order alike, and it was also what kept an escort's
+`Right behind you.` from repeating every time the player stopped (`BotNavigateToFollowTarget` reports each
+EN_ROUTE to ON_STATION transition). That job is now explicit: an order report identical to the bot's last report to the
+same player since its current order is skipped, with a log line. Co-op announcements are not deduplicated; they have
+their own 30 s rule. `last_chat_reply_time` is gone from `bot_info`. Times are `timer_GetTime()`.
+
+**Orders that cannot be carried out.** `BotVoidOrderReply` answers before anything changes, so the bot keeps its
+current order and its issuer: `!goal` with no objective or outside co-op (as before), `!defend lab` with no lab, a
+`!hunt` name that matches no enemy (`No enemy called <name>.`; it used to install the attack role with no target and
+reply `Hunting!`) and a target already dead. In co-op the hunt lookup never matches (one team), so `!hunt <name>` there
+now answers and changes nothing (CMD26's weak order, no longer clearing an escort's anchor).
+
+**Hunts end (CMD12).** The hunted slot is kept in `squad_target_slot` under the attack role (unused there before;
+escorts use it under FOLLOW/COVER, and co-op hunts do not touch it). `BotChatFrame` checks each hunter: a dead or
+dying target, or a disconnected one, gets one report through `BotOrderReport` (`Viper is down. Going freelance.`,
+grouped across hunters) and the bot goes back to freelance with a balanced lean, as `!freelance` leaves it.
+
+**Level change (CMD16).** Every obeyed order now records `order_issuer_slot` (only anchored orders did). At the top of
+`BotReinitAll`, `BotChatLevelReset` counts, per human issuer, the bots whose orders are about to be cleared (the co-op
+default wing excluded) and drops lines still queued from the old level. `BotChatFrame` tells each issuer once they have
+been `NETSEQ_PLAYING` for 3 s (a direct message to a client not yet playing is dropped by `MultiSendMessageFromServer`),
+or drops the notice with a log line if the player left or is not back within 120 s.
+
+**Discoverability (CMD9).** `!help` (sender only, two lines from `BotChatHelpLines`, the example name a bot on the
+sender's side), an unknown-order reply naming `!help`, and a one-time tip. The tip is a join hook rather than a
+first-chat hook: a player who never chats would never learn the orders exist. It goes once per connection (the slot's
+callsign is remembered, so a new player in the same slot gets their own), 8 s after the player is first seen playing,
+only where orders are taken and a bot on their side exists, and never to a player who has already sent an order.
+
+**Mode verbs (MODE1, MODE7).** Entropy `!defend lab` posts the bot in the room the DEFEND lean guards; the lean's
+lookup moved out of `BotGetObjectiveRoom_Entropy` into `BotEntropyLabGuardRoom(team)` unchanged, so the lean behaves as
+before. Entropy `!attack lab` is the attack role and lean, the same as `!attackflag`: there is no clean destination
+hook, since the only lab-targeting code is the loaded invade branch, which runs on load, not role. Monsterball
+`!attack ball` / `!defend goal` pin striker / keeper through `BotMonsterballOrderRole`, under the attack / defend
+squad role so the assigner (which ranks only `SQUAD_FREELANCE` bots) leaves them. On the way: the assigner skipped
+ordered bots but left their `mball_role` as it was, so a striker told `!attack` or `!hunt` kept striking under the
+order. Every obeyed order in Monsterball now sets the role (the ball verbs pin theirs, the rest set the field), and
+`!freelance` hands the bot back to the assigner.
+
+**Comments (COL14).** The stale bot_chat.cpp comments went with the rewrite; bot.h's two `CHAT_COMMANDS.md §Stage 6`
+references point at §A.6.
+
+**Not changed, noticed.** The Monsterball tenure freeze looks for the team's striker among all bots, so an alive
+ordered striker can hold a team's lineup frozen after its assigned striker dies (until the 10 s period ends). Left as
+is. `D3.BotSkelChain` still fails in `ctest` (it compiles functions out of `bot_steering.cpp` and finds `SkelEnsure` and
+`AimNarrowToRouterDoor` undeclared), as before this change.
+
+**Tested.** Debug build clean (no new warnings in the touched files). `bot_chat_tests`: 10 of 10: the order finder,
+every alias and two-word form, names after two-word forms and after `!hunt`, the speaker skip (`!Bang`), the mode
+classifier against the overlay's for every script and team count, the mode verbs in and out of their modes, the help
+lines of every mode (each order they name parsed back), the tip and the taunts (distinct, none readable as an order),
+grouped lines and the roll-call packing, and every line the F10 overlay can send parsed back to its row's verb in its
+mode. `bot_quickorder_tests` 8 of 8 with the new rows. `ctest`: 31 of 32 (the `BotSkelChain` failure above).
+Dedicated server, lab binary `Descent3-cmd`, ports 2102/2112/20202, roster of six: Anarchy on bedlam (spawn,
+`$servercaps`, `$bothelp`, `endlevel` to Plutonium, `$botlist` with all six alive) and CTF on bedlam level 4 (Polaris,
+`$botmode` CTF teams=2, `endlevel` to Apparition, six bots back, `$bothelp`): no assert, no crash, no `BOT CHAT` line
+(no human sent chat). Not verified: anything a player sees, which needs a client in a match (CHAT_COMMANDS §B.7).
+
 ### 2026-10-06: HEAD against 0.9.16, the comparison the week had skipped
 
 Every pair this week ran against `d081952e`, which already carries NAV41; the operator's baseline is 0.9.16

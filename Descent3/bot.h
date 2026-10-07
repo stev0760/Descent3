@@ -361,7 +361,7 @@ enum BotObjectiveLean {
   BOT_LEAN_FLEX,
 };
 
-// Stage 6 "Orders as Goals" (CHAT_COMMANDS.md §Stage 6): an order is verb + anchor + lifecycle.
+// "Orders as Goals" (CHAT_COMMANDS.md §A.6): an order is verb + anchor + lifecycle.
 // The anchor gives the order a destination the bot navigates to and keeps; the lifecycle drives
 // the feedback loop (one "In position." on arrival, one throttled "Can't get there!" when stuck).
 enum BotOrderAnchor : uint8_t {
@@ -678,25 +678,22 @@ struct bot_info {
   int fire_delay_target;    // handle of target the delay was started for
   float aim_wander_phase;   // smooth sinusoidal aim offset phase (like juke_phase)
 
-  // Chat command system (Phase 6.0)
-  float last_chat_reply_time; // Gametime of last chat reply (throttle)
-
-  // Squad orders (Phase 6.0 Stage 2) — persist through death and level transitions
+  // Squad orders (Phase 6.0 Stage 2) — persist through death; cleared at a level change
   BotSquadRole squad_role; // current squad order
-  int squad_target_slot;   // for FOLLOW/COVER: player slot to follow/protect (-1 = sender)
+  int squad_target_slot;   // FOLLOW/COVER: the player escorted; ATTACK from !hunt: the player hunted; else -1
   bool coop_auto_escort;   // co-op: FOLLOW was self-assigned (the default wing), not a chat order;
                            // cleared on level init
   bool coop_no_escort;     // co-op: !freelance opt-out from the default wing — the bot roams until
                            // any other order consumes it; cleared on level init
 
-  // Stage 6 "Orders as Goals" (CHAT_COMMANDS.md §Stage 6) — order anchor + lifecycle.
+  // "Orders as Goals" (CHAT_COMMANDS.md §A.6) — order anchor + lifecycle.
   // Persist through death (the bot returns to its post after respawn); cleared by !freelance,
   // a new order, or level init. The pursuit goal itself is transient — order nav re-issues it.
   uint8_t order_anchor_type; // BotOrderAnchor — what the order is pinned to
   vector order_anchor_pos;   // ORDER_ANCHOR_POSITION: the hold point
   int order_anchor_room;     // room of order_anchor_pos
   uint8_t order_state;       // BotOrderState lifecycle (EN_ROUTE → ON_STATION | BLOCKED)
-  int order_issuer_slot;     // player who gave the order — status reports DM here
+  int order_issuer_slot;     // player who gave the current order — reports and the level-change notice go here
   float order_progress_time; // Gametime of last progress toward the anchor (BLOCKED detection)
   vector order_progress_pos; // position at the last progress mark
   float order_report_time;   // Gametime of last BLOCKED report (throttle)

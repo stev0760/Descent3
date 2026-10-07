@@ -737,6 +737,38 @@ float BotEntropyRetreatShields(int bot_index) {
   return BOT_ENTROPY_RETREAT_SHIELDS * BotGetDiffParams(bot_index)->flee_pct_scale;
 }
 
+// A defender guards the lab's DOOR, not the lab itself (first-POV finding: a zero-capacity defender
+// parked at the lab center bathes in viruses it can't pick up — endless refused-pickup collisions and
+// "can't carry" HUD spam). The guard room is one room out along the likely invasion corridor: the BOA
+// next hop from our lab toward the enemy's lab.
+int BotEntropyLabGuardRoom(int team) {
+  if (team != 0 && team != 1)
+    return -1;
+  int lab = Bot_objective.entropy_lab_rooms[team][0];
+  if (lab < 0)
+    return -1;
+  int enemy_lab = Bot_objective.entropy_lab_rooms[1 - team][0];
+  if (enemy_lab >= 0) {
+    int guard = BOA_GetNextRoom(lab, enemy_lab);
+    if (guard >= 0 && guard != BOA_NO_PATH && guard <= Highest_room_index && Rooms[guard].used &&
+        Bot_objective.entropy_room_kind[guard] != 1) // never anchor in a lab (theirs or a drifted flip)
+      return guard;
+  }
+  return lab; // fallback: adjacent-room lookup failed — the lab beats no anchor at all
+}
+
+void BotMonsterballOrderRole(int bot_index, uint8_t role) {
+  if (bot_index < 0 || bot_index >= MAX_BOTS || Bot_objective.mball_role[bot_index] == role)
+    return;
+  Bot_objective.mball_role[bot_index] = role;
+  Bots[bot_index].mball_fire_handle = OBJECT_HANDLE_NONE; // the old role's shot is not this role's
+  LOG_DEBUG.printf("BOT MBALL: '%s' role -> %s (order)", Bots[bot_index].callsign,
+                   role == 1   ? "STRIKER"
+                   : role == 2 ? "SUPPORT"
+                   : role == 3 ? "KEEPER"
+                               : "field");
+}
+
 // $nav entropy — E3 takeover execution. OFF = economy-only bots (E2 still collects/denies);
 // the A/B lever for the invade/hold/retreat layer. See ENTROPY_MODE.md §3.3.
 bool Bot_entropy_takeover_enabled = true;
@@ -1011,23 +1043,9 @@ static int BotGetObjectiveRoom_Entropy(int bot_index) {
     }
   }
 
-  // DEFEND lean guards the lab's DOOR, not the lab itself (first-POV finding: a zero-capacity
-  // defender parked at the lab center bathes in viruses it can't pick up — endless refused-
-  // pickup collisions and "can't carry" HUD spam). Anchor one room out along the likely
-  // invasion corridor: the BOA next hop from our lab toward the enemy's lab.
-  if (role == SQUAD_FREELANCE && Bots[bot_index].objective_lean == BOT_LEAN_DEFEND) {
-    int lab = Bot_objective.entropy_lab_rooms[my_team][0];
-    if (lab < 0)
-      return -1;
-    int enemy_lab = Bot_objective.entropy_lab_rooms[1 - my_team][0];
-    if (enemy_lab >= 0) {
-      int guard = BOA_GetNextRoom(lab, enemy_lab);
-      if (guard >= 0 && guard != BOA_NO_PATH && guard <= Highest_room_index && Rooms[guard].used &&
-          Bot_objective.entropy_room_kind[guard] != 1) // never anchor in a lab (theirs or a drifted flip)
-        return guard;
-    }
-    return lab; // fallback: adjacent-room lookup failed — the lab beats no anchor at all
-  }
+  // DEFEND lean guards the lab's door (BotEntropyLabGuardRoom).
+  if (role == SQUAD_FREELANCE && Bots[bot_index].objective_lean == BOT_LEAN_DEFEND)
+    return BotEntropyLabGuardRoom(my_team);
 
   // Unloaded attackers: no room override — E2 powerup selection pulls them to lab viruses,
   // normal anarchy otherwise (the streak IS the resource; kills buy carry slots).
