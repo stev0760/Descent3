@@ -6,7 +6,7 @@ The full engineering history behind each release is in [BOTS_DEVEL.md](BOTS_DEVE
 Open items are tracked in [PLAN.md](PLAN.md) §4, and open navigation problems in [NAVIGATION.md](NAVIGATION.md) §7.
 
 Versioning: `0.8.x` = feature releases; `0.9.x` = the navigation-milestone series; `0.10.x` = the release package
-series (bot management, feel and the chat and console commands around the public release, not started yet).
+series (the packaged release: bot management, the chat and console commands, and the install package).
 A `-dev` suffix marks an in-test build that has not yet passed its validation gate.
 
 ## [0.9.17-dev] - in test

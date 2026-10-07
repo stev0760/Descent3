@@ -42,7 +42,7 @@ Ships: `pyro`, `phoenix`, `magnum`, `blackpyro` (Black Pyro needs Mercenary). Di
 
 ### Chat orders and console
 
-In team modes and co-op, type a `!` order in chat, such as `!attack`, `!defend`, `!follow` or `!attackflag`. A bare order goes to every bot on your team, and `<botname>: !order` goes to one bot. Free-for-all modes take no orders. The full list is in [CHAT_COMMANDS.md](matcen-docs/CHAT_COMMANDS.md).
+In team modes and co-op, type a `!` order in chat, such as `!attack`, `!defend`, `!follow` or `!attack flag`. A bare order goes to every bot on your team, and `<botname>: !order` goes to one bot; `!help` lists the orders the current mode takes. In free-for-all modes the bots only taunt back. The full list is in [CHAT_COMMANDS.md](matcen-docs/CHAT_COMMANDS.md).
 
 On a Matcen client, F10 opens a menu of the orders the mode takes and sends the same chat line; players on other clients type it.
 
@@ -50,7 +50,7 @@ On the dedicated server console, over telnet, or on a listen-server host's chat 
 
 ### Roadmap
 
-*   Chat orders finished, plus formation flying when bots form up on you.
+*   Formation flying when bots form up on you.
 *   Co-op inspected and fixed, and Entropy and Monsterball polished.
 *   One planner per room: the last consolidation of the navigation code.
 *   The public 0.10.x release: tested release builds, a D3 Pyrodeck release, and a hosted public server.
