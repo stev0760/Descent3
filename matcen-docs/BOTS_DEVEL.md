@@ -10,6 +10,15 @@ including the CTF, Hyper and Hoard write-ups) is preserved verbatim in
 `matcen-docs/archive/BOTS_DEVEL-phases-0_to_0.9.12.md`. The engine-files audit (single-player, Robo-Anarchy and
 co-op impact) now lives in `matcen-docs/BOT_DEV_REFERENCE.md`.
 
+### 2026-10-08: the console back ends still read a line as a format, 0.10.4 (ENG9)
+
+The REL3 lab run sent `say rel3pct A%sB%dC%xD end` and the server log showed stray bytes for `%s` and `0` for `%d`
+and `%x`. The ENG9 fix had made every caller pass `"%s"`, but the line still went through a format one level down:
+`con_raw_Puts` (linux/lnxcon_raw.cpp, the dedicated server's console on every platform) was `fprintf(stdout, str)`,
+and `con_null_Puts` (linux/lnxcon_null.cpp, the `-service` console) was `mprintf(0, str)`. Now `fputs(str, stdout)`
+and `mprintf(0, "%s", str)`; no other console back end passes text as a format. Verified live on the Debug build:
+`say eng9 A%sB%dC%xD%pE%nF end` and `$addbot Pct%sX` print verbatim on the console, server up. UPSTREAM_PATCHES #8.
+
 ### 2026-10-08: what the release build logs (REL3)
 
 The packages are `release.yml`'s RelWithDebInfo build. The 2026-10-07 entry read from the code that it logs the bot

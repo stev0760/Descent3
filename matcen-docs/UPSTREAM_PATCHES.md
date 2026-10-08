@@ -25,7 +25,7 @@ the patch text in this document is sufficient; there is no need to merge from Ma
 | 5 | Mission-download system: spurious "missing mission" prompt at join, garbage in the URL reply, dead retail copy-protection gate | `Descent3/mission_download.cpp` | Fixed (Matcen 0.9.9, tag v0.9.9) | Not submitted |
 | 6 | CTF: a carrier who dies in a flag's home goal does not send that flag home (wrong object tested) | `netgames/ctf/ctf.cpp` | Fixed (Matcen 0.10.0, tag v0.10.0) | Not submitted |
 | 7 | Mission auto-download: divide by zero on a fast start (SIGFPE), status-line buffer overflow from an 87-character link, uncaught throw on an `https:` link without TLS | `Descent3/mission_download.cpp` | Fixed (Matcen 0.10.0, tag v0.10.0) | Not submitted |
-| 8 | A `%` in a callsign or chat line crashes the dedicated server (formatted text re-used as a format string); `$setteamname` writes one past the team-name array | `Descent3/dedicated_server.cpp`, `netgames/dmfc/dmfcbase.cpp`, `dmfcinputcommand.cpp` | Fixed (Matcen 0.10.0, tag v0.10.0) | Not submitted |
+| 8 | A `%` in a callsign or chat line crashes the dedicated server (formatted text re-used as a format string); `$setteamname` writes one past the team-name array | `Descent3/dedicated_server.cpp`, `netgames/dmfc/dmfcbase.cpp`, `dmfcinputcommand.cpp`, `linux/lnxcon_raw.cpp`, `lnxcon_null.cpp` | Fixed (Matcen 0.10.0; consoles 0.10.4) | Not submitted |
 
 Version labels: the Matcen version is the first release that carried the fix. Not every release was
 tagged, so the index also gives the first git tag that contains the fix (`git tag --contains <commit>`).
@@ -667,18 +667,23 @@ where `buf` is already formatted. `netgames/dmfc/dmfcinputcommand.cpp`:
 `DPrintf(buffer)` in the `$banlist` handler and `team > DLLMAX_TEAMS` in
 `$setteamname`; `netgames/dmfc/dmfcbase.cpp`: `DLLgrtext_Printf(x, y,
 DMFCPlayerInfo[index])` (two sites) and `DPrintf(buffer)` in the help list.
-Original Outrage 1999 code; the fork point and the current
+Below all of them, the console back ends do it again: `linux/lnxcon_raw.cpp`,
+`con_raw_Puts()`, is `fprintf(stdout, str)` (the dedicated server's console on
+every platform), and `linux/lnxcon_null.cpp`, `con_null_Puts()` (the `-service`
+console), is `mprintf(0, str)`. Original Outrage 1999 code; the fork point and the current
 DescentDevelopers/Descent3 `main` have the same lines.
 
 ### Fix
 
 `con_Printf("%s", buf)`, `DPrintf("%s", buffer)`, `DLLgrtext_Printf(x, y, "%s",
-...)`, and `team >= DLLMAX_TEAMS`. Verified live on the Matcen build: the bot
-`Pct%sX[BOT]` joins and is listed, `say hello %s %d %p` prints verbatim.
+...)`, `team >= DLLMAX_TEAMS`, `fputs(str, stdout)` and `mprintf(0, "%s", str)`.
+Verified live on the Matcen build: the bot `Pct%sX[BOT]` joins and is listed,
+`say hello %s %d %p` prints verbatim.
 
 ### Status
 
-- **Matcen:** Fixed in 0.10.0. Found by the Pyrodeck
+- **Matcen:** Fixed in 0.10.0; the two console back ends in 0.10.4, after a
+  release-build log still printed `%s` as stray bytes. Found by the Pyrodeck
   parity work (a ban tool that must survive hostile names).
 - **DescentDevelopers/Descent3:** Not submitted. Same lines.
 - **PiccuEngine:** Not checked.

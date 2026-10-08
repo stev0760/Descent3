@@ -11,6 +11,12 @@ series each bug fix or small feature takes the next number in the last place. A 
 a larger change that may be backed out whole, until it passes its validation gate. 1.0 comes after community play.
 0.9.17 was never released: its development build became 0.10.0.
 
+## [0.10.4] - 2026-10-08
+
+- **A `%` in a chat line, callsign or console command no longer garbles the dedicated server's console or risks
+  crashing it.** 0.10.0 fixed the server's own message formatting; the console itself, and the silent one a
+  `-service` server uses, still read the finished line as a format.
+
 ## [0.10.3] - 2026-10-08
 
 *A cleanup of the code and the console help. The bots play exactly as in 0.10.2.*
