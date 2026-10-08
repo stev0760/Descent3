@@ -10,6 +10,70 @@ including the CTF, Hyper and Hoard write-ups) is preserved verbatim in
 `matcen-docs/archive/BOTS_DEVEL-phases-0_to_0.9.12.md`. The engine-files audit (single-player, Robo-Anarchy and
 co-op impact) now lives in `matcen-docs/BOT_DEV_REFERENCE.md`.
 
+### 2026-10-08: the client compatibility pass (REL12)
+
+Three clients against one server, in the lab on one Linux machine over loopback. The server was the 0.10.4 Debug
+build (`7b929e34`), a labelled copy run beside the Debug build's own `netgames/`, `online/` and `d3-linux.hog` (the
+lab's netgames date from July and would have tested an old DMFC), with the lab's HOGs and missions. Two configs: 3v3
+CTF on Bedlam from level 3 with six hotshot bots, `MaxPlayers=8`, `BotTargetPlayers=6`, `BotReservedSlots=1`, PPS 40;
+and Robo-Anarchy on `d3.mn3` level 1 with four bots. Each client ran windowed on the operator's X display with sound
+off, its settings and pilot under a scratch `XDG_DATA_HOME`, joined with `-directip 127.0.0.1:<port>` and its own
+`-useport`, was driven with `xdotool key --window` (an X `SendEvent`, so no focus and no pointer) and was captured with
+ImageMagick `import`.
+
+- **Matcen client:** a copy of the Debug build, `7b929e34`.
+- **Upstream:** DescentDevelopers/Descent3 `upstream/main` at `a3e82bc2` (2026-09-16), a Release build in a scratch
+  worktree. The one change was a build-system one: the `libsystemd` 260.2 vcpkg override Matcen carries, because GCC
+  16 cannot build the baseline's 257.8.
+- **PiccuEngine:** `56cab84`. Piccu builds only on Windows, so this pass made a native x86_64 Linux build on Piccu's
+  SDL3 path, with system SDL3 and OpenAL. The checkout is untouched; the build, its patch (30 files) and
+  `LINUX_BUILD.md` (steps, every change and why, what runs) are in the Piccu checkout's `build/linux-native/`, which
+  Piccu's `.gitignore` covers. Flying it found three more faults, fixed there: on Linux the engine reads switches
+  GNU-style (`--directip`, `--pilot`); the command-line join loads the connector as `TCP-IP` while the build names it
+  `Direct TCP~IP.piccucon`; and Piccu's `hogdir` wrote HOG entries unsorted on Linux, so the engine's binary search
+  missed `lanclient.str` and the connector refused to start. Its pointer grab in flight was stubbed out with an
+  `LD_PRELOAD` shim, so mouse flight was not tried.
+
+| Check | Matcen client | Upstream | PiccuEngine |
+|---|---|---|---|
+| Join the CTF server | yes | yes | yes |
+| `[BOT]` callsigns, bots fighting and capping | F7 board and kill feed | F7 board and kill feed | kill feed and HUD counts; its F7 board drew no pilot rows |
+| `!help`, `!follow`, `!formup`, `!status` | replies on the HUD below the order line; followers reached the player (log) | same | same |
+| Level change (`$endlevel`) | QuadSomniac to Polaris | Polaris to Apparition | Polaris to Apparition |
+| Yield | a bot left on the join and one rejoined once the server timed out the killed client | a bot left on the join and one rejoined on the clean leave | same as upstream |
+| Robo-Anarchy, about a minute | the ship answered every input; taunt | same | same, keyboard only |
+| F10 | the order menu opened | nothing | nothing |
+
+The server logs hold no assert and no complaint about a client's packets; a Debug server stops on an assert, and
+neither did. The grouped replies (`2 bots: Following!`, `2 bots: Forming up!`), the roll call, the join tip (once a
+join), the free-for-all taunts and `New level, orders cleared.` were the same lines to every client. The upstream
+client's F6 menu is its own netgame's, without Bots; the Bots menu is the listen host's anyway, and every item in it
+is a `$` command. Nothing a player needs is Matcen-client-only: the Piccu rule (CHAT_COMMANDS §B.6) holds. The March
+report of a PiccuEngine "control takeover" in Robo-Anarchy did not show: on all three clients the ship moved on every
+input burst and stayed put between them. The Robo-Anarchy runs, about 8 minutes over three clients on a campaign
+level, raised no BNode assert (ENG6).
+
+**`+connect` needs `-directip`.** PLAN's line for REL12 named `+connect <ip:port>`. In `ProcessCommandLine`
+(menu.cpp) that branch only stores the address; it connects only when `+cl_pxotrack` is also given, `1` going to PXO
+and `0` to `AutoConnectLANIP`, which reads the address from `-directip` or from bare `ip`/`port` arguments and returns
+without connecting otherwise. So `+connect` alone joins nothing in Matcen, upstream or Piccu, while `-directip
+<ip:port>` joins on its own. A note in UPSTREAM_PATCHES style: the smallest fix is for `AutoConnectLANIP` to use the
+address `+connect` already parsed when neither of its own arguments is present. Not fixed here: it is the engine's
+code, and the documented switch works.
+
+**Formation from a human leader (CMD2).** Each `!formup` placed a trail, and on two of the three clients a wedge a
+second later (server log).
+In a QuadSomniac corridor (`clear 18/45`) the one-sided wedge's wing, Reaper, reported BLOCKED after 8 s with the
+leader sitting still, and Viper alternated `Right behind you.` and `Can't reach you!` three times in 40 s. Noted for
+the cockpit flight CMD2 still owes.
+
+Owed (PLAN §4 REL12): retail 1.5 (only the GOG 1.4 installer is here, not the 1.5 patch); Windows clients, both
+Piccu's Windows release and the Matcen package; a real network instead of loopback; mouse flight on PiccuEngine.
+Piccu asks: the connector-name mismatch, which Piccu's Windows build has too unless its package renames the file; and
+the empty F7 rows, to be checked on Piccu's Windows release before they are reported as a Piccu bug. `builds/linux`
+was not touched. The lab run directory, its labelled binary, cfgs and logs, the upstream worktree and the client
+scratch directories were removed afterwards; no WINEPREFIX was made.
+
 ### 2026-10-08: the console back ends still read a line as a format, 0.10.4 (ENG9)
 
 The REL3 lab run sent `say rel3pct A%sB%dC%xD end` and the server log showed stray bytes for `%s` and `0` for `%d`

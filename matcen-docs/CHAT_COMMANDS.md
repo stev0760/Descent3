@@ -227,7 +227,8 @@ The previous doc (now in the archive) said these things; the code says otherwise
 
 Built in 0.10.0 (UX4): `Descent3/bot_quickorder.{h,cpp}` (keys, HUD, send) and `bot_quickorder_menu.cpp` (the
 menu and the lines it composes, covered by `Descent3/tests/bot_quickorder_tests.cpp`). It is a shortcut for typing the
-orders above and adds nothing chat cannot do (the Piccu rule, §B.6). Not yet seen on screen.
+orders above and adds nothing chat cannot do (the Piccu rule, §B.6). First seen on screen 2026-10-08, on a Matcen
+client in CTF (REL12).
 
 - **Key: F10**, in a multiplayer game, on a client or a listen-server host. It is hard-bound. The controls menu's
   bindings are saved in the pilot file as a counted block, and a pilot saved with one more function than another
@@ -474,11 +475,15 @@ compatibility pass (REL12) re-checks this before release.
   report, the lab and ball verbs and the level-change notice through the real code (BOTS_DEVEL 2026-10-07). What only
   a client in a match shows: the replies arriving after the order line (UX7), the grouped line and the
   roll call on the HUD, the taunt in Anarchy, the tip arriving once, the level-change notice, and a hunter's report
-  when its target dies.
+  when its target dies. The REL12 run (2026-10-08, remote Matcen, upstream and PiccuEngine clients) saw the order line
+  above its reply, the grouped line, the roll call, the Robo-Anarchy taunt, the tip once a join and, on PiccuEngine,
+  the level-change notice. A hunter's report and the host path (UX7) are still unseen.
 - **Formation flying (CMD2) in a cockpit.** The lab drove `!formup`'s handler, places, slots and legs on a bot
   leader (§B.2) but not the chat line itself, a human leader, or what the squad looks like from his cockpit: the
   trail in a tunnel, the wedge and the echelon in a room, and how far behind the places the squad flies at a human's
-  speeds.
+  speeds. REL12 sent the chat line from three human leaders: the server placed a trail each time and a wedge for
+  two of them, and in a corridor the one-sided wedge's wing reported BLOCKED while the leader sat still. The view from
+  the cockpit is still owed.
 - **`!hunt` in Anarchy** is moot: free-for-all modes take no orders. The same team-0 lookup governs co-op `!hunt`,
   which now answers `No enemy called <name>.` (CMD26).
 - **Co-op over-spawn.** A roster larger than the co-op player cap once spawned bots past it. The `BotAdd` capacity

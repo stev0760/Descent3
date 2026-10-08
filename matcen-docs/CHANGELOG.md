@@ -16,6 +16,11 @@ a larger change that may be backed out whole, until it passes its validation gat
 - **A `%` in a chat line, callsign or console command no longer garbles the dedicated server's console or risks
   crashing it.** 0.10.0 fixed the server's own message formatting; the console itself, and the silent one a
   `-service` server uses, still read the finished line as a format.
+- **Checked with other clients.** An unmodified client built from the upstream open-source engine and a PiccuEngine
+  client joined a Matcen server, saw the bots, got answers to the `!` orders, followed a level change and took the
+  seat a bot gave up. Their players type the orders that a Matcen client's F10 menu sends. To join from the command
+  line, give the client `-directip <ip:port>`; `+connect` alone does nothing. Retail 1.5 and Windows clients are still
+  to be tried.
 
 ## [0.10.3] - 2026-10-08
 
