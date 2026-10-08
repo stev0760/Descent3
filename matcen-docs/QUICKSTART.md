@@ -68,6 +68,16 @@ Descent3.exe -dedicated ./dedicated.cfg -winconsole       # Windows (-winconsole
 The server needs no display or sound device, so it runs on a headless machine or VPS. To keep it running unattended,
 start that line from a systemd service (or tmux or screen) in the Descent 3 folder, with `-logfile` for a log file.
 
+**Hosting on a small VPS.** A server with 15 bots uses about 3-5% of one CPU core and 60-85 MB of memory (measured on
+a desktop CPU; allow about twice that on a shared VPS core), and D3 Pyrodeck adds about 120 MB. A 2 vCPU / 2 GB Linux
+VPS runs a full server with room to spare. A server runs on one core, so a faster core matters more than more cores;
+avoid plans that throttle the CPU after a burst. Choose a region near your players and a plan with a public IPv4
+address (the game has no IPv6), and open UDP 2092, plus UDP 20142 if you list the server on a tracker. Keep
+`AllowRemoteConsole=0`, so the console stays on the machine. The Linux package needs nothing beyond a stock Ubuntu
+22.04 or 24.04 server image; the retail data a server needs is about 0.3-0.5 GB. At the default log level a server
+writes 12-28 MB of log an hour. `Descent3.log` is replaced at each start but never rotated, so rotate it (logrotate
+with `copytruncate`) or delete old logs from time to time.
+
 The `BotCount` bots join when the first level loads, and the target adds the rest one every five seconds, each
 announced in chat. A server with no bot configuration runs exactly like vanilla Descent 3.
 [BOT_MANAGEMENT.md](BOT_MANAGEMENT.md) has every key and rule.
