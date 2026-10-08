@@ -1651,7 +1651,7 @@ void DMFCBase::DisplayPlayerInfo(int background_bmp, bool dedicated_server) {
   // DLLRenderHUDText(color,255,0,x,y,DMFCPlayerInfo[index]); y+=height;
   DLLgrtext_SetColor(color);
   DLLgrtext_SetAlpha(255);
-  DLLgrtext_Printf(x, y, DMFCPlayerInfo[index]);
+  DLLgrtext_Printf(x, y, "%s", DMFCPlayerInfo[index]); // the line carries the callsign
   y += height;
 
   if (dedicated_server)
@@ -1663,7 +1663,7 @@ void DMFCBase::DisplayPlayerInfo(int background_bmp, bool dedicated_server) {
     // DLLRenderHUDText(color,255,0,x,y,DMFCPlayerInfo[index]);
     DLLgrtext_SetColor(color);
     DLLgrtext_SetAlpha(255);
-    DLLgrtext_Printf(x, y, DMFCPlayerInfo[index]);
+    DLLgrtext_Printf(x, y, "%s", DMFCPlayerInfo[index]); // the line carries the callsign
 
     if (DMFCPlayerInfo[index][0] != '\0')
       y += height;
@@ -3675,7 +3675,7 @@ void DMFCBase::DisplayInputCommandHelp(const char *s) {
       buffer[78] = '\n';
       buffer[79] = '\0';
 
-      DPrintf(buffer);
+      DPrintf("%s", buffer);
 
       if (node)
         node = node->next;

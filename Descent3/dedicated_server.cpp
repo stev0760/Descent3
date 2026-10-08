@@ -1385,7 +1385,7 @@ void PrintDedicatedMessage(const char *fmt, ...) {
     return;
   }
 
-  con_Printf(buf);
+  con_Printf("%s", buf); // buf is already formatted; a '%' in a callsign or chat line must not be re-read as a format
   DedicatedSocketputs(buf);
 }
 

@@ -751,7 +751,7 @@ void DMFCInputCommand_BanList(const char *input_string) {
     char *ptr = basethis->GetBannedPlayerCallsign(i);
     if (ptr) {
       snprintf(buffer, sizeof(buffer), "[%d]%s\n", i, ptr);
-      DPrintf(buffer);
+      DPrintf("%s", buffer); // a banned callsign may hold a '%'
     }
   }
 }
@@ -830,7 +830,7 @@ void DMFCInputCommand_SetTeamName(const char *input_string) {
     return;
   }
 
-  if (team < 0 || team > DLLMAX_TEAMS) {
+  if (team < 0 || team >= DLLMAX_TEAMS) { // DMFC_team_names has DLLMAX_TEAMS entries
     DLLAddHUDMessage(DTXT_INVALIDTEAM, DLLMAX_TEAMS - 1);
     basethis->DisplayInputCommandHelp(DTXT_IC_SETTEAMNAME);
     return;

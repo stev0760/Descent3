@@ -25,6 +25,7 @@ the patch text in this document is sufficient; there is no need to merge from Ma
 | 5 | Mission-download system: spurious "missing mission" prompt at join, garbage in the URL reply, dead retail copy-protection gate | `Descent3/mission_download.cpp` | Fixed (Matcen 0.9.9, tag v0.9.9) | Not submitted |
 | 6 | CTF: a carrier who dies in a flag's home goal does not send that flag home (wrong object tested) | `netgames/ctf/ctf.cpp` | Fixed (Matcen 0.9.17 development series; not yet in a release or tag) | Not submitted |
 | 7 | Mission auto-download: divide by zero on a fast start (SIGFPE), status-line buffer overflow from an 87-character link, uncaught throw on an `https:` link without TLS | `Descent3/mission_download.cpp` | Fixed (Matcen 0.9.17 development series; not yet in a release or tag) | Not submitted |
+| 8 | A `%` in a callsign or chat line crashes the dedicated server (formatted text re-used as a format string); `$setteamname` writes one past the team-name array | `Descent3/dedicated_server.cpp`, `netgames/dmfc/dmfcbase.cpp`, `dmfcinputcommand.cpp` | Fixed (Matcen 0.9.17 development series; not yet in a release or tag) | Not submitted |
 
 Version labels: the Matcen version is the first release that carried the fix. Not every release was
 tagged, so the index also gives the first git tag that contains the fix (`git tag --contains <commit>`).
@@ -640,6 +641,45 @@ if (time_elapsed > 0 && received_bytes) {
   client while building the Pyrodeck mission host; not reproduced in a game
   client (the divide was reproduced with the same expression in a standalone
   program).
+- **DescentDevelopers/Descent3:** Not submitted. Same lines.
+- **PiccuEngine:** Not checked.
+
+---
+
+## 8. A `%` in a Callsign or Chat Line Crashes the Dedicated Server
+
+### Bug
+
+Every line the dedicated server prints goes through `PrintDedicatedMessage`,
+which formats it into a buffer and then passes that buffer to `con_Printf`
+as the *format* string. A callsign or a chat line containing `%s`, `%n` or
+`%p` is therefore interpreted a second time, with no arguments on the stack:
+`$addbot Pct%sX` crashed the server with SIGSEGV in the lab, and a player can
+do the same by joining with such a name or typing it in chat. DMFC repeats the
+pattern three times (`$banlist`, the `$playerinfo` display, the command-help
+list), and `$setteamname` accepts team number 4, one past the end of
+`DMFC_team_names[DLLMAX_TEAMS]`.
+
+### Root cause
+
+`Descent3/dedicated_server.cpp`, `PrintDedicatedMessage()`: `con_Printf(buf)`
+where `buf` is already formatted. `netgames/dmfc/dmfcinputcommand.cpp`:
+`DPrintf(buffer)` in the `$banlist` handler and `team > DLLMAX_TEAMS` in
+`$setteamname`; `netgames/dmfc/dmfcbase.cpp`: `DLLgrtext_Printf(x, y,
+DMFCPlayerInfo[index])` (two sites) and `DPrintf(buffer)` in the help list.
+Original Outrage 1999 code; the fork point and the current
+DescentDevelopers/Descent3 `main` have the same lines.
+
+### Fix
+
+`con_Printf("%s", buf)`, `DPrintf("%s", buffer)`, `DLLgrtext_Printf(x, y, "%s",
+...)`, and `team >= DLLMAX_TEAMS`. Verified live on the Matcen build: the bot
+`Pct%sX[BOT]` joins and is listed, `say hello %s %d %p` prints verbatim.
+
+### Status
+
+- **Matcen:** Fixed in the 0.9.17 development series. Found by the Pyrodeck
+  parity work (a ban tool that must survive hostile names).
 - **DescentDevelopers/Descent3:** Not submitted. Same lines.
 - **PiccuEngine:** Not checked.
 

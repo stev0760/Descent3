@@ -13,6 +13,8 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
 
 *Development series. Do not run this as a release.*
 
+- **A `%` in a player's name or chat no longer crashes the server.** The dedicated console re-read its own output as a
+  format string; so did `$banlist`, `$playerinfo` and the command help. `$setteamname` no longer accepts team 4.
 - **Mission auto-download no longer crashes the client.** Three defects in the download window: an integer divide by
   zero when the first bytes arrived inside the first second (a host on the same LAN did this about half the time), a
   stack overflow on any download link of 87 characters or more, and an uncaught error on an `https:` link in a build

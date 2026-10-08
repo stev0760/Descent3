@@ -10,6 +10,16 @@ including the CTF, Hyper and Hoard write-ups) is preserved verbatim in
 `matcen-docs/archive/BOTS_DEVEL-phases-0_to_0.9.12.md`. The engine-files audit (single-player, Robo-Anarchy and
 co-op impact) now lives in `matcen-docs/BOT_DEV_REFERENCE.md`.
 
+### 2026-10-08: a `%` in a callsign crashed the server (ENG9)
+
+The Pyrodeck ban editor has to survive hostile names, and the agent building it tried one: `$addbot Pct%sX` took the
+dedicated server down with SIGSEGV. `PrintDedicatedMessage` formats its line into a buffer and then hands that buffer
+to `con_Printf` as the format, so every `%` in a callsign, a chat line or a console echo is interpreted a second time
+with nothing on the stack. DMFC does the same in `$banlist`, the `$playerinfo` display and the command-help list, and
+`$setteamname` accepts team 4, one past `DMFC_team_names`. All five sites fixed (`"%s"` formats; `>=` bound); verified
+live: `Pct%sX[BOT]` joins and lists, `say hello %s %d %p` prints verbatim, server up. UPSTREAM_PATCHES #8. Original
+1999 code, present upstream.
+
 ### 2026-10-07 (night): the mission auto-download client, read while building its host (ENG8)
 
 D3 Pyrodeck gained a mission host (its `feature/mission-host` branch): a separate listener that serves `*.mn3` files
