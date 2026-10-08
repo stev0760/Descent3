@@ -15,13 +15,16 @@ quit cleanly → analyze the log → compare against the reference numbers.**
 
 ## Hard rules (read first)
 
-1. **One server at a time.** Before launching ANYTHING:
-   `pgrep -x Descent3` — if it prints a PID, a server is already running (possibly the
-   user's own play session). STOP and ask; do not launch, do not kill it.
-   (Use `-x`, exact process-name match. `pgrep -f "Descent3 -dedicated"` FALSE-POSITIVES
-   on your own shell wrapper — the pattern text appears in your own command line.)
-2. **Never leave a server running.** If a soak errors out, verify the process is gone
-   (`pgrep -x Descent3`), `pkill -9 -x Descent3` if needed.
+1. **Check before launching ANYTHING:** `pgrep -a Descent3` lists every server, labelled lab
+   copies (`Descent3-<label>`) included. If it shows one you did not start (possibly the user's
+   own play session), STOP and ask; do not launch, do not kill it. (`pgrep -x Descent3` misses
+   labelled copies; `pgrep -f "Descent3 -dedicated"` matches your own shell wrapper.)
+   Your own servers may run side by side (paired arms): each needs its own `-useport`,
+   `-gamespyport` (a second server without one hangs on its first frame, PLAN ENG10),
+   `RemoteConsolePort` and a short `-tempdir`, and a labelled binary copy.
+2. **Never leave a server running.** If a soak errors out, check `pgrep -a Descent3` and stop
+   your own servers by PID (`kill <pid>`, `kill -9` only if it hangs). Never `pkill -x Descent3`
+   (it would stop the user's session) and never `pkill -f` a pattern in your own command line.
 3. **Deploy before testing.** The test server runs the binary from the **runtime dir**, which is
    resolved from config (never hardcoded in a manifest — see "One-time setup" below). After any rebuild:
    `cp builds/linux/build/Debug/Descent3 "$SOAK_SERVER_DIR/Descent3"`

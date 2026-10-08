@@ -690,6 +690,15 @@ Verified live on the Matcen build: the bot `Pct%sX[BOT]` joins and is listed,
 
 ---
 
+## Upstream Defects Found, Not Fixed in Matcen
+
+Found while building Matcen; the same code is upstream. Matcen works around them and has not changed the engine.
+
+| Defect | Where | Effect | Workaround |
+| :--- | :--- | :--- | :--- |
+| A second server hangs on its first frame (PLAN ENG10) | `Descent3/gamespy.cpp` `gspy_Init`, `init.cpp` | When the GameSpy port (20142) is taken, `gspy_Init` returns before making its socket non-blocking and its result is ignored, so `gspy_DoFrame`'s `recvfrom` blocks for good | Give every server on one host its own `-gamespyport` |
+| `+connect <ip:port>` alone joins nothing (PLAN ENG13) | `Descent3/menu.cpp`, `ProcessCommandLine` | The address is stored, but only `+cl_pxotrack` acts on it, and its LAN path reads `-directip` or `ip`/`port` instead | Join with `-directip <ip:port>`; the smallest fix is for `AutoConnectLANIP` to fall back to the address `+connect` parsed |
+
 ## Other Fork Hardening to Assess for Upstream
 
 Matcen also changed a few engine and netgame files in ways that might help

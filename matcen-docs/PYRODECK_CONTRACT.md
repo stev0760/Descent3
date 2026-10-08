@@ -214,17 +214,17 @@ space (`'Phantom [BOT]'`), the old `$botmode` names (`TeamAnarchy`, `HyperAnarch
 It also predates the `teams`, `squad_orders` and `population` flags, `$botpopulation`, and the `roster` meaning
 settled in §2. The fix belongs in the Pyrodeck repo; it is tracked as REL8 in the registry (PLAN.md §4).
 
-Pyrodeck 0.4.20 (spec v2.8, on its `release/0.4.20` branch, not merged or pushed as of 2026-10-07) fixes that drift:
+Pyrodeck 0.4.20 (spec v2.8; merged into Pyrodeck's `main` in 0.5.0 on 2026-10-08, not yet pushed) fixes that drift:
 it parses `$addbot` and `$botmode` as §4 specifies, uses `Name[BOT]`, keeps feature flags it does not know, offers a
 team when `teams` is advertised, and keeps a dead bot in its `$botstat` view. It does not drive `$botpopulation`
 yet: it parses and keeps the `population` flag only.
 
 ## 9. Open fork-side items
 
-- REL8: Tier 1 drift above, fixed on Pyrodeck's unmerged `release/0.4.20` branch; the Pyrodeck side of the
+- REL8: Tier 1 drift above, fixed in Pyrodeck 0.5.0; the Pyrodeck side of the
   population controls is not built (the fork side is: §2 and §4).
 - POP6: done in 0.10.0; the `features=` list in §2 is the one the code prints.
 - REL7: the mission-download link refresh (rewrite the URL lines inside the `.mn3`; the engine `MissionURL` cvar was
-  reverted on 07-19). Built in Pyrodeck 0.4.20 on its unmerged branch; it touches no `$` command. See the registry row
+  reverted on 07-19). Built in Pyrodeck 0.4.20, in its `main` since 0.5.0; it touches no `$` command. See the registry row
   in PLAN.md §4.
 - The pre-0.9.16 spec text (features by phase, API, deployment, Addendum A) is in `archive/D3_PYRODECK_SPEC-v2.6.md`.
