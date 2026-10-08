@@ -2,7 +2,7 @@
 
 **Status:** the config-file roster, ship selection, difficulty levels, the Bot Settings menu, per-bot team
 assignment and the `$servercaps` handshake are built and shipped. Seats kept free for humans, the bot that yields a
-seat to a joining human, the population manager and the allowed-ship rule are built on 0.9.17-dev (section 9). The
+seat to a joining human, the population manager and the allowed-ship rule are built in 0.10.0 (section 9). The
 design history of this work (the pre-roster problem statement, the init-order bug, the old implementation order and
 risk table) is in `archive/BOT_MANAGEMENT-design-history.md`.
 
@@ -311,7 +311,7 @@ Pyrodeck side of the new flags is REL8.
 
 ## 9. Population and seats (as built)
 
-Decided by the operator on 2026-10-01 (POP4) and built on 0.9.17-dev (POP1, POP2, POP3, POP9, POP14): seats kept free
+Decided by the operator on 2026-10-01 (POP4) and built in 0.10.0 (POP1, POP2, POP3, POP9, POP14): seats kept free
 for humans with a default of 1 and no bypass; a bot yields the seat a human takes, the larger team's lowest scorer
 first and the newest bot on a tie, announced in chat; an optional target player count, off by default and 12 in the
 sample config; bots obey the server's allowed-ship list. The code is `Descent3/bot_population.{h,cpp}` plus the

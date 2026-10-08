@@ -10,6 +10,18 @@ including the CTF, Hyper and Hoard write-ups) is preserved verbatim in
 `matcen-docs/archive/BOTS_DEVEL-phases-0_to_0.9.12.md`. The engine-files audit (single-player, Robo-Anarchy and
 co-op impact) now lives in `matcen-docs/BOT_DEV_REFERENCE.md`.
 
+### 2026-10-08: 0.9.17-dev becomes 0.10.0 (REL14)
+
+The operator's call: everything built on 0.9.17-dev (NAV41/60/61, the seat rules and population manager, the client UX
+set, UX11, the mode polish, the `!` polish floor, ENG8/ENG9) is 0.10.0; no 0.9.17 is ever stamped. The versioning
+policy from here (CLAUDE.md): each bug fix or small feature bumps the third digit with no suffix; `-dev` is kept for
+experiments and risky multi-commit work that may be reverted whole (the committee collapse will run under one), and
+inside a `-dev` line builds are told apart by SHA. The reveal ships on whichever 0.10.x is current, and 1.0.0 waits for
+community testing (stable enough to merge upstream or be accepted into PiccuEngine; REL15). Logs, labels and entries
+before this one that say 0.9.17-dev refer to builds now called 0.10.0. Pyrodeck reads `fork_version` as a display
+string only (`servercaps.ts`; no comparison), so the two-digit minor needs nothing there. `release.yml` accepts the
+empty suffix (the 0.9.16 form). Annotated tag `v0.10.0`, local; pushing it is the operator's.
+
 ### 2026-10-08: the host's Bots menu in F6 (UX11)
 
 The operator's cockpit finding: on a listen server the bot commands meant typing `$` lines on the F8 chat line, and

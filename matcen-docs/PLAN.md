@@ -54,7 +54,8 @@ the reveal** (operator, 2026-10-01: "This will be a later build. We're still wor
 stamped stable as the next ordinary release after his flights, and the reveal build is a later 0.10.x (0.10.0 or
 higher). What stands between here and the reveal is the B list in §3, with a pre-reveal cutoff of **2026-10-20** and
 the reveal about **2026-10-27** (REL21). By 2026-10-07 the seat and population rows, the client UX set, MODE6, MODE14
-and the Entropy and Monsterball difficulty scaling are built on 0.9.17-dev; the committee collapse, the code-quality
+and the Entropy and Monsterball difficulty scaling are built on 0.9.17-dev, which became 0.10.0 on 2026-10-08
+(REL14); the committee collapse, the code-quality
 pass, the `!` finish line and the co-op line are not (table below).
 
 | Area | State on 2026-10-07 |
@@ -203,7 +204,7 @@ mail/priority/updates), all unmerged: `PARITY_MERGE_PLAN.md` in the Pyrodeck che
    (population toggle in Bot Settings), CMD2 (formation v1), COL28 (bounded quality pass), REL3 (what the release
    build logs), REL12 (a Piccu/vanilla client joining a Matcen server, using the
    engine's `+connect <ip:port> -pilot <name>` for an agent-driven client on the operator's display).
-4. Reveal: REL14 (strip `-dev` → 0.10.0, CHANGELOG promoted, tag → CI builds the packages), DOC11.
+4. Reveal: on the current 0.10.x (REL14: 0.10.0 stamped 2026-10-08; tag → CI builds the packages), DOC11.
 5. Pyrodeck 0.6.0: multi-server; the playlist mission (repack a playlist's levels into one generated `.mn3` served by
    the mission host, since `MP_LEVEL_ENDED` carries only a level index and clients cannot follow a mission change);
    tracker registration; operator event hooks. Piccu ask: auto-reconnect on a server-quit-for-rotation (a reason byte
@@ -229,6 +230,11 @@ announcement (drafted).
 The reveal build is a **0.10.x**: 0.10.0 "or maybe higher", bumped when the B list is done (REL14).
 **1.0 only after community play marks it production-stable.** 1.0 comes after the community has played the 0.10.x
 builds; this replaces March's "all modes, client UI, solid nav" definition (REL15).
+
+**Decided 2026-10-08 (REL14, REL15).** 0.9.17-dev becomes 0.10.0; no 0.9.17 is stamped. From here each bug fix or
+small feature takes the next third digit; `-dev` marks experiments and risky multi-commit work that may be reverted
+whole (the committee collapse). The reveal ships on whichever 0.10.x is current. 1.0.0 comes once community testing
+shows it stable enough to merge into the official Descent 3 repository or to be accepted as part of PiccuEngine.
 
 ---
 ## 4. Master registry
@@ -365,8 +371,8 @@ Status text ("Q13", "Q9") is the old PLAN §4.0.1 review queue, kept in the arch
 | REL11 | **Quickstart + announcement** (Reddit r/descent, DDN Discord, DescentBB, SectorGame; ModDB/GameFront). Quickstart content: minimal dedicated.cfg + bots.cfg, `$bothelp`, the `online/Direct TCP~IP.d3c` gotcha, PPS=40 | PLAN §4.0; archived `reference_descent_community`, `project_release_prep` #4 | quickstart written 2026-10-07 (`QUICKSTART.md`, with the sample configs in `samples/`); the announcement drafted (`ANNOUNCEMENT.md`, link placeholders) for the operator to edit and post at the reveal | C | 14 | — |
 | REL12 | **Client compatibility pass**: retail 1.5, PiccuEngine, the Matcen client against the release server; every player-facing feature has a chat fallback (Piccu rule); re-check the March "PiccuEngine control takeover in robo-anarchy" | archived `feedback_piccu_compat`, `project_pending_testing`; deleted README line | Piccu compatible as of 0.8.7; re-verify | C | 15 | — |
 | REL13 | **UPSTREAM_PATCHES** shared at the reveal; index "post-0.9.8" → 0.9.9; add #6 (MODE14) if fixed; assess other fork hardening (aipath ASSERT→graceful, `OnPlayerReconnect` ASSERT→warning, physics collision-warning rate limit, `$setpps` clamp, ENG5) | UPSTREAM_PATCHES; FEATURE §3f | UPSTREAM_PATCHES index versions corrected to the tags (#1, #3 v0.8.13; #2 v0.9.7; #4, #5 v0.9.9); #6 drafted on the Q19 default; assessment list added; patches 1-5 unsubmitted; #6 fixed in the fork 2026-10-07 (MODE14), unsubmitted | C | 16 | Q19 |
-| REL14 | Series bump to 0.10.x: timing (is the reveal build 0.10.0?) | PLAN 1387-1391 | decision; Decided 2026-10-01 (Q11a): the reveal build is 0.10.0 or higher (a later 0.10.x) | C | 17 | Q11 |
-| REL15 | Write the 1.0 definition into PLAN/README: 1.0 only after community play marks it production-stable (replaces March's "all modes, client UI, solid nav") | memory `release-roadmap.md`; retired PLAN (`3d5b838c^`) | DONE 2026-10-07: PLAN §3 carries the line verbatim ("1.0 only after community play marks it production-stable"), and so does the README's roadmap (the close-out docs pass); Decided 2026-10-01 (Q11b): yes | C | NEW | Q11 |
+| REL14 | Series bump to 0.10.x: timing (is the reveal build 0.10.0?) | PLAN 1387-1391 | DONE 2026-10-08: 0.9.17-dev stamped 0.10.0 (operator: "This will be version 0.10.0"); the third digit then bumps per fix or small feature, `-dev` only for experiments; the reveal ships on the current 0.10.x; Decided 2026-10-01 (Q11a): the reveal build is 0.10.0 or higher (a later 0.10.x) | C | 17 | Q11 |
+| REL15 | Write the 1.0 definition into PLAN/README: 1.0 only after community play marks it production-stable (replaces March's "all modes, client UI, solid nav") | memory `release-roadmap.md`; retired PLAN (`3d5b838c^`) | DONE 2026-10-07: PLAN §3 carries the line verbatim ("1.0 only after community play marks it production-stable"), and so does the README's roadmap (the close-out docs pass); Decided 2026-10-01 (Q11b): yes; refined 2026-10-08 (operator): 1.0.0 once community testing shows it stable enough to merge into the official Descent 3 repository or to be accepted as part of PiccuEngine (PLAN §3) | C | NEW | Q11 |
 | REL16 | Annotated tags: `v0.9.16` on stamp; released 0.8.14, 0.9.3, 0.9.4, 0.9.5, 0.9.6 have none | archived `feedback_git_tags`; `git tag` | DONE 2026-10-07, locally: annotated tags `v0.8.14` (`61b218cc`), `v0.9.3` (`743166ef`), `v0.9.4` (`923eb0cd`), `v0.9.5` (`3d284b32`), `v0.9.6` (`e4358604`), each on its version's stamp commit; `v0.9.16` was tagged and pushed at the stamp (ST5); 0.9.2 and 0.8.15 have no tag and are outside this row; owed, the operator's: `git push origin v0.8.14 v0.9.3 v0.9.4 v0.9.5 v0.9.6`; Decided 2026-10-01 (Q14b): yes, backfill 0.8.14 and 0.9.3-0.9.6, plus `v0.9.16` at the stamp | C | NEW | Q14 |
 | REL17 | Branch hygiene: delete merged/equivalent branches (`fix/mission-exists-check`, `fix/sdl-mouse-controls`, `fix/outdoor-0915`, `fix/sigmabase-window-and-exit`, `fix/vcpkg-libsystemd-gcc16`, `origin/fix/vs2026-release-build`); decide `backup/pre-0530-batch` and `fix/sigmabase-objective-gate` | `git branch -a`, `git cherry` | DONE 2026-10-07, locally: deleted `fix/mission-exists-check`, `fix/sdl-mouse-controls`, `fix/outdoor-0915`, `fix/sigmabase-window-and-exit` and `fix/vcpkg-libsystemd-gcc16` (each merged or patch-equivalent); kept `backup/pre-0530-batch` (ruled) and `fix/sigmabase-objective-gate`, which holds one unmerged commit (`05f620dc`) and is still undecided; owed, the operator's: `git push origin --delete fix/mission-exists-check fix/sdl-mouse-controls fix/vcpkg-libsystemd-gcc16` and the remote-only `fix/vs2026-release-build`; Decided 2026-10-01 (Q14c, Q14d): delete the six merged branches; keep `backup/pre-0530-batch` | C | NEW | Q14 |
 | REL18 | Merge the fork into `main` / sync upstream: before or after the reveal | memory `release-roadmap.md` | Decided 2026-10-01 (Q14e): before the reveal. **DONE locally 2026-10-07**: upstream had moved two commits since our base (one line in `demofile.cpp`, no overlap), merged as `efdea0b8`; `main` fast-forwarded to the branch (793 commits ahead of `origin/main`, every tag an ancestor). Owed: `git push origin main feature/multiplayer-bots` and the tags; then the release.yml dry run from the Actions tab | C | NEW | Q14 |

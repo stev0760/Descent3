@@ -10,7 +10,7 @@ This file owns only what Matcen promises to print. When a `$` bot command or its
 the same commit, and raise the change with the Pyrodeck repo if the command is Tier 1.
 
 Code facts below are true at `ee6e6525` (0.9.16-dev), except the `features=` list, the `$botpopulation` command and
-the seat and ship lines, which are 0.9.17-dev and cited by function name. `dedicated_server.cpp`, `bot.cpp` and
+the seat and ship lines, which are 0.10.0 and cited by function name. `dedicated_server.cpp`, `bot.cpp` and
 `bot_population.cpp` paths are under `Descent3/`.
 
 ## 1. Where the commands work
@@ -26,7 +26,7 @@ line, with no terminator line. Nothing Pyrodeck reads changed when the listen-se
 Printed by `BotPrintServerCaps` (bot.cpp):
 
 ```
-SERVERCAPS version=1 fork=Matcen fork_version=0.9.17 features=bots,roster,ships,difficulty,teams,squad_orders,population
+SERVERCAPS version=1 fork=Matcen fork_version=0.10.0 features=bots,roster,ships,difficulty,teams,squad_orders,population
 ```
 
 - Format string: `"SERVERCAPS version=1 fork=%s fork_version=%d.%d.%d "
@@ -37,7 +37,7 @@ SERVERCAPS version=1 fork=Matcen fork_version=0.9.17 features=bots,roster,ships,
   CMakeLists.txt:37-39). The `-dev` suffix (CMakeLists.txt:40) is never printed here. Keep it that way: the Pyrodeck
   parser (`packages/server/src/parser/parsers/servercaps.ts`) expects a clean semver.
 - `features` is a hard-coded literal. It does not depend on the build or the game mode. Up to 0.9.16 it read
-  `bots,roster,ships,difficulty`; `teams`, `squad_orders` and `population` were added on 0.9.17-dev (POP6, decided
+  `bots,roster,ships,difficulty`; `teams`, `squad_orders` and `population` were added in 0.10.0 (POP6, decided
   2026-10-01). Match flags as a comma-separated set, never as a fixed string.
 
 What the flags mean:
@@ -48,7 +48,7 @@ What the flags mean:
 | `roster` | the server reads a bots.cfg roster (`BotConfig=`). This is its one meaning (decided 2026-10-01); older Pyrodeck builds read it as "`$scores` output is parseable" |
 | `ships` | `$addbot` takes a ship argument |
 | `difficulty` | `$addbot` takes a difficulty argument; `$botdifficulty` exists |
-| `teams` | `$addbot` takes a team argument (built in 0.8.6, advertised from 0.9.17) |
+| `teams` | `$addbot` takes a team argument (built in 0.8.6, advertised from 0.10.0) |
 | `squad_orders` | the `!` chat orders exist (CHAT_COMMANDS.md) |
 | `population` | `$botpopulation` exists, and the server keeps seats free for humans (§4) |
 
@@ -217,7 +217,7 @@ yet: it parses and keeps the `population` flag only.
 
 - REL8: Tier 1 drift above, fixed on Pyrodeck's unmerged `release/0.4.20` branch; the Pyrodeck side of the
   population controls is not built (the fork side is: §2 and §4).
-- POP6: done on 0.9.17-dev; the `features=` list in §2 is the one the code prints.
+- POP6: done in 0.10.0; the `features=` list in §2 is the one the code prints.
 - REL7: the mission-download link refresh (rewrite the URL lines inside the `.mn3`; the engine `MissionURL` cvar was
   reverted on 07-19). Built in Pyrodeck 0.4.20 on its unmerged branch; it touches no `$` command. See the registry row
   in PLAN.md §4.

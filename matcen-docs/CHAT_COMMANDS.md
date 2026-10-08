@@ -3,7 +3,7 @@
 The `!` command harness: players give bots squad orders by typing in the normal Descent 3 chat. This doc has three
 parts:
 
-- **Part A, the shipped reference.** What the code does on 0.9.17-dev, read from `Descent3/bot_chat.cpp` (who an order
+- **Part A, the shipped reference.** What the code does on 0.10.0, read from `Descent3/bot_chat.cpp` (who an order
   is for, carrying it out, every line the bots say), `Descent3/bot_chat_parse.cpp` (the order language, covered by
   `Descent3/tests/bot_chat_tests.cpp`) and the order code in `Descent3/bot.cpp`. Every verb and alias is listed once,
   in §A.5.
@@ -198,7 +198,7 @@ The previous doc (now in the archive) said these things; the code says otherwise
 | Old claim | As built |
 |---|---|
 | `!goal` "resumes autonomous objective-seeking" and releases any order | It installs a post at the objective (§A.5). The stale code comment that repeated the old claim is gone (COL14). |
-| `!attack flag` / `!defend flag` are the flag verbs | They are, since 0.9.17-dev (CMD13); before, only the one-word forms parsed. |
+| `!attack flag` / `!defend flag` are the flag verbs | They are, since 0.10.0 (CMD13); before, only the one-word forms parsed. |
 | `!regroup` / `form up` is a one-shot converge | Both are aliases of the persistent escort. |
 | Enemy orders get a taunt | In team modes they get `Not taking orders from you!`; the taunt is the free-for-all answer (§A.3). |
 | `!follow` / `!cover` can name a third player | The escort is always the speaker (CMD17). |
@@ -215,7 +215,7 @@ The previous doc (now in the archive) said these things; the code says otherwise
 
 ### A.9 Quick-order overlay (Matcen client)
 
-Built in 0.9.17-dev (UX4): `Descent3/bot_quickorder.{h,cpp}` (keys, HUD, send) and `bot_quickorder_menu.cpp` (the
+Built in 0.10.0 (UX4): `Descent3/bot_quickorder.{h,cpp}` (keys, HUD, send) and `bot_quickorder_menu.cpp` (the
 menu and the lines it composes, covered by `Descent3/tests/bot_quickorder_tests.cpp`). It is a shortcut for typing the
 orders above and adds nothing chat cannot do (the Piccu rule, §B.6). Not yet seen on screen.
 
@@ -300,18 +300,18 @@ Decided by the operator on 2026-10-01:
   <powerup>` (CMD8) and team-chat callouts (CMD18) go in only if formation v1 lands early (§B.3). `!above`/`!below`/
   `!flank`, chaining and grouping stay deferred (§B.4).
 - **Free-for-all modes (Q8).** Bots take **no orders at all**; every `!` verb, `!ping` and `!hunt` included, gets a
-  taunt reply and installs nothing. **Built in 0.9.17-dev** (§A.3) for Anarchy, Hyper-Anarchy and Robo-Anarchy, the
+  taunt reply and installs nothing. **Built in 0.10.0** (§A.3) for Anarchy, Hyper-Anarchy and Robo-Anarchy, the
   modes the ruling named, and for Hoard, the other one-team mode (the operator's 2026-10-07 brief; the F10 overlay
   already treated it so). Monsterball, which the earlier §A.3 listed as free-for-all, runs two teams and takes orders.
 - **Formation (Q9 = yes).** "Form up" becomes a distinct formation mode; `!follow` stays a loose escort (§B.2). Not
   built.
 
 The operator's goal (2026-09-28) is the `!` harness refined and finished (CMD1): the polish floor plus formation v1,
-with nothing else blocking the reveal. The polish floor landed in 0.9.17-dev; formation v1 is what remains. The
+with nothing else blocking the reveal. The polish floor landed in 0.10.0; formation v1 is what remains. The
 Entropy and Monsterball mode verbs (`!attack lab`/`!defend lab`, `!attack ball`/`!defend goal`) rode the mode polish
 rows MODE1 and MODE7 (`ENTROPY_MODE.md`, `MONSTERBALL_MODE.md`) and are built (§A.5).
 
-### B.1 The polish floor (CMD9-CMD16): built in 0.9.17-dev
+### B.1 The polish floor (CMD9-CMD16): built in 0.10.0
 
 | Id | Item | As built |
 |---|---|---|
@@ -418,7 +418,7 @@ compatibility pass (REL12) re-checks this before release.
    Unambiguous intent, no prefix needed. Silent acknowledgment via DM reply.
 
 5. **Reply throttle per-bot, not global** — allows staggered replies. 2s cooldown prevents
-   spam but allows each bot to acknowledge once. *(Replaced in 0.9.17-dev: answers are never throttled and group into
+   spam but allows each bot to acknowledge once. *(Replaced in 0.10.0: answers are never throttled and group into
    one line per text; reports are paced per bot and wait instead of being dropped (§A.4).)*
 
 6. **Duration modifiers deferred** — Q3's "for 60 seconds" / "forever" adds complexity
@@ -433,7 +433,7 @@ compatibility pass (REL12) re-checks this before release.
 9. **Enemy commands get a refusal, not compliance** (corrected 2026-10-01). In team modes a bot refuses orders from
    opposing-team players with `Not taking orders from you!`, which stops opponents hijacking your bots. The original
    decision promised a taunt; none was built (a `!taunt` verb is CMD5, deferred). Exception: `!ping` answers everyone.
-   Decided 2026-10-01 and built in 0.9.17-dev: in the free-for-all modes bots take no orders and every `!` verb gets a
+   Decided 2026-10-01 and built in 0.10.0: in the free-for-all modes bots take no orders and every `!` verb gets a
    taunt reply (§A.3, CMD10/CMD11).
 
 10. **`!ping` is permanent diagnostic** — not replaced by `!report`/`!status`. Stays in the

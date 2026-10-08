@@ -44,9 +44,11 @@ Read the named doc before changing the code it covers. Do not duplicate doc cont
 ## Rules that are not obvious from the code
 
 - **Versioning**: `0.x.y` in `CMakeLists.txt` (`MATCEN_VERSION_*`); 0.8.x features, 0.9.x navigation, 0.10.x the
-  release package. The `-dev` suffix is used only while chasing a specific untested bug or regression. Strip it, keep
-  the patch number, to make that version stable; never bump the patch for an experiment, and never leave a hole in
-  the sequence. `$servercaps` prints the numeric version only (`fork_version=X.Y.Z`).
+  release package (the reveal ships on whichever 0.10.x is current). Each bug fix or small feature bumps the third
+  digit, no suffix. `-dev` is for experiments and risky multi-commit work that may be reverted whole (the committee
+  collapse): every iteration stays on that `-dev` number, tracked by SHA, and stripping it keeps the number. Never leave
+  a hole in the sequence. 1.0.0 only after community testing, stable enough to merge upstream or join PiccuEngine.
+  `$servercaps` prints the numeric version only (`fork_version=X.Y.Z`).
 - **Every code change updates the docs in the same commit**: `README.md` and `CHANGELOG.md` for anything a server
   operator notices, a dated `BOTS_DEVEL.md` entry for engineering work, the registry row's status in `PLAN.md`.
 - **Operator rulings (settled, do not re-ask)**: bots obey the same physics as players, always; no thrust against

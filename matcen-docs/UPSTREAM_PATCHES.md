@@ -23,9 +23,9 @@ the patch text in this document is sufficient; there is no need to merge from Ma
 | 3 | BNode lookup asserts (crashes) on a room with no BNode data | `Descent3/bnode.cpp` | Hardened (Matcen 0.8.0; first tag v0.8.13) | Not submitted |
 | 4 | SDL mouse regression vs retail: wheel-down unbindable, mouse-4 aliases wheel-down, mouse-5 dead | `ddio/lnxmouse.cpp` | Fixed (Matcen 0.9.9, tag v0.9.9) | Not submitted (fixed independently in PiccuEngine) |
 | 5 | Mission-download system: spurious "missing mission" prompt at join, garbage in the URL reply, dead retail copy-protection gate | `Descent3/mission_download.cpp` | Fixed (Matcen 0.9.9, tag v0.9.9) | Not submitted |
-| 6 | CTF: a carrier who dies in a flag's home goal does not send that flag home (wrong object tested) | `netgames/ctf/ctf.cpp` | Fixed (Matcen 0.9.17 development series; not yet in a release or tag) | Not submitted |
-| 7 | Mission auto-download: divide by zero on a fast start (SIGFPE), status-line buffer overflow from an 87-character link, uncaught throw on an `https:` link without TLS | `Descent3/mission_download.cpp` | Fixed (Matcen 0.9.17 development series; not yet in a release or tag) | Not submitted |
-| 8 | A `%` in a callsign or chat line crashes the dedicated server (formatted text re-used as a format string); `$setteamname` writes one past the team-name array | `Descent3/dedicated_server.cpp`, `netgames/dmfc/dmfcbase.cpp`, `dmfcinputcommand.cpp` | Fixed (Matcen 0.9.17 development series; not yet in a release or tag) | Not submitted |
+| 6 | CTF: a carrier who dies in a flag's home goal does not send that flag home (wrong object tested) | `netgames/ctf/ctf.cpp` | Fixed (Matcen 0.10.0, tag v0.10.0) | Not submitted |
+| 7 | Mission auto-download: divide by zero on a fast start (SIGFPE), status-line buffer overflow from an 87-character link, uncaught throw on an `https:` link without TLS | `Descent3/mission_download.cpp` | Fixed (Matcen 0.10.0, tag v0.10.0) | Not submitted |
+| 8 | A `%` in a callsign or chat line crashes the dedicated server (formatted text re-used as a format string); `$setteamname` writes one past the team-name array | `Descent3/dedicated_server.cpp`, `netgames/dmfc/dmfcbase.cpp`, `dmfcinputcommand.cpp` | Fixed (Matcen 0.10.0, tag v0.10.0) | Not submitted |
 
 Version labels: the Matcen version is the first release that carried the fix. Not every release was
 tagged, so the index also gives the first git tag that contains the fix (`git tag --contains <commit>`).
@@ -550,9 +550,9 @@ any D3 fork shipping the original Outrage CTF source.
 
 ### Status
 
-- **Matcen:** Fixed in the 0.9.17 development series (`HandlePlayerSpew`,
+- **Matcen:** Fixed in 0.10.0 (`HandlePlayerSpew`,
   `netgames/ctf/ctf.cpp:1754-1757`), the exact change shown above. A code audit
-  found it. It ships in the first release after 0.9.16; no tag carries it yet.
+  found it.
 - **DescentDevelopers/Descent3:** Not submitted. Same line at
   `netgames/ctf/ctf.cpp:1750`.
 - **PiccuEngine:** Not checked. Same netgame lineage, so the same fix should
@@ -637,7 +637,7 @@ if (time_elapsed > 0 && received_bytes) {
 
 ### Status
 
-- **Matcen:** Fixed in the 0.9.17 development series. Found by reading the
+- **Matcen:** Fixed in 0.10.0. Found by reading the
   client while building the Pyrodeck mission host; not reproduced in a game
   client (the divide was reproduced with the same expression in a standalone
   program).
@@ -678,7 +678,7 @@ DescentDevelopers/Descent3 `main` have the same lines.
 
 ### Status
 
-- **Matcen:** Fixed in the 0.9.17 development series. Found by the Pyrodeck
+- **Matcen:** Fixed in 0.10.0. Found by the Pyrodeck
   parity work (a ban tool that must survive hostile names).
 - **DescentDevelopers/Descent3:** Not submitted. Same lines.
 - **PiccuEngine:** Not checked.

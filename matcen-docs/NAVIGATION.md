@@ -346,7 +346,7 @@ escort orders. Its outdoor branch is the one outdoor dispatch (§5.4).
 
 ---
 
-### 4.7 Zones: a room that is several spaces (NAV41, 0.9.17-dev)
+### 4.7 Zones: a room that is several spaces (NAV41, 0.10.0)
 
 A room can be several spaces to a ship. Glasshouse's central pyramid (rm1) is a hollow pyramid open only through its
 whole-floor portal to the room below and a chimney to the room above, plus four wedge galleries on its glass faces,
@@ -430,7 +430,7 @@ build-time toggle flips.
    from an accepted node. Never cull a point because a probe from it is clear: a ray from inside solid false-clears.
    `GrowFromSeeds` (bot_roadmap.cpp:914) grows under **three phases** (seed centroid, centre-anchored, half-pitch shift)
    and keeps the one with the most cells inside the room, then the fullest; ties keep the earliest (NAV61,
-   0.9.17-dev). The first rule was the fullest lattice alone. It counted cells spilled through a door into the next
+   0.10.0). The first rule was the fullest lattice alone. It counted cells spilled through a door into the next
    room, so a neighbour chose a room's grid: on Isengard a change to what may grow in rm29 moved every node in rm33,
    and on the new grid the room was marked HARD in four runs of four. Door coverage is not in the score: it can only
    be read before the repair passes there, and that reading is wrong where the repairs finish the job (ledger L34).
@@ -441,7 +441,7 @@ build-time toggle flips.
    Outdoor edges with an endpoint in an interior room's box must be clear both ways, and the outdoor sweeps are
    back-face honest too (`c1d34f0a`). The runtime primitive
    `BotSegmentClear` keeps its old behaviour for runtime callers (L23).
-   **Each leg starts in the room its start point lies in** (NAV60, 0.9.17-dev). A sweep meets only the faces of the
+   **Each leg starts in the room its start point lies in** (NAV60, 0.10.0). A sweep meets only the faces of the
    room it starts in and of the rooms it crosses into through portals; back-face honesty covers the walls of the
    start room only. The void-cell guard (item 4) keeps cells grown through a door into the next room, and every leg
    from such a cell used to start in the room being built, so it met none of the next room's walls: Glasshouse's ring

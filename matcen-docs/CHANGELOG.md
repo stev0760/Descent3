@@ -6,12 +6,16 @@ The full engineering history behind each release is in [BOTS_DEVEL.md](BOTS_DEVE
 Open items are tracked in [PLAN.md](PLAN.md) §4, and open navigation problems in [NAVIGATION.md](NAVIGATION.md) §7.
 
 Versioning: `0.8.x` = feature releases; `0.9.x` = the navigation-milestone series; `0.10.x` = the release package
-series (the packaged release: bot management, the chat and console commands, and the install package).
-A `-dev` suffix marks an in-test build that has not yet passed its validation gate.
+series (the packaged release: bot management, the chat and console commands, and the install package). Within a
+series each bug fix or small feature takes the next number in the last place. A `-dev` suffix marks an experiment, or
+a larger change that may be backed out whole, until it passes its validation gate. 1.0 comes after community play.
+0.9.17 was never released: its development build became 0.10.0.
 
-## [0.9.17-dev] - in test
+## [0.10.0] - 2026-10-08
 
-*Development series. Do not run this as a release.*
+*The first of the release-package series: seats kept free for players and a player target, bot commands and menus
+for a listen-server host, the F10 order menu, the finished `!` basics, and a router that knows when one room is
+several spaces. Lines marked In test have not been flown yet.*
 
 - **A `%` in a player's name or chat no longer crashes the server.** The dedicated console re-read its own output as a
   format string; so did `$banlist`, `$playerinfo` and the command help. `$setteamname` no longer accepts team 4.
