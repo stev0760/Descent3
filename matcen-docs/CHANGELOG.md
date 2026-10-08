@@ -11,6 +11,13 @@ series each bug fix or small feature takes the next number in the last place. A 
 a larger change that may be backed out whole, until it passes its validation gate. 1.0 comes after community play.
 0.9.17 was never released: its development build became 0.10.0.
 
+## [0.10.7] - 2026-10-08
+
+- **No more flood of "Invalid socket id" errors in the server log.** A level script that messages a player (a trigger,
+  a HUD line, a sound) also tried to send to bots, which have no network connection, and each attempt logged an
+  error. Robo-Anarchy on the retail levels was the worst case: about 1,000 lines a second at times, nine tenths of the
+  log. Bots are now skipped, as the engine already did for its other messages.
+
 ## [0.10.6] - 2026-10-08
 
 - **A dedicated server starts on a machine with no display or sound device**, such as a cloud VPS or a systemd

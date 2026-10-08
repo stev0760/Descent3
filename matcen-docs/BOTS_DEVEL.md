@@ -10,6 +10,19 @@ including the CTF, Hyper and Hoard write-ups) is preserved verbatim in
 `matcen-docs/archive/BOTS_DEVEL-phases-0_to_0.9.12.md`. The engine-files audit (single-player, Robo-Anarchy and
 co-op impact) now lives in `matcen-docs/BOT_DEV_REFERENCE.md`.
 
+### 2026-10-08: level scripts no longer send to bots, 0.10.7 (ENG12)
+
+REL12 counted about 1,200 `nw_SendReliable: Invalid socket id passed ... -1` lines in a bot-only soak. The lab's logs
+put it much higher: a 20-minute Robo-Anarchy soak on `d3.mn3` (2026-10-01) holds 448,058 of them, 87% of its 60 MB,
+at about 64,000 a minute for five minutes running. A Robo-Anarchy server under gdb, broken on the error, showed one
+caller: `MultiSendMSafeFunction`'s `to_slot` branch (Descent3/multisafe_server.cpp), from `msafe_CallFunction`, a
+level script addressing one player. A bot's player slot has no client and its `reliable_socket` is -1. The engine
+skips `NPF_BOT` slots in `MultiSendReliablyToAllExcept` and elsewhere, but not here. Both branches (the bitmask loop
+and `to_slot`) now skip bots; the server has already applied the change, so a bot loses nothing.
+
+Paired 8-minute runs, Robo-Anarchy on `d3.mn3` with 8 bots, started 3 s apart: the control logged 176,260 of the
+lines (198,882 lines, 23 MB); the fix logged none (22,705 lines, 2.7 MB). No asserts in either; 39 and 32 kill lines.
+
 ### 2026-10-08: a dedicated server with no display, 0.10.6 (ENG14, ENG11)
 
 The operator's deployment is a cloud VPS under systemd, with Pyrodeck in front. Started with no `DISPLAY`, the server

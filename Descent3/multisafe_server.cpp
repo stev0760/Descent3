@@ -1105,18 +1105,20 @@ void MultiSendMSafeFunction(uint8_t type, msafe_struct *mstruct) {
   }
 
   if ((Game_mode & GM_MULTI) && (Netgame.local_role == LR_SERVER)) {
-    // Ok, send this out to our clients
+    // Ok, send this out to our clients. A bot has no client (and no socket): the server already applied the
+    // change, so there is nothing to tell it.
     if (to_slot == -1) {
       if (to_bitmask == 0xFFFFFFFF)
         MultiSendReliablyToAllExcept(Player_num, data, count, sequence, false);
       else {
         for (int i = 1; i < MAX_PLAYERS; i++) {
-          if ((to_bitmask & (1 << i)) && (NetPlayers[i].flags & NPF_CONNECTED) && NetPlayers[i].sequence >= sequence)
+          if ((to_bitmask & (1 << i)) && (NetPlayers[i].flags & NPF_CONNECTED) && !(NetPlayers[i].flags & NPF_BOT) &&
+              NetPlayers[i].sequence >= sequence)
             nw_SendReliable(NetPlayers[i].reliable_socket, data, count, false);
         }
       }
     } else {
-      if (NetPlayers[to_slot].sequence >= sequence)
+      if (!(NetPlayers[to_slot].flags & NPF_BOT) && NetPlayers[to_slot].sequence >= sequence)
         nw_SendReliable(NetPlayers[to_slot].reliable_socket, data, count, false);
     }
   }
