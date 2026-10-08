@@ -240,6 +240,10 @@ static void PopPickNextBot(char *name, size_t len, int *ship_index, BotDifficult
   *ship_index = PopShipFromConfig(style ? style->ship : nullptr);
   *difficulty = (style && style->difficulty < BOT_DIFF_COUNT) ? style->difficulty : BotGetDefaultDifficulty();
 
+  BotPopulationFreeDefaultName(name, len);
+}
+
+void BotPopulationFreeDefaultName(char *name, size_t len) {
   for (int i = 0; i < BOT_UI_MAX_BOTS; i++) {
     snprintf(name, len, "%s", BotDefaultName(i));
     if (!PopCallsignInUse(name))

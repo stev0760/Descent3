@@ -855,7 +855,8 @@ static bool DedicatedNavDump(const char *operand) {
 // Handle bot management commands. Returns true if the command was a bot command.
 static bool DedicatedHandleBotCommand(const char *command, const char *operand) {
   if (stricmp(command, "addbot") == 0) {
-    char botname[CALLSIGN_LEN + 1] = "Bot";
+    char botname[CALLSIGN_LEN + 1];
+    BotPopulationFreeDefaultName(botname, BOT_POP_BASE_NAME_LEN + 1);
     int ship_index = 0;
     BotDifficulty diff = BotGetDefaultDifficulty();
     int desired_team = -1;

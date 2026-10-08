@@ -1300,41 +1300,9 @@ static void BotMenuSend(const char *line) {
   DLLRunBotConsoleCommand(line);
 }
 
-// Add bot: default ship, default difficulty, the smallest team. The name is the first of the engine's built-in
-// callsigns (BotDefaultName, bot.cpp) that no player flies under, then Bot<n>: the population manager's order once
-// its roster is used up.
-static const char *const Bot_menu_names[] = {"Reaper",  "Phantom", "Viper",   "Shadow", "Blaze", "Rogue",
-                                             "Havoc",   "Spectre", "Wraith",  "Talon",  "Fury",  "Ghost",
-                                             "Striker", "Nova",    "Tempest", "Apex"};
-
-static bool BotMenuCallsignInUse(const char *name) {
-  char callsign[MAX_CALLSIGN_SIZE];
-  snprintf(callsign, sizeof(callsign), "%s[BOT]", name);
-  for (int i = 0; i < DLLMAX_PLAYERS; i++) {
-    if ((basethis->NetPlayers[i].flags & NPF_CONNECTED) && !stricmp(basethis->Players[i].callsign, callsign))
-      return true;
-  }
-  return false;
-}
-
-static void BotMenuAddBot(int) {
-  char name[16];
-  bool found = false;
-  for (const char *candidate : Bot_menu_names) {
-    if (!BotMenuCallsignInUse(candidate)) {
-      snprintf(name, sizeof(name), "%s", candidate);
-      found = true;
-      break;
-    }
-  }
-  for (int n = 1; !found; n++) { // at most DLLMAX_PLAYERS callsigns can be taken, so this ends
-    snprintf(name, sizeof(name), "Bot%d", n);
-    found = !BotMenuCallsignInUse(name);
-  }
-  char line[64];
-  snprintf(line, sizeof(line), "$addbot %s", name);
-  BotMenuSend(line);
-}
+// Add bot: a bare $addbot, so the engine picks the name (the first free built-in callsign), the default ship and
+// difficulty, and the smallest team.
+static void BotMenuAddBot(int) { BotMenuSend("$addbot"); }
 
 // Remove bot: one row per bot, by callsign. $removebot takes the bot's index in the engine's bot table (the number
 // $botlist prints), not its player slot. BotAdd gives every bot the address 127.<index>.<slot>.1, and NPF_BOT is the

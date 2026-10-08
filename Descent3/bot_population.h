@@ -82,6 +82,10 @@ int BotPopulationBotsAllowed();
 // .mps loader clamp to it.
 int BotPopulationRosterLimit(int max_players);
 
+// The first built-in name (BotDefaultName) no connected player flies under, then Bot<n>: the name of a
+// bot added without one, by the population manager past its roster or by a bare $addbot.
+void BotPopulationFreeDefaultName(char *name, size_t len);
+
 // Print the refusal reason when BotAdd() turns a bot away for want of a seat.
 void BotPopulationPrintRefusal(const char *name);
 

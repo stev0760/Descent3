@@ -15,8 +15,7 @@ co-op impact) now lives in `matcen-docs/BOT_DEV_REFERENCE.md`.
 The operator's cockpit finding: on a listen server the bot commands meant typing `$` lines on the F8 chat line, and
 they belong in the host's F6 multiplayer menu. Built as a **Bots** submenu in shared DMFC code, so every mode gets it
 (anarchy, team anarchy, robo-anarchy, hyper-anarchy, CTF, hoard, Entropy, Monsterball, co-op: all build their F6
-menu in `DMFCBase::GameInit`). Items: Add bot (`$addbot <name>`, named with the first built-in callsign no connected
-player flies under, then `Bot<n>`, the population manager's order once its roster is used up), Remove bot (an
+menu in `DMFCBase::GameInit`). Items: Add bot (a bare `$addbot`), Remove bot (an
 `MIT_CUSTOM` list of the bots by callsign → `$removebot <index>`), Remove all bots (`$removebots`), Difficulty (all
 bots) (five levels → `$botdifficulty all <level>`), and Population: On, Off, Players to keep (2 to
 `max_players − 1` → `$botpopulation target <n>`), Seats kept free (1-4 → `$botpopulation reserve <n>`; no 0, POP15
@@ -41,9 +40,15 @@ on the server's own `NetPlayers`; the menu takes a slot only when the flag and t
 choice on Add bot left out: `$addbot` reads the team only after a ship and a difficulty, and the DLL cannot know the
 configured default difficulty to fill in; the smallest-team balance applies.
 
+A bare `$addbot` used to name every bot `Bot`, so two of them flew as `Bot[BOT]`. It now takes the population
+manager's choice for a bot past its roster, the first built-in callsign (`BotDefaultName`) no connected player flies
+under, then `Bot<n>`: the helper is `BotPopulationFreeDefaultName` (bot_population.cpp), shared by both. The menu's
+Add bot sends the bare line, so the DMFC side carries no copy of the name list. The reply's format is unchanged.
+
 Files: `Descent3/Game2DLL.cpp`, `netgames/includes/gamedll_header.h`, `netgames/dmfc/dmfcfunctions.cpp`,
 `netgames/dmfc/dmfcbase.cpp`, `netgames/dmfc/dmfcinternal.h`, `netgames/dmfc/dmfcmenu.cpp` (`CreateBotsMenu` and its
-handlers). No `$` command or output changed (PYRODECK_CONTRACT untouched); no navigation code. Debug build clean
+handlers), `Descent3/bot_population.{cpp,h}` and `Descent3/dedicated_server.cpp` (the bare `$addbot` name). No `$`
+command syntax or output format changed (PYRODECK_CONTRACT untouched); no navigation code. Debug build clean
 (engine and all nine netgame modules), ctest 32/32. Traced by reading (F6 → `Menu.Execute` → handler →
 `DLLRunBotConsoleCommand` → `fp[370]` → `RunBotConsoleCommand` → `HostConsoleEcho` → HUD); not yet seen on screen,
 owed a cockpit flight on a listen server that walks every item.
