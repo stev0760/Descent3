@@ -1,6 +1,6 @@
 # Announcement draft
 
-A draft for the operator to edit before the reveal (REL11), for r/descent, the DDN Discord, DescentBB and SectorGame,
+A draft for the operator to edit before the reveal, for r/descent, the DDN Discord, DescentBB and SectorGame,
 with the files mirrored on ModDB and GameFront. Replace the bracketed placeholders. The post itself is about 300
 words. Keep it free of custom map names, like the README.
 
@@ -18,10 +18,10 @@ Players need nothing new. A retail 1.5 client, or PiccuEngine, connects as usual
 `Reaper[BOT]` and so on. The bots fly under the same physics as you, lead their shots, use afterburner and
 countermeasures, and pick up powerups.
 
-For server operators it is two config files. Set a player count and the bots fill the server to it, step aside when
-a human joins, and come back when one leaves. One seat always stays free for a human. There are five difficulty
-levels, chat orders in the team modes (`!attack`, `!defend`, `!follow`, `!attackflag`), and a Bot Settings screen if
-you host from the game.
+For server operators it is two config files. Set a player count and the bots keep the game at it: they step aside
+when a human joins and come back when one leaves, and one seat always stays free for a human. There are five
+difficulty levels, chat orders in the team modes and co-op (`!attack`, `!defend`, `!follow`, `!formup`,
+`!attack flag`), and a Bot Settings screen if you host from the game.
 
 Earlier attempts at Descent 3 bots exist: SuperSheep's admin-side bots, and the 1v1 "PiccuBot" servers on the
 Piccu tracker today. As far as we know, none is open source and general-purpose; Matcen's bots are the first

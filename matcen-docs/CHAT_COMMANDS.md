@@ -3,7 +3,7 @@
 The `!` command harness: players give bots squad orders by typing in the normal Descent 3 chat. This doc has three
 parts:
 
-- **Part A, the shipped reference.** What the code does on 0.10.2, read from `Descent3/bot_chat.cpp` (who an order
+- **Part A, the shipped reference.** What the code does, read from `Descent3/bot_chat.cpp` (who an order
   is for, carrying it out, every line the bots say), `Descent3/bot_chat_parse.cpp` (the order language, covered by
   `Descent3/tests/bot_chat_tests.cpp`), the order code in `Descent3/bot.cpp` and the formation code in
   `Descent3/bot_formation.cpp` and `bot_formation_table.cpp`. Every verb and alias is listed once, in §A.5.
@@ -14,7 +14,7 @@ parts:
 The research survey (nine games, with sources), the Engine Chat System hook history, the Stage 1-3 rollout, the
 Stage 4-5 plans and the original Stage 6 "Orders as Goals" design are in
 [`archive/CHAT_COMMANDS-design-history.md`](archive/CHAT_COMMANDS-design-history.md), a verbatim copy of this doc as
-it stood at `ee6e6525`. Open items are tracked in the master registry (PLAN.md §4) under the `CMD` ids used below.
+it stood at `ee6e6525`. Open items are tracked in [PLAN.md](PLAN.md) under the `CMD` ids used in Part B.
 
 ---
 
@@ -24,8 +24,10 @@ it stood at `ee6e6525`. Open items are tracked in the master registry (PLAN.md �
 
 - **Prefix.** A command is the first `!` followed by a letter, at the start of the line or after a space, `:` or `>`
   (`BotChatParse`). So `gg !ping` triggers too, and `wow !!!` or `nice shot!` do not. The chat relay puts the sender's
-  callsign in front of the line (`Bob: `, `[Bob]: ` on team chat, `<Bob>:` in a direct message); that prefix is skipped
-  first (`BotChatSkipSpeaker`), so a pilot called `!Bang` is not giving an order every time he speaks.
+  callsign in front of the line (`Bob says: ` on all-chat, `[Bob]: ` on team chat, `<Bob>:` in a direct message). The
+  team-chat and direct-message prefixes are skipped first (`BotChatSkipSpeaker`), so a pilot called `!Bang` is not
+  giving an order every time he speaks there. The all-chat prefix is not skipped, so on all-chat such a pilot's every
+  line reads as the order `!bang`. <!-- CMD28 -->
 - **Words.** The verb is the word after the `!`, lowercased. Punctuation a sentence leaves at the end of a word
   (`. , ! ? ; :`) is dropped, so `!help?` and `!follow, reaper` work. A two-word form (`!attack flag`, §A.5) is matched
   before the next word is tried as a bot's name. The word after the verb (after the two-word form's second word, and
@@ -49,15 +51,15 @@ it stood at `ee6e6525`. Open items are tracked in the master registry (PLAN.md �
 | `<botname>: !verb` | A direct message. The engine routes it by callsign (`hudmessage.cpp` `GetMessageDestination`; an exact callsign beats a prefix) and only that bot receives it. Bot names carry `[BOT]` as a suffix, so `reaper:` reaches `Reaper[BOT]`. |
 
 The name comes after a two-word form: `!attack flag reaper` sends Reaper for the flag, and `!attack flag` alone is the
-flag order for the team even when a bot is called Flagg (CMD13).
+flag order for the team even when a bot is called Flagg.
 
 ### A.3 Who obeys (the gates)
 
 - **Free-for-all modes take no orders** (Anarchy, Hyper-Anarchy, Robo-Anarchy, Hoard: any mode with one team that is
-  not co-op; operator ruling 2026-10-01, CMD10 and CMD11). Every `!` line, whatever the verb (`!ping`, `!hunt`,
-  `!help` and unknown words included), gets one short in-character taunt from one bot, on the channel it came in on,
-  and nothing changes. The bot is the one the line was addressed to, by direct message or by name, or else the next
-  bot in turn. The six taunts come in turn (`BotChatTaunt`):
+  not co-op). Every `!` line, whatever the verb (`!ping`, `!hunt`, `!help` and unknown words included), gets one short
+  in-character taunt from one bot, on the channel it came in on, and nothing changes. The bot is the one the line was
+  addressed to, by direct message or by name after a known verb, or else the next bot in turn. The six taunts come in
+  turn (`BotChatTaunt`):
 
   > Orders? Out here it's every pilot for themselves. / Nice try. I don't take orders from targets. / No squads in a
   > free-for-all. Just you and my sights. / I'll follow you, all right. Straight into my crosshairs. / You and what
@@ -66,9 +68,8 @@ flag order for the team even when a bot is called Flagg (CMD13).
   The mode test is `BotChatClassifyMode` (one team and no co-op flag). The F10 overlay's "Squad orders are off in this
   mode." (§A.9) uses the same test, and `bot_chat_tests` checks the two agree for every mode and team count.
 - **Team modes** (CTF, Team Anarchy, Entropy, Monsterball): a bot obeys only players on its own team (`BotShouldObey`).
-  Anyone else gets `Not taking orders from you!`. There is no taunt here (decision 9). `!ping` answers everyone, and
-  `!goal` answers anyone with `No mission objectives in this mode.` Monsterball runs two teams; the earlier version of
-  this doc listed it among the free-for-all modes, which the code never bore out.
+  Anyone else gets `Not taking orders from you!`. There is no taunt here. `!ping` answers everyone, and `!goal`
+  answers anyone with `No mission objectives in this mode.` Monsterball runs two teams and takes orders.
 - **Co-op:** there are no teams and every human commands every bot. `BotShouldObey` returns true under `NF_COOP`, and a
   bare `!verb` skips the team filter.
 
@@ -79,23 +80,21 @@ Everything the bots say goes through one queue in `bot_chat.cpp`, emptied once p
 
 - **Channel.** A reply goes back on the channel the command came in on: all-chat to all-chat, team chat to team chat,
   and a direct message to the sender only. Bot lines are server messages in yellow (`GR_RGB(200, 200, 50)`).
-- **Order of lines.** An answer goes out on the server frame after the order, after the server has relayed the order
-  itself, so the order reaches the screen first (UX7, by construction; not yet seen in a cockpit).
-- **Grouping (CMD15).** Lines that go out in the same frame to the same recipient with the same text become one line:
+- **Order of lines.** An answer goes out later in the same server frame, after the server has relayed the order
+  itself, so the order reaches the screen first. <!-- UX7: the listen host's own screen is not yet checked -->
+- **Grouping.** Lines that go out in the same frame to the same recipient with the same text become one line:
   `4 bots: Following!`; a single speaker keeps its name, `Reaper[BOT]: Following!`. Different answers stay separate,
   so `!follow all` in a team game gives `3 bots: Following!` and `3 bots: Not taking orders from you!`. The HUD shows
-  about two chat lines, and a squad order used to fill them with one answer per bot.
+  only about two chat lines.
 - **The roll call.** `!status` to more than one bot answers as one roll call in the server's voice: one short entry per
-  bot, `Reaper (Attack) 84% hunting Viper, en route`, joined with ` | ` and wrapped at 100 characters (two entries a
+  bot, `Reaper (Follow) 84% hunting Viper, en route`, joined with ` | ` and wrapped at 100 characters (two entries a
   line; at most eight lines). One bot answers in the full form (§A.5).
-- **Answers are never held back.** One order, one answer (per group). The old 2 s per-bot reply cooldown, which also
-  ate the answer to a second order given within 2 s, is gone.
-- **Reports are paced, not dropped (CMD14).** Arrival, BLOCKED, a hunted player down and the co-op announcements are
-  reports: each bot volunteers at most one per 2 s (`BOT_CHAT_REPORT_SPACING`, bot_chat.h), and a report inside that
-  window waits its turn. When a line goes out, any line with the same text for the same recipient that is still
-  waiting out its pacing goes with it, so one event is one line (`3 bots: Phantom left the game. Going freelance.`)
-  whatever each bot said last. Before, reports shared the reply cooldown, so an arrival within 2 s of the
-  acknowledgement was lost.
+- **Answers are never held back.** One order, one answer (per group).
+- **Reports are paced, not dropped.** Arrival, BLOCKED, a hunted player down and the co-op announcements are reports:
+  each bot volunteers at most one per 2 s (`BOT_CHAT_REPORT_SPACING`, bot_chat.h), and a report inside that window
+  waits its turn. When a line goes out, any line with the same text for the same recipient that is still waiting out
+  its pacing goes with it, so one event is one line (`3 bots: Phantom left the game. Going freelance.`) whatever each
+  bot said last.
 - **A report is news once per order.** An order report that repeats the bot's last report to the same player since
   its current order is not sent again: an escort that reaches its slot each time the player stops says
   `Right behind you.` once, and says it again only after another report (`Can't reach you!`) or a new order. The
@@ -117,47 +116,46 @@ in place (`BotVoidOrderReply`).
 |---|---|---|---|---|
 | `!ping` | none | Answers any player, either team. | Answers. | `Pong!`; on a direct message, `Pong, <sender>!` |
 | `!status` | `!report` | Read-only report: role, shield %, state, current target, and when an order is active its state and distance to the anchor. To several bots, one roll call (§A.4). | Same. | `Follow, HP 84%, hunting Viper, en route (120u out)` |
-| `!help` | none | To the sender only: the orders the mode takes, then how to order one bot (§A.10). | Same, with `!goal` and without `!hunt`. | `Orders: !follow !cover !attack ...` |
+| `!help` | none | To the sender only: the orders the mode takes, then how to order one bot (§A.10). | Same, with `!goal` and without `!hunt`. | `Orders: !follow !formup !cover !attack ...` |
 | `!attack` | `!target`, `!attack target` | Role ATTACK; releases any post or escort. In CTF the ATTACK role makes the bot a flag-goer. `!target` and `!attack target` also set the bot's target to the enemy nearest the **sender** (not the sender's reticle target) and switch an exploring bot to hunting. | Same, no flags. | `Attacking!`; with a target, `Targeting <name>!` |
 | `!defend` | none | Role DEFEND. Outside CTF, a post at the **bot's own** position. In CTF, no post: the objective system keeps the bot in its home flag room. | Post at the bot's position. | `Defending!` |
 | `!hold` | `!stay`, `!holdposition`, `!defend here` | Role DEFEND with a post at the **speaker's** position; the bot drops its current fight and goes. | Same. | `Holding position!`, later `In position.` or `Can't get there!` |
-| `!follow` | `!regroup` | Escorts **the speaker** (a third player cannot be named; CMD17). Fights back only at close range with line of sight. | Same. | `Following!`, later `Right behind you.` or `Can't reach you!` |
+| `!follow` | `!regroup` | Escorts **the speaker** (a third player cannot be named). Fights back only at close range with line of sight. | Same. | `Following!`, later `Right behind you.` or `Can't reach you!` |
 | `!formup` | `!form up` | The escort of `!follow`, flying a **slot in the speaker's formation**: single file in a tunnel, a wedge where it fits, every follower in its own place (§A.6). Fights back as `!follow` does. A bot already in the formation keeps its place. | Same. | `Forming up!`, later `In formation.` or `Can't reach you!` |
 | `!cover` | none | Escorts the speaker like the follow verb, but engages any threat it sees. | Same. | `Covering you!`, then the same reports |
 | `!freelance` | `!stop`, `!dismiss` | Cancels every order and lean; back to the autonomous FSM. | Also opts the bot out of the default wing (§A.7) until its next order. | `Going freelance.` |
-| `!hunt <name>` | none | Role ATTACK, any post or escort released, target set to the enemy whose callsign starts with `<name>` (the sender's team is skipped). The hunted player is kept in `squad_target_slot`; when they die or leave, each hunter reports it once and goes back to freelance (CMD12, §A.6). A name that matches no enemy answers `No enemy called <name>.` and a player already dead answers `<name> is already down.`; neither changes the bot's current order. With no name, role ATTACK and `Hunting!`. | The lookup skips the sender's team and co-op has one team, so a name never matches: `No enemy called <name>.` and nothing changes. A bare `!hunt` only releases the bot's anchor (CMD26). | `Hunting <name>!` |
+| `!hunt <name>` | none | Role ATTACK, any post or escort released, target set to the enemy whose callsign starts with `<name>` (the sender's team is skipped). The hunted player is kept in `squad_target_slot`; when they die or leave, each hunter reports it once and goes back to freelance (§A.6). A name that matches no enemy answers `No enemy called <name>.` and a player already dead answers `<name> is already down.`; neither changes the bot's current order. With no name, role ATTACK and `Hunting!`. | The lookup skips the sender's team and co-op has one team, so a name never matches: `No enemy called <name>.` and nothing changes. A bare `!hunt` only releases the bot's anchor. <!-- CMD26 --> | `Hunting <name>!` |
 | `!attackflag` | `!attack flag`, `!getflag`, `!flag` | Role ATTACK plus the attack lean; releases any post. | Generic attack. | `On the flag!` in CTF, else `Attacking!` |
 | `!defendflag` | `!defend flag`, `!guardflag` | Role DEFEND plus the defend lean, no post. | Generic defend lean, no post. | `Guarding the flag!` in CTF, else `Defending!` |
 | `!attacklab` | `!attack lab` | **Entropy:** role ATTACK plus the attack lean, as `!attackflag`. The bot fights for kills (a kill is two carry slots) and, like every bot, invades the nearest enemy room once it carries five viruses; the order adds aggression, not a destination. **Other modes:** a plain `!attack`. | A plain `!attack`. | `Attacking their labs!` (Entropy) |
 | `!defendlab` | `!defend lab` | **Entropy:** a post, with the `!hold` lifecycle, in the room a lab defender guards (`BotEntropyLabGuardRoom`, the room the DEFEND lean anchors to: next to the team's first lab on the way toward the enemy's, never inside a lab; the lab itself when that room cannot be found), at the room's path point. The post is fixed: if the lab changes hands, the bot stays. With no lab: `We have no lab to defend.` **Other modes:** a plain `!defend`. | A plain `!defend`. | `Guarding our lab!`, later `In position.` |
 | `!attackball` | `!attack ball` | **Monsterball:** the striker role, pinned (`BotMonsterballOrderRole`, role 1) under role ATTACK, which keeps the role assigner (it ranks only bots with no order) off the bot. The team's own striker is still assigned among the unordered bots, so the ball can have two strikers. **Other modes:** a plain `!attack`. | A plain `!attack`. | `On the ball!` |
-| `!defendgoal` | `!defend goal` | **Monsterball:** the keeper role (role 3) under role DEFEND: the bot shadows the goal the other team scores in (each team scores into its own goal, MONSTERBALL_MODE §1.3). **Other modes:** a plain `!defend`. | A plain `!defend`. | `Guarding their goal!` |
-| `!goal` | `!objective` | Not a team-mode verb: `No mission objectives in this mode.` to anyone. | **Installs a post at the current mission objective** (role DEFEND, position anchor at `coop_goal_pos`, the bot drops its fight and goes), with the post lifecycle of a hold. It does not resume any autonomous seeking. With no reachable objective it answers `No objective right now. Covering you.` and changes nothing (CMD27). | `Heading to: <item>!` |
+| `!defendgoal` | `!defend goal` | **Monsterball:** the keeper role (role 3) under role DEFEND: the bot shadows the goal the other team scores in (each team scores into its own goal). **Other modes:** a plain `!defend`. | A plain `!defend`. | `Guarding their goal!` |
+| `!goal` | `!objective` | Not a team-mode verb: `No mission objectives in this mode.` to anyone. | **Installs a post at the current mission objective** (role DEFEND, position anchor at `coop_goal_pos`, the bot drops its fight and goes), with the post lifecycle of a hold. It does not resume any autonomous seeking. With no reachable objective it answers `No objective right now. Covering you.` and changes nothing. <!-- CMD27 --> | `Heading to: <item>!` |
 
 Notes:
 
 - **Monsterball roles under orders.** Every order a Monsterball bot obeys sets its role: the ball orders pin striker
   or keeper, and every other order sets the field role, so a striker told `!attack` fights instead of playing the ball,
   and `!freelance` hands the bot back to the role assigner (its next 2 s cycle, or when the team's 10 s commitment
-  period ends). Before, the assigner skipped ordered bots but left their old role in place, so a striker told `!attack`
-  kept striking. `$nav mroles off` (every bot strikes) and `$nav mball off` (the legacy ball-chase) override a pinned
+  period ends). `$nav mroles off` (every bot strikes) and `$nav mball off` (the legacy ball-chase) override a pinned
   role, as they override the assigner.
-- **There is no `!get <powerup>`, `!above`, `!below`, `!flank` or `!taunt` verb.** Those are Part B items. The
+- **There is no `!get <powerup>`, `!above`, `!below`, `!flank` or `!taunt` verb.** They are not built (Part B). The
   formation order is `!formup`; `!formation` is not an order.
 
 ### A.6 Order lifecycle
 
 Every order records the player who gave it (`order_issuer_slot`): reports and the level-change notice go to them.
 Orders that carry an anchor (`!hold`, `!defend` outside CTF, `!defend lab`, `!goal`, `!follow`, `!formup`, `!cover`)
-own the bot's navigation while it is not fighting. Bias-only orders (`!attack`, `!hunt`, the flag, lab and ball verbs)
-and `!freelance` clear the anchor.
+own the bot's navigation while it is not fighting. Bias-only orders (`!attack`, `!hunt`, the flag and ball verbs and
+`!attack lab`) and `!freelance` clear the anchor.
 
 - **States.** EN_ROUTE, ON_STATION, BLOCKED. `!status` shows the state and the distance to the anchor.
 - **Posts** (`BotDoHoldStationNav`): on station within 60 u of the anchor (`BOT_ORDER_STATION_RADIUS`, bot.h), with
   the reachability-qualified arrival test `BotStationReached`. Interior legs route over the cost-aware router
   (`BotSetRoutedGoal(... TRAVEL_OWNER_ORDER)`); outdoor legs use the via layer and an engine goal. While posted the bot
   hunts only threats within 250 u of the anchor (`BOT_ORDER_LEASH_RADIUS`), comes back after the fight, and ignores
-  powerups (CMD20).
+  powerups.
 - **Escorts** (`BotNavigateToFollowTarget`). Each bot escorting the same player takes a slot from
   `BotGetEscortStation`, 45 u behind the player in the player's own frame (`BOT_ESCORT_STATION_DIST`): left-rear,
   right-rear, high-rear, deep-rear. The slot is `ordinal % 4`, so the fifth escort shares the first one's slot. Within
@@ -176,15 +174,15 @@ and `!freelance` clear the anchor.
   repeated `!formup` keeps a member's place, a member that takes another order leaves and the ones behind close up,
   and a member that dies rejoins at the end when it respawns. The design is §B.2.
 - **BLOCKED** (`BotOrderProgressCheck`): no 25 u of movement in 8 s. The bot reports to the issuer (`Can't reach you!`
-  for escorts, `Can't get there!` for posts), at most once per 30 s, and drops its current goal so the next tick
-  re-paths. Moving 25 u clears BLOCKED.
+  for escorts, `Can't get there!` for posts), and again at most once per 30 s while it stays BLOCKED, and drops its
+  current goal so the next tick re-paths. Moving 25 u clears BLOCKED.
 - **Reports.** `In position.` / `Right behind you.` / `In formation.` on arrival; BLOCKED as above. All are direct
   messages to the issuer, paced and deduplicated as in §A.4.
-- **A hunt ends with its target (CMD12).** `BotChatFrame` watches every bot under `!hunt`: when the hunted player dies
+- **A hunt ends with its target.** `BotChatFrame` watches every bot under `!hunt`: when the hunted player dies
   or disconnects, the bot reports `Viper is down. Going freelance.` or `Viper left the game. Going freelance.` once
   (several hunters group into `3 bots: ...`) and drops to freelance with a balanced lean, as `!freelance` would.
 - **Death.** Orders survive death: the bot goes back to its post or escort after respawning.
-- **Level change (CMD16).** A level change clears every order (`BotReinitAll`). First, `BotChatLevelReset` notes each
+- **Level change.** A level change clears every order (`BotReinitAll`). First, `BotChatLevelReset` notes each
   human who gave one of the orders being cleared; once that player has been back in the game for 3 s, they are told
   once, by direct message: `Reaper[BOT]: New level, orders cleared.`, or `3 bots: New level, orders cleared.` A player
   who has not come back within 120 s, or has left, is not told (logged). The co-op default wing (§A.7) is not an order
@@ -192,57 +190,41 @@ and `!freelance` clear the anchor.
 
 ### A.7 Co-op default wing
 
-In co-op, bots are companions and never pursue objectives on their own (operator ruling 2026-07-19).
-`BotCoopUpdateEscort` (bot_objective.cpp) puts every bot with no order on `!follow` to the nearest human, with no
-issuer, so it makes no reports. If that human leaves, the bot picks the next nearest. `!freelance` opts a bot out
-until it gets any other order. The first active bot voices objective announcements to everyone:
-`Next objective: <item>. Say !goal to send us there.`, `All primary objectives complete. On your wing.`, and
-`Can't reach the goal yet. Covering you.` The first names the objective and the order that sends the bots to it; it
-used to read `Heading to: <item>`, a move no bot made (UX6, 2026-10-07). The `!goal` reply with no reachable objective,
-`No objective right now. Covering you.`, still promises cover it does not change (CMD27).
+In co-op, bots are companions and never pursue objectives on their own. `BotCoopUpdateEscort` (bot_objective.cpp) puts
+every bot with no order on `!follow` to the nearest human, with no issuer, so it makes no reports. If that human leaves,
+the bot picks the next nearest. `!freelance` opts a bot out until it gets any other order. The first active bot voices
+objective announcements to everyone: `Next objective: <item>. Say !goal to send us there.`, `All primary objectives
+complete. On your wing.`, and `Can't reach the goal yet. Covering you.` The first names the objective and the order that
+sends the bots to it. The `!goal` reply with no reachable objective, `No objective right now. Covering you.`, promises
+cover it does not change.
+<!-- CMD27 -->
 
-### A.8 Corrections to the earlier version of this doc
+### A.8 Earlier versions of this doc
 
-The previous doc (now in the archive) said these things; the code says otherwise.
-
-| Old claim | As built |
-|---|---|
-| `!goal` "resumes autonomous objective-seeking" and releases any order | It installs a post at the objective (§A.5). The stale code comment that repeated the old claim is gone (COL14). |
-| `!attack flag` / `!defend flag` are the flag verbs | They are, since 0.10.0 (CMD13); before, only the one-word forms parsed. |
-| `!regroup` / `form up` is a one-shot converge | `!regroup` is an alias of the persistent escort; `!form up` is the formation order since 0.10.2 (until then an alias of `!follow`). |
-| Enemy orders get a taunt | In team modes they get `Not taking orders from you!`; the taunt is the free-for-all answer (§A.3). |
-| `!follow` / `!cover` can name a third player | The escort is always the speaker (CMD17). |
-| Non-team modes reach "all bots" | Free-for-all modes take no orders; every verb gets a taunt (§A.3). |
-| Only `!ping` ignores team | `!ping` and `!goal`'s "No mission objectives" answer everyone in team modes. |
-| Replies stagger over ~500 ms | No stagger; same-text replies group into one line, and reports are paced per bot (§A.4). |
-| Bot names match exactly | Prefix match since `a241ac88` (CMD25, closed). |
-| Open follow-up: route the escort through the cost-aware router | Done: escorts and posts route with `TRAVEL_OWNER_ORDER` (CMD24, closed). |
-| Escort switches to station-keeping within 2.5x the station distance | 150 u plus line of sight, and the slot is used only in the player's room. |
-| `!get <powerup>` is a Tier 2 verb | Not built (CMD8). |
-| Hook at multi.cpp:4992; functions `BotParseChatCommand` etc. | `MultiDoMessageToServer` plus the listen-host hook; the functions are `BotChatParse` (bot_chat_parse.cpp) and `BotOnChatMessage`, `BotDispatchOrder` (bot_chat.cpp). |
-| Reply format `Name [BOT]:` | `Name[BOT]:`, no space, since 0.9.9. |
-| Monsterball is a free-for-all mode (§A.3 up to 0.9.16) | It runs two teams and takes orders. |
+The version of this doc before 0.10.0, kept in [the archive](archive/CHAT_COMMANDS-design-history.md), claimed several
+things the code does not do: that `!goal` resumes objective-seeking, that enemy orders get a taunt, that `!follow` can
+name a third player, that replies are staggered, that bot names must match exactly, and that Monsterball takes no
+orders. Part A describes the code; where the two disagree, Part A is right.
 
 ### A.9 Quick-order overlay (Matcen client)
 
-Built in 0.10.0 (UX4): `Descent3/bot_quickorder.{h,cpp}` (keys, HUD, send) and `bot_quickorder_menu.cpp` (the
-menu and the lines it composes, covered by `Descent3/tests/bot_quickorder_tests.cpp`). It is a shortcut for typing the
-orders above and adds nothing chat cannot do (the Piccu rule, §B.6). First seen on screen 2026-10-08, on a Matcen
-client in CTF (REL12).
+Built in 0.10.0: `Descent3/bot_quickorder.{h,cpp}` (keys, HUD, send) and `bot_quickorder_menu.cpp` (the menu and
+the lines it composes, covered by `Descent3/tests/bot_quickorder_tests.cpp`). It is a shortcut for typing the orders
+above and adds nothing chat cannot do, so a player on another client misses nothing.
 
 - **Key: F10**, in a multiplayer game, on a client or a listen-server host. It is hard-bound. The controls menu's
   bindings are saved in the pilot file as a counted block, and a pilot saved with one more function than another
   Descent 3 client knows makes that client read past its own table when it loads the pilot (`pilot::read_controls`),
   so a rebindable key would break any other client sharing the pilot. F10 was free: only a Debug-build test key, which
   needs the debug modifier, used it.
-- **Flow.** F10 opens a list at the left of the screen, where the netgame's F6 menu draws. Keys 1-9 pick a row; 0
-  turns the page when a list has more than nine rows. When the player's side has two or more bots, a second list asks
-  who: 1 is the whole squad, then each bot by name. "Hunt a player" asks whom instead and lists the enemy players
-  (observers aside); it is dimmed when there are none. The pick sends the line and closes the menu. Escape or F10
-  closes it, Backspace steps back, and it closes itself after 8 seconds without a key, when the chat line opens, or on
-  any function key or Pause (each opens another screen). While it is open the number keys pick rows, not weapons;
-  every other key, flight and fire included, works as usual. It takes no keys while the chat line or a menu is open,
-  or while the netgame's F6 menu has the keyboard.
+- **Flow.** F10 opens a list at the left of the screen, where the netgame's F6 menu draws. Keys 1-9 pick a row; 0 turns
+  the page when a list has more than nine rows. When the player's side has two or more bots, a second list asks who: 1
+  is the whole squad, then each bot by name. "Hunt a player" asks whom instead and lists the enemy players (observers
+  aside); it is dimmed when there are none. The pick sends the line and closes the menu. Escape or F10 closes it,
+  Backspace steps back (on the first list it closes the menu), and it closes itself 8 seconds after the last key that
+  moved it, when the chat line opens, or on any function key or Pause (each opens another screen). While it is open the
+  number keys pick rows, not weapons; every other key, flight and fire included, works as usual. It takes no keys while
+  the chat line or a menu is open, or while the netgame's F6 menu has the keyboard.
 - **What each mode offers.** Keys in order:
 
   | Mode | Rows |
@@ -254,16 +236,15 @@ client in CTF (REL12).
   | Co-op | 1-5 as above, 6 Go to the objective `!goal`, 7 Freelance, 8 Form up, 9 Report; key 0: 1 Ping |
   | Anarchy, Hyper-Anarchy, Robo-Anarchy, Hoard | none; F10 prints `Squad orders are off in this mode.` |
 
-  Form up (0.10.2) sits between the orders a player reaches for in a fight and the reports, so the fight orders kept
-  their keys in every mode; the reports moved one key on, and in Team Anarchy and co-op Ping went to the second page.
+  Form up sits between the orders a player reaches for in a fight and the reports.
 
   The client tells the modes apart as the server's gate does (§A.3): co-op by its flag, free-for-all by a single team,
   CTF, Entropy and Monsterball by their script names. Left out on purpose: `!hunt` in co-op (the name lookup skips the
   sender's team, and co-op has one team), `!goal` outside co-op (the server answers `No mission objectives in this
   mode.`), and the flag, lab and ball verbs outside their modes (plain attack and defend there). Only canonical verbs
-  are sent, never aliases; `bot_chat_tests` reads every line the menu can send back through the server's parser and
-  checks it names the verb the row shows, with that verb's meaning in the row's mode. With no bot on the player's
-  side, F10 prints `No bots on your team.` (co-op: `No bots in this game.`).
+  are sent, never aliases; `bot_chat_tests` reads the one-bot line and the hunt line of every row back through the
+  server's parser and checks it names the verb the row shows, with that verb's meaning in the row's mode. With no bot on
+  the player's side, F10 prints `No bots on your team.` (co-op: `No bots in this game.`).
 - **The lines it sends**, through `SendHUDChatLine` (hudmessage.cpp), the chat line's own send code:
 
   | Choice | Line | Channel |
@@ -281,7 +262,7 @@ client in CTF (REL12).
 - **Degrades to chat.** The server sees ordinary chat; nothing server-side changed. A player on retail 1.5,
   PiccuEngine or any other client types the same lines.
 
-### A.10 Discoverability: `!help`, the tip, unknown orders (CMD9)
+### A.10 Discoverability: `!help`, the tip, unknown orders
 
 - **`!help`** answers the sender only, in two lines, with the orders the current mode takes and how to order one bot,
   using the name of a bot on the sender's side (`BotChatHelpLines`). Exactly, on a team with Shadow on it:
@@ -459,7 +440,7 @@ and not parking a moving formation are what v1 does about it within the escort's
 - **CMD21** a flag carrier under `!follow` never runs the carrier navigation and scores only by luck.
 - **CMD22** hold-boundary re-arrival jitter; KegD3 rooms 31/32 via-ring blind spot.
 - **CMD23** grate objects are invisible to the order-arrival ray.
-- **CMD24, CMD25** closed (§A.8).
+- **CMD24, CMD25** closed (PLAN's closed table).
 
 ### B.6 The Piccu rule
 

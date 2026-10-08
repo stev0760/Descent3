@@ -8,8 +8,9 @@ or later). The game's .hog data files are not redistributable and are not here.
 Install
 -------
 1. Find your Descent 3 folder, the one that holds d3.hog. The package replaces
-   the game executable and the modules in netgames/ and online/, so copy the
-   folder first if you want to keep the original.
+   the game executable, its d3-<system>.hog script file and the modules in
+   netgames/ and online/, so copy the folder first if you want to keep the
+   original.
 2. Extract this archive into that folder and let it overwrite.
 3. Check that online/Direct TCP~IP.d3c is there. Without it the game has no
    TCP/IP multiplayer: the multiplayer menus and Bot Settings never appear,
@@ -24,6 +25,8 @@ Run a dedicated server with bots
      Linux:    ./Descent3 -dedicated ./dedicated.cfg
      Windows:  Descent3.exe -dedicated ./dedicated.cfg -winconsole
      macOS:    ./Descent3.app/Contents/MacOS/Descent3 -dedicated ./dedicated.cfg
+   The server needs no display or sound device, so it runs on a headless
+   machine or VPS.
 6. Type $bothelp at the server console, or over the remote console (telnet to
    port 2092 with the password), for the bot commands.
 

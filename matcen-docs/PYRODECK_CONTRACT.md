@@ -171,7 +171,7 @@ The v2.6 spec said most detail went to the server log; that is no longer true.
 
 **`$bothelp`** (dedicated_server.cpp:1204-1244) prints `Bot commands:`, the `$addbot` usage with three indented
 argument lines, one line per everyday command, then `Diagnostics:` and one line per diagnostic command (`$botstat`,
-`$botmov` and every `$nav` verb), 23 lines in all. Each command line is `  %-36s %s` (usage, then description). The
+`$botmov` and every `$nav` verb), 26 lines in all. Each command line is `  %-36s %s` (usage, then description). The
 2026-10-07 rewrite changed every line of it: show it as text, never parse it.
 
 ## 6. Tier 3, aliases and removed commands

@@ -1,8 +1,8 @@
 # Matcen quickstart
 
 Matcen adds bots to Descent 3 multiplayer that play every mode (Anarchy, Team Anarchy, Hyper-Anarchy, Robo-Anarchy,
-CTF, Hoard, Entropy, Monsterball and co-op) on any map, and it is open source. The only Descent 3 bots before it were
-closed source and scripted map by map. Matcen's bots build their own route network for each level when it loads.
+CTF, Hoard, Entropy, Monsterball and co-op) on any map, and it is open source. The bots build their own route network
+for each level when it loads, so nothing is scripted per map.
 
 The bots run on the server and take real player seats. Players connect with an unmodified Descent 3 1.5 client, or a
 compatible engine such as PiccuEngine, and see each bot as an ordinary player called `Name[BOT]`.
@@ -16,8 +16,9 @@ compatible engine such as PiccuEngine, and see each bot as an ordinary player ca
 
 ## Install
 
-1. Find your Descent 3 folder, the one that holds `d3.hog`. The package replaces the game executable and the modules
-   in `netgames/` and `online/`, so copy the folder first if you want to keep the original.
+1. Find your Descent 3 folder, the one that holds `d3.hog`. The package replaces the game executable, its
+   `d3-<system>.hog` script file and the modules in `netgames/` and `online/`, so copy the folder first if you want to
+   keep the original.
 2. Extract the package into that folder and let it overwrite.
 3. **Check that `online/Direct TCP~IP.d3c` is there.** It holds the TCP/IP connection module. Without it the
    multiplayer menus and the Bot Settings screen never appear, and a dedicated server stops at start-up because it
@@ -41,7 +42,7 @@ QuadSomniac and Polaris), and adds three lines Matcen cares about:
 
 Change `GameName`, `ConsolePassword`, `MissionName` (any multiplayer mission in your `missions` folder) and
 `Scriptname` (the mode: `anarchy.d3m`, `team anarchy.d3m`, `hyper-anarchy.d3m`, `robo-anarchy.d3m`, `ctf.d3m`,
-`hoard.d3m`, `entropy.d3m`, `monsterball.d3m`, `co-op.d3m`).
+`hoard.d3m`, `entropy.d3m`, `monsterball.d3m`, `co-op.d3m`) with `NumTeams` (2 to 4) for the team modes.
 
 **`bots.cfg`** lists the bots. The sample starts four named bots and keeps the game at 12 players:
 
@@ -51,7 +52,7 @@ Change `GameName`, `ConsolePassword`, `MissionName` (any multiplayer mission in 
 | `BotTargetPlayers=12` | Keeps humans plus bots at 12: a bot leaves when a human joins and comes back when one leaves. `0` turns it off. |
 | `BotReservedSlots=1` | Seats always left free for humans. Bots never fill the server. |
 | `BotDifficulty=hotshot` | `trainee`, `rookie`, `hotshot`, `ace` or `insane`. |
-| `BotName<n>`, `BotShip<n>`, `BotDifficulty<n>`, `BotTeam<n>` | One bot each, up to 16. Ships: `pyro`, `phoenix`, `magnum`, `blackpyro` (needs Mercenary). Teams 1-4; without one, a bot joins the smallest team. |
+| `BotName<n>`, `BotShip<n>`, `BotDifficulty<n>`, `BotTeam<n>` | One bot each, up to 16. Names are cut to 14 characters. Ships: `pyro`, `phoenix`, `magnum`, `blackpyro` (needs Mercenary). Teams 1-4; without one, a bot joins the smallest team. |
 
 Put comments on their own line, starting with `;`. A `;` after a value becomes part of the value. To size a server
 for a different target, set `MaxPlayers` to the target plus `BotReservedSlots` plus one.
@@ -68,15 +69,19 @@ The server needs no display or sound device, so it runs on a headless machine or
 start that line from a systemd service (or tmux or screen) in the Descent 3 folder, with `-logfile` for a log file.
 
 The `BotCount` bots join when the first level loads, and the target adds the rest one every five seconds, each
-announced in chat. A server with no `BotConfig=` line runs exactly like vanilla Descent 3.
+announced in chat. A server with no bot configuration runs exactly like vanilla Descent 3.
 [BOT_MANAGEMENT.md](BOT_MANAGEMENT.md) has every key and rule.
+
+Players join from Multiplayer, Direct TCP/IP, or from the command line with `-directip <address:port>`; `+connect`
+alone joins nothing.
 
 ## The console
 
 Type `$bothelp` at the server console for the bot commands. The same commands work over the remote console (telnet
 to `RemoteConsolePort`, default 2092, with `ConsolePassword`, when `AllowRemoteConsole=1` is set). The everyday ones:
 
-- `$addbot <name> [ship] [difficulty] [team]` and `$removebot <index>` add and remove one bot.
+- `$addbot [name] [ship] [difficulty] [team]` and `$removebot <index>` add and remove one bot. Without a name, the bot
+  takes a free built-in one.
 - `$botlist` shows every bot with its index, ship and difficulty.
 - `$botdifficulty <index|all> <level>` changes difficulty mid-match.
 - `$botpopulation` shows the player target and the free seats, and changes them live.
@@ -84,20 +89,23 @@ to `RemoteConsolePort`, default 2092, with `ConsolePassword`, when `AllowRemoteC
 ## Chat orders
 
 In team modes (CTF, Team Anarchy, Entropy, Monsterball) and co-op, players give the bots on their side orders by
-typing in chat: `!attack`, `!defend`, `!hold`, `!follow`, `!cover`, `!attackflag`, `!defendflag`, `!status` and more.
-A bare order goes to every bot on your team, and `reaper: !follow` goes to one bot. In co-op, `!goal` sends the bots
-to the current objective. The free-for-all modes take no orders. The full list is in
-[CHAT_COMMANDS.md](CHAT_COMMANDS.md).
+typing in chat: `!attack`, `!defend`, `!hold`, `!follow`, `!formup`, `!cover`, `!attack flag`, `!defend flag`,
+`!status` and more; `!help` lists the orders the mode takes. A bare order goes to every bot on your team, and
+`reaper: !follow` goes to one bot. In co-op, `!goal` sends the bots to the current objective. In the free-for-all
+modes the bots take no orders and only taunt back. The full list is in [CHAT_COMMANDS.md](CHAT_COMMANDS.md).
 
 On a Matcen client, F10 opens a menu of the orders the mode takes: a number picks the order, a second number picks the
 whole squad or one bot, and the menu sends the same chat line. Players on other clients type it.
 
 ## Host from the game (listen server)
 
-Open Multiplayer, Direct TCP/IP, Start a New Game, then **Bot Settings**: bot count, default difficulty, and a name,
-ship, difficulty and team for each bot. The settings save with your multiplayer presets. One seat stays free for a
-human here too. During the match the host types the same `$` commands on the chat line (F8). The replies appear on the
-HUD, and Shift+F9 shows the whole message log.
+Open Multiplayer, Direct TCP/IP, Start a New Game, then **Bot Settings**: bot count, difficulty, and a name, ship,
+difficulty and team for each bot. **Auto population** with **Players to keep** keeps humans plus bots at a count, as
+`BotTargetPlayers=` does on a dedicated server. The settings save with your multiplayer presets, and the bots join 3
+seconds after the first level loads. One seat stays free for a human here too.
+
+During the match, the host finds the everyday bot commands under Bots in the F6 menu, or types the same `$` commands
+on the chat line (F8). The replies appear on the HUD, and Shift+F9 shows the whole message log.
 
 ## D3 Pyrodeck (optional)
 
@@ -107,22 +115,12 @@ without it.
 
 If players may join without your custom mission, turn on Mission Downloads in Pyrodeck's Launch panel, forward its TCP
 port (default 3002) and click "Host this mission": the game then offers joining players a working `http://` link.
-Links are `http://` only and at most 86 characters.
+Links are `http://` only, and Pyrodeck keeps them to 86 characters, the most that older clients handle.
 
 ## Known limitations
 
-Each limitation has an id in the open-items registry, [PLAN.md](PLAN.md) §4, where its status is kept current:
-
-- On very large maps and maps built around a big hub, some bots wander or rarely reach the flags (NAV1, NAV3, NAV4,
-  MODE17).
-- On toroid ring maps, bots can get caught in angled alcoves along the ring (NAV8).
-- On four-team maps, flag carriers often die on the way home, and bots do not hoard flags for the bonus (MODE12,
-  MODE11).
-- Openings barely wider than the ship are a last resort, and very flat rooms get a sparse route network (NAV14, NAV7).
-- Outdoors, bots can pin against steep hillsides, and a doorway-shaped recess with no door can trap a carrier (NAV9,
-  NAV22).
-- The route network is sized for the Pyro-GL, so Phoenix and Magnum bots fly it less well (POP11).
-- Co-op is the least finished mode (COOP1, COOP4, COOP6).
+The [README](../README.md#known-limitations) lists them: some maps still trip the bots up, Phoenix and Magnum bots fly
+the route network less well than the Pyro-GL it is sized for, and co-op is the least finished mode.
 
 ## Report a bug
 
@@ -138,4 +136,5 @@ Open an issue on the project's GitHub page. Include:
   `2>&1 | tee server.log` keeps the same log.
 - your `dedicated.cfg` and `bots.cfg`, with the password removed.
 
-A crash report is most useful with the `-symbols` archive for your system unpacked next to the executable.
+A crash report is most useful with the `-symbols` archive for your system (Windows or Linux) unpacked next to the
+executable.

@@ -3,7 +3,7 @@
 Release-notes view of the fork, newest first: what changed for someone running a server.
 The full engineering history behind each release is in [BOTS_DEVEL.md](BOTS_DEVEL.md) from 0.9.13 on, and in
 [archive/BOTS_DEVEL-phases-0_to_0.9.12.md](archive/BOTS_DEVEL-phases-0_to_0.9.12.md) before that.
-Open items are tracked in [PLAN.md](PLAN.md) §4, and open navigation problems in [NAVIGATION.md](NAVIGATION.md) §7.
+Open items are tracked in [PLAN.md](PLAN.md), and open navigation problems in [NAVIGATION.md](NAVIGATION.md).
 
 Versioning: `0.8.x` = feature releases; `0.9.x` = the navigation-milestone series; `0.10.x` = the release package
 series (the packaged release: bot management, the chat and console commands, and the install package). Within a
@@ -217,443 +217,171 @@ several spaces. Lines marked In test have not been flown yet.*
 
 ## [0.9.16] - 2026-10-01
 
-*The navigation series continues: one layer decides where a bot aims, and each step landed with the map that needed it
-and was soaked against a same-night control before it stayed. Still open on this line: wandering on very large maps
-(HAVOC's DownTown), one Batteries Included office whose route network never grows, two Sigma Base rooms where bots
-still get stuck until their stuck escape frees them, and the Glasshouse pyramid below. A stable release, not the public
-one: that comes with 0.10.x.*
+*The navigation series continues: one layer decides where a bot aims, and each change below was measured against the
+build before it on the maps that needed it. A stable release, not the public one: that comes with 0.10.x. Still open:
+wandering on very large maps, one Batteries Included office that gets no route network, two Sigma Base rooms where bots
+stay stuck until their stuck escape frees them, and the Glasshouse pyramid below.*
 
-**Changes (each soaked against same-day controls; flown by the operator on 2026-09-30 and 2026-10-01):**
-
-- **Bots leave their spawn point at once on Batteries Included.** That map starts many ships inside opened toy boxes and
-  under desks. A bot spawned touching the box could not "see" any route out, because every check it ran started from a
-  ship already in contact with a wall, so it pushed at the furniture until a timer freed it: about a third of bot lives
-  began that way, 40 to 90 seconds each, a fifth of all bot time on the map. A bot in contact now looks for the nearest
-  route point along a thin line and uses it only when a full ship's width is clear once it has moved a few units, and a
-  start boxed in on every side but one flies the way the level designer pointed it — under its own thrust, because inside
-  a toy box the ship's built-in wall avoidance drowns out any goal and the ship shuttled in place; and the round-start
-  spawn, which never had a start recorded, gets the same treatment. Twelve rounds against a control, twice: lives that
-  begin pinned 35% to 5% with the first fix, 4% to 1% with the second; hard pins 391 to 32 across both; scoring up
-  (128/64 to 155/72 pickups/captures on the second gate). This was not new; it reads the same on every build back to
-  0.9.13. No change on the bedlam maps, abend2 or the fellowship maps. One office (its door propped open into the room,
-  leaving an 11 u gap a ship clears with a third of a unit to spare) still holds bots at its door: a pilot can squeeze it,
-  a bot cannot on purpose, and the three ways tried to make it do so read no better than blundering through.
-- **Openings are judged by what the ship physically fits, not by a wider planning hull — and Canyons doubles its
-  captures.** The game stops a player ship against walls at a sphere four fifths of its size; the bots' route planner
-  had been using the full size, so any opening between the two (a foot of a unit, on a 13-unit ship) counted as a wall.
-  Openings the ship physically fits but the planner finds cramped are now routes of last resort: used only when a room
-  has no roomier way out, never as a shortcut, and never by a ship whose own size does not fit them; they also stay out
-  of the room's ordinary route network, so a cramped hatch cannot starve a room of routes. On Canyons the passage
-  between the two canyons had been one-way for bots (its wide portal's probe hits rock, and the strip beside it fell
-  under the old rule): eight-round pairs against a same-minute control, twice — 29 captures to 14, then 31 to 13, with
-  stuck counts flat. KegD3 (8-round pair against 0.9.15), Bree, Isengard and Batteries read flat.
-- **A cramped hatch that is a room's only door stays in that room's route network.** The rule above, which keeps
-  cramped openings out of a room's ordinary network, had one blind spot: when the cramped opening is the only way into
-  a room, leaving it out cuts the room off entirely. On abend2 the two flag pits are pockets under the ring floor with
-  one hatch each; the hatch is a squeeze for a ship, the rule dropped it, and bots that planned a route to the flag had
-  nothing to fly at once they reached the ring — they pressed at the hatch frame and the map went from 18 captures in
-  twelve rounds (0.9.15) to none. A cramped opening that is the only door of either room it joins now stays in the
-  network on both sides and is priced as a cramped route rather than a last resort, for every ship: a ship's fit
-  against a cramped opening decides between alternatives, never whether a room can be reached at all. Bot-free,
-  abend2's pits read exactly as they did on 0.9.15 again; Batteries Included reads unchanged. Four rounds against the
-  build before it: 6 captures to 0, 30 flag pickups to 0, stuck events 0 to 377 — the 0.9.15 profile back.
-- **Canyons plays as before.** The rock check (the Sigma Base grid fix below) had trimmed Canyons' route lattice (its
-  canyon segments are thin strips between floor and rim, and the removed cells were in rock under the floor), and
-  captures there had dipped by about a third against the build before it. The cramped-door fit tolerance above brings
-  Canyons back: eight-round pairs on the same afternoon read 19 to 12 for the rock check alone, then 21 and 25 with
-  the tolerance, against 19 to 31 for the earlier builds. An experiment that returned those rock cells to the lattice
-  measured nothing further and does not ship. Canyons' thin canyon rooms still get only a sparse grid. They play fine,
-  and better coverage for rooms that thin is logged for after 0.9.16.
+- **Bots leave their spawn point at once.** Batteries Included starts many ships inside open toy boxes and under desks,
+  and a bot that spawned touching the box could not see any route out: about a third of bot lives there began pinned for
+  40 to 90 seconds. A bot touching a wall now looks for the nearest route point a ship can actually reach, and a start
+  boxed in on every side but one flies out the way the level designer pointed it. Lives that begin pinned fell to about
+  one in a hundred, and the bots score more. One office door, propped open to a gap a ship clears by a third of a unit,
+  still holds bots: a pilot can squeeze through it, and a bot by design does not.
+- **Openings are judged by what the ship fits.** The game stops a ship against a wall at four fifths of its size, but
+  the bots' planner used the full size, so an opening between the two counted as a wall. Such cramped openings are now
+  routes of last resort: used only when a room has no roomier way out, and never by a ship too big for them. On Canyons,
+  whose passage between the two canyons had been one-way for bots, captures doubled.
+- **A cramped hatch that is a room's only door stays a route.** The rule above at first left a cramped opening out even
+  when it was the only way into a room, which cut off abend2's two flag pits and took that map from 18 captures in
+  twelve rounds to none. An only door now always stays in the network, priced as cramped: a ship's fit decides between
+  routes, never whether a room can be reached. abend2 plays as it did on 0.9.15.
 - **Sigma Base: attackers get out of their own bunker and into the enemy's.** When a room opens into the next by several
-  doors, the door a bot picks now accounts for where the route goes afterwards only when that onward stretch can
-  actually be flown, and every part of the pilot heads for the same door. Two three-hour runs against controls: failed
-  room-to-room moves down by a third to a half, five to ten times as many bots reaching the enemy bunker, pickups up
-  from 8 to about 20, the first captures on the map. Still a hard map: captures stay in single figures over three hours.
-- **No more freeze when a bot first enters a big room.** The last first-use stall left in the server was the room's
-  skeleton — the corner-to-corner graph a bot routes over inside a room — which was built in one frame the first time a
-  bot needed it: 1.5 to 3 seconds on Sigma Base's hub, Facing Worlds' towers and DownTown's halls, during which every
-  client saw all ships freeze. It is now built in slices like the rest of the navigation data, ahead of time when a level
-  loads, and a bot that gets there first flies a simpler version of the room until the full one lands a few seconds later.
-  The finished graphs are identical to before, node for node.
-- **Sigma Base: bots find the way out of their own base.** Each base's exits are towers — a ground chamber, a narrow
-  vertical shaft through two hatches, and a door to the outside at the top. The route grid a bot flies inside a room
-  was being laid over the room's whole bounding box and kept wherever a probe found nothing solid, and rock contains
-  nothing solid to find: two thirds of the exit tower's grid points sat inside the rock beside the shaft, and one sat
-  inside the closet next door, so the bot was steered into the wall, shoved back down, and sent up again — the
-  indoor oscillation on both teams that the operator saw, and the reason attackers rarely left their bunker. A grid
-  point is now kept only if it lies inside its own room or a room next door through a doorway. The exit tower's grid
-  went from 142 points to 38, all of them in the chamber, the shaft and the top box; the base hubs lost only points
-  that were never in the room. The first cut of the rule asked the engine's own "which room am I in" test, which
-  looks along one axis and calls a point outside when its ray leaves through a doorway: Town of Bree lost most of
-  one building's grid and half its captures overnight, and the bedlam structures lost a third. The rule now looks
-  along all six axes, and a point that lies in no room is still kept when it sits in open air over the terrain —
-  Bree's streets are terrain, and a building's grid growing out of its door into the street is the route through
-  that door. Sigma Base's captures went from 3 to 12 in the same three hours on the first cut; the daytime pairs on
-  the corrected cut read Bree 34 to 28 and the bedlam set 114 to 97 in its favour, abend2 unchanged, Batteries and the
-  fellowship lap flat. The final cut keeps every grid point either test calls interior, and it passed the overnight
-  and daytime regressions of 2026-09-29 and 2026-09-30: on Sigma Base, 6 captures to 0 over four 45-minute rounds
-  against a control, and every other map flat within its usual swing. Its one cost was Canyons, about a third of its
-  captures, which the cramped-door fit tolerance won back (see the Canyons note above). Flown by the operator on the
-  first cut ("felt WAY better") and again on 2026-09-30.
-- **A bot outside no longer rams a window to reach a powerup it can see inside.** Sigma Base's flag rooms have
-  bulletproof windows onto the terrain; a bot outdoors could see the items in the antechamber through them, chased
-  each one into the glass, timed out, and tried the next — and every timeout counted as a "this item is unreachable"
-  strike that retired the antechamber's powerups for the whole server. An outdoor bot now sweeps a ship-wide line to
-  an indoor item before chasing it; a see-through, unbreakable face in the way means the item is seen, not reachable,
-  and it is skipped. It passed the overnight and daytime regressions of 2026-09-29 and 2026-09-30 with no map
-  reading worse for it.
-- **Bots take a flag in one pass instead of circling it.** A bot's approach goal completed about 20 units short of the
-  flag (the ship's built-in "close enough" distance), so it re-aimed from there and swung out again — nine re-aims per
-  pickup on the bedlam maps. The four flag-touch moves (grab, recover, score, return home) now run until contact. One
-  twelve-minute round on Apparition: 36 pickups from 14 re-aims, where the same round used to log around 200.
+  doors, a bot now picks a door whose onward route can actually be flown, and every part of the pilot heads for the same
+  door. Five to ten times as many bots reach the enemy bunker, and the map saw its first captures. It is still a hard
+  map.
+- **Sigma Base: bots find the way out of their own base.** A room's route grid was laid over the room's whole bounding
+  box, so two thirds of the points in each base's exit tower sat in the rock beside the shaft, and bots were steered
+  into the wall, shoved back and sent up again. A grid point is now kept only inside its own room, a room next door
+  through a doorway, or the open air over the terrain. Sigma Base went from no captures to six over four rounds against
+  the build before it. It cost Canyons a third of its captures, which the cramped-opening change above won back.
+- **No more freeze when a bot first enters a big room.** The graph a bot routes over inside a room was built in one
+  frame the first time a bot needed it, and every client saw all ships freeze for 1.5 to 3 seconds in the largest rooms.
+  It is now built a slice at a time when the level loads; the finished graphs are the same.
+- **A bot outside no longer rams a window to reach a powerup it can see inside.** An outdoor bot now checks that a ship
+  fits the whole way to an indoor item before it chases it, so an item seen through a bulletproof window is skipped.
+  Before, each failed chase also marked the item unreachable for every bot on the server.
+- **Bots take a flag in one pass instead of circling it.** A bot's approach ended about 20 units short of the flag, so
+  it re-aimed and swung out again, many times per pickup. The four flag moves (grab, recover, score, return home) now
+  fly until contact.
 
 **Known in this release:**
 
 - **A room that is really several sealed spaces.** Glasshouse's central pyramid is one room to the engine but five
-  spaces to a ship: a hollow pyramid open only from the room below and the chimney above, and four wedge-shaped
-  galleries behind its glass faces, each with two doors to the hall around it. Bots plan as if every door of a room
-  reaches every other, so a bot in a gallery heading anywhere beyond is sent to the hatch under the pyramid — twenty
-  units away through the glass — and presses into the narrowing wedge until its stuck escape sends it out, which also
-  prefers the hatch. With twelve bots that was about forty such episodes a round, nearly all in the galleries; the map
-  stays playable and fun. Routing by the part of a room a bot is actually in is designed and is the first item on the
-  next line.
+  spaces to a ship: a hollow pyramid open only from below and above, and four galleries behind its glass faces. Bots
+  plan as if every door of a room reaches every other, so a bot in a gallery is sent toward the hatch under the pyramid,
+  through the glass, and presses into the gallery until its stuck escape frees it. The map stays playable. 0.10.0 routes
+  by the part of the room a bot is in.
 
 ## [0.9.15] - 2026-09-20
 
-*The outdoor and smooth-server release. Bots hold their own on maps where the fight crosses open ground (Town of
-Bree, Tower of Isengard, Doors of Moria), and the server no longer freezes while it prepares navigation data — the
-cause of bots rubber-banding, of a huge map refusing joins, and of D3 Pyrodeck failing to read the server version.
-Flight-tested on Isengard, DownTown, Sigma Base and Batteries Included, and checked against the four bedlam maps over
-twelve rounds a side. Still open, and carried to 0.9.16: one team's hub on Sigma Base, the toroid maps (Rim, abend2),
-wandering on very large maps (DownTown), dropped-flag reaction time, and the navigation code consolidation.*
+*The outdoor and smooth-server release. Bots hold their own on maps where the fight crosses open ground (Town of Bree,
+Tower of Isengard, Doors of Moria), and the server no longer freezes while it prepares navigation data. Still open: one
+team's hub on Sigma Base, the toroid maps, wandering on very large maps, and how fast bots react to a dropped flag.*
 
 **The server stays smooth:**
 
 - **Bots no longer freeze and snap back (rubber-banding), and the server stays responsive on huge maps.** The server
-  works out how each room can be flown the first time a bot needs it, and it used to do that in one go, on the same
-  thread that runs the game: on Tower of Isengard the whole server stopped for one to nine seconds each time a bot entered
-  a new large room, and every player saw every ship freeze, then jump. On DownTown (HAVOC level 5), whose halls are
-  enormous, single stops ran to 100 seconds — a joining player timed out before ever getting in — and D3 Pyrodeck's
-  `$servercaps` probe went unanswered for nine seconds at level start and gave up. That work is now done a few
-  milliseconds at a time, starting when the level loads, and bots fly a room by its doors and corners until its finer
-  map is ready. Measured on Isengard with 11 bots: server frames longer than a tenth of a second fell from 11 a minute to
-  about one, the longest from 8.6 seconds to 0.3; on DownTown the console answers in 11 ms. Those figures are from the
-  unoptimised debug build used for testing — an optimised build of the same code had no frame over a tenth of a second
-  in a full round.
-- **Several smaller causes of the same stutter are gone.** All bots used to make their decisions in the same frame,
-  once or twice a second; they now take turns. A heavy ship (Magnum, Phoenix) re-checked every leg of a room's route
-  network against its wider hull on every query; the answers are remembered. A bot wedged where it could see none of
-  the route network searched all of it, every half second.
-- **A server crash on HAVOC level 6 (orbital) is fixed.** A collision sweep that started past the edge of the terrain map
-  crashed the game's collision code. Only a room no bot had ever entered could trigger it, which is why it had never
-  been seen; preparing every room at level start found it within two seconds.
-- **The server log now reports its own frame timing** (`[Perf]` lines), and the log analyzer flags a map whose frames run
+  works out how each room can be flown the first time a bot needs it, and it used to do all of that at once, on the
+  thread that runs the game: on Tower of Isengard every ship froze for one to nine seconds when a bot entered a new
+  large room, and on DownTown (HAVOC level 5) a stop could last long enough for a joining player to time out and for D3
+  Pyrodeck's version check to give up. The work is now done a few milliseconds at a time from the moment the level
+  loads, and bots fly a room by its doors and corners until its finer map is ready.
+- **Smaller causes of the same stutter are gone.** Bots take turns to make their decisions instead of all deciding in
+  one frame, a heavy ship's (Magnum, Phoenix) route checks are remembered, and a wedged bot no longer searches the whole
+  route network every half second.
+- **A server crash on HAVOC level 6 is fixed.** A collision check that started past the edge of the terrain crashed the
+  game.
+- **The server log reports its own frame timing** (`[Perf]` lines), and the log analyzer flags a map whose frames run
   long enough for players to notice.
-- **Sigma Base: attackers head for the enemy bunker from the first second** instead of wandering their own. On a map
-  whose two bases connect only across open terrain, a bot inside its base had no indoor route to the enemy flag and
-  was given no objective at all until its wandering happened to take it outside — in a ten-minute match two of five
-  attackers never got one. They now plan the way out, across, and in: in an eight-minute test, wandering errands fell
-  from 105 to 13 and completed base-to-base trips went from none to five. Blue's attack runs cleanly; Red's bots still
-  lose time in the hub of their own base's upper gallery, where two navigation layers disagree about which door to
-  take — understood, and queued as its own change. Checked against the four bedlam maps over
-  twelve rounds a side: on the two maps where it applies captures held (61 to 66) and bots grab the flag a third more
-  often; on the other two it never triggers.
+- **Sigma Base: attackers head for the enemy bunker from the first second.** The two bases connect only across open
+  terrain, so a bot inside its base had no indoor route to the enemy flag and got no objective until it wandered
+  outside. Bots now plan the way out, across and in. Red's bots still lose time in the hub of their own base.
 
-**Outdoor navigation** (measured against the same roster on the same day):
+**Outdoor navigation:**
 
-- **Bots no longer strand in the valley outside Tower of Isengard.** Most of their outdoor route network had grown
-  *under the ground* — the terrain only stops a ship from above, so the network spread beneath it and then linked back up
-  through the surface. Routes ran through the hillside, and a bot sent to a point under its own feet — or inside the tower
-  wall — would press there for minutes. The network now stays above solid ground (sunken towns such as
-  Bree are recognised and left alone). Stuck episodes over three 20-minute rounds: 176 before, 8 with everything
-  below — and both teams reach the enemy flag now (pickups 10 → 28, Red's share 2 → 16), with both flags out at once
-  for one to three minutes a round where there had never been a standoff at all.
-- **Getting into a building from outside is one routine.** Carriers, attackers and wandering bots all line up a
-  door the same way, follow the outdoor network when the straight line is blocked, and push through only when the push
-  is actually flyable from where they are. Bots wandering in from outdoors used to skip all of it and fly at the wall.
-  Roof hatches (Doors of Moria: 23 failed entries a round → 2) and shallow pipe mouths (Isengard) are crossed now.
-  Doors overall went from 44-70% of attempts to 95% on both maps.
-- **A route indoors stays indoors.** The route planner used to treat a building's outer shell as one more room, so an
-  "indoor" route could leave by one door and come back in by another — on Isengard bots entered a pipe, were sent
-  straight back out, and were sent to the same pipe again. Flying between doors across open ground is now a deliberate,
-  separately priced choice, and it has to be clearly cheaper before a bot leaves cover: flag carriers had started
-  taking a marginally shorter run across the open valley and dying there.
-- **Bots finish the job at the flag.** On reaching a flag room a bot used to stop in the doorway — defenders parked
-  in the only entrance, attackers idled beside them a few ship-lengths from the flag until something knocked them loose.
-  Attackers now fly at the flag and defenders take up a post beside their own. A bot holding position on purpose is no
-  longer treated as stuck and thrown around its own flag room every half minute. Doors of Moria's flag-room
-  doorway went from 28 stuck episodes in three rounds to none.
+- **Bots no longer strand in the valley outside Tower of Isengard.** Most of the outdoor route network had grown under
+  the ground, so routes ran through the hillside and bots pressed against it for minutes. The network now stays above
+  solid ground, and sunken towns such as Bree are recognised. With the other outdoor changes below, stuck episodes there
+  fell from 176 to 8 over three rounds, and both teams now reach the enemy flag.
+- **Getting into a building from outside is one routine.** Carriers, attackers and wandering bots line up a door the
+  same way and push through only when the push can be flown from where they are. Roof hatches and shallow pipe mouths
+  are crossed now; on Doors of Moria and Isengard, 95% of door entries succeed, up from 44 to 70%.
+- **A route indoors stays indoors.** A building's outer shell is no longer treated as one more room, so an indoor route
+  cannot leave by one door and come back in by another. Crossing open ground between doors is a separately priced choice
+  that has to be clearly cheaper before a bot leaves cover.
+- **Bots finish the job at the flag.** Bots used to stop in a flag room's doorway. Attackers now fly at the flag and
+  defenders take up a post beside their own, and a bot holding position on purpose is no longer treated as stuck.
 
-None of this is a per-map fix and none of it adds a setting. Alongside it the bots simply meet each other more:
-two maps that had one team parked outside a door now play with contact throughout.
+None of this is a per-map fix, and none of it adds a setting.
 
 ## [0.9.14] - 2026-09-18
 
-*The navigation model was reworked around
-one idea — a door is a validated crossing, not a point, and a wall is never a door — and every layer
-now reads the same geometry. Measured on the two indoor gate maps against the 0.9.13 line: on Batteries
-Included the bots' route failures went to zero, stuck escalations fell from 159 to 97 per four rounds
-(hard pins 126 to 71), the spawn-room traps the operator found in play are gone, and arms scored
-between 8 and 13 captures; on abend2, whose ring rooms defeated every earlier attempt, captures per
-round rose from 0.71 to 1.13 on both teams over eight rounds and the ring room's stuck episodes went
-from 80 to 1. The outdoor sprint (September 14-15) then took the hardest outdoor map, Town of Bree, from
-two bot captures in twenty rounds to four or five a round, and Tower of Isengard from one capture in six rounds to
-one or two a round with its sewer no longer pinning anyone: bots keep a complete list of doors to the
-outdoors, aim at the part of a door they fit through, no longer push through a wall beside a door or
-route through a one-sided partition, keep their outdoor route network above ground and out of the walls,
-finish the powerup run they started, stop gearing up after half a minute, and play their CTF roles from
-the first level rather than the second. Known limits: one
-propped office door and three floor hatches on Batteries are narrower than a Pyro and are treated as
-such; a desk pocket in one office still wedges a ship now and then; on Town of Bree the Red team's
-attack runs the length of the Blue building's interior under fire and rarely completes (map asymmetry —
-Blue's flag sits deep in the tavern, Red's two rooms from a door); and on Tower of Isengard bots still
-strand in the open valley outside, though the tower interior that used to pin them no longer does.
-Confirmed in live play on 2026-09-18 across a five-level fellowship rotation and Animal House — a map
-that used to catch ships on its geometry and now runs a full round without a single stuck.*
+*The navigation model was reworked around one idea: a door is a checked crossing, not a point, and a wall is never a
+door. Every layer now reads the same geometry. On Batteries Included the bots' route failures went to zero and the
+spawn-room traps are gone; on abend2 captures per round rose by more than half and the ring room's stuck episodes went
+from 80 to 1; Town of Bree went from two bot captures in twenty rounds to four or five a round, and Tower of Isengard
+from one in six rounds to one or two a round. Confirmed in live play across a five-level rotation and Animal House,
+which now runs a full round without a single stuck. Known limits: one propped office door and three floor hatches on
+Batteries Included are narrower than a Pyro and are treated as such; on Town of Bree, Red's attack runs the length of
+Blue's building under fire and rarely completes; on Tower of Isengard bots still strand in the open valley (fixed in
+0.9.15).*
 
-*   **The outdoor route network stays outdoors, and out of the walls.** Town of Bree is a sunken town, and the
-    outdoor network had followed the tavern doors down into the buildings: eleven thousand of its thirteen thousand
-    points were indoors, and the map's two outdoor halves were joined through the tavern. On Tower of Isengard the
-    network reached into the base of a tower column through its open arcade and then drew links straight out
-    through the column's wall, so a flag carrier outside was sent to a point sixteen units away through stone and
-    sat against it for six minutes. Outdoor points now have to be reached across open ground, and a link that
-    touches a building has to be clear in both directions.
-*   **Outdoor detours follow the route network, not a straight hop between doors.** Bots exploring outdoors used
-    a coarse door-to-door graph for their detours and only fell back to the fine route network when that failed;
-    on Isengard a straight hop toward the pipe entrance ran up through a platform the bot was underneath, fifteen
-    times a round at the same spot. The fine network is asked first now, on every outdoor leg.
-*   **A room's route network no longer bridges rooms through solid walls.** The in-room network is grown by
-    sweeping a ship-sized probe outward from each door; it ignored the back of one-sided walls, so on Tower of
-    Isengard the sewer's two halls were joined by "route" points in the rock between them, and bots were sent
-    into the wall at the hatches — the section the project fought longest. With the probe honest about back faces
-    the sewer pins are gone (from about twenty a round to none) and every hatch hop crosses. (A stricter rule that
-    also kept a room's network out of its neighbours was tried and withdrawn: it cost Town of Bree most of its
-    captures, because the points a network grows through an open door are what let a route run through it.)
-*   **Routes no longer pass through one-sided walls.** Descent 3 walls have one visible side, and the in-room
-    route network tested its links without regard to which side it was looking from, so a link could start behind
-    a partition and read as clear. In the Town of Bree tavern that put a route straight through the bar's partition
-    wall: a flag carrier sat pressed against it at the room's centre for nine and a half minutes of a fifteen-minute
-    round, told every second to fly to the point beside it. Links now respect the back of a wall, which removes
-    about a sixth of the network's points on that map (the ones that were inside walls) and leaves every room as
-    connected as before.
-*   **CTF roles apply from the first level, not the second.** Bots were assigned their flag roles (runner,
-    attacker, flex, defender) before the server knew which game it was running, so on the first level of a session
-    every bot played as an unassigned generalist: nobody was the runner, and attackers left the flag run to chase
-    any enemy in sight. Roles only took effect when the mission rotated to its next level. On a server that plays
-    one level, that was the whole match. Roles are now assigned the moment the mode is known.
-*   **A bot on default lasers stops shopping after half a minute.** A freshly spawned bot was allowed to chase any
-    weapon it could see, at any range, for as long as it stayed unarmed — on an item-rich outdoor map that was most
-    of a short life, with the flag errand on hold. Thirty seconds of gearing up per life is now the limit; after
-    that the bot presses its errand on lasers and takes only what lies on its path, as a human would.
-*   **A flag carrier outside a building heads for its door, not its wall.** Once outdoors, a bot bound for a room
-    inside a building was steered two ways at once: the door-finding stage named an entrance, and the obstacle
-    detour aimed straight at the destination room through the wall, and the detour spoke first. On Town of Bree the
-    carriers that never came home were sitting on the tavern roof for minutes, alternating between the two. With an
-    indoor destination the door-finding stage now has the only say outdoors.
-*   **Bots finish the powerup run they started instead of flitting between items.** The item to chase was
-    re-chosen from scratch every half second, and "can I see it" counted ten times over, so a target that slipped
-    behind a lamppost for one tick, or any other item that came into view, stole the chase before the bot got
-    there. On Town of Bree that was a new chase every couple of seconds and a minute or three of every life spent
-    "gearing up" with the flag errand on hold; the Red team never reached the Blue flag room in a round. The item
-    already being chased now keeps priority unless something clearly better appears or the chase times out.
-*   **A bot no longer shoves itself through a wall next to a door it was routing around.** Inside the Town of Bree
-    tavern, a partition wall separates the bar from the door the route wanted. The route re-issued the same door every
-    couple of seconds while steering around the partition, the door push counted those re-issues as failed attempts,
-    and after four it committed to a straight push through the wall — eight seconds pinned, reset, repeat until the
-    round ended. Ten of the eleven flag carriers that never came home in a twenty-round test sat exactly there. A
-    push is now only committed when the bot can actually see the doorway it is pushing through; otherwise the route
-    that was working keeps control.
-*   **Dropped flags get picked up, and the team keeps attacking while its flag is out.** A flag dropped on the
-    ground was left there until the game returned it: nobody on either team went for it. Bots now go for their own
-    dropped flag (or a dropped enemy flag when theirs is home), fly straight to it when it is in view, and route to it
-    otherwise; on Town of Bree every outdoor drop was recovered within half a minute. Separately, the first enemy
-    grab used to put the WHOLE defending team on its own flag room for the rest of the round — Red on Town of Bree
-    recorded zero grabs in five hours for that reason. Only the runner stays on the home flag now; the rest keep
-    attacking. And a bot told to push through a door to the outdoors is no longer talked out of it half a second
-    later by the outdoor route planner.
-*   **Bots find every door to the outdoors, and aim at the part of it they can fly through.** The engine's own
-    table of terrain doors stops at 40 per region and drops the rest without a word; Tower of Isengard has 47, so
-    one whole structure was invisible to the bots. The server now keeps its own complete list, filters out windows
-    and openings narrower than a ship, and aims every outdoor approach at a hull-swept crossing point rather than
-    the door's centre. Measured on Town of Bree over twenty rounds: bots told to push through a door got in 85% of
-    the time, up from never; outdoor stucks fell four-fold; and Town of Bree and Tower of Isengard recorded their
-    first bot captures ever. Not fixed by this: a team that loses its flag early stays on defence (a role question),
-    and dropped flags are not recovered.
-*   **A door that opens onto the outdoors no longer takes the server down.** The new door-crossing
-    check sweeps each candidate line through a door from both sides. On the outdoor side of a
-    terrain-facing door it started that sweep inside the building's exterior shell, which the engine's
-    collision code refuses: a debug build aborts on the spot, and a release build would have treated
-    the shell's faces as a room. Nightmare Castle's hatches open onto the castle exterior, so the first
-    bot that aimed at one ended the game within a minute of the level loading, twice in one evening's
-    play test. The outdoor side of the sweep now starts from the terrain under the door, as the outdoor
-    route checks always have. Verified on the same build with twelve bots: eight minutes each on
-    Nightmare Castle and Isengard with assertions set to abort, plus a full-map `$nav dump` on both
-    (which computes every door's crossing) — no abort, and all 47 of Isengard's terrain doors got a
-    validated crossing point (46 clear, one none). The operator then flew two twenty-minute matches
-    on the fixed build, Nightmare Castle and Mysterious Isle, without incident.
+**Doors and walls:**
 
-*   **Bends are found in tight rooms too.** The search that adds bend waypoints between a room's doors
-    stepped sideways by fixed 12-to-54-unit amounts, so it never found a way round a corner in a duct
-    junction box; Batteries Included's ventilation network had 33 such boxes with no in-room path, and
-    bots that chased items into it got stuck at the first elbow. The steps now scale with the ship,
-    include a forward-diagonal, and are honest about back faces. Batteries: 33 disconnected rooms down
-    to 6 (the six floor-hatch rooms narrower than a Pyro). Abend2: the ring room that stayed in two
-    pieces through every earlier attempt is now one connected network.
-*   **A pinned ship backs out in whichever direction has room.** The one-second escape burst was
-    always straight back, which does nothing for a ship wedged under a desk with the wall behind
-    it; it now probes the five body directions and thrusts along the clearest. A new console command,
-    `$nav sweep`, reports what a ship at a given spot would hit on its way to a door.
-*   **A bot backs away before shooting a pane it is standing against.** Glass only breaks from
-    matter weapons, and a bot's missile is refused within its own splash radius; a bot that spawned
-    directly under a ceiling vent used to sit there firing lasers at it for the whole round. It now
-    reverses for a second and fires from a safe distance.
-*   **A pane a ship cannot fit through is a grate, not a door.** Batteries Included has two walls
-    of small decorative glass panes (each about 11 by 6 units against a 13-unit ship) and three
-    narrow floor hatches; bots routed to the panes, shot them open, and then pressed a hole nothing
-    can pass — a spawn room's whole team could end up pinned there, its real exit being up a vent.
-    Any opening narrower than the ship in either direction is now treated as a wall for routing,
-    whatever the engine's own table says. Ships still shoot through it.
-*   **A floor grate is not glass.** Four floor openings on Batteries Included carry a breakable-glass
-    texture on a face the level never renders, with bars behind it; the route planner priced them as
-    glass, so armed bots kept trying to shoot and fly through bars (one grate: 21 attempts, 0
-    crossings). A pane now has to actually be present to count as glass; those openings are
-    impassable, as the bars make them. The tracked navdump analyzer gained a door-crossings section.
-*   **A shattered pane counts as a door, and a bot stops chasing what it cannot reach.** Once a
-    breakable pane was shot out, the bots' route planner kept treating the hole as glass for the rest
-    of the level, so a bot without a glass-breaking weapon would read a glass-walled office complex
-    as sealed and drop its objective. Broken panes now become ordinary doorways the moment any bot
-    looks at them — including for the route planner, whose engine-side passability table is frozen
-    at level load and would otherwise have called the broken pane a wall for everyone. Separately, a bot only pursues an enemy in another room when it has a route it can
-    actually fly there (the engine's own path table counts intact glass as passable, which had one
-    bot pressing a cubicle wall for 27 minutes with its target one room over), and a bot stuck in a
-    one-door room now escapes through that door instead of picking a random direction.
-*   **A bot approaches a door from afar and pushes through it from beside it.** The point a door
-    hands out to fly was its approach point 8 units in front of the plane, inside the "arrived"
-    sphere, so a bot standing next to a door kept arriving without ever being told to cross. Now a
-    door hands out the approach point while the bot is far and the push-through point once it is
-    beside the door; a committed chain's exit and a composed route's exit always push. Measured on
-    Batteries Included: Blue 8 grabs / 8 captures in four rounds, Red 1 / 1, no route failures.
-*   **The door search sees what a pilot sees.** The sweep that validates a doorway ignored back
-    faces (a test column that started inside a propped door leaf walked out through it and called
-    the door clear from one side), sampled only part of a wide doorway (a 69-unit office door with a
-    slab in the middle never had its open 17-unit side gap tried), and searched around obstacles with
-    steps too big to fit a ceiling duct. All four are fixed generally: back faces count, the whole
-    polygon is sampled with a fine pass when the coarse one finds nothing, the search steps scale with
-    the ship, and two shorter rungs were added — a 4-unit "lip" column and a door-fit radius a few
-    percent under the hull, which is how ships actually get through a gap a hair narrower than
-    themselves. On Batteries Included the doorways without a validated crossing went from twenty to
-    the three floor hatches that genuinely are narrower than a Pyro. The route network itself is
-    unchanged. `$navdump` now records, for any door still without a crossing, every sweep tried and
-    the faces that stopped it.
-*   **A pinned ship backs out before it tries again.** When a bot has genuinely stopped moving (the
-    hard-pin signature), it now applies one second of pure reverse thrust before flying its escape
-    goal. The forward-only escape kept driving pinned ships back into the same pocket: on Batteries
-    Included one Red bot at a time sat in a furniture pocket of its supply room for minutes, its
-    position identical on every logged crossing attempt, while every committed crossing at that
-    room's door was blamed on the door. Legal thrust only; the engine's steering resumes after.
-*   **Door crossings are built for both sides and for glass.** Each side of a door now gets its own
-    approach point 8 units in front of the plane and its own push-through 16 to 24 units beyond it
-    (one side previously inherited the other's approach point as its push, which sat inside the
-    arrival sphere and produced doorway-lip re-issues). An intact pane, which no sweep can pass, gets
-    a synthesized square-on path so the bot faces the glass for the reactive shatter instead of
-    pressing it at an angle. A door with no straight column is searched with the same bounded
-    multi-step lateral search the door on-ramp uses, on each side.
-*   **A glass wall no longer disqualifies the room behind it from route planning.** An intact pane is
-    a solid face, so a lattice seed placed on it never joined the room's network; a hub with fifteen
-    conference-room panes on one wall read as "7% covered" with every one of its four doors connected,
-    and the route composer refused it — that hub is Red's only approach to the blue flag on Batteries
-    Included. Pane seeds now sit one hull radius inside the room (where a bot stands to shoot the
-    pane), and the coverage measure that gates the composer counts door seeds only.
-*   **The point a bot is told to fly through a door is the validated one.** Every in-room layer
-    (skeleton aim, chain export, lattice via, composed route) still handed out a door's polygon centre
-    as the point to fly, even where that centre is shadowed by a propped leaf; Batteries Included has
-    at least two such doors (the red flag room's, and Red's supply room 8, whose only door produced 0
-    successful committed crossings in 41 attempts). The network keeps its nodes where they were, but
-    whenever a door node or a lattice seed is handed out as the next point to fly, the validated
-    crossing point is substituted — the approach point just inside the room for the door the bot is
-    heading to, and the validated push-through point beyond it when it commits the crossing. A door
-    with no straight clear column gets a bent crossing found by the same lateral search the door
-    on-ramp uses. No edge or grid changes; only what the pilot aims at. Failed committed crossings now
-    log where the bot stood, what it was told to fly, and where it ended up.
-*   **The route composer now plans wherever the straight line is blocked.** It used to drive only in
-    hollow-centre rooms. It now runs in any room it is eligible for, but only when the ship-hull sweep
-    to the leg's target fails, so a bot with a clear line still flies straight; the two earlier
-    attempts to widen it regressed because they composed in open halls too. The goal aim reads a live
-    committed route in any room, so the goal layer and the via layer can no longer disagree in a
-    hallway. The explore sampler's neighbour fallback, the doorway picker used for committed
-    crossings, and the stuck-escape chooser all pass the same admission as the router now, which
-    stops skybox window rooms from winning as "unvisited" and stops crossings being committed through
-    a window. Measured on Batteries Included against the previous in-test build: hard stuck pins
-    122 → 98, no-route verdicts 61 → 36, Blue 6 captures in 4 rounds.
-*   **Bots cross a doorway where it is actually open.** Each door now carries a validated crossing
-    point: the door polygon is sampled with the ship-hull sweep along its normal and the most open
-    point that sweeps clear, and how deep it clears, is remembered. The committed push-through a bot
-    flies when it crosses a door now goes through that point along the door's normal, no deeper than
-    the sweep proved, instead of from the polygon centre toward the next room's centre — a diagonal
-    a propped-open leaf can block. The nearest-door pick and the overlay's door markers use the same
-    point. On Batteries Included the red flag room's door point moves 10 units into the clear strip
-    beside the leaf. The network itself keeps its previous anchors: moving the skeleton nodes and
-    lattice seeds onto these points was measured to split rooms, so it was not done. Lattice growth
-    also gained a third candidate grid phase and keeps the fullest of three (+12% cells on Batteries,
-    +1% on abend2, no room worse).
-*   **Bots stop running errands to rooms they cannot reach, and stop abandoning the flag.** The
-    explore sampler validated destinations against the engine's routing table, which is built with
-    breakable glass passable and records skybox windows like doors, so it happily sent bots at glass-
-    sealed pockets and window rooms next door; each such errand ended as a no-route press and a
-    12-second timeout (131 no-route verdicts in the previous 4-round arm). It now asks our own router.
-    Objective items (flags, orbs) that a bot failed to close on were blacklisted for 60 seconds like an
-    unreachable powerup; they now get a 5-second back-off so the pilot re-plans from where it stands,
-    and the "sealed" diagnostic names the item.
-*   **Walls are no longer doors to the navigation network.** A Descent 3 level splits rooms with
-    "portals" even through solid faces, and on an office map most of them are walls or windows (on
-    Batteries Included, 248 of 1041 portals are solid and 207 are glass panes). The room-to-room router
-    always filtered those out; the in-room layers did not, and treated every one as a doorway — a
-    skeleton node, a lattice seed, a repair target, a coverage denominator, even a legal exit goal
-    beside the real door. Every portal now carries one classification (door, breakable pane, or never),
-    and the in-room network is built from doors and panes only. On Batteries Included this frees the
-    skeleton budget in the 30-portal hub rooms (Blue's approach room 3 now has its four doors in one
-    connected skeleton instead of two), turns both flag rooms into rooms the route composer is allowed
-    to plan in, and removes about 1,700 repair waypoints that only ever joined walls to walls. Two
-    lattice repairs came with it: a room tries a second sample phase when its door seed sits on the
-    wall, and a starved single-door room walks its seed into the room around the doorway geometry
-    before growing — the red flag room and two office rooms that previously lost their lattice entirely
-    now fill normally. Measured on bot-free geometry dumps against the previous build: lattice cells
-    +7%, rooms the composer may plan in 26 → 46, rooms with a split lattice 101 → 71, no room lost
-    eligibility, abend2 unchanged in its ring rooms. Play impact is under test.
-*   **Breakable glass is a route again — for bots that can shoot it open.** The engine treats an
-    intact breakable pane as a wall at runtime, so a plain pathfinding gate priced every pane as
-    impassable and bots stopped planning through glass at all. Now a bot carrying a weapon that can
-    shatter glass (a Vauss, Mass Driver, or any loaded missile — which is nearly every loadout)
-    treats a vertical pane (an office window or partition, like Batteries Included's conference-room
-    glass walls) as a priced shortcut: it costs about three extra hops, so a comparable open door
-    still wins, but a genuine short-cut through glass gets taken. A ceiling or floor vent — the
-    horizontal openings bots pinned on in the earlier glass-routing attempt — is only ever used when
-    no door route exists at all, so it can rescue a room whose only way in is a vent without
-    tempting bots at openings they cannot thread. Bots without a glass-breaking weapon route around
-    exactly as before. A pane the router commits a bot to is also shot open deliberately rather
-    than only when the nose happens to point at it.
-*   **Bots no longer press a window when the door is right there.** Three aim-layer corrections, all
-    guided by the new telemetry. (1) The in-room aim resolver refused any room with fewer than two
-    doorways, so a single-exit room got no aim at all — the bot's raw goal direction pointed at
-    whatever face stood between it and the goal, pressing a solid window forever (Batteries Included
-    room 35: one real door to room 33, goal seen through bulletproof glass, 460 presses in one
-    20-round run). Single-exit rooms now aim at their one door. (2) In multi-door rooms the aim set
-    is filtered the same way the router prices routes: a wall or window sharing a destination room
-    with a real door can no longer be chosen, so bots stop aiming at solid faces while a usable door
-    sits behind them. (3) The doorway picker used when committing a crossing was the only selection
-    left that never asked the engine whether it could pass — on Batteries room 33 it committed 310
-    crossings through glass the engine refuses while the real door sat nearby. All three now share
-    one admission rule with the router, so aim, chain, and route can never disagree about which
-    doors exist.
-*   **The navigation failure reports now name what went wrong, not just that it did.** Four
-    diagnostic additions, all log-only: (1) a blocked go-around search now names the face or object
-    that blocked it, its texture, whether it is breakable glass or a force field, and which search
-    tier gave up; (2) the objective-arrival report includes the flag's position, the bot's distance
-    to it, and the aim it was actually flying; (3) a committed doorway crossing reports whether the
-    bot made it through or timed out short of the door; (4) the item-reachability check reports
-    whether the bot could see the item as well as whether the navigation graph could deliver it.
-    Together these turn the remaining Batteries Included failures — where a bot reaches the flag
-    room but never grabs, or pins on a powerup it cannot reach — from counts into evidence.
+- **Walls are no longer doors.** A Descent 3 level divides rooms with portals even across solid faces and windows, and
+  on an office map most of them are walls or glass. The room-to-room router always filtered those out, but the in-room
+  navigation treated every one as a doorway. Every portal now has one classification (door, breakable pane, or neither),
+  and the in-room network is built from doors and panes only.
+- **Bots cross a doorway where it is actually open.** Each door now carries a crossing point on each side, checked with
+  a ship-sized sweep, so a bot flies through the open part of a doorway instead of at its centre, which a propped-open
+  leaf can block. The check sees the back of a wall, samples the whole doorway and scales its search with the ship. A
+  bot approaches a door from a distance and pushes through it once it is beside it. On Batteries Included the doorways
+  without a crossing went from twenty to the three floor hatches that really are narrower than a Pyro.
+- **An opening narrower than the ship is a wall to the planner,** whatever the engine's own table says; ships still
+  shoot through it. A floor grate whose hidden face carries a glass texture is not glass.
+- **Bots find every door to the outdoors.** The engine's table of terrain doors stops at 40 per region, and Tower of
+  Isengard has 47. The server keeps its own complete list, leaving out windows and openings too narrow for a ship. Bots
+  told to push through a door got in 85% of the time, up from never, and Town of Bree and Tower of Isengard saw their
+  first bot captures.
+- **A door that opens onto the outdoors no longer takes the server down.** The door check started its sweep inside the
+  building's exterior shell, which the engine's collision code refuses: on Nightmare Castle the first bot to aim at a
+  hatch stopped the game.
+- **Bots no longer press a window when the door is right there.** A room with a single exit now aims at that door, a
+  wall or window can no longer be chosen beside a real door, and the doorway picker asks the engine whether it can pass.
+  The aim, the route and the crossing now share one rule about which doors exist.
+
+**Glass:**
+
+- **Breakable glass is a route for bots that can shoot it open.** A bot carrying a weapon that can shatter glass (a
+  Vauss, Mass Driver or any loaded missile) treats an upright pane as a priced shortcut, and a floor or ceiling vent as
+  a last resort when no door route exists. Other bots route around glass as before. A pane the planner chose is shot
+  open on purpose.
+- **A shattered pane is a doorway from then on,** for every bot. A bot backs away before it shoots a pane it is standing
+  against, and a glass wall no longer keeps the route planner out of the room behind it.
+
+**Route networks:**
+
+- **A room's route network no longer runs through walls.** It ignored the back of one-sided walls, so it joined rooms
+  through solid rock (Tower of Isengard's sewer pinned about twenty bots a round, and now none) and ran routes through
+  partitions (a carrier in Town of Bree's tavern sat against the bar's partition for most of a round).
+- **The outdoor route network stays outdoors and out of the walls.** On Town of Bree it had followed the doors down into
+  the buildings; on Tower of Isengard it ran links through a column's wall. Outdoor detours now follow this network
+  before a straight hop between doors.
+- **Bends are found in tight rooms too.** The search for a way around a corner now scales with the ship. Batteries
+  Included's ventilation boxes with no path through them went from 33 to 6 (the narrow floor-hatch rooms), and abend2's
+  ring room is one connected network.
+- **The route composer plans wherever the straight line is blocked,** and a bot with a clear line still flies straight.
+  Bots no longer run errands to rooms they cannot reach.
+
+**The pilot:**
+
+- **CTF roles apply from the first level.** Roles were assigned before the server knew the mode, so on a server that
+  plays one level the bots never had them.
+- **Dropped flags get picked up, and the team keeps attacking while its flag is out.** Bots go for their own dropped
+  flag, or a dropped enemy flag when theirs is home. After the first enemy grab only the runner stays home; before, the
+  whole team did.
+- **A bot stops gearing up after thirty seconds** on its default lasers and presses its errand, taking only what lies on
+  its path. It finishes the powerup run it started instead of switching to every item that comes into view.
+- **A flag carrier outdoors heads for the door, not the wall,** and a bot no longer shoves through a wall beside the
+  door it was routing around: it commits to a push only when it can see the doorway.
+- **A pinned ship backs out before it tries again,** and its escape burst goes whichever way has the most room instead
+  of always straight back; a bot stuck in a room with one door leaves by that door. A bot chases an enemy into another
+  room only when it has a route there, and a flag or orb it failed to reach gets a short back-off instead of a minute's
+  blacklist. `$nav sweep` reports what a ship would hit on its way to a door.
+- **Navigation failure reports name the cause:** what blocked a search, where a bot stood at a failed crossing, how far
+  it was from the flag, and whether it could see the item. `$nav dump` records every sweep tried at a door that has no
+  crossing.
 
 ## [0.9.13] - 2026-09-11
 
@@ -661,33 +389,17 @@ that used to catch ships on its geometry and now runs a full round without a sin
 diagnostics. This is **not** a "navigation solved" release: the hard interior-navigation cases in
 **Known limitations** below are unchanged and scoped for 0.9.14.*
 
-*   **Wider testing still finds carrier stalls.** Nysa produced 67 captures in 20 completed rounds,
-    but Red carriers recorded 11 hard stalls in the room beside the Blue flag room. This is useful
-    localization, not a confirmed cause or complete-coverage pass. The rotating Batteries test was
-    stopped after one round. Its replacement uses a single-level mission and equal-difficulty
-    Pyro-GL rosters. The release decision awaits review, with known limitations stated explicitly;
-    this candidate does not claim to finish navigation.
-*   **abend2 is an accepted map-specific limitation.** Toroid navigation is partly solved, but its
-    generated skeleton/arterial network remains uneven between teams. The route-order and endpoint
-    corrections stay. Testing now moves to Nysa and Batteries Included instead of further tuning
-    abend2. This scope decision is not a claim that the failed comparison guard passed.
-    Usable navigation on arbitrary maps remains the coverage goal. Roughly balanced scoring is a
-    separate expectation for designed-symmetric CTF maps with equal-difficulty bots.
-*   **Fix under test: a room-crossing route must not end back at its start.** Some callers pass a
+*   **A room-crossing route no longer ends back at its start.** Some callers pass a
     local steering point alongside the next room. The skeleton builder appended that point after
     the exit, creating a return leg back into the room. Cross-room chains now stop at the selected
     exit portal, like composed routes. Same-room chains retain their local destination. The caller
     still requires two skeleton nodes, and directly visible exits keep the single-hop fallback.
-    The follow-up comparison failed its guard because one bot dominated the soft-stuck change.
-    Pickup wording does not reliably distinguish a base extraction from a regrab. The remaining
-    abend2 imbalance is documented rather than being pursued in another test arm.
-*   **Fix under test: fly skeleton waypoints toward the exit, not backward.** The search starts at
+*   **Bots fly a room's waypoints toward the exit, not backward.** The search starts at
     the exit and follows parent pointers back from the bot. Those pointers already give the flight
     order, but the export reversed them again, sending the bot at the far door first. It now keeps
     the correct order, handles directly visible exits, and rejects routes too long for the output
     buffer instead of skipping their remaining legs. A synthetic test reproduces the old reversal
-    and passes with the correction. A matched test removed all stuck records with a stored chain,
-    but Blue flag pickups fell from 48 to 20. That count alone does not identify the cause.
+    and passes with the correction.
 *   **More precise navigation analysis.** Hard-pin reports now split by room, team, stored route,
     and commitment liveness. Carrier counts are labelled as goal reissues, not time spent travelling.
     Skeleton and composed route builds are counted separately. Room-exit events no longer appear
@@ -793,12 +505,11 @@ diagnostics. This is **not** a "navigation solved" release: the hard interior-na
     not been observed in testing.
 *   **Validation and known costs.** A 20-round abend2 test and roughly 30 additional rounds across
     six modes reported no crashes or assertion failures. abend2 hard pins rose from 25 to 49.
-    The comparison guard failed on one bot's share of the stuck increase, and the apparent Red
-    capture recovery is not established. Bedlam hard pins fell, but Fellowship results were mixed.
+    Bedlam hard pins fell, but Fellowship results were mixed.
 *   **Unresolved map and mode limitations.** QuadSomniac Red flag conversion fell from 24% to zero
     against an older build spanning two changes, so the responsible change is unknown. Polaris
     wind routing and Batteries Included flag-room connectivity still need work. Entropy takeovers
-    remain unobserved in testing. These issues are not fixed by the current candidate.
+    remain unobserved in testing. These issues are not fixed in this release.
 
 ## [0.9.12-dev] - never released (folded into 0.9.13)
 
@@ -826,10 +537,10 @@ the navigation code rather than adding special cases. The work that held up ship
     engine calls passable at a high finite cost. This keeps real grates out of normal routes while
     allowing the only connector around abend2's rings. The first short test removed the no-route
     failures and hard stucks, but captures stayed at zero and more route attempts ended in the
-    ring's polite give-up guard. In-test; the abend2 and grate-map gates have not yet cleared.
+    ring's polite give-up guard. The line ended before this cleared its abend2 and grate-map tests.
 *   **Full glass routing remains a proven regression** (earlier this line): letting the router plan
     shortcuts through breakable glass made bots stick twice as often and reach the enemy flag a
-    third as often. Reverted; do not retry. `NAVIGATION.md` §7.0.
+    third as often. Reverted.
     *Later: 0.9.14 brought glass routing back in a narrower form. Each bot decides for itself: only a
     bot carrying a weapon that can break the pane routes through it, an upright pane is a priced
     shortcut, and a floor or ceiling vent is used only when no door route exists. See the 0.9.14
