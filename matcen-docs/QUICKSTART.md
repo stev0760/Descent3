@@ -112,8 +112,10 @@ on the chat line (F8). The replies appear on the HUD, and Shift+F9 shows the who
 ## D3 Pyrodeck (optional)
 
 D3 Pyrodeck is a separate desktop admin tool for Descent 3 dedicated servers. It starts and watches the server and
-manages the bots over the remote console, so the server needs `AllowRemoteConsole=1` and a password. Matcen works
-without it.
+manages the bots over the remote console, so the server needs a `ConsolePassword`. Pyrodeck 0.5.1 and later run on
+the same machine as the server and connect on 127.0.0.1, so `AllowRemoteConsole=0` is enough; earlier releases need
+`AllowRemoteConsole=1`. To put Pyrodeck's panel on the internet, follow its guide to running behind a reverse proxy
+(nginx and HTTPS). Matcen works without it.
 
 If players may join without your custom mission, turn on Mission Downloads in Pyrodeck's Launch panel, forward its TCP
 port (default 3002) and click "Host this mission": the game then offers joining players a working `http://` link.
