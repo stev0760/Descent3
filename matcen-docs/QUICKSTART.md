@@ -78,7 +78,9 @@ alone joins nothing.
 ## The console
 
 Type `$bothelp` at the server console for the bot commands. The same commands work over the remote console (telnet
-to `RemoteConsolePort`, default 2092, with `ConsolePassword`, when `AllowRemoteConsole=1` is set). The everyday ones:
+to `RemoteConsolePort`, default 2092, with `ConsolePassword`). With `AllowRemoteConsole=0` the console listens on
+127.0.0.1 and only this machine can connect; `AllowRemoteConsole=1` lets other machines connect, so firewall the port
+if the server is on the internet. The everyday ones:
 
 - `$addbot [name] [ship] [difficulty] [team]` and `$removebot <index>` add and remove one bot. Without a name, the bot
   takes a free built-in one.

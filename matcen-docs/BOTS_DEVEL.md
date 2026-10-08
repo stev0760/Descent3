@@ -10,6 +10,19 @@ including the CTF, Hyper and Hoard write-ups) is preserved verbatim in
 `matcen-docs/archive/BOTS_DEVEL-phases-0_to_0.9.12.md`. The engine-files audit (single-player, Robo-Anarchy and
 co-op impact) now lives in `matcen-docs/BOT_DEV_REFERENCE.md`.
 
+### 2026-10-08: the remote console listens on loopback unless opened, 0.10.8 (ENG15)
+
+For the droplet the operator asked for a second lock behind the firewall. The console (`InitDedicatedSocket`) bound
+`nw_GetThisIP()`, which is INADDR_ANY without `-useip`, whatever `AllowRemoteConsole` said; `=0` (the engine default)
+only made `ListenDedicatedSocket` refuse a peer other than 127.0.0.1 after accepting it. So a "local only" console
+still answered on every interface. Now `=0` binds 127.0.0.1, `=1` binds as before, the accept-time check stays, and a
+`Remote console listening on <addr>:<port>` log line records the choice. The sample `dedicated.cfg` moves to 0.
+
+Verified with the Debug build, two servers side by side: `=0` listens on 127.0.0.1:2397 (`ss -ltn`), a login on
+127.0.0.1 answers `$servercaps`, and a connect to the LAN address is refused at TCP; `=1` listens on 0.0.0.0:2398 and
+a LAN login answers. Pyrodeck required `=1` (its config generator always wrote it); its `hardening/reverse-proxy`
+branch accepts `=0` and connects on 127.0.0.1.
+
 ### 2026-10-08: level scripts no longer send to bots, 0.10.7 (ENG12)
 
 REL12 counted about 1,200 `nw_SendReliable: Invalid socket id passed ... -1` lines in a bot-only soak. The lab's logs

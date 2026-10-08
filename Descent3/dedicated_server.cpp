@@ -1433,8 +1433,10 @@ void InitDedicatedSocket(uint16_t port) {
 
   memset(&sock_addr, 0, sizeof(SOCKADDR_IN));
   sock_addr.sin_family = AF_INET;
+  // Without AllowRemoteConsole the console takes local connections only, so it listens on the loopback address:
+  // nothing off this machine can reach it. ListenDedicatedSocket still rejects a remote peer as a second check.
   uint32_t my_ip;
-  my_ip = nw_GetThisIP();
+  my_ip = Dedicated_allow_remote ? nw_GetThisIP() : htonl(INADDR_LOOPBACK);
   memcpy(&sock_addr.sin_addr.s_addr, &my_ip, sizeof(uint32_t));
   sock_addr.sin_port = htons(port);
 
@@ -1453,6 +1455,9 @@ void InitDedicatedSocket(uint16_t port) {
     return;
   }
   make_nonblocking(dedicated_listen_socket);
+  LOG_INFO.printf("Remote console listening on %s:%d (%s)", inet_ntoa(sock_addr.sin_addr), port,
+                  Dedicated_allow_remote ? "AllowRemoteConsole=1: remote connections allowed"
+                                         : "local connections only");
 }
 
 void ListenDedicatedSocket(void) {

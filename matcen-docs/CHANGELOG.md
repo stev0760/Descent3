@@ -11,6 +11,14 @@ series each bug fix or small feature takes the next number in the last place. A 
 a larger change that may be backed out whole, until it passes its validation gate. 1.0 comes after community play.
 0.9.17 was never released: its development build became 0.10.0.
 
+## [0.10.8] - 2026-10-08
+
+- **The remote console stays on the server machine unless you open it.** With `AllowRemoteConsole=0` (also the
+  default when the key is absent) the console listens on 127.0.0.1 only, so nothing on the network can reach it, not
+  even to try a password. Connect from the same machine (`telnet 127.0.0.1 2092`). `AllowRemoteConsole=1` opens it to
+  other machines as before; firewall that port. The server log says where the console listens. The sample
+  `dedicated.cfg` now uses 0.
+
 ## [0.10.7] - 2026-10-08
 
 - **No more flood of "Invalid socket id" errors in the server log.** A level script that messages a player (a trigger,

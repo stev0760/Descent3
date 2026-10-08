@@ -16,7 +16,7 @@ Bots take real player slots on dedicated and listen servers and show up to every
 
 **No client modification is needed.** Retail D3 v1.5 clients, builds of this open-source engine and compatible engines such as PiccuEngine connect and play as they are. A server with no bot configuration behaves exactly like vanilla D3.
 
-**Status: 0.10.7** (2026-10-08), in the 0.10.x release-package series; the public release comes with a 0.10.x build. What each release changed is in [CHANGELOG.md](matcen-docs/CHANGELOG.md).
+**Status: 0.10.8** (2026-10-08), in the 0.10.x release-package series; the public release comes with a 0.10.x build. What each release changed is in [CHANGELOG.md](matcen-docs/CHANGELOG.md).
 
 **Getting started:** [QUICKSTART.md](matcen-docs/QUICKSTART.md) covers installing over Descent 3, running a server with bots, and reporting a bug. Release packages for Windows, Linux and macOS (community-tested) go on the GitHub Releases page, starting with the next tagged release.
 

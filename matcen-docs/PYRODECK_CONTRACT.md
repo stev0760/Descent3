@@ -194,6 +194,11 @@ Removed, never reference: `$navrouting`, `$flowfield`, `$potentialfield`, `$botp
 
 ## 7. Timing
 
+Where to connect: from 0.10.8, a server with `AllowRemoteConsole=0` (or no such key) listens on 127.0.0.1 only, so a
+Pyrodeck on the same machine connects there whatever the profile's `-useip`; with `AllowRemoteConsole=1` the console
+listens on the `-useip` address, else on every interface (dedicated_server.cpp, `InitDedicatedSocket`). The server log
+names the address in a `Remote console listening on` line.
+
 D3 prints no end-of-reply marker, so Pyrodeck collects a reply by silence: it waits up to 5000 ms for the first
 chunk, then ends the reply after 200 ms without a new chunk (`packages/server/src/connection/TelnetConnection.ts`,
 `FIRST_RESPONSE_TIMEOUT_MS`, `RESPONSE_TIMEOUT_MS`). The long first wait matters: a server that is still loading a
