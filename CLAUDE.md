@@ -47,7 +47,9 @@ Read the named doc before changing the code it covers. Do not duplicate doc cont
   release package (the reveal ships on whichever 0.10.x is current). Each bug fix or small feature bumps the third
   digit, no suffix. `-dev` is for experiments and risky multi-commit work that may be reverted whole (the committee
   collapse): every iteration stays on that `-dev` number, tracked by SHA, and stripping it keeps the number. Never leave
-  a hole in the sequence. 1.0.0 only after community testing, stable enough to merge upstream or join PiccuEngine.
+  a hole in the sequence. Tag (`v0.x.y`) only a build to be packaged (the reveal, a build for testers); the other
+  bumps get their number and CHANGELOG heading, no tag. 1.0.0 only after community testing, stable enough to merge
+  upstream or join PiccuEngine.
   `$servercaps` prints the numeric version only (`fork_version=X.Y.Z`).
 - **Every code change updates the docs in the same commit**: `README.md` and `CHANGELOG.md` for anything a server
   operator notices, a dated `BOTS_DEVEL.md` entry for engineering work, the registry row's status in `PLAN.md`.

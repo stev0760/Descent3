@@ -234,7 +234,8 @@ builds; this replaces March's "all modes, client UI, solid nav" definition (REL1
 
 **Decided 2026-10-08 (REL14, REL15).** 0.9.17-dev becomes 0.10.0; no 0.9.17 is stamped. From here each bug fix or
 small feature takes the next third digit; `-dev` marks experiments and risky multi-commit work that may be reverted
-whole (the committee collapse). The reveal ships on whichever 0.10.x is current. 1.0.0 comes once community testing
+whole (the committee collapse). The reveal ships on whichever 0.10.x is current. Only a build to be packaged (the
+reveal, a build for testers) is tagged; `v0.10.0` marks the start of the series. 1.0.0 comes once community testing
 shows it stable enough to merge into the official Descent 3 repository or to be accepted as part of PiccuEngine.
 
 ---
