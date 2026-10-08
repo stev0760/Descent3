@@ -1652,17 +1652,6 @@ static const char *BotTeamDisplayName(int team) {
   return (team >= 0 && team < MAX_TEAMS) ? kBotTeamNames[team] : "Auto";
 }
 
-static bool bot_ui_initialized = false;
-
-// Ensure Bot_ui_settings has sensible defaults before the UI opens.
-// BotInitAll() is only called after level load, but the UI opens before that.
-static void BotEnsureUIDefaults() {
-  if (!bot_ui_initialized) {
-    BotUISettingsInit();
-    bot_ui_initialized = true;
-  }
-}
-
 // --- Layout constants (master-detail) ---
 // Vertical positions (full-screen NewUIWindow, matching multiplayer menu style)
 #define BOT_SET_TITLE_Y 30
@@ -1690,10 +1679,14 @@ static void BotEnsureUIDefaults() {
 #define BOT_SET_PDIFF_OFS 68
 #define BOT_SET_TEAM_OFS 98
 
-// Server block under the detail panel: a header, the free-seat readout and the spawn note (18px rows)
+// Server block under the detail panel: a header, auto population (a toggle and the players to keep), the free-seat
+// readout and the spawn note. Text rows are 18px; the edit capsule takes 38px, as in the detail panel.
 #define BOT_SET_SERVER_HDR_OFS 136
-#define BOT_SET_SEATS_OFS 154
-#define BOT_SET_SPAWN_NOTE_OFS 172
+#define BOT_SET_POP_OFS 154
+#define BOT_SET_TARGET_OFS 176
+#define BOT_SET_SEATS_OFS 214
+#define BOT_SET_SPAWN_NOTE_OFS 232
+#define BOT_SET_SERVER_VAL_X 440 // the server block's labels are longer than the detail panel's
 
 // Controls row
 #define BOT_SET_COUNT_LBL_X 40
@@ -1715,6 +1708,8 @@ static void BotEnsureUIDefaults() {
 #define BOT_SET_SHIP_HS_ID 211
 #define BOT_SET_PDIFF_HS_ID 212
 #define BOT_SET_TEAM_HS_ID 213
+#define BOT_SET_POP_HS_ID 214
+#define BOT_SET_TARGET_EDIT_ID 215
 
 // Difficulty display names (for per-bot cycling — includes "Default" sentinel)
 static const char *BotDiffDisplayName(BotDifficulty d) {
@@ -1734,9 +1729,22 @@ static int BotFreeSeats(int bot_count) {
   return free_seats > 0 ? free_seats : 0;
 }
 
-void MultiBotSettingsMenu() {
-  BotEnsureUIDefaults();
+// The bots in the game once it settles with only the host: the roster, or with auto population on, the bots the
+// manager keeps beside the host (it adds or removes roster bots to get there), as far as the seats allow.
+static int BotSettledBotCount(int bot_count, int target_players) {
+  if (target_players <= 0)
+    return bot_count;
+  return std::clamp(target_players - 1, 0, BotPopulationRosterLimit(Netgame.max_players));
+}
 
+// The number typed in one of the menu's edit fields.
+static int BotReadNumber(NewUIEdit &edit) {
+  char buf[8];
+  edit.GetText(buf, sizeof(buf));
+  return atoi(buf);
+}
+
+void MultiBotSettingsMenu() {
   // A preset can name a ship this install does not offer (the Black Pyro without Mercenary): fly the default instead.
   for (int i = 0; i < BOT_UI_MAX_BOTS; i++) {
     BotUIRosterEntry &e = Bot_ui_settings.roster[i];
@@ -1855,19 +1863,65 @@ void MultiBotSettingsMenu() {
   team_hs.Create(&main_wnd, BOT_SET_TEAM_HS_ID, 0, &team_off, &team_on, BOT_SET_DETAIL_VAL_X,
                  BOT_SET_CONTENT_Y + BOT_SET_TEAM_OFS, 120, 18, UIF_FIT);
 
-  // --- Server block: free seats and when the bots join ---
+  // --- Server block: auto population, free seats and when the bots join ---
   UITextItem hdr_server("Server", UICOL_WINDOW_TITLE);
   UIText hdr_server_txt;
   hdr_server_txt.Create(&main_wnd, &hdr_server, BOT_SET_DETAIL_LBL_X, BOT_SET_CONTENT_Y + BOT_SET_SERVER_HDR_OFS, 0);
 
-  char seats_str[64];
-  auto FormatSeats = [&](int bot_count) {
-    snprintf(seats_str, sizeof(seats_str), "Free seats: %d of %d", BotFreeSeats(bot_count), Netgame.max_players);
+  // Auto population. The settings hold the target only while it is on (0 = off, as bots.cfg's BotTargetPlayers); the
+  // field keeps its number while the toggle is off, and starts at the host plus the roster.
+  bool pop_on = Bot_ui_settings.target_players > 0;
+  int pop_target =
+      BotUIClampTarget(pop_on ? Bot_ui_settings.target_players : Bot_ui_settings.bot_count + 1, Netgame.max_players);
+
+  UITextItem pop_lbl_text("Auto population:", UICOL_TEXT_NORMAL);
+  UIText pop_lbl;
+  pop_lbl.Create(&main_wnd, &pop_lbl_text, BOT_SET_DETAIL_LBL_X, BOT_SET_CONTENT_Y + BOT_SET_POP_OFS, 0);
+
+  UITextItem pop_hs_on(pop_on ? "On" : "Off", UICOL_HOTSPOT_HI);
+  UITextItem pop_hs_off(pop_on ? "On" : "Off", UICOL_HOTSPOT_LO);
+  UIHotspot pop_hs;
+  pop_hs.Create(&main_wnd, BOT_SET_POP_HS_ID, 0, &pop_hs_off, &pop_hs_on, BOT_SET_SERVER_VAL_X,
+                BOT_SET_CONTENT_Y + BOT_SET_POP_OFS, 60, 18, UIF_FIT);
+
+  UITextItem target_lbl_text("Players to keep:", UICOL_TEXT_NORMAL);
+  UIText target_lbl;
+  target_lbl.Create(&main_wnd, &target_lbl_text, BOT_SET_DETAIL_LBL_X,
+                    BOT_SET_CONTENT_Y + BOT_SET_TARGET_OFS + BOT_SET_EDIT_LABEL_OFS, 0);
+
+  NewUIEdit target_edit;
+  target_edit.Create(&main_wnd, BOT_SET_TARGET_EDIT_ID, BOT_SET_SERVER_VAL_X, BOT_SET_CONTENT_Y + BOT_SET_TARGET_OFS,
+                     100, 15, UIED_NUMBERS);
+  auto ReadTarget = [&]() {
+    return BotUIClampTarget(std::max(BotReadNumber(target_edit), BOT_UI_TARGET_MIN), Netgame.max_players);
   };
-  FormatSeats(Bot_ui_settings.bot_count);
+  auto ShowTarget = [&]() {
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%d", pop_target);
+    target_edit.SetText(buf);
+    if (pop_on)
+      target_edit.Enable();
+    else
+      target_edit.Disable(); // drawn faded
+  };
+  ShowTarget();
+
+  // Free seats once the game settles with only the host: the roster's bots, or with auto population on, the bots it
+  // keeps. The manager holds that many free while it has bots to make room with.
+  char seats_str[64];
+  auto FormatSeats = [&]() {
+    const int bots = BotSettledBotCount(Bot_ui_settings.bot_count, pop_on ? pop_target : 0);
+    snprintf(seats_str, sizeof(seats_str), "Free seats: %d of %d", BotFreeSeats(bots), Netgame.max_players);
+  };
+  FormatSeats();
   UITextItem seats_text(seats_str, UICOL_TEXT_NORMAL);
   UIText seats_txt;
   seats_txt.Create(&main_wnd, &seats_text, BOT_SET_DETAIL_LBL_X, BOT_SET_CONTENT_Y + BOT_SET_SEATS_OFS, 0);
+  auto RefreshSeats = [&]() {
+    FormatSeats();
+    seats_text = UITextItem(seats_str, UICOL_TEXT_NORMAL);
+    seats_txt.SetTitle(&seats_text);
+  };
 
   char spawn_str[64];
   snprintf(spawn_str, sizeof(spawn_str), "Bots join %.0f s after the first level loads.", BOT_UI_SPAWN_DELAY);
@@ -1999,9 +2053,28 @@ void MultiBotSettingsMenu() {
       snprintf(buf, sizeof(buf), "%d", count);
       count_edit.SetText(buf);
 
-      FormatSeats(count);
-      seats_text = UITextItem(seats_str, UICOL_TEXT_NORMAL);
-      seats_txt.SetTitle(&seats_text);
+      RefreshSeats();
+      continue;
+    }
+
+    // --- Auto population toggle ---
+    if (res == BOT_SET_POP_HS_ID) {
+      if (pop_on) // keep a number typed without Enter
+        pop_target = ReadTarget();
+      pop_on = !pop_on;
+      pop_hs_on = UITextItem(pop_on ? "On" : "Off", UICOL_HOTSPOT_HI);
+      pop_hs_off = UITextItem(pop_on ? "On" : "Off", UICOL_HOTSPOT_LO);
+      pop_hs.SetStates(&pop_hs_off, &pop_hs_on);
+      ShowTarget();
+      RefreshSeats();
+      continue;
+    }
+
+    // --- Players to keep committed (Enter in the field) ---
+    if (res == BOT_SET_TARGET_EDIT_ID) {
+      pop_target = ReadTarget();
+      ShowTarget();
+      RefreshSeats();
       continue;
     }
 
@@ -2019,6 +2092,9 @@ void MultiBotSettingsMenu() {
       if (count > BotPopulationRosterLimit(Netgame.max_players))
         count = BotPopulationRosterLimit(Netgame.max_players); // the host's seat and the reserve stay free
       Bot_ui_settings.bot_count = count;
+      if (pop_on)
+        pop_target = ReadTarget();
+      Bot_ui_settings.target_players = pop_on ? pop_target : 0;
       exit_menu = true;
       continue;
     }

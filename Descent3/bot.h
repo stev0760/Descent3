@@ -25,6 +25,7 @@
 #define MAX_BOTS 16
 #define BOT_UI_MAX_BOTS 16
 #define BOT_UI_SPAWN_DELAY 3.0f         // seconds after level load before the Bot Settings roster joins
+#define BOT_UI_TARGET_MIN 2             // the smallest auto-population target the menu offers: the host and one bot
 #define BOT_RESPAWN_DELAY 3.0f          // seconds after death before respawn
 #define BOT_TARGET_UPDATE_INTERVAL 0.5f // seconds between target search runs
 #define BOT_THINKERS_PER_FRAME 2        // decision ticks allowed per server frame (the rest run next frame)
@@ -890,9 +891,12 @@ struct BotUIRosterEntry {
 struct BotUISettings {
   int bot_count;
   BotDifficulty default_difficulty;
+  int target_players; // auto population: humans plus bots to keep, the host included (BotTargetPlayers); 0 = off
   BotUIRosterEntry roster[BOT_UI_MAX_BOTS];
 };
 
+// Holds the defaults from program start, so a preset loaded before the menu first opens (default.mps) is what the
+// menu shows.
 extern BotUISettings Bot_ui_settings;
 
 // The built-in callsigns (Reaper, Phantom, ...), BOT_UI_MAX_BOTS of them: the Bot Settings menu's defaults
@@ -902,8 +906,13 @@ const char *BotDefaultName(int index);
 // Initialize Bot_ui_settings with sensible defaults.
 void BotUISettingsInit();
 
-// Spawn bots from UI roster data (client-hosted games).
-// Called from MultiStartNewLevel(). Does nothing if bot_count <= 0 or already spawned.
+// An auto-population target the menu and the .mps loader accept on a server of max_players seats: at least the
+// host and one bot, at most every seat but those kept free for humans. 0 (off) stays 0.
+int BotUIClampTarget(int target, int max_players);
+
+// Spawn bots from UI roster data (client-hosted games), and hand the population manager the menu's roster and
+// target as BotLoadRosterFile() hands it the bots.cfg ones. Called from MultiStartNewLevel(); acts once per game
+// session, and not at all when the menu asks for no bots and no target.
 void BotSpawnFromUI();
 
 #endif // BOT_H

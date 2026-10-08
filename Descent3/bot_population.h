@@ -54,10 +54,10 @@ struct BotRosterEntry {
 };
 
 // Back to the defaults (reserve 1, no target, manager off, empty roster). Called when a game session
-// ends; the next session's bots.cfg sets them again.
+// ends; the next session's bots.cfg or Bot Settings menu sets them again.
 void BotPopulationReset();
 
-// The bots.cfg roster the manager cycles through when it adds a bot.
+// The roster the manager cycles through when it adds a bot: the bots.cfg entries, or the Bot Settings list.
 void BotPopulationSetRoster(const BotRosterEntry *entries, int count);
 
 // BotReservedSlots. Values below BOT_POP_RESERVE_DEFAULT are raised to it. Returns the value stored.

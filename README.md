@@ -16,7 +16,7 @@ Bots take real player slots on dedicated and listen servers and show up to every
 
 **No client modification is needed.** Retail D3 v1.5 clients and compatible engines such as PiccuEngine connect and play as they are. A server with no bot configuration behaves exactly like vanilla D3.
 
-**Status: 0.10.0** (2026-10-08), the first of the release-package series. It adds the seat rules and player target below, bot commands and an F6 Bots menu for a listen-server host, and the F10 order menu. The public release comes with a 0.10.x build. Release notes are in [CHANGELOG.md](matcen-docs/CHANGELOG.md).
+**Status: 0.10.1** (2026-10-08). The release-package series began with 0.10.0, which adds the seat rules and player target below, bot commands and an F6 Bots menu for a listen-server host, and the F10 order menu; 0.10.1 puts the player target in the Bot Settings screen. The public release comes with a 0.10.x build. Release notes are in [CHANGELOG.md](matcen-docs/CHANGELOG.md).
 
 **Getting started:** [QUICKSTART.md](matcen-docs/QUICKSTART.md) covers installing over Descent 3 and running a server with bots. Release packages for Windows, Linux and macOS (community-tested) go on the GitHub Releases page, starting with the next tagged release.
 
@@ -38,7 +38,7 @@ Ships: `pyro`, `phoenix`, `magnum`, `blackpyro` (Black Pyro needs Mercenary). Di
 
 **Seats:** bots never fill the server. One seat stays free for a human (`BotReservedSlots=`, default 1), and when a human takes it a bot leaves, so the next human finds a seat too.
 
-**Player target:** `BotTargetPlayers=12` keeps humans plus bots at 12, adding and removing bots as humans come and go; `$botpopulation` changes it live. Size `MaxPlayers` as the target plus the free seats plus one for the server.
+**Player target:** `BotTargetPlayers=12` keeps humans plus bots at 12, adding and removing bots as humans come and go; `$botpopulation` changes it live. Size `MaxPlayers` as the target plus the free seats plus one for the server. On a listen server, turn on Auto population in Bot Settings.
 
 ### Chat orders and console
 

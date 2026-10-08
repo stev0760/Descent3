@@ -11,6 +11,20 @@ series each bug fix or small feature takes the next number in the last place. A 
 a larger change that may be backed out whole, until it passes its validation gate. 1.0 comes after community play.
 0.9.17 was never released: its development build became 0.10.0.
 
+## [0.10.1] - 2026-10-08
+
+*Auto population in Bot Settings: a listen-server host keeps a player count without the console. Lines marked In
+test have not been flown yet.*
+
+- **Bot Settings keeps a player count.** Turn on Auto population and set Players to keep (2 up to one less than the
+  server's seats; the host counts as a player): bots join as humans leave and leave as humans join, as
+  `BotTargetPlayers=` does on a dedicated server. It starts when the roster joins; past the roster, bots take
+  built-in names and the roster's ships and difficulties. Free seats counts the bots it keeps. The setting is saved in
+  presets, and a preset from an earlier build loads with it off. When the screen sets up bots, its Difficulty is also
+  the default for a bot added mid-match. In test.
+- **A preset loaded with the Start Game screen now shows in Bot Settings.** The first time Bot Settings opened after
+  the game started, it replaced the bots of a `default.mps` preset with the defaults.
+
 ## [0.10.0] - 2026-10-08
 
 *The first of the release-package series: seats kept free for players and a player target, bot commands and menus

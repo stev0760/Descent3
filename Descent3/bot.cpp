@@ -10108,13 +10108,13 @@ static const char *kDefaultBotNames[BOT_UI_MAX_BOTS] = {"Reaper",  "Phantom", "V
 
 const char *BotDefaultName(int index) { return kDefaultBotNames[std::clamp(index, 0, BOT_UI_MAX_BOTS - 1)]; }
 
-BotUISettings Bot_ui_settings;
-
-void BotUISettingsInit() {
-  Bot_ui_settings.bot_count = 0;
-  Bot_ui_settings.default_difficulty = BOT_DIFF_HOTSHOT;
+static BotUISettings BotUIDefaultSettings() {
+  BotUISettings s = {};
+  s.bot_count = 0;
+  s.default_difficulty = BOT_DIFF_HOTSHOT;
+  s.target_players = 0; // auto population off
   for (int i = 0; i < BOT_UI_MAX_BOTS; i++) {
-    BotUIRosterEntry *e = &Bot_ui_settings.roster[i];
+    BotUIRosterEntry *e = &s.roster[i];
     strncpy(e->name, kDefaultBotNames[i], CALLSIGN_LEN - 1);
     e->name[CALLSIGN_LEN - 1] = '\0';
     strncpy(e->ship_alias, "Pyro-GL", sizeof(e->ship_alias) - 1);
@@ -10122,26 +10122,64 @@ void BotUISettingsInit() {
     e->difficulty = BOT_DIFF_COUNT; // sentinel = "use default"
     e->team = -1;                   // auto-balance
   }
+  return s;
+}
+
+BotUISettings Bot_ui_settings = BotUIDefaultSettings();
+
+void BotUISettingsInit() { Bot_ui_settings = BotUIDefaultSettings(); }
+
+int BotUIClampTarget(int target, int max_players) {
+  if (target <= 0)
+    return 0;
+  const int most = std::max(BOT_UI_TARGET_MIN, max_players - BotPopulationGetReserve());
+  return std::clamp(target, BOT_UI_TARGET_MIN, most);
 }
 
 void BotSpawnFromUI() {
-  if (Bot_roster_spawned || Bot_ui_settings.bot_count <= 0)
-    return;
   // Only for client-hosted games — dedicated servers use BotLoadRosterFile() instead
-  if (Bot_config_file[0])
+  if (Bot_roster_spawned || Bot_config_file[0])
+    return;
+  if (Bot_ui_settings.bot_count <= 0 && Bot_ui_settings.target_players <= 0)
     return;
   Bot_roster_spawned = true;
 
-  // Delay spawn so the host player can manage teams, review the lobby, etc.
+  // Delay spawn so the host player can manage teams, review the lobby, etc. The population target waits with the
+  // roster, so the manager never adds a roster callsign the roster is about to spawn.
   Bot_ui_spawn_pending = true;
   Bot_ui_spawn_time = Gametime + BOT_UI_SPAWN_DELAY;
   LOG_INFO.printf("BOT UI: %d bots will spawn in %.0f seconds", Bot_ui_settings.bot_count, BOT_UI_SPAWN_DELAY);
+}
+
+// Hand the population manager the menu's roster, default difficulty and target, the three things
+// BotLoadRosterFile() takes from bots.cfg (BotName<n>/BotShip<n>/BotDifficulty<n>/BotTeam<n>, BotDifficulty,
+// BotTargetPlayers). The roster is the bots the menu lists, as the .mps saves them; a roster entry left on
+// Default flies the menu's default difficulty, as it does when the roster spawns.
+static void BotApplyUIPopulation() {
+  const BotUISettings &ui = Bot_ui_settings;
+  BotRosterEntry roster[BOT_UI_MAX_BOTS] = {};
+  const int count = std::clamp(ui.bot_count, 0, BOT_UI_MAX_BOTS);
+  for (int i = 0; i < count; i++) {
+    const BotUIRosterEntry &e = ui.roster[i];
+    snprintf(roster[i].name, sizeof(roster[i].name), "%s", e.name[0] ? e.name : kDefaultBotNames[i]);
+    snprintf(roster[i].ship, sizeof(roster[i].ship), "%s", e.ship_alias);
+    roster[i].difficulty = (e.difficulty < BOT_DIFF_COUNT) ? e.difficulty : ui.default_difficulty;
+    roster[i].team = e.team;
+  }
+  BotPopulationSetRoster(roster, count);
+  BotSetDefaultDifficulty(ui.default_difficulty);
+  if (ui.target_players > 0) {
+    BotPopulationSetTarget(ui.target_players);
+    LOG_INFO.printf("BOT UI: population target %d, %d seat(s) kept free", BotPopulationGetTarget(),
+                    BotPopulationGetReserve());
+  }
 }
 
 // Actually spawn the bots from UI roster data. Called from BotDoFrame() after delay.
 static void BotDoUISpawn() {
   Bot_ui_spawn_pending = false;
   HostConsoleEcho echo; // the host has no console: BotAdd's refusals reach its HUD
+  BotApplyUIPopulation();
   LOG_INFO.printf("BOT UI: Spawning %d bots from UI roster", Bot_ui_settings.bot_count);
   for (int i = 0; i < Bot_ui_settings.bot_count; i++) {
     BotUIRosterEntry *e = &Bot_ui_settings.roster[i];

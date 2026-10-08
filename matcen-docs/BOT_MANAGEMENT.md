@@ -2,7 +2,8 @@
 
 **Status:** the config-file roster, ship selection, difficulty levels, the Bot Settings menu, per-bot team
 assignment and the `$servercaps` handshake are built and shipped. Seats kept free for humans, the bot that yields a
-seat to a joining human, the population manager and the allowed-ship rule are built in 0.10.0 (section 9). The
+seat to a joining human, the population manager and the allowed-ship rule are built in 0.10.0 (section 9); the Bot
+Settings menu sets the population target on a listen server from 0.10.1 (sections 5 and 9.10). The
 design history of this work (the pre-roster problem statement, the init-order bug, the old implementation order and
 risk table) is in `archive/BOT_MANAGEMENT-design-history.md`.
 
@@ -22,11 +23,12 @@ There are two ways to get a starting roster, and one console path for live chang
 | Server type | Source | Spawn point |
 |---|---|---|
 | Dedicated | the file named by `BotConfig=` in `dedicated.cfg` | `BotLoadRosterFile()` (bot.cpp:9683), called from `MultiStartNewLevel()` (multi.cpp:6465) |
-| Listen (client-hosted) | the Bot Settings menu, saved in `.mps` presets | `BotSpawnFromUI()` (bot.cpp:9929, called at multi.cpp:6467); bots join 3 s after the level loads (`BOT_UI_SPAWN_DELAY`, bot.h:27) |
+| Listen (client-hosted) | the Bot Settings menu (the roster and Auto population), saved in `.mps` presets | `BotSpawnFromUI()` (bot.cpp:9929, called at multi.cpp:6467); bots join 3 s after the level loads (`BOT_UI_SPAWN_DELAY`, bot.h:27) |
 | Dedicated console, telnet, or a listen-server host's chat line or F6 Bots menu | `$addbot` and the other `$` commands in section 3 | `RunBotConsoleCommand()` → `DedicatedHandleBotCommand()` (dedicated_server.cpp) |
 
 All three call the same `BotAdd()` (bot.cpp:8701), and so does the population manager (section 9). `BotAdd()` is
-where the seats kept free for humans are enforced. If `BotConfig=` is set, the UI roster is skipped (bot.cpp:9933).
+where the seats kept free for humans are enforced. If `BotConfig=` is set, the UI roster and its target are skipped
+(bot.cpp:9933).
 
 The starting roster spawns **once per game session**: `Bot_roster_spawned` is set on the first level load and reset
 only by `BotShutdownAll()` (bot.cpp:8422). Bots then persist across level changes through `BotReinitAll()`
@@ -256,9 +258,15 @@ screen is `MultiBotSettingsMenu()` (multi_ui.cpp:1736-2093).
     It applies in team games only; a team the game does not have joins the smallest team, and `BotAdd` says so on the
     host's HUD.
 - **Server block** under the detail panel:
-  - **Free seats: N of M**, where M is `max_players` and N is M less the host and the bot count
-    (`BotFreeSeats`). It updates when the bot count is applied. The host is the only connected player while the menu
-    is open. The reserve-seat rule (POP2) is not in this count yet.
+  - **Auto population:** Off or On. On keeps humans plus bots at the players to keep once the game starts, as
+    `BotTargetPlayers=` does on a dedicated server (section 9.10).
+  - **Players to keep:** numbers only, applied on Enter or Done, clamped to 2 through `max_players − 1`: the host
+    counts as a player and the last seat stays free (`BotUIClampTarget`). Faded and ignored while Auto population is
+    off; it starts at the host plus the bot count.
+  - **Free seats: N of M**, where M is `max_players` and N is M less the host and the bots the game settles on
+    (`BotFreeSeats`, `BotSettledBotCount`): the bot count, or with Auto population on, the bots the target keeps
+    beside the host. It updates when the bot count or the players to keep is applied and when the toggle changes. The
+    host is the only connected player while the menu is open; the seat kept free for humans counts as free.
   - **Bots join 3 s after the first level loads** (`BOT_UI_SPAWN_DELAY`, bot.h).
 - **Done / Cancel.**
 
@@ -274,13 +282,18 @@ tab-separated key per line:
 |---|---|
 | `BOTCOUNT` | bot count; after the whole file is read, clamped to the menu's limit for the preset's `MAXPLAYERS`, with a log line (POP14) |
 | `BOTDEFAULTDIFF` | default difficulty 0-4 |
+| `BOTTARGETPLAYERS` | Auto population's players to keep, 0 = off; after the whole file is read, clamped to the menu's range for the preset's `MAXPLAYERS`, with a log line |
 | `BOTNAME<n>` | name of bot n |
 | `BOTSHIP<n>` | ship name of bot n |
 | `BOTDIFF<n>` | difficulty 0-4, or 5 for "use the default" |
 | `BOTTEAM<n>` | team 1-4; written only when set |
 
 Older presets without these keys load as before. Reading `BOTCOUNT` resets every roster team to Auto first, so a bot
-the preset saved without a `BOTTEAM<n>` line loads as Auto, not as the team it had before the preset was loaded.
+the preset saved without a `BOTTEAM<n>` line loads as Auto, not as the team it had before the preset was loaded. A
+preset with a `BOTCOUNT` line and no `BOTTARGETPLAYERS` line (one saved before 0.10.1) loads with Auto population off.
+
+`Bot_ui_settings` holds its defaults from program start (`BotUIDefaultSettings`, bot.cpp). Up to 0.10.0 the menu set
+them the first time it opened, which replaced whatever `default.mps` had loaded when the Start Game screen opened.
 
 ## 6. Capacity rules as built
 
@@ -334,8 +347,9 @@ Both go in the bots.cfg file, comments on their own line (section 2):
 | `BotReservedSlots=<n>` | 1 | Seats always left free for humans. Below 1 is raised to 1 with a warning. |
 | `BotTargetPlayers=<n>` | 0 (off) | Humans plus bots to keep in the game. Above 0 turns the population manager on. |
 
-A listen server has no bots.cfg: it keeps one seat free and runs no target. Both values return to their defaults when
-a game session ends (`BotShutdownAll`), and the next session's bots.cfg sets them again.
+A listen server has no bots.cfg: it keeps one seat free, and its host sets a target with Auto population in Bot
+Settings (section 9.10). Both values return to their defaults when a game session ends (`BotShutdownAll`), and the
+next session's bots.cfg, or the Bot Settings menu, sets them again.
 
 ### 9.3 Seats kept free (POP2, POP14)
 
@@ -471,6 +485,49 @@ checked by reading the code. The join path leaves the free seat to the vanilla j
 connects the human into it, the manager holds while that human's sequence is short of `NETSEQ_PLAYING`, and the
 census change when the human reaches it triggers the same `free < reserve` branch the reserve test above exercised.
 The first operator flight with a human client should confirm it.
+
+### 9.10 From the Bot Settings menu (UX12)
+
+Built in 0.10.1. A listen-server host sets the target before the match with **Auto population** and **Players to
+keep** (section 5); `$botpopulation` and the F6 Bots menu change it afterwards.
+
+- **Stored** as `Bot_ui_settings.target_players`, 0 = off, the meaning of `BotTargetPlayers=`, and saved as the
+  `.mps` line `BOTTARGETPLAYERS`. The menu writes the target only while the toggle is on.
+- **Range:** `BOT_UI_TARGET_MIN` (2: the host and one bot) to `max_players − BotReservedSlots` (`BotUIClampTarget`,
+  bot.cpp), which is `max_players − 1` on a listen server: the host is one of the players the target counts, so at
+  the top the bots take every seat but the free one. The menu and the `.mps` loader clamp to it. The menu has no
+  reserve control (POP15 is undecided).
+- **Applied** with the roster, 3 s after the first level loads, once per game session: `BotSpawnFromUI()` arms the
+  delayed spawn when the menu asks for bots or a target, and `BotDoUISpawn()` calls `BotApplyUIPopulation()` before
+  the roster's `BotAdd` calls. That hands the manager what `BotLoadRosterFile()` takes from bots.cfg: the roster
+  (`BotPopulationSetRoster`), the default difficulty (`BotSetDefaultDifficulty`, the `BotDifficulty=` equivalent, so
+  a bare `$addbot` or the F6 Add bot also flies the menu's Difficulty) and the target (`BotPopulationSetTarget`, only
+  when on). The target waits for the roster, so the manager never adds a roster callsign the roster is about to
+  spawn. `BotShutdownAll()` clears the manager when the session ends; `Bot_ui_settings` lives as long as the
+  process, so the next session applies it again.
+- **The roster the manager cycles** is the bots the menu lists (the first Bot Count entries, as the `.mps` saves
+  them), with an empty name resolved as the spawn resolves it and a Default difficulty resolved to the menu's
+  Difficulty. It is handed over whether or not the target is on, as the bots.cfg roster is, so a target set later
+  from F6 or `$botpopulation` draws from the same bots. Past the roster the usual rule applies (section 9.5):
+  built-in names with the roster's ships and difficulties in turn; with no roster, Pyro-GL and the menu's Difficulty.
+- **Roster against target:** no new rule. The roster spawns as listed, within the seat clamp, then the manager adds
+  or removes one bot every 5 seconds until humans plus bots reach the target.
+- **Dedicated servers:** a dedicated server without `BotConfig=` that loads an `.mps` with a `BOTCOUNT` line already
+  spawned that roster through `BotSpawnFromUI()`; it now takes the preset's target too. The server's own seat is not a
+  player there, so a target of `max_players − 1` is one more than the seats allow, and the manager logs it as out of
+  reach. With `BotConfig=` set, the preset's roster and target are both ignored.
+
+Checked 2026-10-08 on a Debug dedicated server with no `BotConfig=` and an `.mps` as `MultiSettingsFile=`
+(`MaxPlayers=8`, anarchy):
+
+| Preset | Result |
+|---|---|
+| `BOTCOUNT 2`, `BOTTARGETPLAYERS 5`, roster Alpha (Phoenix, Default), Bravo (Pyro-GL, Rookie), `BOTDEFAULTDIFF 3` | Alpha (Ace) and Bravo spawned 3 s after load; `Reaper` (Phoenix, Ace), `Phantom` (Pyro-GL, Rookie) and `Viper` (Phoenix, Ace) joined at 5 s intervals; `$botpopulation status` read `manager=on target=5 reserve=1 humans=0 bots=5 seats=6/8 bot_limit=6` |
+| the same without the `BOTTARGETPLAYERS` line | `manager=off target=0`, the two roster bots |
+| `BOTTARGETPLAYERS 20`, `BOTCOUNT 0` | loaded as 7 with `preset BOTTARGETPLAYERS 20 changed to 7 for MAXPLAYERS 8`; the manager began filling from built-in names (Pyro-GL, Hotshot) |
+
+Not checked: the menu on screen (layout, the toggle, the field, the readout, a save and reload). That is owed to the
+operator's cockpit flight.
 
 ## Related documents
 

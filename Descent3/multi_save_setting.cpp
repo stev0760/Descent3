@@ -128,6 +128,8 @@ int MultiSaveSettings(const std::filesystem::path &filename) {
   cf_WriteString(cf, szoutput);
   snprintf(szoutput, sizeof(szoutput), "BOTDEFAULTDIFF\t%d", (int)Bot_ui_settings.default_difficulty);
   cf_WriteString(cf, szoutput);
+  snprintf(szoutput, sizeof(szoutput), "BOTTARGETPLAYERS\t%d", Bot_ui_settings.target_players);
+  cf_WriteString(cf, szoutput);
   for (i = 0; i < Bot_ui_settings.bot_count && i < BOT_UI_MAX_BOTS; i++) {
     snprintf(szoutput, sizeof(szoutput), "BOTNAME%d\t%s", i + 1, Bot_ui_settings.roster[i].name);
     cf_WriteString(cf, szoutput);
@@ -171,6 +173,8 @@ int MultiLoadSettings(const std::filesystem::path &filename) {
   if (!cf)
     return 0;
 
+  bool bot_preset = false; // the file carries Bot Settings (BOTCOUNT)
+  int bot_target = -1;     // BOTTARGETPLAYERS, -1 = no such line
   while (cf_ReadString(szinput, MAX_MPS_LINE_LEN - 1, cf)) {
 
     toklabel = strtok(szinput, seps);
@@ -285,6 +289,7 @@ int MultiLoadSettings(const std::filesystem::path &filename) {
       if ((Netgame.difficulty > 4) || (Netgame.difficulty < 0))
         Netgame.difficulty = 0;
     } else if (stricmp(toklabel, "BOTCOUNT") == 0) {
+      bot_preset = true;
       Bot_ui_settings.bot_count = atoi(tokval);
       if (Bot_ui_settings.bot_count < 0)
         Bot_ui_settings.bot_count = 0;
@@ -293,6 +298,10 @@ int MultiLoadSettings(const std::filesystem::path &filename) {
       // BOTTEAM<n> is written only for a chosen team, so a bot without one is Auto, not the team it had before.
       for (BotUIRosterEntry &e : Bot_ui_settings.roster)
         e.team = -1;
+    } else if (stricmp(toklabel, "BOTTARGETPLAYERS") == 0) {
+      bot_target = atoi(tokval);
+      if (bot_target < 0)
+        bot_target = 0; // 0 = off
     } else if (stricmp(toklabel, "BOTDEFAULTDIFF") == 0) {
       int d = atoi(tokval);
       if (d >= 0 && d < BOT_DIFF_COUNT)
@@ -353,6 +362,17 @@ int MultiLoadSettings(const std::filesystem::path &filename) {
     LOG_INFO.printf("BOT UI: preset BOTCOUNT %d lowered to %d for MAXPLAYERS %d", Bot_ui_settings.bot_count, bot_limit,
                     Netgame.max_players);
     Bot_ui_settings.bot_count = bot_limit;
+  }
+
+  // Auto population, after the whole file too: a preset with Bot Settings but no BOTTARGETPLAYERS line predates it
+  // and loads with it off; a target outside the menu's range for MAXPLAYERS is brought into it, as the menu would.
+  if (bot_preset || bot_target >= 0) {
+    const int target = BotUIClampTarget(bot_target, Netgame.max_players);
+    if (target != bot_target && bot_target > 0) {
+      LOG_INFO.printf("BOT UI: preset BOTTARGETPLAYERS %d changed to %d for MAXPLAYERS %d", bot_target, target,
+                      Netgame.max_players);
+    }
+    Bot_ui_settings.target_players = target;
   }
   return 1;
 }

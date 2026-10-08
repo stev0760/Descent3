@@ -10,6 +10,50 @@ including the CTF, Hyper and Hoard write-ups) is preserved verbatim in
 `matcen-docs/archive/BOTS_DEVEL-phases-0_to_0.9.12.md`. The engine-files audit (single-player, Robo-Anarchy and
 co-op impact) now lives in `matcen-docs/BOT_DEV_REFERENCE.md`.
 
+### 2026-10-08: auto population in Bot Settings, 0.10.1 (UX12)
+
+The operator's cockpit question ("is there a bot auto population toggle?"): on a listen server the population manager
+was console-only. The Bot Settings Server block now has **Auto population** (an On/Off hotspot) and **Players to
+keep** (a numbers-only `NewUIEdit`, committed on Enter or Done), above the free-seat readout; the server block's
+values sit at x=440 because its labels are longer than the detail panel's. Range 2 (`BOT_UI_TARGET_MIN`, the host and
+one bot) to `max_players − reserve`, `max_players − 1` on a listen server (`BotUIClampTarget`, bot.cpp, shared by the
+menu and the `.mps` loader). No reserve control: POP15 is undecided.
+
+Data and preset: one field, `BotUISettings::target_players`, 0 = off, the meaning of `BotTargetPlayers=`; the menu
+keeps the field's number while the toggle is off but stores it only while on. `.mps` line `BOTTARGETPLAYERS\t<n>`
+(0 = off), written after `BOTDEFAULTDIFF`. The loader notes the line and `BOTCOUNT`, and after the whole file decides,
+order-independent like the `BOTCOUNT` clamp: a preset with `BOTCOUNT` and no target line (0.10.0 and earlier) loads
+off; a target outside the menu's range for `MAXPLAYERS` is clamped with a `BOT UI:` log line.
+
+Apply: `BotDoUISpawn()` (3 s after the first level loads) calls a new `BotApplyUIPopulation()` before the roster's
+`BotAdd` calls, which hands the manager the three things `BotLoadRosterFile()` takes from bots.cfg:
+`BotPopulationSetRoster`, `BotSetDefaultDifficulty` (the menu's Difficulty, as `BotDifficulty=`) and, when on,
+`BotPopulationSetTarget`. No second code path for the manager. Applying at the delayed spawn rather than at level load
+keeps the manager from adding roster callsign 1 during the 3 s before the roster spawns it. `BotSpawnFromUI()` now
+arms when the menu asks for bots or a target (a target with an empty roster used to return early). The manager is
+cleared by `BotShutdownAll()` at session end and `Bot_ui_settings` lives for the process, so each session re-applies.
+Roster decision: the menu's listed bots (the first `bot_count` entries, the ones the `.mps` saves) go to
+`BotPopulationSetRoster` whether or not the target is on, as the dedicated path hands over the bots.cfg roster
+regardless of `BotTargetPlayers`; a Default difficulty is resolved to the menu's default when the entries are built,
+since the manager would resolve it to the server default. Roster against target: no new rule (roster spawns, the
+manager converges one bot per 5 s). The free-seat readout counts the settled bots: the roster, or with the target on,
+`clamp(target − 1, 0, BotPopulationRosterLimit)` (`BotSettledBotCount`).
+
+Found on the way and fixed: `Bot_ui_settings` was zero until the menu first opened, when `BotEnsureUIDefaults`
+(multi_ui.cpp) called `BotUISettingsInit()`; `StartMultiplayerGameMenu` (con_dll.h) loads `default.mps` before that,
+so the first open of Bot Settings replaced the preset's bots with the defaults. The settings are now initialized at
+program start (`Bot_ui_settings = BotUIDefaultSettings()`) and `BotEnsureUIDefaults` is gone. `BotUISettingsInit()`
+stays for `BotInitAll()` (dead, COL28).
+
+Checked on a Debug dedicated server through `MultiSettingsFile=` (a dedicated server without `BotConfig=` runs
+`BotSpawnFromUI()` on a preset's roster): target 5 with a two-bot roster gave `manager=on target=5 ... bots=5
+seats=6/8`, the three extra bots borrowing the roster's ship and difficulty in turn; the same preset without the line
+gave `manager=off target=0`; `BOTTARGETPLAYERS 20` with `MAXPLAYERS 8` loaded as 7 with the log line. BOT_MANAGEMENT
+§9.10 has the table. Not checked: the menu on screen, owed to a cockpit flight. Debug build clean, ctest 32/32.
+
+Files: `Descent3/bot.h`, `Descent3/bot.cpp`, `Descent3/multi_ui.cpp`, `Descent3/multi_save_setting.cpp`,
+`CMakeLists.txt` (0.10.1), and the docs.
+
 ### 2026-10-08: 0.9.17-dev becomes 0.10.0 (REL14)
 
 The operator's call: everything built on 0.9.17-dev (NAV41/60/61, the seat rules and population manager, the client UX
