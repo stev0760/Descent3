@@ -10,6 +10,25 @@ including the CTF, Hyper and Hoard write-ups) is preserved verbatim in
 `matcen-docs/archive/BOTS_DEVEL-phases-0_to_0.9.12.md`. The engine-files audit (single-player, Robo-Anarchy and
 co-op impact) now lives in `matcen-docs/BOT_DEV_REFERENCE.md`.
 
+### 2026-10-08: a dedicated server with no display, 0.10.6 (ENG14, ENG11)
+
+The operator's deployment is a cloud VPS under systemd, with Pyrodeck in front. Started with no `DISPLAY`, the server
+stopped at once: `SDL_Init` of audio and video failed with "No available video device". `sdlmain.cpp` sets
+`SDL_VIDEODRIVER=dummy` for a dedicated server, but under `#ifdef DEDICATED`, which no build defines, so the one
+binary that runs `-dedicated` at run time never set it. With `SDL_VIDEODRIVER=dummy` in the environment the server
+loaded abend2 and the six bots joined. The fix: `-dedicated` sets `SDL_HINT_VIDEO_DRIVER` and `SDL_HINT_AUDIO_DRIVER`
+to `dummy` before `SDL_Init`. Verified with an empty environment (`env -i`: no display, no sound server, no SDL
+variables): abend2 CTF, 6 bots, joins and play.
+
+The same change ends both `-service` defects (ENG11), since the fork follows `SDL_Init`. With `DISPLAY` set, the
+backgrounded server loaded the level, the bots joined, and it exited on `Quit`; with an empty environment, the same.
+Reading: the real drivers opened an X connection the exiting parent closed, and started driver threads the forked
+child does not have, and its shutdown waited on them; the dummy drivers do neither. Not tested on Windows or macOS at
+run time.
+
+Sizing, from the same run (Debug build, Ryzen 9 5900X): a 6-bot CTF server used about 5% of one core and 55 MB of
+memory; `[Perf]` showed 62 fps, bots 0.40 ms a frame on average, worst server frame 17 ms.
+
 ### 2026-10-08: the console in `Descent3.log`, 0.10.5 (REL3)
 
 REL3 found that `-logfile`'s `Descent3.log` holds the plog lines only, so a Windows operator's only complete log could

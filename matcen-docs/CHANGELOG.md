@@ -11,6 +11,13 @@ series each bug fix or small feature takes the next number in the last place. A 
 a larger change that may be backed out whole, until it passes its validation gate. 1.0 comes after community play.
 0.9.17 was never released: its development build became 0.10.0.
 
+## [0.10.6] - 2026-10-08
+
+- **A dedicated server starts on a machine with no display or sound device**, such as a cloud VPS or a systemd
+  service. Before, it stopped at start-up with "No available video device" unless `SDL_VIDEODRIVER=dummy` was set.
+- **`-service` works on Linux and macOS:** the backgrounded server no longer dies when the first level loads on a
+  desktop, and it exits on `Quit` instead of hanging.
+
 ## [0.10.5] - 2026-10-08
 
 - **`-logfile`'s `Descent3.log` now holds the whole server log, game messages included.** Flag pickups and captures,

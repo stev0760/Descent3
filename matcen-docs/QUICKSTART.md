@@ -64,6 +64,9 @@ Descent3.exe -dedicated ./dedicated.cfg -winconsole       # Windows (-winconsole
 ./Descent3.app/Contents/MacOS/Descent3 -dedicated ./dedicated.cfg   # macOS
 ```
 
+The server needs no display or sound device, so it runs on a headless machine or VPS. To keep it running unattended,
+start that line from a systemd service (or tmux or screen) in the Descent 3 folder, with `-logfile` for a log file.
+
 The `BotCount` bots join when the first level loads, and the target adds the rest one every five seconds, each
 announced in chat. A server with no `BotConfig=` line runs exactly like vanilla Descent 3.
 [BOT_MANAGEMENT.md](BOT_MANAGEMENT.md) has every key and rule.

@@ -242,9 +242,12 @@ int main(int argc, char *argv[]) {
                   D3_FORK_NAME, D3_FORK_VER_MAJOR, D3_FORK_VER_MINOR, D3_FORK_VER_PATCH, D3_FORK_VER_SUFFIX,
                   D3_GIT_HASH);
 
-#ifdef DEDICATED
-  setenv("SDL_VIDEODRIVER", "dummy", 1);
-#endif
+  // A dedicated server opens no window and plays no sound. SDL's dummy drivers let it start where there is no display
+  // or sound device (a headless server or VPS), which the default drivers refuse.
+  if (FindArgChar("-dedicated", 'd')) {
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+    SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+  }
 
   int rc = SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO);
   if (!rc) {
