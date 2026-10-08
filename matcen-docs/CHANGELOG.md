@@ -11,6 +11,17 @@ series each bug fix or small feature takes the next number in the last place. A 
 a larger change that may be backed out whole, until it passes its validation gate. 1.0 comes after community play.
 0.9.17 was never released: its development build became 0.10.0.
 
+## [0.10.3] - 2026-10-08
+
+*A cleanup of the code and the console help. The bots play exactly as in 0.10.2.*
+
+- **`$bothelp` shows the `$addbot` name as optional:** `$addbot [name] [ship] [difficulty] [team]`. Without a name the
+  bot takes a free built-in one, as it has since 0.10.0.
+- **The `$nav` toggle list says what each toggle does**, without internal references, and every `$nav` usage line
+  starts with `Usage:`.
+- The code comments describe the design instead of the history that produced it, and an unused start-up function
+  is gone.
+
 ## [0.10.2] - 2026-10-08
 
 *Formation flying: `!formup` puts the bots in formation behind you. Lines marked In test have not been flown yet.*

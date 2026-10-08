@@ -19,10 +19,10 @@
 #ifndef BOT_ROADMAP_H
 #define BOT_ROADMAP_H
 
-// 0.9.4 navigation substrate — Stage 1: a per-room VOLUMETRIC grid-seeded roadmap (deterministic PRM)
+// Navigation substrate, indoor build: a per-room VOLUMETRIC grid-seeded roadmap (deterministic PRM)
 // that the bot routes over with Lazy Theta* (any-angle), replacing the portal-skeleton pass of the via
 // search. The roadmap puts nodes throughout a room's INTERIOR (incl. the Y/vertical extent) so bots can
-// reach an arbitrary interior point and traverse tall shafts — the 0.9.3 skeleton's two failure modes.
+// reach an arbitrary interior point and traverse tall shafts — the portal skeleton's two failure modes.
 //
 // Honors the project invariants: our layer only (output is an AIG_GET_TO_POS waypoint, never movement_dir,
 // never BNode_allocated); additive + toggle-gated; hull radius real and FIXED (no speed-scaled clearance);
@@ -41,12 +41,12 @@ extern bool Bot_gridnav_enabled;
 // fits through — it is NOT a flight-safety/momentum margin (the engine's avoid-walls owns flight safety).
 // The original 8.0 was over-conservative and falsely fragmented tight rooms (a ~7u tavern doorway the hull
 // clears read as blocked -> disconnected components). Keep it at hull + a sliver, and never BELOW the hull
-// (sub-hull edges route a bot through a gap it doesn't fit — the reverted bnode-gen max_rad 5.0 mistake).
+// (sub-hull edges route a bot through a gap it doesn't fit, as a BNode build pruned at max_rad 5.0 did).
 // Pyro hull ~6.676. This is a pure FIT radius (connectivity), NOT a flight-safety margin — the engine's
 // avoid-walls owns flight safety. 7.0 still over-rejected the tightest real doorways (the townofbree tavern
 // BASEMENT door, where the blue key lives — a bot/player can barely fit → grid sealed the room → via-dance +
 // "sealed" powerup abandons in room 60). Dropped to a hair over the hull so a gap the ship physically clears
-// is accepted. NEVER set below the hull (the reverted bnode-gen max_rad 5.0 routed bots into gaps they jam in).
+// is accepted. NEVER set below the hull: sub-hull edges route bots into gaps they jam in (NAVIGATION.md §7.5).
 #define BOT_ROADMAP_CLEARANCE 6.7f // hull 6.676 + 0.024 sliver — fit radius, not a safety margin
 // Fatter clearance used ONLY by the $nav curve Theta* straightening (SetVertex) so it won't shortcut
 // two nodes across a mound/bend that clears bare hull but not the engine's avoid-walls margin (~2x
@@ -54,7 +54,7 @@ extern bool Bot_gridnav_enabled;
 #define BOT_ROADMAP_STRAIGHTEN_CLEARANCE 13.5f
 #define BOT_ROADMAP_SPACING 20.0f     // 3D lattice spacing (control-loop param: matches engine arrival/lookahead)
 #define BOT_ROADMAP_MAX_LATTICE 20000 // per-room candidate-cell cap; spacing auto-coarsens past this
-// Sliced builds (2026-09-20): milliseconds of roadmap building per server frame. A 60 fps frame is 16.7 ms and the
+// Sliced builds: milliseconds of roadmap building per server frame. A 60 fps frame is 16.7 ms and the
 // bot layer averages 2-3 ms, so 5 ms keeps the frame on time with players in the game; an empty server spends most
 // of its frame building.
 #define BOT_ROADMAP_SLICE_MS 5.0
@@ -84,7 +84,7 @@ extern bool Bot_gridnav_enabled;
 #define BOT_ROADMAP_BRIDGE_LEN 55.0f      // max cross-component gap to attempt bridging (catches ~40-45u splits)
 #define BOT_ROADMAP_BRIDGE_MAX_NODES 1200 // skip the O(n^2) bridge scan above this (huge rooms are ~1 component)
 
-// Corner-rounding component bridge (Stage 3.5 prototype, $gridbridge). The straight bridge above only spans
+// Corner-rounding component bridge ($gridbridge). The straight bridge above only spans
 // a gap a SINGLE hull-clear segment crosses; it cannot connect two components split by a WALL whose only link
 // is a lateral go-around — the Bree-tavern class: the open-air component vs. the door-approach pocket, divided
 // by the structure facade. This pass inserts ONE intermediate vertex M swept off the A-B midline (laterally to
@@ -96,7 +96,7 @@ extern bool Bot_gridnav_enabled;
 #define BOT_ROADMAP_CORNER_OFFSET_MAX 120.0f // max lateral/vertical midpoint offset swept to find the open corner
 #define BOT_ROADMAP_CORNER_MAX_ATTEMPTS 240  // cap corner-insertion attempts per build (closest pairs first)
 
-extern bool Bot_roadmap_corner_enabled; // $gridbridge — corner-rounding component bridge (Stage 3.5 prototype)
+extern bool Bot_roadmap_corner_enabled; // $gridbridge — corner-rounding component bridge
 
 // Selective gridroute complexity gate (the floor that fixes the tiny-room false positive). A room earns
 // PROACTIVE grid routing only if BOTH: (a) its airspace fragmented before the bridges merged it
@@ -115,12 +115,12 @@ extern bool Bot_roadmap_corner_enabled; // $gridbridge — corner-rounding compo
 #define BOT_ROADMAP_ROUTABLE_MIN_CELLS 8
 #define BOT_ROADMAP_ROUTABLE_MIN_PAIRPCT 75
 
-// Stage 2 ($gridroute, prototype): route the in-room leg of objective/carrier nav over the volumetric grid
+// Proactive gridroute (always on): route the in-room leg of objective/carrier nav over the volumetric grid
 // PROACTIVELY, not just reactively when a straight line is blocked. Today the router (BotSetRoutedGoal) aims
 // the engine at the raw portal path_pnt of the next room; in a buried-center / multi-level room the engine
 // path-follower stalls flying to that single point, and the reactive via only engages if the LINE happens to
 // be blocked — so normal in-room traversal (and a carrier's escape OUT of a structure) gets no grid help even
-// though the grid has the interior nodes to plan it. With this on, the router asks the roadmap for a
+// though the grid has the interior nodes to plan it. Instead, the router asks the roadmap for a
 // furthest-visible waypoint toward the destination and aims there, falling back to the path_pnt when the room
 // roadmap is degenerate. Indoor only (outdoor already routes its region roadmap via the reactive path).
 
@@ -170,7 +170,7 @@ int BotRoadmapZoneAt(int room_idx, const vector &pos);
 // True when the room's portal seeds span more than one component of a lattice that actually populated.
 bool BotRoadmapRoomZoned(int room_idx);
 
-// Stage 3 (outdoor): the SAME roadmap grown over a terrain REGION's airspace, so the local search threads
+// Outdoor build: the SAME roadmap grown over a terrain REGION's airspace, so the local search threads
 // laterally around outdoor structures (the Bree-wall class) instead of beelining into them. Seeds = the
 // region's BOA_connect door approach points; the lattice extent = the region's structure bboxes expanded
 // into airspace, Y-capped under the outdoor ceiling (no sky-fly). Coarser spacing than indoor — open
@@ -205,11 +205,11 @@ bool BotComposeRoomRoute(object *obj, const vector &target_pos, int target_room,
                          BotComposedRoute *route_out, bool cached_only = false);
 const char *BotComposedTerminalName(BotComposedTerminal terminal);
 
-// Stage 1 query. Find a go-around waypoint by routing the bot's CURRENT room's volumetric roadmap with
+// Indoor query. Find a go-around waypoint by routing the bot's CURRENT room's volumetric roadmap with
 // Lazy Theta* toward target_pos (same room) or the seam node toward the next room (cross room). Returns
 // BOT_VIA_FOUND (+ *via_out = furthest-visible vertex on the any-angle path) on success, or BOT_VIA_NONE
 // when the room has no usable roadmap / start & goal are in different components — the caller then falls
-// back to the 0.9.3 skeleton. Indoor only; outdoor is Stage 3.
+// back to the portal skeleton. Indoor only; BotRoadmapFindViaOutdoor is the outdoor query.
 //
 // `proactive` = the selective gridroute gate. When true (objective/carrier routing, not a reactive blocked
 // line), the call returns NONE in a SIMPLE single-component room — only COMPLEX rooms (airspace fragmented
@@ -218,10 +218,10 @@ const char *BotComposedTerminalName(BotComposedTerminal terminal);
 BotViaResult BotRoadmapFindVia(object *obj, const vector &target_pos, int target_room, vector *via_out,
                                bool proactive = false, int next_room_hint = -1);
 
-// Stage 3 query (outdoor). Route the bot's terrain REGION over its volumetric roadmap toward target_pos,
+// Outdoor query. Route the bot's terrain REGION over its volumetric roadmap toward target_pos,
 // threading laterally around structures. Same any-angle Lazy Theta* + furthest-visible delivery as the
 // indoor query. Returns BOT_VIA_FOUND (+ *via_out) or BOT_VIA_NONE (no region graph / start & goal in
-// different components / bot can't see the graph) — the caller then falls back to the 12.6 outdoor
+// different components / bot can't see the graph) — the caller then falls back to the outdoor
 // connecting graph. Bot must be outside. Outdoor is gated by $gridnav alongside the indoor roadmap.
 BotViaResult BotRoadmapFindViaOutdoor(object *obj, const vector &target_pos, int target_room, vector *via_out);
 
@@ -272,7 +272,7 @@ bool BotRoadmapRoomRoutable(int room_idx);
 bool BotRoadmapCoverage(int room_idx, int *cells_out, int *connector_out, int *local_pair_pct_out,
                         bool *routable_out = nullptr);
 
-// $navdump diagnostic (Stage 3): build (lazily) + dump a terrain region's outdoor roadmap — node world
+// $navdump diagnostic: build (lazily) + dump a terrain region's outdoor roadmap — node world
 // positions + per-node component id. Returns node count (0 = empty/out-of-range region). Sets
 // *comp_count_out and *degenerate_out. Caller arrays must hold max_nodes entries.
 // Cached-only region dumps for the live overlay (never build — draw-only contract, see PeekCached).

@@ -730,14 +730,10 @@ void ParseLine(char *srcline, char *command, char *operand, int cmdlen, int oprl
     operand[0] = 0;
 }
 
-// --- $nav namespace (0.9.5) ---------------------------------------------------------------------
-// One entry point for the navigation toggle/diagnostic surface (the BOTS_DEVEL.md "Pre-Release
-// Cleanup", Option B): bare `$nav` prints the live toggle table, `$nav <name> on|off` flips one,
-// `$nav dump [file]` writes the nav-geometry JSON. The pre-0.9.5 flat command names stay as HIDDEN
-// aliases (soak scripts + muscle memory keep working; they're gone from $bothelp). (The 0.9.3 fallback
-// substrate and its `legacy` rows are gone; 0.9.16-dev dropped the tag.) NOTE the near-collision: `$nav bridge` =
-// the 0.9.4 corner-rounding bridge
-// ($gridbridge), while the OLD `$navbridge` = the 12.7 soft-hop, now `$nav softhop`.
+// --- $nav namespace ------------------------------------------------------------------------------
+// One entry point for the navigation toggles and diagnostics: bare `$nav` prints the live toggle table,
+// `$nav <name> on|off` flips one, `$nav dump [file]` writes the nav-geometry JSON. The older flat command
+// names stay as HIDDEN aliases so existing scripts keep working; $bothelp does not list them.
 struct NavToggle {
   const char *sub;    // $nav <sub> on|off
   const char *alias;  // legacy flat command name (hidden)
@@ -747,7 +743,7 @@ struct NavToggle {
   bool rebuild; // BUILD-TIME roadmap parameter: flush cached roadmaps when the value changes
 };
 static const NavToggle Nav_toggles[] = {
-    {"grid", "gridnav", "navgrid", &Bot_gridnav_enabled, "volumetric grid roadmap (0.9.4; off = 0.9.3 substrate)",
+    {"grid", "gridnav", "navgrid", &Bot_gridnav_enabled, "volumetric grid roadmap (off = the portal skeleton alone)",
      false},
     {"bridge", "gridbridge", nullptr, &Bot_roadmap_corner_enabled, "corner-rounding component bridge", true},
     {"grate", "grateclear", nullptr, &Bot_grate_clear_enabled, "proactive destroyable-obstacle (grate) clearing",
@@ -755,7 +751,7 @@ static const NavToggle Nav_toggles[] = {
     {"glass", "glassroute", nullptr, &Bot_glass_route_enabled,
      "kinetic bots route through breakable glass: vertical panes as shortcuts, any pane as a sole route", true},
     {"outlattice", "outdoorlattice", nullptr, &Bot_outdoor_lattice_enabled,
-     "outdoor lattice via in blocked-line rescue (off = 0.9.3 rescue order)", false},
+     "outdoor lattice first in the blocked-line rescue (off = the connecting graph alone)", false},
     {"wind", "windroute", nullptr, &Bot_wind_route_enabled, "wind-tunnel one-way routing + downwind shortcut bias",
      false},
     {"outtier", "outdoortier", nullptr, &Bot_outdoor_tier_enabled,
@@ -763,32 +759,31 @@ static const NavToggle Nav_toggles[] = {
     {"hardroom", "hardroom", nullptr, &Bot_hard_room_enabled,
      "evidence-gated gridroute: via-suspension repeat offenders get proactive grid routing", false},
     {"curve", "curveroute", nullptr, &Bot_curve_route_enabled,
-     "curve-following: fatter-clearance Theta* straightening keeps winding paths (isengard corkscrew Fork-B fix)",
-     false},
+     "curve-following: fatter-clearance Theta* straightening keeps winding paths around their bends", false},
     {"strike", "softstrike", nullptr, &Bot_soft_strike_enabled,
-     "same-room soft chase-aborts accrue troll strikes at half weight (magnet-powerup retirement)", false},
+     "same-room soft chase aborts count as troll strikes at half weight (retires items bots cannot reach)", false},
     {"dense", "tubedense", nullptr, &Bot_tube_densify_enabled,
-     "thin-tube roadmap densification: hull-fit ladder rungs along portal pairs (degenerate shaft/tunnel fix)", true},
+     "thin-tube roadmap densification: hull-fit ladder rungs along portal pairs in narrow shafts and tunnels", true},
     {"troute", "terrainroute", nullptr, &Bot_troute_enabled,
-     "terrain tier: cross-terrain routes composed over region-lattice door pairs (piece 1, NAVIGATION 3.7)", false},
+     "terrain tier: cross-terrain routes composed over region-lattice door pairs", false},
     {"bnodesp", "bnodenative", nullptr, &Bot_bnode_native_pathing_enabled,
-     "defer to the engine's native BNode path pipeline on BNode-rich SP maps (PLAN-coop-nav-rethink.md); "
+     "defer to the engine's native BNode path pipeline on BNode-rich SP maps; "
      "default ON, inert on every BNode-less MP map",
      false},
     {"troute2", "troutecompare", nullptr, &Bot_troute_compare_enabled,
-     "v2 route choice: compose terrain plan even when an interior route exists, take the cheaper", false},
+     "route choice: compose a terrain plan even when an interior route exists, take the cheaper", false},
     {"heal", "roadmapheal", nullptr, &Bot_roadmap_heal_enabled,
-     "stale-glass fix: rebuild a room's roadmap when its watched panes/grates open mid-round", true},
+     "rebuild a room's roadmap when its watched panes/grates open mid-round", true},
     {"runner", "flagrunner", nullptr, &Bot_dedicated_runner_enabled,
      "dedicated CTF flag-runner role (1 committed runner + defenders + flex; off = binary attack/defend)", false},
     {"hyper", "hyperroles", nullptr, &Bot_hyper_roles_enabled,
      "Hyper-Anarchy loose orb roles (nearest-K chase orb / hunt carrier; off = everyone races, nobody hunts)", false},
     {"entropy", "entropytakeover", nullptr, &Bot_entropy_takeover_enabled,
-     "Entropy E3 takeover execution (loaded bots invade/hold/retreat; off = E2 economy only)", false},
+     "Entropy room takeovers (loaded bots invade/hold/retreat; off = virus economy only)", false},
     {"mball", "mballstriker", nullptr, &Bot_mball_striker_enabled,
-     "Monsterball M2 striker (approach-point + gated ball shooting; off = legacy ball-chaser)", false},
+     "Monsterball striker (approach point + gated ball shooting; off = plain ball chasing)", false},
     {"mroles", "mballroles", nullptr, &Bot_mball_roles_enabled,
-     "Monsterball M3 roles (one striker + support + keeper, utility+hysteresis; off = everyone strikes)", false},
+     "Monsterball roles (one striker + support + keeper, utility+hysteresis; off = everyone strikes)", false},
     {"mavoid", "mballavoid", nullptr, &Bot_mball_avoid_enabled,
      "Monsterball contact-blunder discipline (detour around a ball the leg would bump toward THEIR goal)", false},
     {"mjunction", "mballjunction", nullptr, &Bot_mball_junction_enabled,
@@ -821,9 +816,8 @@ static void NavToggleSet(const NavToggle *t, const char *value) {
   bool want = (stricmp(value, "on") == 0);
   bool changed = (*t->flag != want);
   if (changed) {
-    // §7 contend: a toggle flip is an A/B arm boundary — dump + reset the contention histograms so
-    // each arm's numbers land in the log standalone (the 07-22 session lost its histograms because
-    // the dump was manual-only).
+    // A toggle flip is an A/B arm boundary: dump and reset the nav-contention histograms so each arm's
+    // numbers land in the log on their own.
     char reason[80];
     snprintf(reason, sizeof(reason), "toggle %s->%s", t->sub, want ? "on" : "off");
     BotNavContendDumpAll(reason);
@@ -1050,7 +1044,7 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
     if (stricmp(sub, "probe") == 0) {
       float x0 = 0, y0 = 0, z0 = 0, x1 = 0, y1 = 0, z1 = 0;
       if (sscanf(value, "%f %f %f %f %f %f", &x0, &y0, &z0, &x1, &y1, &z1) != 6) {
-        PrintDedicatedMessage("usage: $nav probe <x> <y> <z> <x2> <y2> <z2>\n");
+        PrintDedicatedMessage("Usage: $nav probe <x> <y> <z> <x2> <y2> <z2>\n");
         return true;
       }
       static char report[4096];
@@ -1069,7 +1063,7 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
       int room = -1;
       char fname[128] = "";
       if (sscanf(value, "%d %127s", &room, fname) < 1) {
-        PrintDedicatedMessage("usage: $nav roomfaces <room> [file]\n");
+        PrintDedicatedMessage("Usage: $nav roomfaces <room> [file]\n");
         return true;
       }
       if (BotNavRoomFacesDump(room, fname))
@@ -1082,7 +1076,7 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
       float x = 0, y = 0, z = 0;
       int room = -1, portal = -1;
       if (sscanf(value, "%f %f %f %d %d", &x, &y, &z, &room, &portal) != 5) {
-        PrintDedicatedMessage("usage: $nav sweep <x> <y> <z> <room> <portal>\n");
+        PrintDedicatedMessage("Usage: $nav sweep <x> <y> <z> <room> <portal>\n");
         return true;
       }
       static char report[4096];
@@ -1098,8 +1092,8 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
       return true;
     }
     if (stricmp(sub, "contend") == 0) {
-      // §7 contention instrumentation dump: per-bot nav-committee win-count histogram + contention
-      // total (BotNavMemberWin in bot.cpp). Diagnostic-only, same do_all/single_idx shape as $botstat.
+      // Nav-contention dump: per bot, how often each navigation layer won the steering decision, and the
+      // contention total (BotNavMemberWin in bot.cpp). Diagnostic only; same index/all shape as $botstat.
       bool any = false;
       bool do_all = (value[0] == '\0' || stricmp(value, "all") == 0);
       int single_idx = do_all ? -1 : atoi(value);
@@ -1117,7 +1111,7 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
         PrintDedicatedMessage("No bots active (or invalid index)\n");
       return true;
     }
-    if (stricmp(sub, "mtenure") == 0) { // numeric knob, not a toggle (the M3 thrash A/B lever)
+    if (stricmp(sub, "mtenure") == 0) { // numeric knob, not a toggle: the Monsterball role tenure
       float sec = (float)atof(value);
       if (!value[0] || sec < 2.0f || sec > 120.0f) {
         PrintDedicatedMessage("Usage: $nav mtenure <seconds 2-120>  (current: %.0f)\n", Bot_mball_role_tenure);
@@ -1138,8 +1132,8 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
   if (stricmp(command, "navdump") == 0) { // hidden flat alias of $nav dump (Pyrodeck spec references it)
     return DedicatedNavDump(operand);
   }
-  // Hidden flat aliases for the $nav toggles (pre-0.9.5 names: $gridnav/$navgrid, $gridbridge,
-  // $gridroute, $terrainsteer, $pseudobnodes, $outdoorvia, $outdoorgraph, $navbridge).
+  // Hidden flat aliases for the $nav toggles (the older names: $gridnav/$navgrid, $gridbridge,
+  // $terrainsteer, $outdoorvia, $outdoorgraph, ...; see Nav_toggles).
   if (const NavToggle *t = NavToggleFind(command, false)) {
     NavToggleSet(t, operand);
     return true;
@@ -1236,7 +1230,7 @@ static bool DedicatedHandleBotCommand(const char *command, const char *operand) 
         {"$nav mtenure <seconds>", "Monsterball role commitment period, 2-120 s"},
     };
     PrintDedicatedMessage("Bot commands:\n");
-    PrintDedicatedMessage("  $addbot <name> [ship] [difficulty] [team]  Add a bot\n");
+    PrintDedicatedMessage("  $addbot [name] [ship] [difficulty] [team]  Add a bot (no name: a free built-in one)\n");
     PrintDedicatedMessage("      ship: pyro, phoenix, magnum, blackpyro\n");
     PrintDedicatedMessage("      difficulty: trainee, rookie, hotshot, ace, insane\n");
     PrintDedicatedMessage("      team: 1-4 in team games; leave it out to join the smallest team\n");

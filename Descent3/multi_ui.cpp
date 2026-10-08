@@ -1599,7 +1599,7 @@ void MultiGameOptionsMenu(int alloptions) {
   main_wnd.Destroy();
 }
 
-// --- Bot Settings Menu (Phase 5.4) ---
+// --- Bot Settings Menu ---
 // Full-screen UI for configuring bots in client-hosted games.
 // Populates Bot_ui_settings; bots spawn via BotSpawnFromUI() at level load.
 

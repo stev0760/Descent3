@@ -2305,7 +2305,7 @@ int fvi_QuickDistObjectList(vector *pos, int init_room_index, float rad, int16_t
   return num_objects;
 }
 
-// Directional room test for the bot navigation layer (2026-09-29). A ray from `pos` along `dir` against THIS room's
+// Directional room test for the bot navigation layer. A ray from `pos` along `dir` against THIS room's
 // shell faces only: returns 1 when the closest face hit is a front face (the point sees the inside of the room's
 // wall — only an interior point can), 0 when it is a back face (the point is outside, looking at the wall's far side),
 // -1 when the ray meets no face of this room at all (it left through a portal, or there is nothing of this room that

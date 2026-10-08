@@ -41,7 +41,7 @@
 #define BOT_COMBAT_CIRCLE_DIST 120.0f                 // circle-strafe orbit distance in combat state
 #define BOT_TOUCH_GOAL_CIRCLE_DIST (-100.0f) // a flag-touch goal never completes by distance (engine melee value)
 
-// Thrust-based movement constants (Phase 3.5)
+// Thrust-based movement constants
 #define BOT_AFTERBURNER_FUEL_MAX 5.0f                    // seconds of fuel (matches AFTERBURN_TIME)
 #define BOT_AFTERBURNER_THRUST_MULT 1.6f                 // base afterburner thrust multiplier
 #define BOT_JUKE_FREQUENCY 0.5f                          // lateral oscillation frequency (Hz)
@@ -51,7 +51,7 @@
 #define BOT_VERTICAL_JUKE_AMPLITUDE 0.3f                 // vertical oscillation amplitude
 #define BOT_COMBAT_ORBIT_FORWARD 0.5f                    // forward thrust for orbit maintenance
 
-// Afterburner burst management (Phase 3.7)
+// Afterburner burst management
 // Bots use afterburner in controlled bursts to conserve fuel and avoid wasting energy.
 // DoFlyingControl() skips on dedicated server, so we manually manage fuel/energy sync.
 #define BOT_AB_BURST_MAX 1.0f                              // max duration of a single afterburner burst (seconds)
@@ -62,38 +62,37 @@
 #define BOT_AB_RECHARGE_ENERGY_MIN 20.0f                   // need this much energy to recharge fuel at all
 #define BOT_AB_FACING_THRESHOLD 0.7f                       // min dot(fvec, desired_dir) to allow afterburner (~45°)
 
-// Sound awareness (Phase 3.7)
+// Sound awareness
 #define BOT_HEAR_AB_RADIUS 200.0f // radius (units) to detect enemy afterburner noise
 
-// EVADE state (Phase 3.8)
+// EVADE state
 // Triggered from COMBAT after bot has been stuck in prolonged combat without progress.
 // Bot breaks off engagement for BOT_EVADE_DURATION seconds, then returns to HUNT or EXPLORE.
 #define BOT_EVADE_COMBAT_TIMEOUT 20.0f // seconds in COMBAT before triggering EVADE (requires shields < 60%)
 #define BOT_EVADE_DURATION 3.5f        // seconds to stay in EVADE before re-engaging
 
-// HUNT LOS timeout (Phase 3.24, tuned Phase 3.26) — prevents bots from ramming walls chasing
+// HUNT LOS timeout — prevents bots from ramming walls chasing
 // unreachable targets. Uses progress-based tracking: timer resets when bot gets closer to target.
 // Only fires when bot makes no progress for the full timeout duration.
 #define BOT_HUNT_NO_LOS_TIMEOUT 15.0f
 #define BOT_HUNT_PROGRESS_THRESHOLD 10.0f // distance decrease (units) that counts as "making progress"
-#define BOT_RETARGET_COOLDOWN 5.0f        // seconds after HUNT drop before re-acquiring targets (Phase 4.01: 2→5)
+#define BOT_RETARGET_COOLDOWN 5.0f        // seconds after HUNT drop before re-acquiring targets
 #define BOT_HUNT_MIN_DURATION 3.0f        // minimum seconds in HUNT before dropping to EXPLORE (hysteresis)
-#define BOT_HUNT_BLIND_MAX_DIST                                                                                        \
-  300.0f // max distance to enter HUNT without LOS (Phase 4.06: 150→300, 150 too tight for open maps)
+#define BOT_HUNT_BLIND_MAX_DIST 300.0f    // max distance to enter HUNT without LOS (150 is too tight for open maps)
 
-// Target blacklist (Phase 3.28) — prevents re-selecting unreachable targets during retarget cooldown.
+// Target blacklist — prevents re-selecting unreachable targets during retarget cooldown.
 // When a target is blacklisted due to HUNT timeout, the bot cannot select it again until the
 // blacklist timer expires. This breaks infinite loops where bots repeatedly lock onto the same
 // enemy they can't reach due to walls/geometry on complex maps like Fellowship.
 #define BOT_TARGET_BLACKLIST_DURATION 10.0f // seconds a target remains blacklisted after HUNT timeout
-// Failed-destination demotion (the "fifth lifetime cause", 2026-08-07). Travel intent must clear on
+// Failed-destination demotion (the "fifth lifetime cause"). Travel intent must clear on
 // UNREACHABILITY EVIDENCE as well as arrival/timeout/replacement/death — otherwise persistence
 // becomes a stubbornness loop: the bot escapes a wedge, re-picks the same room, and grinds it again.
 // ~2-4 room-progress cycles; long enough to break the loop, short enough that a temporarily blocked
 // room (a closed door, a firefight) comes back into play.
 #define BOT_FAILED_DEST_DURATION 45.0f
 
-// Powerup collection (Phase 3.8)
+// Powerup collection
 #define BOT_POWERUP_SEEK_RADIUS 350.0f   // scan radius for powerup objects
 #define BOT_POWERUP_ONPATH_RADIUS 120.0f // tighter radius during objective nav — grab items on the way
 #define BOT_CHASE_STRIKE_MAX_DISP                                                                                      \
@@ -109,7 +108,7 @@
 #define BOT_LOW_SHIELDS_PCT 0.30f // seek shield powerups when below 30% shields
 #define BOT_LOW_ENERGY 25.0f      // seek energy powerups when below 25 energy units
 
-// Inventory management (Phase 3.9)
+// Inventory management
 // Weapon selection uses energy level and combat distance to pick the best available weapon.
 //   Low energy  → prefer ammo-based weapons (Vauss, Mass Driver) — no energy cost
 //   Long range  → prefer fast-projectile weapons (proj_speed > BOT_WEAPON_LONGRANGE_VEL)
@@ -125,29 +124,24 @@
 //   VAUSS_INDEX=1, MASSDRIVER_INDEX=6, OMEGA_INDEX=9, etc.
 #define BOT_OMEGA_MAX_DIST 35.0f // Omega Cannon: leech beam, melee-range only
 
-// EXPLORE state room roaming (Phase 3.9, overhauled Phase 4.0)
-// Phase 4.0: bots pick destinations from across the entire map via BOA validation,
+// EXPLORE state room roaming: bots pick destinations from across the entire map via BOA validation,
 // letting the engine build full BOA+BNode paths instead of manual portal-by-portal navigation.
 #define BOT_EXPLORE_ROOM_TIME_MIN 6.0f          // min seconds for nearby explore destinations
 #define BOT_EXPLORE_ROOM_TIME_MAX 20.0f         // max seconds for far-away explore destinations
 #define BOT_EXPLORE_MAX_CANDIDATES 16           // max rooms to sample from the map per destination pick
 #define BOT_VISITED_ROOM_COUNT 12               // circular buffer of recently visited rooms (anti-oscillation)
-#define BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT 12.0f // stuck if no room change for this long (Phase 4.01: 8→12)
+#define BOT_EXPLORE_ROOM_PROGRESS_TIMEOUT 12.0f // stuck if no room change for this long
 #define BOT_OUTDOOR_PROGRESS_DIST 50.0f         // outdoors (no room transitions) progress = moving at least this far
 #define BOT_OUTDOOR_APPROACH_OFFSET 12.0f // 12.6: aim this far OUT of a structure door (clear of facade/open-door)
 // $nav troute2 (v2 cost-comparison route choice, NAVIGATION.md 3.7): a terrain plan is ADOPTED over
 // an existing interior route only when meaningfully cheaper (factor = hysteresis + exposure tax),
 // and comparison composes are only attempted at all when the interior route is long enough to
 // plausibly lose (floor) — short indoor hops never pay the composer's Dijkstras.
-// TUNED 0.85 -> 1.0 (2026-07-11 isengard A/B: 587 comparisons, 0 adopts, tie-class losses e.g.
-// 3716 vs 3720 — the extra 15% hysteresis double-taxed on top of hardcost's pain pricing).
-// BACK TO 0.85 (2026-09-19). The 1.0 was chosen while adopted plans almost never executed (0-4 completions a
-// level). Once the outdoor doors worked they did (Doors of Moria: completions 1 -> 19), and every one of that arm's
-// 156 adoptions was a tie-class win (terrain >= 85% of the interior cost, 115 of them >= 95%): carriers left a 57 s
-// interior run home for "terrain 2970 beats interior 3131", crossed the valley in the open and queued at a roof
-// hatch — capture carries 57 s -> 104 s, 9 carrier deaths outdoors against 0, captures 19 -> 8 in three rounds.
-// The lattice prices distance, not exposure or the door at the far end; the factor is that tax. Isengard's
-// decisive adoptions (18 of 147 under 0.85) still pass.
+// A terrain plan is adopted only when it costs less than 0.85 of the interior route. The lattice prices
+// distance, not exposure or the door at the far end; the factor is that tax. At 1.0 the tie-class wins
+// ("terrain 2970 beats interior 3131") took carriers off a 57 s interior run home, across an open valley
+// and into a queue at a roof hatch: longer carries, carrier deaths outdoors, fewer captures. Decisive
+// adoptions (Isengard's) still pass at 0.85.
 #define BOT_TROUTE_ADOPT_FACTOR 0.85f
 #define BOT_TROUTE_ADOPT_MIN_INTERIOR 500.0f
 #define BOT_ENTRY_COMMIT_DIST 30.0f   // 8.2 ($nav entry): within this of the standoff point -> commit THROUGH the door
@@ -173,7 +167,7 @@
 #define BOT_GRATE_PORTAL_NEAR 30.0f // $nav grate pass 4: a destroyable object within this of a portal = in the doorway
 #define BOT_INDOOR_PROGRESS_DIST 50.0f // indoors, also count this much displacement as progress (big-room fix)
 
-// Secondary weapon firing (Phase 3.10)
+// Secondary weapon firing
 // Bots fire missiles alongside primaries in COMBAT. Each secondary has range gates and self-guards.
 //   Concussion/Frag: rapid barrage at close-to-medium range (fast dumbfire)
 //   Mega/Black Shark: held for long range only (massive splash — NEVER fire close)
@@ -186,7 +180,7 @@
 #define BOT_NAPALM_ROCKET_MAX_DIST 90.0f // short-range area denial only
 #define BOT_SPLASH_SELF_GUARD 30.0f      // universal: never fire splash weapons this close to self
 
-// Powerup interrupt (Phase 3.10 / 3.12)
+// Powerup interrupt
 // Two-tier interrupt system:
 //   COMBAT interrupt  — breaks off a live fight; tight radius, only game-changers
 //   HUNT divert       — detours mid-hunt; medium radius, any upgrade worth grabbing
@@ -197,7 +191,7 @@
 #define BOT_WEAK_DIVERT_RADIUS 350.0f       // WEAK bots scan very wide for weapon diverts
 #define BOT_WEAK_SEEK_RADIUS 500.0f         // WEAK bots scan further for powerups
 
-// Equipment-based behavior (Phase 3.11)
+// Equipment-based behavior
 // Bots self-classify their loadout into three tiers each target-update tick.
 // The tier drives flee aggression, target selection bias, and rampage mode.
 #define BOT_EQUIP_TIER_WEAK 0  // only default Laser (battery 0)
@@ -211,7 +205,7 @@
 #define BOT_NO_LOS_TARGET_PENALTY 500.0f // score increase for targets not visible (behind walls)
 #define BOT_TARGET_CONGESTION_PENALTY 80.0f // score increase per other bot already on the target (spreads fire)
 
-// Close-quarters dynamic turn rate (Phase 3.11)
+// Close-quarters dynamic turn rate
 // Tighter tracking at close range improves hit accuracy in dogfights.
 #define BOT_CLOSERANGE_DIST 70.0f
 #define BOT_MIDRANGE_DIST 140.0f
@@ -224,7 +218,7 @@
 // Deployed as a missile evasion countermeasure — chaff + afterburner outmaneuvers homing missiles.
 #define BOT_COUNTERMEASURE_INTERVAL 5.0f // seconds between chaff deployments
 
-// Mine and gunboy deployment (Phase 3.22)
+// Mine and gunboy deployment
 // Bots dump mines near indoor portals while exploring, and place gunboys as sentries.
 #define BOT_MINE_DEPLOY_CHANCE 0.15f   // probability per 0.5s EXPLORE tick to dump mines near a portal
 #define BOT_MINE_RAPID_INTERVAL 0.3f   // seconds between mine drops during a dump burst
@@ -237,30 +231,30 @@
 // before it can divert/interrupt again. This allows the bot to collect the item and re-engage
 // without immediately being yanked out of COMBAT on the next tick.
 #define BOT_POWERUP_INTERRUPT_COOLDOWN 6.0f
-#define BOT_POWERUP_CHASE_TIMEOUT 8.0f       // seconds chasing same powerup before giving up (Phase 4.03)
-#define BOT_POWERUP_BLACKLIST_DURATION 60.0f // seconds that a timed-out powerup stays blacklisted (Phase 7.4)
+#define BOT_POWERUP_CHASE_TIMEOUT 8.0f       // seconds chasing same powerup before giving up
+#define BOT_POWERUP_BLACKLIST_DURATION 60.0f // seconds that a timed-out powerup stays blacklisted
 #define BOT_POWERUP_STICKY_MULT 1.5f         // the chase in hand keeps its LOS term and this margin (chase hysteresis)
 #define BOT_PICKUP_LOG_DIST 25.0f            // a chased item that vanishes within this range was collected (log only)
 // Objective items (flags, orbs) are never optional pickups: a failed approach earns a short back-off
 // so the pilot re-plans from where it stands, not a minute of ignoring the objective (0.9.14).
 #define BOT_OBJECTIVE_BLACKLIST_DURATION 5.0f
 #define BOT_UNSTICK_REVERSE_TIME 1.0f   // seconds of pure reverse thrust after a hard (net_disp<10) pin
-#define BOT_POWERUP_THRUST_RADIUS 50.0f // direct-thrust override distance for close visible powerups (Phase 4.06)
-#define BOT_POWERUP_STALE_CHASE 4.0f // seconds chasing without collecting before treating chase as stale (Phase 4.06)
+#define BOT_POWERUP_THRUST_RADIUS 50.0f // direct-thrust override distance for close visible powerups
+#define BOT_POWERUP_STALE_CHASE 4.0f    // seconds chasing without collecting before treating chase as stale
 #define BOT_GEARUP_BUDGET 30.0f      // seconds per life a default-laser bot may gear up wide before pressing its errand
 
-// Intra-room via-point steering (Phase 12) — go around free-standing interior obstacles
+// Intra-room via-point steering — go around free-standing interior obstacles
 // (glass covers, pillars, ledges) that the engine path-follower presses into (NAVIGATION.md §7).
 // The via-point is delivered as an AIG_GET_TO_POS sub-goal; the engine still does all steering.
 #define BOT_VIA_COMMIT_TIME                                                                                            \
   4.0f                            // seconds committed to a chosen via-point (side-commit — per-tick
-                                  // re-selection IS the net_disp 28-43 circling seen pre-Phase-12)
+                                  // re-selection makes the bot circle in place)
 #define BOT_VIA_ARRIVE_DIST 15.0f // via-point counts as reached within this distance
 #define BOT_VIA_SEALED_TICKS                                                                                           \
   4 // consecutive failed via searches on a same/adjacent-room powerup
     // (~2s at the 0.5s tick) before the sealed abandon
 
-// Phase 12.2 — via cycle cap, global troll memory (NAVIGATION.md §7)
+// Via cycle cap, global troll memory (NAVIGATION.md §7)
 #define BOT_VIA_CYCLE_CAP 3        // bounce arrivals in the same room before via is suspended there
 #define BOT_VIA_SUSPEND_TIME 12.0f // suspension length — lets timeout/dyn-bump/escape machinery act
 #define BOT_VIA_BOUNCE_DIST                                                                                            \
@@ -283,23 +277,23 @@
     // soft evidence at half weight, so 6 in-room give-ups level-wide retire a
     // magnet item the hard-pin fairness rule never touches (room-36 class)
 
-// Homing missile evasion (Phase 3.15)
+// Homing missile evasion
 // Scans Objects[] for OBJ_WEAPON with PF_HOMING tracking the bot's handle.
 // Triggers EVADE + chaff deployment + afterburner burst to outrun/dodge.
 #define BOT_MISSILE_SCAN_COOLDOWN 1.0f // seconds between homing missile scans (per bot)
 
-// Greedy powerup collection (Phase 3.15)
+// Greedy powerup collection
 // Bots in HUNT grab very close items without changing state; WEAK bots interrupt combat at wider range.
 #define BOT_HUNT_PICKUP_RADIUS 200.0f    // max dist to grab an item while hunting (wider corridor grab)
 #define BOT_WEAK_INTERRUPT_RADIUS 200.0f // WEAK bots break off combat for weapons within this range
 
-// Outdoor awareness scaling (Phase 3.15)
+// Outdoor awareness scaling
 // Open spaces need wider search/engagement ranges — indoor settings are the base.
 #define BOT_OUTDOOR_SEEK_MULTIPLIER 1.5f   // powerup seek radius multiplier outdoors
 #define BOT_OUTDOOR_TARGET_DIST_SCALE 0.7f // target scoring: 500u outdoors scores like 350u
 #define BOT_OUTDOOR_COMBAT_RANGE_MULT 1.5f // combat entry/exit range multiplier outdoors
 
-// Stuck-clear firing (Phase 3.11 fix)
+// Stuck-clear firing
 // When a bot is pinned by another player/bot or a destructible obstacle, it fires to clear the path.
 #define BOT_STUCK_FIGHT_TIMER 1.5f    // seconds stuck before firing to clear the blockage
 #define BOT_STUCK_ENEMY_RADIUS 50.0f  // proximity radius to detect a player/bot we're jammed against
@@ -310,12 +304,12 @@
                                     // wide firing window instead of the 10u sliver a 40u ray would leave
 #define BOT_STUCK_ABANDON_TIME 5.0f // seconds stuck before abandoning goal and switching to EXPLORE
 
-// Altitude constraint (Phase 3.20)
+// Altitude constraint
 // Prevents bots from flying out of the level space on outdoor maps.
 // OF_FORCE_CEILING_CHECK enables engine ceiling collision; these constants add a thrust soft cap.
 #define BOT_ALTITUDE_CEILING_MARGIN 50.0f // suppress upward thrust this far below Ceiling_height
 
-// Game mode detection (Phase 7.0) — cached at level start from Netgame.scriptname.
+// Game mode detection — cached at level start from Netgame.scriptname.
 // Keeps string compares off the hot path; FSM and objective code switch on this enum.
 enum BotGameMode {
   BGM_ANARCHY,
@@ -339,7 +333,7 @@ enum BotDifficulty {
   BOT_DIFF_COUNT = 5,
 };
 
-// Squad role assigned via chat commands (Phase 6.0 Stage 2).
+// Squad role assigned via chat commands.
 // Persists through death and level transitions until overridden.
 enum BotSquadRole {
   SQUAD_FREELANCE = 0, // autonomous FSM (default)
@@ -404,7 +398,7 @@ enum BotState {
   BOT_STATE_EVADE,   // Prolonged combat stall. Break off, regroup, then re-engage.
 };
 
-// §7 contention instrumentation (NAVIGATION.md §6.9, 2026-07-21): each value names one member of
+// Contention instrumentation ($nav contend): each value names one member of
 // the nav "committee" (the review's §3 table) that can seize the bot's travel goal or thrust for a
 // tick. Measurement only — no member here changes behavior; BotNavMemberWin() in bot.cpp just counts
 // who wins and how often the winner flips faster than a bot could act on it (the "committee" tell).
@@ -415,7 +409,7 @@ enum BotNavMember : uint8_t {
   NAV_MEMBER_NO_ROUTE,      // no finite route under our cost model — engine's wind-blind BOA takes over
   NAV_MEMBER_SEAM,          // $nav seam — engine steer-target detoured off our waypoint
   NAV_MEMBER_HOP_COMMIT,    // 0.9.7 hop-commit — same adjacent hop re-issued past the press trigger
-  NAV_MEMBER_VIA,           // Phase 12 via-point — interior obstacle go-around
+  NAV_MEMBER_VIA,           // via-point — interior obstacle go-around
   NAV_MEMBER_GRIDROUTE,     // $nav route — proactive in-room grid waypoint (complex rooms)
   NAV_MEMBER_OUTDOOR_ENTRY, // outdoor two-stage entrance approach/commit
   NAV_MEMBER_OUTDOOR_LEG,   // $nav troute — outdoor lattice segment follower
@@ -423,8 +417,8 @@ enum BotNavMember : uint8_t {
   NAV_MEMBER_STUCK_ESCAPE,  // stuck-recovery escape thrust (can flee backward) — BotApplyThrust
   NAV_MEMBER_ENGINE,        // raw goal handed to the engine (escort beeline / hold-station / outdoor
                             // track) — the engine's own routing, the review's §3 top-row counterpart.
-                            // Added 2026-07-22: the first co-op session showed these legs dominate
-                            // SP travel yet were uncounted, so ours-vs-engine flips were invisible.
+                            // Counted because these legs dominate SP travel: uncounted, the
+                            // ours-vs-engine flips are invisible.
   NAV_MEMBER_COUNT
 };
 #define BOT_NAV_CONTEND_WINDOW 3.0f // winner flip inside this many seconds = contention, not a clean handoff
@@ -450,7 +444,7 @@ struct bot_info {
   BotState state;           // current behavioral state
   int combat_goal_index;    // goal index for circle-strafe or flee goal, or -1
 
-  // Thrust-based movement (Phase 3.5)
+  // Thrust-based movement
   float ship_full_thrust;    // cached from ship physics template
   float ship_full_rotthrust; // cached from ship physics template
   float ship_mass;           // cached from ship physics template
@@ -460,29 +454,29 @@ struct bot_info {
   float juke_phase;          // oscillating strafe phase (radians)
   float stuck_timer;         // seconds at near-zero speed with nonzero thrust (wall escape)
 
-  // Afterburner burst management (Phase 3.7)
+  // Afterburner burst management
   // >0 = seconds remaining in current burst, <0 = cooldown remaining, 0 = ready for new burst
   float afterburner_burst_timer;
 
-  // EVADE state timers (Phase 3.8)
+  // EVADE state timers
   float combat_idle_timer;   // seconds spent in COMBAT state; triggers EVADE when > BOT_EVADE_COMBAT_TIMEOUT
-  float combat_no_los_timer; // seconds in COMBAT without LOS; drop to HUNT when > 3s (Phase 4.05)
+  float combat_no_los_timer; // seconds in COMBAT without LOS; drop to HUNT when > 3s
   float evade_timer;         // counts down from BOT_EVADE_DURATION while in EVADE state
 
-  // HUNT LOS timeout (Phase 3.24, progress-based Phase 3.26)
+  // HUNT LOS timeout (progress-based)
   float hunt_no_los_timer; // seconds in HUNT without line-of-sight; drop target when > threshold
   float hunt_last_dist;    // distance to target at last progress check; reset timer if closer
   float retarget_cooldown; // >0: suppress BotSelectTarget (after HUNT timeout, let bot explore)
   float hunt_enter_time;   // Gametime when bot entered HUNT state (hysteresis — prevent rapid HUNT→EXPLORE)
 
-  // Last-known target position (Phase 3.26) — guides EXPLORE toward doors/entrances after HUNT timeout
+  // Last-known target position — guides EXPLORE toward doors/entrances after HUNT timeout
   vector last_target_pos; // position of target when it was dropped (or zero if none)
   int last_target_room;   // roomnum of target when dropped; -1 = no last-known position
 
-  // Powerup seeking (Phase 3.8)
+  // Powerup seeking
   int powerup_goal_index; // goal index of AIG_GET_TO_OBJ powerup pursuit goal, or -1
 
-  // EXPLORE room roaming (Phase 3.9, overhauled Phase 4.0)
+  // EXPLORE room roaming
   int explore_dest_room;    // Rooms[] index the bot is currently navigating toward, -1 = none
   float explore_room_timer; // counts down; when <=0 bot picks a new destination room
 
@@ -504,7 +498,7 @@ struct bot_info {
   int failed_dest_room;      // destination demoted on unreachability evidence, or -1
   float failed_dest_expires; // Gametime after which it is eligible again
 
-  // Room-change progress tracking (Phase 4.0) — detects stuck earlier than speed-based detection
+  // Room-change progress tracking — detects stuck earlier than speed-based detection
   int last_progress_room;                    // roomnum at last progress check
   vector last_progress_pos;                  // position at last progress check (outdoor displacement metric)
   float room_progress_timer;                 // seconds since last room change (or outdoor displacement)
@@ -512,7 +506,7 @@ struct bot_info {
   int visited_room_idx;                      // write index into visited_rooms[]
   int room_progress_stuck_count;             // consecutive timeouts in same room; escalates to escape
 
-  // Target blacklist (Phase 3.28) — prevents re-selecting unreachable targets after HUNT timeout
+  // Target blacklist — prevents re-selecting unreachable targets after HUNT timeout
   int target_blacklist[MAX_NET_PLAYERS]; // player slots blacklisted as targets
   float target_blacklist_timer;          // countdown until blacklist expires
 
@@ -525,20 +519,20 @@ struct bot_info {
   // BotShouldInterruptForPowerup() and the HUNT divert check return false while > 0.
   float powerup_interrupt_cooldown;
 
-  // Homing missile evasion (Phase 3.15)
+  // Homing missile evasion
   // Counts down from BOT_MISSILE_SCAN_COOLDOWN; scan only when <= 0.
   float missile_evade_cooldown;
 
-  // Mine/gunboy deployment (Phase 3.22)
+  // Mine/gunboy deployment
   float mine_dump_timer;   // >0: rapid-dumping mines, counts down between drops
   int mine_dump_remaining; // mines left in current dump burst
   float gunboy_cooldown;   // cooldown for gunboy placement
 
-  // Powerup chase tracking (Phase 4.03) — detect when chasing an unreachable powerup
+  // Powerup chase tracking — detect when chasing an unreachable powerup
   int chasing_powerup_handle;  // handle of powerup being pursued, or OBJECT_HANDLE_NONE
   float chasing_powerup_timer; // seconds spent chasing current powerup without collecting it
   vector chase_start_pos;      // bot position when this chase began — strike discipline (0.9.6)
-  float chase_start_dist;      // bot-to-item distance when this chase began (progress at timeout, 2026-09-15)
+  float chase_start_dist;      // bot-to-item distance when this chase began (progress at timeout)
   float chase_last_dist;       // bot-to-item distance on the last chase tick (a vanished item this close = collected)
   int chase_last_id;           // Object_info id of the item last chased (its name after the object is gone)
 
@@ -571,16 +565,16 @@ struct bot_info {
   // here — this is a dumb trigger). Cleared with the active goal and on respawn.
   int mball_fire_handle;
   float mball_shot_log_t; // throttle for the shots-at-ball analyzer log line
-  // M2.5 finisher observability (2026-07-13 soak lesson: the old reissue-gated log line
-  // undercounted arms and the vauss-finish branch was fully silent — arming was unmeasurable).
+  // M2.5 finisher observability: a log line gated on goal reissue undercounts arms and never fires on
+  // the vauss-finish branch, so the log follows mode transitions instead.
   // 0 = off, 1 = slam run, 2 = vauss finish. Log-transition state only; recomputed every tick.
   uint8_t mball_finish_mode;
   float mball_finish_log_t;   // transition-log throttle (align jitters across the arm threshold)
   float mball_avoid_log_t;    // ball-avoid detour log throttle (contact-blunder discipline)
   float mball_junction_log_t; // junction fork-veto log throttle (M2.6; absolute Gametime — reinit sweep)
 
-  // Long-term powerup blacklist (Phase 7.4) — survives BotClearActiveGoal so the 12-second
-  // Plasmacannon loop is broken. Set when a powerup chase times out; checked in BotFindBestPowerup.
+  // Long-term powerup blacklist — survives BotClearActiveGoal, so a timed-out item is not re-picked at once
+  // (a 12-second chase-timeout loop). Set when a powerup chase times out; checked in BotFindBestPowerup.
   int blacklisted_powerup_handle;    // handle of recently-timed-out powerup; OBJECT_HANDLE_NONE = none
   float blacklisted_powerup_expires; // Gametime when blacklist expires (0 = not blacklisted)
 
@@ -609,7 +603,7 @@ struct bot_info {
   vector hop_commit_aim; // the push-through point issued (outcome telemetry)
   float hop_tight_r;     // a TIGHT committed hop this ship fits: the radius that found its crossing (0 = comfortable)
   int hop_tight_room;    // the room that commitment was made in; leaving it ends the commitment
-  // 0.9.14 outdoor pass, Phase 0 (PLAN.md 3.7): the entrance twin of the hop-commit observer. Set when an
+  // The entrance twin of the hop-commit observer. Set when an
   // outdoor bot commits THROUGH a terrain-facing door (the ENTRY stage); resolved in BotDoFrame when its
   // roomnum flips indoors (CROSSED) or the timeout passes still outside (NOT-CROSSED). Log-only.
   int entry_commit_room;   // door room committed to; < 0 = no pending entry commit
@@ -628,7 +622,7 @@ struct bot_info {
   vector entry_commit_pos;   // bot position at commit
   vector entry_commit_aim;   // the push-through point issued
 
-  // Intra-room via-point steering (Phase 12) — committed go-around waypoint state
+  // Intra-room via-point steering — committed go-around waypoint state
   vector via_point;        // committed go-around waypoint (valid while Gametime < via_expires)
   float via_expires;       // Gametime when the via commitment lapses; 0 = no active via
   int via_seal_count;      // consecutive no-via-found verdicts on the chased same/adjacent-room powerup
@@ -645,7 +639,7 @@ struct bot_info {
   float via_suspend_until;    // Gametime until via search is suspended in via_suspend_room
   int via_suspend_room;       // room the suspension applies to
 
-  // Committed multi-hop in-room chain (Step 3, 2026-08-30 committee collapse): the ordered skeleton
+  // Committed multi-hop in-room chain: the ordered skeleton
   // crossing THROUGH a buried room, built once by BotSkelBuildChain and flown hop-by-hop by advancing
   // via_chain_cursor on each arrival — so a bot commits to LEAVING the room (one mind) instead of
   // re-deriving a single hop per arrival (the abend2 ring orbit). Valid only while roomnum ==
@@ -657,15 +651,15 @@ struct bot_info {
   int via_chain_room;              // roomnum the chain is valid in (-1 = none)
   int via_chain_target_room;       // next-hop room the chain exits toward (clear on change)
 
-  // §7 contention instrumentation (NAVIGATION.md §6.9, 2026-07-21) — measurement only, no
+  // Contention instrumentation ($nav contend) — measurement only, no
   // behavior change. Tracks which nav-committee member (BotNavMember) last won this bot's routed
   // goal/thrust, and counts how often the winner flips to a DIFFERENT member before the previous
   // one held the wheel for BOT_NAV_CONTEND_WINDOW seconds. See BotNavMemberWin() in bot.cpp.
-  // UNITS (fixed 2026-08-04, NAVIGATION.md §6.9a): counts are EPISODES — one per
+  // UNITS: counts are EPISODES — one per
   // uninterrupted streak of a member holding the wheel — NOT per call. The call sites fire at wildly
-  // different rates (engine/bnodesp per leg issue, via per 0.5s tick, stuck-escape per FRAME), so the
-  // old per-call counter overstated via and stuck-escape against the engine by ~an order of magnitude
-  // and made members non-comparable. Duration lives in nav_member_held[] instead.
+  // different rates (engine/bnodesp per leg issue, via per 0.5s tick, stuck-escape per FRAME), so a
+  // per-call count overstates via and stuck-escape against the engine by ~an order of magnitude
+  // and makes members non-comparable. Duration lives in nav_member_held[] instead.
   BotNavMember nav_last_member;                // member that won most recently (NONE = no tick yet)
   float nav_last_member_time;                  // Gametime the current winning streak started
   uint32_t nav_member_count[NAV_MEMBER_COUNT]; // EPISODES this level, by BotNavMember (see units note)
@@ -673,13 +667,13 @@ struct bot_info {
   float nav_member_last_win[NAV_MEMBER_COUNT]; // Gametime of that member's most recent win
   uint32_t nav_contention_count;               // times the winner flipped within the churn window
 
-  // Difficulty system (Phase 5.2)
+  // Difficulty system
   BotDifficulty difficulty; // this bot's difficulty level
   float fire_delay_timer;   // counts down after target acquired; fires when <= 0
   int fire_delay_target;    // handle of target the delay was started for
   float aim_wander_phase;   // smooth sinusoidal aim offset phase (like juke_phase)
 
-  // Squad orders (Phase 6.0 Stage 2) — persist through death; cleared at a level change
+  // Squad orders — persist through death; cleared at a level change
   BotSquadRole squad_role; // current squad order
   int squad_target_slot;   // FOLLOW/COVER: the player escorted; ATTACK from !hunt: the player hunted; else -1
   bool coop_auto_escort;   // co-op: FOLLOW was self-assigned (the default wing), not a chat order;
@@ -702,14 +696,14 @@ struct bot_info {
   vector order_progress_pos; // position at the last progress mark
   float order_report_time;   // Gametime of last BLOCKED report (throttle)
 
-  // Objective-mode lean (Phase 6.0 Stage 3) — assigned at level start, affects FREELANCE nav
+  // Objective-mode lean — assigned at level start, affects FREELANCE nav
   BotObjectiveLean objective_lean;
 };
 
 extern bot_info Bots[MAX_BOTS];
 extern int Num_bots;
 extern bool Bot_debug_movement;               // When true, log bot+player velocity every ~0.5s
-extern bool Bot_grate_clear_enabled;          // $nav grate — proactive destroyable-obstacle clearing (0.9.6 Stage 2)
+extern bool Bot_grate_clear_enabled;          // $nav grate — proactive destroyable-obstacle clearing
 extern bool Bot_dedicated_runner_enabled;     // $nav runner — dedicated CTF flag-runner role (0.9.8)
 extern bool Bot_soft_strike_enabled;          // $nav strike — same-room soft chase-aborts count toward troll
                                               // retirement at BOT_TROLL_SOFT_PER_STRIKE weight (0.9.7 Fix A)
@@ -773,9 +767,6 @@ bool BotCanBreakGlass(int bot_index);
 // Per-frame update: keep-alive, death detection, respawn. Called from MultiDoServerFrame().
 void BotDoFrame();
 
-// Initialize bot subsystem (call at server start).
-void BotInitAll();
-
 // Shutdown bot subsystem (call at server shutdown / level end).
 void BotShutdownAll();
 
@@ -783,7 +774,7 @@ void BotShutdownAll();
 // Also accepts full names ("Pyro-GL", "Magnum-AHT", "Black Pyro"). Returns -1 if not found.
 int BotResolveShipAlias(const char *alias);
 
-// --- Bot roster config (Phase 5.1) ---
+// --- Bot roster config ---
 //
 // Bot roster is configured via an external file referenced by "BotConfig=<file>" in
 // dedicated.cfg. The BotConfig CVar is handled by the standard D3 CVar system — no
@@ -833,8 +824,8 @@ void BotSetDifficulty(int bot_index, BotDifficulty diff);
 const char *BotSquadRoleName(BotSquadRole r);
 
 // Returns the display name for an objective lean — the ONLY way lean values may be printed.
-// The $botstat handler kept a private 3-entry name table after BOT_LEAN_RUNNER/FLEX landed and
-// indexed it with lean 3/4: garbage-pointer %s, SIGSEGV, end of the 2026-07-18 overnight soak.
+// A private name table goes stale when a lean is added, and indexing it past its end hands %s a
+// garbage pointer (a $botstat crash).
 const char *BotLeanName(int lean);
 
 // Diagnostic: write a one-line navigation summary for $botstat into buf. Exposes why a bot
@@ -880,7 +871,7 @@ void BotForceEscortMode(int bot_index);
 void BotSetDefaultDifficulty(BotDifficulty diff);
 BotDifficulty BotGetDefaultDifficulty();
 
-// --- Bot UI roster (Phase 5.4) ---
+// --- Bot UI roster ---
 // Client-hosted games populate this from the Bot Settings screen.
 // Dedicated servers use BotLoadRosterFile() instead.
 
@@ -905,9 +896,6 @@ extern BotUISettings Bot_ui_settings;
 // The built-in callsigns (Reaper, Phantom, ...), BOT_UI_MAX_BOTS of them: the Bot Settings menu's defaults
 // and the population manager's names once the bots.cfg roster is used up.
 const char *BotDefaultName(int index);
-
-// Initialize Bot_ui_settings with sensible defaults.
-void BotUISettingsInit();
 
 // An auto-population target the menu and the .mps loader accept on a server of max_players seats: at least the
 // host and one bot, at most every seat but those kept free for humans. 0 (off) stays 0.

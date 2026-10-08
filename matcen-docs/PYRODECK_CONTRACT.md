@@ -72,8 +72,9 @@ A Tier 1 format changes only with a CHANGELOG entry and a matching Pyrodeck chan
 
 All lines below are copied from the code. `%s` and `%d` are the C format fields.
 
-**`$addbot <name> [ship] [difficulty] [team]`** (dedicated_server.cpp:856-907). Arguments are positional:
-difficulty is read only when a ship was given, team only when a difficulty was given.
+**`$addbot [name] [ship] [difficulty] [team]`** (dedicated_server.cpp:852-908). Arguments are positional:
+difficulty is read only when a ship was given, team only when a difficulty was given. With no name the bot takes the
+first built-in callsign no player flies under (`BotPopulationFreeDefaultName`); the reply lines are the same.
 - Ship: `pyro`, `phoenix`, `magnum`, `blackpyro`, or a full ship name (bot.cpp:9651-9666). An unknown ship prints
   `Unknown ship '%s', using default. Valid: pyro, phoenix, magnum, blackpyro` first (:882) and uses Pyro-GL. A ship
   the server does not allow prints `BOT: ship %s is not allowed on this server; '%s' flies %s` before the success line
@@ -168,7 +169,7 @@ name up to ` (scriptname=`.
 flags and carriers, orbs, Hoard counts, Monsterball roles, Entropy labs, the co-op goal, per-bot roles and leans.
 The v2.6 spec said most detail went to the server log; that is no longer true.
 
-**`$bothelp`** (dedicated_server.cpp:1170-1207) prints `Bot commands:`, the `$addbot` usage with three indented
+**`$bothelp`** (dedicated_server.cpp:1204-1244) prints `Bot commands:`, the `$addbot` usage with three indented
 argument lines, one line per everyday command, then `Diagnostics:` and one line per diagnostic command (`$botstat`,
 `$botmov` and every `$nav` verb), 23 lines in all. Each command line is `  %-36s %s` (usage, then description). The
 2026-10-07 rewrite changed every line of it: show it as text, never parse it.

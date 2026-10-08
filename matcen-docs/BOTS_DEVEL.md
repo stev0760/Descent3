@@ -10,6 +10,46 @@ including the CTF, Hyper and Hoard write-ups) is preserved verbatim in
 `matcen-docs/archive/BOTS_DEVEL-phases-0_to_0.9.12.md`. The engine-files audit (single-player, Robo-Anarchy and
 co-op impact) now lives in `matcen-docs/BOT_DEV_REFERENCE.md`.
 
+### 2026-10-08: the bounded code-quality pass, 0.10.3 (COL28)
+
+The pass the operator bounded on 2026-10-07: one commit, no behaviour change, comments only in the navigation code.
+
+**Removed.** `BotInitAll()` (bot.h declaration, 90-line bot.cpp body), never called; it was the only caller of
+`BotUISettingsInit()`, which went with it, since `Bot_ui_settings` has been initialised statically from
+`BotUIDefaultSettings()` since UX12. `BotTrollTableReset` and `BotCacheCountermeasureIDs` keep their level-start
+callers. The multi_ui.cpp comment saying `BotInitAll` runs after level load had already gone with UX12.
+
+**Rewritten, comments only.** About 330 comment sites in bot.cpp (~120), bot.h (65), bot_objective.cpp/.h (23),
+bot_steering.cpp/.h (~73), bot_roadmap.cpp/.h (~47), dedicated_server.cpp, multi_ui.cpp and
+physics/findintersection.cpp. Dates, "Phase N"/"Stage N" step labels, version tags used as history, soak anecdotes,
+"tried and reverted" stories and SHAs used as names ("the d6efc603 lesson" is now "one aim point per room") became
+present-tense statements of what the code does and why; the tried-and-reverted warnings keep the warning and point to
+NAVIGATION.md §7.5. A measured number stays where it justifies a constant or a rule, a map name where it names the
+geometry a rule is for. "Stage 1/Stage 2" stays as the name of the two stages of the outdoor entrance approach.
+Notable: the RoadmapLOS back-face comment, the composed-route drive (18 lines of revert history to 8 of design), the
+orphan-path and order-arrival comments, `BOT_TROUTE_ADOPT_FACTOR`'s tuning history, and the stale
+`BotGetNavGoalRoom` header (it named flow-field steering). COL26: the corner-bridge note in bot_roadmap.cpp no longer
+says the sweep ignores back faces; `RoadmapLOS` sweeps with `FQ_BACKFACE`. The `fvi_RoomCheckDir` comment lost its
+date. Comments naming toggles that no longer exist (`$pseudobnodes`, `$gridroute`, `$navbridge`/`softhop`,
+`$nav entry`, `$nav seam`) were fixed where the sweep touched them.
+
+**User-visible text.** `$bothelp`: `$addbot <name> ...  Add a bot` is `$addbot [name] [ship] [difficulty] [team]  Add
+a bot (no name: a free built-in one)`, since a bare `$addbot` has picked a name since UX11; the line count is
+unchanged. The `$nav` toggle descriptions lost their internal references (`0.9.3 substrate`, `isengard corkscrew
+Fork-B fix`, `piece 1, NAVIGATION 3.7`, `PLAN-coop-nav-rethink.md`, `E2`/`E3`, `M2`/`M3`, `v2`, `stale-glass fix`).
+`$nav probe`, `$nav roomfaces` and `$nav sweep` print `Usage:` like every other usage line. No LOG format string and
+no `$` output shape changed; no `$nav` toggle was added, renamed or removed. The `!` replies, `!help`, the F10 and F6
+labels and the Bot Settings labels already read as product text and are unchanged. PYRODECK_CONTRACT and
+BOT_MANAGEMENT show `$addbot [name]`.
+
+**Checks.** A comment-stripping token comparison against HEAD: bot_steering.cpp/.h, bot_roadmap.cpp/.h,
+bot_objective.cpp/.h, multi_ui.cpp and findintersection.cpp are identical; bot.cpp and bot.h are identical apart
+from the dead code. `git clang-format` against HEAD on the changed lines, except bot_objective.h: its hand-aligned
+trailing comments on the Entropy and Monsterball `#define`s were never clang-format-stable (clang-format breaks HEAD's
+own version of those macros onto continuation lines), so they stay hand-formatted. Debug build clean of new warnings;
+ctest 34/34. No soak: the navigation files changed in comments and whitespace only. What the pass found and left is
+the "found for later" list in PLAN.md's COL28 row.
+
 ### 2026-10-08: formation flying v1, `!formup`, 0.10.2 (CMD2)
 
 The last item of the `!` finish line (Q2b, Q9). `!formup` and `!form up` are their own verb (`BCV_FORMUP`, one-word

@@ -228,7 +228,7 @@ static void BotPollCTF() {
   for (int t = 0; t < BOT_MAX_TEAMS; t++)
     Prev_flag_state[t] = Bot_objective.flag_state[t];
 
-  // Phase 1: find free flag powerups in the world
+  // First, find free flag powerups in the world
   for (int t = 0; t < BOT_MAX_TEAMS; t++) {
     Bot_objective.flag_objnum[t] = -1;
     Bot_objective.flag_room[t] = -1;
@@ -249,7 +249,7 @@ static void BotPollCTF() {
     }
   }
 
-  // Phase 2: determine state for each team's flag
+  // Then determine the state of each team's flag
   for (int t = 0; t < BOT_MAX_TEAMS; t++) {
     if (Obj_flag_id[t] < 0) {
       Bot_objective.flag_state[t] = FLAG_UNKNOWN;
@@ -779,23 +779,19 @@ bool Bot_mball_striker_enabled = true;
 // $nav mroles — M3 role split. OFF (with mball ON) = every bot strikes. See §4.3.
 bool Bot_mball_roles_enabled = true;
 
-// $nav mavoid — contact-blunder discipline (2026-07-13): role-nav legs detour around a ball
-// they would otherwise bump toward the enemy goal. OFF = pre-fix straight legs (the A/B
-// baseline for the 21-contact-own-goals soak).
+// $nav mavoid — contact-blunder discipline: role-nav legs detour around a ball they would
+// otherwise bump toward the enemy goal. OFF = straight legs (the A/B baseline).
 bool Bot_mball_avoid_enabled = true;
 
 // $nav mjunction — M2.6 junction steering: in a fork room (3+ passable portals) the striker
-// holds fire until the induced ball line wins the fork. VALIDATED-NEGATIVE 2026-07-16 (same-day
-// A/B, frenzy 6+6 rnds): goals fell on ALL maps under the veto — PowerHouse 3.7→3.0, Monster
-// Arena 3.5→2.0, and Veins (the map it was built for) 1.0→0.0 — because goal-adjacent rooms ARE
-// the multi-portal hubs, so the veto suppresses exactly the finishing-band pushes (410 of 2892
-// holds were live-fire candidates). The 07-15 finisher envelope had already lifted Veins ~0→1.0
-// on its own. Default OFF; kept as an experiment lever (the gridall disposition).
+// holds fire until the induced ball line wins the fork. Default OFF: measured A/B, goals fall on
+// every map under the veto, Veins (the map it was built for) included, because goal-adjacent rooms
+// ARE the multi-portal hubs, so the veto suppresses exactly the finishing-band pushes. Kept as an
+// experiment lever.
 bool Bot_mball_junction_enabled = false;
 
-// $nav mtenure <seconds> — the role commitment period, runtime-tunable so the 10/15/20s
-// thrash A/B (2026-07-13 clean soak: 356-773 re-assigns/round, pairwise station swaps at
-// every 10s expiry) runs as soak phases instead of rebuilds. Default = the M3 constant.
+// $nav mtenure <seconds> — the role commitment period, runtime-tunable so a tenure A/B (role
+// thrash against commitment) runs as soak phases instead of rebuilds. Default = the M3 constant.
 float Bot_mball_role_tenure = BOT_MBALL_ROLE_TENURE;
 
 // M3 role assignment (MONSTERBALL_MODE.md §4.3): per team, utility-ranked by path cost to the
@@ -923,7 +919,7 @@ static void BotAssignMonsterballRoles() {
 // (1=lab 2=energy 3=repair; 0=any), by path cost from the bot.
 //
 // Cost model: the wind/glass/penalty-aware routed cost (BotComputeRouteCost), not the BOA-chain
-// estimate — on a wind-tunnel map (RAGE Entropy, 2026-07-18 operator report) the blind estimate
+// estimate — on a wind-tunnel map (RAGE Entropy) the blind estimate
 // prices a route through a one-way tunnel's exhaust as cheap, the router then correctly refuses
 // it, and BotSetRoutedGoal's no-route fallback hands the engine's wind-blind path straight into
 // the upwind mouth: the bot visibly fights the tunnel forever. Candidate counts are tiny (a
@@ -992,11 +988,10 @@ static int BotGetObjectiveRoom_Entropy(int bot_index) {
   // Loaded bot (>= 5): the carrier analog — invade, or repair first. Shield policy is an
   // emergent hysteresis keyed on the live hold flag (constants in bot_objective.h): an
   // ESTABLISHED hold runs down to the hard floor, but anyone else — approaching OR standing
-  // un-held in the room — needs REENGAGE (= floor 25 + 3s hold cost 15 + margin). The v3
-  // smoke's doomed-hold trace (2026-07-14: hold START at 26 shields, room damage crossed the
-  // floor in 0.5s, target flipped to repair, ABORT) came from keying this on "in an enemy
-  // special room" instead: arriving wounded granted the run-to-floor concession before any
-  // clock time was banked.
+  // un-held in the room — needs REENGAGE (= floor 25 + 3s hold cost 15 + margin). Keyed on "in an
+  // enemy special room" instead, arriving wounded grants the run-to-floor concession before any clock
+  // time is banked: a hold starts at 26 shields, room damage crosses the floor in 0.5s, the target
+  // flips to repair, and the hold aborts.
   if (Bot_entropy_takeover_enabled && Bot_objective.entropy_virus_count[slot] >= BOT_ENTROPY_TAKEOVER_LOAD) {
     object *obj = &Objects[Players[slot].objnum];
     int cur_room = OBJECT_OUTSIDE(obj) ? -1 : (int)obj->roomnum;
@@ -1126,7 +1121,7 @@ static bool BotResolveCoopItem(char type, int handle, int *out_room, vector *out
 // Engage/release the automatic escort. When no routable campaign goal exists (locked door,
 // non-location goal, all done), FREELANCE bots fall in behind the nearest human; when a goal
 // (re)appears, only bots WE auto-escorted release — chat-ordered follows are untouched.
-// Co-op default posture (operator ruling 2026-07-19): bots are COMPANIONS, not players — no
+// Co-op default posture: bots are COMPANIONS, not players — no
 // autonomous objective pursuit (that steals the player's game). Every unordered bot escorts the
 // nearest human by default; the objective feeds announcements and the !goal order only.
 // !freelance opts a bot out (coop_no_escort) until any other order consumes the opt-out.
@@ -1180,7 +1175,7 @@ static void BotCoopUpdateEscort() {
 // Consecutive unroutable polls before an established goal is dropped for escort. The routability
 // gate is referenced from a moving bot's room, so a single-poll "unroutable" is often transient
 // (stuck-escape hop, outdoor moment) — flapping goal<->escort every 0.5s churns roles and spams
-// announcements (observed on the first co-op smoke, 2026-07-19).
+// announcements.
 #define BOT_COOP_UNROUTABLE_POLLS 4
 // Min seconds before re-announcing the SAME (goal,item) after an escort interlude.
 #define BOT_COOP_REANNOUNCE_INTERVAL 30.0f
@@ -1321,7 +1316,7 @@ static int BotGetObjectiveRoom_Coop(int bot_index) {
     return -1;
   if (Bots[bot_index].order_anchor_type == ORDER_ANCHOR_POSITION)
     return -1;
-  // Operator ruling 2026-07-19: co-op bots never pursue objectives autonomously — companions,
+  // Co-op bots never pursue objectives autonomously — companions,
   // not players. The resolved goal (coop_goal_room/pos) feeds announcements and the !goal
   // order anchor only. Kept as a function so a future opt-in ("bot-run co-op") is one line.
   return -1;
@@ -1333,11 +1328,10 @@ static int BotGetObjectiveRoom_Coop(int bot_index) {
 
 void BotPollObjectiveState() {
   BotPerfScope perf(BPERF_OBJ_POLL);
-  // First-round leans (2026-09-15): BotAdd assigns leans before the game mode is known, so every bot started a
+  // First-round leans: BotAdd assigns leans before the game mode is known, so without this every bot starts a
   // session's FIRST level as BALANCED — no runner, no attacker exemption from hunting (ctf_pushing), the chooser's
-  // ATTACK default for all — and only got real leans at the next level (an accidental re-assign on the level-start
-  // flag transition). Measured on Town of Bree: the runner hunted from EXPLORE 20 times at median 275 u in round 1,
-  // once at 26 u in rounds 2-3. Assign as soon as the mode is known and a freelance team bot is still BALANCED.
+  // ATTACK default for all — and only gets real leans at the next level (from a re-assign on the level-start
+  // flag transition). Assign as soon as the mode is known and a freelance team bot is still BALANCED.
   {
     const BotGameMode mode = BotGetGameMode();
     if (mode == BGM_CTF || mode == BGM_ENTROPY) {
@@ -1573,9 +1567,8 @@ static int BotGetObjectiveRoom_CTF(int bot_index) {
       continue;
     if (Bot_objective.flag_carrier_slot[t] == slot) {
       // Log on DESTINATION CHANGE only. This runs on every BotGetObjectiveRoom call — for a
-      // carrier that's every nav tick, and the unconditional print was 1.53M of the 2026-07-18
-      // overnight log's lines (~90% of the whole file). The transition is the information; the
-      // repeats were pure footprint.
+      // carrier that's every nav tick, and an unconditional print fills ~90% of an overnight log.
+      // The transition is the information; the repeats are pure footprint.
       static int Carrier_log_dest[MAX_BOTS]; // stores dest+1; 0 = nothing logged yet (room 0 is valid)
       int dest = Bot_objective.goal_room[my_team];
       bool divert = Bot_objective.flag_state[my_team] == FLAG_DROPPED && Bot_objective.flag_objnum[my_team] >= 0 &&
@@ -1625,10 +1618,9 @@ static int BotGetObjectiveRoom_CTF(int bot_index) {
         return fumble_room;
     }
     // If our flag is carried, let target selection handle the carrier — no nav override — EXCEPT the
-    // dedicated RUNNER, which keeps its attack errand (2026-09-15 role fix, operator intent: "someone keeps
-    // the attack errand while the home flag is out; defenders hunt the carrier"). Before this every
-    // freelance bot dropped offence the moment its flag was taken: on Town of Bree Blue's early grab put all
-    // four Red bots on defence for the rest of the round, 20 rounds running, Red 0 grabs.
+    // dedicated RUNNER, which keeps its attack errand: someone keeps attacking while the home flag is out,
+    // and the defenders hunt the carrier. Without the exemption every freelance bot drops offence the moment
+    // its flag is taken, and an early grab puts the whole team on defence for the rest of the round.
     if (Bot_objective.flag_state[my_team] == FLAG_CARRIED && Bots[bot_index].objective_lean != BOT_LEAN_RUNNER)
       return -1;
     effective = (Bots[bot_index].objective_lean == BOT_LEAN_DEFEND) ? SQUAD_DEFEND : SQUAD_ATTACK;
@@ -1659,14 +1651,13 @@ static int BotGetObjectiveRoom_CTF(int bot_index) {
         far_dist = room_dist;
         far_room = room;
       }
-      // Priced by OUR router (2026-09-18), not the engine's BOA chain. BOA believes in every portal it
-      // calls passable, including a flag room's windows onto its yard shell, so from anywhere inside the
-      // enemy bunker on Sigma Base its shortest path to the flag ran outdoors and through a window: the
-      // chain hit a terrain index, read 1e30, and no attack errand was ever issued indoors — 67 bots
-      // arrived in the enemy bunker by explore in one 4-round soak, 1 attack errand, 1 grab. Our router
+      // Priced by OUR router, not the engine's BOA chain. BOA believes in every portal it calls passable,
+      // including a flag room's windows onto its yard shell, so from inside an enemy bunker (Sigma Base) its
+      // shortest path to the flag can run outdoors and through a window: the chain hits a terrain index,
+      // reads 1e30, and no attack errand is ever issued indoors. Our router
       // excludes what the hull cannot fly and prices the interior route the bot will actually take; where
       // no interior route exists (a bot in its own bunker, any bedlam structure) it still reads 1e30 and
-      // the outdoor distance pricing takes over once the bot is outside, as before.
+      // the outdoor distance pricing takes over once the bot is outside.
       float cost = (bot_room >= 0) ? BotComputeRouteCost(bot_room, room)
                                    : vm_VectorDistanceQuick(&obj->pos, &Rooms[room].path_pnt);
       if (cost < best_cost) {
@@ -1674,17 +1665,14 @@ static int BotGetObjectiveRoom_CTF(int bot_index) {
         best_room = room;
       }
     }
-    // NO INTERIOR ROUTE IS NOT "NO ERRAND" (2026-09-20, the operator's Sigma Base flight). An attacker inside its own
-    // bunker read 1e30 for the only enemy flag there is — the bunkers join over terrain — and got no objective at
-    // all: it roamed the bunker on explore errands until one happened to carry it outdoors, where the distance
-    // pricing above finally gave it the flag. In ten minutes: 105 explore errands against 19 objective ones, the
-    // runner's first attack errand 2 min 9 s into the round, two of the five attackers never issued one, and from the
-    // cockpit "lost... flying around aimlessly in the bunker". The routed goal already knows what to do with a goal
-    // that has no interior route: BotTrouteRedirect plans exit door -> region lattice -> entry door, and since the
-    // 2026-09-19 outdoor pass those plans execute. So rank by our router where a route exists, and only among rooms
-    // no interior route reaches fall back to the distance pricing the outdoor branch uses. (An earlier, broader
-    // version cost captures on the bedlam maps before terrain plans executed; this one fires only when no flag room
-    // is reachable indoors, and its bedlam regression pair read flat — BOTS_DEVEL.md 2026-09-20.)
+    // NO INTERIOR ROUTE IS NOT "NO ERRAND". An attacker inside its own bunker reads 1e30 for an enemy flag that
+    // only terrain reaches (Sigma Base's bunkers join over terrain), and would get no objective at all: it would
+    // roam the bunker on explore errands until one happened to carry it outdoors, where the distance pricing above
+    // finally gives it the flag. The routed goal already knows what to do with a goal
+    // that has no interior route: BotTrouteRedirect plans exit door -> region lattice -> entry door, and
+    // those plans execute. So rank by our router where a route exists, and only among rooms
+    // no interior route reaches fall back to the distance pricing the outdoor branch uses. This fires only when no
+    // flag room is reachable indoors; why it is that narrow is in BOTS_DEVEL.md (2026-09-20).
     if (best_room < 0 && far_room >= 0 && bot_room >= 0) {
       best_room = far_room;
       best_cost = far_dist;
@@ -1697,8 +1685,8 @@ static int BotGetObjectiveRoom_CTF(int bot_index) {
                          Bots[bot_index].callsign, bot_room, best_room, best_cost);
       }
     }
-    // Role-fix observer (2026-09-15): what the attack branch answers while our flag is out. The Bree
-    // runner kept issuing explore errands inside carried windows and the log could not say why.
+    // Role observer: what the attack branch answers while our flag is out, so the log can say why a runner
+    // issues explore errands while the home flag is carried.
     if (Bot_objective.flag_state[my_team] != FLAG_AT_HOME) {
       static float Attack_log_t[MAX_BOTS];
       static int Attack_log_room[MAX_BOTS];

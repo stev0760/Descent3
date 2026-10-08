@@ -63,18 +63,16 @@
 // instead of starting a fresh approach; an in-progress hold runs down to the hard floor.
 #define BOT_ENTROPY_HOLD_DEPTH 24.0f // invade nav point pushed this far off the entry portal INTO the room:
                                      // a park on the portal plane flaps roomnum between the two rooms
-                                     // (2026-07-13 soak: 32/32 holds churned <=1s, 0 takeovers in 12 rounds).
+                                     // and every hold breaks within a second.
                                      // Must comfortably exceed the engine goal-arrive radius (~10u,
                                      // AIGoal circle_distance) or the ship stops on the near side of the
-                                     // arrive sphere ~= back on the plane (2026-07-14 re-soak at 12u:
-                                     // 24/24 holds still flapped — the seam-push lesson, 25u > arrive)
+                                     // arrive sphere ~= back on the plane (at 12u the holds still flap)
 #define BOT_ENTROPY_HOLD_MIN_DEPTH 8.0f // hold START gate: ship must be this deep past the nearest portal
-                                        // plane (> hull 6.68) before movement goals are cleared — the
-                                        // 2026-07-14 re-soak root cause was starting the hold (and killing
-                                        // the goal) the instant roomnum flipped, i.e. AT the plane, so the
-                                        // 12u-inward goal was never flown. Abort keeps plain roomnum
+                                        // plane (> hull 6.68) before movement goals are cleared: a hold
+                                        // started (and its goal killed) the instant roomnum flips starts
+                                        // AT the plane, so the inward goal is never flown. Abort keeps plain roomnum
                                         // (leave-room) semantics — no flap-out at this threshold
-#define BOT_ENTROPY_HOLD_MAX_SPEED 5.0f // hold START gate #2 (v2 evening soak): a bot TRANSITING an enemy
+#define BOT_ENTROPY_HOLD_MAX_SPEED 5.0f // hold START gate #2: a bot TRANSITING an enemy
                                         // room trips depth alone — target re-picks to the room it's flying
                                         // through, hold starts at full speed, goal-clear lets momentum coast
                                         // it out the far side within 1s (START rm14 -> ABORT rm12). Require
@@ -133,8 +131,8 @@
 #define BOT_MBALL_SLAM_ALIGN 0.5f    // rough behind-the-ball gate to START a slam run (fvec converges
                                      // en route — the AB facing gate holds the burn until nose-on)
 #define BOT_MBALL_SLAM_THROUGH 30.0f // aim point distance THROUGH the ball along the push line
-// M2.6 junction steering (operator-directed 2026-07-16: "make bots steer the ball through
-// junctions — Veins is vanilla D3 and Monsterball must generally work"). In a fork room a
+// M2.6 junction steering: bots steer the ball through junctions, since Monsterball must work on
+// vanilla maps such as Veins. In a fork room a
 // merely align-gated shot can still be BETTER aligned with a wrong portal than the on-route
 // one — one bad nudge sends the ball down a whole wrong tube (Veins: six 3-portal junctions,
 // loop topology lets it circulate forever; soakdump-veins.json). The veto below refuses the
@@ -162,8 +160,8 @@
                                         // only by the striker's death. RoboCup commitment pattern.
 #define BOT_MBALL_AVOID_MARGIN 8.0f // contact-blunder discipline: extra clearance (beyond ball+ship
                                     // radii) when detouring around a ball a straight nav leg would
-                                    // bump toward THEIR goal (2026-07-13 soak: all 21 own-goals were
-                                    // body bumps — 10 keeper station legs, 10 striker approach legs)
+                                    // bump toward THEIR goal (own-goals come from body bumps on keeper
+                                    // station legs and striker approach legs)
 #define BOT_MBALL_SUPPORT_STANDOFF 60.0f // supporter's distance from the ball along the push line
 #define BOT_MBALL_TB_NEAR_BALL 150.0f    // "enemy striker" proxy: enemy within this of the ball
 #define BOT_MBALL_STRIKER_BIAS -250.0f   // target bias: prefer killing the enemy striker (turnover)
@@ -268,12 +266,12 @@ void BotPrintObjectiveState();
 // Returns a room index the bot should navigate toward, or -1 if no objective applies.
 // Called from BotDoExploreRoaming() to short-circuit random room selection.
 int BotGetObjectiveRoom(int bot_index);
-// CTF flag recovery (2026-09-15): the free flag this bot should TOUCH right now — its own dropped flag (touching
+// CTF flag recovery: the free flag this bot should TOUCH right now — its own dropped flag (touching
 // returns it) or a dropped enemy flag it may grab — as an OBJECT with a position and the flag's roomnum, which
 // may be a terrain cell (ROOMNUM_OUTSIDE) when the flag lies outdoors. -1 when there is nothing to touch.
-// BotGetObjectiveRoom cannot express an outdoor flag (a terrain cell is not a room), and its room answer sent
-// bots to a room's centre, never to the flag: on Town of Bree 11 of 19 flag episodes ended as silent 120 s
-// returns with nobody touching the drop. The objective consumer asks this first.
+// BotGetObjectiveRoom cannot express an outdoor flag (a terrain cell is not a room), and its room answer sends
+// bots to a room's centre, never to the flag, so a drop can sit out its 120 s return with nobody touching it.
+// The objective consumer asks this first.
 int BotGetObjectiveItem(int bot_index, vector *pos_out, int *roomnum_out);
 
 // Target selection bias for objective-relevant enemies.
