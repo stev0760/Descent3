@@ -196,9 +196,9 @@ D3Server3-parity branches `parity/{sup,plr,pro,ops}` (supervisor, players/bans/r
 mail/priority/updates), all unmerged: `PARITY_MERGE_PLAN.md` in the Pyrodeck checkout is the merge brief (→ 0.5.0).
 
 **Next waves, in order (the roadmap a fresh session should follow):**
-1. Operator: push `main` + branch + tags (done 2026-10-08); `release.yml` dry run (REL2's first run); cockpit checks (F10, `!help`,
-   population yield, Entropy park, Monsterball kickoff); join 63.141.237.42:2301 and message Terminal (DescentBB
-   t=25174) before the reveal; decide POP15.
+1. Operator: push `main` + branch + tags (done 2026-10-08); `release.yml` dry run (REL2's first run); cockpit checks
+   (F10, `!help`, population yield, Entropy park, Monsterball kickoff); join 63.141.237.42:2301 and message Terminal
+   (DescentBB t=25174) before the reveal; decide POP15.
 2. Pyrodeck 0.5.0 (done 2026-10-08: the parity branches and `release/0.4.20` merged into its `main`), then 0.5.1-0.5.3
    the same day for a public server: reverse-proxy hardening (trust the loopback hop only, never local when proxied,
    an Origin check, a Secure cookie), server-side sessions, a 127.0.0.1 default, opt-in log retention, autostart with
