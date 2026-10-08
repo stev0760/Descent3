@@ -43,12 +43,13 @@ macOS: community-tested; nobody on the project has a Mac to test it on. The
 A log for a bug report
 ----------------------
 The server log, bot lines included, goes to the terminal: about 5 to 15 MB
-an hour with 6 to 8 bots. On Linux and macOS, end the start line with
+an hour with 6 to 8 bots. Add -logfile to the start line to keep all of
+it: Descent3.log, in the folder you start from, holds the bot lines and
+the console's game messages (flag captures, level changes). The next start
+replaces it. On Linux and macOS, ending the start line with
   2>&1 | tee server.log
-to keep all of it. On Windows, -logfile writes Descent3.log in the folder
-you start from. It has the bot lines but not the console's game messages
-(flag captures, level changes), and the next start replaces it. Leave the
-log level alone: -loglevel info drops every bot line.
+keeps the same log. Leave the log level alone: -loglevel info drops every
+bot line.
 
 More
 ----

@@ -30,8 +30,9 @@ quit cleanly → analyze the log → compare against the reference numbers.**
 4. **Linux Debug builds for soaks** (asserts stop the run). A Release-config build logs at
    `info`: ZERO nav telemetry (no stuck/router/via lines) unless started with `-loglevel debug`,
    so analyzer zeros there are blind spots, not health. The RelWithDebInfo packages log the
-   telemetry by default (REL3, 2026-10-08). Analyze captured stdout, never `-logfile`'s
-   `Descent3.log`: it has no `Opening level` or HUD flag lines.
+   telemetry by default (REL3, 2026-10-08). Captured stdout and, from 0.10.5, `-logfile`'s
+   `Descent3.log` both hold the whole log; an older build's `Descent3.log` has no `Opening level`
+   or HUD flag lines, so analyze its stdout.
 5. **Don't trust rates from short runs.** Captures/round needs hours; the short-run metrics
    are conversion % and hard-fail signatures (see "Judging results").
 

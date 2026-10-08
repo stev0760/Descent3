@@ -62,6 +62,7 @@
 
 #include "application.h"
 #include "AppConsole.h"
+#include "log.h"
 
 enum {
   Console_null,
@@ -164,6 +165,8 @@ void con_Printf(const char *fmt, ...) {
   *fp = '\0';
 
   commands[Console_mode].con_Puts(0, filter_buf);
+  // With -logfile, the text also goes to Descent3.log (logger/log.cpp joins the pieces into lines)
+  PLOG_INFO_(CONSOLE_LOG_ID) << filter_buf;
 }
 
 bool con_Input(char *buf, int buflen) {

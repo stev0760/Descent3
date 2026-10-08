@@ -1008,11 +1008,17 @@ same module).
   lines: the analyzer then shows mode Unknown, zero deaths and zero stucks, which are blind spots, not health. The
   difference that remains between Debug and RelWithDebInfo is the assert: the optimised build logs `Assertion failed`
   and carries on (a Release build compiles `ASSERT` out).
-- **Analyze stdout, never `Descent3.log`.** The console's own lines (HUD messages such as flag pickups, captures,
-  returns and kills, the `Opening level` line, and every `$` reply) go straight to stdout (`con_raw_Puts`,
-  linux/lnxcon_raw.cpp, the console on every platform) and never reach plog. `-logfile`'s `Descent3.log` holds the plog
-  lines only: `analyze_bot_log.py` stops on "No level data found" and `flag_conversion.py` finds no flag events. With
-  `-service` the console is the null driver, and those lines go nowhere.
+- **`Descent3.log` and a stdout capture read alike from 0.10.5.** The console's own lines (HUD messages such as flag
+  pickups, captures, returns and kills, the `Opening level` line, and every `$` reply) go to stdout through
+  `con_Printf` (linux/lnxcon.cpp, the console on every platform). With `-logfile`, `con_Printf` also hands its text to
+  a second plog instance, `CONSOLE_LOG_ID`, whose only appender is the file (logger/log.cpp), so stdout prints nothing
+  twice. The file writes those lines without the plog prefix, as stdout shows them, and keeps stdout's order: console
+  text waits for its newline or for the next plog line. Text that stdout glues to a plog line (the level-load progress,
+  which has no newline, and a `$botstat` line printed in pieces) is two lines in the file, and the progress's
+  backspaces are applied. Both analyzers give the same report from either (BOTS_DEVEL 2026-10-08, 0.10.5). With
+  `-service` the console is the null driver, which reaches stdout only through `mprintf` (compiled out without
+  `ENABLE_LOGGER`), and the file either way. A build before 0.10.5 has the plog lines only in `Descent3.log`:
+  `analyze_bot_log.py` stops on "No level data found" there, so analyze that build's stdout.
 - **Team labels:** the log prints the engine's 0-based team index while the bot config is 1-based.
   `tools/analyze_bot_log.py` maps them.
 - **Stuck counts:** judge navigation by the analyzer's `(hard)` columns (`net_disp < 10`). Raw stuck totals include

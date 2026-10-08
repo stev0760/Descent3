@@ -33,10 +33,14 @@ In case of swapping to another solution here should be redefined following macro
 
 */
 
+/// plog instance for the console's own text (con_Printf). It exists only with -logfile and writes only to the log file,
+/// so the console's lines reach the file without printing twice on stdout.
+constexpr int CONSOLE_LOG_ID = 1;
+
 /**
  * Initialize logger facility.
  * @param log_level desired log level (for example, plog::debug)
- * @param enable_filelog enable logging into Descent.log
+ * @param enable_filelog enable logging into Descent3.log, the console's text included
  * @param enable_win_console enable console windows for WIN32 (no-op for POSIX systems)
  */
 void InitLog(plog::Severity log_level, bool enable_filelog, bool enable_win_console);

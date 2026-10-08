@@ -10,6 +10,64 @@ including the CTF, Hyper and Hoard write-ups) is preserved verbatim in
 `matcen-docs/archive/BOTS_DEVEL-phases-0_to_0.9.12.md`. The engine-files audit (single-player, Robo-Anarchy and
 co-op impact) now lives in `matcen-docs/BOT_DEV_REFERENCE.md`.
 
+### 2026-10-08: the console in `Descent3.log`, 0.10.5 (REL3)
+
+REL3 found that `-logfile`'s `Descent3.log` holds the plog lines only, so a Windows operator's only complete log could
+not be analysed. The operator approved writing the console to it.
+
+**Design.** `con_Printf` (linux/lnxcon.cpp, the console on every platform) hands its filtered text, one record per call,
+to a second plog instance, `CONSOLE_LOG_ID` (logger/log.h). That instance exists only with `-logfile`, and its only
+appender is the file's, so stdout prints nothing twice. The file appender (logger/log.cpp) joins the pieces into lines:
+console text waits for its newline or for the next plog record. The level-load progress never ends in a newline and
+erases itself with backspaces. The first build held the text until a newline and nothing else. In its run, `Opening
+level 'Polaris.d3l'...` sat at file line 651 against stdout line 486, behind the 165 plog lines of the load, so the
+analyzer would have charged them to the previous map. Flushing the pending text before each plog record puts the file
+in stdout's order. A line that stdout glues to a plog line becomes two lines, and the backspaces are applied.
+
+The console lines are written without the plog prefix. Six tools read console lines (both analyzers, `carry_episodes.py`,
+`ab_guard.py`, `soakctl.py`, `navdump_geometry.py`). `RE_CAPTURE`'s lazy name group would take the prefix into the
+player's name. Without the prefix the file is a stdout capture with its glued lines split, so no tool changes. The
+console lines lose a timestamp that stdout never gave them either.
+
+**Thread safety.** plog 1.1.11 (the vcpkg baseline, CI included): `Logger::operator+=` takes no lock, and
+`RollingFileAppender::write` locks its own mutex around formatting and writing. So two instances can share one appender.
+The `FileAppender` wrapper adds a `std::mutex` over the pending console line and the write, and nests the inner
+appender's lock under it. No path takes them in the other order, and the console appender's lock is never held with
+either.
+
+**Run.** Debug build of this commit, a labelled copy started from a scratch directory that links the lab's data. Six
+hotshot bots, 3v3 CTF on Bedlam: Polaris, then Apparition after an `EndLevel` at about 2.5 minutes, 5 m 15 s in all.
+Over the remote console: `$servercaps` and `$botstat` on each level, `say lfcheck A%sB%dC%xD end`,
+`say lfcheck2 100%% %n%p end`, and `Quit`.
+
+| Check | stdout capture | `Descent3.log` |
+|---|---|---|
+| Lines | 5,757 | 5,856 |
+| plog records / console lines | 5,593 / glued in | 5,593 / 263 (125 are progress pieces) |
+| `SERVERCAPS` / `Opening level` / kill lines | 2 / 2 / 28 | 2 / 2 / 28 |
+| Flag pickups / captures / returns / respawns | 8 / 2 / 3 / 31 | 8 / 2 / 3 / 31 |
+| `con_Printf@` records (a console line printed twice) | 0 | 0 |
+
+The file was rebuilt from the stdout capture by splitting at each plog record, applying the backspaces and dropping
+CRs. It matched the real file character for character, so every console line is in the file in stdout's order. Both
+`%` lines print verbatim in both logs. `analyze_bot_log.py` gave the same report from either, apart from the path and
+line count: Polaris and Apparition, CTF, 2 bot captures, 31 deaths, 0 stucks, 26 sections. `flag_conversion.py` and
+`--timeline` gave the same reports apart from the path. 34/34 tests pass.
+
+**`-service`.** The console is the null driver, whose `mprintf` the local Debug build compiles out (`ENABLE_LOGGER=OFF`),
+so its stdout holds no console line. 7b929e34's `Descent3.log` held none either. This build's holds `Opening level`, the
+six joins, the kill lines, the `SERVERCAPS` reply, the `say` line, `Quit` and `Shutting down server.` Two older
+`-service` defects, the same on 7b929e34 (ENG11). With `DISPLAY` set, the forked server dies on an X I/O error once the
+first level loads: the exiting parent closes the X connection the child shares. Without a display, after `Quit` the
+process logs its whole shutdown and then waits on a futex for good; SIGTERM does not end it either.
+
+**Aside, ENG10.** The first run stalled on its first frame. The other agent's server held the gamespy port (20142).
+`gspy_Init` returns before making its socket non-blocking when the bind fails, nothing checks the result, and
+`gspy_DoFrame`'s `recvfrom` blocks for good. The run went through with `-gamespyport 2443`.
+
+`builds/linux` in the main checkout was not touched. The scratch run directory, the labelled binaries, the temp
+directory and the logs were removed, and no server was left running.
+
 ### 2026-10-08: the client compatibility pass (REL12)
 
 Three clients against one server, in the lab on one Linux machine over loopback. The server was the 0.10.4 Debug

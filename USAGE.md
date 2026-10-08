@@ -543,7 +543,7 @@ The following command-line options are available in Descent 3. You can set comma
 
     **Platform:** all
 
-    **Description:** Generates a logfile `d3.log` if using the Debug build. All `mprintf` statements output to the logfile.
+    **Description:** Writes the log to `Descent3.log` in the directory the game starts in, replacing the previous one. The file gets every log line printed to the terminal (see `-loglevel`) and, on a dedicated server, the console's own lines.
 
 - `-loglevel <LEVEL>`
 

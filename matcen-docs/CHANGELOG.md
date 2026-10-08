@@ -11,6 +11,12 @@ series each bug fix or small feature takes the next number in the last place. A 
 a larger change that may be backed out whole, until it passes its validation gate. 1.0 comes after community play.
 0.9.17 was never released: its development build became 0.10.0.
 
+## [0.10.5] - 2026-10-08
+
+- **`-logfile`'s `Descent3.log` now holds the whole server log, game messages included.** Flag pickups and captures,
+  kills, level changes and the replies to console commands are in it beside the bot lines, in the order the console
+  shows them, on every platform. On Windows it is the log to attach to a bug report. The next start still replaces it.
+
 ## [0.10.4] - 2026-10-08
 
 - **A `%` in a chat line, callsign or console command no longer garbles the dedicated server's console or risks
