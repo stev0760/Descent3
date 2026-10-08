@@ -224,6 +224,71 @@ mail/priority/updates), all unmerged: `PARITY_MERGE_PLAN.md` in the Pyrodeck che
    on `MP_SERVER_QUIT`).
 6. After the reveal: the committee collapse (COL1-COL3, COL10, COL11), NAV64, MODE2, the Monsterball role freeze.
 
+### Operator checks before the reveal
+
+Everything here needs the operator: a cockpit, a second machine, a Windows box, GitHub, or a real host. Agents can
+run the rest (the NAV "verify in one soak" rows, regression soaks). Grouped by sitting; each line cites its row.
+
+**1. Desk: git and CI** (unblocks everything after it)
+- [ ] Push Matcen: `main`, `feature/multiplayer-bots`, the tags (`v0.10.0`, and REL16's five); delete the merged remote
+  branches (REL17). Don't push `--tags` without deleting the local `v1.5.0` that the REL12 upstream fetch added.
+- [ ] Run Matcen's `release.yml` by hand: the Windows, Linux and macOS packages and `SHA256SUMS.txt` build (REL2).
+- [ ] Push Pyrodeck `main` (0.5.3) and run its release workflow by hand: the Linux package and `SHA256SUMS.txt` (REL6).
+- [ ] Give the deployment repo its private remote and confirm its lint workflow passes.
+
+**2. Cockpit: a Matcen client on a dedicated server** (the build-path Debug binary)
+- [ ] F10: open, order, the reply after the order line, Backspace and the idle close (UX4, UX7).
+- [ ] `!help` tip once a join, the taunt in Anarchy, the level-change notice, a hunter's report when its target dies
+  (CMD9, CHAT_COMMANDS §B.7).
+- [ ] Formation as leader (CMD2): the trail in a tunnel, the wedge and the echelon in a room, how far the squad lags
+  at your speed, door order, any BLOCKED reports; Form up from F10.
+- [ ] A real join and leave: a bot gives up its seat when you join and comes back when you leave (POP3).
+- [ ] Entropy: fly it (MODE3); the park holds still and a knock moves it (MODE6).
+- [ ] Monsterball: the kickoff and the difficulty spread (MODE7).
+- [ ] The maps you judge by feel: Batteries, Sigma Base, abend2 (NAV60: "the operator's flights decide").
+
+**3. Cockpit: host from the game** (listen server)
+- [ ] The F6 Bots menu: add (a free built-in name), remove, remove all, difficulty, population on, off, players,
+  seats, status (UX11).
+- [ ] Bot Settings: Auto population and Players to keep, an `.mps` save and load, seats, ships and teams on screen
+  (UX12, UX3).
+- [ ] A `$` command typed on the host's chat line shows its reply on the HUD (UX2); the replies after the order line
+  on the host path (UX7).
+- [ ] Ctrl+F7 draws on the host and does nothing on a remote client (UX5, UX1).
+- [ ] Decide POP15 (a listen host's seat reserve).
+
+**4. Co-op flight** (one Pyrodeck co-op session, keep the log: COOP2)
+- [ ] Bots escort and fight robots (COOP1, COOP5, COOP6); a roster larger than the co-op cap does not spawn past it
+  (COOP4).
+
+**5. The release build, and Windows** (REL3)
+- [ ] Your release soak: the package from step 1, a same-evening Debug control, the HUD goal lines.
+- [ ] Windows-native: the Windows package as a dedicated server starts with no window (ENG14), `-logfile` writes the
+  console's lines into `Descent3.log` (0.10.5), and `AllowRemoteConsole=0` keeps the console on 127.0.0.1 (ENG15).
+
+**6. Other clients** (REL12's owed half)
+- [ ] Retail 1.5 joins a Matcen server (needs the 1.5 patch; only the 1.4 installer is on hand).
+- [ ] PiccuEngine's Windows release joins; its F7 scoreboard shows pilot rows (the native Linux build showed none:
+  report it to Piccu only if Windows shows it too).
+- [ ] A join over a real network, not loopback (the rehearsal VM or the droplet gives this).
+
+**7. Pyrodeck 0.5.1-0.5.3, eyes on**
+- [ ] Login, logout, Settings > "Log out all sessions"; the session ends at its lifetime.
+- [ ] Launch panel: the Autostart block, "Start when Pyrodeck starts", the warning on `AllowRemoteConsole=1`.
+- [ ] Logs tab: the Retention section; a compressed log views and downloads.
+- [ ] Behind real nginx: the Checks section of Pyrodeck's `docs/behind-a-reverse-proxy.md`; the mission host's Test
+  from another machine (the panel's own Test passes through loopback).
+
+**8. Deployment rehearsal on a Rocky Linux 10 VM**
+- [ ] `bootstrap.yml`, `site.yml`, `verify.yml`, then `verify.yml -e verify_reboot=true`, and the deployment repo's
+  first-boot checks (its README, "First-boot checks").
+
+**9. Go-live**
+- [ ] Buy the VPS and the domain; the panel on a subdomain (REL22). The same playbook and `verify.yml` against it.
+- [ ] Measure on the VPS itself: CPU, memory, level-load time against REL10's desktop figures.
+- [ ] Before the reveal: join 63.141.237.42:2301 and message Terminal (DescentBB t=25174); the announcement's links
+  (REL11); the project e-mail address and accounts (REL22).
+
 **Exit:** the release build passes the battery and the compatibility pass, the packages and Pyrodeck release are
 published, the quickstart is written, and the announcement goes out (Reddit r/descent, DDN Discord, DescentBB,
 SectorGame; files on ModDB/GameFront).
