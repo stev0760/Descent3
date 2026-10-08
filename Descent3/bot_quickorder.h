@@ -62,7 +62,7 @@ enum QuickOrderStep : uint8_t {
 
 #define QUICKORDER_NAME_LEN 20  // CALLSIGN_LEN + 1
 #define QUICKORDER_MAX_NAMES 32 // MAX_PLAYERS
-#define QUICKORDER_MAX_VERBS 16
+#define QUICKORDER_MAX_VERBS 20
 #define QUICKORDER_PAGE_SIZE 9 // keys 1-9; key 0 turns the page when a list is longer
 #define QUICKORDER_LINE_LEN 80 // MAX_HUD_INPUT_LEN, the chat line's own limit
 

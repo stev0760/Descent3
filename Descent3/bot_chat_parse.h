@@ -56,6 +56,7 @@ enum BotChatVerb : uint8_t {
   BCV_HELP,
   BCV_FOLLOW,
   BCV_COVER,
+  BCV_FORMUP,
   BCV_ATTACK,
   BCV_DEFEND,
   BCV_HOLD,

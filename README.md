@@ -16,7 +16,7 @@ Bots take real player slots on dedicated and listen servers and show up to every
 
 **No client modification is needed.** Retail D3 v1.5 clients and compatible engines such as PiccuEngine connect and play as they are. A server with no bot configuration behaves exactly like vanilla D3.
 
-**Status: 0.10.1** (2026-10-08). The release-package series began with 0.10.0, which adds the seat rules and player target below, bot commands and an F6 Bots menu for a listen-server host, and the F10 order menu; 0.10.1 puts the player target in the Bot Settings screen. The public release comes with a 0.10.x build. Release notes are in [CHANGELOG.md](matcen-docs/CHANGELOG.md).
+**Status: 0.10.2** (2026-10-08). The release-package series began with 0.10.0, which adds the seat rules and player target below, bot commands and an F6 Bots menu for a listen-server host, and the F10 order menu; 0.10.1 puts the player target in the Bot Settings screen, and 0.10.2 adds formation flying. The public release comes with a 0.10.x build. Release notes are in [CHANGELOG.md](matcen-docs/CHANGELOG.md).
 
 **Getting started:** [QUICKSTART.md](matcen-docs/QUICKSTART.md) covers installing over Descent 3 and running a server with bots. Release packages for Windows, Linux and macOS (community-tested) go on the GitHub Releases page, starting with the next tagged release.
 
@@ -42,7 +42,7 @@ Ships: `pyro`, `phoenix`, `magnum`, `blackpyro` (Black Pyro needs Mercenary). Di
 
 ### Chat orders and console
 
-In team modes and co-op, type a `!` order in chat, such as `!attack`, `!defend`, `!follow` or `!attack flag`. A bare order goes to every bot on your team, and `<botname>: !order` goes to one bot; `!help` lists the orders the current mode takes. In free-for-all modes the bots only taunt back. The full list is in [CHAT_COMMANDS.md](matcen-docs/CHAT_COMMANDS.md).
+In team modes and co-op, type a `!` order in chat, such as `!attack`, `!defend`, `!follow`, `!formup` (formation flying) or `!attack flag`. A bare order goes to every bot on your team, and `<botname>: !order` goes to one bot; `!help` lists the orders the current mode takes. In free-for-all modes the bots only taunt back. The full list is in [CHAT_COMMANDS.md](matcen-docs/CHAT_COMMANDS.md).
 
 On a Matcen client, F10 opens a menu of the orders the mode takes and sends the same chat line; players on other clients type it.
 
@@ -50,7 +50,6 @@ On the dedicated server console, over telnet, or on a listen-server host's chat 
 
 ### Roadmap
 
-*   Formation flying when bots form up on you.
 *   Co-op inspected and fixed, and Entropy and Monsterball polished.
 *   One planner per room: the last consolidation of the navigation code.
 *   The public 0.10.x release: tested release builds, a D3 Pyrodeck release, and a hosted public server.

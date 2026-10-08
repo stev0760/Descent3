@@ -26,8 +26,9 @@
 #include <cstring>
 
 static const char *const Verb_names[BCV_COUNT] = {
-    "",     "ping",      "status",     "help",       "follow",    "cover",     "attack",     "defend",     "hold",
-    "hunt", "freelance", "attackflag", "defendflag", "attacklab", "defendlab", "attackball", "defendgoal", "goal",
+    "",          "ping",      "status",     "help",       "follow",    "cover",      "formup",
+    "attack",    "defend",    "hold",       "hunt",       "freelance", "attackflag", "defendflag",
+    "attacklab", "defendlab", "attackball", "defendgoal", "goal",
 };
 
 // One-word forms: every canonical verb, and the aliases players have been given (CHAT_COMMANDS.md §A.5).
@@ -43,7 +44,7 @@ static const BotChatWord One_word[] = {
     {"help", BCV_HELP, false},
     {"follow", BCV_FOLLOW, false},
     {"regroup", BCV_FOLLOW, false},
-    {"formup", BCV_FOLLOW, false},
+    {"formup", BCV_FORMUP, false},
     {"cover", BCV_COVER, false},
     {"attack", BCV_ATTACK, false},
     {"target", BCV_ATTACK, true},
@@ -81,7 +82,7 @@ static const BotChatPair Two_word[] = {
     {"attack", "lab", BCV_ATTACKLAB, false},   {"defend", "lab", BCV_DEFENDLAB, false},
     {"attack", "ball", BCV_ATTACKBALL, false}, {"defend", "goal", BCV_DEFENDGOAL, false},
     {"attack", "target", BCV_ATTACK, true},    {"defend", "here", BCV_HOLD, false},
-    {"form", "up", BCV_FOLLOW, false},
+    {"form", "up", BCV_FORMUP, false},
 };
 
 static const char *const Taunts[] = {
@@ -261,10 +262,10 @@ int BotChatHelpLines(BotChatMode mode, const char *example_bot, char lines[][BOT
   // `!hunt` names a player on another team, so co-op (one team) does not offer it; `!goal` is co-op's.
   if (mode == BCM_COOP)
     snprintf(lines[0], BOT_CHAT_TEXT_LEN,
-             "Orders: !follow !cover !attack !defend !hold !goal !freelance !status !ping");
+             "Orders: !follow !formup !cover !attack !defend !hold !goal !freelance !status !ping");
   else
     snprintf(lines[0], BOT_CHAT_TEXT_LEN,
-             "Orders: !follow !cover !attack !defend !hold !hunt <name> !freelance !status !ping");
+             "Orders: !follow !formup !cover !attack !defend !hold !hunt <name> !freelance !status !ping");
   if (max_lines < 2)
     return 1;
 

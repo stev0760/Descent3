@@ -22,6 +22,7 @@ The dated status log this file used to carry is in `archive/BOT_DEV_REFERENCE-st
 | `Descent3/bot_navdebug.h/.cpp` | In-world nav debug overlay (`Ctrl+F7`, modes 0-3: off, skeleton and portals, plus bot intent, plus roadmap; bot_navdebug.cpp:55). Draw-only. Usage: `VISUAL_DEBUG.md` |
 | `Descent3/bot_chat.h/.cpp` | Chat orders: addressing (all/team/DM), the free-for-all gate, squad orders and their reports, hunts ending, the level-change notice and the tip; every bot line goes through its outbound queue (`BotChatFrame()`, called from `BotDoFrame()`). Usage: `CHAT_COMMANDS.md` |
 | `Descent3/bot_chat_parse.h/.cpp` | The `!` order language with no engine state: the parser and its alias tables, the mode rule, the help, tip and taunt wording, grouped lines. Unit-tested by `Descent3/tests/bot_chat_tests.cpp` |
+| `Descent3/bot_formation.h/.cpp`, `bot_formation_table.h/.cpp` | Formation flying (`!formup`): each leader's recorded path, the width sweeps and every member's slot (`BotFormationFrame()`, called from `BotDoFrame()`; the slot is read by `BotNavigateToFollowTarget`), and the slot table and width rule with no engine state (`bot_formation_table.cpp`, unit-tested by `bot_chat_tests`). No steering. Usage: `CHAT_COMMANDS.md` §A.6, §B.2 |
 | `Descent3/bot_quickorder.h/.cpp`, `bot_quickorder_menu.cpp` | Client-side quick-order menu (F10): the menu state machine and the chat lines it composes (`bot_quickorder_menu.cpp`, no engine state, unit-tested by `Descent3/tests/bot_quickorder_tests.cpp`), and its keys, HUD draw and send (`bot_quickorder.cpp`). Sends ordinary chat through `SendHUDChatLine`. Usage: `CHAT_COMMANDS.md` §A.9 |
 | `Descent3/bot_population.h/.cpp` | Seats and population: the seat census, the reserve `BotAdd()` enforces, the yield, the `BotTargetPlayers` manager (`BotPopulationFrame()`, called from `BotDoFrame()`), `$botpopulation status`. Design: `BOT_MANAGEMENT.md` §9 |
 | `Descent3/multi_ui.cpp/.h` | The Bot Settings menu (`MultiBotSettingsMenu()`, multi_ui.cpp:1697); fills `Bot_ui_settings`, and bots spawn from it through `BotSpawnFromUI()` at level load |
@@ -134,6 +135,8 @@ Simplified. `BotDoFrame()` starts at bot.cpp:9035; read it for the full order.
 once per frame, before the bots:
   BotDoUISpawn() when the listen-server roster is due
   BotPopulationFrame()        - seat census; the yield and the population target (bot_population.h)
+  BotChatFrame()              - the bots' outbound chat queue, hunts ending, the tip (bot_chat.h)
+  BotFormationFrame()         - formation leaders' paths; every 0.25 s per leader, the width and the slots
 
 for each active bot:
   1. NetPlayers[slot].last_packet_time = timer_GetTime()     (keep-alive)

@@ -39,7 +39,8 @@ struct QuickOrderVerb {
 
 // The canonical verbs of CHAT_COMMANDS.md §A.5, in menu order. The orders a player reaches for in a
 // fight come first and keep their keys across modes (Follow 1, Cover 2, Attack 3, Defend 4, Hold 5);
-// the reports come last. Where a verb is left out of a mode, the server would not carry it out there:
+// Form up, an order for moving through the map, follows them, and the reports come last. Where a verb
+// is left out of a mode, the server would not carry it out there:
 // - `!hunt` names a player on another team, and co-op has one team, so there is no one to name.
 // - `!goal` sends the bots to the mission objective, which only co-op has; elsewhere the server
 //   answers "No mission objectives in this mode."
@@ -60,6 +61,7 @@ static const QuickOrderVerb Quick_orders[] = {
     {"attackball", "Take the ball", QOP_BOT, QO_MODE_BIT(QOM_MONSTERBALL)},
     {"defendgoal", "Guard their goal", QOP_BOT, QO_MODE_BIT(QOM_MONSTERBALL)},
     {"freelance", "Freelance", QOP_BOT, QO_ORDER_MODES},
+    {"formup", "Form up", QOP_BOT, QO_ORDER_MODES},
     {"status", "Report", QOP_BOT, QO_ORDER_MODES},
     {"ping", "Ping", QOP_NONE, QO_ORDER_MODES},
 };

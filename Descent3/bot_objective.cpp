@@ -1168,6 +1168,7 @@ static void BotCoopUpdateEscort() {
         if (Bots[i].squad_target_slot < 0) { // nobody left to escort
           Bots[i].squad_role = SQUAD_FREELANCE;
           Bots[i].coop_auto_escort = false;
+          Bots[i].formation = false;
           Bots[i].order_anchor_type = ORDER_ANCHOR_NONE;
           Bots[i].order_state = ORDER_NONE;
         }

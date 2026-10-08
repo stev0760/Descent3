@@ -10,6 +10,90 @@ including the CTF, Hyper and Hoard write-ups) is preserved verbatim in
 `matcen-docs/archive/BOTS_DEVEL-phases-0_to_0.9.12.md`. The engine-files audit (single-player, Robo-Anarchy and
 co-op impact) now lives in `matcen-docs/BOT_DEV_REFERENCE.md`.
 
+### 2026-10-08: formation flying v1, `!formup`, 0.10.2 (CMD2)
+
+The last item of the `!` finish line (Q2b, Q9). `!formup` and `!form up` are their own verb (`BCV_FORMUP`, one-word
+and two-word tables in `bot_chat_parse.cpp`); `!regroup` stays `!follow`. The handler makes the bot a `!follow`
+escort of the speaker (SQUAD_FOLLOW, player anchor, `BotForceEscortMode`) and joins it to the speaker's formation:
+`bot_info::formation` and `formation_seq`, the join stamp. `BotTakeOrder` takes the bot out of its formation on any
+other order; the flag is also cleared at a level change, at `BotAdd`, and when the co-op wing has nobody left to
+escort. Replies: `Forming up!`, `In formation.` on arrival, `Can't reach you!` as an escort; `!status` names the role
+Formation (chat only; `$botstat`/`$botlist` still print Follow, so PYRODECK_CONTRACT is unchanged). `!help` lists
+`!formup` in team modes and co-op (90 and 83 characters). The F10 table gets Form up after Freelance and before the
+reports, so the fight keys keep their places; `QUICKORDER_MAX_VERBS` 16 to 20.
+
+**No navigation changes.** Formation is a different point for the escort: `BotNavigateToFollowTarget` asks
+`BotFormationSlot` and, for a member, uses the slot (with its room) where the loose escort uses its station or the
+player: arrival at the slot only, then the same three legs aimed at the slot (beeline with the via tick when within
+150 u and a hull ray to the slot is clear; `BotSetRoutedGoal(slot room, slot, TRAVEL_OWNER_ORDER)` otherwise; the
+outdoor leg as GET_TO_POS). Two member-only rules in the same function and in `BotApplyThrust`: a member in its slot
+while the leader moves faster than 10 u/s does not park (the escort's arrival clears its goal and coasts for half a
+second, a slot behind at cruise), and the escort's afterburner threshold is 25 u from the slot instead of 150 u from
+the player. A bot with no formation flag takes exactly the old branch. Router, roadmap, skeleton, steering and portal
+code are untouched.
+
+**The module.** `bot_formation.{h,cpp}` (engine side) and `bot_formation_table.{h,cpp}` (no engine state, tested).
+`BotFormationFrame()` runs once per server frame from `BotDoFrame`, after `BotChatFrame`: it sorts each leader's live
+members by join stamp (a member that died rejoins at the end when it respawns), records each leader's path every 8 u
+he flies (96 points with rooms; restarted on a jump over 120 u or his death), and every 0.25 s per leader places the
+squad: two hull sweeps 80 u left and right of the leader square to his heading (the path over the last 24 u), at the
+squad's largest wall radius; `BotFormationWingStep` per wing (free distance less hull, over the ranks the wing steps
+out, at most 35 u, folds under 18 u, spreads at 24 u and only after fitting 1 s, folds at once); then per place:
+the wedge (rank `k/2+1`, 40 u back per rank, right then left, out to two steps) set off from the path point at its
+rank's distance by a hull sweep that stops a unit short of the wall, used only while the path behind the leader was
+open that far back and the wing lands at least 18 u from the path and 20 u from an earlier place; else the trail
+place, the recorded path point `45 (k+1)` u back (moved up to one gap further back when an earlier place is within
+20 u). Every slot is led up the path by the leader's speed x 0.5 s, at most 20 u. A place past the recorded path (a
+formation just formed) extends the path straight back only if a sweep says that is clear, else that member escorts
+loosely for the moment. Cost per leader per 0.25 s: 2 + (wedge places) sweeps and a few walks of at most 96 points;
+per member per frame one slot lookup; per member per decision one hull ray to the slot when within 150 u.
+
+**Lab.** Scratch build, not committed: `$formtest <leader index> <n>` ordered n bots to form up on a roaming bot by
+calling the real `BotTakeOrder` + `BotHandleFormUp`, and `FORMTEL` lines logged every placement per member (slot
+error, shape, rooms, point-in-room test of the slot against its room and neighbours, slot position, leader speed).
+Lab binaries `Descent3-cmd2`, `-cmd2a`, `-cmd2b`, ports 2140/2141/20240 and 2150/2151/20250, Team Anarchy, five
+rookies on one team (Pyro leader; Phoenix, Pyro, Magnum, Black Pyro following), no enemies. The roaming leader
+cruises at 40-55 u/s, top speed. Runs in order, each row adding to the one above; only the last two ran in the same
+minute, as a pair:
+
+| Build | Map, minutes | Within 25 u, tunnel / room | Median error | Notes |
+|---|---|---|---|---|
+| first cut | Apparition, 4.5 | 9% / 4% | 56 / 64 u | slots stacked on one point at the start (the straight-back extension hit a wall) |
+| + lead, per-wing, catch-up at 50 u | Apparition 9.5, Plutonium 3 | 8% / 8% indoors | 59 / 65 u | much of both maps outdoors; there the squad came apart |
+| + dwell, spacing, catch-up at 25 u | Plutonium, 3 | not read | | the leader stayed on the terrain |
+| + no parking a moving formation | Sigma Base, 9.5 | 16% / 13% | 49 / 52 u | 1 BLOCKED; 0 slots in rock |
+| same, arm A | Batteries Included, 9.5 | 22% / 14% | 42 / 55 u | 12 BLOCKED (10 the Magnum in rm80); 0 of 8,890 slots in rock |
+| + path aim, arm B (same minute) | Batteries Included, 9.5 | 14% / 15% | 70 / 61 u | 18 BLOCKED; dropped |
+
+Arm B tried a member out of sight of its slot following the leader's own path (straight at the farthest recorded
+point toward its slot a sweep reached; 1,360 of 2,700 calls found one). It lost on nearly every count against the
+same minute's arm A: a member in another room than its slot sat at a median 343 u against 87 u, 153 placements
+with slots within 10 u against 39, 18 BLOCKED against 12. Out.
+
+Read with the final build (arm A): a member in its slot's room is within 25 u 28% of the time, median 35 u; 42% of
+samples it is in another room, median 87 u, on the router's leg. With the leader under 15 u/s: 43% (tunnel) and 35%
+(room). The shape changed 17.6 times a minute. Pairs of followers entering a room after the leader did so in place
+order 279 of 487 times (57%): the order is in the slots, not yet in the flight. The limit is the escort itself: it
+decides twice a second, and a member that falls a room behind takes the router's way. The exit test (a four-follower
+formation holds its slots through a tunnel and a room) is met by the slots, not by the flight at a bot leader's top
+speed; a cockpit flight (§B.7) is owed. Seen, not fixed: outdoors (Apparition's and Plutonium's terrain) the members
+fall hundreds of units behind on the escort's outdoor leg; a leader that turns back in a tunnel makes the trail pass
+him; the Magnum pinned for five minutes in Batteries rm80, whose door is the 11.4 u leaf-tip gap (POP11's hull
+class).
+
+After the lab the scratch hook and telemetry were removed and the tree rebuilt. Debug build clean (no new warnings in
+the touched files); `ctest` 34 of 34: `bot_chat_tests` adds the formation verb's parse (`!formup`, `!form up`,
+`!form up reaper`, `!formup all`; `!follow up` stays a `!follow` with a name; `!regroup` stays `!follow`), the help
+line, the slot table (1 to 15 followers, both shapes, widest and narrowest step, no two places closer than 40 u at
+the full step) and the per-wing width rule (room, tunnel, along a wall, two ranks, hysteresis); `bot_quickorder_tests`
+has the new rows and keys.
+
+Files: `Descent3/bot_formation.{h,cpp}`, `Descent3/bot_formation_table.{h,cpp}` (new); `Descent3/bot.cpp`, `bot.h`,
+`bot_chat.cpp`, `bot_chat_parse.{h,cpp}`, `bot_objective.cpp`, `bot_quickorder.h`, `bot_quickorder_menu.cpp`;
+`Descent3/CMakeLists.txt`, `Descent3/tests/CMakeLists.txt`, `tests/bot_chat_tests.cpp`,
+`tests/bot_quickorder_tests.cpp`; `CMakeLists.txt` (0.10.2); README, CHANGELOG, CHAT_COMMANDS (§A.5, §A.6, §A.9,
+§A.10, §B.2, §B.7, decision 12), PLAN (CMD2), BOT_DEV_REFERENCE.
+
 ### 2026-10-08: auto population in Bot Settings, 0.10.1 (UX12)
 
 The operator's cockpit question ("is there a bot auto population toggle?"): on a listen server the population manager

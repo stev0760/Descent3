@@ -11,6 +11,18 @@ series each bug fix or small feature takes the next number in the last place. A 
 a larger change that may be backed out whole, until it passes its validation gate. 1.0 comes after community play.
 0.9.17 was never released: its development build became 0.10.0.
 
+## [0.10.2] - 2026-10-08
+
+*Formation flying: `!formup` puts the bots in formation behind you. Lines marked In test have not been flown yet.*
+
+- **`!formup` (or `!form up`) flies the bots in formation behind you.** In a tunnel they take places single file
+  along the path you flew, one behind the other; where there is room they spread into a wedge behind you, and along
+  one wall of a room into a half wedge on the open side. Every bot has its own place however many follow, and no place
+  is ever inside a wall. At full speed they trail their places, and close up as you slow down; they use the
+  afterburner to catch up. The bots answer `Forming up!` and report `In formation.` once in place. `!follow` is still
+  the loose escort it was, and `!regroup` is still `!follow`. `!help` lists `!formup`, and the F10 menu has Form up
+  after Freelance (the report keys move one place on). In test.
+
 ## [0.10.1] - 2026-10-08
 
 *Auto population in Bot Settings: a listen-server host keeps a player count without the console. Lines marked In

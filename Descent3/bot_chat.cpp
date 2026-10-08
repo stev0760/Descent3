@@ -23,6 +23,7 @@
 #include "bot_chat.h"
 #include "bot_chat_parse.h"
 #include "bot.h"
+#include "bot_formation.h"
 #include "bot_objective.h"
 #include "ddio.h"
 #include "dedicated_server.h"
@@ -321,12 +322,15 @@ static void BotClearOrderAnchor(int bot_index) {
 }
 
 // Bookkeeping every order shares: who gave it (the reports and the level-change notice go to them), a
-// fresh report memory, and in Monsterball the role the order pins, which is none unless it is a ball
-// order: a striker told to `!attack` plays the field, not the ball.
+// fresh report memory, any other order than `!formup` takes the bot out of its formation, and in
+// Monsterball the role the order pins, which is none unless it is a ball order: a striker told to
+// `!attack` plays the field, not the ball.
 static void BotTakeOrder(int bot_index, const BotChatOrder &order) {
   Bots[bot_index].order_issuer_slot = order.from;
   Report_last[bot_index][0] = '\0';
   Report_last_to[bot_index] = -1;
+  if (order.verb != BCV_FORMUP)
+    BotFormationLeave(bot_index);
   if (BotGetGameMode() == BGM_MONSTERBALL) {
     uint8_t role = (order.verb == BCV_ATTACKBALL) ? 1 : (order.verb == BCV_DEFENDGOAL) ? 3 : 0;
     BotMonsterballOrderRole(bot_index, role);
@@ -339,7 +343,7 @@ static void BotStatusText(int bot_index, bool compact, char *out, size_t size) {
 
   float shields_pct = obj->shields / INITIAL_SHIELDS * 100.0f;
   shields_pct = std::clamp(shields_pct, 0.0f, 100.0f);
-  const char *role = BotSquadRoleName(Bots[bot_index].squad_role);
+  const char *role = BotFormationMember(bot_index) ? "Formation" : BotSquadRoleName(Bots[bot_index].squad_role);
 
   const char *state_str;
   switch (Bots[bot_index].state) {
@@ -479,6 +483,17 @@ static void BotHandleEscort(const BotChatOrder &order, int bot_index, BotSquadRo
   BotArmOrder(bot_index, order.from, ORDER_ANCHOR_PLAYER);
   BotForceEscortMode(bot_index);
   BotAck(order, bot_index, (role == SQUAD_COVER) ? "Covering you!" : "Following!");
+}
+
+// `!formup`: the escort of `!follow`, flying a slot in the speaker's formation: single file in a tunnel,
+// a wedge where it fits (bot_formation.h). A bot already in this formation keeps its place.
+static void BotHandleFormUp(const BotChatOrder &order, int bot_index) {
+  BotFormationJoin(bot_index, order.from);
+  Bots[bot_index].squad_role = SQUAD_FOLLOW;
+  Bots[bot_index].squad_target_slot = order.from;
+  BotArmOrder(bot_index, order.from, ORDER_ANCHOR_PLAYER);
+  BotForceEscortMode(bot_index);
+  BotAck(order, bot_index, "Forming up!");
 }
 
 static void BotHandleFreelance(const BotChatOrder &order, int bot_index) {
@@ -684,6 +699,9 @@ static void BotDispatchOrder(BotChatOrder &order, int bot_index, bool direct) {
     break;
   case BCV_COVER:
     BotHandleEscort(order, bot_index, SQUAD_COVER);
+    break;
+  case BCV_FORMUP:
+    BotHandleFormUp(order, bot_index);
     break;
   case BCV_FREELANCE:
     BotHandleFreelance(order, bot_index);

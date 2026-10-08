@@ -111,30 +111,36 @@ TEST(D3, QuickOrderMenusPerMode) {
   QuickOrderMenu menu{};
   std::string title;
 
+  // Form up comes after the fight orders and before the reports; in Team Anarchy and co-op it pushes
+  // Ping to a second page.
   QuickOrderOpen(&menu, QOM_TEAM, &roster);
   EXPECT_EQ(RowText(menu, &title),
             (std::vector<std::string>{"1 Follow me | !follow", "2 Cover me | !cover", "3 Attack | !attack",
                                       "4 Defend | !defend", "5 Hold here | !hold", "6 Hunt a player | !hunt <name>",
-                                      "7 Freelance | !freelance", "8 Report | !status", "9 Ping | !ping"}));
+                                      "7 Freelance | !freelance", "8 Form up | !formup", "9 Report | !status",
+                                      "0 More (1/2)"}));
   EXPECT_EQ(title, "Squad orders");
+  QuickOrderLine line;
+  EXPECT_EQ(QuickOrderPress(&menu, 0, &line), QOR_MOVED);
+  EXPECT_EQ(RowText(menu), (std::vector<std::string>{"1 Ping | !ping", "0 More (2/2)"}));
 
   QuickOrderOpen(&menu, QOM_COOP, &roster);
-  EXPECT_EQ(RowText(menu),
-            (std::vector<std::string>{"1 Follow me | !follow", "2 Cover me | !cover", "3 Attack | !attack",
-                                      "4 Defend | !defend", "5 Hold here | !hold", "6 Go to the objective | !goal",
-                                      "7 Freelance | !freelance", "8 Report | !status", "9 Ping | !ping"}));
+  EXPECT_EQ(RowText(menu), (std::vector<std::string>{"1 Follow me | !follow", "2 Cover me | !cover",
+                                                     "3 Attack | !attack", "4 Defend | !defend", "5 Hold here | !hold",
+                                                     "6 Go to the objective | !goal", "7 Freelance | !freelance",
+                                                     "8 Form up | !formup", "9 Report | !status", "0 More (1/2)"}));
 
-  // CTF offers eleven orders: nine on the first page, the reports behind key 0.
+  // CTF offers twelve orders: nine on the first page, Form up and the reports behind key 0.
   QuickOrderOpen(&menu, QOM_CTF, &roster);
   EXPECT_EQ(RowText(menu),
             (std::vector<std::string>{"1 Follow me | !follow", "2 Cover me | !cover", "3 Attack | !attack",
                                       "4 Defend | !defend", "5 Hold here | !hold", "6 Hunt a player | !hunt <name>",
                                       "7 Get the flag | !attackflag", "8 Guard our flag | !defendflag",
                                       "9 Freelance | !freelance", "0 More (1/2)"}));
-  QuickOrderLine line;
   EXPECT_EQ(QuickOrderPress(&menu, 0, &line), QOR_MOVED);
-  EXPECT_EQ(RowText(menu), (std::vector<std::string>{"1 Report | !status", "2 Ping | !ping", "0 More (2/2)"}));
-  EXPECT_EQ(QuickOrderPress(&menu, 3, &line), QOR_IGNORED); // no third row on this page
+  EXPECT_EQ(RowText(menu),
+            (std::vector<std::string>{"1 Form up | !formup", "2 Report | !status", "3 Ping | !ping", "0 More (2/2)"}));
+  EXPECT_EQ(QuickOrderPress(&menu, 4, &line), QOR_IGNORED); // no fourth row on this page
   EXPECT_EQ(QuickOrderPress(&menu, 0, &line), QOR_MOVED);   // wraps to the first page
   EXPECT_EQ(RowText(menu)[0], "1 Follow me | !follow");
 
@@ -152,7 +158,8 @@ TEST(D3, QuickOrderMenusPerMode) {
                                       "7 Take the ball | !attackball", "8 Guard their goal | !defendgoal",
                                       "9 Freelance | !freelance", "0 More (1/2)"}));
   EXPECT_EQ(QuickOrderPress(&menu, 0, &line), QOR_MOVED);
-  EXPECT_EQ(RowText(menu), (std::vector<std::string>{"1 Report | !status", "2 Ping | !ping", "0 More (2/2)"}));
+  EXPECT_EQ(RowText(menu),
+            (std::vector<std::string>{"1 Form up | !formup", "2 Report | !status", "3 Ping | !ping", "0 More (2/2)"}));
 }
 
 TEST(D3, QuickOrderPickBot) {
@@ -214,7 +221,8 @@ TEST(D3, QuickOrderSkipsTheQuestion) {
   // Ping goes to the squad without a second step.
   QuickOrderRoster three = MakeRoster(3, 1);
   QuickOrderOpen(&menu, QOM_TEAM, &three);
-  EXPECT_EQ(QuickOrderPress(&menu, 9, &line), QOR_SEND);
+  EXPECT_EQ(QuickOrderPress(&menu, 0, &line), QOR_MOVED);
+  EXPECT_EQ(QuickOrderPress(&menu, 1, &line), QOR_SEND);
   EXPECT_STREQ(line.text, "!ping");
 }
 

@@ -20,14 +20,17 @@
 // (bot_quickorder_menu.cpp), which sends these orders as chat.
 
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <set>
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 
 #include "bot_chat_parse.h"
+#include "bot_formation_table.h"
 #include "bot_quickorder.h"
 
 static BotChatCommand Parse(const char *line) {
@@ -81,8 +84,8 @@ TEST(D3, BotChatEveryAlias) {
       {"!help", "help"},
       {"!follow", "follow"},
       {"!regroup", "follow"},
-      {"!formup", "follow"},
-      {"!form up", "follow"},
+      {"!formup", "formup"},
+      {"!form up", "formup"},
       {"!cover", "cover"},
       {"!attack", "attack"},
       {"!target", "attack"},
@@ -161,6 +164,23 @@ TEST(D3, BotChatTwoWordFormsAndNames) {
   cmd = Parse("!defend me");
   EXPECT_EQ(cmd.verb, BCV_DEFEND);
   EXPECT_STREQ(cmd.bot_name, "me");
+
+  // `!formup` and `!form up` are the formation order, no longer `!follow`; `!regroup` still is.
+  cmd = Parse("!form up reaper");
+  EXPECT_EQ(cmd.verb, BCV_FORMUP);
+  EXPECT_STREQ(cmd.bot_name, "reaper");
+  cmd = Parse("!formup all");
+  EXPECT_EQ(cmd.verb, BCV_FORMUP);
+  EXPECT_TRUE(cmd.to_all);
+  cmd = Parse("!form up");
+  EXPECT_EQ(cmd.verb, BCV_FORMUP);
+  EXPECT_STREQ(cmd.bot_name, "");
+  EXPECT_EQ(Parse("!follow up").verb, BCV_FOLLOW); // "up" names no form of !follow: it is a name
+  EXPECT_STREQ(Parse("!follow up").bot_name, "up");
+  EXPECT_EQ(Parse("!regroup").verb, BCV_FOLLOW);
+  EXPECT_STREQ(BotChatVerbName(BCV_FORMUP), "formup");
+  for (BotChatMode m : {BCM_TEAM, BCM_CTF, BCM_ENTROPY, BCM_MONSTERBALL, BCM_COOP})
+    EXPECT_EQ(BotChatVerbForMode(BCV_FORMUP, m), BCV_FORMUP);
 
   // `!hunt` names its target first, then may name the bot.
   cmd = Parse("!hunt Kestrel");
@@ -283,6 +303,10 @@ TEST(D3, BotChatHelp) {
     ExpectHelpParses(m.mode, lines, n);
   }
 
+  for (BotChatMode m : {BCM_TEAM, BCM_COOP}) {
+    BotChatHelpLines(m, "Shadow", lines, 4);
+    EXPECT_NE(strstr(lines[0], "!formup"), nullptr);
+  }
   BotChatHelpLines(BCM_COOP, "Shadow", lines, 4);
   EXPECT_EQ(strstr(lines[0], "!hunt"), nullptr); // co-op has one team: nobody to hunt
   EXPECT_NE(strstr(lines[0], "!goal"), nullptr);
@@ -392,5 +416,87 @@ TEST(D3, BotChatOverlayOrdersParse) {
         EXPECT_STREQ(cmd.hunt_name, "Kestrel");
       }
     }
+  }
+}
+
+// The formation slot table (bot_formation_table.cpp): single file and the wedge, for every squad size a
+// server can hold, with no two followers on one point.
+TEST(D3, BotFormationSlotTable) {
+  const float side = BOT_FORMATION_WEDGE_SIDE;
+  for (int n = 1; n <= 15; n++) {
+    for (BotFormationShape shape : {BFS_TRAIL, BFS_WEDGE}) {
+      std::vector<BotFormationOffset> slots;
+      for (int k = 0; k < n; k++)
+        slots.push_back(BotFormationSlotOffset(shape, k, side));
+      for (int a = 0; a < n; a++) {
+        EXPECT_GT(slots[a].back, 0.0f) << "behind the leader";
+        for (int b = a + 1; b < n; b++) {
+          float d = std::hypot(slots[a].back - slots[b].back, slots[a].side - slots[b].side);
+          EXPECT_GE(d, BOT_FORMATION_WEDGE_BACK) << BotFormationShapeName(shape) << " n=" << n << " " << a << "/" << b;
+        }
+      }
+    }
+  }
+
+  // Single file: one gap apart along the path, nobody to the side.
+  for (int k = 0; k < 15; k++) {
+    BotFormationOffset t = BotFormationSlotOffset(BFS_TRAIL, k, side);
+    EXPECT_FLOAT_EQ(t.back, BOT_FORMATION_TRAIL_GAP * (k + 1));
+    EXPECT_FLOAT_EQ(t.side, 0.0f);
+  }
+
+  // The wedge: right then left in each rank, a rank further back each time; the first two ranks step
+  // out, the rest fly straight back two abreast.
+  BotFormationOffset w[6];
+  for (int k = 0; k < 6; k++)
+    w[k] = BotFormationSlotOffset(BFS_WEDGE, k, side);
+  EXPECT_FLOAT_EQ(w[0].back, BOT_FORMATION_WEDGE_BACK);
+  EXPECT_FLOAT_EQ(w[0].side, side);
+  EXPECT_FLOAT_EQ(w[1].back, BOT_FORMATION_WEDGE_BACK);
+  EXPECT_FLOAT_EQ(w[1].side, -side);
+  EXPECT_FLOAT_EQ(w[2].back, 2 * BOT_FORMATION_WEDGE_BACK);
+  EXPECT_FLOAT_EQ(w[2].side, 2 * side);
+  EXPECT_FLOAT_EQ(w[3].side, -2 * side);
+  EXPECT_FLOAT_EQ(w[4].back, 3 * BOT_FORMATION_WEDGE_BACK);
+  EXPECT_FLOAT_EQ(w[4].side, 2 * side);
+  EXPECT_FLOAT_EQ(w[5].side, -2 * side);
+
+  // A narrower wedge keeps its places distinct down to the narrowest step the width rule allows.
+  for (int a = 0; a < 15; a++) {
+    for (int b = a + 1; b < 15; b++) {
+      BotFormationOffset p = BotFormationSlotOffset(BFS_WEDGE, a, BOT_FORMATION_WEDGE_SIDE_MIN);
+      BotFormationOffset q = BotFormationSlotOffset(BFS_WEDGE, b, BOT_FORMATION_WEDGE_SIDE_MIN);
+      EXPECT_GE(std::hypot(p.back - q.back, p.side - q.side), BOT_FORMATION_WEDGE_SIDE_MIN);
+    }
+  }
+}
+
+// The width rule, a wing at a time: a tunnel flies single file, a room flies the wedge, a leader along
+// one wall leads an echelon, the wings narrow before they fold, and they do not flicker at the edge.
+TEST(D3, BotFormationWidthRule) {
+  const float hull = 5.34f; // a Pyro's wall sphere
+  // Open room: the full step for any squad.
+  for (int n = 1; n <= 15; n++)
+    EXPECT_FLOAT_EQ(BotFormationWingStep(200.0f, hull, n, false), BOT_FORMATION_WEDGE_SIDE) << n;
+  // A 40 u tunnel (20 u either side of the path): single file, even for one follower.
+  for (int n = 1; n <= 15; n++)
+    EXPECT_EQ(BotFormationWingStep(20.0f, hull, n, true), 0.0f) << n;
+  // Along one wall: the open wing spreads, the wall's folds into the trail.
+  EXPECT_FLOAT_EQ(BotFormationWingStep(300.0f, hull, 4, true), BOT_FORMATION_WEDGE_SIDE);
+  EXPECT_EQ(BotFormationWingStep(15.0f, hull, 4, true), 0.0f);
+  // Four followers need two steps a wing; two followers one.
+  const float clear = hull + 2 * 25.0f; // room for two 25 u steps
+  EXPECT_FLOAT_EQ(BotFormationWingStep(clear, hull, 4, false), 25.0f);
+  EXPECT_FLOAT_EQ(BotFormationWingStep(clear, hull, 2, false), BOT_FORMATION_WEDGE_SIDE);
+  EXPECT_FLOAT_EQ(BotFormationWingStep(clear, hull, 3, false), 25.0f);
+  // Hysteresis: between the folding and the spreading widths a wing stays as it is.
+  const float edge = hull + 2 * (BOT_FORMATION_WEDGE_SIDE_MIN + BOT_FORMATION_WEDGE_OPEN_MARGIN * 0.5f);
+  EXPECT_GT(BotFormationWingStep(edge, hull, 4, true), 0.0f);
+  EXPECT_EQ(BotFormationWingStep(edge, hull, 4, false), 0.0f);
+  EXPECT_EQ(BotFormationWingStep(200.0f, hull, 0, false), 0.0f);
+  // Places alternate wings, right first.
+  for (int k = 0; k < 15; k++) {
+    EXPECT_EQ(BotFormationRightWing(k), k % 2 == 0) << k;
+    EXPECT_EQ(BotFormationSlotOffset(BFS_WEDGE, k, 30.0f).side > 0.0f, BotFormationRightWing(k)) << k;
   }
 }

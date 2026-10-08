@@ -39,6 +39,7 @@ add_executable(
   bot_chat_tests
   bot_chat_tests.cpp
   ../bot_chat_parse.cpp
+  ../bot_formation_table.cpp
   ../bot_quickorder_menu.cpp
 )
 target_link_libraries(

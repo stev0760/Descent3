@@ -686,6 +686,9 @@ struct bot_info {
                            // cleared on level init
   bool coop_no_escort;     // co-op: !freelance opt-out from the default wing — the bot roams until
                            // any other order consumes it; cleared on level init
+  bool formation;          // !formup: this escort flies a slot in its leader's formation (bot_formation.h)
+  uint32_t formation_seq;  // when it joined that formation, or came back to it after dying: its place
+                           // is the number of live members who joined before it
 
   // "Orders as Goals" (CHAT_COMMANDS.md §A.6) — order anchor + lifecycle.
   // Persist through death (the bot returns to its post after respawn); cleared by !freelance,

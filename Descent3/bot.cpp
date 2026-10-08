@@ -21,6 +21,7 @@
 
 #include "bot.h"
 #include "bot_chat.h"
+#include "bot_formation.h"
 #include "bot_objective.h"
 #include "bot_steering.h"
 #include "bot_roadmap.h"
@@ -2247,27 +2248,42 @@ static bool BotNavigateToFollowTarget(int bot_index) {
   // Stage 6: on station when close to OUR offset slot (not a shared 40u bubble). Report arrival
   // once per EN_ROUTE→ON_STATION transition; idle there (no goal churn) until the player moves.
   vector station = BotGetEscortStation(bot_index, tgt_obj);
+  // A formation member (`!formup`) flies its slot in the leader's trail or wedge instead (bot_formation.h).
+  // That slot is a place the leader flew through or a wing swept clear of the wall, so its room is known;
+  // and it arrives only at the slot, since a member that has reached the player is not in its place.
+  int station_room = -1;
+  const bool formation = BotFormationSlot(bot_index, &station, &station_room);
   // Both arrival terms are reachability-qualified (BotStationReached) — a bare distance let a bot
   // "arrive" through a wall. The station passes room = -1 because BotGetEscortStation is pure vector
   // arithmetic in the player's orientation frame and genuinely does not know what room it landed in
   // (it can land inside geometry); the player term can use his room for the cheap same-room path.
   int tgt_room_arrive = OBJECT_OUTSIDE(tgt_obj) ? -1 : (int)tgt_obj->roomnum;
-  if (BotStationReached(obj, station, -1, BOT_ESCORT_STATION_ARRIVE) ||
-      BotStationReached(obj, tgt_obj->pos, tgt_room_arrive, BOT_ESCORT_STATION_ARRIVE)) {
+  const bool arrived = formation ? BotStationReached(obj, station, station_room, BOT_ESCORT_STATION_ARRIVE)
+                                 : (BotStationReached(obj, station, -1, BOT_ESCORT_STATION_ARRIVE) ||
+                                    BotStationReached(obj, tgt_obj->pos, tgt_room_arrive, BOT_ESCORT_STATION_ARRIVE));
+  // A formation on the move is flown, not parked: its slot moves on, and a member that stopped in it would
+  // be a slot behind by its next decision, half a second later.
+  const bool formation_moving =
+      formation && vm_GetMagnitude(&tgt_obj->mtype.phys_info.velocity) > BOT_FORMATION_MOVING_SPEED;
+  if (arrived) {
     if (Bots[bot_index].order_state != ORDER_ON_STATION) {
       Bots[bot_index].order_state = ORDER_ON_STATION;
-      BotOrderReport(bot_index, "Right behind you.");
+      BotOrderReport(bot_index, formation ? "In formation." : "Right behind you.");
       LOG_DEBUG.printf("BOT ORDER: '%s' escort on station (player %d)", Bots[bot_index].callsign, target_slot);
     }
-    if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
-      GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
-    pgi = -1;
+    if (!formation_moving) {
+      if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+        GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+      pgi = -1;
+      Bots[bot_index].order_progress_pos = obj->pos;
+      Bots[bot_index].order_progress_time = Gametime;
+      return true;
+    }
     Bots[bot_index].order_progress_pos = obj->pos;
     Bots[bot_index].order_progress_time = Gametime;
-    return true;
-  }
-  if (Bots[bot_index].order_state == ORDER_ON_STATION)
+  } else if (Bots[bot_index].order_state == ORDER_ON_STATION) {
     Bots[bot_index].order_state = ORDER_EN_ROUTE; // player moved off — resume silently
+  }
 
   // Far/close split — the responsiveness fix. CLOSE + LOS = beeline (the tight-escort + wedged-bot rescue
   // case), with the reactive via go-around if an interior face blocks the straight line. FAR or out of sight =
@@ -2278,7 +2294,31 @@ static bool BotNavigateToFollowTarget(int bot_index) {
   int tgt_room = OBJECT_OUTSIDE(tgt_obj) ? -1 : (int)tgt_obj->roomnum;
   bool routed = false;
 
-  if (BotHasLOS(obj, tgt_obj) && dist < BOT_FOLLOW_BEELINE_DIST) {
+  if (formation) {
+    // The same legs, aimed at the slot rather than the player: a member that flew at the player would
+    // crowd into the door he just went through. Close with a clear hull line: straight in, via tick
+    // first. Farther or around a corner: routed to the slot's room and point. Outdoors: the engine.
+    const bool slot_inside = !OBJECT_OUTSIDE(obj) && station_room >= 0 && !ROOMNUM_OUTSIDE(station_room);
+    const bool straight =
+        vm_VectorDistanceQuick(&obj->pos, &station) < BOT_FOLLOW_BEELINE_DIST && BotHasClearLineToPos(obj, station);
+    if (slot_inside && !straight) {
+      bool reissued = false;
+      BotSetRoutedGoal(bot_index, station_room, station, &reissued, TRAVEL_OWNER_ORDER);
+      routed = true;
+    } else {
+      int steer_room = -1;
+      vector steer_pos = BotGetActiveSteerPoint(obj, station, station_room, &steer_room);
+      if (BotViaPointTick(bot_index, steer_pos, steer_room, pgi, nullptr) == 0) {
+        if (pgi >= 0 && pgi < MAX_GOALS && obj->ai_info->goals[pgi].used)
+          GoalClearGoal(obj, &obj->ai_info->goals[pgi]);
+        goal_info gi_info{};
+        gi_info.pos = station;
+        gi_info.roomnum = station_room;
+        pgi = GoalAddGoal(obj, AIG_GET_TO_POS, (void *)&gi_info, 2, 1.0f, GF_SPEED_ATTACK);
+        BotNavMemberWin(bot_index, NAV_MEMBER_ENGINE);
+      }
+    }
+  } else if (BotHasLOS(obj, tgt_obj) && dist < BOT_FOLLOW_BEELINE_DIST) {
     // Close + line of sight: beeline. Via tick first (round a blocking face — the wedged-bot rescue), else
     // GET_TO the offset station (same room = formation spacing) or the player (in LOS through a portal).
     int steer_room = -1;
@@ -6529,7 +6569,16 @@ static void BotApplyThrust(int bot_index) {
       if (tslot >= 0 && tslot < MAX_NET_PLAYERS && (NetPlayers[tslot].flags & NPF_CONNECTED) &&
           !(Players[tslot].flags & (PLAYER_FLAGS_DEAD | PLAYER_FLAGS_DYING))) {
         float follow_dist = vm_VectorDistanceQuick(&obj->pos, &Objects[Players[tslot].objnum].pos);
-        if (follow_dist > 150.0f)
+        float catch_up_dist = 150.0f;
+        // A formation member measures from its slot (the rear of a trail is always far from the player),
+        // and catches up sooner: a ship as fast as its leader never closes a gap without the afterburner.
+        vector slot;
+        int slot_room;
+        if (BotFormationSlot(bot_index, &slot, &slot_room)) {
+          follow_dist = vm_VectorDistanceQuick(&obj->pos, &slot);
+          catch_up_dist = BOT_FORMATION_CATCH_UP_DIST;
+        }
+        if (follow_dist > catch_up_dist)
           want_afterburner = true;
       }
       break;
@@ -8615,6 +8664,7 @@ void BotReinitAll() {
   // resets them, so every level's histogram lands in the log without operator action.
   BotNavContendDumpAll("level-end");
   BotChatLevelReset(); // before the loop below clears the orders: their issuers are told in the new level
+  BotFormationLevelReset();
 
   BotDetectGameMode();
   BotInitObjectiveState();
@@ -8757,6 +8807,7 @@ void BotReinitAll() {
     Bots[i].squad_target_slot = -1;
     Bots[i].coop_auto_escort = false;
     Bots[i].coop_no_escort = false;
+    Bots[i].formation = false;
     Bots[i].objective_lean = BOT_LEAN_BALANCED;
     // difficulty persists across levels — don't reset
 
@@ -9102,6 +9153,7 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   Bots[bot_index].squad_target_slot = -1;
   Bots[bot_index].coop_auto_escort = false;
   Bots[bot_index].coop_no_escort = false;
+  Bots[bot_index].formation = false;
   Bots[bot_index].objective_lean = BOT_LEAN_BALANCED;
   BotCacheShipPhysics(bot_index);
   BotSelectBestSecondary(bot_index); // equip best secondary weapon at spawn
@@ -9187,6 +9239,9 @@ void BotDoFrame() {
 
   // Bot chat: queued replies and reports, hunted players down, level-change notices, the tip.
   BotChatFrame();
+
+  // Formations: the leaders' paths, and a few times a second the width and the slots.
+  BotFormationFrame();
 
   // Objective state polling — shared across all bots, runs on a 0.5s interval.
   // Gametime resets to 0 on level transitions, so detect that and force an immediate poll.
