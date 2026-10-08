@@ -1001,8 +1001,18 @@ same module).
 - **`SetLevel=N` sets the start level; it does not pin.** Before play it only sets `Dedicated_start_level`
   (dedicated_server.cpp:502-511), and the rotation moves on from there. An A/B that toggles mid-run can land the
   two arms on different maps. Hold a level fixed across a toggle with separate single-round runs.
-- **Release builds log at `info` by default** (sdlmain.cpp:229-233), and nearly all bot telemetry is `LOG_DEBUG`.
-  A Release log without `-loglevel debug` has no nav telemetry; analyzer zeros there are blind spots, not health.
+- **What a build logs** (checked on a real server log 2026-10-08, REL3). Nearly all bot telemetry is `LOG_DEBUG`,
+  filtered at run time, and no `bot*.cpp` file has a build-type `#if`. Debug and RelWithDebInfo (the release packages)
+  define no `RELEASE`, so they log at `debug` by default and carry the same line families. Only a Release-config build
+  starts at `info` (sdlmain.cpp:229-233), and `-loglevel debug` lifts it. An `info` log has no nav, respawn or game-mode
+  lines: the analyzer then shows mode Unknown, zero deaths and zero stucks, which are blind spots, not health. The
+  difference that remains between Debug and RelWithDebInfo is the assert: the optimised build logs `Assertion failed`
+  and carries on (a Release build compiles `ASSERT` out).
+- **Analyze stdout, never `Descent3.log`.** The console's own lines (HUD messages such as flag pickups, captures,
+  returns and kills, the `Opening level` line, and every `$` reply) go straight to stdout (`con_raw_Puts`,
+  linux/lnxcon_raw.cpp, the console on every platform) and never reach plog. `-logfile`'s `Descent3.log` holds the plog
+  lines only: `analyze_bot_log.py` stops on "No level data found" and `flag_conversion.py` finds no flag events. With
+  `-service` the console is the null driver, and those lines go nowhere.
 - **Team labels:** the log prints the engine's 0-based team index while the bot config is 1-based.
   `tools/analyze_bot_log.py` maps them.
 - **Stuck counts:** judge navigation by the analyzer's `(hard)` columns (`net_disp < 10`). Raw stuck totals include

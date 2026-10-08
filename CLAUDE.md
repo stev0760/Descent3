@@ -14,8 +14,9 @@ clang-format -i <file>                                # .clang-format is the sty
 
 - No in-source builds. `compile_commands.json` is always generated. The git hash is baked in via `cmake/CheckGit.cmake`
   into `d3_version.h` on every build; a dirty tree stamps the PARENT commit's hash, so label test binaries by name.
-- Soaks run the Debug build (asserts are the crash net and the nav telemetry is Debug-only). The operator flies the
-  binary at `builds/linux/build/Debug/Descent3` through Pyrodeck; its logs land next to it as `testing-<UTC>.log`.
+- Soaks run the Debug build because asserts are the crash net. The nav telemetry is not Debug-only: the RelWithDebInfo
+  packages log it too (BOT_DEV_REFERENCE, measurement caveats). The operator flies the binary at
+  `builds/linux/build/Debug/Descent3` through Pyrodeck; its logs land next to it as `testing-<UTC>.log`.
 
 ## Where things live
 

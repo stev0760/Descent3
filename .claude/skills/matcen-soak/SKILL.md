@@ -27,8 +27,11 @@ quit cleanly → analyze the log → compare against the reference numbers.**
    `cp builds/linux/build/Debug/Descent3 "$SOAK_SERVER_DIR/Descent3"`
    then confirm the git hash is in the binary: `strings <deployed binary> | grep -m1 <commit-hash>`.
    A soak on a stale binary is worthless and has burned whole sessions before.
-4. **Linux Debug builds only for diagnostics.** Windows Release logs contain ZERO nav
-   telemetry (no stuck/router/via lines) — analyzer zeros there are blind spots, not health.
+4. **Linux Debug builds for soaks** (asserts stop the run). A Release-config build logs at
+   `info`: ZERO nav telemetry (no stuck/router/via lines) unless started with `-loglevel debug`,
+   so analyzer zeros there are blind spots, not health. The RelWithDebInfo packages log the
+   telemetry by default (REL3, 2026-10-08). Analyze captured stdout, never `-logfile`'s
+   `Descent3.log`: it has no `Opening level` or HUD flag lines.
 5. **Don't trust rates from short runs.** Captures/round needs hours; the short-run metrics
    are conversion % and hard-fail signatures (see "Judging results").
 

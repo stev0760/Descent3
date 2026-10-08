@@ -128,8 +128,12 @@ Open an issue on the project's GitHub page. Include:
 - the version: the server prints `Matcen <version> <commit>` when it starts, and `$servercaps` prints
   `fork_version=`.
 - the mode, the mission and the level, and what the bots did against what you expected.
-- the server log: on Linux, run the server with `2>&1 | tee server.log`. On Windows, add `-logfile` and attach
-  `Descent3.log`.
+- the server log. The release build logs the bots' navigation by default, about 5 to 15 MB an hour with 6 to 8 bots.
+  Do not start it with `-loglevel info`, which drops every bot line. On Linux and macOS, run the server with
+  `2>&1 | tee server.log`: the file then holds the log and the console's game messages (flag pickups and captures,
+  level changes) together. On Windows, add `-logfile` and attach `Descent3.log` from the folder you started the server
+  in. It has the bot lines but not the game messages, so say what happened around the problem. The next start
+  replaces it: copy it before you restart the server.
 - your `dedicated.cfg` and `bots.cfg`, with the password removed.
 
 A crash report is most useful with the `-symbols` archive for your system unpacked next to the executable.

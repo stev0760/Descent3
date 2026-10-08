@@ -21,6 +21,10 @@ a larger change that may be backed out whole, until it passes its validation gat
   starts with `Usage:`.
 - The code comments describe the design instead of the history that produced it, and an unused start-up function
   is gone.
+- **INSTALL.txt and the quickstart say how to keep a server log for a bug report.** The release build logs the bots'
+  navigation by default, as a Debug build does. On Linux and macOS, `2>&1 | tee server.log` keeps everything. On
+  Windows, `-logfile` writes `Descent3.log`, which lacks the console's game messages (flag captures, level changes)
+  and is replaced at every start. `-loglevel info` drops every bot line.
 
 ## [0.10.2] - 2026-10-08
 

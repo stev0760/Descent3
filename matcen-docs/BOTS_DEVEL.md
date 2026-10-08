@@ -10,6 +10,70 @@ including the CTF, Hyper and Hoard write-ups) is preserved verbatim in
 `matcen-docs/archive/BOTS_DEVEL-phases-0_to_0.9.12.md`. The engine-files audit (single-player, Robo-Anarchy and
 co-op impact) now lives in `matcen-docs/BOT_DEV_REFERENCE.md`.
 
+### 2026-10-08: what the release build logs (REL3)
+
+The packages are `release.yml`'s RelWithDebInfo build. The 2026-10-07 entry read from the code that it logs the bot
+telemetry as a Debug build does, and REL3 asked for a real log. Built at 51d681b0 in a separate binary directory with
+`release.yml`'s configure line. `-DUSE_EXTERNAL_PLOG=ON` configures, and CMake reports it as an unused variable: plog
+comes from vcpkg through `find_package(plog REQUIRED)` either way, so the flag does nothing here or on CI. `bot.cpp`
+compiles with `-O2 -g -DNDEBUG -DLOGGER`, without `RELEASE` or `_DEBUG`. No `bot*.cpp` file has an `#if`, and all 201
+`LOG_DEBUG` calls in them are filtered at run time.
+
+**Runs.** Lab, 6 hotshot bots, 3v3 CTF on Bedlam level 4 (Polaris), about 5 minutes an arm, the lab's netgames modules
+in every arm, `$servercaps`, `$botstat`, `$nav contend all` and `$nav dump` over the remote console. Rates are bytes
+from the spawn line to the end of the log.
+
+| Arm | Binary and flags | DEBUG / INFO lines | Analyzer | MB an hour of play |
+|---|---|---|---|---|
+| A | RelWithDebInfo, defaults, `-logfile` | 4128 / 79 | full report, 23 sections | 5.5 |
+| B | RelWithDebInfo, `-loglevel DEBUG` | 5211 / 80 | full report, 25 sections | 7.0 |
+| C | RelWithDebInfo, `-loglevel INFO` | 0 / 79 | 5 sections: mode Unknown, 0 deaths, 0 stucks | 0.19 |
+| D | Debug (the operator's binary), defaults | 4810 / 86 | full report, 25 sections | 6.5 |
+
+A lacks D's capture and flag-return sections (its 5 minutes had no capture) and has a pin section D lacks. A, B and D
+carry the same families: `BOT DEST`, `NAVCENSUS`/`NAVCONTEND`, room progress timeouts, powerup chases and pickups,
+carrier nav, flag grabs, objective nav, via points, hop and entrance outcomes, chains and composed routes, respawns,
+game mode, `[Nav]`, `[Perf]`, `[Roadmap]`, `[NavDump]`, the config and population lines. None of the four runs had a
+stuck escalation, an `!` order or an assert. The distinct `[function@line]` emitters number 217 in A and B and 221 in D.
+Each one seen in only one build is an event of that sample (`BotDoCarrierNav@4088` in D, `BotTrollSoftStrike@5018` in
+B), not a guard. `-loglevel` takes the level's first letter, so `DEBUG`, `debug` and `d` are the same, and a level that
+matches none of the six (a digit, say) silences plog. C keeps the HUD lines, `Opening level`, `[Perf]`, `[Roadmap]` and
+the config lines, so `flag_conversion.py` reads it in full, while `analyze_bot_log.py` loses every nav section. "The nav
+telemetry is Debug-only" (CLAUDE.md, PLAN §7) is wrong for the packages and true only of a Release-config build at its
+`info` default. What a Debug build keeps for itself is the assert stop: RelWithDebInfo logs `Assertion failed` and
+carries on.
+
+**Two sinks.** plog writes to stdout and, with `-logfile`, to `Descent3.log` in the directory the server starts in,
+deleted at every start and never rotated (plog's rolling appender with `maxFiles` 0). The console's own lines go to
+stdout through `con_raw_Puts` (`linux/lnxcon_raw.cpp`, the console on every platform, since `win32/wincon.cpp` is
+editor-only) and never reach plog: HUD messages (flag pickups, captures, returns, kills), `Opening level`, and every `$`
+reply. A's `Descent3.log` has none of the 2 flag pickups, 8 kill lines, the level line or the `SERVERCAPS` reply.
+`analyze_bot_log.py` stops on "No level data found", and `flag_conversion.py` finds no flag events. A's stdout holds
+every plog line in the file: the 49 that a line diff misses are glued behind console text that has no newline (the
+level-load progress lines). The quickstart told Windows operators to attach `Descent3.log`. INSTALL.txt and QUICKSTART
+now say what it lacks and that `2>&1 | tee` on Linux and macOS keeps everything. With `-service` the console is the null
+driver, and those lines go nowhere.
+
+**Console replies.** `$servercaps` printed the same line in all four arms (`fork_version=0.10.3`, features
+`bots,roster,ships,difficulty,teams,squad_orders,population`). `$botstat` printed the same fields in all four. The
+optional ones (`via:`, `boa=`, the wall detail after `ahead:`) follow each bot's state. Both are console output, so the
+log level does not touch them.
+
+**Volume.** 5.5-7.0 MB an hour of play at the default, 42,000-54,000 lines an hour, 12 to 15 lines a second on the
+terminal. The lab's Debug soaks of 2026-10-06 ran 4.9-7.9 MB an hour (6-8 bots, one map) and 14.2 MB an hour (8 bots,
+four-team Bedlam rotation): 120-340 MB for a day's server. The file is unbounded but replaced at the next start. The
+terminal is hard to read at that rate, and `-loglevel info` quiets it at the cost of every bot line.
+
+**Aside, ENG9.** The `%` fix stops at `con_Printf`: `con_raw_Puts` is `fprintf(stdout, str)`, so the filtered line is
+read as a format once more. `say rel3pct A%sB%dC%xD end` printed stray bytes for `%s` and `0` for `%d` and `%x` in the
+server log (the server stayed up). ENG9's row is reopened. The fix is `fputs`, not built.
+
+Owed (PLAN §4 REL3): the operator's release soak and the one Windows-native Release run (Q13b), which also settles what
+a Windows operator can capture. Also owed: a decision on teeing the console into `Descent3.log` (a file-only plog
+instance fed from `con_Printf`, so stdout does not double) and on ENG9's `fputs`, both 0.10.4 if approved.
+`builds/linux` was not touched. The RelWithDebInfo tree, the lab copies, cfgs, dumps and temp directories were removed
+afterwards.
+
 ### 2026-10-08: the bounded code-quality pass, 0.10.3 (COL28)
 
 The pass the operator bounded on 2026-10-07: one commit, no behaviour change, comments only in the navigation code.

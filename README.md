@@ -16,7 +16,7 @@ Bots take real player slots on dedicated and listen servers and show up to every
 
 **No client modification is needed.** Retail D3 v1.5 clients and compatible engines such as PiccuEngine connect and play as they are. A server with no bot configuration behaves exactly like vanilla D3.
 
-**Status: 0.10.3** (2026-10-08). The release-package series began with 0.10.0, which adds the seat rules and player target below, bot commands and an F6 Bots menu for a listen-server host, and the F10 order menu; 0.10.1 puts the player target in the Bot Settings screen, 0.10.2 adds formation flying, and 0.10.3 tidies the code and the console help. The public release comes with a 0.10.x build. Release notes are in [CHANGELOG.md](matcen-docs/CHANGELOG.md).
+**Status: 0.10.3** (2026-10-08). The release-package series began with 0.10.0, which adds the seat rules and player target below, bot commands and an F6 Bots menu for a listen-server host, and the F10 order menu; 0.10.1 puts the player target in the Bot Settings screen, 0.10.2 adds formation flying, and 0.10.3 tidies the code and the console help and says how to keep a server log for a bug report. The public release comes with a 0.10.x build. Release notes are in [CHANGELOG.md](matcen-docs/CHANGELOG.md).
 
 **Getting started:** [QUICKSTART.md](matcen-docs/QUICKSTART.md) covers installing over Descent 3 and running a server with bots. Release packages for Windows, Linux and macOS (community-tested) go on the GitHub Releases page, starting with the next tagged release.
 

@@ -46,7 +46,9 @@ From `flag_conversion.py` output (picks -> caps per team):
   splusv1: rooms 58/59. "Grate" visuals never imply the object type — check `$navdump` `objects[]`.
 - **Wind tunnels** = `Rooms[].wind`, one-way gates + downwind shortcut ($nav wind). Polaris rooms
   38/105 (mag 15). Navdump emits `wind`/`wind_mag`. Threshold `BOT_WIND_TUNNEL_MIN` = 10.
-- **Windows Release logs have ZERO nav telemetry** — analyzer zeros there are blindness, not health.
+- **A Release-config log at its `info` default has ZERO nav telemetry** — analyzer zeros there are
+  blindness, not health. RelWithDebInfo (the packages) logs it by default; `Descent3.log` lacks the
+  HUD and `Opening level` lines, so read captured stdout (BOT_DEV_REFERENCE, measurement caveats).
 - **navdump `outdoor_roadmap[].node_count` is DUMP-CLAMPED at 4096** — it's a floor, not a count.
   `comp_count` IS full-graph truth (stored at build). Room dumps clamp at 2048 the same way.
 - **navdump is taken from the LIVE state**: region roadmaps build lazily — dump AFTER bots fly

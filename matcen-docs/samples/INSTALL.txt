@@ -40,6 +40,16 @@ macOS: community-tested; nobody on the project has a Mac to test it on. The
   app is not signed: run  xattr -dr com.apple.quarantine .  once in the
   Descent 3 folder after extracting.
 
+A log for a bug report
+----------------------
+The server log, bot lines included, goes to the terminal: about 5 to 15 MB
+an hour with 6 to 8 bots. On Linux and macOS, end the start line with
+  2>&1 | tee server.log
+to keep all of it. On Windows, -logfile writes Descent3.log in the folder
+you start from. It has the bot lines but not the console's game messages
+(flag captures, level changes), and the next start replaces it. Leave the
+log level alone: -loglevel info drops every bot line.
+
 More
 ----
 Quickstart:   @DOCS_URL@/QUICKSTART.md
