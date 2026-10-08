@@ -1460,7 +1460,7 @@ void DemoReadNewFrame(void) {
 }
 
 void DemoWriteAttachObjRad(object *parent, char parent_ap, object *child, float rad) {
-  cf_WriteByte(Demo_cfp, DT_ATTACH);
+  cf_WriteByte(Demo_cfp, DT_ATTACH_RAD);
   cf_WriteShort(Demo_cfp, OBJNUM(parent));
   cf_WriteByte(Demo_cfp, parent_ap);
   cf_WriteShort(Demo_cfp, OBJNUM(child));
