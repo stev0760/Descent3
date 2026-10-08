@@ -10,6 +10,98 @@ including the CTF, Hyper and Hoard write-ups) is preserved verbatim in
 `matcen-docs/archive/BOTS_DEVEL-phases-0_to_0.9.12.md`. The engine-files audit (single-player, Robo-Anarchy and
 co-op impact) now lives in `matcen-docs/BOT_DEV_REFERENCE.md`.
 
+### 2026-10-08: sizing the cloud server, a capped soak on the release build (REL10)
+
+The operator's server will be a 2 vCPU, 2 GB Linux VPS (Ubuntu LTS, in the US) running Matcen under systemd with
+Pyrodeck on the same machine. REL10 asked what a full server costs on the release build, and whether a slower vCPU
+keeps frames and level loads acceptable.
+
+**Setup.** RelWithDebInfo at `09ffa783` (0.10.7), configured with `release.yml`'s line in its own binary directory,
+installed, and its debug info split off as the package does. Each server ran from its own directory laid out like a
+deployment (the install tree, with the lab's retail HOGs and `missions/` linked in), in an empty environment
+(`env -i`: no display, no sound server), with `-logfile`, its own `-useport`, `-gamespyport`, console port and
+`-tempdir`. 15 hotshot bots, mixed hulls, PPS 40. `MaxPlayers=17`: the server's own slot counts, so `MaxPlayers=16`
+holds 14 bots and the seat kept free; 15 bots and a free seat need 17. Seven servers ran side by side on the Ryzen 9
+5900X (24 threads, otherwise mostly idle), started 15 s apart. CPU is the process's utime plus stime over 10-second
+samples, as a percentage of one core. The caps are cgroup quotas on a pinned core (`systemd-run --user --scope
+-p CPUQuota=<n>% -p CPUQuotaPeriodSec=10ms taskset -c <core>`); the 10 ms period spreads the cap across each frame
+instead of one long stall per 100 ms. A quota slices time and does not slow each instruction, so it models a slower
+vCPU only roughly.
+
+| Arm | Map | Cap | CPU % avg (max sample) | RSS MB | Steady minutes: fps, bots ms a frame, worst frame, frames >50 ms | Start to level open, open to first frame, open to prewarm done |
+|---|---|---|---|---|---|---|
+| A | Batteries Included CTF | none | 2.9 (4.9) | 79-83 | 62.3, 0.28, 17 ms, 0 | 0.48, 0.25, 1.05 s |
+| B | Robo-Anarchy, `d3.mn3` level 1 (level 2 from 15 min) | none | 4.6 (10.9) | 62-71 | 62.3, 0.28, 18 ms, 0 | 0.50, 0.11, 0.53 s |
+| C | Batteries | one core (`taskset`) | 2.8 (5.3) | 80-83 | 62.3, 0.28, 18 ms, 0 | 0.51, 0.26, 1.08 s |
+| D | Batteries | 50% of a core | 2.4 (4.7) | 80-83 | 62.3, 0.24, 18 ms, 0 | 1.07, 0.56, 1.98 s |
+| E | Batteries | 25% | 2.5 (10.4) | 80-84 | 62.3, 0.26, 21 ms, 0 | 2.27, 1.16, 4.28 s |
+| F | Batteries | 10% | 2.5 (10.0) | 78-83 | 62.2, 0.32, 55 ms, 2 | 6.03, 3.08, 12.75 s |
+
+A and B ran 17 minutes, C-F 16; "steady" is the `[Perf]` minutes holding no level load (13-15 an arm). In the minute
+of the first load every arm logged one frame of about 100 ms, the load itself; F logged four over 50 ms and two over
+100 ms (worst 121 ms). The 15-minute TimeLimit reloaded Batteries: open to first frame 0.23 s in A, 0.52 s in D,
+1.13 s in E, 2.98 s in F, with the nav already built (`prewarm queued: 0`). Batteries' first load prewarms 302 rooms;
+play runs during the prewarm, which is sliced at 5 ms a frame. No arm logged an assert or an `Invalid socket` line.
+
+**What it says.** One server is one thread at a time. It has two or three threads, but the nav-build workers run only
+while the main thread waits for them (`SliceRun`), and pinned to one core (C) the server measured as A did. More cores
+buy more servers, not a faster one; per-thread speed sets the level-load and prewarm times and the size of the spikes.
+The steady work is small: 2.9% of a 16 ms frame is about 0.5 ms on this CPU for Batteries with 15 bots. At a quarter
+of a core no frame passed 21 ms; at a tenth the server still held 62 fps with two frames over 50 ms in 13 minutes,
+and a level change took 3 s to the first frame.
+
+**24/7 run (L).** Bedlam CTF, four teams, 15 bots auto-balanced, TimeLimit 8, 100 minutes: 12 level changes,
+Apparition, Plutonium, QuadSomniac and Polaris three times over. No assert, no crash, 15 joins and no bot lost. CPU
+2.5% on average (max sample 5.3%). The 74 steady minutes: 62.3 fps, bots 0.22 ms a frame, worst frame 31 ms, none
+over 50 ms. Each change took 0.04-0.06 s from open to the first frame and 0.14-0.42 s to a finished prewarm. RSS was
+49.9 MB at the start and rose 1.4-3.4 MB at each of the first four levels as each one's nav was built (58.3 MB after
+one rotation), 1.2 MB over the second rotation, and 0.4 MB over the last 44 minutes and four changes (59.5 to 59.9 MB,
+about 0.1 MB a change). A fit over the last hour gives +1.8 MB an hour, most of it the second rotation; by the third
+the curve is flat. `Descent3.log` reached 32.2 MB, 17.9 MB an hour after the first 10 minutes.
+
+**Logs.** At the default level with 15 bots: Batteries 12 MB an hour, the Bedlam rotation 18, Robo-Anarchy on the
+retail levels 28; 0.3-0.7 GB a day for one server. The largest single emitter in L is the engine's `AIFindRandomRoom`
+("Wander is generating the same room"), 60,608 of its 252,242 lines; B has none. `Descent3.log` is deleted at start
+and never rotated. plog opens it `O_APPEND`, so logrotate's `copytruncate` should work; not tried. Pyrodeck writes
+each launch's stdout to its own file and never prunes them. Without Pyrodeck, systemd sends stdout to the journal,
+which journald caps.
+
+**Start-up.** With the game files evicted from the page cache (`posix_fadvise(POSIX_FADV_DONTNEED)`), three cold
+starts took 1.35-1.37 s from launch to the bots' join and a warm one 0.72 s. One earlier cold start took 8.4 s, 5.4 s
+of it in the table load (`mng_LoadNetPages`); the cause was not found, and the desktop was busy with other work. A start
+reads about 200 MB (`rchar`, about 200,000 read calls), nearly all of `d3.hog`. A VPS disk is slower than this NVMe,
+so the first start after a boot may take some seconds; later loads come from the page cache. Each server extracts 56
+level-script modules from `d3-linux.hog` into its temp dir, 36 MB, which is RAM where /tmp is a tmpfs.
+
+**Disk.** The install tree is 86 MB (`Descent3` 14 MB after the debug split, `d3-linux.hog` 36 MB, `netgames/` 18 MB,
+`online/` 20 MB), 16 MB as `tar.xz`. Retail data: `d3.hog` 194 MB, `extra.hog` and `extra13.hog` 0.8 MB, and
+`missions/d3.mn3` 78 MB for the retail levels (Robo-Anarchy here); `merc.hog` 212 MB, `d3_2.mn3` 216 MB and
+`merc.mn3` 9 MB only for their levels. Batteries is 11 MB; the lab's 120-odd community missions are 0.9 GB. About
+0.4 GB serves the two cases measured, and the lab's whole set is about 1.7 GB.
+
+**Shared libraries.** `objdump -p` NEEDED of `Descent3`: `libm.so.6`, `libstdc++.so.6`, `libgcc_s.so.1`,
+`libc.so.6`, `ld-linux-x86-64.so.2`. `ctf.d3m`, the connection module and the 56 level-script modules need the same
+four less the loader. SDL3 and the other vcpkg libraries are linked statically; `libsystemd` is a build-only pin, and
+nothing of it or of OpenAL is linked. At run time (`/proc/<pid>/maps`) SDL3 also opened `libdbus-1.so.3` and
+`libudev.so.1` (and `libsystemd.so.0`, which this desktop's libdbus pulls in); with the dummy drivers no X11, Wayland,
+ALSA or PulseAudio library was mapped. A stock Ubuntu 22.04 or 24.04 server image has every one of them (`libc6`,
+`libstdc++6`, `libgcc-s1`, `libdbus-1-3`, `libudev1`, `libsystemd0`), so there is nothing to install with apt. This
+build needs GLIBC_2.43 (Arch); the package `release.yml` builds on ubuntu-22.04 needs glibc 2.35 at most, so the VPS
+takes the package, not a desktop build.
+
+**Pyrodeck 0.5.0.** The standalone binary (`dist-server/pyrodeck-server`, 124 MB on disk plus 1.5 MB of
+`resources/`), on loopback with its own config directory: 85-86 MB resident idle, 102-123 MB with the panel open in a
+headless browser and connected over the console to L for 96 minutes, CPU 0.03-0.07% of a core. Pyrodeck 0.5.0 runs
+one server; more servers would be plain systemd units.
+
+**Sizing.** One server with Pyrodeck needs under 0.25 GB of process memory (60-85 MB for the server, up to 123 MB for
+Pyrodeck), plus the HOGs in the page cache and the OS. CPU is 2.5-4.6% of one desktop core for a full server; at half
+the per-thread speed, a common shared vCPU, that is about 5-10% of a vCPU, an estimate (no VPS was measured). By CPU
+and memory 2 vCPU / 2 GB holds three or four full servers. The limits to watch are elsewhere: logs at 0.3-0.7 GB a day
+a server, the first cold start on a slower disk, and the players' latency and bandwidth (not measured; bots send
+nothing over the network). Not tested: a real VPS, network-attached disk latency, human clients over the internet.
+`builds/linux` was not touched; the RelWithDebInfo tree, the lab directories, copies, cfgs and temp dirs were removed.
+
 ### 2026-10-08: the remote console listens on loopback unless opened, 0.10.8 (ENG15)
 
 For the droplet the operator asked for a second lock behind the firewall. The console (`InitDedicatedSocket`) bound
