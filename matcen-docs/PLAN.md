@@ -186,6 +186,30 @@ release build (REL4); the quickstart and the announcement draft (REL11); the tag
 deleted, locally (REL16, REL17; pushing them is the operator's); Pyrodeck 0.4.20 with the mission-link rewrite, the
 contract sync and the log-path checks on its own branch (REL7-REL9; merging and tagging it is the operator's).
 
+Done by 2026-10-08 (the evening's second wave): the `!` polish floor and the mode verbs (CMD9-CMD16, MODE1, MODE7);
+the mission auto-download client fixes (ENG8, UPSTREAM #7) and the `%` console crash (ENG9, UPSTREAM #8); the
+announcement's prior-art line hedged (public "PiccuBot" 1v1 servers exist on tracker.h0m3.net; what they are is
+unknown); upstream synced and `main` fast-forwarded locally (REL18). Pyrodeck: the mission host (`feature/mission-host`),
+Startup Commands actually applied (`fix/autoexec-arg`), the D3Server3 audit (`docs/d3server3-audit`, §1-§6) and the four
+D3Server3-parity branches `parity/{sup,plr,pro,ops}` (supervisor, players/bans/rules, profile launch options, scheduler/
+mail/priority/updates), all unmerged: `PARITY_MERGE_PLAN.md` in the Pyrodeck checkout is the merge brief (→ 0.5.0).
+
+**Next waves, in order (the roadmap a fresh session should follow):**
+1. Operator: push `main` + branch + tags; `release.yml` dry run (REL2's first run); cockpit checks (F10, `!help`,
+   population yield, Entropy park, Monsterball kickoff); join 63.141.237.42:2301 and message Terminal (DescentBB
+   t=25174) before the reveal; decide POP15.
+2. Pyrodeck 0.5.0: merge the parity branches per `PARITY_MERGE_PLAN.md` (an Opus session in that repo).
+3. Matcen, one Opus agent each, no nav: UX11 (Bots submenu in the F6 menu via a DLL callback to
+   `RunBotConsoleCommand`), UX12 (population toggle in Bot Settings), CMD2 (formation v1), COL28 (bounded quality
+   pass), REL3 (what the release build logs), REL12 (a Piccu/vanilla client joining a Matcen server, using the
+   engine's `+connect <ip:port> -pilot <name>` for an agent-driven client on the operator's display).
+4. Reveal: REL14 (strip `-dev` → 0.10.0, CHANGELOG promoted, tag → CI builds the packages), DOC11.
+5. Pyrodeck 0.6.0: multi-server; the playlist mission (repack a playlist's levels into one generated `.mn3` served by
+   the mission host, since `MP_LEVEL_ENDED` carries only a level index and clients cannot follow a mission change);
+   tracker registration; operator event hooks. Piccu ask: auto-reconnect on a server-quit-for-rotation (a reason byte
+   on `MP_SERVER_QUIT`).
+6. After the reveal: the committee collapse (COL1-COL3, COL10, COL11), NAV64, MODE2, the Monsterball role freeze.
+
 **Exit:** the release build passes the battery and the compatibility pass, the packages and Pyrodeck release are
 published, the quickstart is written, and the announcement goes out (Reddit r/descent, DDN Discord, DescentBB,
 SectorGame; files on ModDB/GameFront).
@@ -248,6 +272,7 @@ Status text ("Q13", "Q9") is the old PLAN §4.0.1 review queue, kept in the arch
 | POP12 | bots.cfg has no inline comments: a trailing `; note` stays in the value (`BotDifficulty1=ace ; note` becomes Hotshot); strip inline `;` in the parser, or keep the doc rule "comments on their own line" | bot.cpp:9716-9740; old BOT_MANAGEMENT 169-171, 255-262 | open; BOT_MANAGEMENT §2 states the own-line rule | E | NEW | — |
 | POP13 | The old BOT_MANAGEMENT risk row "config parser strips quotes" is false: the parser trims only spaces, tabs, CR and LF, quotes stay in the value | bot.cpp:9731-9739; old BOT_MANAGEMENT 330 | docs corrected (live BM); parser unchanged | E | NEW | — |
 | POP14 | `.mps` `BOTCOUNT` clamps to 16 on load, not to `max_players - 1` (the menu clamps only on Enter/Done); `BotAdd` still refuses at capacity, so the effect is warnings, not overflow | multi_save_setting.cpp:286-291; multi_ui.cpp:1891, 1927 | DONE 2026-10-07 (0.9.17-dev, with POP2): after the whole file is read, `BOTCOUNT` is clamped to `max_players - 1 - reserve` with a log line. Lab: `BOTCOUNT 16` loaded as 6 for `MAXPLAYERS 8` | E | NEW | — |
+| POP15 | **Listen host may fill the last seat with a bot** (testing convenience): on a listen server the host is a human, so `reserve 0` would let MaxPlayers 8 carry 7 bots; today the floor is 1 everywhere (`BotPopulationRosterLimit` = MaxPlayers − 1 − reserve), by the 10-01 ruling "bots never fill a server". DECISION: allow `reserve 0` on listen servers only (one-line floor change in `bot_population.cpp` + menu text), or keep the floor and document MaxPlayers 9 for odd rosters | operator 2026-10-08 (cockpit: "I could only add 6 bots when I tried to make an 8 player game") | open — operator's call | B | NEW | — |
 
 ### CMD: `!` harness and formations
 | ID | Item | Source | Status (evidence) | Bkt | §4.2 | Q |
