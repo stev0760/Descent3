@@ -14,7 +14,7 @@ Build or runtime issues should be reported on our [GitHub tracker](https://githu
 
 Bots take real player slots on dedicated and listen servers and show up to every client as ordinary players, with `[BOT]` after the callsign (for example `Reaper[BOT]`). They fight with lead aiming, strafing, afterburner and countermeasures, collect powerups, honor cloaking, and fly under the same physics as human players.
 
-**No client modification is needed.** Retail D3 v1.5 clients, builds of this open-source engine and compatible engines such as PiccuEngine connect and play as they are. A server with no bot configuration behaves exactly like vanilla D3.
+**No client modification is needed.** PiccuEngine and builds of this open-source engine connect and play as they are; retail 1.4 clients cannot join. A server with no bot configuration behaves exactly like vanilla D3.
 
 **Status: 0.10.8** (2026-10-08), in the 0.10.x release-package series; the public release comes with a 0.10.x build. What each release changed is in [CHANGELOG.md](matcen-docs/CHANGELOG.md).
 

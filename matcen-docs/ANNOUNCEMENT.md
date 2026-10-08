@@ -14,9 +14,9 @@ Team Anarchy, Hyper-Anarchy, Robo-Anarchy, CTF, Hoard, Entropy and Monsterball, 
 play any map, including the ones you built yourself: Matcen builds a route network from each level's geometry when it
 loads, so there are no waypoint files and nothing is scripted per map.
 
-Players need nothing new. A retail 1.5 client, or PiccuEngine, connects as usual and sees the bots as players named
-`Reaper[BOT]` and so on. The bots fly under the same physics as you, lead their shots, use afterburner and
-countermeasures, and pick up powerups.
+Players need nothing new. PiccuEngine, or a build of the open-source Descent 3 engine, connects as usual and sees the
+bots as players named `Reaper[BOT]` and so on. The bots fly under the same physics as you, lead their shots, use
+afterburner and countermeasures, and pick up powerups.
 
 For server operators it is two config files. Set a player count and the bots keep the game at it: they step aside
 when a human joins and come back when one leaves, and one seat always stays free for a human. There are five
