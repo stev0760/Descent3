@@ -38,6 +38,7 @@ The dated status log this file used to carry is in `archive/BOT_DEV_REFERENCE-st
 | `physics/physics.cpp` | "Too many collisions" warnings rate-limited to 1/s at both sim-loop sites; server force on bot players |
 | `physics/collide.cpp` | Server force application on bot players (`CT_AI`) |
 | `netgames/dmfc/dmfcclient.cpp` | `OnPlayerReconnect` ASSERT replaced with a warning log |
+| `netgames/dmfc/dmfcmenu.cpp`, `dmfcbase.cpp`; `Descent3/Game2DLL.cpp` | The host's F6 Bots menu (`CreateBotsMenu`): every item runs a `$` line through `DLLRunBotConsoleCommand`, the game DLL table entry `fp[370]` (`RunBotConsoleCommandForDLL`). Usage: `BOT_MANAGEMENT.md` §3 |
 
 The full list of engine files the fork touches, with the single-player impact of each, is in
 [Engine files modified](#engine-files-modified-single-player--robo-anarchy--co-op-impact-audit) below.
@@ -912,6 +913,10 @@ mode DLLs `netgames/{anarchy,tanarchy,ctf,hoard,entropy,hyperanarchy,roboanarchy
 multiplayer code path and the game-mode modules, not executed by the single-player campaign. In DMFC,
 `dmfcclient.cpp` turns the `OnPlayerReconnect` team-mismatch assert into a log line (dmfcclient.cpp:903-906) and
 `dmfcinputcommand.cpp` raises the `$setpps` clamp from `[1, 20]` to `[2, 40]` (dmfcinputcommand.cpp:730-733).
+`dmfcmenu.cpp` adds the Bots submenu, which `DMFCBase::GameInit` builds for a listen-server host only, and
+`dmfcbase.cpp` zeroes the engine function table before the engine fills it. `Game2DLL.cpp` appends one entry to that
+table, `fp[370]`, which runs a `$` line through `RunBotConsoleCommand` on the game server and nothing on a client; no
+existing entry moved.
 `hudmessage.cpp` adds the bot-chat hook (`BotOnChatMessage`) inside the `LR_SERVER` send path (hudmessage.cpp:861,
 888), and offers a listen-server host's `$` chat line to the bot console first (`RunBotConsoleCommand`,
 hudmessage.cpp:834); a line it declines, and every client's `$` line, reaches the game DLL as before.

@@ -2839,6 +2839,8 @@ void IncreasePacketsPerSecond(int i);
 // Rehashs the hosts.allow/deny lists
 void RehashAllowDenyLists(int i);
 void SwitchLossPingIndicator(int i);
+// The host's Bots submenu (server only): every item runs a "$..." bot console line through DLLRunBotConsoleCommand
+MenuItem *CreateBotsMenu(void);
 
 /*
 ****************************************

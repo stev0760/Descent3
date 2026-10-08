@@ -199,9 +199,9 @@ mail/priority/updates), all unmerged: `PARITY_MERGE_PLAN.md` in the Pyrodeck che
    population yield, Entropy park, Monsterball kickoff); join 63.141.237.42:2301 and message Terminal (DescentBB
    t=25174) before the reveal; decide POP15.
 2. Pyrodeck 0.5.0: merge the parity branches per `PARITY_MERGE_PLAN.md` (an Opus session in that repo).
-3. Matcen, one Opus agent each, no nav: UX11 (Bots submenu in the F6 menu via a DLL callback to
-   `RunBotConsoleCommand`), UX12 (population toggle in Bot Settings), CMD2 (formation v1), COL28 (bounded quality
-   pass), REL3 (what the release build logs), REL12 (a Piccu/vanilla client joining a Matcen server, using the
+3. Matcen, one Opus agent each, no nav: UX11 (built 2026-10-08: the F6 Bots menu; owed a cockpit check), UX12
+   (population toggle in Bot Settings), CMD2 (formation v1), COL28 (bounded quality pass), REL3 (what the release
+   build logs), REL12 (a Piccu/vanilla client joining a Matcen server, using the
    engine's `+connect <ip:port> -pilot <name>` for an agent-driven client on the operator's display).
 4. Reveal: REL14 (strip `-dev` → 0.10.0, CHANGELOG promoted, tag → CI builds the packages), DOC11.
 5. Pyrodeck 0.6.0: multi-server; the playlist mission (repack a playlist's levels into one generated `.mn3` served by
@@ -315,7 +315,7 @@ Status text ("Q13", "Q9") is the old PLAN §4.0.1 review queue, kept in the arch
 | UX7 | On the host path a bot's ack can print above the speaker's command | multi.cpp:5010 vs 5012; hudmessage.cpp:857-858 | low confidence; needs a cockpit look; 2026-10-07: bot replies now leave from a queue on the server frame after the order is relayed (CHAT_COMMANDS §A.4), so the order should print first on both paths; unflown | E | NEW | — |
 | UX8 | `$bothelp` shows internal jargon ("§7 ... NAVIGATION.md §6.9") and omits `$nav roomfaces/probe/sweep/mtenure` | dedicated_server.cpp:1170-1186 | **BUILT 2026-10-07**: `$bothelp` lists the everyday commands, then a Diagnostics group with `$botstat`, `$botmov` and every `$nav` verb (dump, roomfaces, probe, sweep, contend, mtenure), with no internal references; the bare `$nav` contend line rewritten the same way; PYRODECK_CONTRACT §5 records it as text-only; checked over telnet | C | NEW | — |
 | UX9 | `$` surface verb/noun mixing ("accepted; revisit only if the surface grows") | BOTS_DEVEL 2759-2761 | standing | E | NEW | — |
-| UX11 | **Bots submenu in the F6 in-game multiplayer menu** (DMFC, every mode, host only): add bot, remove bot (bot list), difficulty, population on/off, target players, reserve — each item sends the matching `$` line through one new DLL callback to `RunBotConsoleCommand` (the UX2 entry point). Replaces typing `$` in F8 chat on a listen server | operator 2026-10-08 (cockpit): "this command surface should be updated to use the host player multiplayer controls menu" | open | B | NEW | — |
+| UX11 | **Bots submenu in the F6 in-game multiplayer menu** (DMFC, every mode, host only): add bot, remove bot (bot list), difficulty, population on/off, target players, reserve — each item sends the matching `$` line through one new DLL callback to `RunBotConsoleCommand` (the UX2 entry point). Replaces typing `$` in F8 chat on a listen server | operator 2026-10-08 (cockpit): "this command surface should be updated to use the host player multiplayer controls menu" | **BUILT 2026-10-08**: Bots in the F6 menu (DMFC `CreateBotsMenu`, every mode, listen host only): add, remove one or all, difficulty for all, population on/off, players to keep, seats kept free (1-4), status; each item sends its `$` line through the new DLL table entry `fp[370]` to `RunBotConsoleCommand`, replies on the HUD (BOT_MANAGEMENT.md §3); traced by reading, owed a cockpit check | B | NEW | — |
 | UX12 | **Population manager in the Bot Settings menu**: an on/off toggle and the target-players field (`BotTargetPlayers`/`$botpopulation`), next to the roster; today the menu only applies the seat clamp and the manager is console/config only | operator 2026-10-08: "is there a bot auto population toggle?" — no | open | B | NEW | — |
 
 ### COL: committee collapse and code cleanup

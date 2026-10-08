@@ -119,6 +119,18 @@ static void DUMMYrend_DrawScaledBitmap(int x1, int y1, int x2, int y2, int bm, f
   rend_DrawScaledBitmap(x1, y1, x2, y2, bm, u0, v0, u1, v1, color, alphas);
 }
 
+// fp[370]: the host's F6 Bots menu (DMFC) runs a "$..." line through the bot console, as if typed on the chat line.
+// Only the game server runs bots, so a client's call does nothing. The menu calls from inside the DLL's own keypress
+// event, and a bot joining or leaving calls back into the DLL through the same DLLInfo: the event's copy is restored.
+static bool RunBotConsoleCommandForDLL(const char *line) {
+  if (Netgame.local_role != LR_SERVER)
+    return false;
+  const dllinfo event_info = DLLInfo;
+  const bool handled = RunBotConsoleCommand(line);
+  DLLInfo = event_info;
+  return handled;
+}
+
 void GetGameAPI(game_api *api) {
   api->objs = (int *)Objects;
   api->rooms = (int *)Rooms;
@@ -505,6 +517,7 @@ void GetGameAPI(game_api *api) {
   api->fp[367] = (int *)dInven_GetTypeIDCount;
   api->fp[368] = (int *)dInven_FindPos;
   api->fp[369] = (int *)dInven_GetInventoryItemList;
+  api->fp[370] = (int *)RunBotConsoleCommandForDLL;
 
   // Variable pointers
   api->vp[0] = (int *)&Player_num;

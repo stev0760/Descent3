@@ -1286,3 +1286,177 @@ void SwitchLossPingIndicator(int i) {
   basethis->EnableLossGuage(enable);
   DLLAddHUDMessage(DTXT_LOSSINDICATOR, (enable) ? DTXT_ENABLED : DTXT_DISABLED);
 }
+
+///////////////////////////////////////////////////
+// Bots: the host's bot controls (Matcen)
+//
+// Every item sends the "$..." line the host could type on the chat line (F8) through DLLRunBotConsoleCommand, the
+// engine's bot console, so the reply or the refusal reaches the HUD exactly as a typed command's does. The menu reads
+// nothing back from the engine: it shows no current state, and Show status prints it.
+
+static void BotMenuSend(const char *line) {
+  if (basethis->GetLocalRole() != LR_SERVER || !DLLRunBotConsoleCommand)
+    return;
+  DLLRunBotConsoleCommand(line);
+}
+
+// Add bot: default ship, default difficulty, the smallest team. The name is the first of the engine's built-in
+// callsigns (BotDefaultName, bot.cpp) that no player flies under, then Bot<n>: the population manager's order once
+// its roster is used up.
+static const char *const Bot_menu_names[] = {"Reaper",  "Phantom", "Viper",   "Shadow", "Blaze", "Rogue",
+                                             "Havoc",   "Spectre", "Wraith",  "Talon",  "Fury",  "Ghost",
+                                             "Striker", "Nova",    "Tempest", "Apex"};
+
+static bool BotMenuCallsignInUse(const char *name) {
+  char callsign[MAX_CALLSIGN_SIZE];
+  snprintf(callsign, sizeof(callsign), "%s[BOT]", name);
+  for (int i = 0; i < DLLMAX_PLAYERS; i++) {
+    if ((basethis->NetPlayers[i].flags & NPF_CONNECTED) && !stricmp(basethis->Players[i].callsign, callsign))
+      return true;
+  }
+  return false;
+}
+
+static void BotMenuAddBot(int) {
+  char name[16];
+  bool found = false;
+  for (const char *candidate : Bot_menu_names) {
+    if (!BotMenuCallsignInUse(candidate)) {
+      snprintf(name, sizeof(name), "%s", candidate);
+      found = true;
+      break;
+    }
+  }
+  for (int n = 1; !found; n++) { // at most DLLMAX_PLAYERS callsigns can be taken, so this ends
+    snprintf(name, sizeof(name), "Bot%d", n);
+    found = !BotMenuCallsignInUse(name);
+  }
+  char line[64];
+  snprintf(line, sizeof(line), "$addbot %s", name);
+  BotMenuSend(line);
+}
+
+// Remove bot: one row per bot, by callsign. $removebot takes the bot's index in the engine's bot table (the number
+// $botlist prints), not its player slot. BotAdd gives every bot the address 127.<index>.<slot>.1, and NPF_BOT is the
+// server's own flag, so the index is read here, on the server, from the slot.
+static int Bot_menu_slots[DLLMAX_PLAYERS]; // player slot of each row, refreshed whenever the list is counted
+static int Bot_menu_count = 0;
+
+static int BotMenuBotIndex(int slot) {
+  const netplayer &np = basethis->NetPlayers[slot];
+  if (!(np.flags & NPF_CONNECTED) || !(np.flags & NPF_BOT))
+    return -1;
+  const uint8_t *a = np.addr.address;
+  if (a[0] != 127 || a[2] != slot || a[3] != 1)
+    return -1;
+  return a[1];
+}
+
+static int BotMenuBotCount(void) {
+  Bot_menu_count = 0;
+  for (int i = 0; i < DLLMAX_PLAYERS; i++) {
+    if (BotMenuBotIndex(i) >= 0)
+      Bot_menu_slots[Bot_menu_count++] = i;
+  }
+  return Bot_menu_count;
+}
+
+static char *BotMenuBotName(int row) {
+  if (row < 0 || row >= Bot_menu_count)
+    return NULL;
+  return basethis->Players[Bot_menu_slots[row]].callsign;
+}
+
+static void BotMenuRemoveBot(int row) {
+  if (row < 0 || row >= Bot_menu_count)
+    return;
+  const int index = BotMenuBotIndex(Bot_menu_slots[row]);
+  if (index < 0)
+    return;
+  char line[32];
+  snprintf(line, sizeof(line), "$removebot %d", index);
+  BotMenuSend(line);
+}
+
+static void BotMenuRemoveAll(int) { BotMenuSend("$removebots"); }
+
+// Difficulty: every bot, and the default for bots added later
+static const char *const Bot_menu_levels[] = {"trainee", "rookie", "hotshot", "ace", "insane"};
+static const char *const Bot_menu_level_titles[] = {"Trainee", "Rookie", "Hotshot", "Ace", "Insane"};
+
+static void BotMenuDifficulty(int level) {
+  if (level < 0 || level >= (int)(sizeof(Bot_menu_levels) / sizeof(Bot_menu_levels[0])))
+    return;
+  char line[48];
+  snprintf(line, sizeof(line), "$botdifficulty all %s", Bot_menu_levels[level]);
+  BotMenuSend(line);
+}
+
+// Population: the manager that keeps humans plus bots at a target. The targets offered run from 2 to one short of
+// the server's player limit, the most the one seat always kept free allows; the reserve offered is 1 to 4 seats.
+static void BotMenuPopulationOn(int) { BotMenuSend("$botpopulation on"); }
+static void BotMenuPopulationOff(int) { BotMenuSend("$botpopulation off"); }
+static void BotMenuPopulationStatus(int) { BotMenuSend("$botpopulation status"); }
+
+#define BOT_MENU_MIN_TARGET 2
+
+static int BotMenuTargetCount(void) {
+  const int count = basethis->Netgame->max_players - BOT_MENU_MIN_TARGET;
+  return (count > 0) ? count : 0;
+}
+
+static char *BotMenuTargetName(int row) {
+  static char text[MAX_STRING_LEN];
+  if (row < 0 || row >= BotMenuTargetCount())
+    return NULL;
+  snprintf(text, sizeof(text), "%d players", BOT_MENU_MIN_TARGET + row);
+  return text;
+}
+
+static void BotMenuTarget(int row) {
+  if (row < 0 || row >= BotMenuTargetCount())
+    return;
+  char line[48];
+  snprintf(line, sizeof(line), "$botpopulation target %d", BOT_MENU_MIN_TARGET + row);
+  BotMenuSend(line);
+}
+
+static void BotMenuReserve(int row) {
+  char line[48];
+  snprintf(line, sizeof(line), "$botpopulation reserve %d", row + 1);
+  BotMenuSend(line);
+}
+
+MenuItem *CreateBotsMenu(void) {
+  MenuItem *bots = new MenuItem("Bots", MIT_NORMAL, 0, NULL);
+  bots->AddSubMenu(new MenuItem("Add bot", MIT_NORMAL, 0, BotMenuAddBot));
+
+  tCustomMenu bot_list;
+  bot_list.GetListCount = BotMenuBotCount;
+  bot_list.GetItem = BotMenuBotName;
+  bots->AddSubMenu(new MenuItem("Remove bot", MIT_CUSTOM, 0, BotMenuRemoveBot, &bot_list));
+  bots->AddSubMenu(new MenuItem("Remove all bots", MIT_NORMAL, 0, BotMenuRemoveAll));
+
+  MenuItem *difficulty = new MenuItem("Difficulty (all bots)", MIT_NORMAL, 0, NULL);
+  for (const char *title : Bot_menu_level_titles)
+    difficulty->AddSubMenu(new MenuItem(title, MIT_NORMAL, 0, BotMenuDifficulty));
+  bots->AddSubMenu(difficulty);
+
+  MenuItem *population = new MenuItem("Population", MIT_NORMAL, 0, NULL);
+  population->AddSubMenu(new MenuItem("On", MIT_NORMAL, 0, BotMenuPopulationOn));
+  population->AddSubMenu(new MenuItem("Off", MIT_NORMAL, 0, BotMenuPopulationOff));
+  tCustomMenu targets;
+  targets.GetListCount = BotMenuTargetCount;
+  targets.GetItem = BotMenuTargetName;
+  population->AddSubMenu(new MenuItem("Players to keep", MIT_CUSTOM, 0, BotMenuTarget, &targets));
+  MenuItem *reserve = new MenuItem("Seats kept free", MIT_NORMAL, 0, NULL);
+  reserve->AddSubMenu(new MenuItem("1 seat", MIT_NORMAL, 0, BotMenuReserve));
+  reserve->AddSubMenu(new MenuItem("2 seats", MIT_NORMAL, 0, BotMenuReserve));
+  reserve->AddSubMenu(new MenuItem("3 seats", MIT_NORMAL, 0, BotMenuReserve));
+  reserve->AddSubMenu(new MenuItem("4 seats", MIT_NORMAL, 0, BotMenuReserve));
+  population->AddSubMenu(reserve);
+  population->AddSubMenu(new MenuItem("Show status", MIT_NORMAL, 0, BotMenuPopulationStatus));
+  bots->AddSubMenu(population);
+
+  return bots;
+}

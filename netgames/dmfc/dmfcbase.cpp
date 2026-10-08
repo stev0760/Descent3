@@ -768,6 +768,8 @@ void DMFCBase::SaveSettings(void) {
 //	Initialized all the functions for a multiplayer game...must be first thing called
 void DMFCBase::LoadFunctions(int *api_func) {
   DLLGetGameAPI = (GetGameAPI_fp)api_func;
+  // An engine fills only the entries it has, so zero the table first: an entry newer than the engine reads as NULL.
+  memset(&API, 0, sizeof(API));
   DLLGetGameAPI(&API);
 
   Objects = (object *)API.objs;
@@ -1154,6 +1156,7 @@ void DMFCBase::LoadFunctions(int *api_func) {
   Inven_GetTypeIDCount = (dInven_GetTypeIDCount_fp)API.fp[367];
   Inven_FindPos = (dInven_FindPos_fp)API.fp[368];
   Inven_GetInventoryItemList = (dInven_GetInventoryItemList_fp)API.fp[369];
+  DLLRunBotConsoleCommand = (RunBotConsoleCommand_fp)API.fp[370]; // Matcen; NULL from an engine without bots
 
   // Do variables
   Player_num = (int *)API.vp[0];
@@ -1379,6 +1382,10 @@ void DMFCBase::GameInit(int teams) {
     }
 
     Menu.AddSubMenu(lev1);
+
+    // The host's bot controls; a dedicated server has no on-screen menu, an engine without bots no callback
+    if (!IAmDedicatedServer() && DLLRunBotConsoleCommand)
+      Menu.AddSubMenu(CreateBotsMenu());
 
     // End Server Commands Menu
   }

@@ -1768,4 +1768,10 @@ DMFCDLLOUT(dInven_FindPos_fp Inven_FindPos;)
 typedef int (*dInven_GetInventoryItemList_fp)(Inventory *inven, tInvenList *list, int max_amount, int *cur_sel);
 DMFCDLLOUT(dInven_GetInventoryItemList_fp Inven_GetInventoryItemList;)
 
+// Runs one "$..." bot console line on the game server, as if the host had typed it on the chat line: the reply goes
+// to the host's HUD. Returns true if the line was a bot command; does nothing on a client. NULL from an engine
+// without bots.
+typedef bool (*RunBotConsoleCommand_fp)(const char *line);
+DMFCDLLOUT(RunBotConsoleCommand_fp DLLRunBotConsoleCommand;)
+
 #endif

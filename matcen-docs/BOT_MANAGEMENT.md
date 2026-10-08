@@ -7,8 +7,9 @@ design history of this work (the pre-roster problem statement, the init-order bu
 risk table) is in `archive/BOT_MANAGEMENT-design-history.md`.
 
 **Key files:** `Descent3/bot.h`, `Descent3/bot.cpp`, `Descent3/bot_population.h`, `Descent3/bot_population.cpp`,
-`Descent3/dedicated_server.cpp`, `Descent3/multi_ui.cpp`, `Descent3/multi_save_setting.cpp`. Line numbers below are at
-commit `ee6e6525`; the code added for section 9 is cited by function name.
+`Descent3/dedicated_server.cpp`, `Descent3/multi_ui.cpp`, `Descent3/multi_save_setting.cpp`, and the F6 Bots menu in
+`netgames/dmfc/dmfcmenu.cpp`. Line numbers below are at commit `ee6e6525`; the code added for section 9 and the menu
+is cited by function name.
 
 Open items for this area live in the registry (PLAN.md §4) under the POP ids cited below.
 
@@ -22,7 +23,7 @@ There are two ways to get a starting roster, and one console path for live chang
 |---|---|---|
 | Dedicated | the file named by `BotConfig=` in `dedicated.cfg` | `BotLoadRosterFile()` (bot.cpp:9683), called from `MultiStartNewLevel()` (multi.cpp:6465) |
 | Listen (client-hosted) | the Bot Settings menu, saved in `.mps` presets | `BotSpawnFromUI()` (bot.cpp:9929, called at multi.cpp:6467); bots join 3 s after the level loads (`BOT_UI_SPAWN_DELAY`, bot.h:27) |
-| Dedicated console, telnet, or a listen-server host's chat line | `$addbot` and the other `$` commands in section 3 | `RunBotConsoleCommand()` → `DedicatedHandleBotCommand()` (dedicated_server.cpp) |
+| Dedicated console, telnet, or a listen-server host's chat line or F6 Bots menu | `$addbot` and the other `$` commands in section 3 | `RunBotConsoleCommand()` → `DedicatedHandleBotCommand()` (dedicated_server.cpp) |
 
 All three call the same `BotAdd()` (bot.cpp:8701), and so does the population manager (section 9). `BotAdd()` is
 where the seats kept free for humans are enforced. If `BotConfig=` is set, the UI roster is skipped (bot.cpp:9933).
@@ -32,8 +33,8 @@ only by `BotShutdownAll()` (bot.cpp:8422). Bots then persist across level change
 (bot.cpp:8494). A bot removed with `$removebot` is not replaced, unless the population manager is on: then it adds a
 bot back after its cooldown (section 9.5).
 
-A listen-server host types the same `$` commands mid-match on the chat line (F8), and the replies come back on the
-HUD (section 3).
+A listen-server host types the same `$` commands mid-match on the chat line (F8), or picks the everyday ones from
+Bots in the F6 menu, and the replies come back on the HUD (section 3).
 
 ## 2. Config file reference (dedicated server)
 
@@ -168,6 +169,39 @@ describes. `$bothelp` prints the everyday commands first and the diagnostics in 
 level's navigation geometry as JSON (hidden alias `$navdump`, :1098). Remote-admin tools must gate on `$servercaps`,
 not on which `$nav` rows exist. NAVIGATION.md documents what the toggles do.
 
+### The host's Bots menu (F6)
+
+On a listen server the host's F6 menu has a **Bots** submenu, in every mode (all of them build their F6 menu in DMFC,
+co-op included). Each item sends the `$` line in the table through the bot console, so the reply, or the refusal,
+arrives on the HUD exactly as if the host had typed it. The menu shows no current state, since it reads nothing back
+from the engine: Show status prints it.
+
+| Item | Sends |
+|---|---|
+| Add bot | `$addbot <name>`: the default ship and difficulty, the smallest team. The name is the first built-in callsign (Reaper, Phantom, Viper, ...) no player flies under, then `Bot<n>`: the population manager's order once its roster is used up |
+| Remove bot ▸ one row per bot, by callsign | `$removebot <index>`, the `Bots[]` index `$botlist` prints |
+| Remove all bots | `$removebots` |
+| Difficulty (all bots) ▸ Trainee, Rookie, Hotshot, Ace, Insane | `$botdifficulty all <level>`, which also sets the default for later bots |
+| Population ▸ On, Off | `$botpopulation on`, `$botpopulation off` |
+| Population ▸ Players to keep ▸ 2 players up to one short of the server's limit | `$botpopulation target <n>`, which also switches the manager on |
+| Population ▸ Seats kept free ▸ 1 to 4 seats | `$botpopulation reserve <n>`; there is no 0 (section 9.1) |
+| Population ▸ Show status | `$botpopulation status` |
+
+Add bot takes no team: `$addbot` reads a team only after a ship and a difficulty, and the menu cannot know the
+configured default difficulty to pass. The menu is built only for the game server, and not on a dedicated server,
+which has no on-screen menu.
+
+How it is wired: the menu is `CreateBotsMenu()` (netgames/dmfc/dmfcmenu.cpp), added by `DMFCBase::GameInit` after
+the Server menu. It reaches the engine through one entry appended to the game DLL's function table, `fp[370]`
+(Game2DLL.cpp, `RunBotConsoleCommandForDLL`; `DLLRunBotConsoleCommand` on the DMFC side), which runs the line
+through `RunBotConsoleCommand()` on the server and does nothing on a client. DMFC zeroes the table before the engine
+fills it, so an engine without that entry leaves it NULL and the menu is left out. The menu runs inside the DLL's own
+keypress event, and a bot that joins or leaves calls back into the DLL through the same `DLLInfo` (whose `iRet`
+`CallGameDLL` zeroes), so the entry restores `DLLInfo` on the way out and the Enter key stays consumed. `$removebot`
+takes the bot's `Bots[]` index, not its player slot: the menu reads it from the slot's address, which `BotAdd()` and
+`BotReinitAll()` set to `127.<index>.<slot>.1`, on a slot flagged `NPF_BOT` (the server's own flag). Not yet seen on
+screen: the first cockpit flight on a listen server should walk every item.
+
 ## 4. Difficulty
 
 Five tiers, named after the single-player levels, each setting seven parameters (`kDiffParams`, bot.cpp:370-381;
@@ -228,10 +262,10 @@ screen is `MultiBotSettingsMenu()` (multi_ui.cpp:1736-2093).
   - **Bots join 3 s after the first level loads** (`BOT_UI_SPAWN_DELAY`, bot.h).
 - **Done / Cancel.**
 
-After the match starts the host adds, removes and retunes bots with the `$` commands on the chat line (section 3);
-the menu itself is pre-game only. If the server refuses a roster bot when the game starts, the host sees
-`BOT: cannot add '<name>' — server full (n/m players)` (the dash shows as `-` on the HUD) and then
-`Failed to add bot '<name>'` on the HUD.
+After the match starts the host adds, removes and retunes bots from Bots in the F6 menu or with the `$` commands on
+the chat line (section 3); the Bot Settings screen itself is pre-game only. If the server refuses a roster bot when
+the game starts, the host sees `BOT: cannot add '<name>' — server full (n/m players)` (the dash shows as `-` on the
+HUD) and then `Failed to add bot '<name>'` on the HUD.
 
 Bot settings are saved in `.mps` multiplayer presets (multi_save_setting.cpp:125-140 write, :286-340 read), one
 tab-separated key per line:

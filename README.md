@@ -46,7 +46,7 @@ In team modes and co-op, type a `!` order in chat, such as `!attack`, `!defend`,
 
 On a Matcen client, F10 opens a menu of the orders the mode takes and sends the same chat line; players on other clients type it.
 
-On the dedicated server console, over telnet, or on a listen-server host's chat line, `$bothelp` lists the bot commands (`$addbot`, `$removebot`, `$botlist`, `$botdifficulty`, `$botpopulation` and the diagnostics).
+On the dedicated server console, over telnet, or on a listen-server host's chat line, `$bothelp` lists the bot commands (`$addbot`, `$removebot`, `$botlist`, `$botdifficulty`, `$botpopulation` and the diagnostics). A listen-server host also finds the everyday ones under Bots in the F6 menu.
 
 ### Roadmap
 

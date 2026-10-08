@@ -10,6 +10,44 @@ including the CTF, Hyper and Hoard write-ups) is preserved verbatim in
 `matcen-docs/archive/BOTS_DEVEL-phases-0_to_0.9.12.md`. The engine-files audit (single-player, Robo-Anarchy and
 co-op impact) now lives in `matcen-docs/BOT_DEV_REFERENCE.md`.
 
+### 2026-10-08: the host's Bots menu in F6 (UX11)
+
+The operator's cockpit finding: on a listen server the bot commands meant typing `$` lines on the F8 chat line, and
+they belong in the host's F6 multiplayer menu. Built as a **Bots** submenu in shared DMFC code, so every mode gets it
+(anarchy, team anarchy, robo-anarchy, hyper-anarchy, CTF, hoard, Entropy, Monsterball, co-op: all build their F6
+menu in `DMFCBase::GameInit`). Items: Add bot (`$addbot <name>`, named with the first built-in callsign no connected
+player flies under, then `Bot<n>`, the population manager's order once its roster is used up), Remove bot (an
+`MIT_CUSTOM` list of the bots by callsign → `$removebot <index>`), Remove all bots (`$removebots`), Difficulty (all
+bots) (five levels → `$botdifficulty all <level>`), and Population: On, Off, Players to keep (2 to
+`max_players − 1` → `$botpopulation target <n>`), Seats kept free (1-4 → `$botpopulation reserve <n>`; no 0, POP15
+is undecided), Show status. The menu keeps no state of its own (no `MIT_STATE` check marks that a console or telnet
+change would make stale); the replies on the HUD are the feedback.
+
+One engine entry point, appended to the game DLL function table: **`fp[370]`** (the table ended at 369,
+`dInven_GetInventoryItemList`; no index moved). Engine side `RunBotConsoleCommandForDLL` (Game2DLL.cpp): returns false
+unless `Netgame.local_role == LR_SERVER`, then runs the line through `RunBotConsoleCommand`, the UX2 entry point, so
+the `HostConsoleEcho` scope puts the reply on the host's HUD exactly as for a typed line. It saves and restores
+`DLLInfo` around the call: the menu runs inside DMFC's `EVT_CLIENT_KEYPRESS` handler, which sets `Data->iRet = 1`
+before `Menu.Execute()`, and `BotAdd`/`BotRemove` call back into the DLL (`EVT_GAMEPLAYERENTERSGAME`,
+`EVT_GAMEPLAYERDISCONNECT`) through `CallGameDLL`, which zeroes `DLLInfo.iRet`; without the restore `SendKeyToGameDLL`
+would see 0 and pass the Enter key on to the game. DLL side: `DLLRunBotConsoleCommand` (gamedll_header.h,
+dmfcfunctions.cpp) loaded in `DMFCBase::LoadFunctions`, which now zeroes `API` before `DLLGetGameAPI` so an engine
+that does not fill an entry leaves it NULL; `GameInit` adds the menu only when the pointer is set, the role is
+`LR_SERVER` and the process is not a dedicated server.
+
+`$removebot` takes the `Bots[]` index, not the player slot, and the DLL cannot see `Bots[]`. It reads the index from
+the slot: `BotAdd` and `BotReinitAll` give every bot the dummy address `127.<bot index>.<slot>.1`, and `NPF_BOT` is set
+on the server's own `NetPlayers`; the menu takes a slot only when the flag and the 127/slot/1 bytes all match. Team
+choice on Add bot left out: `$addbot` reads the team only after a ship and a difficulty, and the DLL cannot know the
+configured default difficulty to fill in; the smallest-team balance applies.
+
+Files: `Descent3/Game2DLL.cpp`, `netgames/includes/gamedll_header.h`, `netgames/dmfc/dmfcfunctions.cpp`,
+`netgames/dmfc/dmfcbase.cpp`, `netgames/dmfc/dmfcinternal.h`, `netgames/dmfc/dmfcmenu.cpp` (`CreateBotsMenu` and its
+handlers). No `$` command or output changed (PYRODECK_CONTRACT untouched); no navigation code. Debug build clean
+(engine and all nine netgame modules), ctest 32/32. Traced by reading (F6 → `Menu.Execute` → handler →
+`DLLRunBotConsoleCommand` → `fp[370]` → `RunBotConsoleCommand` → `HostConsoleEcho` → HUD); not yet seen on screen,
+owed a cockpit flight on a listen server that walks every item.
+
 ### 2026-10-08: a `%` in a callsign crashed the server (ENG9)
 
 The Pyrodeck ban editor has to survive hostile names, and the agent building it tried one: `$addbot Pct%sX` took the

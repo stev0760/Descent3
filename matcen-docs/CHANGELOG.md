@@ -48,6 +48,10 @@ A `-dev` suffix marks an in-test build that has not yet passed its validation ga
   and every other bot command typed on the chat line (F8) now run on the host, with the reply on the HUD (Shift+F9
   shows the whole of a long one). When the server refuses a bot, at the start of the game or later, the host is told
   why. Other `$` commands, and anything a client types, go to the game as before.
+- **Bots in the F6 menu.** The host of a listen server finds a Bots menu in F6, in every mode: add a bot, remove one
+  from a list of the bots or remove them all, set every bot's difficulty, and switch the player target on or off, set
+  how many players it keeps, and how many seats stay free. Each choice runs the same command as typing it on the chat
+  line, with the same reply on the HUD. In test.
 - **Bot Settings shows more and offers only what works.** Each bot has a Team setting (Auto, Red, Blue, Green, Yellow;
   saved in presets; ignored in free-for-all games). The screen shows how many seats are left for players and says that
   bots join 3 seconds after the first level loads. The Black Pyro is offered only when Mercenary is installed, like the

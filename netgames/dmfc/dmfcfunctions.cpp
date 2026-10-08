@@ -520,3 +520,4 @@ bool (*Inven_IsUsable)(Inventory *inven);
 int (*Inven_GetTypeIDCount)(Inventory *inven, int type, int id);
 bool (*Inven_FindPos)(Inventory *inven, int type, int id);
 int (*Inven_GetInventoryItemList)(Inventory *inven, tInvenList *list, int max_amount, int *cur_sel);
+bool (*DLLRunBotConsoleCommand)(const char *line);
