@@ -11,6 +11,12 @@ series each bug fix or small feature takes the next number in the last place. A 
 a larger change that may be backed out whole, until it passes its validation gate. 1.0 comes after community play.
 0.9.17 was never released: its development build became 0.10.0.
 
+## [0.10.9] - 2026-10-11
+
+- **The Windows build compiles again.** Two lines of the bot code that GCC accepts are errors for Microsoft's
+  compiler, and the Windows build had stopped on them since 0.9.13. The release workflow's Linux package also uses
+  the same library versions as a local build now. Bots play exactly as in 0.10.8.
+
 ## [0.10.8] - 2026-10-08
 
 - **The remote console stays on the server machine unless you open it.** With `AllowRemoteConsole=0` (also the

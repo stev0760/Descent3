@@ -100,6 +100,9 @@ jobs:
       - uses: lukka/run-vcpkg@v11
         with:
           vcpkgJsonGlob: vcpkg.json
+          # The vcpkg tree whose versions database holds vcpkg.json's libsystemd 260.2 override; without it the
+          # action checks out builtin-baseline, which stops at 257.8. Dependencies still resolve from the baseline.
+          vcpkgGitCommitId: 703036c815a5c31da3358ad807c99a0ed14a56f6
 
       - name: Configure cross-compiled build
         if: ${{ matrix.os.preset == 'linux-cross-arm64' }}

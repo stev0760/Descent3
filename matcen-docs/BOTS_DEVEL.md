@@ -10,6 +10,31 @@ including the CTF, Hyper and Hoard write-ups) is preserved verbatim in
 `matcen-docs/archive/BOTS_DEVEL-phases-0_to_0.9.12.md`. The engine-files audit (single-player, Robo-Anarchy and
 co-op impact) now lives in `matcen-docs/BOT_DEV_REFERENCE.md`.
 
+### 2026-10-11: the first release dry run, and the Windows and Linux package builds, 0.10.9 (ENG16, REL2)
+
+The operator enabled Actions on the fork, and the first `release.yml` dry run (run 38109837185, on `d8dd2b9a`)
+built the macOS package and the source tarball and failed the other two. Nothing had run CI on the fork before, so
+both failures were old.
+
+- Windows, MSVC 14.51: `bot_roadmap.cpp` named a local `far` (since `e569d082`, 0.9.13), which the Windows headers
+  define away, so the line read `size_t = run_end;`; renamed `reach`. `bot_steering.cpp` sized an array inside the
+  `Finish` lambda with a `constexpr` local of the enclosing function (since `a6c3fc5b`), which MSVC treats as a
+  captured value (C2131); `kMax` is `static constexpr` now. Ninja stopped at 368 of 499 objects, so the rest were
+  checked here instead: the 53 fork-touched `.cpp` files with GCC `-fsyntax-only -Wpedantic -Wvla` (no VLA or GNU
+  extension; only `vecmat_external.h`'s anonymous structs, which MSVC accepts), the fork's added lines for
+  identifiers the Windows headers define (`far`, `near`, `small`, `interface`, `ERROR`, `IN`, `OUT` and the like:
+  only this one) and for POSIX-only headers and calls (none), and every array sized by a non-static local
+  `constexpr` (only this one inside a lambda). A real MSVC build is still the proof.
+- Linux: `lukka/run-vcpkg` checks out vcpkg at `vcpkg.json`'s `builtin-baseline` (`84bab45d`), whose versions
+  database stops at libsystemd 257.8, so the 260.2 override (`fa478242`, 0.9.4, for GCC 16) failed the manifest
+  install. Local builds use a vcpkg tree at `703036c8` (microsoft/vcpkg `master`, 2026-06-23), which has 260.2 and
+  descends from the baseline. `release.yml` and `build.yml` now pin `vcpkgGitCommitId` to it; the baseline, and so
+  every other dependency version, is unchanged. Whether 260.2 builds on the Ubuntu 22.04 runner is for the re-run
+  to show.
+
+Linux Debug build clean, 34 of 34 tests pass. Pyrodeck's dry run (run 38109838580, `main` at 0.5.3) passed: the
+Linux and Windows packages and `SHA256SUMS.txt`, the release job skipped.
+
 ### 2026-10-08: sizing the cloud server, a capped soak on the release build (REL10)
 
 The operator's server will be a 2 vCPU, 2 GB Linux VPS (Ubuntu LTS, in the US) running Matcen under systemd with

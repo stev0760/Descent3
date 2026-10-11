@@ -709,7 +709,7 @@ static bool PortalCrossingSide(int probe_room, const vector &P, const vector &di
     bool done;
     int pred;
   };
-  constexpr int kMax = 48;
+  static constexpr int kMax = 48; // static: MSVC rejects a captured local as the array bound in Finish below
   RP rp[kMax];
   int rpn = 0;
   rp[rpn++] = {P, 0.0f, false, -1};

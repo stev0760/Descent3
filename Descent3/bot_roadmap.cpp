@@ -2886,11 +2886,11 @@ bool ComposeUnionRoute(RoadmapRoom *rr, object *obj, const vector &target_pos, i
       run_end++;
     size_t at = edge_i;
     while (at < run_end) {
-      size_t far = run_end;
-      while (far > at + 1 && !RoadmapLOSr(rr, graph[nodes[at]].pos, graph[nodes[far]].pos, straighten_clear))
-        far--;
-      waypoint.push_back(graph[nodes[far]].pos);
-      at = far;
+      size_t reach = run_end;
+      while (reach > at + 1 && !RoadmapLOSr(rr, graph[nodes[at]].pos, graph[nodes[reach]].pos, straighten_clear))
+        reach--;
+      waypoint.push_back(graph[nodes[reach]].pos);
+      at = reach;
     }
     edge_i = run_end;
   }
