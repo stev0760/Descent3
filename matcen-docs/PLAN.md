@@ -257,6 +257,8 @@ run the rest (the NAV "verify in one soak" rows, regression soaks). Grouped by s
   (CMD9, CHAT_COMMANDS §B.7).
 - [ ] Formation as leader (CMD2): the trail in a tunnel, the wedge and the echelon in a room, how far the squad lags
   at your speed, door order, any BLOCKED reports; Form up from F10.
+  Indoors confirmed by the operator's flight 2026-10-10 (`dmf.d3l`, CTF, 5 bots, 0.10.8: one `5 bots: Forming up!`,
+  a trail in room 8, a wedge in room 20, `In formation.` replies, no BLOCKED); owed a careful pass outdoors.
 - [ ] A real join and leave: a bot gives up its seat when you join and comes back when you leave (POP3).
 - [ ] Entropy: fly it (MODE3); the park holds still and a knock moves it (MODE6).
 - [ ] Monsterball: the kickoff and the difficulty spread (MODE7).
@@ -275,6 +277,9 @@ run the rest (the NAV "verify in one soak" rows, regression soaks). Grouped by s
 **4. Co-op flight** (one Pyrodeck co-op session, keep the log: COOP2)
 - [ ] Bots escort and fight robots (COOP1, COOP5, COOP6); a roster larger than the co-op cap does not spawn past it
   (COOP4).
+  The operator's yardstick (2026-10-11): orders obeyed, and travel as purposeful as the guide-bot's. Legs the engine
+  plans already ride its BNode path (`$nav bnodesp`, on); region-less campaign terrain does not (COOP3), so the
+  flight notes whether the randomness is indoors, outdoors or at the change.
 
 **5. The release build, and Windows** (REL3)
 - [ ] Fly the RelWithDebInfo package from here on, not the Debug build, before the reveal (REL1, Q13a).
