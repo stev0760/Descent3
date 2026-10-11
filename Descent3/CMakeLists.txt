@@ -151,6 +151,7 @@ set(HEADERS
   weapon_external.h
   weather.h)
 
+# The Windows editor (editor/CMakeLists.txt) compiles all of these but sdlmain.cpp: list a new file there too.
 set(CPPS
   aiambient.cpp
   AIGoal.cpp

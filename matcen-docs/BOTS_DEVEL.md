@@ -10,6 +10,27 @@ including the CTF, Hyper and Hoard write-ups) is preserved verbatim in
 `matcen-docs/archive/BOTS_DEVEL-phases-0_to_0.9.12.md`. The engine-files audit (single-player, Robo-Anarchy and
 co-op impact) now lives in `matcen-docs/BOT_DEV_REFERENCE.md`.
 
+### 2026-10-11: the Windows editor links again, 0.10.10 (ENG17)
+
+The first Continuous Delivery run (38115874815, on 0.10.9) passed six of its eight builds and failed both Windows ones
+at the link of `Descent3Editor.exe`: 89 unresolved symbols, all bot code, referenced from `dedicated_server.cpp` (64,
+mostly the `$nav` toggles), `multi*.cpp`, `GameLoop.cpp`, `hud*.cpp` and `AImain.cpp`. The editor (MFC, Windows
+only, `BUILD_EDITOR=ON` in CD, off in the packages) compiles the game's engine files from its own hand-kept list in
+`editor/CMakeLists.txt`, which in upstream is exactly the game's `CPPS` without `sdlmain.cpp`. The fork added 13
+`bot_*.cpp` files to the game and none to the editor, and the first bot commit (`da024500`, 2026-02-21) already had
+`dedicated_server.cpp` call `BotAdd`/`BotRemove`, so the editor has not linked since then; the navigation work only
+widened the gap. The fork never touched `editor/`, and nothing ran CI on the fork until 2026-10-11.
+
+Fix: the 13 sources and the bot headers in the editor's lists (alphabetical, as the list is), and a note above `CPPS`
+in `Descent3/CMakeLists.txt`; CLAUDE.md carries the rule. Checked before CI, on the Linux objects: the bot objects
+need nothing that lives only in `sdlmain.cpp` (what they leave unresolved is the C library and pthreads, which map to
+Windows equivalents); the headers they include change under `EDITOR` only by adding declarations
+(`WinMainInitEditor`, `FindPointRoom`, terrain selection) and by `MAX_PALETTE_ROOMS` going from 0 to 50; the editor
+forces no precompiled or included header on its sources. An editor-only Windows workflow on a temporary branch
+(`ci/editor-link-check`, run 38151015827, deleted afterwards) built `Descent3Editor` in Debug and Release: the bot
+objects compiled and the executable linked with no error or LNK warning. Nothing runs bots in the editor; that it
+links is the whole claim.
+
 ### 2026-10-11: the first release dry run, and the Windows and Linux package builds, 0.10.9 (ENG16, REL2)
 
 The operator enabled Actions on the fork, and the first `release.yml` dry run (run 38109837185, on `d8dd2b9a`)

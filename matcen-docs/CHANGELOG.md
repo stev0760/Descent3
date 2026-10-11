@@ -11,6 +11,12 @@ series each bug fix or small feature takes the next number in the last place. A 
 a larger change that may be backed out whole, until it passes its validation gate. 1.0 comes after community play.
 0.9.17 was never released: its development build became 0.10.0.
 
+## [0.10.10] - 2026-10-11
+
+- **The Windows level editor builds again.** The editor (`-DBUILD_EDITOR=ON`, Windows only) compiles the game's own
+  code, and it had not linked since the bots arrived: the bot sources were never added to its build. Nothing changes
+  in play.
+
 ## [0.10.9] - 2026-10-11
 
 - **The Windows build compiles again.** Two lines of the bot code that GCC accepts are errors for Microsoft's

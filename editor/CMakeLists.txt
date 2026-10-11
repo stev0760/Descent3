@@ -12,6 +12,16 @@ set(HEADERS
     ../descent3/audiotaunts.h
     ../descent3/bnode.h
     ../descent3/BOA.h
+    ../descent3/bot.h
+    ../descent3/bot_chat.h
+    ../descent3/bot_chat_parse.h
+    ../descent3/bot_formation.h
+    ../descent3/bot_formation_table.h
+    ../descent3/bot_objective.h
+    ../descent3/bot_perf.h
+    ../descent3/bot_population.h
+    ../descent3/bot_quickorder.h
+    ../descent3/bot_roadmap.h
     ../descent3/Briefing.h
     ../descent3/BriefingParse.h
     ../descent3/bsp.h
@@ -297,6 +307,19 @@ set(SOURCE
     ../descent3/audiotaunts.cpp
     ../descent3/bnode.cpp
     ../descent3/BOA.cpp
+    ../descent3/bot.cpp
+    ../descent3/bot_chat.cpp
+    ../descent3/bot_chat_parse.cpp
+    ../descent3/bot_formation.cpp
+    ../descent3/bot_formation_table.cpp
+    ../descent3/bot_navdebug.cpp
+    ../descent3/bot_objective.cpp
+    ../descent3/bot_perf.cpp
+    ../descent3/bot_population.cpp
+    ../descent3/bot_quickorder.cpp
+    ../descent3/bot_quickorder_menu.cpp
+    ../descent3/bot_roadmap.cpp
+    ../descent3/bot_steering.cpp
     ../descent3/Briefing.cpp
     ../descent3/BriefingParse.cpp
     ../descent3/bsp.cpp
