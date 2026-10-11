@@ -31,6 +31,13 @@ forces no precompiled or included header on its sources. An editor-only Windows 
 objects compiled and the executable linked with no error or LNK warning. Nothing runs bots in the editor; that it
 links is the whole claim.
 
+The full CD run on 0.10.10 (38151835698) then passed all eight builds, the editor linked in both Windows ones,
+and 32 of 32 Windows tests passed. CD's artifacts are the `cmake --install` tree, which leaves the editor out
+(upstream keeps its install rule off until the editor is usable), so `build.yml` now uploads it on its own as
+`Descent3Editor_<config>_Windows-x64`. The Release artifact carries `mfc140.dll` from the runner's MFC
+redistributable folder: the editor is an ANSI MFC build in the shared DLL (`_AFXDLL`, no `UNICODE`), and Wine
+provides the C runtime but no MFC.
+
 ### 2026-10-11: the first release dry run, and the Windows and Linux package builds, 0.10.9 (ENG16, REL2)
 
 The operator enabled Actions on the fork, and the first `release.yml` dry run (run 38109837185, on `d8dd2b9a`)

@@ -167,3 +167,29 @@ jobs:
         with:
           name: Descent3_${{ matrix.build_type }}_${{ matrix.os.name }}
           path: ${{ github.workspace }}/builds/${{ matrix.os.preset }}/installed/
+
+      # The editor is not installed (editor/CMakeLists.txt keeps its install rule off), so it travels as its own
+      # artifact. The Release one carries the redistributable MFC DLL beside it, so it runs without the Visual C++
+      # redistributable, and under Wine; the Debug one needs Visual Studio's debug MFC and CRT.
+      - name: Collect the Windows editor
+        if: ${{ matrix.os.runner == 'windows-latest' }}
+        shell: pwsh
+        run: |
+          $out = "builds/win/editor-artifact"
+          New-Item -ItemType Directory -Force $out | Out-Null
+          $bin = "builds/win/editor/${{ matrix.build_type }}"
+          Copy-Item "$bin/Descent3Editor.exe" $out
+          if (Test-Path "$bin/Descent3Editor.pdb") { Copy-Item "$bin/Descent3Editor.pdb" $out }
+          if ("${{ matrix.build_type }}" -eq "Release") {
+            $mfc = Get-ChildItem -Directory "$env:VCToolsRedistDir/x64" -Filter "Microsoft.VC*.MFC" | Select-Object -First 1
+            if (-not $mfc) { throw "no MFC redistributable folder under $env:VCToolsRedistDir/x64" }
+            Copy-Item "$($mfc.FullName)/mfc140.dll" $out
+          }
+          Get-ChildItem $out | Format-Table Name, Length
+
+      - name: Upload the Windows editor
+        if: ${{ matrix.os.runner == 'windows-latest' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Descent3Editor_${{ matrix.build_type }}_${{ matrix.os.name }}
+          path: ${{ github.workspace }}/builds/win/editor-artifact/

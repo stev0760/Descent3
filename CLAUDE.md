@@ -93,9 +93,10 @@ The operator runs this (or Pyrodeck) in another shell; review the log with the a
 
 Matrix builds for Windows (MSVC), macOS (universal), Linux (GCC) and Linux ARM64 with `BUILD_TESTING=ON` and
 `ENABLE_LOGGER=ON`; workflows in `.github/workflows/`. Continuous Delivery runs on a push to `main` and also builds the
-Windows editor (`BUILD_EDITOR=ON`). `release.yml` runs on a `v*` tag and builds the Windows, Linux and macOS packages
-with `SHA256SUMS.txt` into a draft GitHub Release; run by hand, it is a dry run that builds the packages as artifacts
-only (no checksums, no release). MSVC rejects some code GCC accepts (a local named `far` or `near`; a `constexpr`
+Windows editor (`BUILD_EDITOR=ON`), uploaded as `Descent3Editor_<config>_Windows-x64` (the Release one with
+`mfc140.dll` beside it, so it runs under Wine). `release.yml` runs on a `v*` tag and builds the Windows, Linux and
+macOS packages with `SHA256SUMS.txt` into a draft GitHub Release; run by hand, it is a dry run that builds the
+packages as artifacts only (no checksums, no release). MSVC rejects some code GCC accepts (a local named `far` or `near`; a `constexpr`
 local used as an array bound inside a lambda): only CI shows it.
 
 The Windows editor (`editor/CMakeLists.txt`) compiles every `Descent3/*.cpp` but `sdlmain.cpp` from its own copy of
