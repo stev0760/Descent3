@@ -1,10 +1,9 @@
 # Pyrodeck contract: the fork-side telnet surface
 
-Decided 2026-10-01: the Matcen copy of the Pyrodeck spec (v2.6) is retired to `archive/D3_PYRODECK_SPEC-v2.6.md`,
-and this short contract replaces it.
+Decided 2026-10-01: this short contract replaces the Matcen copy of the Pyrodeck spec (v2.6).
 
 **The spec of record is the Pyrodeck repo** (`stev0760/d3-pyrodeck`, its `D3_PYRODECK_SPEC.md` v2.7, app v0.4.19; v2.8
-and app 0.4.20, synced to this contract, are on its `release/0.4.20` branch, not yet merged).
+and app 0.4.20, synced to this contract, are on its `release/0.4.20` branch).
 That spec owns the tool: architecture, session model, UI, API, packaging, phases, the vanilla commands it parses.
 This file owns only what Matcen promises to print. When a `$` bot command or its output changes, update this file in
 the same commit, and raise the change with the Pyrodeck repo if the command is Tier 1.
@@ -37,7 +36,7 @@ SERVERCAPS version=1 fork=Matcen fork_version=0.10.0 features=bots,roster,ships,
   CMakeLists.txt:37-39). The `-dev` suffix (CMakeLists.txt:40) is never printed here. Keep it that way: the Pyrodeck
   parser (`packages/server/src/parser/parsers/servercaps.ts`) expects a clean semver.
 - `features` is a hard-coded literal. It does not depend on the build or the game mode. Up to 0.9.16 it read
-  `bots,roster,ships,difficulty`; `teams`, `squad_orders` and `population` were added in 0.10.0 (POP6, decided
+  `bots,roster,ships,difficulty`; `teams`, `squad_orders` and `population` were added in 0.10.0 (decided
   2026-10-01). Match flags as a comma-separated set, never as a fixed string.
 
 What the flags mean:
@@ -212,19 +211,17 @@ The Pyrodeck repo's v2.7 spec still shows the old `$addbot` usage and success li
 space (`'Phantom [BOT]'`), the old `$botmode` names (`TeamAnarchy`, `HyperAnarchy`, `RoboAnarchy`, `Coop`, no
 `Entropy` or `Unknown`) and `fork_version=0.9.5`. Pyrodeck's `$botlist` regex already accepts both callsign forms.
 It also predates the `teams`, `squad_orders` and `population` flags, `$botpopulation`, and the `roster` meaning
-settled in §2. The fix belongs in the Pyrodeck repo; it is tracked as REL8 in the registry (PLAN.md §4).
+settled in §2. The fix belongs in the Pyrodeck repo.
 
-Pyrodeck 0.4.20 (spec v2.8; merged into Pyrodeck's `main` in 0.5.0 on 2026-10-08, not yet pushed) fixes that drift:
+Pyrodeck 0.4.20 (spec v2.8; merged into Pyrodeck's `main` in 0.5.0 on 2026-10-08) fixes that drift:
 it parses `$addbot` and `$botmode` as §4 specifies, uses `Name[BOT]`, keeps feature flags it does not know, offers a
 team when `teams` is advertised, and keeps a dead bot in its `$botstat` view. It does not drive `$botpopulation`
 yet: it parses and keeps the `population` flag only.
 
 ## 9. Open fork-side items
 
-- REL8: Tier 1 drift above, fixed in Pyrodeck 0.5.0; the Pyrodeck side of the
-  population controls is not built (the fork side is: §2 and §4).
-- POP6: done in 0.10.0; the `features=` list in §2 is the one the code prints.
-- REL7: the mission-download link refresh (rewrite the URL lines inside the `.mn3`; the engine `MissionURL` cvar was
-  reverted on 07-19). Built in Pyrodeck 0.4.20, in its `main` since 0.5.0; it touches no `$` command. See the registry row
-  in PLAN.md §4.
-- The pre-0.9.16 spec text (features by phase, API, deployment, Addendum A) is in `archive/D3_PYRODECK_SPEC-v2.6.md`.
+- The Tier 1 drift above: fixed in Pyrodeck 0.5.0; the Pyrodeck side of the population controls is not built (the
+  fork side is: §2 and §4).
+- The new `features=` flags: done in 0.10.0; the `features=` list in §2 is the one the code prints.
+- The mission-download link refresh (rewrite the URL lines inside the `.mn3`; the engine `MissionURL` cvar was
+  reverted on 07-19). Built in Pyrodeck 0.4.20, in its `main` since 0.5.0; it touches no `$` command.

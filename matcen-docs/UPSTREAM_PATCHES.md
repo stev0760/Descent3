@@ -1,16 +1,12 @@
 # Upstream Patches
 
-This document tracks bug fixes applied in the Matcen fork that also exist in
-upstream Descent 3 codebases (DescentDevelopers/Descent3 and PiccuEngine). These
-are original 1999 Outrage bugs that have survived untouched across forks.
+This document describes fixes to the shared Descent 3 engine code that were
+found while building Matcen. Each bug is also in upstream
+DescentDevelopers/Descent3, and each fix is written up so upstream can take it.
 
-Patches here are intentionally **small, self-contained, and portable**. Each is
-a mechanical change to a single file (or a small family of near-identical files)
-that any downstream maintainer can apply without pulling in the rest of the
-Matcen fork.
-
-If you maintain a D3 engine fork and want to fix these bugs in your own tree,
-the patch text in this document is sufficient; there is no need to merge from Matcen.
+Patches here are intentionally **small and self-contained**: each applies
+without the rest of Matcen, and the text in this document is enough to make
+the change.
 
 ---
 
@@ -21,7 +17,7 @@ the patch text in this document is sufficient; there is no need to merge from Ma
 | 1 | `$scores` numeric column truncation | 7 netgame DLLs | Fixed (Matcen 0.8.7, header-overlap regression fixed 0.8.8; first tag v0.8.13) | Not submitted |
 | 2 | Dedicated server never resets the grtext buffer → overflow crash | `Descent3/GameLoop.cpp` | Fixed (Matcen 0.9.3; first tag v0.9.7) | Not submitted |
 | 3 | BNode lookup asserts (crashes) on a room with no BNode data | `Descent3/bnode.cpp` | Hardened (Matcen 0.8.0; first tag v0.8.13) | Not submitted |
-| 4 | SDL mouse regression vs retail: wheel-down unbindable, mouse-4 aliases wheel-down, mouse-5 dead | `ddio/lnxmouse.cpp` | Fixed (Matcen 0.9.9, tag v0.9.9) | Not submitted (fixed independently in PiccuEngine) |
+| 4 | SDL mouse regression vs retail: wheel-down unbindable, mouse-4 aliases wheel-down, mouse-5 dead | `ddio/lnxmouse.cpp` | Fixed (Matcen 0.9.9, tag v0.9.9) | Not submitted |
 | 5 | Mission-download system: spurious "missing mission" prompt at join, garbage in the URL reply, dead retail copy-protection gate | `Descent3/mission_download.cpp` | Fixed (Matcen 0.9.9, tag v0.9.9) | Not submitted |
 | 6 | CTF: a carrier who dies in a flag's home goal does not send that flag home (wrong object tested) | `netgames/ctf/ctf.cpp` | Fixed (Matcen 0.10.0, tag v0.10.0) | Not submitted |
 | 7 | Mission auto-download: divide by zero on a fast start (SIGFPE), status-line buffer overflow from an 87-character link, uncaught throw on an `https:` link without TLS | `Descent3/mission_download.cpp` | Fixed (Matcen 0.10.0, tag v0.10.0) | Not submitted |
@@ -70,12 +66,11 @@ t = strlen(name);                                                    // 2
 memcpy(&buffer[pos[2]], name, (t < len[2]) ? t : len[2]);           // clips to 1
 ```
 
-Original Outrage 1999 code. Unchanged in all known forks.
+Original Outrage 1999 code.
 
 ### Affected files
 
-**Matcen / DescentDevelopers/Descent3 / PiccuEngine**: all 7 files identical
-across forks.
+**Matcen / DescentDevelopers/Descent3**: all 7 files identical before the fix.
 
 | File | Function location | Format |
 | :--- | :--- | :--- |
@@ -168,8 +163,6 @@ spaces.
 
 The patch is mechanical: 3 added lines per affected column, no API changes,
 no new dependencies, no behavior change when values fit the header width.
-Safe to apply to any D3 engine fork shipping the original Outrage netgame
-source.
 
 ### Status
 
@@ -180,8 +173,6 @@ source.
   together. The 0.8.8 change is commit `e6d7da60`. The first git tag that
   contains both is `v0.8.13`.
 - **DescentDevelopers/Descent3:** Not submitted. Candidate for PR.
-- **PiccuEngine:** Not submitted. Same fix applies verbatim (source confirmed
-  identical at `netgames/anarchy/anarchy.cpp:770-775` and sibling files).
 
 ---
 
@@ -247,16 +238,13 @@ function, not just `$netgameinfo`.
 ### Portability
 
 One line in one engine file, no API or behavior change for non-dedicated
-clients (the branch only runs when `Dedicated_server` is set). Safe to apply to
-any D3 engine fork.
+clients (the branch only runs when `Dedicated_server` is set).
 
 ### Status
 
 - **Matcen:** Fixed during 0.9.2 development (commit `5b0f1255`) and first
   released in 0.9.3. The first git tag that contains it is `v0.9.7`.
 - **DescentDevelopers/Descent3:** Not submitted. Candidate for PR.
-- **PiccuEngine:** Not submitted. Same fix expected to apply (engine-level
-  dedicated render guard is shared lineage).
 
 ---
 
@@ -301,11 +289,11 @@ strictly better than an abort.
 
 ### Portability
 
-Self-contained per-function guards in one engine file, no API change. Safe to
-apply to any D3 engine fork; bot-independent, benefits vanilla robustness on its
-own. (A sibling hardening of the deeper `ASSERT(f_ok)` in `aipath.cpp`'s
-`AIGenerateBNodePath` was tried during the reverted runtime-BNode-generation
-experiment and is **not** in the current tree; those asserts only fire when
+Self-contained per-function guards in one engine file, no API change.
+Bot-independent; benefits vanilla robustness on its own. (A sibling hardening
+of the deeper `ASSERT(f_ok)` in `aipath.cpp`'s `AIGenerateBNodePath` was tried
+during the reverted runtime-BNode-generation experiment and is **not** in the
+current tree; those asserts only fire when
 `BNode_allocated` is true, which on MP maps it is not, so they are dormant here.)
 
 ### Status
@@ -315,7 +303,6 @@ experiment and is **not** in the current tree; those asserts only fire when
   is `v0.8.13`.
 - **DescentDevelopers/Descent3:** Not submitted. Candidate for PR (latent retail
   crash on BNode-less rooms).
-- **PiccuEngine:** Not submitted. Same engine lineage; same fix expected to apply.
 
 ---
 
@@ -325,8 +312,7 @@ experiment and is **not** in the current tree; those asserts only fire when
 
 Three related input regressions versus the retail v1.4/1.5 Windows build, all in
 the SDL mouse layer (`ddio/lnxmouse.cpp`, used by every platform in the SDL3
-port). Reported from live play with a 5-button mouse; PiccuEngine fixed the same
-class of problem independently, which is where the correct mapping was taken from.
+port). Reported from live play with a 5-button mouse.
 
 1. **Mouse-wheel scroll-down cannot be bound.** `ddio_MouseGetCaps()` returned
    `MOUSE_LB | MOUSE_CB | MOUSE_RB` (bits 0-2 only). The config screen's
@@ -353,7 +339,7 @@ directions) and emitted a zero-width press/release pair, so
 
 ### Fix
 
-Match retail slot semantics (the same mapping PiccuEngine ships):
+Match retail slot semantics:
 
 | Physical | SDL button | Engine slot | Binding text |
 | :--- | :--- | :--- | :--- |
@@ -371,26 +357,26 @@ Match retail slot semantics (the same mapping PiccuEngine ships):
   pulse with a 0.1 s width so hold-time reads are nonzero.
 - Slot 6 gets its `mse-5` binding text.
 
+The slot mapping was ported from PiccuEngine's `ddio_sdl/sdlmouse.cpp`.
+
 ### Caveats
 
 - Pilots created under the broken mapping who bound actions to SDL-middle or
   SDL-right re-bind once (the slots those clicks land on now follow retail
   order). Bind-by-press in the config screen works as always.
 - Support for a hypothetical 8th slot (SDL button 6) was dropped; SDL itself
-  defines buttons only through X2, and PiccuEngine does the same.
+  defines buttons only through X2.
 
 ### Portability
 
 Self-contained in the SDL mouse translation unit; no API changes, no engine
-changes. Safe to apply to any SDL3-based D3 fork.
+changes.
 
 ### Status
 
 - **Matcen:** Fixed in 0.9.9 (commit `dc63136c`, branch `fix/sdl-mouse-controls`).
   First tag: `v0.9.9`.
 - **DescentDevelopers/Descent3:** Not submitted. Candidate for PR.
-- **PiccuEngine:** Already fixed independently (`ddio_sdl/sdlmouse.cpp`); their
-  mapping is the reference this fix was ported against.
 
 ---
 
@@ -408,11 +394,9 @@ subdirectory; the absolute-path variant is a raw case-sensitive `fopen` on Linux
 and macOS. Meanwhile the actual mission *load* path (`mn3_Open` →
 `cf_OpenLibrary` → `cf_LocatePath`) resolves `missions/<file>` case-insensitively.
 Result: a mission that is installed and perfectly loadable (e.g. on-disk
-`rage.mn3` vs server-advertised `RAGE.MN3`, a routine mismatch with community
-maps) fails the join-time check, and the client is told it doesn't have the map
-and offered the mission file's authored download links, which are usually decades
-stale. Windows builds mask the bug via filesystem case-insensitivity, which is
-also why PiccuEngine (same code) appears unaffected.
+`rage.mn3` vs server-advertised `RAGE.MN3`) fails the join-time check, and the
+client is told it doesn't have the map and offered the mission file's authored
+download links. Windows builds mask the bug via filesystem case-insensitivity.
 
 **(c) Server side: the retail copy-protection gate is dead code, twice.** The
 "don't offer downloads for retail content" check was
@@ -421,10 +405,9 @@ also why PiccuEngine (same code) appears unaffected.
 *named* clang.wav (never true). And even with the arguments un-swapped it could
 not fire: the retail campaign mn3s contain no `clang.wav` (verified against
 retail data), and the port stores library names as full paths that a bare-name
-compare can't match. Net effect: servers running retail missions have been
-advertising the campaign's 1999 outrage.com download URLs all along — observed
-in the wild on this fork's test server. Same dead code in
-DescentDevelopers/Descent3 and PiccuEngine.
+compare can't match. Net effect: a server running a retail mission advertises
+the campaign's 1999 outrage.com download URLs, as Matcen's test server did.
+Same dead code in DescentDevelopers/Descent3.
 
 **(b) Server side: the URL reply packet is built wrong.** In `msn_DoAskForURL()`:
 the URL-counting loop tested `url->URL[0]` (an array address, always true) instead
@@ -433,7 +416,7 @@ regardless of how many the mission actually authored; and the mission-name field
 was filled with `memcpy(data + count, url->URL[i], msnlen)` after `i` had run to
 one past the end of the URL array — an out-of-bounds read that puts adjacent-memory
 garbage on the wire where the mission name belongs. Original Outrage 1.5-patch-era
-code; present in DescentDevelopers/Descent3 and PiccuEngine unmodified.
+code; present in DescentDevelopers/Descent3 unmodified.
 
 ### Fix
 
@@ -454,19 +437,16 @@ undownloadable, which is the behavior the original gate intended.
 
 ### Portability
 
-Both fixes are confined to `Descent3/mission_download.cpp`, no API or protocol
+All three fixes are confined to `Descent3/mission_download.cpp`, no API or protocol
 change (the packet format is unchanged; the fields now just carry correct
 values). Retail clients interoperate unmodified. Fix (a) matters on
-case-sensitive filesystems (Linux/macOS); fix (b) applies everywhere, including
-Windows-only forks.
+case-sensitive filesystems (Linux/macOS); fix (b) applies on every platform.
 
 ### Status
 
 - **Matcen:** Fixed in 0.9.9 (commits `b8137dd2` and `6f8f83df`, branch
   `fix/mission-exists-check`). First tag: `v0.9.9`.
-- **DescentDevelopers/Descent3:** Not submitted. Candidate for PR (both).
-- **PiccuEngine:** Not fixed there — same code; (a) is masked by Windows
-  case-insensitivity, (b) is live but invisible unless the reply is inspected.
+- **DescentDevelopers/Descent3:** Not submitted. Candidate for PR (all three).
 
 ---
 
@@ -545,8 +525,7 @@ drop-and-timer path, which is the safe fallback.
 
 ### Portability
 
-One line in one netgame module, no API or protocol change. Safe to apply to
-any D3 fork shipping the original Outrage CTF source.
+One line in one netgame module, no API or protocol change.
 
 ### Status
 
@@ -555,8 +534,6 @@ any D3 fork shipping the original Outrage CTF source.
   found it.
 - **DescentDevelopers/Descent3:** Not submitted. Same line at
   `netgames/ctf/ctf.cpp:1750`.
-- **PiccuEngine:** Not checked. Same netgame lineage, so the same fix should
-  apply.
 
 ---
 
@@ -582,7 +559,7 @@ than failing the download:
    buffer on every client.
 3. **Uncaught exception.** The scheme check accepts `https:` (case-insensitively),
    but `httplib::Client` throws `std::invalid_argument` from its constructor for
-   any scheme it cannot serve: `https:` in a build without OpenSSL (the fork's
+   any scheme it cannot serve: `https:` in a build without OpenSSL (Matcen's
    vcpkg build), or any upper-case scheme, since httplib matches `[a-z]+`.
    Nothing catches it.
 
@@ -630,7 +607,7 @@ if (time_elapsed > 0 && received_bytes) {
 - A server-side mitigation exists in D3 Pyrodeck's mission host (it sends
   `Content-Length` and holds the first byte for one second) for the clients in
   the wild that carry the divide. Fixed clients do not need the hold.
-- Links must stay at 86 characters or fewer for unfixed clients; the fork's
+- Links must stay at 86 characters or fewer for unfixed clients; Matcen's
   companion tool enforces that on the server side.
 - The download window still blocks until the first progress callback (the
   `0 == 0` check in the same loop); unchanged here.
@@ -642,7 +619,6 @@ if (time_elapsed > 0 && received_bytes) {
   client (the divide was reproduced with the same expression in a standalone
   program).
 - **DescentDevelopers/Descent3:** Not submitted. Same lines.
-- **PiccuEngine:** Not checked.
 
 ---
 
@@ -686,7 +662,6 @@ Verified live on the Matcen build: the bot `Pct%sX[BOT]` joins and is listed,
   release-build log still printed `%s` as stray bytes. Found by the Pyrodeck
   parity work (a ban tool that must survive hostile names).
 - **DescentDevelopers/Descent3:** Not submitted. Same lines.
-- **PiccuEngine:** Not checked.
 
 ---
 
@@ -696,15 +671,14 @@ Found while building Matcen; the same code is upstream. Matcen works around them
 
 | Defect | Where | Effect | Workaround |
 | :--- | :--- | :--- | :--- |
-| A second server hangs on its first frame (PLAN ENG10) | `Descent3/gamespy.cpp` `gspy_Init`, `init.cpp` | When the GameSpy port (20142) is taken, `gspy_Init` returns before making its socket non-blocking and its result is ignored, so `gspy_DoFrame`'s `recvfrom` blocks for good | Give every server on one host its own `-gamespyport` |
-| `+connect <ip:port>` alone joins nothing (PLAN ENG13) | `Descent3/menu.cpp`, `ProcessCommandLine` | The address is stored, but only `+cl_pxotrack` acts on it, and its LAN path reads `-directip` or `ip`/`port` instead | Join with `-directip <ip:port>`; the smallest fix is for `AutoConnectLANIP` to fall back to the address `+connect` parsed |
+| A second server hangs on its first frame | `Descent3/gamespy.cpp` `gspy_Init`, `init.cpp` | When the GameSpy port (20142) is taken, `gspy_Init` returns before making its socket non-blocking and its result is ignored, so `gspy_DoFrame`'s `recvfrom` blocks for good | Give every server on one host its own `-gamespyport` |
+| `+connect <ip:port>` alone joins nothing | `Descent3/menu.cpp`, `ProcessCommandLine` | The address is stored, but only `+cl_pxotrack` acts on it, and its LAN path reads `-directip` or `ip`/`port` instead | Join with `-directip <ip:port>`; the smallest fix is for `AutoConnectLANIP` to fall back to the address `+connect` parsed |
 
 ## Other Fork Hardening to Assess for Upstream
 
 Matcen also changed a few engine and netgame files in ways that might help
-other forks. Nobody has reviewed these as upstream patches yet. This list
-keeps the review from being forgotten. Each one needs a check that it is a
-real upstream defect and not only a Matcen need.
+upstream. These have not been reviewed as upstream patches yet. Each one needs
+a check that it is a real upstream defect and not only a Matcen need.
 
 | Change | File | What it does in Matcen | Upstream question |
 | :--- | :--- | :--- | :--- |

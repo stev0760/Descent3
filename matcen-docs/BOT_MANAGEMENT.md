@@ -3,16 +3,12 @@
 **Status:** the config-file roster, ship selection, difficulty levels, the Bot Settings menu, per-bot team
 assignment and the `$servercaps` handshake are built and shipped. Seats kept free for humans, the bot that yields a
 seat to a joining human, the population manager and the allowed-ship rule are built in 0.10.0 (section 9); the Bot
-Settings menu sets the population target on a listen server from 0.10.1 (sections 5 and 9.10). The
-design history of this work (the pre-roster problem statement, the init-order bug, the old implementation order and
-risk table) is in `archive/BOT_MANAGEMENT-design-history.md`.
+Settings menu sets the population target on a listen server from 0.10.1 (sections 5 and 9.10).
 
 **Key files:** `Descent3/bot.h`, `Descent3/bot.cpp`, `Descent3/bot_population.h`, `Descent3/bot_population.cpp`,
 `Descent3/dedicated_server.cpp`, `Descent3/multi_ui.cpp`, `Descent3/multi_save_setting.cpp`, and the F6 Bots menu in
 `netgames/dmfc/dmfcmenu.cpp`. Line numbers below are at commit `ee6e6525`; the code added for section 9 and the menu
 is cited by function name.
-
-Open items for this area are tracked in [PLAN.md](PLAN.md).
 
 ---
 
@@ -130,7 +126,7 @@ to Pyro-GL, or to the first allowed ship if Pyro-GL is not allowed either, and t
 `BOT: ship Phoenix is not allowed on this server; 'Shadow' flies Pyro-GL`.
 
 One known gap: the navigation network is built for the Pyro-class hull, so other hulls fly it less well. Pyro-class
-hulls fly best. <!-- POP11 -->
+hulls fly best.
 
 ## 3. Console reference
 
@@ -317,9 +313,9 @@ nothing else. The output formats remote tools rely on are specified in `PYRODECK
 
 ## 8. Not built
 
-- `$botship <index> <ship>`, respawning a bot with a new ship. <!-- POP7 -->
+- `$botship <index> <ship>`, respawning a bot with a new ship.
 - Persistent bot statistics (kills, deaths, weapon use, state time, powerups; a level-end log) and a `$botstats`
-  console summary. <!-- POP8 -->
+  console summary.
 
 ---
 
@@ -480,7 +476,7 @@ A Debug build on a dedicated CTF server (bedlam level 4, two teams), `MaxPlayers
 | `$removebot 0` | `Reaper[BOT]` removed; the manager added it back 5.0 s later (`Reaper[BOT] joined to keep the game at 6 players.`) |
 | `$botpopulation target 3` | three bots left at 5 s intervals; status `bots=3 seats=4/8` |
 | Yield branch | `$botpopulation reserve 3` with two seats free: `Shadow[BOT] left to make room for a player.`, from the larger team (blue, three bots to red's two); the kill feed puts Shadow on the lowest frag count there (the frag counts themselves are not printed) |
-| Allowed ships | `BOT: ship Phoenix is not allowed on this server; 'Shadow' flies Pyro-GL` (roster) and the same for `$addbot Feeny phoenix ace 2` |
+| Allowed ships | `BOT: ship Phoenix is not allowed on this server; 'Shadow' flies Pyro-GL` (roster) and the same for `$addbot Hawk phoenix ace 2` |
 | Unknown difficulty | `BotDifficulty3=junk` logged a warning and spawned Ace (the configured default); `$addbot Junky pyro junk` printed `Unknown difficulty 'junk', using the default (Ace)` |
 | `.mps` clamp | `BOTCOUNT 16` loaded as 6 for `MAXPLAYERS 8` (log line) |
 | Four-seat server | `MaxPlayers=4`, `BotCount=4`: two bots spawned, `2 of 4 bots skipped`; the target of 6 was logged once as out of reach and the status showed the note |
@@ -503,7 +499,7 @@ keep** (section 5); `$botpopulation` and the F6 Bots menu change it afterwards.
 - **Range:** `BOT_UI_TARGET_MIN` (2: the host and one bot) to `max_players − BotReservedSlots` (`BotUIClampTarget`,
   bot.cpp), which is `max_players − 1` on a listen server: the host is one of the players the target counts, so at
   the top the bots take every seat but the free one. The menu and the `.mps` loader clamp to it. The menu has no
-  reserve control. <!-- POP15 -->
+  reserve control.
 - **Applied** with the roster, 3 s after the first level loads, once per game session: `BotSpawnFromUI()` arms the
   delayed spawn when the menu asks for bots or a target, and `BotDoUISpawn()` calls `BotApplyUIPopulation()` before
   the roster's `BotAdd` calls. That hands the manager what `BotLoadRosterFile()` takes from bots.cfg: the roster
@@ -537,9 +533,5 @@ Not yet checked on screen: the menu's layout, the toggle, the field, the readout
 
 ## Related documents
 
-- `PLAN.md`: the open items for this area.
 - `PYRODECK_CONTRACT.md`: the telnet output formats remote-admin tools depend on.
 - `CHAT_COMMANDS.md`: the in-game `!` order verbs.
-- `BOT_DEV_REFERENCE.md`: bot architecture and engine API patterns.
-- `archive/BOT_MANAGEMENT-design-history.md`: the original problem statement, init-order bug, implementation order
-  and risk table.

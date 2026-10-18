@@ -7,14 +7,9 @@ parts:
   is for, carrying it out, every line the bots say), `Descent3/bot_chat_parse.cpp` (the order language, covered by
   `Descent3/tests/bot_chat_tests.cpp`), the order code in `Descent3/bot.cpp` and the formation code in
   `Descent3/bot_formation.cpp` and `bot_formation_table.cpp`. Every verb and alias is listed once, in §A.5.
-- **Part B, the finish line.** What is left before the harness counts as done, as the operator decided it on
+- **Part B, the finish line.** What is left before the harness counts as done, as the maintainer decided it on
   2026-10-01, and what of it has landed.
 - **Part C, the Design Decisions Log.**
-
-The research survey (nine games, with sources), the Engine Chat System hook history, the Stage 1-3 rollout, the
-Stage 4-5 plans and the original Stage 6 "Orders as Goals" design are in
-[`archive/CHAT_COMMANDS-design-history.md`](archive/CHAT_COMMANDS-design-history.md), a verbatim copy of this doc as
-it stood at `ee6e6525`. Open items are tracked in [PLAN.md](PLAN.md) under the `CMD` ids used in Part B.
 
 ---
 
@@ -26,8 +21,8 @@ it stood at `ee6e6525`. Open items are tracked in [PLAN.md](PLAN.md) under the `
   (`BotChatParse`). So `gg !ping` triggers too, and `wow !!!` or `nice shot!` do not. The chat relay puts the sender's
   callsign in front of the line (`Bob says: ` on all-chat, `[Bob]: ` on team chat, `<Bob>:` in a direct message). The
   team-chat and direct-message prefixes are skipped first (`BotChatSkipSpeaker`), so a pilot called `!Bang` is not
-  giving an order every time he speaks there. The all-chat prefix is not skipped, so on all-chat such a pilot's every
-  line reads as the order `!bang`. <!-- CMD28 -->
+  giving an order every time they speak there. The all-chat prefix is not skipped, so on all-chat such a pilot's every
+  line reads as the order `!bang`.
 - **Words.** The verb is the word after the `!`, lowercased. Punctuation a sentence leaves at the end of a word
   (`. , ! ? ; :`) is dropped, so `!help?` and `!follow, reaper` work. A two-word form (`!attack flag`, §A.5) is matched
   before the next word is tried as a bot's name. The word after the verb (after the two-word form's second word, and
@@ -81,7 +76,7 @@ Everything the bots say goes through one queue in `bot_chat.cpp`, emptied once p
 - **Channel.** A reply goes back on the channel the command came in on: all-chat to all-chat, team chat to team chat,
   and a direct message to the sender only. Bot lines are server messages in yellow (`GR_RGB(200, 200, 50)`).
 - **Order of lines.** An answer goes out later in the same server frame, after the server has relayed the order
-  itself, so the order reaches the screen first. <!-- UX7: the listen host's own screen is not yet checked -->
+  itself, so the order reaches the screen first. <!-- the listen host's own screen is not yet checked -->
 - **Grouping.** Lines that go out in the same frame to the same recipient with the same text become one line:
   `4 bots: Following!`; a single speaker keeps its name, `Reaper[BOT]: Following!`. Different answers stay separate,
   so `!follow all` in a team game gives `3 bots: Following!` and `3 bots: Not taking orders from you!`. The HUD shows
@@ -124,14 +119,14 @@ in place (`BotVoidOrderReply`).
 | `!formup` | `!form up` | The escort of `!follow`, flying a **slot in the speaker's formation**: single file in a tunnel, a wedge where it fits, every follower in its own place (§A.6). Fights back as `!follow` does. A bot already in the formation keeps its place. | Same. | `Forming up!`, later `In formation.` or `Can't reach you!` |
 | `!cover` | none | Escorts the speaker like the follow verb, but engages any threat it sees. | Same. | `Covering you!`, then the same reports |
 | `!freelance` | `!stop`, `!dismiss` | Cancels every order and lean; back to the autonomous FSM. | Also opts the bot out of the default wing (§A.7) until its next order. | `Going freelance.` |
-| `!hunt <name>` | none | Role ATTACK, any post or escort released, target set to the enemy whose callsign starts with `<name>` (the sender's team is skipped). The hunted player is kept in `squad_target_slot`; when they die or leave, each hunter reports it once and goes back to freelance (§A.6). A name that matches no enemy answers `No enemy called <name>.` and a player already dead answers `<name> is already down.`; neither changes the bot's current order. With no name, role ATTACK and `Hunting!`. | The lookup skips the sender's team and co-op has one team, so a name never matches: `No enemy called <name>.` and nothing changes. A bare `!hunt` only releases the bot's anchor. <!-- CMD26 --> | `Hunting <name>!` |
+| `!hunt <name>` | none | Role ATTACK, any post or escort released, target set to the enemy whose callsign starts with `<name>` (the sender's team is skipped). The hunted player is kept in `squad_target_slot`; when they die or leave, each hunter reports it once and goes back to freelance (§A.6). A name that matches no enemy answers `No enemy called <name>.` and a player already dead answers `<name> is already down.`; neither changes the bot's current order. With no name, role ATTACK and `Hunting!`. | The lookup skips the sender's team and co-op has one team, so a name never matches: `No enemy called <name>.` and nothing changes. A bare `!hunt` only releases the bot's anchor. | `Hunting <name>!` |
 | `!attackflag` | `!attack flag`, `!getflag`, `!flag` | Role ATTACK plus the attack lean; releases any post. | Generic attack. | `On the flag!` in CTF, else `Attacking!` |
 | `!defendflag` | `!defend flag`, `!guardflag` | Role DEFEND plus the defend lean, no post. | Generic defend lean, no post. | `Guarding the flag!` in CTF, else `Defending!` |
 | `!attacklab` | `!attack lab` | **Entropy:** role ATTACK plus the attack lean, as `!attackflag`. The bot fights for kills (a kill is two carry slots) and, like every bot, invades the nearest enemy room once it carries five viruses; the order adds aggression, not a destination. **Other modes:** a plain `!attack`. | A plain `!attack`. | `Attacking their labs!` (Entropy) |
 | `!defendlab` | `!defend lab` | **Entropy:** a post, with the `!hold` lifecycle, in the room a lab defender guards (`BotEntropyLabGuardRoom`, the room the DEFEND lean anchors to: next to the team's first lab on the way toward the enemy's, never inside a lab; the lab itself when that room cannot be found), at the room's path point. The post is fixed: if the lab changes hands, the bot stays. With no lab: `We have no lab to defend.` **Other modes:** a plain `!defend`. | A plain `!defend`. | `Guarding our lab!`, later `In position.` |
 | `!attackball` | `!attack ball` | **Monsterball:** the striker role, pinned (`BotMonsterballOrderRole`, role 1) under role ATTACK, which keeps the role assigner (it ranks only bots with no order) off the bot. The team's own striker is still assigned among the unordered bots, so the ball can have two strikers. **Other modes:** a plain `!attack`. | A plain `!attack`. | `On the ball!` |
 | `!defendgoal` | `!defend goal` | **Monsterball:** the keeper role (role 3) under role DEFEND: the bot shadows the goal the other team scores in (each team scores into its own goal). **Other modes:** a plain `!defend`. | A plain `!defend`. | `Guarding their goal!` |
-| `!goal` | `!objective` | Not a team-mode verb: `No mission objectives in this mode.` to anyone. | **Installs a post at the current mission objective** (role DEFEND, position anchor at `coop_goal_pos`, the bot drops its fight and goes), with the post lifecycle of a hold. It does not resume any autonomous seeking. With no reachable objective it answers `No objective right now. Covering you.` and changes nothing. <!-- CMD27 --> | `Heading to: <item>!` |
+| `!goal` | `!objective` | Not a team-mode verb: `No mission objectives in this mode.` to anyone. | **Installs a post at the current mission objective** (role DEFEND, position anchor at `coop_goal_pos`, the bot drops its fight and goes), with the post lifecycle of a hold. It does not resume any autonomous seeking. With no reachable objective it answers `No objective right now. Covering you.` and changes nothing. | `Heading to: <item>!` |
 
 Notes:
 
@@ -197,14 +192,13 @@ objective announcements to everyone: `Next objective: <item>. Say !goal to send 
 complete. On your wing.`, and `Can't reach the goal yet. Covering you.` The first names the objective and the order that
 sends the bots to it. The `!goal` reply with no reachable objective, `No objective right now. Covering you.`, promises
 cover it does not change.
-<!-- CMD27 -->
 
 ### A.8 Earlier versions of this doc
 
-The version of this doc before 0.10.0, kept in [the archive](archive/CHAT_COMMANDS-design-history.md), claimed several
-things the code does not do: that `!goal` resumes objective-seeking, that enemy orders get a taunt, that `!follow` can
-name a third player, that replies are staggered, that bot names must match exactly, and that Monsterball takes no
-orders. Part A describes the code; where the two disagree, Part A is right.
+The version of this doc before 0.10.0 claimed several things the code does not do: that `!goal` resumes
+objective-seeking, that enemy orders get a taunt, that `!follow` can name a third player, that replies are staggered,
+that bot names must match exactly, and that Monsterball takes no orders. Part A describes the code; where the two
+disagree, Part A is right.
 
 ### A.9 Quick-order overlay (Matcen client)
 
@@ -289,41 +283,40 @@ above and adds nothing chat cannot do, so a player on another client misses noth
 
 ## Part B. Forward: the finish line
 
-Decided by the operator on 2026-10-01:
+Decided by the maintainer on 2026-10-01:
 
-- **Scope (Q2 = b).** "Finished" means the polish floor (§B.1, CMD9-CMD16) plus formation v1 (§B.2, CMD2). `!get
-  <powerup>` (CMD8) and team-chat callouts (CMD18) go in only if formation v1 lands early (§B.3). `!above`/`!below`/
-  `!flank`, chaining and grouping stay deferred (§B.4).
-- **Free-for-all modes (Q8).** Bots take **no orders at all**; every `!` verb, `!ping` and `!hunt` included, gets a
+- **Scope.** "Finished" means the polish floor (§B.1) plus formation v1 (§B.2). `!get <powerup>` and team-chat
+  callouts go in only if formation v1 lands early (§B.3). `!above`/`!below`/`!flank`, chaining and grouping stay
+  deferred (§B.4).
+- **Free-for-all modes.** Bots take **no orders at all**; every `!` verb, `!ping` and `!hunt` included, gets a
   taunt reply and installs nothing. **Built in 0.10.0** (§A.3) for Anarchy, Hyper-Anarchy and Robo-Anarchy, the
-  modes the ruling named, and for Hoard, the other one-team mode (the operator's 2026-10-07 brief; the F10 overlay
-  already treated it so). Monsterball, which the earlier §A.3 listed as free-for-all, runs two teams and takes orders.
-- **Formation (Q9 = yes).** "Form up" becomes a distinct formation mode; `!follow` stays a loose escort (§B.2).
-  **Built in 0.10.2** (§A.6, §B.2); owed a cockpit flight.
+  modes the ruling named, and for Hoard, the other one-team mode (decided 2026-10-07; the F10 overlay already treated
+  it so). Monsterball, which the earlier §A.3 listed as free-for-all, runs two teams and takes orders.
+- **Formation.** "Form up" becomes a distinct formation mode; `!follow` stays a loose escort (§B.2).
+  **Built in 0.10.2** (§A.6, §B.2); flown indoors, outdoors not yet (§B.7).
 
-The operator's goal (2026-09-28) is the `!` harness refined and finished (CMD1): the polish floor plus formation v1,
-with nothing else blocking the reveal. The polish floor landed in 0.10.0 and formation v1 in 0.10.2; what remains is
-seeing both in a cockpit (§B.7). The Entropy and Monsterball mode verbs (`!attack lab`/`!defend lab`, `!attack
-ball`/`!defend goal`) rode the mode polish rows MODE1 and MODE7 (`ENTROPY_MODE.md`, `MONSTERBALL_MODE.md`) and are
-built (§A.5).
+The goal (2026-09-28) is the `!` harness refined and finished: the polish floor plus formation v1. The polish floor
+landed in 0.10.0 and formation v1 in 0.10.2; what remains is listed in §B.7. The Entropy and
+Monsterball mode verbs (`!attack lab`/`!defend lab`, `!attack ball`/`!defend goal`) came with the mode work
+(`ENTROPY_MODE.md`, `MONSTERBALL_MODE.md`) and are built (§A.5).
 
-### B.1 The polish floor (CMD9-CMD16): built in 0.10.0
+### B.1 The polish floor: built in 0.10.0
 
-| Id | Item | As built |
-|---|---|---|
-| CMD9 | Discoverability | `!help` to the sender with the mode's orders; a one-time tip per player once bots on their side can take orders; unknown orders answered with a pointer to `!help` (§A.10). |
-| CMD10 | Free-for-all drops orders silently | Every `!` line gets a taunt from one bot and installs nothing (§A.3). |
-| CMD11 | `!hunt` in free-for-all: a grief vector | Gone with the free-for-all rule. In team modes and co-op a bot cannot be told to hunt itself: the obeying bots are on the sender's team, which the lookup skips. |
-| CMD12 | `!hunt` target death not reported; ATTACK persists | Each hunter reports the death or departure once and goes back to freelance (§A.6). |
-| CMD13 | Two-word `!attack flag` / `!defend flag` do not parse | Every documented two-word form parses before the next word is tried as a name (§A.1, §A.5). |
-| CMD14 | Order reports share the 2 s cooldown and are dropped | Reports have their own per-bot pacing and wait their turn; a repeat of the last report since the order is skipped and logged (§A.4). |
-| CMD15 | Broadcast replies flood the ~2-line HUD chat area | Same-text replies group into one line (`4 bots: Following!`); `!status` to the squad is one roll call (§A.4). |
-| CMD16 | Orders are cleared silently at a level change | Each issuer is told once in the new level (§A.6). Orders are not carried over. |
+| Item | As built |
+|---|---|
+| Discoverability | `!help` to the sender with the mode's orders; a one-time tip per player once bots on their side can take orders; unknown orders answered with a pointer to `!help` (§A.10). |
+| Free-for-all drops orders silently | Every `!` line gets a taunt from one bot and installs nothing (§A.3). |
+| `!hunt` in free-for-all: a grief vector | Gone with the free-for-all rule. In team modes and co-op a bot cannot be told to hunt itself: the obeying bots are on the sender's team, which the lookup skips. |
+| `!hunt` target death not reported; ATTACK persists | Each hunter reports the death or departure once and goes back to freelance (§A.6). |
+| Two-word `!attack flag` / `!defend flag` do not parse | Every documented two-word form parses before the next word is tried as a name (§A.1, §A.5). |
+| Order reports share the 2 s cooldown and are dropped | Reports have their own per-bot pacing and wait their turn; a repeat of the last report since the order is skipped and logged (§A.4). |
+| Broadcast replies flood the ~2-line HUD chat area | Same-text replies group into one line (`4 bots: Following!`); `!status` to the squad is one roll call (§A.4). |
+| Orders are cleared silently at a level change | Each issuer is told once in the new level (§A.6). Orders are not carried over. |
 
-### B.2 Formation v1 (CMD2): built in 0.10.2
+### B.2 Formation v1: built in 0.10.2
 
-Decided (Q9): `!formup` and `!form up` stop being aliases of `!follow` and become a distinct formation mode.
-`!follow` stays a loose escort. `!regroup` keeps its current meaning unless the operator moves it too. Target
+Decided: `!formup` and `!form up` stop being aliases of `!follow` and become a distinct formation mode.
+`!follow` stays a loose escort. `!regroup` keeps its current meaning unless the maintainer moves it too. Target
 behaviour: **trail** (single file) in tunnels, **wedge** in rooms, and **fixed slots for four or more followers** so no
 two bots share a point; collapse in tight corridors and expand in open rooms; no slot inside rock; followers file
 through doors in order instead of piling into the opening. The loose escort (§A.6) still cycles four slots, so its
@@ -338,8 +331,8 @@ through the escort's own legs (§A.6), and no routing, roadmap, steering or port
   of the same formation who joined earlier. A repeated `!formup` keeps the place; another order leaves the formation
   and the members behind close up; a member that dies drops out, and rejoins at the end when it respawns.
 - **The leader's path.** Once per server frame (`BotFormationFrame`, from `BotDoFrame`), each leader with members has
-  his position recorded every 8 u he flies (`BOT_FORMATION_PATH_STEP`), with his room, up to 96 points (768 u). A jump
-  of more than 120 u (a respawn) or his death starts the path again.
+  its position recorded every 8 u flown (`BOT_FORMATION_PATH_STEP`), with its room, up to 96 points (768 u). A jump
+  of more than 120 u (a respawn) or the leader's death starts the path again.
 - **Slot table.** Trail: place k sits `45 (k + 1)` u back along the path (`BOT_FORMATION_TRAIL_GAP`). Wedge: place k
   is in rank `k / 2 + 1`, the first of each rank on the right wing and the second on the left, `40` u back per rank
   (`BOT_FORMATION_WEDGE_BACK`) and one sideways step per rank out to the second rank (`BOT_FORMATION_WEDGE_WIDE_RANKS`):
@@ -348,7 +341,7 @@ through the escort's own legs (§A.6), and no routing, roadmap, steering or port
   a bot off a teammate whose hull is within 40 u) pushes only weakly.
 - **Width rule, per wing** (`BotFormationWingStep`). Every 0.25 s per leader (`BOT_FORMATION_SENSE_INTERVAL`, one pass
   for the whole squad), two hull sweeps go 80 u (`BOT_FORMATION_PROBE`) left and right of the leader, square to the way
-  he has been flying, at the largest wall radius in the squad. A wing's step is the free distance less the hull,
+  the leader has been flying, at the largest wall radius in the squad. A wing's step is the free distance less the hull,
   divided by the ranks it steps out (two for three or more followers), at most 35 u (`BOT_FORMATION_WEDGE_SIDE`); under
   18 u (`BOT_FORMATION_WEDGE_SIDE_MIN`) the wing folds and its followers fly in the trail. A folded wing spreads only
   with 6 u more step than that (`BOT_FORMATION_WEDGE_OPEN_MARGIN`) and after it has fitted for 1 s
@@ -363,9 +356,9 @@ through the escort's own legs (§A.6), and no routing, roadmap, steering or port
   remembers whether the wedge fitted there): a formation entering a tunnel goes single file at once, each follower a
   gap behind the one ahead, so the places take a door in turn; one leaving a tunnel spreads from the front while its
   rear keeps its places in single file. The slots are in order along the leader's path; how a member gets to its slot is the escort's
-  leg, so a member that has fallen a room behind takes the router's way to the slot's room, not necessarily his.
+  leg, so a member that has fallen a room behind takes the router's way to the slot's room, not necessarily the leader's.
 - **No two on one point.** A slot within 20 u (`BOT_FORMATION_MIN_SPACING`) of an earlier place's (where the leader
-  doubled back and his path lies over itself) moves further back along the path, up to one gap; a wedge slot that
+  doubled back and the path lies over itself) moves further back along the path, up to one gap; a wedge slot that
   would be that close flies in the trail.
 - **Keeping up.** Each slot is placed where it will be when its follower next decides (an escort decides twice a
   second): moved up the path by the leader's speed times 0.5 s, at most 20 u (`BOT_FORMATION_LEAD_TIME`,
@@ -377,19 +370,15 @@ through the escort's own legs (§A.6), and no routing, roadmap, steering or port
   per wedge slot (or per place past the recorded path) and a few walks of at most 96 path points. Per member: one
   slot lookup per frame (the afterburner rule), and per decision (twice a second) one hull ray to the slot when it is
   within 150 u (a loose escort casts one to the player).
-- **Not built.** Formation types beyond trail and wedge; `!above` / `!below` / `!flank` (CMD3); reversing the order
-  when the leader turns back in a tunnel (the trail then has to pass him); a member that has fallen a room behind
+- **Not built.** Formation types beyond trail and wedge; `!above` / `!below` / `!flank`; reversing the order
+  when the leader turns back in a tunnel (the trail then has to pass the leader); a member that has fallen a room behind
   following the leader's own way rather than the router's (tried in the lab and dropped, below); outdoor formations
   beyond what the escort's outdoor leg does. `bot_roadmap.cpp:163`'s unused `tweight` "flanking hook" is still unused.
 
-The design notes this rests on (from the archived doc and BOTS_DEVEL): (i) 6DOF formation flying in tunnel geometry
-has no prior art, the nearest games being open-space (Freespace) or 2.5DOF (Quake, UT), archive lines 28-29, 149,
-372-373 (decision 8); (ii) tunnels constrain the width along the route, so the formation collapses in tight corridors
-and expands in open rooms, archive lines 242-245; (iii) Stage 6's escort slots were built as the formation primitive,
-archive lines 258-260, 325-327, 339-340; (iv) the plan was nav, then Stage 6, then formation, archive lines 343-346;
-(v) BOTS_DEVEL.md line 2855 at `ee6e6525` restates the tunnel-formation problem.
+The design notes this rests on: tunnels constrain the width along the route, so the formation collapses in tight
+corridors and expands in open rooms; and the escort slots (§A.6) were built as the formation primitive.
 
-**In the lab** (2026-10-08, BOTS_DEVEL; a scratch console hook ordered four bots to form up on a fifth, roaming,
+**In the lab** (2026-10-08; a scratch console hook ordered four bots to form up on a fifth, roaming,
 bot: Pyro, Phoenix, Magnum and Black Pyro behind a Pyro, Team Anarchy, one team, no enemies). The roaming leader
 cruises at 40-55 u/s, the ship's top speed, so this is the hard case. Batteries Included (all indoors), 9.5 min:
 
@@ -404,7 +393,7 @@ A member in its slot's room was within 25 u 28% of the time (median 35 u); 42% o
 slot's room and its neighbours). Slots came within 10 u of each other in 39 of 2,224 placements, nearly all trail
 places where the leader doubled back in rooms 63 and 64. 12 BLOCKED reports, 10 of them the Magnum pinned for five
 minutes in rm80, whose door is the leaf-tip gap (OBSTACLE_GEOMETRY §4d). The shape changed 17.6 times a minute. When the
-leader entered a room, follower pairs entered it after him in their place order 57% of the time (279 of 487): the
+leader entered a room, follower pairs entered it after the leader in their place order 57% of the time (279 of 487): the
 order along the path is in the slots, not yet in the flight. Sigma Base, 9.5 min, gave the same picture (within 25 u:
 tunnels 16%, rooms 13%; no slot in rock; 1 BLOCKED).
 
@@ -415,60 +404,59 @@ and not parking a moving formation are what v1 does about it within the escort's
 
 ### B.3 In only if formation v1 lands early
 
-- **CMD8 `!get <powerup>`.** Its stated blocker, powerup awareness, now exists (`BotRoadmapItemReach`, `32b5b62e`).
-- **CMD18 team-chat callouts.** UT-style intent lines on team chat (flag taken, enemy spotted), the operator's stated
+- **`!get <powerup>`.** Its stated blocker, powerup awareness, now exists (`BotRoadmapItemReach`, `32b5b62e`).
+- **Team-chat callouts.** UT-style intent lines on team chat (flag taken, enemy spotted), the maintainer's stated
   next step after squad roles (2026-07-12).
 
-### B.4 Deferred past the reveal
+### B.4 Deferred
 
-- **CMD3** `!above`, `!below`, `!flank left/right` (6DOF positioning; small extensions of the formation slot table,
-  `bot_formation_table.cpp`, now that CMD2 is built).
-- **CMD4** `!hold room` / `!take room` for Entropy. The Entropy `!attack lab`/`!defend lab` verbs it overlaps are
-  built (MODE1).
-- **Monsterball** `!push ball` / `!block goal` (old Tier 4). The `!attack ball`/`!defend goal` verbs they overlap are
-  built (MODE7).
-- **CMD5** `!taunt` and D3 audio taunts. Refusals stay plain text.
-- **CMD6** command chaining ("Beta cover Gamma") and named squad grouping.
-- **CMD7** duration modifiers ("for 60 seconds") and dual-point patrol.
-- **CMD17** `!follow <player>` / `!cover <player>` (escort a third party).
+- `!above`, `!below`, `!flank left/right` (6DOF positioning; small extensions of the formation slot table,
+  `bot_formation_table.cpp`, now that formation v1 is built).
+- `!hold room` / `!take room` for Entropy. The Entropy `!attack lab`/`!defend lab` verbs it overlaps are built.
+- `!push ball` / `!block goal` for Monsterball. The `!attack ball`/`!defend goal` verbs they overlap are built.
+- `!taunt` and D3 audio taunts. Refusals stay plain text.
+- Command chaining ("Beta cover Gamma") and named squad grouping.
+- Duration modifiers ("for 60 seconds") and dual-point patrol.
+- `!follow <player>` / `!cover <player>` (escort a third party).
 
 ### B.5 Standing follow-ups in the order code (not blocking)
 
-- **CMD19** the designed catch-up afterburner (>150 u and the target receding) was never built; the en-route
-  afterburner sustain is a simpler rule.
-- **CMD20** posts ignore powerups entirely (a v1 simplification).
-- **CMD21** a flag carrier under `!follow` never runs the carrier navigation and scores only by luck.
-- **CMD22** hold-boundary re-arrival jitter; KegD3 rooms 31/32 via-ring blind spot.
-- **CMD23** grate objects are invisible to the order-arrival ray.
-- **CMD24, CMD25** closed (PLAN's closed table).
+- The designed catch-up afterburner (>150 u and the target receding) was never built; the en-route afterburner
+  sustain is a simpler rule.
+- Posts ignore powerups entirely (a v1 simplification).
+- A flag carrier under `!follow` never runs the carrier navigation and scores only by luck.
+- Hold-boundary re-arrival jitter; KegD3 rooms 31/32 via-ring blind spot.
+- Grate objects are invisible to the order-arrival ray.
 
-### B.6 The Piccu rule
+### B.6 Plain chat first
 
-Every player-facing feature must work through plain chat, so retail 1.5 and PiccuEngine players can use it. A HUD
-(for example the quick-order overlay, UX4) may only add to a chat command, never replace one. The client
-compatibility pass (REL12) re-checks this before release.
+Every player-facing feature must work through plain chat, so players on any compatible client (retail 1.5, builds of
+the open-source engine, PiccuEngine) can use it. A HUD (for example the quick-order overlay, §A.9) may only add to a
+chat command, never replace one.
 
 ### B.7 Pending flight verification
 
 - **The polish floor in a cockpit.** The parser, the mode rule, the help text, the grouped lines and the roll call are
   covered by `bot_chat_tests`; the server ran clean through bot spawn, a level change and `$bothelp` in Anarchy and
   CTF; and a scratch build that let the console speak as the server's own slot drove every verb, the taunts, the hunt
-  report, the lab and ball verbs and the level-change notice through the real code (BOTS_DEVEL 2026-10-07). What only
-  a client in a match shows: the replies arriving after the order line (UX7), the grouped line and the
+  report, the lab and ball verbs and the level-change notice through the real code (2026-10-07). What only
+  a client in a match shows: the replies arriving after the order line, the grouped line and the
   roll call on the HUD, the taunt in Anarchy, the tip arriving once, the level-change notice, and a hunter's report
-  when its target dies. The REL12 run (2026-10-08, remote Matcen, upstream and PiccuEngine clients) saw the order line
+  when its target dies. A test on 2026-10-08 with remote Matcen, upstream and PiccuEngine clients saw the order line
   above its reply, the grouped line, the roll call, the Robo-Anarchy taunt, the tip once a join and, on PiccuEngine,
-  the level-change notice. A hunter's report and the host path (UX7) are still unseen.
-- **Formation flying (CMD2) in a cockpit.** The lab drove `!formup`'s handler, places, slots and legs on a bot
-  leader (§B.2) but not the chat line itself, a human leader, or what the squad looks like from his cockpit: the
+  the level-change notice. A hunter's report and the listen host's own screen (§A.4) are still unseen.
+- **Formation flying in a cockpit.** The lab drove `!formup`'s handler, places, slots and legs on a bot
+  leader (§B.2) but not the chat line itself, a human leader, or what the squad looks like from their cockpit: the
   trail in a tunnel, the wedge and the echelon in a room, and how far behind the places the squad flies at a human's
-  speeds. REL12 sent the chat line from three human leaders: the server placed a trail each time and a wedge for
-  two of them, and in a corridor the one-sided wedge's wing reported BLOCKED while the leader sat still. The view from
-  the cockpit is still owed.
+  speeds. The 2026-10-08 test sent the chat line from three human leaders: the server placed a trail each time and a
+  wedge for two of them, and in a corridor the one-sided wedge's wing reported BLOCKED while the leader sat still. The
+  maintainer flew it indoors on 2026-10-10 (CTF, 5 bots, 0.10.8): the squad answered `5 bots: Forming up!`, flew a
+  trail in a tunnel and a wedge in a room, replied `In formation.` and reported no BLOCKED. Outdoors is still to be
+  flown.
 - **`!hunt` in Anarchy** is moot: free-for-all modes take no orders. The same team-0 lookup governs co-op `!hunt`,
-  which now answers `No enemy called <name>.` (CMD26).
+  which now answers `No enemy called <name>.`
 - **Co-op over-spawn.** A roster larger than the co-op player cap once spawned bots past it. The `BotAdd` capacity
-  clamp, which the config roster goes through, may already close it. Unflown (COOP4).
+  clamp, which the config roster goes through, may already close it. Unflown.
 
 ---
 
@@ -481,8 +469,8 @@ compatibility pass (REL12) re-checks this before release.
 2. **Game-mode-scoped verb meaning** (UT pattern) — `!attack` means different things in
    CTF vs Team Anarchy vs Anarchy. Dispatch table keyed by game mode.
 
-3. **`!` prefix over `/bot`** — 1 char vs 5. Free in D3 namespace. Universally understood
-   as command prefix (IRC, Discord, many games).
+3. **`!` prefix over `/bot`** — 1 char vs 5. Free in D3 namespace. Used as a command prefix
+   in IRC, Discord and many games.
 
 4. **DM shortcut as bonus channel** — engine's `name:msg` parser already routes to bot slots.
    Unambiguous intent, no prefix needed. Silent acknowledgment via DM reply.
@@ -497,25 +485,24 @@ compatibility pass (REL12) re-checks this before release.
 7. **No natural-language parsing** — strict keyword match. NLU is latency-hostile, fragile,
    and overkill for a command interface. Muscle memory beats natural language in combat.
 
-8. **Formation flying is the D3 differentiator** — no other game combines 6DOF + tunnel
-   geometry + multi-bot formation. Worth dedicated design phase post-0.9.0.
+8. **Formation flying gets a dedicated design phase** post-0.9.0.
 
 9. **Enemy commands get a refusal, not compliance** (corrected 2026-10-01). In team modes a bot refuses orders from
    opposing-team players with `Not taking orders from you!`, which stops opponents hijacking your bots. The original
-   decision promised a taunt; none was built (a `!taunt` verb is CMD5, deferred). Exception: `!ping` answers everyone.
+   decision promised a taunt; none was built (a `!taunt` verb is deferred, §B.4). Exception: `!ping` answers everyone.
    Decided 2026-10-01 and built in 0.10.0: in the free-for-all modes bots take no orders and every `!` verb gets a
-   taunt reply (§A.3, CMD10/CMD11).
+   taunt reply (§A.3).
 
 10. **`!ping` is permanent diagnostic** — not replaced by `!report`/`!status`. Stays in the
     verb table as a lightweight proof-of-life with the standard `Pong!` response (except in the free-for-all modes,
     where it gets the taunt like every other verb). `!report`
-    and `!status` are the military-style equivalents wired in Stage 2 with richer output.
+    and `!status` are the military-style equivalents with richer output.
 
-11. **Answers in one line, reports as news** (2026-10-07, CMD14/CMD15). The HUD shows about two chat lines, so a
+11. **Answers in one line, reports as news** (2026-10-07). The HUD shows about two chat lines, so a
     squad answers as a squad (`4 bots: Following!`), a roll call packs the squad into a line or two, and a bot reports
     a state change once per order instead of every time it re-reaches the same state.
 
-12. **A formation is a choice of point, not a new way to fly** (2026-10-08, CMD2). A member flies the escort's own
-    legs to its slot; the trail is the path the leader flew, recorded as he flies it, which keeps every trail slot out
-    of the rock and puts the squad through a door in his order without any new navigation. The width is sensed per
+12. **A formation is a choice of point, not a new way to fly** (2026-10-08). A member flies the escort's own
+    legs to its slot; the trail is the path the leader flew, recorded as it is flown, which keeps every trail slot out
+    of the rock and puts the squad through a door in the leader's order without any new navigation. The width is sensed per
     leader, a few times a second, for the whole squad.

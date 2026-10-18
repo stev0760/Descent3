@@ -1,17 +1,12 @@
 # NAVIGATION.md: bot navigation, design of record
 
 > **Read this before modifying navigation, routing or steering code.** This file says how Matcen bots move today and
-> why. It is the design of record, not a log. The dated record it replaced (every `7.0` snapshot from June to
-> September 2026, the slice-by-slice portal-model sprint, the committee-collapse narrative, the old toggle table, the
-> Phase 12 build log) is preserved verbatim in `archive/NAVIGATION-history-2026-06_to_09.md`. The 0.9.12 skeleton
-> rework spec is merged into §5.3; its original is `archive/SKELETON_REWORK.md`. Engine geometry facts (what is
-> passable, what a pane or a grate is) live in `OBSTACLE_GEOMETRY.md`; per-frame fields and constants in
-> `BOT_DEV_REFERENCE.md`; the engine's own AI pathing in `PATHFINDING_CODEBASE_EXPLORE.md`.
+> why. It is the design of record, not a log. The 0.9.12 skeleton rework spec is merged into §5.3. Engine geometry
+> facts (what is passable, what a pane or a grate is) live in `OBSTACLE_GEOMETRY.md`.
 
 **Status (2026-10-01).** Code is 0.9.16-dev, code complete at `4b4e78f4`. Every function, constant and line number
-below was checked against `ee6e6525`. Open problems are §7, each with its id in the master registry (PLAN.md §4,
-draft at REGISTRY-v2). The tried-and-reverted ledger is §7.5. Live toggle state is the bare `$nav` command, never a
-table in a doc (§6.3).
+below was checked against `ee6e6525`. Open problems are §7. The tried-and-reverted ledger is §7.5. Live toggle state
+is the bare `$nav` command, never a table in a doc (§6.3).
 
 ---
 
@@ -39,7 +34,7 @@ The routing layer talks to steering through one channel: the engine goal (`AIG_G
 1. **Never write `movement_dir`.** Routing returns a room, a door or a waypoint; the engine steers to it. Bounded
    exceptions decompose a vector of our own into thrust without touching the engine field: the CTF carrier's
    home-room beeline, the stuck escape and its directional burst, the glass back-off, and the spawn egress
-   (`517a5df0` made the egress a local copy after an E2 build briefly held the engine field by reference).
+   (`517a5df0` made the egress a local copy after an earlier build briefly held the engine field by reference).
 2. **Routing failure falls back to the engine, never strands.** `BotComputeRoute` returning -1 hands the engine the
    far goal (the `NO-ROUTE` line, which prints the hull the router was given).
 3. **Geometry verdicts are soft costs only.** Never mutate engine portal or BOA flags (the `$navprobe` lesson, §7.5
@@ -63,14 +58,11 @@ The routing layer talks to steering through one channel: the engine goal (`AIG_G
 
 ### 1.3 The physics rulings (the consolidation phase's design of record)
 
-Provenance: the retired `NAV_CONSOLIDATION_PLAN.md` and `NAV_DESIGN_REVIEW.md` (absorbed 2026-08-29; originals in git
-history). The full absorbed section, §6.9, is in the archive at its HEAD position.
-
 **The diagnosis (2026-07-22):** the bot fights like a pilot and travels like a committee. Navigation grew into
 ten-odd cooperating subsystems as game modes were added, and they competed for the same decision. The substrate was
 sound; the incoherence was arbitration.
 
-**The north star (operator, 2026-08-04):** a bot flying a ship, not code that is the ship taking orders from several
+**The north star (2026-08-04):** a bot flying a ship, not code that is the ship taking orders from several
 vectors. Two physics rulings constrain everything:
 
 1. **D3 has real drag. Braking is just not thrusting.** Stop thrusting and the ship slows on its own. A bot that
@@ -79,9 +71,8 @@ vectors. Two physics rulings constrain everything:
    should be loosened generally; failing to hold a spot under fire is the game as designed.
 
 Both reinforce the standing rule: bots use only legal thrust, with no velocity zeroing, position snapping or
-knockback immunity, even to fix a park. The rule is absolute (operator, 2026-10-01, Q10d: "NO physics violations:
-knockback must affect bots the same as players, always"). The Entropy takeover park, the last exception, holds zero
-thrust since 2026-10-07 (MODE6).
+knockback immunity, even to fix a park. The rule is absolute (2026-10-01): knockback must affect bots the same as
+players, always. The Entropy takeover park, the last exception, holds zero thrust since 2026-10-07.
 
 **One router, two substrates, one contract.** Every mechanism delivers one engine goal. On a level with baked BNodes
 (the campaign) the engine's own pipeline can plan a leg (`$nav bnodesp`, inert on every BNode-less MP map); otherwise
@@ -98,10 +89,10 @@ the engine. Each disagreement bred a compensator: troll strikes, per-bot blackli
 fairness rule, via-dance caps. The strike table is a mechanism for learning behaviourally what the network already
 knows geometrically.
 
-**The north star (operator-approved 2026-07-09, restated 2026-09-05 and 2026-09-06):** one hierarchical spatial model
+**The north star (2026-07-09, restated 2026-09-05 and 2026-09-06):** one hierarchical spatial model
 is the single authority every subsystem queries for reachability, cost and next waypoint.
 
-- **Vocabulary (operator, 2026-09-06).** The **navigation network** is **arterials** (the skeleton: portal nodes and
+- **Vocabulary (2026-09-06).** The **navigation network** is **arterials** (the skeleton: portal nodes and
   bends, §5.3) plus **local streets** (the lattice fill, §5.2). The **navigator** plans; a **route** is one continuous
   goal-to-goal path; the **pilot** flies it. The **committee** is the set of extra voices that overwrite the pilot's
   aim, and it is what we are removing (§7.1). *Router*, *composer*, *governor*, *capillaries* and *grid nav* are
@@ -111,7 +102,7 @@ is the single authority every subsystem queries for reachability, cost and next 
   typed terminal (same room, exit door, tray) or returns NONE without changing state. The roadmap-authority
   experiment that let the dense lattice own the crossing moved its own metrics and cratered play (L19); substrate
   ownership is the wrong architecture. The skeleton is therefore not a "fallback to be deleted": it is the arterial
-  half of the network. The 0.9.4 plan's "Stage 4, delete the 0.9.3 substrate" is superseded in part (COL7).
+  half of the network. The 0.9.4 plan's "Stage 4, delete the 0.9.3 substrate" is superseded in part (§7.1).
 - **Judge by goal-to-goal completion**, never by substrate usage or component counts (§5.2: "component counts are
   not coverage").
 
@@ -120,9 +111,9 @@ is the single authority every subsystem queries for reachability, cost and next 
 | Step | State at 0.9.16-dev |
 |---|---|
 | 1. Item selection gated by network reach | Built: `BotRoadmapItemReach` (bot_roadmap.cpp:2945), `BotRoomSealedForShip` (bot_steering.cpp:3243), hunt-needs-a-route (0.9.14), the outdoor window sweep (`f5562a80`). The old `$nav reach` toggle is gone; the gate is unconditional. |
-| 2. Path-cost detour budget for same/adjacent-room candidates | Not built (NAV29). |
+| 2. Path-cost detour budget for same/adjacent-room candidates | Not built. |
 | 3. Terrain tier | Built: `troute` (`edaba249`), v2 cost comparison `troute2`, one outdoor dispatch (`161582cc`) (§5.4). |
-| 4. Workaround retirement audit (strike, blacklist, hardroom, via-dance firing rates) | Not done (COL6). |
+| 4. Workaround retirement audit (strike, blacklist, hardroom, via-dance firing rates) | Not done. |
 
 ---
 
@@ -288,7 +279,7 @@ lookahead is blind (log line `entry door lookahead blind`) and the nearest door 
 (room, entry, exit) until the level or roadmap serial changes. Root case: Sigma Base rm19, a non-convex gallery cut by
 the bridge room rm13, where "nearest door" picked the one behind the bot and oscillated.
 
-**One mind at the door (old review queue Q12, ruled 2026-09-22).** `BotRouterExitDoor` (bot_steering.cpp:1613)
+**One mind at the door (2026-09-22).** `BotRouterExitDoor` (bot_steering.cpp:1613)
 returns the router's door when its pick rests on a hull-clear onward leg; `BotAimExitMask` (bot_steering.h:464) and
 the internal `AimExitMask` (:1363) narrow the aim layer's exit set to it, so the composer, the roadmap via and the
 skeleton chain fly the router's door (`b9b3b2e3`, `7b67fe1b`: only an informed pick binds). The same exit set is the
@@ -346,7 +337,7 @@ escort orders. Its outdoor branch is the one outdoor dispatch (§5.4).
 
 ---
 
-### 4.7 Zones: a room that is several spaces (NAV41, 0.10.0)
+### 4.7 Zones: a room that is several spaces (0.10.0)
 
 A room can be several spaces to a ship. Glasshouse's central pyramid (rm1) is a hollow pyramid open only through its
 whole-floor portal to the room below and a chimney to the room above, plus four wedge galleries on its glass faces,
@@ -429,8 +420,8 @@ build-time toggle flips.
    outdoors; coarsens past `BOT_ROADMAP_MAX_LATTICE` 20000). A cell is accepted only when a hull-swept edge reaches it
    from an accepted node. Never cull a point because a probe from it is clear: a ray from inside solid false-clears.
    `GrowFromSeeds` (bot_roadmap.cpp:914) grows under **three phases** (seed centroid, centre-anchored, half-pitch shift)
-   and keeps the one with the most cells inside the room, then the fullest; ties keep the earliest (NAV61,
-   0.10.0). The first rule was the fullest lattice alone. It counted cells spilled through a door into the next
+   and keeps the one with the most cells inside the room, then the fullest; ties keep the earliest
+   (0.10.0). The first rule was the fullest lattice alone. It counted cells spilled through a door into the next
    room, so a neighbour chose a room's grid: on Isengard a change to what may grow in rm29 moved every node in rm33,
    and on the new grid the room was marked HARD in four runs of four. Door coverage is not in the score: it can only
    be read before the repair passes there, and that reading is wrong where the repairs finish the job (ledger L34).
@@ -441,7 +432,7 @@ build-time toggle flips.
    Outdoor edges with an endpoint in an interior room's box must be clear both ways, and the outdoor sweeps are
    back-face honest too (`c1d34f0a`). The runtime primitive
    `BotSegmentClear` keeps its old behaviour for runtime callers (L23).
-   **Each leg starts in the room its start point lies in** (NAV60, 0.10.0). A sweep meets only the faces of the
+   **Each leg starts in the room its start point lies in** (0.10.0). A sweep meets only the faces of the
    room it starts in and of the rooms it crosses into through portals; back-face honesty covers the walls of the
    start room only. The void-cell guard (item 4) keeps cells grown through a door into the next room, and every leg
    from such a cell used to start in the room being built, so it met none of the next room's walls: Glasshouse's ring
@@ -463,7 +454,7 @@ build-time toggle flips.
    is still kept when it is open outdoor air (under the ceiling and above a solid terrain segment, or anywhere over a
    `TF_INVISIBLE` one: Bree's sunken streets). Cause: Sigma Base's exit tower lattice had two thirds of its points in
    rock and routed the exit leg through the shaft wall. A sky-roofed-room exemption for Canyons was tried and reverted
-   (L29); thin rooms are NAV7.
+   (L29); thin rooms are an open problem (§7.3).
 5. **Heightfield admission outdoors** (0.9.15). Terrain collides from above only, so a sweep that starts underground
    is clear everywhere. An outdoor cell over a solid segment must stand hull clearance above `GetTerrainGroundPoint`;
    `TF_INVISIBLE` segments are exempt. Isengard went from 6811 cells (916 real) to the real ones.
@@ -491,18 +482,17 @@ somewhere in its first 24 u (`d783cd18`, `f27d247d`). Goal and item attaches nev
 
 **Sliced builds (0.9.15, `455aacbe` for the skeleton in 0.9.16).** Builds run on parked worker threads used as
 coroutines, `BOT_ROADMAP_SLICE_MS` 5 per server frame, fed by a level-start prewarm (terrain regions first) and by
-on-demand requests that jump the queue. Until a room is published the bot flies it by the skeleton. Rules for touching
-this code: `BOT_DEV_REFERENCE.md`, "Frame time / sliced roadmap builds".
+on-demand requests that jump the queue. Until a room is published the bot flies it by the skeleton.
 
-**Known limits.** A regular lattice can miss a passage wider than the hull but narrower than the spacing (NAV7). A
+**Known limits.** A regular lattice can miss a passage wider than the hull but narrower than the spacing (§7.3). A
 statically clear path is not always flyable at speed; the spacing is a control-loop parameter tuned against observed
 motion. fvi-clear is not traversable for dynamic geometry (doors, forcefields, grate objects: OBSTACLE_GEOMETRY). The
-growth probe can over-reach into a sealed pocket over one lattice step (NAV28).
+growth probe can over-reach into a sealed pocket over one lattice step (§7.3).
 
-**Prior art** (§9): PRM, HPA\*, Lazy Theta\*; Quake III's AAS is the surface-locomotion contrast. 6DOF makes the
-geometry harder (sample a volume) and the cost model simpler (one edge type, Euclidean cost).
+**References** (§9): PRM, HPA\*, Lazy Theta\*. 6DOF makes the geometry harder (sample a volume) and the cost model
+simpler (one edge type, Euclidean cost).
 
-### 5.3 Arterials: the skeleton (merged from SKELETON_REWORK.md)
+### 5.3 Arterials: the skeleton
 
 **What it is.** Per room, a small graph of portal nodes and bend nodes joined by straight hull-clear legs
 (`ViaSegmentClear`, bot_steering.cpp:1451, at `BOT_PSEUDO_BNODE_RADIUS` 6.7). Built by `SkelBuildBase` (:1845) and
@@ -510,7 +500,7 @@ geometry harder (sample a volume) and the cost model simpler (one edge type, Euc
 keep their index but carry no edges, and a TIGHT door that leaves the network is not live. Bridge pairs must include a
 DOOR. Cap `BOT_SKEL_MAX_NODES` 64 per room (64-bit edge masks).
 
-**The contract** (designed 2026-09-04 with an external reviewer, built as `1d52aa7f`):
+**The contract** (designed 2026-09-04, built as `1d52aa7f`):
 1. **Soundness:** never add an edge that fails `ViaSegmentClear`.
 2. **Bounded completeness:** find every route representable within the candidate resolution and the node budget.
 3. **Fail closed:** if budget or search cannot represent a route, leave it disconnected; never invent an edge.
@@ -542,7 +532,7 @@ The first version (fixed 12/26/40/54 u fan) was neutral over a 7 h abend2 soak a
 avoids it, so a real ring closes into a cycle and a genuine Y-corridor correctly does not). The slice-7 fan made it
 unnecessary on every map read so far. **Approach 2** (a boundary-feature visibility graph over the room mesh) was the
 fallback if Approach 1 could not trace curved tubes, and was not needed; **Approach 3** (convex-cell dual graph) was
-rejected as a project of its own. Both stay closed unless evidence reopens them (NAV53).
+rejected as a project of its own. Both stay closed unless evidence reopens them.
 
 **Sliced build (`455aacbe`, 0.9.16-dev).** `BotSkelBuildPrivate` runs the bridge search on the roadmap's slice worker
 and `BotSkelPublish` replaces the base graph a few frames later; a bot that arrives first flies the base graph
@@ -567,6 +557,10 @@ explore, last-known chase) is issued by `BotSetRoutedGoal`'s outdoor branch, in 
 4. the **reactive rescue** as a plain query: `BotFindViaPoint` (bot_steering.cpp:3216) rings, then the outdoor
    door graph (`OGraphBuild` :1492, `BotOutdoorGraphHop` :2891).
 
+Two `$nav` levers cover this order, both on by default: `outlattice` puts the outdoor lattice first in the
+blocked-line rescue (off leaves the connecting graph alone), and `outtier` chooses the entrance by its full routed
+cost, wind and glass included, instead of the `BOA` estimate.
+
 The explore ladder's private copies are deleted; outdoor-origin explore is no longer a raw engine goal. The committed
 via tick still serves terrain-to-terrain targets (pursuit, item chases, escort).
 
@@ -583,14 +577,14 @@ exists or an endpoint is outdoors; v2 (`troute2`) composes both and takes the ch
 accepted only if the string-pull reaches within R of the target approach at plan time (never "best effort toward");
 every waypoint must shrink distance to the segment target, else replan the segment once; a hull-clear beeline skips
 lattice following (the bedlam lesson, L10). The composer still refuses a goal while the bot is `OBJECT_OUTSIDE`
-(COL10).
+(§7.2).
 
 **Not outdoor maps.** Canyons CTF and DownTown have exterior portals at or above the flight ceiling and zero terrain
 presence. Do not list their problems as lattice defects. Facing Worlds' "void" is two giant interior rooms (an
 indoor-planner case).
 
 **Engine limit.** The engine caps a room at 40 portals; Kartoon Kanyon has 45 in rooms 1 and 14, Isengard's door
-table 47. Our per-portal caches treat portals at or past `BOT_MAX_PORTALS` as impassable (NAV57, accepted).
+table 47. Our per-portal caches treat portals at or past `BOT_MAX_PORTALS` as impassable (accepted).
 
 ---
 
@@ -608,7 +602,7 @@ collapse (§7.1) turns into one commitment rule.
   latch, bot.h:157) and the hop commit (same hop re-issued past the press trigger) push through to the crossing's far
   point. A commit needs the door approach in hull view or it is refused (`09c40a72`). A TIGHT hop commits at the
   wall-sphere radius. `hop outcome` lines log CROSSED / NOT-CROSSED per committed crossing.
-- **Spawn egress** (C1-C3, E1-E2, 0.9.16-dev). A ship that starts in contact sees no route (every sweep dies at 0 u).
+- **Spawn egress** (0.9.16-dev). A ship that starts in contact sees no route (every sweep dies at 0 u).
   For the first `BOT_SPAWN_EGRESS_WINDOW` 45 s of a life, within `BOT_SPAWN_EGRESS_RADIUS` 25 u of the start, with no
   network attach, the via is the start's own facing as far as a thin ray measured clear (capped at 50 u). It runs
   before the composed drive and the skeleton chain, at most `BOT_SPAWN_EGRESS_MAX_FIRES` 2 times a life, and while it
@@ -619,14 +613,14 @@ collapse (§7.1) turns into one commitment rule.
   the failed portal (§4.6) and picks a new destination; escalation forces a physical escape. At a hard pin the burst
   is **directional**: five body directions (reverse, down, up, left, right) are swept 16 u at hull radius and the
   burst takes the longest clear one, reverse winning ties (slice 9c). In a one-door room the excluded door is the
-  fallback escape. The destination that forced an escape is demoted. The escape pick is still not goal-aware (NAV24).
+  fallback escape. The destination that forced an escape is demoted. The escape pick is still not goal-aware (§7.3).
 - **Glass back-off.** A pane inside the 30 u self-splash guard, with a missile but no matter primary: one second of
   straight reverse, then fire from the guard distance (slice 9b; vent-only spawn rooms).
 - **Proactive clearing.** `BotProactiveObstacleClear` (bot.cpp:1908) uses the 40 u forward ray to shatter panes and
   clear `OF_DESTROYABLE` objects on approach; `BotClearObstacleSafely` never fires a splash secondary within range.
 - **Hunt needs a route.** A hunt of a target in another room needs our router to find a route under this bot's glass
   authority; `BotSetPursuitGoal` (bot.cpp:908) pre-validates the same way. Pursuit steering itself still rides the
-  engine path (COL9).
+  engine path (§7.1 step 5).
 - **CTF errand last leg.** Arrival in the objective room is not the end: attackers touch an enemy flag at home;
   others take station by the flag and hold within 40 u with the progress clock at zero. A flag-touch goal never
   completes by distance (`BOT_TOUCH_GOAL_CIRCLE_DIST`, bot.h:40; `5d46e532`): bedlam re-aims per pickup fell from
@@ -651,7 +645,7 @@ fallback, and favours unvisited, uncrowded rooms.
   `crossing_trace`). Format changes must be reflected in the Pyrodeck contract.
 - **`$nav probe`**, **`$nav sweep x y z room portal`** (hull sweeps from a point to a door's crossing points at both
   radii plus a reverse leg, with the face each hits; `BotNavSweepReport`, bot_steering.cpp:1071), **`$nav roomfaces`**
-  (with `tools/render_room.py`, the `render-room` skill). Run them bot-free on a second instance via
+  (with `tools/render_room.py`). Run them bot-free on a second instance via
   `tools/navdump_geometry.py`.
 - **Overlay (Ctrl+F7)**, host-only, `bot_navdebug.cpp`: skeleton by component, portal verdicts, per-bot chain and
   goal, and the roadmap layer. See `VISUAL_DEBUG.md`.
@@ -662,17 +656,13 @@ fallback, and favours unvisited, uncrowded rooms.
   `hop outcome`, `item-reach`, `entry door lookahead blind`, `roadmap attach from contact [REFUSED]`, `spawn egress in
   room`, `pane ... shattered`, `NO-ROUTE` (with hull), `[Perf]`.
 - **Footprint discipline:** per-tick paths log on state change or through a self-healing `Gametime` throttle. One
-  unthrottled carrier line once wrote 90% of a 237 MB overnight log. Release builds log no nav telemetry (WAT1).
+  unthrottled carrier line once wrote 90% of a 237 MB overnight log. Release builds log no nav telemetry.
 
 ---
 
 ## 7. Open problems
 
-Every row carries its registry id (PLAN.md §4; buckets: B pre-reveal, E open not blocking, F deferred, X closed;
-the operator settled every D row on 2026-10-01, PLAN.md §5). Status changes found while writing this doc are in the docs-rewrite status-changes file for the
-registry owner to apply.
-
-### 7.1 The committee collapse (COL1-COL3, COL5, COL9): design
+### 7.1 The committee collapse: design
 
 **Where it stands, measured (2026-09-13 census, Batteries).** Share of bots' ACTIVE-held time: `via` (our resolved
 aim) 54% → 96% from the 0.9.14 sprint start to `57aaa31f`; `no-route` 39% → 0%; `stuck-escape` 4.5% → 1.9%; the
@@ -686,160 +676,149 @@ over-represented at the remaining escalations (composed 20% of issues, ring 15%,
 25%). The steps below are a code-quality project now.
 
 **The order, by subtraction, one member per slice, each gated by bot-free dumps and both soak maps:**
-1. **One in-room planner (COL1).** The three sub-voices inside `via` (skeleton via, roadmap via, composed route,
+1. **One in-room planner.** The three sub-voices inside `via` (skeleton via, roadmap via, composed route,
    chosen by room type and a line-blocked test) become one query on the union graph, with the straight line as
    string-pulling inside the plan. Plan caching is the first design question (the composed drive once stalled errands
    on an unthrottled per-tick search): plan once, re-plan only on invalidation. Gate: flat on bedlam, fellowship,
-   Sigma Base and the HAVOC trio against same-minute controls. Design input: Facing Worlds' Theta\* storms (COL4).
-2. **Seam push and hop commit become the plan's commitment rule (COL2).** A committed plan that re-plans only on
+   Sigma Base and the HAVOC trio against same-minute controls. Design input: Facing Worlds' Theta\* storms.
+2. **Seam push and hop commit become the plan's commitment rule.** A committed plan that re-plans only on
    invalidation (room changed, leg blocked, goal moved) does not re-pick at a door. Absorbs the old "hop granularity on
    the home-flag approach".
 3. **Waypoint aim (`path_pnt`) and grid route fold into step 1**; they are the same graph queried from another branch.
 4. **Stuck escape becomes an invalidation signal** plus the physical burst, instead of an actor with its own portal
-   chooser (part of COL2).
-5. **Combat pursuit and powerup chase request destinations from the planner (COL9)** instead of driving the engine
+   chooser (part of step 2).
+5. **Combat pursuit and powerup chase request destinations from the planner** instead of driving the engine
    path. The hunt-needs-a-route gate is the first half. Remaining engine-path-node callers (escort, hold, powerup,
-   fallback, outdoor sites untouched by `cddde48c`) are COL5.
+   fallback, outdoor sites untouched by `cddde48c`) are listed in §7.4.
 
 Success is fewer committed-but-not-crossed hops and no rise in pins, per map and per team, never substrate usage. The
-room router stays untouched. Nothing here is a `$nav` toggle or a per-map fix. Cleanup riding steps 1-2 (COL3): the
+room router stays untouched. Nothing here is a `$nav` toggle or a per-map fix. Cleanup riding steps 1-2: the
 duplicated dispatch in `BotSetRoutedGoal` / `BotDoExploreRoaming`, stale toggle descriptions, and treating skeleton +
 roadmap as one network outside the in-room case.
 
-**Collapse scope, decided 2026-10-01 (Q20; the operator confirmed on 2026-10-01 that the outdoor phases are pre-reveal: "Reveal should be as polished as possible").** The
+**Collapse scope, decided 2026-10-01.** The
 0.9.4 "Stage 4, delete the 0.9.3 substrate" is closed as superseded by the one-network ruling (the skeleton is the
 arterials). The legacy toggles `terrain`, `outdoorvia`, `outdoorgraph`, `grid off` and the validated-negative
-`mjunction` retire inside the COL3 cleanup, each retirement inside the must-read-flat gate (COL7, COL8, B). Outdoor
-Phases 2-4 (§7.2) come after the reveal (E). The collapse (rows 4-5) ships in a build after 0.9.16 stable (Q4d).
+`mjunction` retire inside that cleanup, each retirement inside the must-read-flat gate. The collapse ships in a build
+after 0.9.16 stable.
 
-### 7.2 Outdoor collapse, Phases 2-4 (COL10, COL11): design
+### 7.2 Outdoor collapse, Phases 2-4: design
 
 Phase 1 (the entrance-miss class) shipped in 0.9.15; Phase 4's first cut (one outdoor dispatch, `161582cc`) landed
 2026-09-19.
 
-- **Phase 2: one outdoor network per region (COL10).** `EnsureUnionGraph` for an outdoor region: door-graph nodes as
+- **Phase 2: one outdoor network per region.** `EnsureUnionGraph` for an outdoor region: door-graph nodes as
   arterials, the region lattice as local streets, ramps as indoors; the outdoor via query attaches to the hull-visible
   nearest node, as indoors. Lift `BotComposeRoomRoute`'s `OBJECT_OUTSIDE` guard (bot_roadmap.cpp:2790) so the composer
   plans the terrain leg to the validated door crossing; rings stay the reactive rescue. Gate: region union components
   on the bot-free dump, then paired arms. Prediction: `outdoor-leg`/`gridroute` episodes fall into the composed route;
-  Bree facade presses fall. Also owed: `BOT_OGRAPH_RADIUS` is still 6.0 against the 6.7 network hull (COL13).
-- **Phase 3: one route across the boundary (COL11).** troute's three-segment plan becomes the planner's cross-tier
+  Bree facade presses fall. Also owed: `BOT_OGRAPH_RADIUS` is still 6.0 against the 6.7 network hull.
+- **Phase 3: one route across the boundary.** troute's three-segment plan becomes the planner's cross-tier
   route; its door-pair scorer stays; its executor (segments, monotone watermark, forced entry door) becomes the plan's
   commitment rule, as seam/hop-commit do indoors (§7.1 step 2). Region-to-region terrain edges only if cross-region legs
   appear (fellowship). Prediction: troute completions rise toward the adoption count; carrier outdoor seconds per grab
   fall on Bree.
-- **Phase 4 remainder: collapse the outdoor dispatch (COL11).** The ladder's, explore's and the via's outdoor branches
+- **Phase 4 remainder: collapse the outdoor dispatch.** The ladder's, explore's and the via's outdoor branches
   fold into the one planner; `outdoor-entry`, `outdoor-leg` and `troute` stop being census members and become plan
   segments; the committed via tick for terrain-to-terrain legs joins them; `BotResolveOutdoorEntrance` is replaced by
   the composer (partial today). Success: one census member outdoors, entrance-miss and ground pins not rising.
 - **Sequencing:** Phases 1-2 are independent of indoor step 1; Phases 3-4 are the outdoor half of steps 2-5 and land
   with them.
 
-### 7.3 Open navigation problems (NAV)
+### 7.3 Open navigation problems
 
-| Id | Problem | State |
-|---|---|---|
-| NAV1 | Sigma Base rm37 (no in-room path) and bridge room rm13 (via fails 33/31 on 09-30); `FLAG_PICKUP_FAILURE`; closet pockets rm2→rm1, rm27→rm28; re-read hubs rm19/rm37 | open; render first; operator: not a priority yet |
-| NAV2 | Carrier station point is the room box centre (Sigma rm17 `goal=none` pin, 4 min); a station must be a reachable lattice node | unconfirmed; render rm17 |
-| NAV3 | Slave Pit zero flag picks (hub rm1→rm5/rm11 hops fail ~55%, via fails on tmap 1374); DownTown wandering (parking structure, one team's start) | open |
-| NAV4 | DownTown-class build cost: skip lattice phases 1-2 when phase 0 exceeds ~1,500 cells (rm31 97 s); time-budget attach probes | not built |
-| NAV5 | DownTown rm37: a portal whose crossing the sampler refuses is neither a relay node nor priced as a door; outdoor-exit legality | not built |
-| NAV6 | The last-resort pass admits a DISAGREE portal whose far side is a wall-backed NEVER window (abend2); Sigma rm22→rm37 antechamber windows escaped the wall-backed rule (portal class is per side, see NAV26) | open |
-| NAV7 | Thin rooms under-sampled: a floor-hugging sample row for rooms thinner than the spacing (Canyons rm4 22 cells, rm13 not routable; khazaddum rm13 5 nodes); gap-directed sampling | open, after 0.9.16 |
-| NAV8 | Toroid refinements: Rim's 45° alcoves, ceiling-exit flag rooms, the 2,048 lattice cap; toroidal-room orbit (Lazy Theta\* straightening pulls legs to the inner chord; candidates: annulus-aware straightening, arc-following); Entropy on Rim | open (point-in-room probe now exists) |
-| NAV9 | Isengard outdoor pin class (cells 123,149 / 127,112), long carries rm45→rm34; Doors of Moria rm7 commits and per-team divergence; Bree outdoor fine-threading; outdoor idling when the entrance stage fails | partly improved by 0.9.15; re-measure |
-| NAV10 | Items the hull cannot reach are never chased (a level-load unreachable verdict) | open |
-| NAV11 | A nook the hull cannot occupy is never entered (Batteries rm35) | E (verify): likely closed by E2 |
-| NAV13 | `BotPortalGeoCost` prices solid faces free (geodomes 504, Batteries 32 walls); no navdump field | open |
-| NAV14 | Batteries rm80 propped-leaf office (11.37 u): lattice never grows past the door plane; bookcase wedges; seed relocation when the seed's hull is in contact; a second seeding source for degenerate door seeds; seed-isolated door census (Batteries rm80 p0, rm46 p10, rm55 p0; Sigma rm19 p14-16, rm37 p2) | deferred with its geometry (three squeeze attempts, L31) |
-| NAV15 | Batteries rm118 Shield chase pins; rm12 powerup-chase circling class | known class, open |
-| NAV16 | Overlapping-portal merge: strip-tiled boundaries become one opening for crossing and commit (fixes Canyons rm12 p1 at the root) | E (Q22: "we will see"; decided after the collapse) |
-| NAV17 | A chain's first node can be the door behind the bot, flown as a crossing (log the router's next hop first) | not built, not measured |
-| NAV18 | Window-misroute fix's sibling gaps: legacy resolver pass-1 eligibility; cached/memo/forced admission revalidation; helper reciprocal-face and crossing cost | no closure since 0.9.14 |
-| NAV19 | Escape-relapse loop (a freed bot heads back to the spot that beat it) | E (verify, Q21a: one soak or flight): destination demotion may fix it |
-| NAV20 | Nightmare Castle five-second seam refire; its 6-seed region lattice | E (verify) |
-| NAV21 | One Plutonium room where bots reliably wedge | E (verify) |
-| NAV22 | Decorative concave-alcove trap (a Bree carrier flew into a doorless recess) | X: accepted as a known limitation (Q21c) |
-| NAV23 | Rigidity / node-to-node feel (any loosening must be non-oscillating, L3) | X: not reproduced, reopen on evidence (Q21b) |
-| NAV24 | Goal-blind stuck escape (escape pick ignores the goal) | partial (slice 6b, 9c, destination demotion) |
-| NAV25 | Corridor (multi-point) hand-out for bent crossings | deferred; no Batteries door needs it after the lip rungs |
-| NAV26 | Portal class is computed per side (a sky room's window reads as a door from the sky side) | no fix |
-| NAV27 | A trunk node per room | X: not reproduced, reopen on evidence (Q21b) |
-| NAV28 | Roadmap growth over-reach into sealed pockets (stricter growth probe deferred, L32; troll strikes are the backstop) | open; the void-cell guard covers rock, not pockets |
-| NAV29 | North-star step 2: path-cost detour budget | not built |
-| NAV30 | Grate-route awareness (finite grate cost; Isengard's blastable grate tunnels) | F: needs asymmetric-probe fix, a dynamic overlay and a payoff map |
-| NAV31 | Nysa room-69 carrier pins; carrier return-leg stall | E (verify) |
-| NAV32 | Verification set never re-checked: nysa blue-flag room, stadium-plus side room | open, cheap (overlay) |
-| NAV33 | Stacked-room arrival (invisible horizontal seam on the final leg) | E (verify): abend2 pits fixed, class unverified |
-| NAV34 | July leftovers: interior-pane heal coverage; metropolis_gt navdump pass (rooms 55/56/50/36) | X: not reproduced, reopen on evidence (Q21b) |
-| NAV35 | What defines the two reach populations (~10x picks/round gap) | X: not reproduced, reopen on evidence (Q21b) |
-| NAV36 | Lattice ~2 s re-issue while routing around a partition: a defect in itself? | open |
-| NAV37 | Indoor-item chases fail at the rm60 sealed pocket | E (verify): likely superseded by E2 |
-| NAV38 | Objective-owned degradation (old row 6.28) | X: not reproduced, reopen on evidence (Q21b) |
-| NAV39 | Flag-carrier sprint-home speed | X: not reproduced, reopen on evidence (Q21b) |
-| NAV40 | abend2 per-team asymmetry vs the symmetry acceptance test | X: operator, "not asymmetrical from my testing" (Q21c) |
-| NAV41 | Glasshouse rm1 is five sealed spaces (a hollow pyramid open only below and above; four door galleries on its faces) routed as one volume: `BotRouteDijkstra` was any-portal-in, any-portal-out; the stuck escape ranked portals its space cannot reach; 72 of 76 stucks in the galleries' narrowing wedges | BUILT 2026-10-01 on 0.9.17-dev (§4.7). abend2 pair: zero differing decisions, play flat. Glasshouse: rm1 stucks halved, refusals and wall-escapes gone. Open: zone-blind carrier waypoints; the hall-corner hop refusal (rm2->rm3) without an in-room leg; route to the goal's own zone; same-room cross-zone goals |
-| NAV42 | 0.9.16 scores a tenth of 0.9.15 on Glasshouse (2 vs 23 captures in 8 rounds): carriers routed through the pyramid or stalled at rm16->rm14; portal verdicts identical, the void guard cut rm9/rm10/rm16/rm12/rm5 by 63-93% (rock); cause of the route change unknown | open; bot-free bisect across the 0.9.16-series binaries next |
-| NAV60 | Lattice legs from a cell grown through a door were swept from the room being built, so they met none of the next room's walls (Glasshouse: 140 edges through other rooms' faces) | BUILT 2026-10-03, §4 item 3; gate passed with NAV61 on 2026-10-05 |
-| NAV61 | The grid phase a room keeps was the fullest of three: spill into the next room counted, door coverage did not (Isengard rm33, Batteries rm16) | BUILT: own cells, then all cells (§4 item 2); gate passed 2026-10-05. Open: a score read after the repair passes, so door coverage can lead (ledger L34) |
-| NAV62 | Isengard: a carrier routed home through the sewer (rm36) is pinned at the hatch above its upper hall | open, latent; confirm the route, then render |
-| NAV63 | Hard-room promotion is a cliff: three via suspensions add 800 to every route through the room until the level changes | open |
-| NAV58 | Corner-bridge sweep honouring back faces | X: code read (`RoadmapLOS` indoor sweeps pass `FQ_BACKFACE` since `8b6ee205`; §5.2 item 7) |
-| NAV59 | The door on-ramp admits points outside the room (two rm80 nodes in the hallway) | E (verify); the void-cell guard does not test on-ramp nodes |
+| Problem | State |
+|---|---|
+| Sigma Base rm37 (no in-room path) and bridge room rm13 (via fails 33/31 on 09-30); `FLAG_PICKUP_FAILURE`; closet pockets rm2→rm1, rm27→rm28 | open |
+| Carrier station point is the room box centre (Sigma rm17 `goal=none` pin, 4 min); a station must be a reachable lattice node | unconfirmed |
+| Slave Pit zero flag picks (hub rm1→rm5/rm11 hops fail ~55%, via fails on tmap 1374); DownTown wandering (parking structure, one team's start) | open |
+| DownTown-class build cost: skip lattice phases 1-2 when phase 0 exceeds ~1,500 cells (rm31 97 s); time-budget attach probes | not built |
+| DownTown rm37: a portal whose crossing the sampler refuses is neither a relay node nor priced as a door; outdoor-exit legality | not built |
+| The last-resort pass admits a DISAGREE portal whose far side is a wall-backed NEVER window (abend2); Sigma rm22→rm37 antechamber windows escaped the wall-backed rule (portal class is per side, see below) | open |
+| Thin rooms under-sampled: a floor-hugging sample row for rooms thinner than the spacing (Canyons rm4 22 cells, rm13 not routable; khazaddum rm13 5 nodes); gap-directed sampling | open, after 0.9.16 |
+| Toroid refinements: Rim's 45° alcoves, ceiling-exit flag rooms, the 2,048 lattice cap; toroidal-room orbit (Lazy Theta\* straightening pulls legs to the inner chord; candidates: annulus-aware straightening, arc-following); Entropy on Rim | open (point-in-room probe now exists) |
+| Isengard outdoor pin class (cells 123,149 / 127,112), long carries rm45→rm34; Doors of Moria rm7 commits and per-team divergence; Bree outdoor fine-threading; outdoor idling when the entrance stage fails | partly improved by 0.9.15 |
+| Items the hull cannot reach are never chased (a level-load unreachable verdict) | open |
+| A nook the hull cannot occupy is never entered (Batteries rm35) | to verify: likely closed by the spawn egress (§6.1) |
+| `BotPortalGeoCost` prices solid faces free (geodomes 504, Batteries 32 walls); no navdump field | open |
+| Batteries rm80 propped-leaf office (11.37 u): lattice never grows past the door plane; bookcase wedges; seed relocation when the seed's hull is in contact; a second seeding source for degenerate door seeds; seed-isolated door census (Batteries rm80 p0, rm46 p10, rm55 p0; Sigma rm19 p14-16, rm37 p2) | deferred with its geometry (three squeeze attempts, L31) |
+| Batteries rm118 Shield chase pins; rm12 powerup-chase circling class | known class, open |
+| Overlapping-portal merge: strip-tiled boundaries become one opening for crossing and commit (fixes Canyons rm12 p1 at the root) | open; decided after the collapse |
+| A chain's first node can be the door behind the bot, flown as a crossing (log the router's next hop first) | not built, not measured |
+| Window-misroute fix's sibling gaps: legacy resolver pass-1 eligibility; cached/memo/forced admission revalidation; helper reciprocal-face and crossing cost | no closure since 0.9.14 |
+| Escape-relapse loop (a freed bot heads back to the spot that beat it) | to verify: destination demotion may fix it |
+| Nightmare Castle five-second seam refire; its 6-seed region lattice | to verify |
+| One Plutonium room where bots reliably wedge | to verify |
+| Decorative concave-alcove trap (a Bree carrier flew into a doorless recess) | closed: accepted as a known limitation |
+| Rigidity / node-to-node feel (any loosening must be non-oscillating, L3) | closed: not reproduced, reopen on evidence |
+| Goal-blind stuck escape (escape pick ignores the goal) | partial (slice 6b, 9c, destination demotion) |
+| Corridor (multi-point) hand-out for bent crossings | deferred; no Batteries door needs it after the lip rungs |
+| Portal class is computed per side (a sky room's window reads as a door from the sky side) | no fix |
+| A trunk node per room | closed: not reproduced, reopen on evidence |
+| Roadmap growth over-reach into sealed pockets (stricter growth probe deferred, L32; troll strikes are the backstop) | open; the void-cell guard covers rock, not pockets |
+| North-star step 2: path-cost detour budget | not built |
+| Grate-route awareness (finite grate cost; Isengard's blastable grate tunnels) | deferred: needs asymmetric-probe fix, a dynamic overlay and a payoff map |
+| Nysa room-69 carrier pins; carrier return-leg stall | to verify |
+| Verification set never re-checked: nysa blue-flag room, stadium-plus side room | open, cheap (overlay) |
+| Stacked-room arrival (invisible horizontal seam on the final leg) | to verify: abend2 pits fixed, class unverified |
+| July leftovers: interior-pane heal coverage; metropolis_gt navdump pass (rooms 55/56/50/36) | closed: not reproduced, reopen on evidence |
+| What defines the two reach populations (~10x picks/round gap) | closed: not reproduced, reopen on evidence |
+| Lattice ~2 s re-issue while routing around a partition: a defect in itself? | open |
+| Indoor-item chases fail at the rm60 sealed pocket | to verify: likely superseded by the spawn egress (§6.1) |
+| Objective-owned degradation | closed: not reproduced, reopen on evidence |
+| Flag-carrier sprint-home speed | closed: not reproduced, reopen on evidence |
+| abend2 per-team asymmetry vs the symmetry acceptance test | closed: not asymmetric in the maintainer's testing |
+| Glasshouse rm1 is five sealed spaces (a hollow pyramid open only below and above; four door galleries on its faces) routed as one volume: `BotRouteDijkstra` was any-portal-in, any-portal-out; the stuck escape ranked portals its space cannot reach; 72 of 76 stucks in the galleries' narrowing wedges | BUILT 2026-10-01 on 0.9.17-dev (§4.7). abend2 pair: zero differing decisions, play flat. Glasshouse: rm1 stucks halved, refusals and wall-escapes gone. Open: zone-blind carrier waypoints; the hall-corner hop refusal (rm2->rm3) without an in-room leg; route to the goal's own zone; same-room cross-zone goals |
+| 0.9.16 scores a tenth of 0.9.15 on Glasshouse (2 vs 23 captures in 8 rounds): carriers routed through the pyramid or stalled at rm16->rm14; portal verdicts identical, the void guard cut rm9/rm10/rm16/rm12/rm5 by 63-93% (rock); cause of the route change unknown | open |
+| Lattice legs from a cell grown through a door were swept from the room being built, so they met none of the next room's walls (Glasshouse: 140 edges through other rooms' faces) | BUILT 2026-10-03, §5.2 item 3; gate passed 2026-10-05 |
+| The grid phase a room keeps was the fullest of three: spill into the next room counted, door coverage did not (Isengard rm33, Batteries rm16) | BUILT: own cells, then all cells (§5.2 item 2); gate passed 2026-10-05. Open: a score read after the repair passes, so door coverage can lead (ledger L34) |
+| Isengard: a carrier routed home through the sewer (rm36) is pinned at the hatch above its upper hall | open, latent |
+| Hard-room promotion is a cliff: three via suspensions add 800 to every route through the room until the level changes | open |
+| Corner-bridge sweep honouring back faces | closed: code read (`RoadmapLOS` indoor sweeps pass `FQ_BACKFACE` since `8b6ee205`; §5.2 item 7) |
+| The door on-ramp admits points outside the room (two rm80 nodes in the hallway) | to verify; the void-cell guard does not test on-ramp nodes |
 
-**Decided 2026-10-01 (Q21, Q22).** NAV19, NAV20, NAV21, NAV31, NAV33 and NAV37 are verified in one soak or flight.
-NAV23, NAV27, NAV34, NAV35, NAV38 and NAV39 close as "not reproduced, reopen on evidence". NAV22 is accepted as a
-known limitation. NAV40 closes: the operator finds abend2 not asymmetric in his testing. NAV16 stays E ("we will
-see"), decided after the collapse.
+**Closed on evidence (kept for the record):** the explore sampler picking `RF_EXTERNAL` window rooms (slices 5/5b);
+the Polaris 08-31 regression and the wind-axis hypothesis (bedlam Polaris 15.5 caps/rnd; hypothesis refuted);
+QuadSomniac wind-20 (superseded; the engine-node callers are carried in §7.4); isengard/bree "0 captures on every
+build" and the Bree tavern maze (both score); flag-room arrival stall and connectivity dead-ends (`8031ffbf`, portal
+model NO-ROUTE 0); the entrance-miss class (0.9.15 Phase 1); the 0.9.14 sprint staged items (`8b6ee205`,
+`c1d34f0a`, `fe1dc474`); Isengard rm36, rm20 pipe mouth, valley strands; abend2 vestibules, floor-hatch tray entry
+and ring-threshold hesitation (`0126b884`..`84a3f3d3`); troute through windows on interior-only maps
+(`BotPortalClass` NEVER); OBSTACLE_GEOMETRY §5 gaps 1-3; the articulation pass, Approach 2 and the skeleton rework
+risk list (not needed); outdoor altitude OOB and sky-fly; dual-goal combat strategy (declined); robo-anarchy battery
+config; the engine's 40-door cap (accepted).
 
-**Closed on evidence (kept for the record):** NAV12 explore sampler picking `RF_EXTERNAL` window rooms (slices 5/5b);
-NAV43 Polaris 08-31 regression and the wind-axis hypothesis (bedlam Polaris 15.5 caps/rnd; hypothesis refuted);
-NAV44 QuadSomniac wind-20 and the §3.0.1 threads (superseded; engine-node callers carried as COL5); NAV45 isengard/bree
-"0 captures on every build" and the Bree tavern maze (both score); NAV46 flag-room arrival stall and connectivity
-dead-ends (`8031ffbf`, portal model NO-ROUTE 0); NAV47 the entrance-miss class (0.9.15 Phase 1); NAV48 the 0.9.14
-sprint staged items (`8b6ee205`, `c1d34f0a`, `fe1dc474`); NAV49 Isengard rm36, rm20 pipe mouth, valley strands; NAV50
-abend2 vestibules, floor-hatch tray entry and ring-threshold hesitation (`0126b884`..`84a3f3d3`); NAV51 troute through
-windows on interior-only maps (`BotPortalClass` NEVER); NAV52 OBSTACLE_GEOMETRY §5 gaps 1-3; NAV53 articulation pass,
-Approach 2 and the skeleton rework risk list (not needed); NAV54 outdoor altitude OOB and sky-fly; NAV55 dual-goal combat
-strategy (declined); NAV56 robo-anarchy battery config; NAV57 the engine's 40-door cap (accepted).
+### 7.4 Collapse and cleanup items
 
-### 7.4 Collapse and cleanup rows (COL)
+| Item | State |
+|---|---|
+| One in-room planner (§7.1 step 1) | not built |
+| Seam/hop-commit as the commitment rule; stuck as invalidation (§7.1 steps 2, 4) | not built; depends on the in-room planner |
+| Cleanup riding §7.1 steps 1-2 (duplicated dispatch, stale toggle tags, one network outside the in-room case) | open; also retires the legacy toggles and `mjunction` |
+| Facing Worlds' Theta\* storms as design input to the in-room planner | open |
+| Remaining engine-path-node target callers | open |
+| Workaround-retirement audit (strike, hardroom, hardcost, blacklist, via-dance firing rates) | open |
+| Stage 4 vs the one-network ruling; legacy toggles `terrain`, `outdoorvia`, `outdoorgraph`, `grid off` | Stage 4 closed as superseded; the toggles retire in the cleanup |
+| Retire `$nav mjunction` | with the cleanup |
+| Pursuit and powerup chases request routed destinations (§7.1 step 5) | open |
+| Outdoor Phase 2 (§7.2) | open; after §7.1 steps 1-2 |
+| Outdoor Phases 3-4 remainder (§7.2) | open; after §7.1 steps 1-2 |
+| The 0.9.6 grate-DOOR clutter/building allowlist "aimed at a class that may not exist" | open |
+| Code hygiene owed: post-Hyper-Anarchy objective-carrier/powerup-suppression/hunt-leash helpers (not yet written); goal-attachment rework and `BOT_OGRAPH_RADIUS` 6.0 → 6.7; resolve-memo serial keying, interior non-portal pane watching, v1-plan vs heal-opened routes | open |
+| Stale code comments (bot_chat.cpp, dedicated_server.cpp) | open |
 
-| Id | Item | State |
-|---|---|---|
-| COL1 | One in-room planner (§7.1 step 1) | B, not built |
-| COL2 | Seam/hop-commit as the commitment rule; stuck as invalidation (§7.1 steps 2, 4) | B, depends on COL1 |
-| COL3 | Cleanup riding COL1-2 (duplicated dispatch, stale toggle tags, one network outside the in-room case) | B (Q20: also retires the legacy toggles and `mjunction`) |
-| COL4 | Facing Worlds' Theta\* storms as COL1 design input | B |
-| COL5 | Remaining engine-path-node target callers | B |
-| COL6 | Workaround-retirement audit (strike, hardroom, hardcost, blacklist, via-dance firing rates) | B |
-| COL7 | Stage 4 vs the one-network ruling; legacy toggles `terrain`, `outdoorvia`, `outdoorgraph`, `grid off` | B (Q20: Stage 4 closed as superseded; toggles retire in COL3) |
-| COL8 | Retire `$nav mjunction` | B (Q20: with COL3) |
-| COL9 | Pursuit and powerup chases request routed destinations (§7.1 step 5) | B |
-| COL10 | Outdoor Phase 2 (§7.2) | B (Q20b, confirmed: pre-reveal, after COL1-COL2) |
-| COL11 | Outdoor Phases 3-4 remainder (§7.2) | B (Q20b, confirmed: pre-reveal, after COL1-COL2) |
-| COL12 | The 0.9.6 grate-DOOR clutter/building allowlist "aimed at a class that may not exist" | E |
-| COL13 | Code hygiene owed: post-Hyper-Anarchy objective-carrier/powerup-suppression/hunt-leash helpers (not yet written); goal-attachment rework and `BOT_OGRAPH_RADIUS` 6.0 → 6.7; resolve-memo serial keying, interior non-portal pane watching, v1-plan vs heal-opened routes | E |
-| COL14 | Stale code comments (bot_chat.cpp, dedicated_server.cpp list in the registry) | B |
-
-Closed: COL15 open-the-line cleanup (`ea291c29`); COL16 the router's door is the via layers' door (`b9b3b2e3`,
-`7b67fe1b`); COL17 sliced skeleton build (`455aacbe`); COL18 powerup chase asks the routed goal, as re-scoped to E2
-(remainder is COL9); COL19 flag-touch goals run until contact (`5d46e532`); COL20 analyzer kills column (`c580d612`);
-COL21 bedlam spread repeat pair; COL22 Sigma attackers leave their bunker (`d9f6d9d4`, `22fb70b0`, Q12); COL23 Sigma
-carry home; COL24 pseudo-bnode Stage 2, outdoor-graph fragmentation, ridge/anchor graph (superseded; leftover code is
-COL7); COL25 troute v2 (built as `troute2`).
-
-**Related rows owned by other themes:** POP11 (non-Pyro hulls against a Pyro-class network; Phoenix wall sphere 6.42,
-comfort hull 8.0), MODE6 (the Entropy park's thrust against knockback, removed 2026-10-07), MODE11 (multi-flag CTF hoarding), CBT5 (flanking cost term,
-the reserved exposure weight on roadmap edges), CBT8 (one-route maps: commit, wait or fight), CBT14/CBT15
-(visit-recency patrol bias; spline trajectories, behaviour-tree FSM), WAT1 (telemetry consolidation), WAT2 (overlay
-labels), WAT3 (navdump ship sizes vs `BotHullPhys`), WAT10 (mysterious_isle conversion), WAT11 (pumphouse/pyroplace).
+Closed: open-the-line cleanup (`ea291c29`); the router's door is the via layers' door (`b9b3b2e3`, `7b67fe1b`);
+sliced skeleton build (`455aacbe`); the powerup chase asks the routed goal, as re-scoped to the spawn egress
+(remainder is §7.1 step 5); flag-touch goals run until contact (`5d46e532`); analyzer kills column (`c580d612`);
+bedlam spread repeat pair; Sigma attackers leave their bunker (`d9f6d9d4`, `22fb70b0`); Sigma carry home;
+pseudo-bnode Stage 2, outdoor-graph fragmentation, ridge/anchor graph (superseded; the leftover code retires with the
+legacy toggles); troute v2 (built as `troute2`).
 
 ### 7.5 Tried and reverted: the ledger
 
-One line each: what, commit, lesson, do-not-retry scope. Full narratives are in the archive.
+One line each: what, commit, lesson, do-not-retry scope.
 
-1. **L1 Committed-leg executor** (0.9.12-dev, never committed; `0.9.12-committed-leg-experiment.patch`): buried-room
+1. **L1 Committed-leg executor** (0.9.12-dev, never committed): buried-room
    activation fires too broadly, stay-in-room cancels on portal drift, a global via stand-down is too blunt. Do not
    rebuild with those three properties.
 2. **L2 Runtime engine BNode generation** (`f0f39007`/`4d515800` → `730dab37`, `69fa0b7b`): the all-or-nothing
@@ -867,7 +846,7 @@ One line each: what, commit, lesson, do-not-retry scope. Full narratives are in 
 12. **L12 Step 4 campaign-outdoor gate widening** (`legacy_accept || BOA-routable`; `4678c30e`, A/B corrected in
     `3fc593f8`): closed NO-GO, 99.2% of target legs hull-blocked. Routable is not flyable.
 13. **L13 Terrain-exit level classifier plus glass exemption from the Dijkstra veto** (0.9.12-dev 08-29;
-    commit: none, reverted before commit; record in the archive §7.0.0): signals moved, play did not; hard stucks
+    commit: none, reverted before commit): signals moved, play did not; hard stucks
     4 → 16 → 46. Prerequisite named: per-entry aim (since built as `4a8e63b2`).
 14. **L14 Artery hierarchy plus FREE glass routing** (08-30, 33-round paired A/B; recorded in `8a69e0c6`): picks 1.94 → 0.56 per round,
     stucks +131%; 127 of 207 Batteries panes are ceiling vents. Do not retry the FREE form; the mode ladder `55a8d28f`
@@ -902,12 +881,12 @@ One line each: what, commit, lesson, do-not-retry scope. Full narratives are in 
 28. **L28 3.12p friend-avoidance and stuck-timer changes** (`9a960f71`): reverted regressions. Do not duplicate the
     engine's friend avoidance.
 29. **L29 Sky-roofed-room lattice exemption for Canyons** (`b444f936` → `4b4e78f4`): Canyons' recovery was the hull
-    fit slack; the exemption measured nothing. The cure for thin rooms is NAV7.
+    fit slack; the exemption measured nothing. The cure for thin rooms is the thin-room sampling item (§7.3).
 30. **L30 Returning rock cells to Canyons' lattice** (09-29/30; commit: none, never shipped): measured nothing further.
 31. **L31 Three ways to make bots squeeze Batteries' 11 u propped-leaf door** (0.9.16-dev; commit: none, the arms were never merged): read no
-    better than blundering through. rm80 waits for NAV14's geometry work.
+    better than blundering through. rm80 waits for its geometry work (§7.3).
 32. **L32 Stricter roadmap growth probe for sealed pockets** (0.9.4; commit: none, never tried): judged too risky to
-    connectivity. Reopen only with a connectivity gate (NAV28).
+    connectivity. Reopen only with a connectivity gate (§7.3).
 33. **L33 Skeleton rework #1, fixed-fan collision-guided bridge** (`1d52aa7f`, 7 h abend2 soak): neutral, kept; did
     not close ring room 0. The hull-scaled fan (`6c17d9bd`) did.
 34. **L34 Door coverage, read before the repair passes, leading the grid-phase choice** (0.9.17-dev, 2026-10-04/05;
@@ -959,13 +938,13 @@ radius raised to the hull (6.0 → 6.7), sharper diagnostics. Explicitly not "na
 Portal class, crossing search with lip and fit rungs, shattered-pane flip, too-small-for-hull and wall-backed rules,
 two-hop door pricing, the per-bot glass mode ladder, the hull-scaled skeleton fan (abend2 ring room 0 one component),
 directional burst and glass back-off, back-face-honest build probes. Batteries route failures went to zero and the
-spawn-room traps the operator found are gone.
+spawn-room traps the maintainer found are gone.
 
 **0.9.15 (2026-09-20).** Outdoors and a smooth server: heightfield admission for the region lattice, one outdoor
 dispatch, the router no longer routes through exterior shells, CTF errands fly their last leg, and roadmap builds run
 in slices on worker coroutines (no frame stalls; the HAVOC level 6 off-grid sweep crash fixed).
 
-**0.9.16-dev (in test, code complete at `4b4e78f4`).** Q12 settled (one door for every layer, informed picks only);
+**0.9.16-dev (in test, code complete at `4b4e78f4`).** One door for every layer (informed picks only);
 spawn egress (Batteries lives pinned at spawn 35% → 1%); flag-touch goals until contact; the sliced skeleton build
 (no first-use freeze); the hull tiers (wall sphere floor, comfort hull, TIGHT last resort; Canyons captures doubled);
 the void-cell lattice guard (Sigma Base's exit towers; six-ray room test after Bree lost a building's grid to the
@@ -986,14 +965,8 @@ geometry; every durable win came from feeding the engine better goals over one s
   Development* 1(1):7-28. D3's rooms and portals are the cluster/entrance decomposition (§4).
 - **Lazy Theta\*:** Nash, Koenig and Tovey (2010), "Lazy Theta\*: Any-Angle Path Planning and Path Length Analysis in
   3D," *AAAI 2010* (§5.2).
-- **Quake III AAS:** van Waveren (2001), "The Quake III Arena Bot" (MSc thesis): the surface-locomotion contrast case.
 - **Frontier exploration:** Yamauchi (1997), "A Frontier-Based Approach for Autonomous Exploration," *IEEE CIRA*.
-  Evaluated and deferred: D3 has no unknown space; the residue is a visit-recency patrol bias (CBT14). Cite Yamauchi,
-  not Yamaguchi 1998 (formation control).
-- **Recovery and replan patterns:** ROS 2 Nav2 and Move Base Flex, as pattern references only. Anti-adopt (from the
-  2026-06-30 robotics synthesis): no probabilistic occupancy maps (BSP is noiseless truth), no Nav2 port, no sensor
-  fusion loop.
-- Matcen docs: `OBSTACLE_GEOMETRY.md` (passability facts), `PATHFINDING_CODEBASE_EXPLORE.md` (engine AI pathing),
-  `BOT_DEV_REFERENCE.md` (fields, constants, sliced builds), `VISUAL_DEBUG.md` (overlay), `D3_MOVEMENT_PHYSICS.md`,
-  `PLAN.md` §4 (the registry), `BOTS_DEVEL.md` (engineering log), `archive/NAVIGATION-history-2026-06_to_09.md`,
-  `archive/SKELETON_REWORK.md`.
+  Evaluated and deferred: D3 has no unknown space; the residue is a visit-recency patrol bias.
+- **Recovery and replan patterns:** ROS 2 Nav2 and Move Base Flex, as pattern references only. Not adopted: no
+  probabilistic occupancy maps (BSP is noiseless truth), no Nav2 port, no sensor fusion loop.
+- Matcen docs: `OBSTACLE_GEOMETRY.md` (passability facts), `VISUAL_DEBUG.md` (overlay), `D3_MOVEMENT_PHYSICS.md`.

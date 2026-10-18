@@ -5,12 +5,10 @@ geometry, and how our bots must treat each type.** Written 2026-06-03 from a sou
 read of the engine (citations are `file:line`). Read this before touching navigation,
 portal passability, powerup selection, or stuck-clear code.
 
-Cross-referenced from [`NAVIGATION.md`](NAVIGATION.md) (nav design) and
-[`BOT_DEV_REFERENCE.md`](BOT_DEV_REFERENCE.md) (engine API patterns).
+Cross-referenced from [`NAVIGATION.md`](NAVIGATION.md) (nav design).
 
 Corrected 2026-10-01 against `ee6e6525`: §1 now quotes both branches of `BOA_PassablePortal`, and the
-"our bot" claims reflect the 0.9.14-0.9.16 portal model. The superseded §4bb code analysis and §5 gaps 1-3
-are in [`archive/OBSTACLE_GEOMETRY-superseded.md`](archive/OBSTACLE_GEOMETRY-superseded.md).
+"our bot" claims reflect the 0.9.14-0.9.16 portal model.
 
 > **Why this exists:** the wall-press, glass-mega-pin, and grate-beeline bugs all come
 > down to misreading what a given face/portal *is*. The single biggest past mistake was
@@ -154,9 +152,9 @@ more permissive than a real ship hull. See §4 (DISAGREE band).
 | **Blastable grate-DOOR** (2026-07-06, isengard) | **`OBJ_DOOR` + `OF_DESTROYABLE`** wearing a grate model (`blastablegrate.OOF`) — a door whose ONLY "open" is dying. Reads as a normal unlocked doorway (geocost 0, BOA passable), so routing correctly walks bots into a door that never opens. | **Yes** (it's an "unlocked door") | any weapon, multiple hits | Admitted to the proactive clear allowlist + pass-4 portal object scan (`5d872f1c`). **Object-dump survey (2026-07-06): `OBJ_DOOR` is THE standard representation** — isengard (6), splusv1 (2, rooms 58/59), and the ancestral D3 campaign level-4 sewer grates (2, rooms 21/23) are ALL destroyable doors; no clutter-type grate found on any surveyed map. The 0.9.6 clutter/building allowlist was aimed at a class that may not exist — its splusv1 "dormant-as-designed" verdict is rewritten to "silently filtered". Never assume the object type from the visual. |
 | **Forcefield** | `TF_FORCEFIELD` texture on a rendered portal face; on/off = `PF_RENDER_FACES` set/clear | **Build time only** (§1): finite BOA cost; at runtime **no while on**, yes once a script turns it off | toggled on/off by a level script (`MSAFE_ROOM_PORTAL_RENDER`) | Engine AI treats the texture as a hazard (`AImain.cpp:2020`); our router follows the engine's live verdict |
 
-### 3.1 Troll-powerup patterns (map-maker ground truth, 2026-06-10)
+### 3.1 Troll-powerup patterns (2026-06-10)
 
-Custom-map authors bait with **ultra-high-value items** (Mega, Black Shark) — exactly what our
+Some custom maps place **ultra-high-value items** (Mega, Black Shark) — exactly what our
 prioritization loves — in two recurring builds:
 
 1. **Glass pocket**: a pocket adjacent to a larger room, sealed with bulletproof glass. The glass
@@ -165,8 +163,8 @@ prioritization loves — in two recurring builds:
    the glass walls off a pocket *containing* the alcove portals; both sides' aperture probes run
    entirely inside the pocket → geocost 0.0/40, never touching the glass).
 2. **Grated chamber**: a chamber fully surrounded by grating with no entry at all — usually
-   shoot-through. In single-player this doubles as a puzzle (shoot a switch through the grate,
-   guided missile, or Black Shark suction to pull the item out); in multiplayer it is pure bait.
+   shoot-through. In single-player this can be a puzzle (shoot a switch through the grate,
+   guided missile, or Black Shark suction to pull the item out).
 
 Both classes are **approach-sealed, not portal-sealed** — "can a ship reach the opening" is a
 volumetric question no straight-line probe answers.
@@ -321,8 +319,7 @@ anyone else. Ceiling and floor vents never qualify as shortcuts: free pane routi
 regression on Batteries, where 127 of 207 panes are ceiling vents. Once a pane is gone, `PortalShattered` /
 `PortalPaneShatteredFlip` (`bot_steering.cpp:563`, `:675`) reclassify it and its twin as DOOR, and
 `BotPortalEnginePassable` (`bot_steering.cpp:472`) returns true for it even though the engine's cost table still
-says glass. The pre-0.9.14 analysis that found the glass intent dead in the router, and the reverted 2026-08-29
-blanket exemption, are in the archive file named at the top.
+says glass.
 
 **Diagnostic trap:** a `$navdump` records whatever the pane's state was at dump time. A dump taken
 after a bot shattered the glass shows `flags = 0x00000000` and `engine_passable = true`, which
@@ -365,7 +362,7 @@ closed. Batteries rm80's door (the leaf-tip gap, 11.37 u at every height) is one
 ## 5. Known gaps
 
 Gaps 1-3 of the 0.9.3 list are closed (glass cost 0.9.6 and the 0.9.14 pane ladder; powerup reachability gates;
-the navdump obstacle fields) and live verbatim in the archive file. One caveat stays current:
+the navdump obstacle fields). One caveat stays current:
 
 - **`sealed_troll` FALSE-POSITIVES on outdoor-connected pockets — DO NOT gate selection on it alone.**
 The strict connected-component BFS **skips external (RF_EXTERNAL) rooms** because FVI can't use an
@@ -375,7 +372,7 @@ wrongly tagged `sealed_troll`. Confirmed on Apparition: **both CTF flags** (Flag
 r84, FlagGreen r28 → external r27) plus 7 weapon/ammo powerups read sealed, yet all are reachable
 in-game through the outdoor courtyard. `tools/analyze_navdump.py` now flags these as `OUTDOOR-LINKED`
 (room's only neighbours are external) and warns. **Implication for the powerup-reachability filter
-(archived gap #2): it MUST bridge external rooms** (treat an external-only-connected pocket as reachable, or
+(gap 2 above): it MUST bridge external rooms** (treat an external-only-connected pocket as reachable, or
 route the reachability test through terrain) — a filter built naively on this BFS would make bots
 **ignore outdoor flags/powerups**, a capture-killing regression. `review` is the trustworthy verdict;
 `sealed_troll` is only reliable on fully-indoor maps.

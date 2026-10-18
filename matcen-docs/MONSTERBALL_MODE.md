@@ -4,21 +4,17 @@
 `c0db0728`/`9cbf16c1`/`8bf0b4fe`).** §3 describes what the bots do at HEAD, including the
 `$nav mball / mroles / mavoid / mjunction / mtenure` controls. The contact own-goal fix holds; role
 tenure stays at 10 s (longer tenure halved scoring in A/B). M4's difficulty scaling is built (2026-10-07, §3.8); its
-`!attack ball` / `!defend goal` verbs come with the `!` order work, and the rest of M4 is open (MODE7). Open items
-are in §3.7 "Known open"; the main one is weak finisher conversion on Veins-class corridor maps
-(MODE8). The pre-M1 §3, the junction-feature narrative and the original §6 questions are preserved in
-`archive/MODE-docs-history.md`, Part 2. (This document began as spec-only on 2026-06-12.)
+`!attack ball` / `!defend goal` verbs are built (0.10.0, `CHAT_COMMANDS.md`), and the rest of M4 is open. Open items
+are in §3.7 "Known open"; the main one is weak finisher conversion on Veins-class corridor maps.
+(This document began as spec-only on 2026-06-12.)
 
-Sources of truth: `netgames/monsterball/monsterball.cpp` (read in full for this document),
+Sources of truth: `netgames/monsterball/monsterball.cpp` (read in full for this document) and
 the sports-game AI research in §2 (RLBot botmaking wiki, Rocket League shadow-defense
-literature, RoboCup dynamic role assignment), and the **D3 community/competitive-play research
-in §8** (DescentBB match archives + D2X-XL back-port docs, which independently corroborate
-the two DLL "surprises" and the Vauss/rate-of-fire meta). Companion doc: `ENTROPY_MODE.md`
-(same spec pattern). Read `BOT_DEV_REFERENCE.md` and `NAVIGATION.md` before implementing.
+literature, RoboCup dynamic role assignment). Companion doc: `ENTROPY_MODE.md`
+(same spec pattern). Read `NAVIGATION.md` before implementing.
 
-Monsterball is D3's ball-sports mode — soccer with ships, predating Rocket League by 16
-years. It is the only mode where the objective is a **shared physics object** rather than
-items/rooms, which makes it the only mode where our bots need *sports* AI: ball interception,
+Monsterball is D3's ball-sports mode — soccer with ships. The objective is a **shared physics
+object** rather than items/rooms, so here our bots need *sports* AI: ball interception,
 shot alignment, role rotation, and the discipline to not all chase the ball at once.
 
 ---
@@ -49,13 +45,9 @@ tool — **shoot it**.
   [10, 20] u/s per hit** (`bump_object`, monsterball.cpp:2029). Consequence: *per-hit punch
   is nearly weapon-independent* — a Mass Driver slug and a Vauss round move the ball about
   the same — so **rate of fire is king**. Vauss/laser spam is the ball-mover of choice.
-  **Community-confirmed** (§8): D3 competitive players independently converged on Vauss as
-  *the* Monsterball weapon — exactly what the [10,20] clamp predicts.
 - **The ball moves directly AWAY from the shooter**, in a straight line from the ship through
   the ball center (the collision normal of a shot striking a sphere points back along the
-  shot line). **Cross-confirmed** by the D2X-XL back-port docs (§8): *"the ball will always
-  move away from the player firing at it in a straight line from the player ship to the
-  ball."* You cannot angle a shot — the only degree of freedom is *where you stand*. This is
+  shot line). You cannot angle a shot — the only degree of freedom is *where you stand*. This is
   the exact basis of the M2 striker's approach-point math and the blunder gate (§4.2):
   position yourself so the bot→ball line, extended, points where you want the ball to go.
 - The last player whose ship or weapon touched the ball is tracked (`LastHitPnum`) for
@@ -74,9 +66,7 @@ The last hitter is then credited:
 
 So the geometry is inverted soccer but strategically isomorphic: each team drives the ball
 toward its **own** goal room and defends **the enemy's** goal room (their sink is what you
-deny). Team score limit (`GetScoreLimit`) ends the level. **Cross-confirmed** by the D2X-XL
-back-port docs (§8): *"Push a giant ball into the your goal area"* — the own-goal scoring is
-not a fork quirk, it's the original D3 rule.
+deny). Team score limit (`GetScoreLimit`) ends the level.
 
 ### 1.4 Everything else
 
@@ -132,7 +122,7 @@ target.)
 ## 3. What the bots do now (as built, 0.9.8 onward)
 
 This replaces the pre-M1 inventory that stood here (bots were then pure ball-chasers with no way to
-shoot a non-player object); that text is in `archive/MODE-docs-history.md`, Part 2a. Constants live in
+shoot a non-player object). Constants live in
 `Descent3/bot_objective.h:106-168`. Where §4's original spec and this section differ, this section
 is the code.
 
@@ -195,8 +185,7 @@ per team:
 - **Junction veto** (`$nav mjunction`, default **off**, `bot.cpp:4468-4507`): in a ball room with 3 or
   more passable portals, holds the shot or slam when the induced ball line points at some other portal
   better than at the on-route portal by more than `BOT_MBALL_JUNCTION_MARGIN` (0.25). Validated negative on
-  2026-07-16 (goals fell on every map tested, Veins included); kept as an experiment lever. The design
-  narrative is in the archive, Part 2b; its retirement is registry row COL8.
+  2026-07-16 (goals fell on every map tested, Veins included); kept as an experiment lever.
 
 ### 3.4 Support and keeper
 
@@ -241,13 +230,13 @@ Soak manifests: `tools/manifests/monsterball-smoke.json`, `monsterball-soak.json
 
 ### 3.7 Known open
 
-| Id | Item | State at HEAD |
-|---|---|---|
-| MODE8 | Finisher conversion on Veins-class corridor maps is weak; Monster Arena's 42% via-arrival rate is unverified; whether the "fury" results generalise. | Open. |
-| MODE7 | M4 polish (§4.4). | Difficulty scaling built 2026-10-07 (§3.8); the mode verbs built 2026-10-07 (§4.4); wall and ceiling play, banks and pass-backs stay out of scope. |
-| MODE9 | Analyzer anomalies `MBALL_BLUNDER_HEAVY` and `MBALL_BALL_STUCK` named in §5. | Not built (§5 note). |
-| COL8 | Retire `$nav mjunction`. | Toggle present; decided 2026-10-01 (Q20 a): retire it in the toggle cleanup. |
-| MODE12 | Crossfire bunker outlier. | Accepted for the first release (operator ruling). |
+| Item | State at HEAD |
+|---|---|
+| Finisher conversion on Veins-class corridor maps is weak; Monster Arena's 42% via-arrival rate is unverified; whether the "fury" results generalise. | Open. |
+| M4 polish (§4.4). | Difficulty scaling built 2026-10-07 (§3.8); the mode verbs built 2026-10-07 (§4.4); wall and ceiling play, banks and pass-backs stay out of scope. |
+| Analyzer anomalies `MBALL_BLUNDER_HEAVY` and `MBALL_BALL_STUCK` named in §5. | Not built (§5 note). |
+| Retire `$nav mjunction`. | Toggle present; decided 2026-10-01: retire it in the toggle cleanup. |
+| Crossfire bunker outlier. | Accepted for the first release. |
 
 ### 3.8 Difficulty (M4, built 2026-10-07)
 
@@ -361,43 +350,38 @@ the bot detours laterally around the ball (`BOT_MBALL_AVOID_MARGIN`). Slam runs 
 state bumps (4/21 in the soak) are accepted residual. Role tenure is runtime-tunable via
 `$nav mtenure <seconds>` for the thrash A/B ladder (see manifests/monsterball-tenure-ab.json).
 
-### 4.4 Phase M4 (polish): see MODE7
+### 4.4 Phase M4 (polish)
 
 M4's difficulty scaling is built (§3.8), and so are its chat verbs (2026-10-07, CHAT_COMMANDS.md §A.5): `!attack ball`
 (also `!attackball`) pins the bot to the striker role and `!defend goal` (also `!defendgoal`) to the keeper role, through
 `BotMonsterballOrderRole`, under the attack or defend squad role, which keeps the role assigner (it ranks only bots with
 no order) off the bot; the team's own striker is still assigned among the rest. Every other order a Monsterball bot
 obeys sets the field role, and `!freelance` hands it back to the assigner. Outside Monsterball both are a plain
-`!attack` or `!defend`. The rest of M4 is not built and is tracked as registry row MODE7 (`PLAN.md` §4,
-the master registry). Decided 2026-10-01: M4's mode verbs and difficulty scaling are pre-reveal work. Its content,
-unchanged from the original §4.4: difficulty scaling of the alignment threshold, prediction quality, blunder-cone width
-and kickoff reaction; wall and ceiling play, deliberate banks, supporter pass-backs and multi-touch dribbling, all out
-of scope until soaks demand them; and the `!attack ball` / `!defend goal` chat verbs (Tier 2 pattern), now built. Junction-aware
-pushing was built and tested as part of this phase and is validated negative (§3.3); its full narrative is in
-`archive/MODE-docs-history.md`, Part 2b. The Veins finishing problem it was meant to solve is MODE8.
+`!attack` or `!defend`. The rest of M4 is not built. Its content, unchanged from the original §4.4: difficulty scaling
+of the alignment threshold, prediction quality, blunder-cone width and kickoff reaction; wall and ceiling play,
+deliberate banks, supporter pass-backs and multi-touch dribbling, all out of scope until soaks demand them; and the
+`!attack ball` / `!defend goal` chat verbs (Tier 2 pattern), now built. Junction-aware pushing was built and tested as
+part of this phase and is validated negative (§3.3). The Veins finishing problem it was meant to solve is open (§3.7).
 
 ---
 
 ## 5. Testing plan
 
-- **Maps:** need Monsterball-flagged missions (`MINGOALS2,GOALPERTEAM,SPEC1`). Named D3
-  community maps (§8): **Circuit Breaker** and **Veins** (multi-room — "best for net play",
-  the route-aware design earns its keep here), **Monsterball Arena** / "MB Arena" and
-  **Powerhouse** (single-room — routing degenerates to the goal mouth, pure in-room shot
-  positioning), **Infernal Bolt**, **Burning Indika** (Fusion-favored). Test on at least one
-  single-room and one multi-room map — they exercise different halves of the design. The
-  user picks (same holdout-map discipline as nav testing).
+- **Maps:** need Monsterball-flagged missions (`MINGOALS2,GOALPERTEAM,SPEC1`). Test on at
+  least one single-room map (routing degenerates to the goal mouth, pure in-room shot
+  positioning) and one multi-room map (the route-aware design earns its keep there) — they
+  exercise different halves of the design.
 - **Analyzer:** "## Monsterball" section — goals/round per team, **blunders** (the quality
   metric: a bot team with blunders ≈ goals is net-zero), shots-at-ball, role distribution
   over time, kickoff first-touch rate. Anomalies: `MBALL_ZERO_GOALS` (nothing works),
   `MBALL_BLUNDER_HEAVY` (alignment/blunder gate broken), `MBALL_BALL_STUCK` (ball wedged in
   a room >N min — possible map/physics pathology worth knowing about).
-- *As built (DOC8):* the analyzer's "## Monsterball" section exists with goals, blunders, shots at the
+- *As built:* the analyzer's "## Monsterball" section exists with goals, blunders, shots at the
   ball, role changes, finisher arms, avoid detours and junction holds. Its anomaly checks are
   `MBALL_ZERO_GOALS`, `MBALL_OWN_GOAL_EXCESS` (blunders at or above good goals, the nearest thing to
   the planned blunder check) and `MBALL_ROLE_THRASH` (`tools/analyze_bot_log.py:1513-1538`). The two
   checks named above, `MBALL_BLUNDER_HEAVY` and `MBALL_BALL_STUCK`, are **not** in the analyzer
-  (registry MODE9).
+  (§3.7).
 - **Stage gates:** M1 = poll + fire-at-ball visibly works ($botobj + a bot shoots the ball
   on command); M2 = a lone bot reliably advances the ball room-by-room into its goal on an
   empty server (the "empty-net drill" — measurable: time-to-goal from kickoff); M3 = full
@@ -408,9 +392,8 @@ pushing was built and tested as part of this phase and is validated negative (§
 
 ## 6. Open questions (written for M1; closed out against the code)
 
-The original wording is in `archive/MODE-docs-history.md`, Part 2c. M1-M3 shipped without any of these
-blocking; the answers below come from the code and the recorded soaks, and the rest are marked
-historical (never measured, and nothing in play has needed the answer).
+M1-M3 shipped without any of these blocking; the answers below come from the code and the recorded soaks, and the
+rest are marked historical (never measured, and nothing in play has needed the answer).
 
 1. **Ship-ramming moves the ball usefully.** Answered by the as-built finisher: the slam run exists
    because a ram is unclamped momentum (`bot_objective.h:115-117`), and the 07-15 decode recorded one
@@ -443,75 +426,16 @@ historical (never measured, and nothing in play has needed the answer).
 - RLBot community bots (BotimusPrime et al.) — hand-authored strategy structure reference:
   https://github.com/Darxeal/BotimusPrime
 
-## 8. Descent 3 Monsterball — community history & competitive play (research)
+## 8. Play notes
 
-Monsterball is, as the user noted, a uniquely obscure mode with a narrow playerbase, so this
-section assembles the thin-but-real historical record (forum archives, the D2X-XL back-port
-docs, period strategy material). It exists to (a) corroborate the DLL-derived mechanics from
-*independent* sources and (b) capture the human meta so bot behavior can be checked against
-how people actually played.
+Gameplay points behind the design, alongside the DLL facts in §1:
 
-### 8.1 Lineage
-
-Although our DLL read is of the D3 netgame module, the mode's identity is settled history:
-the **D2X-XL** project (the modern Descent 1/2 source port) added Monsterball and states it
-*"originally comes from Descent 3."* So D3 is the origin; D1/D2 inherited it. The D2X-XL docs
-are therefore a useful *second implementer's* description of the same rules — and they
-corroborate our two DLL "surprises":
-
-- **Own-goal scoring confirmed:** *"Push a giant ball into the your goal area by ramming and
-  shooting it."* Score into your own goal — not a fork artifact, the original rule.
-- **Ball-moves-away-from-shooter confirmed:** *"the ball will always move away from the
-  player firing at it in a straight line from the player ship to the ball … rooted very
-  deeply in the game."* This is exactly the collision-normal physics in `bump_object`, and it
-  is what makes the M2 approach-point math and the blunder gate *exact* rather than
-  heuristic. (Caveat: D2X-XL lets level designers retune per-weapon ball impact by
-  mass×velocity — e.g. Mercury > Mega there — but **that is a D2X-XL customization; retail
-  D3 keeps the flat [10,20] clamp**, so our "rate-of-fire is king" conclusion stands for D3.)
-
-### 8.2 The human meta (DescentBB match archives + period notes)
-
-The strongest primary source is a DescentBB thread organizing a Monsterball match night
-(viewtopic t=2842). What the competitive players did, and why it matters for bots:
-
-- **Vauss is the ball weapon.** Player quote: *"Me + Circuit Breaker + Vauss = Your dead."*
-  The community converged on Vauss with no knowledge of the source — *independent
-  confirmation* of the [10,20] clamp consequence (high RoF beats high punch). A bot that
-  prefers Vauss/laser for ball-pushing is playing the human meta, not just the code.
-- **Map-geometry split is a real strategic axis.** *"Circuit Breaker and Veins are the best
-  for net play"*; single-room maps (**Monsterball Arena**, **Powerhouse**) were seen as
-  LAN-favored because one big room networks poorly. For us this maps directly onto the
-  design: **single-room maps reduce "aim at the next portal" to "aim at the goal mouth"**
-  (pure in-room shot positioning, the router is a no-op), while **multi-room maps (Circuit
-  Breaker, Veins) are where the route-aware aim target is essential.** Test both halves.
-- **Some maps are weapon-gated by geometry:** *"that lvls like Burning Indika without
-  fusion"* — long-sightline maps reward Fusion. Niche; below the bot's first-pass concern.
-- **Format:** time-limited (most goals in the period wins), small teams (2v1 mentioned),
-  voice callouts for coordination. Confirms the mode was played as *team* sport with
-  positional roles, not a free-for-all — validating the M3 role design over pure chase.
-- **Countermeasures saw use:** players *"experimenting with the Bouncing Bettys while trying
-  to score."* A defensive-mine layer around the goal mouth is a plausible far-future keeper
+- **Vauss is the ball weapon.** The [10,20] clamp (§1.2) means high rate of fire beats high punch, which is why the
+  bots prefer Vauss, then the laser, for ball-pushing (§3.5).
+- **Map geometry is a real strategic axis.** On single-room maps, "aim at the next portal" reduces to "aim at the goal
+  mouth" (pure in-room shot positioning; the router is a no-op). On multi-room maps the route-aware aim target is
+  essential. Test both halves (§5).
+- **Positional roles, not a free-for-all.** Monsterball is two-team play (§1.4), and the M3 role design (§4.3) treats
+  it as a team sport with positional roles rather than pure chase.
+- **Countermeasures around the goal mouth.** A defensive-mine layer (Bouncing Bettys) is a plausible far-future keeper
   trick (M4+), noted but out of scope now.
-
-### 8.3 Confidence & gaps
-
-- **High confidence (multi-source):** own-goal scoring, ball-away-from-shooter physics,
-  Vauss/RoF meta, two-team structure, named maps. DLL + D2X-XL + forum agree.
-- **Single-source / thin:** exact competitive scoring conventions and team sizes (one match
-  thread); treat as flavor, not spec.
-- **Could not retrieve:** the official D3 FAQ multiplayer page and the descent3.com patch
-  README were unreachable this session (timeout / self-signed cert / archive.org blocked for
-  the fetch tool). If deeper rules archaeology is ever needed, those plus the BradyGames
-  *Descent 3 Official Strategy Guide* (scanned on archive.org) are the next stops.
-
-### 8.4 Sources
-
-- D2X-XL Monsterball description (second-implementer corroboration):
-  https://www.descent2.de/d2x-monsterball.html
-- DescentBB "Descent 3 Monsterball Match" thread (human meta, map roster, Vauss):
-  https://descentbb.net/viewtopic.php?t=2842
-- Official Descent 3 FAQ §5 Multiplayer (mode summaries):
-  http://moon.descentforum.net/D3FAQ/05.html
-- Sectorgame D3 hub (community archive, levels/mods): https://sectorgame.com/d3/
-- BradyGames *Descent 3 Official Strategy Guide* (scanned): archive.org
-  `descent-3-official-strategy-guide-brady-games`

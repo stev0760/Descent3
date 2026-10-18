@@ -162,7 +162,7 @@ obj->mtype.phys_info.flags |=  PF_USES_THRUST;
 
 ## 7. Two physics rulings that constrain bot movement
 
-Operator rulings (2026-08-04; design record in [`NAVIGATION.md`](NAVIGATION.md) §6.9). They follow from the drag
+Rulings of 2026-08-04 (design record in [`NAVIGATION.md`](NAVIGATION.md) §1.3). They follow from the drag
 model in §1 and apply to every movement change.
 
 1. **Drag means braking is not thrusting.** With no thrust the ship decays toward zero velocity on its own
@@ -173,7 +173,7 @@ model in §1 and apply to every movement change.
    against them, zero its velocity, snap its position, or hold a spot under fire. A human can barely do it,
    and it reads as unnatural. Losing a hold under fire is the game as designed.
 
-Both rest on the standing rule that bots use only legal thrust inputs, and the operator ruled on 2026-10-01 that
-there are no exceptions: knockback must affect bots exactly as it affects players, always. The Entropy takeover
+Both rest on the standing rule that bots use only legal thrust inputs, with no exceptions since 2026-10-01:
+knockback must affect bots exactly as it affects players, always. The Entropy takeover
 park (`entropy_holding` in `BotApplyThrust()`), the last place that thrust against residual velocity, holds zero
-thrust since 2026-10-07 (registry MODE6): drag stops the parked ship and a knock moves it like any player's.
+thrust since 2026-10-07: drag stops the parked ship and a knock moves it like any player's.

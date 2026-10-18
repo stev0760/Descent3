@@ -5,20 +5,17 @@
 campaign, after the hold-behavior ladder landed (doorway-plane park, then depth and near-rest gates, then active
 braking; see the 0.9.8 CHANGELOG entry). The 0.9.13 CHANGELOG "known limitations" says the opposite for that release's
 testing: "Entropy room takeover has not been observed in testing." Both statements stand in the record, and a re-check
-on the release build is owed (MODE2, see "Known open" below). `$nav entropy` gates the E3 invasion layer. E4's
-difficulty scaling is built (2026-10-07, §3.5); its `!attack lab` / `!defend lab` verbs come with the `!` order work,
-and the rest of E4 is open (MODE1). The takeover park holds zero thrust and obeys knockback like a player (MODE6, built
-2026-10-07, §3.3). The as-built summary is §3; the original E1-E3 build spec is in
-`archive/MODE-docs-history.md`, Part 1.
+on the release build is owed (see "Known open" below). `$nav entropy` gates the E3 invasion layer. E4's
+difficulty scaling is built (2026-10-07, §3.5); its `!attack lab` / `!defend lab` verbs are built (0.10.0,
+`CHAT_COMMANDS.md`), and the rest of E4 is open. The takeover park holds zero thrust and obeys knockback like a player (built
+2026-10-07, §3.3). The as-built summary is §3.
 Source of truth: `netgames/entropy/` (EntropyBase.cpp, EntropyAux.h, EntropyPackets.cpp,
 EntropyRoom.cpp), read in full for this document. Line references are to those files.
-Read this before writing any Entropy bot code; read `BOT_DEV_REFERENCE.md` and
-`CHAT_COMMANDS.md` (Stage 6) for the surrounding bot architecture.
+Read this before writing any Entropy bot code.
 
 Entropy is D3's territory-control mode: teams own special rooms, labs grow "virus" powerups,
-and players carry viruses into enemy rooms to convert them. It is the most mechanically rich
-of the stock modes — and the best fit for everything we've already built (objective polling,
-hold-station navigation, role leans, room routing).
+and players carry viruses into enemy rooms to convert them. It builds on what the bots already
+have for other modes (objective polling, hold-station navigation, role leans, room routing).
 
 ---
 
@@ -165,8 +162,6 @@ they describe is reconstructable:
 
 ## 3. What the bots do (as built, 0.9.8 onward)
 
-The phased spec this section replaced (E1 scaffolding, E2 economy, E3 takeover, including the
-2026-07-13 hold-point correction) is preserved verbatim in `archive/MODE-docs-history.md`, Part 1.
 What follows is the code at HEAD. Constants live in `Descent3/bot_objective.h:52-104`.
 
 ### 3.1 Polling and observability (E1)
@@ -223,10 +218,10 @@ What follows is the code at HEAD. Constants live in `Descent3/bot_objective.h:52
 - Park (`bot.cpp:6423-6438`): while holding in EXPLORE, thrust is zero and the FSM thrust path (juke, combat
   overrides) is skipped. Turning and firing are untouched. The hold starts only near rest (5 u/s or less), and drag
   stops the ship from there. Weapon knockback moves a parked bot exactly as it moves a player (physics ruling 2; the
-  operator ruled on 2026-10-01 that there are no exceptions): the bot never thrusts against it. The DLL restarts its
+  maintainer ruled on 2026-10-01 that there are no exceptions): the bot never thrusts against it. The DLL restarts its
   3 s clock wherever the ship comes to rest, so a knock that leaves the ship inside the room costs clock time only. A
   knock out of the room ends the hold (ABORT), and the invade leg flies the ship back to the hold point under normal
-  thrust, where the hold restarts at depth and near rest. Before 2026-10-07 (MODE6) the park thrust against any
+  thrust, where the hold restarts at depth and near rest. Before 2026-10-07 the park thrust against any
   velocity above 2 u/s, knockback included.
 - Flee while loaded (`bot.cpp:5534-5552`): mid-hold, fleeing is the abort and is allowed only below the hard floor (the
   bot's own, §3.5); loaded and en route, the flee threshold is raised (x1.5, capped at 60%). A loaded bot in idle combat
@@ -240,16 +235,15 @@ What follows is the code at HEAD. Constants live in `Descent3/bot_objective.h:52
 
 ### 3.4 Known open
 
-| Id | Item | State at HEAD |
-|---|---|---|
-| MODE2 | Do takeovers happen on the release build? The 0.9.8 campaign confirmed takeovers; the 0.9.13 CHANGELOG known limitations say none were observed in that testing, and the README repeats "not completed". | Open. Decided 2026-10-01: one Entropy run on `dementia.mn3` with the release build is owed before the README line is final. 2026-10-07, with every bot force-loaded by a scratch build: GeoDomes holds started and converted; on SteelVapor none started in two 6-minute levels, the loaded bots circling inside the target room at 16-40 u/s, never under the 5 u/s start gate (BOTS_DEVEL, mode polish). |
-| MODE4 | Inversion produces refused-pickup spam (bots chase viruses the server refuses). | Open. The analyzer flags it as `ENTROPY_REFUSED_PICKUP_SPAM` (`tools/analyze_bot_log.py:1503-1511`). |
-| MODE5 | RAGE wind-tunnel counter-fly fix (`9e602d7f`, routed-cost room selection in `BotGetNearestEntropyRoom`). | In code since 0.9.8; never verified on RAGE. |
-| NAV8 | Rim is nav-hostile for this mode (part of the toroid refinements row). | Open; tracked in `NAVIGATION.md` §7. |
-| MODE6 | The active park thrusts against knockback, contrary to physics ruling 2. | **Built 2026-10-07.** The counter-thrust is removed: the park holds zero thrust and still bypasses the FSM thrust path, so no juke or combat thrust reaches the pad (§3.3). Takeover rate under fire is unmeasured on this build; MODE2's Dementia run reads it. |
-| MODE3 | Operator in-person Entropy flight ("is this mode fun against bots", §4). | No record. Decided 2026-10-01: the operator will fly Entropy. |
+| Item | State at HEAD |
+|---|---|
+| Do takeovers happen on the release build? The 0.9.8 campaign confirmed takeovers; the 0.9.13 CHANGELOG known limitations say none were observed in that testing. | Open. Decided 2026-10-01: one Entropy run on `dementia.mn3` with the release build is owed. 2026-10-07, with every bot force-loaded by a scratch build: GeoDomes holds started and converted; on SteelVapor none started in two 6-minute levels, the loaded bots circling inside the target room at 16-40 u/s, never under the 5 u/s start gate. |
+| Inversion produces refused-pickup spam (bots chase viruses the server refuses). | Open. The analyzer flags it as `ENTROPY_REFUSED_PICKUP_SPAM` (`tools/analyze_bot_log.py:1503-1511`). |
+| RAGE wind-tunnel counter-fly fix (`9e602d7f`, routed-cost room selection in `BotGetNearestEntropyRoom`). | In code since 0.9.8; never verified on RAGE. |
+| Rim is nav-hostile for this mode. | Open; tracked in `NAVIGATION.md` §7. |
+| The active park thrusts against knockback, contrary to physics ruling 2. | **Built 2026-10-07.** The counter-thrust is removed: the park holds zero thrust and still bypasses the FSM thrust path, so no juke or combat thrust reaches the pad (§3.3). Takeover rate under fire is unmeasured on this build; the release-build Dementia run in the first row reads it. |
 
-### 3.5 Phase E4 (polish): see MODE1
+### 3.5 Phase E4 (polish)
 
 **Difficulty scaling, built 2026-10-07.** The mode reuses the bot difficulty table (`kDiffParams`, BOT_MANAGEMENT.md
 §4) instead of adding columns. Its constants were tuned on Hotshot bots, so a Hotshot bot plays exactly as before
@@ -286,13 +280,11 @@ toward the enemy's, never a lab; the lab when that lookup fails); a team with no
 defend.` The post is fixed, so a bot stays put if the lab changes hands. Outside Entropy both are a plain `!attack` or
 `!defend`.
 
-The rest of E4 is not built and is tracked as registry row MODE1 (`PLAN.md` §4, the master registry). Decided
-2026-10-01: E4 is pre-reveal work ("Entropy will be polished pre-release"), the mode verbs and difficulty scaling first.
-Its content, unchanged from the original §3.4 except that the verbs and the difficulty scaling are built: denial
-appetite scaling; smarter invasion (strand the enemy's last lab,
-coordinated raids) only with soak evidence; mirror hardening for `entropy_kill_streak` (resync on an observed refused
-pickup); re-evaluating "combat light" (`76549be3`) and loaded-bot aggression; a force-load or empty-net drill command;
-and further iteration on the shield knobs.
+The rest of E4 is not built. Its content, unchanged from the original §3.4 except that the verbs and the difficulty
+scaling are built: denial appetite scaling; smarter invasion (strand the enemy's last lab, coordinated raids) only with
+soak evidence; mirror hardening for `entropy_kill_streak` (resync on an observed refused pickup); re-evaluating "combat
+light" (`76549be3`) and loaded-bot aggression; a force-load or empty-net drill command; and further iteration on the
+shield knobs.
 
 ### 3.6 Explicit non-goals (first release)
 
@@ -306,9 +298,8 @@ and further iteration on the shield knobs.
 
 - **Maps:** `dementia.mn3` (Outrage 2-level set *designed for Entropy*, already in our test
   library — navdumps exist for SteelVapor; GeoDomes is outdoor-heavy, expect the known
-  outdoor entrance-finding gap to show). The user can pull additional Entropy-flagged
-  community missions; the mode's "requirements" filter makes the mission list the easy way
-  to find them.
+  outdoor entrance-finding gap to show). The mode's "requirements" filter makes the mission
+  list the easy way to find other Entropy-flagged missions.
 - **Analyzer:** add `RE_*` patterns + a "## Entropy" report section before the first soak:
   takeovers per round/team (the outcome metric — analog of captures), takeover attempts vs.
   aborts (hold broken / shield bail), pickups vs. refused-pickups (mirror accuracy!), denial
@@ -323,9 +314,8 @@ and further iteration on the shield knobs.
   + clean `$botobj`; E2 soak = bots carry loads >0 with zero refused-pickup spam; E3 soak =
   takeovers happen, rounds END (the win condition fires) — Entropy rounds ending by
   elimination rather than timer is the headline success signal.
-- **In-person validation matters more than usual:** the user has never played Entropy — early
-  sessions double as "is this mode actually fun against bots," which is the project's whole
-  point. HUD virus-load counter and room textures make bot behavior unusually legible.
+- **In-person validation matters more than usual:** early sessions double as "is this mode
+  actually fun against bots," which is the project's whole point. HUD virus-load counter and room textures make bot behavior unusually legible.
 
 ## 5. Open questions (historical: written before E1; kept as the verification checklist)
 

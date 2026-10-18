@@ -4,8 +4,7 @@ An in-world 3D overlay that draws the bot navigation state: per-room skeletons (
 buried-centre rooms, each bot's committed route, and the roadmap lattice ("local streets"), indoors and outdoors.
 It is the live version of `tools/visualize_navdump.py`. Code: `Descent3/bot_navdebug.{cpp,h}`. Built in 0.9.12
 (`d3d7a95d`, validated in flight 2026-09-02); the roadmap layer came later (`08cdefbe`, `7b06de9f`), then the
-outdoor lattice (`463069c6`). The original design notes (layers, rendering plan, data exposure, phasing, open
-questions) are in [`archive/VISUAL_DEBUG-design-notes.md`](archive/VISUAL_DEBUG-design-notes.md).
+outdoor lattice (`463069c6`).
 
 ## Using it
 
@@ -64,10 +63,10 @@ Colours are defined at `bot_navdebug.cpp:78-102` and `:255-267`.
     with no bots, nothing is drawn.
 - It changes nothing a bot does. It is a render toggle, outside the `$nav` census and `$servercaps`.
 
-Registry row UX5 (operator ruling Q3, 2026-10-01: host-only and cached-only) was built on 2026-10-07. A bot-free
+The host-only, cached-only design (decided 2026-10-01) was built on 2026-10-07. A bot-free
 look at a level's skeletons is `$nav dump` plus `tools/visualize_navdump.py`, which build everything.
 
-## No 2D / top-down view (operator ruling, 2026-09-01)
+## No 2D / top-down view (2026-09-01)
 
 A top-down (or any single flat projection) is **useless here**: Descent 3 is 6DOF, so the geometry
 overlaps in every 2D projection: the toroid is not planar, tunnels run on every axis, rooms stack
@@ -84,7 +83,7 @@ still work; F7 specifically is WM-bound.) Ctrl+F-keys are not a standard WM shor
 Ctrl+**Alt**+Fn) and pass straight through, so the overlay moved to Ctrl+F7. Keys reach `SendKeyToGameDLL()` first
 in `GM_MULTI`, but it passes unhandled keys through, so it is not the blocker.
 
-## Not built (registry WAT2)
+## Not built
 
 Projected 3D text labels (room number, bot state, hop index), a draw-over variant without the depth test so an
 occluded chain still shows, and a per-bot state label. Only the HUD legend draws text today.
