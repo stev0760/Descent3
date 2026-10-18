@@ -8,7 +8,7 @@ Settings menu sets the population target on a listen server from 0.10.1 (section
 **Key files:** `Descent3/bot.h`, `Descent3/bot.cpp`, `Descent3/bot_population.h`, `Descent3/bot_population.cpp`,
 `Descent3/dedicated_server.cpp`, `Descent3/multi_ui.cpp`, `Descent3/multi_save_setting.cpp`, and the F6 Bots menu in
 `netgames/dmfc/dmfcmenu.cpp`. Line numbers below are at commit `ee6e6525`; the code added for section 9 and the menu
-is cited by function name.
+is cited by function name. Levels named here are listed with their mission files in [TEST_LEVELS.md](TEST_LEVELS.md).
 
 ---
 

@@ -611,7 +611,7 @@ struct bot_info {
   float entry_commit_time; // Gametime at commit
   float life_start_time;   // Gametime this life began (spawn / level start) — the gear-up budget clock
   // Spawn egress (BotRecordSpawn / BotViaPointTick): the player start this life began at. A start can sit in a
-  // nook where every hull sweep begins in contact; its facing is the level designer's "this way out".
+  // nook where every hull sweep begins in contact; its facing is taken as the way out.
   vector spawn_pos;
   vector spawn_fvec;
   float spawn_clear_ahead;   // thin-ray clear distance along spawn_fvec, measured at spawn (0 = none / outdoors)

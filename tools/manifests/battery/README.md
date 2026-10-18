@@ -1,7 +1,8 @@
 # Regression battery
 
 The manifests here are the tracked regression set for `tools/soakctl.py`. This file is the **release regression
-battery**: the stages a release build passes before its GitHub Release is published.
+battery**: the stages a release build passes before its GitHub Release is published. Levels named here
+are listed with their mission files in [TEST_LEVELS.md](../../../matcen-docs/TEST_LEVELS.md).
 
 ## Before the first stage
 

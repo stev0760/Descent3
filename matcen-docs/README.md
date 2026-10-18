@@ -25,4 +25,5 @@ Documentation for Matcen, the multiplayer bot fork of Descent 3. The current ver
 | [MONSTERBALL_MODE.md](MONSTERBALL_MODE.md) | Monsterball mechanics and what the bots do in it |
 | [PYRODECK_CONTRACT.md](PYRODECK_CONTRACT.md) | The fork's side of the D3 Pyrodeck telnet contract: `$servercaps`, stability tiers, and every output format the tool parses. Update it whenever a `$` command or its output changes |
 | [UPSTREAM_PATCHES.md](UPSTREAM_PATCHES.md) | Fixes made in the fork for bugs that also exist in upstream Descent 3, written up to share back |
+| [TEST_LEVELS.md](TEST_LEVELS.md) | The levels these docs name as test cases: mission file, level number, level file, and whether it ships with Descent 3 |
 | [Release battery](../tools/manifests/battery/README.md) | Outside this folder: the release regression battery, a stage checklist with its manifests and the `soakctl.py` and `soak_battery.sh` invocations |

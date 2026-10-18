@@ -5,7 +5,8 @@ geometry, and how our bots must treat each type.** Written 2026-06-03 from a sou
 read of the engine (citations are `file:line`). Read this before touching navigation,
 portal passability, powerup selection, or stuck-clear code.
 
-Cross-referenced from [`NAVIGATION.md`](NAVIGATION.md) (nav design).
+Cross-referenced from [`NAVIGATION.md`](NAVIGATION.md) (nav design). Levels named here are listed with their
+mission files in [TEST_LEVELS.md](TEST_LEVELS.md).
 
 Corrected 2026-10-01 against `ee6e6525`: §1 now quotes both branches of `BOA_PassablePortal`, and the
 "our bot" claims reflect the 0.9.14-0.9.16 portal model.
@@ -154,7 +155,7 @@ more permissive than a real ship hull. See §4 (DISAGREE band).
 
 ### 3.1 Troll-powerup patterns (2026-06-10)
 
-Some custom maps place **ultra-high-value items** (Mega, Black Shark) — exactly what our
+Some levels place **ultra-high-value items** (Mega, Black Shark) — exactly what our
 prioritization loves — in two recurring builds:
 
 1. **Glass pocket**: a pocket adjacent to a larger room, sealed with bulletproof glass. The glass
@@ -220,7 +221,7 @@ pseudo-room translates through the entry to the **external** room's face before 
 (`BOA.cpp:220-226`). A connection therefore records that terrain can see a building, and says
 nothing about whether a ship can fly out of that building through it.
 
-Custom maps make this bite. A window onto the skybox is a `portal_face` with `face_solid=1`
+Some levels make this bite. A window onto the skybox is a `portal_face` with `face_solid=1`
 joining an interior room to an `RF_EXTERNAL` room, and it lands in `BOA_connect` exactly like a
 hangar door. **See-through is not passable, and neither is "the engine listed it."**
 
@@ -286,7 +287,7 @@ the `TF_INVISIBLE` skip is at ~3942) and `Descent3/TerrainSearch.cpp`:
   were handed waypoints under their feet — the "valley pins".) The same holds for an exterior shell room's faces seen
   from inside: `$nav probe` reads inside → outside CLEAR at every radius, with or without `FQ_BACKFACE`.
 - **`TF_INVISIBLE` terrain segments neither draw nor collide** — the node check is skipped for them
-  (`!(Terrain_seg[n].flags & TF_INVISIBLE)`). Level designers sink structures under them: Town of Bree's streets and
+  (`!(Terrain_seg[n].flags & TF_INVISIBLE)`). Some levels place structures under them: Town of Bree's streets and
   courtyards are flyable "outdoors" 20-70 u BELOW the heightfield (the analyzer's outdoor `agl` reads −73 there). Any
   below-ground rule must exempt invisible segments.
 - **The level's flight ceiling is a real lid.** `Ceiling_height` (level file, default `MAX_TERRAIN_HEIGHT` 350) stops

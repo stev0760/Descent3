@@ -11,7 +11,8 @@ are in §3.7 "Known open"; the main one is weak finisher conversion on Veins-cla
 Sources of truth: `netgames/monsterball/monsterball.cpp` (read in full for this document) and
 the sports-game AI research in §2 (RLBot botmaking wiki, Rocket League shadow-defense
 literature, RoboCup dynamic role assignment). Companion doc: `ENTROPY_MODE.md`
-(same spec pattern). Read `NAVIGATION.md` before implementing.
+(same spec pattern). Read `NAVIGATION.md` before implementing. Levels named here are listed with their
+mission files in [TEST_LEVELS.md](TEST_LEVELS.md).
 
 Monsterball is D3's ball-sports mode — soccer with ships. The objective is a **shared physics
 object** rather than items/rooms, so here our bots need *sports* AI: ball interception,

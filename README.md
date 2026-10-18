@@ -2,7 +2,7 @@
 
 Server-side multiplayer bots for Descent 3.
 
-**Matcen** brings bots to every Descent 3 multiplayer mode: Anarchy, Team Anarchy, Hyper-Anarchy, Robo-Anarchy, CTF, Hoard, Entropy, Monsterball and co-op. They play on any map, user-made levels included. Multiplayer maps carry no AI waypoint data, so Matcen builds its own route network from each level's geometry when it loads; nothing is scripted per map. Descent 3 never shipped with multiplayer bots.
+**Matcen** brings bots to every Descent 3 multiplayer mode: Anarchy, Team Anarchy, Hyper-Anarchy, Robo-Anarchy, CTF, Hoard, Entropy, Monsterball and co-op. They play on any map, third-party levels included. Multiplayer maps carry no AI waypoint data, so Matcen builds its own route network from each level's geometry when it loads; nothing is scripted per map. Descent 3 never shipped with multiplayer bots.
 
 Bots take real player slots on dedicated and listen servers and show up to every client as ordinary players, with `[BOT]` after the callsign (for example `Reaper[BOT]`). They fight with lead aiming, strafing, afterburner and countermeasures, collect powerups, honor cloaking, and fly under the same physics as human players.
 

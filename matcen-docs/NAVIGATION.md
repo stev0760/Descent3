@@ -6,7 +6,8 @@
 
 **Status (2026-10-01).** Code is 0.9.16-dev, code complete at `4b4e78f4`. Every function, constant and line number
 below was checked against `ee6e6525`. Open problems are §7. The tried-and-reverted ledger is §7.5. Live toggle state
-is the bare `$nav` command, never a table in a doc (§6.3).
+is the bare `$nav` command, never a table in a doc (§6.3). Levels named here are listed with their mission files in
+[TEST_LEVELS.md](TEST_LEVELS.md).
 
 ---
 

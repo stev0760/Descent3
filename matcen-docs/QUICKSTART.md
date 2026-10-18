@@ -8,6 +8,8 @@ The bots run on the server and take real player seats. Players connect with an u
 an ordinary player called `Name[BOT]`. Clients built from the open-source Descent 3 engine (Matcen's own build and
 upstream builds) and PiccuEngine have been tested. Retail 1.4 clients cannot join.
 
+Levels named here are listed with their mission files in [TEST_LEVELS.md](TEST_LEVELS.md).
+
 ## What you need
 
 - Descent 3 from GOG or Steam, patched to 1.4 or later. The game data (the `.hog` files and the `missions` folder)
@@ -34,8 +36,8 @@ installed. The Linux build needs glibc 2.35 or newer. On macOS the app is not si
 The package carries two sample files in `samples/`. Copy both into the Descent 3 folder and edit them.
 
 **`dedicated.cfg`** is the standard Descent 3 server file. Its first line must be `[server config file]`. The sample
-runs CTF with two teams on `bedlam.mn3`, a retail mission of four levels built for four teams (Apparition, Plutonium,
-QuadSomniac and Polaris), and adds three lines Matcen cares about:
+runs CTF with two teams on `bedlam.mn3`, a mission that ships with Descent 3: four levels built for four teams
+(Apparition, Plutonium, QuadSomniac and Polaris), and adds three lines Matcen cares about:
 
 - `MaxPlayers=14`: the server's own seat, 12 players and one seat kept free for a human.
 - `PPS=40`: the highest packet rate the server accepts, the rate the bots are tested at.

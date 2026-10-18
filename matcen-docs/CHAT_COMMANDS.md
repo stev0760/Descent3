@@ -11,6 +11,8 @@ parts:
   2026-10-01, and what of it has landed.
 - **Part C, the Design Decisions Log.**
 
+Levels named here are listed with their mission files in [TEST_LEVELS.md](TEST_LEVELS.md).
+
 ---
 
 ## Part A. The shipped reference

@@ -6,7 +6,8 @@ Versioning: `0.8.x` = feature releases; `0.9.x` = the navigation-milestone serie
 series (the packaged release: bot management, the chat and console commands, and the install package). Within a
 series each bug fix or small feature takes the next number in the last place. A `-dev` suffix marks an experiment, or
 a larger change that may be backed out whole, until it passes its validation gate. 1.0 comes after community play.
-Versions before 0.10.0 were development builds; their changes are in the git history.
+Versions before 0.10.0 were development builds; their changes are in the git history. Levels named here are listed
+with their mission files in [TEST_LEVELS.md](TEST_LEVELS.md).
 
 ## [0.10.10] - 2026-10-11
 

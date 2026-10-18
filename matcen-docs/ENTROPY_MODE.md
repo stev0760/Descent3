@@ -11,7 +11,8 @@ difficulty scaling is built (2026-10-07, §3.5); its `!attack lab` / `!defend la
 2026-10-07, §3.3). The as-built summary is §3.
 Source of truth: `netgames/entropy/` (EntropyBase.cpp, EntropyAux.h, EntropyPackets.cpp,
 EntropyRoom.cpp), read in full for this document. Line references are to those files.
-Read this before writing any Entropy bot code.
+Read this before writing any Entropy bot code. Levels named here are listed with their mission files in
+[TEST_LEVELS.md](TEST_LEVELS.md).
 
 Entropy is D3's territory-control mode: teams own special rooms, labs grow "virus" powerups,
 and players carry viruses into enemy rooms to convert them. It builds on what the bots already
@@ -296,7 +297,7 @@ shield knobs.
 
 ## 4. Testing plan
 
-- **Maps:** `dementia.mn3` (Outrage 2-level set *designed for Entropy*, already in our test
+- **Maps:** `dementia.mn3` (a 2-level Entropy mission that ships with Descent 3, already in our test
   library — navdumps exist for SteelVapor; GeoDomes is outdoor-heavy, expect the known
   outdoor entrance-finding gap to show). The mode's "requirements" filter makes the mission
   list the easy way to find other Entropy-flagged missions.
