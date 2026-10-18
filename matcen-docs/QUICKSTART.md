@@ -4,16 +4,16 @@ Matcen adds bots to Descent 3 multiplayer that play every mode (Anarchy, Team An
 CTF, Hoard, Entropy, Monsterball and co-op) on any map, and it is open source. The bots build their own route network
 for each level when it loads, so nothing is scripted per map.
 
-The bots run on the server and take real player seats. Players connect with PiccuEngine or a build of the open-source
-Descent 3 engine, unmodified, and see each bot as an ordinary player called `Name[BOT]`. Retail 1.4 clients cannot
-join.
+The bots run on the server and take real player seats. Players connect with an unmodified client and see each bot as
+an ordinary player called `Name[BOT]`. Clients built from the open-source Descent 3 engine (Matcen's own build and
+upstream builds) and PiccuEngine have been tested. Retail 1.4 clients cannot join.
 
 ## What you need
 
 - Descent 3 from GOG or Steam, patched to 1.4 or later. The game data (the `.hog` files and the `missions` folder)
   comes from your copy. It is not redistributable and is not in the Matcen package.
 - The Matcen package for your system from the GitHub Release: Windows x64, Linux x64, or macOS universal
-  (community-tested: nobody on the project has a Mac).
+  (the macOS build is untested: the project has no Mac to test it on).
 
 ## Install
 

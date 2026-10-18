@@ -39,7 +39,7 @@ Windows: if VCRUNTIME140.dll or MSVCP140.dll is missing, install the
   Microsoft Visual C++ Redistributable for Visual Studio 2015-2022 (x64).
   -winconsole opens the console window; add -logfile to keep Descent3.log.
 Linux: built on Ubuntu 22.04; needs glibc 2.35 or newer.
-macOS: community-tested; nobody on the project has a Mac to test it on. The
+macOS: untested; the project has no Mac to test it on. The
   app is not signed: run  xattr -dr com.apple.quarantine .  once in the
   Descent 3 folder after extracting.
 

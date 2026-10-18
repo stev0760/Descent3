@@ -1,29 +1,28 @@
 # matcen-docs
 
-Design documents, reference material and specifications for Matcen, the multiplayer bot fork of Descent 3. Developers and AI coding agents (through `CLAUDE.md`) use them as the project's knowledge base across sessions.
+Documentation for Matcen, the multiplayer bot fork of Descent 3. The current version is in the top-level
+[README](../README.md), and what each release changed is in [CHANGELOG.md](CHANGELOG.md).
 
-The current version and what shipped are in the top-level [README](../README.md) and in [CHANGELOG.md](CHANGELOG.md). Every open item, with its status and priority, is in the registry in [PLAN.md](PLAN.md) §4. The other documents describe the code as it is built and carry no status.
+## For server operators and players
 
 | Document | Purpose |
 |----------|---------|
-| [PLAN.md](PLAN.md) | The forward plan: goal, honest status, release path and exit criteria, decisions owed, and the registry of every open item (§4) |
+| [QUICKSTART.md](QUICKSTART.md) | Install over Descent 3, run a dedicated server with bots, the console, chat orders, Bot Settings, bug reports |
+| [BOT_MANAGEMENT.md](BOT_MANAGEMENT.md) | Config rosters, the console, difficulty, the Bot Settings menu, capacity rules, and population and seats (the reserved seat, the yield, the player target, `$botpopulation`) |
+| [CHAT_COMMANDS.md](CHAT_COMMANDS.md) | The `!` chat orders and the design decisions behind them |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes, newest first |
-| [QUICKSTART.md](QUICKSTART.md) | For server operators and players: install over Descent 3, run a dedicated server with bots, the console, chat orders, Bot Settings, known limitations, bug reports |
 | [samples/](samples/) | `dedicated.cfg` and `bots.cfg` samples and the `INSTALL.txt` template, all three shipped in the release packages (`.github/workflows/release.yml` fills in the version and links) |
-| [ANNOUNCEMENT.md](ANNOUNCEMENT.md) | Draft of the reveal post for the operator to edit (REL11) |
+
+## For developers
+
+| Document | Purpose |
+|----------|---------|
 | [NAVIGATION.md](NAVIGATION.md) | The navigation design as built: routing, the portal model, the route network, the execution layer, open navigation problems (§7) and the tried-and-reverted ledger |
 | [OBSTACLE_GEOMETRY.md](OBSTACLE_GEOMETRY.md) | How the engine represents walls, glass, grates, doors and forcefields, which engine functions decide passability, and what the bots do with each |
-| [PATHFINDING_CODEBASE_EXPLORE.md](PATHFINDING_CODEBASE_EXPLORE.md) | Engine AI pathing reference: how the stock engine paths its own single-player AI, and which techniques are worth borrowing |
 | [D3_MOVEMENT_PHYSICS.md](D3_MOVEMENT_PHYSICS.md) | Engine physics constants and packet flags behind bot movement |
 | [VISUAL_DEBUG.md](VISUAL_DEBUG.md) | The navigation overlay (Ctrl+F7, on a local game or a listen-server host): what it draws, how to read it, what it can and cannot see |
-| [BOT_DEV_REFERENCE.md](BOT_DEV_REFERENCE.md) | Architecture, state machine, data model, constants, engine API patterns, gotchas, the engine files the fork modifies, and measurement caveats |
-| [BOTS_DEVEL.md](BOTS_DEVEL.md) | The dated engineering log from the 0.9.13 cycle on: what was built, how it was measured, with commits |
-| [BOT_MANAGEMENT.md](BOT_MANAGEMENT.md) | Operator and developer reference for config rosters, the console, difficulty, the Bot Settings menu, capacity rules, and population and seats as built (the reserved seat, the yield, the player target, `$botpopulation`) |
-| [CHAT_COMMANDS.md](CHAT_COMMANDS.md) | The `!` chat orders as built, the finish line still to build, and the design decisions log |
 | [ENTROPY_MODE.md](ENTROPY_MODE.md) | Entropy mechanics (from the game module source) and what the bots do in it |
-| [MONSTERBALL_MODE.md](MONSTERBALL_MODE.md) | Monsterball mechanics, the sports-AI research behind the bots, and what the bots do in it |
+| [MONSTERBALL_MODE.md](MONSTERBALL_MODE.md) | Monsterball mechanics and what the bots do in it |
 | [PYRODECK_CONTRACT.md](PYRODECK_CONTRACT.md) | The fork's side of the D3 Pyrodeck telnet contract: `$servercaps`, stability tiers, and every output format the tool parses. Update it whenever a `$` command or its output changes |
-| [UPSTREAM_PATCHES.md](UPSTREAM_PATCHES.md) | Fixes made in the fork for bugs that also exist upstream, ready to share back |
-| [Release battery](../tools/manifests/battery/README.md) | Outside this folder: the release regression battery (REL4), a stage checklist with its manifests and the `soakctl.py` and `soak_battery.sh` invocations |
-| Open items | They live in one place: the registry in [PLAN.md](PLAN.md) §4. A doc that names an open item cites its registry id |
-| [archive/](archive/README.md) | History moved out of the live docs on 2026-10-01, verbatim: older plans, logs, design notes, retired specs and reports. Read only; nothing there is current |
+| [UPSTREAM_PATCHES.md](UPSTREAM_PATCHES.md) | Fixes made in the fork for bugs that also exist in upstream Descent 3, written up to share back |
+| [Release battery](../tools/manifests/battery/README.md) | Outside this folder: the release regression battery, a stage checklist with its manifests and the `soakctl.py` and `soak_battery.sh` invocations |

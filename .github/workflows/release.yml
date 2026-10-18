@@ -70,7 +70,7 @@ jobs:
             preset: mac
             cc: cc
             cxx: c++
-            name: macOS-universal-community-tested
+            name: macOS-universal
 
     runs-on: ${{ matrix.os.runner }}
 
@@ -254,7 +254,7 @@ jobs:
             (GOG or Steam, 1.4 or later) and read INSTALL.txt; the game data is not included.
 
             - Windows and Linux: built and tested.
-            - macOS (universal): community-tested; nobody on the project has a Mac to test it on.
+            - macOS (universal): untested; the project has no Mac to test it on.
             - `-symbols` archives: debug symbols for crash reports. `SHA256SUMS.txt`: checksums.
 
             Quickstart: ${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}/matcen-docs/QUICKSTART.md
