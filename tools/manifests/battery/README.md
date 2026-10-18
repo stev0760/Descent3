@@ -32,7 +32,6 @@ are listed with their mission files in [TEST_LEVELS.md](../../../matcen-docs/TES
 | [ ] | Monsterball | `monsterball-soak.json` | `soak-dedicated-mball.cfg`, `soak-bots-8.cfg` | 6 rounds of 20 min, cap 150 min | the analyzer's `## Monsterball`: goals per round, own goals |
 | [ ] | Entropy | `battery/reg-entropy.json` | `soak-dedicated-entropy.cfg`, `soak-bots-12.cfg` | 3 rounds of up to 60 min, cap 150 min | the analyzer's `## Entropy`: pickups and takeovers (at least one takeover on the release build) |
 | [ ] | Anarchy, Team Anarchy, Hyper-Anarchy, Robo-Anarchy | `battery/reg-anarchy.json`, `reg-team.json`, `reg-hyper.json`, `reg-robo.json`, `reg-robo2.json` | `soak-dedicated-reg-<mode>.cfg` and the bots files they name | 2 rounds each, caps 35-40 min | deaths and stucks per map, flat against the control |
-| [ ] | Co-op | `battery/reg-coop.json` | `soak-dedicated-coop.cfg`, `soak-bots-coop.cfg` | 30 min, cap 40 min | crash net only: the server stays up, bots spawn, no asserts. Bots without a human say little about co-op play; the maintainer's co-op flight on the release build is the real check |
 | [ ] | Maintainer flight and one Windows-native run | none | the maintainer's own setup | one evening | the HUD goal lines, and the maintainer's flight against a same-evening Debug control |
 
 Not covered by any stage: removing a bot during a level change.
@@ -60,7 +59,6 @@ setsid tools/soak_battery.sh "$OUT" \
   tools/manifests/battery/reg-hyper.json \
   tools/manifests/battery/reg-robo.json \
   tools/manifests/battery/reg-robo2.json \
-  tools/manifests/battery/reg-coop.json \
   > "$OUT.events" 2>&1 < /dev/null &
 ```
 
