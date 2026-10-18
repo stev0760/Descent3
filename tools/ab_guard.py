@@ -150,7 +150,7 @@ def main():
     print(f"  per-bot test   : {dict(tc.most_common(4))}")
 
     # the signature that told us Ninja was a vacancy trap, not the mechanism under test
-    print("\n[4] HARD vs SOFT (net_disp<10 = genuinely pinned; the column CLAUDE.md says to trust)")
+    print("\n[4] HARD vs SOFT (net_disp<10 = genuinely pinned; the column to trust)")
     for name, d in (("control", ctrl), ("test", test)):
         hard = sum(1 for _, _, nd in d["escal"] if nd < 10)
         print(f"  {name:<8} hard={hard:5d}  soft={len(d['escal'])-hard:5d}")

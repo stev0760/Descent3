@@ -52,7 +52,7 @@ struct fvi_info;
 #define BOT_PORTAL_WALL_BACKED_DEPTH 5.0f
 // Engine-passable probe rejection, used only if the strict graph has no route.
 #define BOT_PORTAL_DISAGREE_PENALTY 120.0f
-// Zones (NAV41): a route that enters a room through one lattice zone and leaves through another is a route
+// Zones: a route that enters a room through one lattice zone and leaves through another is a route
 // through a wall (Glasshouse's pyramid: a hollow pyramid open only below and above, four door galleries on its
 // faces; Sigma Base's hub galleries). Cross-zone edges are disagree-class: absent from the strict pass, priced
 // at this in the last-resort pass, so a lattice gap in a connected room can never strand a bot.
@@ -67,7 +67,7 @@ struct fvi_info;
 #define BOT_PSEUDO_BNODE_RADIUS 6.7f // hull-fit clearance radius for pseudo-bnode edges (== BOT_ROADMAP_CLEARANCE)
 #define BOT_SKEL_MAX_NODES 64        // skeleton node cap per room (portal nodes + pseudo-bnodes); 64-bit edge masks
 
-// Collision-guided bridge search (0.9.12 skeleton rework — SKELETON_REWORK.md). Replaces the old
+// Collision-guided bridge search (0.9.12 skeleton rework). Replaces the old
 // all-portal-centroid pseudo-bnode with a bounded best-first search that traces BENT flyable paths:
 // when a straight leg blocks, it fans candidates around the blocker (reusing BotFindViaPoint's
 // tangent frame) and expands until it reaches the goal, then string-pulls the polyline into explicit
@@ -207,7 +207,7 @@ bool BotRoomPathPntReachable(int room_idx);
 // node nearest `toward` (portal nodes are guaranteed-flyable; pseudo-bnodes are hull-verified).
 vector BotWaypointAimPos(int wp_room, const vector &toward);
 
-// Step A (PLAN.md §3.4): the per-entry-portal overload. The 2-arg form answers a per-entry
+// Step A: the per-entry-portal overload. The 2-arg form answers a per-entry
 // question with a room-level boolean — ANY portal seeing the centre makes the room pass, so a bot
 // entering through any other door is aimed at a centre it cannot see (the mechanism that consumed
 // four routing fixes; NAVIGATION.md §7.0). This overload conditions the answer on the door the
@@ -271,7 +271,7 @@ int BotSkelDumpRoom(int room_idx, vector *pos_out, uint64_t *edges_out, int *por
 // Cached-only form for shadow diagnostics: never builds the skeleton and returns 0 when the room
 // has not already been used by live navigation.
 int BotSkelDumpRoomCached(int room_idx, vector *pos_out, uint64_t *edges_out, int *portal_count_out);
-// Q8: the skeleton's bridge search on the roadmap's sliced worker. BotSkelBuildPrivate runs on the worker and
+// The skeleton's bridge search on the roadmap's sliced worker. BotSkelBuildPrivate runs on the worker and
 // returns an opaque finished graph (nullptr = nothing to do); BotSkelPublish (main thread) takes ownership and
 // makes it the room's graph, true if the room's graph changed; BotSkelDiscard frees an unpublished one.
 // BotSkelRoomBridged: the room's graph is final (no bridge pass pending).
@@ -399,7 +399,7 @@ bool BotTerrainConnectPassable(int room, int portal);
 // hull-narrow openings out), keyed by the terrain region under its approach point. Uncapped where the
 // engine's BOA_connect stops at 40 per region (Isengard has 47; Kartoon Kanyon and DownTown fill the
 // engine table). Built lazily per level. Every outdoor consumer reads this table, never BOA_connect —
-// the operator's ruling on engine limits: route around them in our files, never raise MAX_PATH_PORTALS.
+// the maintainer's decision on engine limits: route around them in our files, never raise MAX_PATH_PORTALS.
 #define BOT_TDOOR_MAX 96 // doors per region our table holds
 // Slice 1b: the width of OUR per-portal caches. The engine's BOA arrays stop at MAX_PATH_PORTALS (40) and a
 // room may have more portals than that (Kartoon Kanyon's canyon rooms have 45, their open ceilings among

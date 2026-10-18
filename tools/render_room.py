@@ -14,7 +14,7 @@ from 2026-10-03 on) are thin grey lines; an edge whose straight segment passes t
 of any --with room is drawn thick magenta and counted in the label (a ray test: the engine sweeps a hull, so a
 flagged edge is a real one through a wall, not a near miss). Needs rsvg-convert for
 the PNG; without it the SVG is left next to the output path. The instrument for the in-room threading class:
-render the room a bot pins in BEFORE reasoning about why (BOTS_DEVEL 2026-09-15, Isengard rm36).
+render the room a bot pins in BEFORE reasoning about why.
 """
 import json, math, os, subprocess, sys
 
@@ -66,7 +66,7 @@ def main():
     pins = []
     view = "both"
     width = 1600
-    by = "comp"  # --by zone: colour lattice nodes by in-room zone (NAV41) instead of component
+    by = "comp"  # --by zone: colour lattice nodes by in-room zone instead of component
     overlay = None
     region = 0
     center = None

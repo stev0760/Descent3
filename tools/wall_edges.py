@@ -16,7 +16,7 @@ Dump every room bot-free in one run (the lattices are built by the dump, so a sh
     python3 tools/navdump_geometry.py --cfg geom-<map>.cfg --out /tmp/<map>.json --cmd-settle 0.5 "${args[@]}" ...
     python3 tools/wall_edges.py "$HOME/.local/share/Outrage Entertainment/Descent 3/<map>-rm"
 
-The 2026-10-03 finding (NAV60): Glasshouse's lattices held 140 edges through other rooms' walls, none through their
+The 2026-10-03 finding: Glasshouse's lattices held 140 edges through other rooms' walls, none through their
 own room's; legs from a foreign cell were swept from the wrong room.
 """
 import collections

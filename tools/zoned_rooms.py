@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""zoned_rooms.py — list every room of a `$nav dump` whose lattice splits its portals into separate zones
-(NAV41). A zoned room is one the router must not treat as a single volume: a route in through one zone and
+"""zoned_rooms.py — list every room of a `$nav dump` whose lattice splits its portals into separate zones.
+A zoned room is one the router must not treat as a single volume: a route in through one zone and
 out through another is a route through a wall (Glasshouse's pyramid: a hollow pyramid open only below and
 above, plus four door galleries on its faces). Reads the per-room `portal_zones` and `roadmap_zoned` fields
 the dump writes from the engine's own component ids (complete, unlike the 2,048-node dump sample).

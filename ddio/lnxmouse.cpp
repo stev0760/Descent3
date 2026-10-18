@@ -197,8 +197,8 @@ void ddio_MouseSetVCoords(int width, int height) { ddio_MouseSetLimits(0, 0, wid
 // SDL button number -> engine button slot, and the slot's btn_mask bit.
 // Retail slot order is left(0), right(1), center(2), mse-4(3); slots 4 and 5 are
 // reserved for the mouse wheel, so the fifth physical button (X2) sits at slot 6.
-// SDL numbers middle before right, hence the swap. (This matches PiccuEngine's
-// mapping, which matches retail pilot files.)
+// SDL numbers middle before right, hence the swap. (Ported from PiccuEngine's
+// mapping; it matches retail pilot files.)
 static int sdlButtonToSlot(uint8_t sdl_button) {
   switch (sdl_button) {
   case SDL_BUTTON_LEFT:

@@ -86,7 +86,7 @@
                                            // approach cost = arriving at the floor = the 07-15 ping-pong
                                            // (877 invade legs, 559 by one bot, 1 hold in 12 rounds);
                                            // 80 - transit ≈ 45-60 at arrival = a real hold budget
-// Streak-preservation healing (operator insight, first POV session): the kill streak gates
+// Streak-preservation healing (maintainer's insight, first POV session): the kill streak gates
 // the whole economy, and dying zeroes it — so a wounded bot WITH a streak banks it at its
 // own repair room (+5/s to the mode's 100 cap; these rooms exist only in Entropy) instead of
 // coin-flipping the next fight. Fresh spawns (streak 0) have nothing to lose and keep
@@ -94,7 +94,7 @@
 // shield knobs are the mode's economy tuning surface — expect iteration.
 #define BOT_ENTROPY_HEAL_START 50.0f // streak >= 1: break off and heal below this (40->50: soak-1
                                      // showed streak 3 unreachable at 8v8 — bots died mid-economy)
-#define BOT_ENTROPY_HEAL_DONE 95.0f  // leave the repair room near-full (80->95, operator call —
+#define BOT_ENTROPY_HEAL_DONE 95.0f  // leave the repair room near-full (80->95, maintainer call —
                                      // the pad is free and the streak is the whole economy)
 // Defense target bias (BotGetObjectiveTargetBias): negative = prefer killing. Hotshot magnitudes;
 // lower tiers weigh them by their dodge_percent (ENTROPY_MODE.md §3.5).
@@ -111,7 +111,7 @@
 #define BOT_MBALL_RAM_SWITCH 12.0f  // dry-bot ram: within this of the approach point, target the ball
 #define BOT_MBALL_MAX_SPEED 120.0f  // the DLL's ball speed cap (MAX_MONSTERBALL_VEL): a bigger jump is a teleport
 #define BOT_MBALL_SPAWN_SNAP 2.0f   // a ball this close to its spawn point after a teleport is a kickoff
-// The FINISHER (operator insight, first frenzy session): DLL weapon hits clamp to [10,20] u/s
+// The FINISHER (maintainer's insight, first frenzy session): DLL weapon hits clamp to [10,20] u/s
 // but a physical ram is UNCLAMPED momentum — guns move the ball around the field, the body puts
 // it in the net. Near the goal the striker stops sniping and afterburner-slams through the ball.
 #define BOT_MBALL_FINISH_COST 160.0f // ball->our-goal route cost below which we're "in position"

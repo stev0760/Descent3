@@ -1091,7 +1091,7 @@ bool AIPathAllocPath(object *obj, ai_frame *ai_info, void *goal_ptr, int *start_
                             TERRAIN_REGION(*start_room) != TERRAIN_REGION(*end_room));
 
         if (f_bnode_ok) {
-          // One-time diagnostic (PLAN-coop-nav-rethink.md 9.3/9.7): confirms the BNode pipeline is
+          // One-time diagnostic: confirms the BNode pipeline is
           // selected for an OBJ_PLAYER goal — i.e. our $nav bnodesp bots, not the level's robots
           // (robots alloc BNode paths constantly on SP maps and would consume the latch as noise).
           static bool Bnode_pipeline_logged = false;

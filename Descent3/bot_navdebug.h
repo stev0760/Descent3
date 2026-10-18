@@ -20,7 +20,7 @@
 #define BOT_NAVDEBUG_H
 
 // -------------------------------------------------------------------------------------------------
-// Live in-client nav debug overlay (VISUAL_DEBUG.md / PLAN.md §3.6).
+// Live in-client nav debug overlay (VISUAL_DEBUG.md).
 //
 // A host-only, in-world 3D overlay that draws the bot navigation state the engine keeps server-side
 // and otherwise invisible: the per-room skeleton (nodes/edges colored by connected component),

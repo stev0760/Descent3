@@ -89,7 +89,7 @@ bool Bot_roadmap_heal_enabled = true; // $nav heal: rebuild a room's roadmap whe
 // --- Evidence-gated hard-room promotion (0.9.7, the isengard room-36 lock) ---------------------
 // The static complexity gate (orig_comp_count>1) misses rooms that are SINGLE-component yet
 // unflyable by the raw path_pnt line: isengard room 36 has 2000+ lattice nodes, comp_count 1, a
-// concave center with portal lips sticking out (operator description) — carriers pressed the
+// concave center with portal lips sticking out (maintainer's description) — carriers pressed the
 // 36->38 hop 22x per carry, all day, while proactive gridroute stayed gated off. Rather than
 // loosen the static gate (the measured easy-pool regression), promote a room on EVIDENCE: every
 // 12.2c via suspension ("arrivals without crossing") in a room counts against it; at
@@ -185,7 +185,7 @@ struct RoadmapRoom {
   std::vector<int> seed_portal;      // node index -> portal index for the seeds (indoor; size = n_seed)
   int comp_count = 0;
   int orig_comp_count = 0;    // components BEFORE the bridges merged them (>1 = non-convex / multi-level)
-  std::vector<int> zone;      // zone id per node (NAV41): what a seed reaches without crossing a portal face; -1 = none
+  std::vector<int> zone;      // zone id per node: what a seed reaches without crossing a portal face; -1 = none
   std::vector<int> zone_comp; // zone id -> the lattice component it lies in (a zone never spans two)
   int zone_count = 0;
   bool routable = false; // route-ownership gate: this room HAS a usable local-street network
@@ -1828,7 +1828,7 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     }
   }
 
-  // Zones (NAV41): what each portal seed reaches without leaving the room. The lattice grows door-approach nodes
+  // Zones: what each portal seed reaches without leaving the room. The lattice grows door-approach nodes
   // into the next room on purpose (the route THROUGH a door), and in an open hall those nodes join every door of a
   // neighbouring room into one component: Glasshouse's four sealed galleries read as one. So the zone union skips
   // every edge whose segment crosses one of this room's own portal faces — the only way out of a room — and keeps

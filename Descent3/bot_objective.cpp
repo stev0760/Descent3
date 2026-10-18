@@ -1225,7 +1225,7 @@ static void BotPollCoop() {
         continue;
       // Routability gate: an item behind a locked door is not actionable — humans unlock,
       // we re-poll and resume. Same honest-cost model as BotGetNearestEntropyRoom. Under $nav
-      // bnodesp (PLAN-coop-nav-rethink.md 9.2), the engine plans the route, not our router — gate
+      // bnodesp, the engine plans the route, not our router — gate
       // on the engine's own reachability (BOA_GetNextRoom, what AI_IsDestReachable checks) instead,
       // so selection can't silently fall back to escort while a BNode path is actually flyable.
       if (ref_room >= 0 && ref_room != room) {
@@ -1628,7 +1628,7 @@ static int BotGetObjectiveRoom_CTF(int bot_index) {
 
   if (effective == SQUAD_ATTACK) {
     // Own flag stolen — drop offensive nav, let -400 targeting bias drive toward carrier (the RUNNER
-    // lean is exempt: it presses the enemy flag while the home flag is out — the standoff the operator wants)
+    // lean is exempt: it presses the enemy flag while the home flag is out — the standoff the maintainer wants)
     if (Bot_objective.flag_state[my_team] == FLAG_CARRIED && Bots[bot_index].objective_lean != BOT_LEAN_RUNNER)
       return -1;
     // Find nearest available enemy flag by BOA path cost (not Euclidean)
@@ -1672,7 +1672,7 @@ static int BotGetObjectiveRoom_CTF(int bot_index) {
     // that has no interior route: BotTrouteRedirect plans exit door -> region lattice -> entry door, and
     // those plans execute. So rank by our router where a route exists, and only among rooms
     // no interior route reaches fall back to the distance pricing the outdoor branch uses. This fires only when no
-    // flag room is reachable indoors; why it is that narrow is in BOTS_DEVEL.md (2026-09-20).
+    // flag room is reachable indoors.
     if (best_room < 0 && far_room >= 0 && bot_room >= 0) {
       best_room = far_room;
       best_cost = far_dist;

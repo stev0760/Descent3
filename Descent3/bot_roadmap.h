@@ -151,7 +151,7 @@ float BotRoadmapOutdoorPathCost(int region, const vector &a, const vector &b);
 int BotRoadmapSerial();
 // Roadmap component count for a room (0 = none). Do NOT cache reach-style verdicts when > 1.
 int BotRoadmapRoomComps(int room_idx);
-// Zones (NAV41): the lattice component each portal's seam seed belongs to. A room whose seeds fall in more than
+// Zones: the lattice component each portal's seam seed belongs to. A room whose seeds fall in more than
 // one component is several spaces to a ship (Glasshouse's pyramid: a hollow pyramid open only below and above,
 // and four door galleries on its faces), and a route in through one zone and out through another is a route
 // through a wall. Zone ids are dense per room; -1 = no answer (no lattice, outdoor, degenerate, starved, or no

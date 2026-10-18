@@ -1549,7 +1549,7 @@ static int8_t room_buried[MAX_ROOMS];  // -1 unknown, else BotRoomPathPntReachab
 
 // A skeleton under construction. The builders write here and nowhere else, so a build can run on the roadmap's
 // sliced worker (parked between sweeps, nothing published until it ends) or inline for the tools, and the
-// room's live graph is replaced in one copy. Q8 (PLAN 4.0.2 step 3).
+// room's live graph is replaced in one copy.
 struct SkelData {
   vector node_pos[SKEL_MAX_NODES];
   uint64_t edges[SKEL_MAX_NODES];
@@ -1653,7 +1653,7 @@ uint64_t BotAimExitMask(object *obj, int room_idx, int dest_room, int target_roo
   return (target_room >= 0) ? AimNarrowToRouterDoor(obj, room_idx, dest_room, target_room, exits) : exits;
 }
 
-// --- Collision-guided bridge search (0.9.12 skeleton rework, SKELETON_REWORK.md) ----------------
+// --- Collision-guided bridge search (0.9.12 skeleton rework) -------------------------------------
 // The base skeleton connects two nodes only when a SINGLE STRAIGHT ship-radius leg is hull-clear, so
 // any pair whose real flyable path BENDS (an L, a corner, a curved toroid tube) got no edge — and the
 // old all-portal-centroid pseudo-bnode papered over that with a hub every segment spoked to (the
@@ -1895,7 +1895,7 @@ static bool SkelBuildBase(int room_idx, SkelData &d) {
 }
 
 // Bridge pass: pseudo-bnodes, only when a live portal pair is disconnected (most rooms are fully connected -> no
-// cost). 0.9.12 rework (SKELETON_REWORK.md): instead of the old all-portal-centroid + blanket offset
+// cost). 0.9.12 rework: instead of the old all-portal-centroid + blanket offset
 // nodes (which manufactured the abend2 ring hub), repeatedly bridge the closest still-disconnected
 // portal pair with the collision-guided search. This builds the spanning connectivity a room actually
 // supports — segment->bend->segment chains around a curved tube, or portal->corner->portal in an L —
@@ -1905,7 +1905,7 @@ static bool SkelBuildBase(int room_idx, SkelData &d) {
 // fifteen conference-room panes beside four doors).
 // This is the expensive half (Sigma Base rm19: 28,000 sweeps, 1.4 s; Facing Worlds rm0: 2.9 s) and the reason the
 // build yields: on the sliced worker it parks before every sweep and the room keeps its base graph until this
-// commits (Q8).
+// commits.
 static void SkelBuildBridges(int room_idx, SkelData &d) {
   const int np = d.np;
   const uint64_t live = d.live;
@@ -1982,7 +1982,7 @@ static void SkelStore(int room_idx, const SkelData &d) {
 // via machinery and **hull-aware** so we never synthesize an unflyable edge (an edge kept below the hull,
 // as the engine BNode build's max_rad 5.0 against a ~6.676 hull, pins bots: NAVIGATION.md §7.5). Always on.
 //
-// Q8 (PLAN 4.0.2 step 3): first use no longer freezes the server on the bridge search. The base graph is built
+// First use no longer freezes the server on the bridge search. The base graph is built
 // and stored here, in this call; when a live pair needs bridging the full build is queued on the roadmap's sliced
 // worker (BotSkelBuildPrivate / BotSkelPublish) and replaces the base graph a few frames later. The tools' sync
 // scope ($nav dump) still builds everything inline, so bot-free dumps read exactly as before.
@@ -2056,7 +2056,7 @@ bool BotRoomPathPntReachable(int room_idx) {
   return false;
 }
 
-// Step A (PLAN.md §3.4): the per-entry-portal form of the buried-centre probe — the exact cast
+// Step A: the per-entry-portal form of the buried-centre probe — the exact cast
 // BotRoomPathPntReachable makes per portal, answered for ONE portal instead of "any". This is
 // the test whose any-portal pass makes a room count as "not buried"; a 0 here for the door the
 // bot is entering through is the blind-entry case the room-level boolean hides. Cached per level
@@ -2177,7 +2177,7 @@ int BotEntryPortalIndex(object *obj, int wp_room, int goal_room, bool *onward_va
   // Doors-first: the strict pass admits only engine-agreeing portals, the fallback pass adds the
   // router's DISAGREE class. Intact panes are a THIRD class, tried only when no door exists — the
   // same sole-route discipline the router and the aim exit set apply.
-  // The bot's zone of its room (NAV41): a door into wp_room that lies in another zone is behind a wall from here
+  // The bot's zone of its room: a door into wp_room that lies in another zone is behind a wall from here
   // (Glasshouse: another gallery's door, 92 refusals in one flight). Disagree-class, like the router's edge.
   const int bot_zone = BotRoadmapZoneAt(cur, obj->pos);
   for (int pass = 0; pass < 3 && best_p < 0; pass++) {
@@ -2662,7 +2662,7 @@ vector BotWaypointAimPos(int wp_room, const vector &toward) {
   return SkelFlyPos(wp_room, best);
 }
 
-// Step A (PLAN.md §3.4): the per-entry-portal waypoint aim. The 2-arg form above answers a
+// Step A: the per-entry-portal waypoint aim. The 2-arg form above answers a
 // per-entry question with a room-level boolean — ANY portal seeing the centre makes the room
 // pass, so a bot entering through any other door is aimed at a centre it cannot see. This
 // overload conditions the answer on the door the bot will actually enter through; it replaces
@@ -2749,7 +2749,7 @@ int BotSkelDumpRoom(int room_idx, vector *pos_out, uint64_t *edges_out, int *por
   int np = SkelPortalCount(rm);
   if (np < 1)
     return 0;
-  SkelEnsure(room_idx, /*full=*/true); // a tool wants the finished graph now (bot-free dumps read as before Q8)
+  SkelEnsure(room_idx, /*full=*/true); // a tool wants the finished graph now (bot-free dumps read as before the sliced build)
   int n = skel_node_count[room_idx];
   for (int i = 0; i < n; i++) {
     if (pos_out)
@@ -3368,7 +3368,7 @@ int BotPortalWindDir(int room_idx, int portal_idx) {
 // picks/rnd 1.94→0.56, stucks +131%, because 127 of Batteries' 207 panes are CEILING
 // vents and free routing aimed bots at horizontal openings they cannot thread. Hence the split.
 //
-// Zones (NAV41): the node is (room, zone), not the room. A room's lattice can hold several zones —
+// Zones: the node is (room, zone), not the room. A room's lattice can hold several zones —
 // spaces its own nodes do not connect — and Glasshouse's pyramid showed what routing over rooms does there: a bot
 // in a door gallery was sent to the hatch under the pyramid, 20 u away through the glass, and pressed into the
 // narrowing wedge until its stuck escape freed it (72 of 76 stucks in one flight). The zone a route holds in a
@@ -3547,7 +3547,7 @@ static float BotRouteDijkstra(int from_room, int goal_room, int *first_hop_out, 
 // The router's pass ladder, shared by BotComputeRoute and the aim layers.
 //
 // A kinetic bot (SHORTCUT) admits VERTICAL panes into the FIRST pass beside the strict doors: the
-// operator's intent is that a pane is a usable shortcut (Batteries' conference-room glass walls),
+// maintainer's intent is that a pane is a usable shortcut (Batteries' conference-room glass walls),
 // and Dijkstra's price decides when it is genuinely better — every pane edge carries
 // BOT_PORTAL_GLASS_PENALTY (+120, ~3 hops), so a comparable door route still wins. Horizontal
 // ceiling/floor vents are NOT in that pass: they pin bots (127 of Batteries' 207 panes are vents)
@@ -3612,7 +3612,7 @@ int BotComputeRoute(int from_room, int goal_room, int bot_index) {
   const object *bobj =
       (bot_index >= 0 && Bots[bot_index].active) ? &Objects[Players[Bots[bot_index].player_slot].objnum] : nullptr;
   const float hull = bobj ? BotHullPhys(bobj) : BOT_HULL_PHYS;
-  // The bot's own zone of from_room (NAV41). -1 unless from_room is zoned and one of its own nodes is in hull view
+  // The bot's own zone of from_room. -1 unless from_room is zoned and one of its own nodes is in hull view
   // of the bot — a bot elsewhere (the onward-validation callers) gets the zone of the nearest door pocket, or none.
   const int start_zone = bobj ? BotRoadmapZoneAt(from_room, bobj->pos) : -1;
   const int hop = BotComputeRoutePasses(from_room, goal_room, glass_mode, hull, nullptr, start_zone);

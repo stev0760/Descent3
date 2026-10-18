@@ -1,8 +1,7 @@
 # Regression battery
 
 The manifests here are the tracked regression set for `tools/soakctl.py`. This file is the **release regression
-battery** (PLAN.md §4, REL4): the stages a release build passes before its GitHub Release is published. The lab
-procedure and its guardrails are the `matcen-soak` skill; the reading rules are CLAUDE.md's and the skill's.
+battery**: the stages a release build passes before its GitHub Release is published.
 
 ## Before the first stage
 
@@ -30,12 +29,12 @@ procedure and its guardrails are the `matcen-soak` skill; the reading rules are 
 | [ ] | Bedlam, 4-team CTF (the easy-pool gate) | `battery/reg-bedlam.json` | `soak-dedicated-bedlam4t.cfg`, `soak-bots-4t.cfg` | 12 rounds of 15 min, cap 210 min | `analyze_bot_log.py` and `flag_conversion.py`; lead with the stuck and carrier-loss numbers, not conversion |
 | [ ] | Fellowship CTF (the hard-pool gate) | `battery/battery-fellowship.json` | `soak-dedicated-fellowship.cfg`, `soak-bots.cfg` | 9 rounds of 10 min, cap 130 min | the same two tools; the hard stuck columns |
 | [ ] | Monsterball | `monsterball-soak.json` | `soak-dedicated-mball.cfg`, `soak-bots-8.cfg` | 6 rounds of 20 min, cap 150 min | the analyzer's `## Monsterball`: goals per round, own goals |
-| [ ] | Entropy | `battery/reg-entropy.json` | `soak-dedicated-entropy.cfg`, `soak-bots-12.cfg` | 3 rounds of up to 60 min, cap 150 min | the analyzer's `## Entropy`: pickups and takeovers (MODE2 wants one takeover on the release build) |
+| [ ] | Entropy | `battery/reg-entropy.json` | `soak-dedicated-entropy.cfg`, `soak-bots-12.cfg` | 3 rounds of up to 60 min, cap 150 min | the analyzer's `## Entropy`: pickups and takeovers (at least one takeover on the release build) |
 | [ ] | Anarchy, Team Anarchy, Hyper-Anarchy, Robo-Anarchy | `battery/reg-anarchy.json`, `reg-team.json`, `reg-hyper.json`, `reg-robo.json`, `reg-robo2.json` | `soak-dedicated-reg-<mode>.cfg` and the bots files they name | 2 rounds each, caps 35-40 min | deaths and stucks per map, flat against the control |
-| [ ] | Co-op | `battery/reg-coop.json` | `soak-dedicated-coop.cfg`, `soak-bots-coop.cfg` | 30 min, cap 40 min | crash net only: the server stays up, bots spawn, no asserts. Bots without a human say little about co-op play; the operator's co-op flight on the release build is the real check (COOP2) |
-| [ ] | Operator flight and one Windows-native run | none | the operator's own setup | one evening | REL3: the HUD goal lines and his flight against a same-evening Debug control |
+| [ ] | Co-op | `battery/reg-coop.json` | `soak-dedicated-coop.cfg`, `soak-bots-coop.cfg` | 30 min, cap 40 min | crash net only: the server stays up, bots spawn, no asserts. Bots without a human say little about co-op play; the maintainer's co-op flight on the release build is the real check |
+| [ ] | Maintainer flight and one Windows-native run | none | the maintainer's own setup | one evening | the HUD goal lines, and the maintainer's flight against a same-evening Debug control |
 
-Not covered by any stage: removing a bot during a level change (REL5).
+Not covered by any stage: removing a bot during a level change.
 
 ## Running it
 

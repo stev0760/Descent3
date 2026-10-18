@@ -28,7 +28,7 @@ RE_STUCK = re.compile(r"stuck escalation \(room (-?\d+)")
 # g1=player name (bots carry the " [BOT]" suffix), g2=team. Split bot vs human captures —
 # soak stats must not credit bots with captures a human in the lobby made.
 RE_CAPTURE = re.compile(r"\*?(.+?) \((\w+)\) captures the (.+?) Flags?\b")
-# Q6 (PLAN 4.0.1): the game's death messages are HUD text and mostly never reach the server log (one wording,
+# The game's death messages are HUD text and mostly never reach the server log (one wording,
 # `was killed by`, matched 29 lines against 549 bot respawns on a 12-round log). Bot deaths are counted from
 # `BotRespawn` lines instead: every death respawns, and the round-start spawn takes another path (it never
 # prints this line), so every respawn line is a death.
@@ -61,7 +61,7 @@ RE_VIA_FAIL_DIAG = re.compile(
 # 0.9.14 hop-commit outcome: CROSSED = the committed crossing happened; NOT-CROSSED = gave up.
 RE_HOP_OUTCOME = re.compile(r"hop outcome: (CROSSED|NOT-CROSSED) rm(-?\d+) -> rm(-?\d+) via portal (-?\d+) "
                             r"\(([\d.]+)s(?:, now rm(-?\d+))?\)")
-# Outdoor pass Phase 0 (PLAN.md 3.7): entrance commits — an outdoor bot committing THROUGH a terrain door.
+# Outdoor pass Phase 0: entrance commits — an outdoor bot committing THROUGH a terrain door.
 # Two commit lines exist (the goal ladder's outdoor branch and the explore entrance-seek); the observer
 # line is the server-side outcome (builds after 836f2f75). Older logs get an INFERRED outcome instead:
 # the bot's next room-revealing line within ENTRY_INFER_WINDOW seconds decides crossed (interior room)
@@ -118,7 +118,7 @@ RE_ARRIVED_OBJ = re.compile(r"ARRIVED at objective room (-?\d+) \(t=([\d.]+)s\) 
 # 0.9.14 item-reach telemetry: graph verdict + raw hull-LOS + distance (los/d only on the new format).
 RE_ITEM_REACH = re.compile(r"item-reach '([^']*)' \(room (-?\d+)\): (REACHABLE|UNREACHABLE) \(([^)]+)\)"
                            r"(?: los=(\d) d=(-?[\d.]+))?")
-# Step A (PLAN.md §3.4): the per-entry-portal aim replaced the raw room centre because the entry
+# Step A: the per-entry-portal aim replaced the raw room centre because the entry
 # door is blind to it (throttled 5s global). Firing rate + room concentration are the change's
 # own health metrics; the line is also the A/B arm marker for the Step A build.
 RE_ENTRY_AIM = re.compile(r"entry-aim rm(-?\d+) via portal (-?\d+) -> node hop (-?\d+)")
@@ -161,10 +161,9 @@ RE_VIA_SUSPEND = re.compile(r"via suspended in room (-?\d+)")
 RE_TROLL_RETIRED = re.compile(r"powerup troll-retired: '([^']*)' \(room (-?\d+)\)")
 
 # Phase 12.3 portal-skeleton traversal.
-# Committee census (NAVIGATION.md 6.9). BotNavMemberWin() in bot.cpp has recorded which nav member
+# Nav-member census (NAVIGATION.md 6.9). BotNavMemberWin() in bot.cpp has recorded which nav member
 # holds the wheel since 0.9.x — episodes, ACTIVE-held seconds, and "contention" (a rival taking the
-# wheel inside BOT_NAV_CONTEND_WINDOW). Nothing ever parsed it, which is why the docs say "the MP
-# committee census does not exist. Do not assume it." These two patterns are that census.
+# wheel inside BOT_NAV_CONTEND_WINDOW). Nothing parsed it before these two patterns.
 RE_NAVCENSUS = re.compile(
     r"NAVCONTEND DUMP \[(\w+)\]: '([^']+)' episodes\((\d+)\):(.*?) \| contention=(\d+)")
 RE_NAVCENSUS_MEMBER = re.compile(r"(\S+)=(\d+)\(([\d.]+)s\)")
@@ -333,9 +332,9 @@ def new_map_stats():
     return {
         "rounds": 0,
         "game_mode": "Unknown",
-        # Committee census. nav_census_* hold the LAST periodic dump seen per bot (the counters are
+        # Nav-member census. nav_census_* hold the LAST periodic dump seen per bot (the counters are
         # running totals, so the last dump is the level's answer — summing dumps would multiply-count).
-        # Committee census. The engine's counters are cumulative WITHIN a level and are WIPED at
+        # Nav-member census. The engine's counters are cumulative WITHIN a level and are WIPED at
         # every level-end dump, so reading the last dump gives you the final round, not the session —
         # which silently under-reported a 20-round log as if it were one round. We bank each bot's
         # peak per segment (detected by its episode total going DOWN, which can only mean a reset)
@@ -1287,7 +1286,7 @@ def detect_anomalies(stats):
         cap_rate = bot_caps / rounds
         mode = s["game_mode"]
 
-        # Committee thrash. The wheel changing hands is normal; changing hands INSIDE the contention
+        # Nav-member thrash. The wheel changing hands is normal; changing hands INSIDE the contention
         # window is not — the previous member had no time to act before being overwritten. Above ~40%
         # the aim point is being rewritten faster than the ship can respond, which reads in play as a
         # bot that does not know where it is going. Also flag any member that grabs the wheel a lot and
@@ -2077,7 +2076,7 @@ def print_report(stats, total_lines, log_path):
             print(f"| {name} | {s['chains_built']} ({brooms}) | {s['composed_built']} | {s['chains_done']} |")
         print()
 
-    # --- Committee census -------------------------------------------------------------------
+    # --- Nav-member census ------------------------------------------------------------------
     # Who holds the wheel, how often it changes hands, and whether the changes are handovers or
     # arguments. Read the ping-pong table first: a pair with similar counts in BOTH directions is two
     # members overwriting each other, not one handing off to the next.

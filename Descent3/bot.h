@@ -398,10 +398,10 @@ enum BotState {
   BOT_STATE_EVADE,   // Prolonged combat stall. Break off, regroup, then re-engage.
 };
 
-// Contention instrumentation ($nav contend): each value names one member of
-// the nav "committee" (the review's §3 table) that can seize the bot's travel goal or thrust for a
+// Contention instrumentation ($nav contend): each value names one of
+// the competing nav members that can seize the bot's travel goal or thrust for a
 // tick. Measurement only — no member here changes behavior; BotNavMemberWin() in bot.cpp just counts
-// who wins and how often the winner flips faster than a bot could act on it (the "committee" tell).
+// who wins and how often the winner flips faster than a bot could act on it (the contention tell).
 enum BotNavMember : uint8_t {
   NAV_MEMBER_NONE = 0,      // no routed-goal tick yet this level (idle / combat / not exploring)
   NAV_MEMBER_BNODESP,       // $nav bnodesp — engine's own BNode path owns the leg (SP maps)
@@ -416,7 +416,7 @@ enum BotNavMember : uint8_t {
   NAV_MEMBER_PATH_PNT,      // default: raw portal path_pnt / final pos, nothing else engaged
   NAV_MEMBER_STUCK_ESCAPE,  // stuck-recovery escape thrust (can flee backward) — BotApplyThrust
   NAV_MEMBER_ENGINE,        // raw goal handed to the engine (escort beeline / hold-station / outdoor
-                            // track) — the engine's own routing, the review's §3 top-row counterpart.
+                            // track) — the engine's own routing.
                             // Counted because these legs dominate SP travel: uncounted, the
                             // ours-vs-engine flips are invisible.
   NAV_MEMBER_COUNT
@@ -652,7 +652,7 @@ struct bot_info {
   int via_chain_target_room;       // next-hop room the chain exits toward (clear on change)
 
   // Contention instrumentation ($nav contend) — measurement only, no
-  // behavior change. Tracks which nav-committee member (BotNavMember) last won this bot's routed
+  // behavior change. Tracks which competing nav member (BotNavMember) last won this bot's routed
   // goal/thrust, and counts how often the winner flips to a DIFFERENT member before the previous
   // one held the wheel for BOT_NAV_CONTEND_WINDOW seconds. See BotNavMemberWin() in bot.cpp.
   // UNITS: counts are EPISODES — one per
@@ -709,8 +709,8 @@ extern bool Bot_soft_strike_enabled;          // $nav strike — same-room soft 
                                               // retirement at BOT_TROLL_SOFT_PER_STRIKE weight (0.9.7 Fix A)
 extern bool Bot_bnode_native_pathing_enabled; // $nav bnodesp — operator intent: defer to the engine's
                                               // native BNode path pipeline on BNode-rich (SP campaign)
-                                              // maps instead of our routing/via/seam stack (default ON —
-                                              // PLAN-coop-nav-rethink.md; inert on every BNode-less MP map)
+                                              // maps instead of our routing/via/seam stack (default ON;
+                                              // inert on every BNode-less MP map)
 // Live effective check: Bot_bnode_native_pathing_enabled && BNode_allocated && BNode_verified.
 // A function (not a level-start cached bool) so a mid-level $nav flip takes effect immediately
 // and the verdict never depends on BotReinitAll timing — the engine globals ARE the level state.
@@ -836,7 +836,7 @@ const char *BotLeanName(int lean);
 void BotFormatNavDiag(int bot_index, char *buf, size_t buflen);
 #define BOT_NAV_DIAG_PROBE_DIST 50.0f // forward look distance for the $botstat movement_dir probe
 
-// §7 contention instrumentation ($nav contend): write a one-line per-bot nav-committee win-count
+// §7 contention instrumentation ($nav contend): write a one-line per-bot nav-member win-count
 // histogram + contention total into buf (NAVIGATION.md §6.9). Diagnostic-only; no behavior change.
 void BotFormatNavContend(int bot_index, char *buf, size_t buflen);
 

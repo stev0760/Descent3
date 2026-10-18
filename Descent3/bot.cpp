@@ -73,8 +73,8 @@ bool Bot_debug_movement = false;     // Toggle with "$botmov on/off" console com
 bool Bot_grate_clear_enabled = true; // $nav grate — proactive destroyable-obstacle clearing
 bool Bot_soft_strike_enabled = true; // $nav strike — same-room soft chase-aborts accrue troll strikes (0.9.7)
 // $nav bnodesp — defer to the engine's native BNode path pipeline on BNode-rich (SP campaign) maps
-// instead of our routing/via/seam stack (PLAN-coop-nav-rethink.md). Default ON: client-launched co-op
-// has no console, so default-OFF would be untestable (9.5.1); inert by construction on every MP map
+// instead of our routing/via/seam stack. Default ON: client-launched co-op
+// has no console, so default-OFF would be untestable; inert by construction on every MP map
 // (BNode_allocated == false there). This bool stores operator intent only — every bypass check reads
 // BotBnodeNativeActive(), which conjoins it with the engine's level-load flags live.
 bool Bot_bnode_native_pathing_enabled = true;
@@ -98,7 +98,7 @@ static int BotTerrainRegionSafe(int roomnum) {
 // for external rooms; the guide-bot flies d3 L1's canyon on exactly this path.
 //
 // Our 6.20 bypass demanded both ends INTERIOR, which was strictly stricter than the engine's own
-// contract — so every outdoor leg fell back to the committee (the 07-22 arm C collapse, and 100%
+// contract — so every outdoor leg fell back to the competing nav members (the 07-22 arm C collapse, and 100%
 // of the residual contention in the 07-23 smoke). Matching the engine's gate is a DELETION of an
 // over-restriction, not a new mechanism. Unresolvable cells (the -1 sentinel) stay excluded.
 // Step 0a instrumentation (NAVIGATION.md §6.9): the 08-04 smoke showed this gate declining
@@ -397,7 +397,7 @@ extern void MultiSendRenewPlayer(int slot);
 extern void MultiSendPlayerDisconnect(int slot);
 
 // --- Nav contention instrumentation ($nav contend) ---
-// Measurement only, no behavior change: names the nav-committee members from the review's §3 table
+// Measurement only, no behavior change: names the competing nav members
 // and records which one wins each tick, so the eventual collapse-to-one-router decision is made from
 // counted contention, not from argument. BotNavMember + the per-bot counters live in bot.h; $nav
 // contend (dedicated_server.cpp, via BotFormatNavContend below) dumps the running totals over telnet.
@@ -436,8 +436,8 @@ static const char *BotNavMemberName(BotNavMember m) {
 // member's lifetime (this level) win tally, and — the actual measurement — flags CONTENTION when the
 // winner is DIFFERENT from last time and the previous member had held the wheel for under
 // BOT_NAV_CONTEND_WINDOW seconds. A slow handoff (a bot finishing one leg and starting the next
-// cleanly) is not contention; two members fighting over the same few ticks is — the "committee"
-// signature the review names, since a coherent pilot doesn't reverse its own plan that fast.
+// cleanly) is not contention; two members fighting over the same few ticks is — the signature of
+// competing members, since a coherent pilot doesn't reverse its own plan that fast.
 static void BotNavMemberWin(int bot_index, BotNavMember member) {
   if (bot_index < 0 || bot_index >= MAX_BOTS || member <= NAV_MEMBER_NONE || member >= NAV_MEMBER_COUNT)
     return;
@@ -473,8 +473,8 @@ static void BotNavMemberWin(int bot_index, BotNavMember member) {
   if (bi.nav_last_member != member) {
     float held = Gametime - bi.nav_last_member_time;
     bi.nav_member_count[member]++;
-    // held < 0 covers the Gametime-resets-per-level gotcha (BOT_DEV_REFERENCE) — never miscounts a
-    // level transition as contention.
+    // held < 0 covers Gametime resetting per level — never miscounts a level transition as
+    // contention.
     if (bi.nav_last_member != NAV_MEMBER_NONE && held >= 0.0f && held < BOT_NAV_CONTEND_WINDOW) {
       bi.nav_contention_count++;
       static float Contend_log_t[MAX_BOTS];
@@ -817,7 +817,7 @@ static void BotClearViaChain(int bot_index) {
 // circle distance is 10 u (Player.cpp), and a GET_TO_OBJ goal completes itself once the surface gap is inside it,
 // about 20 u from a flag's centre and well short of contact, so the errand re-issued it from there — a fresh
 // engine path each time, the ship swinging out to 40 u and back: 3,365 flag-grab issues for 297 pickups in 12
-// bedlam rounds, nothing else logged in between (Q1). The engine's own melee chase uses -100 for the same reason:
+// bedlam rounds, nothing else logged in between. The engine's own melee chase uses -100 for the same reason:
 // the goal never ends by distance; the pickup ends it.
 static int BotAddTouchGoal(object *obj, int objnum) {
   int handle = Objects[objnum].handle;
@@ -1718,7 +1718,7 @@ static void BotClearObstacleSafely(int bot_index, object *blocker, vector *targe
   // thrust, the primitive the hard-pin escape uses — and the next tick fires from the guard
   // distance. Firing lasers here opened nothing: Batteries rm1 is a spawn room whose only exit is a
   // 19x20u ceiling vent, and a bot that spawned under it sat 5u below the pane firing lasers twenty
-  // times a second for the round (the operator found his own team trapped there).
+  // times a second for the round (the maintainer found his own team trapped there).
   {
     int sec_wb = Players[slot].weapon[PW_SECONDARY].index;
     if (dist < BOT_SPLASH_SELF_GUARD && sec_wb >= 10 && sec_wb < 20 && Players[slot].weapon_ammo[sec_wb] > 0) {
@@ -2651,7 +2651,7 @@ static int BotViaPointTick(int bot_index, const vector &target_pos, int target_r
     }
   }
 
-  // Committed multi-hop chain (Step 3) — the committee-collapse fix. In a BURIED room with a
+  // Committed multi-hop chain (Step 3). In a BURIED room with a
   // GENUINELY multi-hop crossing, build the ordered skeleton chain ONCE and commit to flying it,
   // instead of re-deriving one skeleton hop per arrival (the abend2 ring orbit, where per-hop
   // resolution oscillates between adjacent vestibule nodes). Activation is deliberately NARROW —
@@ -3011,7 +3011,7 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   // en-route re-dispatch reads intent, so a terrain index here would poison Rooms[] lookups.
   BotSetTravelDest(bot_index, ROOMNUM_OUTSIDE(goal_room) ? -1 : goal_room, owner, TRAVEL_END_REPLACEMENT);
 
-  // $nav bnodesp bypass (PLAN-coop-nav-rethink.md): on a BNode-rich map (SP campaign) hand the
+  // $nav bnodesp bypass: on a BNode-rich map (SP campaign) hand the
   // engine the FAR goal directly and let AIPathAllocPath -> AIGenerateBNodePath build the full
   // multi-room path end-to-end — exactly what the guide-bot does for LIT_INTERNAL_ROOM
   // (scripts/AIGame.cpp:5045). Our routing/via/seam/grid-route stack below exists to compensate
@@ -3019,7 +3019,7 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
   // bypassed here for this call, not deleted. Both ends must be interior — mirrors the escort
   // far-leg check at bot.cpp:1794 — later campaign levels have terrain and the outdoor stack
   // stays live there. Only WHO plans/flies the route changes: same GF_SPEED_ATTACK, no
-  // GF_USE_BLINE_IF_SEES_GOAL (bot.cpp:360 invariant), no guide-bot goal-recipe mimicry (9.6).
+  // GF_USE_BLINE_IF_SEES_GOAL (bot.cpp:360 invariant), no guide-bot goal-recipe mimicry.
   // Subtraction #2: the gate is now the ENGINE's own f_bnode_ok contract (BotBnodeLegOk), not our
   // stricter both-ends-interior rule — outdoor legs the engine can fly, the engine flies.
   if (BotBnodeNativeActive() && BotBnodeLegOk(obj, obj->roomnum, goal_room, &final_pos)) {
@@ -3040,7 +3040,7 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
     Bots[bot_index].explore_dest_room = goal_room;
 
     // Scale the re-issue window by BOA distance, same as random-explore (bot.cpp:2758-2770) — a
-    // flat 20s would re-path a cross-level trek mid-flight (9.4).
+    // flat 20s would re-path a cross-level trek mid-flight.
     float est_dist = 0.0f;
     bool has_dist = BOA_ComputeMinDist(obj->roomnum, goal_room, 2000.0f, &est_dist);
     if (has_dist && est_dist > 0.0f) {
@@ -3053,7 +3053,7 @@ static int BotSetRoutedGoal(int bot_index, int goal_room, const vector &final_po
       Bots[bot_index].explore_room_timer = BOT_EXPLORE_ROOM_TIME_MAX; // unknown distance — generous
     }
 
-    // Self-healing throttle (Gametime resets per level — see BOT_DEV_REFERENCE gotcha): not an
+    // Self-healing throttle (Gametime resets per level): not an
     // absolute latch, so no BotReinitAll reset entry is needed.
     static float Bnodesp_log_t[MAX_BOTS];
     float &last = Bnodesp_log_t[bot_index];
@@ -3553,9 +3553,9 @@ static void BotDoExploreRoaming(int bot_index) {
                          &m_reissued, m_owner);
       } else if (!OBJECT_OUTSIDE(obj) && BotBnodeNativeActive()) {
         // $nav bnodesp: the engine's BNode path owns this leg — skip the via-point re-aim (that
-        // IS the routing/via stack this bypass exists to disable, PLAN-coop-nav-rethink.md 9.5.3).
+        // IS the routing/via stack this bypass exists to disable).
         // Only re-issue if the pursuit goal itself lapsed, and at the SAME far goal each time.
-        // BotApplyThrust's stuck-escape stays armed — untouched here (9.5.3 dormant safety net).
+        // BotApplyThrust's stuck-escape stays armed — untouched here (a dormant safety net).
         // (Intent-less fallback, reachable when no interior errand is recorded.)
         int dest = Bots[bot_index].explore_dest_room;
         int &pgi = Bots[bot_index].pursuit_goal_index;
@@ -4510,7 +4510,7 @@ static void BotDoMonsterballStrikerNav(int bot_index) {
     }
   }
 
-  // THE FINISHER (operator insight): weapon hits clamp to [10,20] u/s; a ram is unclamped
+  // THE FINISHER (maintainer's insight): weapon hits clamp to [10,20] u/s; a ram is unclamped
   // momentum. Ball in position (route cost to OUR goal below FINISH_COST) + striker roughly
   // behind it -> stop sniping, fly THROUGH the predicted ball along the push line. The fire
   // order below keeps the nose on the ball, and the AB facing gate releases the burn exactly
@@ -4532,7 +4532,7 @@ static void BotDoMonsterballStrikerNav(int bot_index) {
   // Dry bot: ram. Approach point first so the bump still pushes the right way, then the ball.
   bool dry = Players[slot].energy <= 0.0f &&
              !((Players[slot].weapon_flags & (1u << VAUSS_INDEX)) && Players[slot].weapon_ammo[VAUSS_INDEX] > 0);
-  // Vauss finish (operator): sustained vauss fire drives the ball fast — a striker with rounds
+  // Vauss finish (maintainer): sustained vauss fire drives the ball fast — a striker with rounds
   // and position finishes from the standoff without risking the body. Slam only without it.
   bool vauss_finish = (Players[slot].weapon_flags & (1u << VAUSS_INDEX)) &&
                       Players[slot].weapon_ammo[VAUSS_INDEX] > 25 && d < BOT_FIRE_RANGE * 0.8f;
@@ -5565,7 +5565,7 @@ static void BotUpdateState(int bot_index) {
 
   switch (old_state) {
   case BOT_STATE_EXPLORE: {
-    // OWNER HIERARCHY (NAVIGATION.md §6.9 A, an operator ruling):
+    // OWNER HIERARCHY (NAVIGATION.md §6.9 A, a maintainer decision):
     //
     //     order  >  carry  >  objective  >  opportunism  >  explore
     //
@@ -5573,7 +5573,7 @@ static void BotUpdateState(int bot_index) {
     // arrangement, where the carrier branch was checked first and a carrier under !follow or !hold
     // therefore never even evaluated the order it had been given.
     //
-    // Rationale (operator): a human ordering a carrier is making a tactical play the bot cannot
+    // Rationale (maintainer): a human ordering a carrier is making a tactical play the bot cannot
     // understand — the bot may be routing the wrong way, flying into danger, or the human may have a
     // detour that normal routing cannot account for, or be clearing a path ahead of the carrier.
     // "I can't think of any legitimate reason why a bot should ignore human orders." The obvious
@@ -5831,7 +5831,7 @@ static void BotUpdateState(int bot_index) {
       // doctrine: "preserve objective state so the bot resumes its route after collecting."
       // The off-objective half wiped explore_dest_room, so a freelance/roaming bot that detoured two
       // rooms for a shield forgot where it had been going and re-rolled a random destination on
-      // return. That is the "gets distracted" half of the operator's complaint, and it is the same
+      // return. That is the "gets distracted" half of the maintainer's complaint, and it is the same
       // defect 2b-2 fixed for combat blips — a reactive excursion erasing travel intent instead of
       // interrupting it.
       //
@@ -6478,8 +6478,8 @@ static void BotApplyThrust(int bot_index) {
     // so releasing thrust IS the brake — a pilot with nowhere to go coasts to a stop, they do not
     // reverse-thrust and they do not fly into the wall in front of them.
     //
-    // This used to be `forward = 1.0f` (full throttle), which made this the nav committee's unlisted
-    // eleventh member: `has_nav_dir` keys only off movement_dir magnitude, NOT off whether a goal
+    // This used to be `forward = 1.0f` (full throttle), which made this the unlisted eleventh
+    // competing nav member: `has_nav_dir` keys only off movement_dir magnitude, NOT off whether a goal
     // exists, so ANY goalless frame — an escort idling on station, a bot between goals, the frames
     // after spawn — drove the ship forward at full power. Worse, it manufactured the stuck detector's
     // own precondition (`speed < 5 && applying_thrust`, where applying_thrust is just |forward|>0.1):
@@ -6833,7 +6833,7 @@ static void BotApplyThrust(int bot_index) {
       bool best_is_unvisited = false;
       bool best_own_zone = false;
       int only_way_in = -1; // the excluded portal, kept in case it is the room's only door
-      // The bot's zone of this room (NAV41): a portal in another zone is the one it cannot reach from here —
+      // The bot's zone of this room: a portal in another zone is the one it cannot reach from here —
       // on Glasshouse 69 of 76 escapes aimed at the hatch or the chimney from a gallery. Own zone first.
       const int bot_zone = BotRoadmapZoneAt(obj->roomnum, obj->pos);
       for (int p = 0; p < cur.num_portals; p++) {
@@ -6953,7 +6953,7 @@ static void BotApplyThrust(int bot_index) {
     want_afterburner = false;
   }
 
-  // Co-op pacing (an operator ruling): co-op is a chill exploration mode, not arena
+  // Co-op pacing (a maintainer decision): co-op is a chill exploration mode, not arena
   // combat — bots fly at normal thrust and reserve afterburner for fleeing. Cures the tunnel
   // afterburner-slams (close-beeline vertical at floor items near doors, WEAK-tier bursts that
   // never end on campaign economies) without touching any MP-mode tuning.
@@ -7545,7 +7545,7 @@ bool BotNavDump(const char *filename) {
               "      \"roadmap_lattice_cells\": %d, \"roadmap_connector_nodes\": %d, "
               "\"roadmap_local_pair_pct\": %d, \"roadmap_routable\": %s,\n",
               rcells, rconn, rlpair, rroutable ? "true" : "false");
-      // Zones (NAV41): the component of each portal's seed from the engine's complete labelling — the node
+      // Zones: the component of each portal's seed from the engine's complete labelling — the node
       // sample below is capped at 2,048, so a big room's components cannot be read off it.
       fprintf(fp, "      \"roadmap_zoned\": %s, \"roadmap_zone_count\": %d, \"portal_zones\": [",
               BotRoadmapRoomZoned(r) ? "true" : "false", BotRoadmapRoomZones(r));
@@ -8528,7 +8528,7 @@ void BotReinitAll() {
   BotInitObjectiveState();
   BotTrollTableReset(); // 12.2b: new level = new geometry; strikes don't carry over
 
-  // $nav bnodesp level-start telemetry (PLAN-coop-nav-rethink.md): BNode_allocated/verified are set
+  // $nav bnodesp level-start telemetry: BNode_allocated/verified are set
   // by ReadBNodeChunk during level load, which has already happened by the time MultiStartNewLevel
   // calls us. The bypass reads BotBnodeNativeActive() live — this log is just the per-level marker.
   if (BotBnodeNativeActive()) {

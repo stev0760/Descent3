@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Mechanical accuracy audit for matcen-docs/.
 
-Many sessions and several models have written into these docs. The expensive failure is not a typo
+These docs have been written over many revisions. The expensive failure is not a typo
 — it is a confident claim about ENGINE behavior that is false, because that premise then gets built
-into code. (Real case, 0.9.12: BOTS_DEVEL asserted "BOA already routes through glass"; BOA only does
+into code. (Real case, 0.9.12: a doc asserted "BOA already routes through glass"; BOA only does
 so while BOA is being built, so the router silently vetoed the feature for two releases.)
 
 This checks the claims that CAN be checked mechanically, so review attention can go to the prose
@@ -25,7 +25,7 @@ SRC_DIRS = ["Descent3", "lib", "netgames", "scripts", "physics", "vecmat", "netc
 
 
 # A doc that SAYS something was removed is accurate, not stale. These docs are partly history logs
-# (BOTS_DEVEL phase table, CHANGELOG, the "tried & reverted" ledgers, Pyrodeck's "never reference"
+# (the CHANGELOG, the "tried & reverted" ledgers, Pyrodeck's "never reference"
 # list), so a dead symbol cited as history is correct writing. Only flag a dead symbol presented as
 # CURRENT. Heuristic: look at the surrounding sentence for removal language.
 REMOVED_CTX = re.compile(
@@ -49,6 +49,21 @@ def source_blob():
                     except OSError:
                         pass
     return "\n".join(parts)
+
+def files_by_name():
+    """basename -> every path with that name under SRC_DIRS and tools/. A citation such as
+    `EntropyBase.cpp:506` names a file in a subdirectory (netgames/entropy/), which the
+    top-level candidates in the cite check never reach."""
+    idx = defaultdict(list)
+    for d in SRC_DIRS + ["tools"]:
+        p = os.path.join(ROOT, d)
+        if not os.path.isdir(p):
+            continue
+        for dirpath, _, files in os.walk(p):
+            for f in files:
+                if f.endswith((".cpp", ".h", ".c", ".py")):
+                    idx[f].append(os.path.join(dirpath, f))
+    return idx
 
 def live_toggles():
     """Parse the $nav table: {"name", "alias", ..., &Bot_x_enabled, "help"}."""
@@ -106,11 +121,16 @@ def main():
 
     # ---- file:line citations must resolve --------------------------------------------------
     CITE = re.compile(r'\b([A-Za-z0-9_./-]+\.(?:cpp|h|py))[:\s]*(\d{2,5})\b')
+    by_name = files_by_name()
     for name, txt in docs():
         for m in CITE.finditer(txt):
             f, ln = m.group(1), int(m.group(2))
             cands = [os.path.join(ROOT, f)] + [os.path.join(ROOT, d, os.path.basename(f)) for d in SRC_DIRS + ["tools"]]
             hit = next((c for c in cands if os.path.isfile(c)), None)
+            if hit is None and by_name.get(os.path.basename(f)):
+                # Same basename in several places: take the longest, so the past-EOF check cannot
+                # fire just because a shorter namesake was picked.
+                hit = max(by_name[os.path.basename(f)], key=lambda c: sum(1 for _ in open(c, errors="replace")))
             line = txt[:m.start()].count("\n") + 1
             if hit is None:
                 stable["cite-nofile"].append(f"{name}  {f}:{ln}"); fails["cite-nofile"].append(f"{name}:{line}  {f}:{ln}")
@@ -160,10 +180,10 @@ def main():
     print(f"TOTAL mechanical failures: {total}")
     print()
     print("HOW TO READ THIS. Do not chase the total to zero — much of the residual is legitimate")
-    print("history. BOTS_DEVEL's phase table, the CHANGELOG, the NAVIGATION 'tried & reverted'")
-    print("ledger and the dated soak reports all correctly cite toggles and functions that existed")
-    print("at the time. The removal-context heuristic catches most of those; it misses the ones")
-    print("whose 'we removed this' sentence is far from the mention.")
+    print("history. The CHANGELOG and the NAVIGATION 'tried & reverted' ledger correctly cite")
+    print("toggles and functions that existed at the time. The removal-context heuristic catches")
+    print("most of those; it misses the ones whose 'we removed this' sentence is far from the")
+    print("mention.")
     print()
     print("What actually matters is a claim presented as CURRENT that is false. Those cause code")
     print("bugs. The 0.9.12 case: OBSTACLE_GEOMETRY's taxonomy asserted 'BOA exempts TF_BREAKABLE',")

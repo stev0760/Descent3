@@ -17,7 +17,7 @@
  */
 
 // -------------------------------------------------------------------------------------------------
-// Live in-client nav debug overlay (VISUAL_DEBUG.md / PLAN.md §3.6). See bot_navdebug.h for the why.
+// Live in-client nav debug overlay (VISUAL_DEBUG.md). See bot_navdebug.h for the why.
 //
 // This is the in-world twin of tools/visualize_navdump.py: instead of an offline top-down SVG (which
 // is lossy for a 6DOF toroid — every flat projection overlaps the geometry), it draws the live nav
@@ -307,7 +307,7 @@ static void NavDbgDrawRoomRoadmap(int room_idx, int &node_budget, int &edge_budg
 
 // Outdoor twin of NavDbgDrawRoomRoadmap. Until this existed the overlay had NO outdoor path at all:
 // the scope list is built from indoor rooms only (add_room rejects RF_EXTERNAL), so flying outdoors in
-// mode 3 drew an empty sky. That reads as "there is no outdoor lattice" — and the operator read it
+// mode 3 drew an empty sky. That reads as "there is no outdoor lattice" — and the maintainer read it
 // exactly that way on bedlam — when Polaris actually carries 4096 region nodes in one component. The
 // overlay must never show absence where there is presence; that is the same failure class as a counter
 // that reports coverage it doesn't have.

@@ -81,7 +81,7 @@ def portal_traversable(p):
 
 
 def aim_gate(rooms):
-    """The aim gate (PLAN.md §3 / NAVIGATION.md §7.0): BotRoomPathPntReachable() returns true if ANY
+    """The aim gate (NAVIGATION.md §7.0): BotRoomPathPntReachable() returns true if ANY
     portal has a clear hull line to the room's path_pnt, without asking whether a ship can fly
     through that portal. In a glass-walled room a pane satisfies the probe while the one real door
     does not — the room reports "not buried", BotResolveRoomAim is never called, and the bot is aimed
@@ -221,7 +221,7 @@ def diff_verdicts(old_path, new_path):
 def flag_approach(rooms, flag_rooms):
     """CTF flag rooms and the rooms you must cross to reach them.
 
-    WHY (operator ruling 2026-09-10): there are TWO acceptance bars and they fail differently.
+    WHY (maintainer decision 2026-09-10): there are TWO acceptance bars and they fail differently.
     COVERAGE applies to EVERY map — bots must find their way around an arbitrary level, user-made
     ones included. SYMMETRY applies ONLY to maps DESIGNED symmetric (named: abend2, Batteries
     Included), where an equal-difficulty roster should score roughly evenly; lopsided scoring there
@@ -320,7 +320,7 @@ def crossings(rooms, ships=None):
 
 
 def terrain_doors(data):
-    """Outdoor pass Phase 0 (PLAN.md 3.7): the terrain-facing doors — every portal an interior room opens onto an
+    """Outdoor pass Phase 0: the terrain-facing doors — every portal an interior room opens onto an
     RF_EXTERNAL shell — with the engine's own door-table cap, the sampler's crossing verdict, and whether the
     region lattice was seeded at the door's approach point. The offline gate for the boundary slices: after
     Phase 1 every consumer reads the crossing, so `no crossing` doors must be windows/hull-narrow, never doors."""

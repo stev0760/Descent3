@@ -2,12 +2,12 @@
 """soak_report.py — one-command soak verdict for agents (and humans).
 
 Wraps analyze_bot_log.py + flag_conversion.py + the hard-signature greps this project
-actually judges by, and prints a compact verdict block. Built so a weaker model can run
-ONE command and read ONE table instead of re-deriving the judgment procedure.
+actually judges by, and prints a compact verdict block: ONE command and ONE table instead
+of re-deriving the judgment procedure.
 
 Usage: soak_report.py <server-log> [more logs...]
 
-Verdict signals (see .claude/skills/matcen-triage/SKILL.md for the full cookbook):
+Verdict signals:
   SEAM_CHURN     seam-guard firings way above sane (latch bug class; sane is ~1/hop)
   DEADLOCK       'arrivals without crossing' clusters (via dance class)
   GRATE_ENGAGED  type=17/11/16 proactive clears (the grate chain firing — usually GOOD)

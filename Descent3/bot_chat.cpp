@@ -771,7 +771,7 @@ void BotOnChatMessage(int from_pnum, int towho, const char *message) {
   const int reply_to = (towho >= 0) ? from_pnum : towho;
   const BotChatMode mode = BotChatCurrentMode();
 
-  // Free-for-all modes take no orders (operator ruling): one bot answers in character, nothing changes.
+  // Free-for-all modes take no orders (maintainer decision): one bot answers in character, nothing changes.
   if (mode == BCM_FREE_FOR_ALL) {
     int voice = (direct_bot >= 0) ? direct_bot : BotFindBotByName(cmd.bot_name);
     for (int k = 0; k < MAX_BOTS && voice < 0; k++) {
