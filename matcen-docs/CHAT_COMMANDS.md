@@ -470,7 +470,7 @@ chat command, never replace one.
    CTF vs Team Anarchy vs Anarchy. Dispatch table keyed by game mode.
 
 3. **`!` prefix over `/bot`** — 1 char vs 5. Free in D3 namespace. Used as a command prefix
-   in IRC, Discord and many games.
+   in IRC and many games.
 
 4. **DM shortcut as bonus channel** — engine's `name:msg` parser already routes to bot slots.
    Unambiguous intent, no prefix needed. Silent acknowledgment via DM reply.
