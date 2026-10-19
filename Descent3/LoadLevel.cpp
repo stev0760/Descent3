@@ -3888,9 +3888,15 @@ int LoadLevel(char *filename, void (*cb_fn)(const char *, int, int)) {
 
           Objects[objnum].roomnum = -1; // ObjLink() expects the roomnum to be -1
 
-          if ((roomnum > Highest_room_index) && !ROOMNUM_OUTSIDE(roomnum)) { // bad roomnum
-            Int3();                                                          // loading object with invalid room number
-            Objects[objnum].type = OBJ_NONE;                                 // kill the object
+          // A room number the level cannot hold. A negative number has the outside bit set, so ObjLink would read
+          // it as a terrain cell far past the terrain (room -1 is cell 0x7fffffff) and index Terrain_seg[] out of
+          // bounds; a plain number past the last room would index Rooms[] the same way. Drop the object instead.
+          const bool bad_roomnum = ROOMNUM_OUTSIDE(roomnum) ? (CELLNUM(roomnum) >= TERRAIN_WIDTH * TERRAIN_DEPTH)
+                                                            : (roomnum > Highest_room_index);
+          if (bad_roomnum) {
+            LOG_ERROR.printf("Object %d (type %d, id %d) is saved in room %d, which this level does not have: dropped",
+                             objnum, Objects[objnum].type, Objects[objnum].id, roomnum);
+            Objects[objnum].type = OBJ_NONE; // kill the object
           } else {
             if (!ROOMNUM_OUTSIDE(roomnum) && Rooms[roomnum].flags & RF_EXTERNAL) {
               LOG_ERROR.printf("Internal object %d linked to external room %d (type = %d)!!!",

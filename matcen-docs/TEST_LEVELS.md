@@ -18,6 +18,7 @@ mission.
 | Plutonium | `bedlam.mn3` | 2 | `Plutonium.d3l` | yes |
 | QuadSomniac | `bedlam.mn3` | 3 | `QuadSomniac.d3l` | yes |
 | Polaris, bedlam level 4 | `bedlam.mn3` | 4 | `Polaris.d3l` | yes |
+| bitcht | `bitcht.mn3` | 1 | `silkepil.d3l` | no |
 | Nightmare Castle | `bsidectf.mn3` | 1 | `Nightmarecastle.d3l` | yes |
 | mysterious_isle | `bsidectf.mn3` | 2 | `mysterious_isle.d3l` | yes |
 | Batteries Included, Batteries, batteriesincluded, bsidectf L3 | `bsidectf.mn3` | 3 | `batteriesincluded.d3l` | yes |

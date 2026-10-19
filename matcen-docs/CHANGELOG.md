@@ -9,6 +9,15 @@ a larger change that may be backed out whole, until it passes its validation gat
 Versions before 0.10.0 were development builds; their changes are in the git history. Levels named here are listed
 with their mission files in [TEST_LEVELS.md](TEST_LEVELS.md).
 
+## [0.10.11] - 2026-10-19
+
+- **A level with an object saved in no room no longer crashes the server at load.** Some third-party levels hold an
+  object the mapper never placed in a room. The loader checked only for room numbers past the last room, and a room
+  number of -1 sent it far past the end of the terrain table: a 64-bit build crashed on such a level at load, server
+  and client alike. The object is now dropped with a log line naming it, and the level loads. Clients need no change:
+  each loads the level from its own copy, and the other objects keep their numbers. Found on bitcht; the write-up is
+  [UPSTREAM_PATCHES.md](UPSTREAM_PATCHES.md) #9.
+
 ## [0.10.10] - 2026-10-11
 
 - **The Windows level editor builds again.** The editor (`-DBUILD_EDITOR=ON`, Windows only) compiles the game's own

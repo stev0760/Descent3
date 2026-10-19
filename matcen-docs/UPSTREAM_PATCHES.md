@@ -24,6 +24,7 @@ Levels named here are listed with their mission files in [TEST_LEVELS.md](TEST_L
 | 6 | CTF: a carrier who dies in a flag's home goal does not send that flag home (wrong object tested) | `netgames/ctf/ctf.cpp` | Fixed (Matcen 0.10.0, tag v0.10.0) | Not submitted |
 | 7 | Mission auto-download: divide by zero on a fast start (SIGFPE), status-line buffer overflow from an 87-character link, uncaught throw on an `https:` link without TLS | `Descent3/mission_download.cpp` | Fixed (Matcen 0.10.0, tag v0.10.0) | Not submitted |
 | 8 | A `%` in a callsign or chat line crashes the dedicated server (formatted text re-used as a format string); `$setteamname` writes one past the team-name array | `Descent3/dedicated_server.cpp`, `netgames/dmfc/dmfcbase.cpp`, `dmfcinputcommand.cpp`, `linux/lnxcon_raw.cpp`, `lnxcon_null.cpp` | Fixed (Matcen 0.10.0; consoles 0.10.4) | Not submitted |
+| 9 | A level object saved with room number -1 crashes the loader: a negative room number passes the bad-room check and indexes the terrain array far out of bounds | `Descent3/LoadLevel.cpp` | Fixed (Matcen 0.10.11) | Not submitted |
 
 Version labels: the Matcen version is the first release that carried the fix. Not every release was
 tagged, so the index also gives the first git tag that contains the fix (`git tag --contains <commit>`).
@@ -663,6 +664,88 @@ Verified live on the Matcen build: the bot `Pct%sX[BOT]` joins and is listed,
 - **Matcen:** Fixed in 0.10.0; the two console back ends in 0.10.4, after a
   release-build log still printed `%s` as stray bytes. Found by the Pyrodeck
   parity work (a ban tool that must survive hostile names).
+- **DescentDevelopers/Descent3:** Not submitted. Same lines.
+
+---
+
+## 9. A Level Object Saved in No Room Crashes the Loader
+
+### Bug
+
+A level file can hold an object whose room number is -1: an object the
+mapper never placed in a room. Loading such a level crashes the game in
+`ObjLink()` with a segmentation fault, dedicated server and client alike,
+before any play. In the lab, `bitcht.mn3` (level 1, `silkepil.d3l`) crashed
+on every load; its object 9, a clutter object (type 11, id 369), is saved in
+room -1:
+
+```
+ObjLink (objnum=9, roomnum=-1) at object.cpp:1447
+  obj->next = Terrain_seg[cellnum].objects;   // cellnum = 0x7fffffff
+LoadLevel (filename="silkepil.d3l") at LoadLevel.cpp:3913
+```
+
+### Root cause
+
+`Descent3/LoadLevel.cpp`, the `CHUNK_OBJECTS` loop of `LoadLevel()`, checks
+each object's room number before linking it:
+
+```cpp
+if ((roomnum > Highest_room_index) && !ROOMNUM_OUTSIDE(roomnum)) { // bad roomnum
+```
+
+A room number's high bit marks a terrain cell (`ROOMNUM_CELLNUM_FLAG` in
+`lib/object_external_struct.h`), so every negative number counts as outside
+and passes the check. `ObjLink()` then takes the terrain branch with
+`CELLNUM(-1)` = 0x7fffffff, and `Terrain_seg[]` has
+`TERRAIN_WIDTH * TERRAIN_DEPTH` = 65,536 cells. A 64-bit build indexes about
+40 GB past the array and faults. In 32-bit offset arithmetic the same index
+times the 20-byte cell wraps to 20 bytes before the array: no fault, two
+bytes of whatever precedes `Terrain_seg` overwritten, and the object in no
+room's list, where nothing draws or collides with it. That is why such a
+level can load in a 32-bit build and crash a 64-bit one. Original Outrage
+1999 code; the fork point and the current DescentDevelopers/Descent3 `main`
+have the same check.
+
+### Affected files
+
+- `Descent3/LoadLevel.cpp`, `LoadLevel()`, the `CHUNK_OBJECTS` loop
+
+### Fix
+
+Check both directions: a terrain cell must be below
+`TERRAIN_WIDTH * TERRAIN_DEPTH`, an indoor room number at most
+`Highest_room_index`. A bad number logs the object's number, type, id and
+room and drops the object (`type = OBJ_NONE`), as the old branch already did
+for a number past the last room. The `Int3()` is gone: in a Debug build it is
+an assert, which would stop a dedicated server on a level that is otherwise
+playable. No `roomnum < 0` test is needed on the indoor side, since a
+negative number always has the outside bit set and is caught as an
+impossible cell.
+
+Object numbers come from the level file (`handle & HANDLE_OBJNUM_MASK`), so
+dropping one object leaves every other number as the file names it, and a
+fixed server agrees with an unfixed client on the rest of the level. Clients
+need no change: each loads the level from its own copy.
+
+Verified on the Matcen Debug build: `bitcht.mn3` loads with one log line
+for object 9, and a ten-minute Hoard round with six bots runs to its time
+limit; the next level load logs the same line and starts cleanly.
+
+### Caveats
+
+The object is lost, as it already was in any build that survived the load.
+Fixing the level is the mapper's job; the log line names the object.
+
+### Portability
+
+Applies to upstream as is. The Windows editor compiles the same loader and
+gets the same log line.
+
+### Status
+
+- **Matcen:** Fixed in 0.10.11. Found by a bot soak: the level crashed on
+  every load, in the loader, before any bot code ran.
 - **DescentDevelopers/Descent3:** Not submitted. Same lines.
 
 ---
