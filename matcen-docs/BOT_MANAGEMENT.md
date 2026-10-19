@@ -416,6 +416,14 @@ With the manager on, it keeps humans plus bots at `BotTargetPlayers`, one change
 - **Announcements** go to every player as server chat (`MultiSendMessageFromServer`, the colour of bot chat replies);
   on a dedicated server the HUD copy also prints on the console, prefixed `*`, and the log has a `BOT POP:` line.
 
+**Choosing the numbers.** `BotTargetPlayers` is the game size and `MaxPlayers` is the room. With the reserve at 1,
+`MaxPlayers = BotTargetPlayers + 2` (the server's own seat, the target, one seat always open) keeps the game at the
+target around the clock: each human who joins replaces a bot, and the last seat is never taken by a bot. A larger
+`MaxPlayers` lets humans outgrow the bots: once humans alone reach the target no bots remain, and humans keep joining
+up to `MaxPlayers − 1`. A fixed roster with the manager off (`BotCount` bots, `BotTargetPlayers=0`) keeps the same
+bots in the game whoever joins; they never yield, so it suits a few bots in a large room. In a two-team game pick an
+even target; an odd one always leaves one team a player bigger, whoever is in.
+
 ### 9.6 Console (`$botpopulation`)
 
 ```
