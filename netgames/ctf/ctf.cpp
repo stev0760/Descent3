@@ -2095,10 +2095,11 @@ bool AddFlagToPlayer(int pnum, int team, int flagobjnum) {
 
     // Attach the flag
 
-    //	1st figure out how many flags the guy already has
-    //	-------------------------------------------------
+    //	1st figure out how many flags the guy already has, and in which attach points
+    //	-----------------------------------------------------------------------------
     int max_num_attach = 3; // based off chrishack for multiplayer
     int num_attached = 0;
+    bool ap_used[3] = {false, false, false};
 
     if (!pobj->attach_children)
       ret = false;
@@ -2109,12 +2110,15 @@ bool AddFlagToPlayer(int pnum, int team, int flagobjnum) {
           object *tobj;
           if (DLLObjGet(pobj->attach_children[ap], &tobj)) {
             num_attached++;
+            ap_used[ap] = true;
           }
         }
       }
 
-      //	2nd num_attached is the current number of flags this object has
-      //	---------------------------------------------------------------
+      //	2nd num_attached is the current number of flags this object has. One flag hangs at ap0, two at ap1
+      //	and ap2, three fill all of them. A single flag is not always at ap0 (removing one of a pair leaves
+      //	the other at ap1 or ap2), so the slots are read, not assumed.
+      //	---------------------------------------------------------------------------------------------------
       switch (num_attached) {
       case 0: {
         // the easy case, nothing is attached, so just attach it to ap0
@@ -2125,21 +2129,25 @@ bool AddFlagToPlayer(int pnum, int team, int flagobjnum) {
         bool retval;
         object *tobj;
 
-        // we should have a flag at ap0, move it to ap1
-        ASSERT(pobj->attach_children[0] != OBJECT_HANDLE_NONE);
-        int saved_ap0 = pobj->attach_children[0];
-        retval = DLLUnattachChild(pobj, 0);
-        ASSERT(retval);
+        if (ap_used[0]) {
+          // the flag is at ap0, move it to ap1
+          int saved_ap0 = pobj->attach_children[0];
+          retval = DLLUnattachChild(pobj, 0);
+          ASSERT(retval);
 
-        retval = DLLObjGet(saved_ap0, &tobj);
-        ASSERT(retval);
+          retval = DLLObjGet(saved_ap0, &tobj);
+          ASSERT(retval);
 
-        // attach to ap1
-        retval = DLLAttachObject(pobj, 1, tobj, 0, true);
-        ASSERT(retval);
+          // attach to ap1
+          retval = DLLAttachObject(pobj, 1, tobj, 0, true);
+          ASSERT(retval);
 
-        // attach new flag to ap2
-        retval = DLLAttachObject(pobj, 2, &dObjects[flagobjnum], 0, true);
+          // attach new flag to ap2
+          retval = DLLAttachObject(pobj, 2, &dObjects[flagobjnum], 0, true);
+        } else {
+          // the flag is already at ap1 or ap2; the new one takes the other
+          retval = DLLAttachObject(pobj, ap_used[1] ? 2 : 1, &dObjects[flagobjnum], 0, true);
+        }
         ASSERT(retval);
 
         ret = retval;
@@ -2147,11 +2155,9 @@ bool AddFlagToPlayer(int pnum, int team, int flagobjnum) {
       } break;
 
       case 2: {
-        // we should have a flag at ap1 and ap2
-        // so just add this to ap3
-
-        // attach new flag to ap3
-        ret = DLLAttachObject(pobj, 0, &dObjects[flagobjnum], 0, true);
+        // two flags are attached, at ap1 and ap2 as a rule; the new one takes the free attach point
+        int free_ap = !ap_used[0] ? 0 : (!ap_used[1] ? 1 : 2);
+        ret = DLLAttachObject(pobj, free_ap, &dObjects[flagobjnum], 0, true);
 
       } break;
 
@@ -2197,6 +2203,11 @@ bool RemoveFlagFromPlayer(int pnum, int team) {
       return false;
     }
 
+    // Unattach the flag from the ship before killing it. The engine unattaches a dead object only when it
+    // deletes it at the end of the frame, and ObjGet still returns it until then, so a flag picked up in the
+    // same frame (a goal room that holds its own flag spawn) would count the dying flag as still attached and
+    // AddFlagToPlayer would hang the new flag from the wrong attach point.
+    DLLUnattachFromParent(fptr);
     DLLSetObjectDeadFlag(fptr, true, false);
 
     // tell the clients to remove the flag

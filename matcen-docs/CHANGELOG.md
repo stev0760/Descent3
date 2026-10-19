@@ -9,6 +9,15 @@ a larger change that may be backed out whole, until it passes its validation gat
 Versions before 0.10.0 were development builds; their changes are in the git history. Levels named here are listed
 with their mission files in [TEST_LEVELS.md](TEST_LEVELS.md).
 
+## [0.10.12] - 2026-10-19
+
+- **Capture the Flag no longer crashes the server when a flag is captured and picked up again in the same frame.**
+  On a level whose goal room holds its own flag spawn, a captured flag comes back beside the player who scored, and
+  the CTF module still counted the dying flag as carried. The second capture of that kind stopped a Debug server on
+  an assert and would crash a release server. The module now unhooks a flag from the ship before it dies and reads
+  which attach points are in use instead of assuming. Server side only: clients need no change and see the flags as
+  before. Found on hellfire; the write-up is [UPSTREAM_PATCHES.md](UPSTREAM_PATCHES.md) #10.
+
 ## [0.10.11] - 2026-10-19
 
 - **A level with an object saved in no room no longer crashes the server at load.** Some third-party levels hold an

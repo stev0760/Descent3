@@ -43,6 +43,7 @@ mission.
 | Kartoon Kanyon, Canyons CTF, Canyons | `HAVOC.MN3` | 4 | `CanyonsCTF.d3l` | yes |
 | DownTown | `HAVOC.MN3` | 5 | `DownTown.d3l` | yes |
 | HAVOC level 6 | `HAVOC.MN3` | 6 | `orbital.d3l` | yes |
+| hellfire | `hellfire.mn3` | 1 | `hellfire.d3l` | no |
 | KegD3 | `KegD3.mn3` | 1 | `KegD3.d3l` | no |
 | Crossfire | `MAYHEM.MN3` | 2 | `Crossfire.d3l` | yes |
 | metropolis_gt | `metropolis_gt.mn3` | 1 | `metropol_gt.d3l` | no |

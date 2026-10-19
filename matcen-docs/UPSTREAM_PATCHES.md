@@ -25,6 +25,7 @@ Levels named here are listed with their mission files in [TEST_LEVELS.md](TEST_L
 | 7 | Mission auto-download: divide by zero on a fast start (SIGFPE), status-line buffer overflow from an 87-character link, uncaught throw on an `https:` link without TLS | `Descent3/mission_download.cpp` | Fixed (Matcen 0.10.0, tag v0.10.0) | Not submitted |
 | 8 | A `%` in a callsign or chat line crashes the dedicated server (formatted text re-used as a format string); `$setteamname` writes one past the team-name array | `Descent3/dedicated_server.cpp`, `netgames/dmfc/dmfcbase.cpp`, `dmfcinputcommand.cpp`, `linux/lnxcon_raw.cpp`, `lnxcon_null.cpp` | Fixed (Matcen 0.10.0; consoles 0.10.4) | Not submitted |
 | 9 | A level object saved with room number -1 crashes the loader: a negative room number passes the bad-room check and indexes the terrain array far out of bounds | `Descent3/LoadLevel.cpp` | Fixed (Matcen 0.10.11) | Not submitted |
+| 10 | CTF: a flag captured and picked up again in the same frame crashes the server (the carried flag is killed without being unattached, and a single flag is assumed to hang at attach point 0) | `netgames/ctf/ctf.cpp` | Fixed (Matcen 0.10.12) | Not submitted |
 
 Version labels: the Matcen version is the first release that carried the fix. Not every release was
 tagged, so the index also gives the first git tag that contains the fix (`git tag --contains <commit>`).
@@ -746,6 +747,83 @@ gets the same log line.
 
 - **Matcen:** Fixed in 0.10.11. Found by a bot soak: the level crashed on
   every load, in the loader, before any bot code ran.
+- **DescentDevelopers/Descent3:** Not submitted. Same lines.
+
+---
+
+## 10. CTF: A Flag Captured and Picked Up in the Same Frame Crashes the Server
+
+### Bug
+
+When a carrier scores, the CTF module removes the captured flag from the
+ship and creates a fresh one at the centre of that flag's goal room. On a
+level where the capturer stands in that room (the lab case: `hellfire.mn3`,
+level 1, where every team's goal flag is set on the same room, so every goal
+room is room 7), the capturer touches the new flag in the same frame. The
+second such capture stops a Debug server on
+
+```cpp
+ASSERT(pobj->attach_children[0] != OBJECT_HANDLE_NONE);   // AddFlagToPlayer(), ctf.cpp:2129
+```
+
+A release server, where the assert is compiled out, continues with
+`saved_ap0 = OBJECT_HANDLE_NONE`; `DLLObjGet()` leaves `tobj` NULL and
+`DLLAttachObject(pobj, 1, NULL, ...)` dereferences it. In the lab the assert
+fired 5 seconds into a bot round, after two captures 1.1 seconds apart.
+
+### Root cause
+
+`RemoveFlagFromPlayer()` marks the carried flag object dead
+(`DLLSetObjectDeadFlag`) but does not unattach it from the ship. The engine
+unattaches a dead object only when it deletes it at the end of the frame
+(`ObjDeleteDead()`), and `ObjGet()` returns the object until then. So a
+pickup in the same frame finds the dying flag still in an attach point:
+`AddFlagToPlayer()` counts one attached flag, takes the "one flag, it is at
+ap0" branch, moves the dying flag to ap1 and hangs the new flag at ap2. The
+end of the frame deletes the dying flag and clears ap1, leaving the live
+flag at ap2 and ap0 empty. The next capture-and-pickup counts one flag again
+and asserts on ap0.
+
+The same branch assumes a single flag is always at ap0. That also fails
+whenever one of two carried flags is removed on its own (a pair hangs at ap1
+and ap2), which three- and four-team games can do.
+
+Original Outrage 1999 code; the fork point and the current
+DescentDevelopers/Descent3 `main` have the same lines.
+
+### Affected files
+
+- `netgames/ctf/ctf.cpp`: `RemoveFlagFromPlayer()`, `AddFlagToPlayer()`
+
+### Fix
+
+`RemoveFlagFromPlayer()` calls `DLLUnattachFromParent(fptr)` before
+`DLLSetObjectDeadFlag()`. The function is already in the game's DLL API
+(`fp[196]`), and the engine's `UnattachFromParent()` sends `MP_UNATTACH_OBJ`
+to the clients, so clients running any version of the module stay in step.
+`AddFlagToPlayer()` records which attach points hold a live flag: with one
+flag, a flag at ap0 moves to ap1 and the new one takes ap2 as before, while
+a flag already at ap1 or ap2 keeps its place and the new one takes the
+other; with two flags the new one takes whichever point is free.
+
+Verified on the Matcen Debug build: a ten-minute bot round on
+`hellfire.mn3`, three against three, where the unfixed module asserted
+5 seconds in, ran to its time limit with 401 captures and no assert, and the
+next round loaded cleanly.
+
+### Caveats
+
+On that level a capture is a touch away from the flag, so captures come
+fast. The fix stops the crash; it does not change the level.
+
+### Portability
+
+Server side only, and nothing in it depends on the Matcen bots. Applies to
+upstream as is.
+
+### Status
+
+- **Matcen:** Fixed in 0.10.12. Found by a bot soak on `hellfire.mn3`.
 - **DescentDevelopers/Descent3:** Not submitted. Same lines.
 
 ---
