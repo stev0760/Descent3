@@ -65,7 +65,7 @@ import subprocess
 import sys
 import time
 
-LEVEL_RE = re.compile(r"Opening level '([^'.]+)\.d3l'", re.IGNORECASE)
+LEVEL_RE = re.compile(r"Opening level '([^']+)\.d3l'", re.IGNORECASE)
 BUILD_RE = re.compile(r"Matcen ([0-9a-zA-Z.\-]+ [0-9a-f]+(?:-dirty)?)")
 SPAWN_RE = re.compile(r"Spawning \d+ bots")
 
