@@ -27,6 +27,7 @@ Levels named here are listed with their mission files in [TEST_LEVELS.md](TEST_L
 | 9 | A level object saved with room number -1 crashes the loader: a negative room number passes the bad-room check and indexes the terrain array far out of bounds | `Descent3/LoadLevel.cpp` | Fixed (Matcen 0.10.11) | Not submitted |
 | 10 | CTF: a flag captured and picked up again in the same frame crashes the server (the carried flag is killed without being unattached, and a single flag is assumed to hang at attach point 0) | `netgames/ctf/ctf.cpp` | Fixed (Matcen 0.10.12) | Not submitted |
 | 11 | A mission whose file name has a dot before `.mn3` never loads ("Mission file not found"): the `.msn` and `.gam` names are built with `replace_extension()` on a stem that holds a dot | `Descent3/Mission.cpp` | Fixed (Matcen 0.10.13) | Not submitted |
+| 12 | A second server on one host hangs on its first frame: after failing to bind the tracker query port, `gspy_Init` leaves a blocking socket open and `gspy_DoFrame` waits in `recvfrom` for good | `Descent3/gamespy.cpp` | Fixed (Matcen 0.10.14) | Not submitted |
 
 Version labels: the Matcen version is the first release that carried the fix. Not every release was
 tagged, so the index also gives the first git tag that contains the fix (`git tag --contains <commit>`).
@@ -887,13 +888,71 @@ the fix too.
 
 ---
 
+## 12. A Second Server on One Host Hangs on Its First Frame
+
+### Bug
+
+Start a second dedicated server on a host where one already runs, without
+`-gamespyport`. The second server loads its level, prints its spawn lines,
+and then stops: no frames, no console, and nobody ever gets in. Its last
+log line is the bind warning for the tracker query socket. A server that
+no tracker will ever list hangs all the same: the socket is created and
+bound whether or not a tracker list exists.
+
+### Root cause
+
+`gspy_Init()` (`Descent3/gamespy.cpp`) creates the query socket, binds it
+to the query port (20142 unless `-gamespyport` says otherwise), and only
+then makes it non-blocking. When the bind fails because the first server
+holds the port, it returns early with the socket still open and blocking.
+Its caller (`init.cpp`) ignores the result, so `gspy_DoFrame()` runs every
+frame and calls `recvfrom()` on that socket, which waits for a datagram
+that can never arrive. Original Outrage 1999 code; the fork point and the
+current DescentDevelopers/Descent3 `main` have the same lines.
+
+### Affected files
+
+- `Descent3/gamespy.cpp`: `gspy_Init()`, `gspy_DoFrame()`
+
+### Fix
+
+On a bind failure `gspy_Init()` closes the socket and marks it invalid,
+with a log line that says tracker queries are off for this server and that
+each server on one host needs its own `-gamespyport`. `gspy_DoFrame()`
+returns while the socket is invalid. The server then runs without tracker
+queries or heartbeats.
+
+Verified on the Matcen Debug build: a second server started beside a
+running one, both on the default query port, hung before the fix and ran a
+bot round after it. With `-gamespyport` set, nothing changes.
+
+### Caveats
+
+A server whose query socket failed to bind answers no tracker queries and
+sends no heartbeats; to be listed it still needs its own port.
+
+### Portability
+
+Server side; nothing in it depends on the Matcen bots. Applies to upstream
+as is. The hang itself is how Linux treats a receive on a socket that was
+never bound: it waits. The Winsock documentation says `recvfrom` on an
+unbound socket fails with `WSAEINVAL` instead, so a Windows build would log
+the "recvfrom failed" warning every frame rather than freeze; not tested
+here. The fix ends both.
+
+### Status
+
+- **Matcen:** Fixed in 0.10.14. Found in the lab beside another server.
+- **DescentDevelopers/Descent3:** Not submitted. Same lines.
+
+---
+
 ## Upstream Defects Found, Not Fixed in Matcen
 
 Found while building Matcen; the same code is upstream. Matcen works around them and has not changed the engine.
 
 | Defect | Where | Effect | Workaround |
 | :--- | :--- | :--- | :--- |
-| A second server hangs on its first frame | `Descent3/gamespy.cpp` `gspy_Init`, `init.cpp` | When the GameSpy port (20142) is taken, `gspy_Init` returns before making its socket non-blocking and its result is ignored, so `gspy_DoFrame`'s `recvfrom` blocks for good | Give every server on one host its own `-gamespyport` |
 | `+connect <ip:port>` alone joins nothing | `Descent3/menu.cpp`, `ProcessCommandLine` | The address is stored, but only `+cl_pxotrack` acts on it, and its LAN path reads `-directip` or `ip`/`port` instead | Join with `-directip <ip:port>`; the smallest fix is for `AutoConnectLANIP` to fall back to the address `+connect` parsed |
 
 ## Other Fork Hardening to Assess for Upstream

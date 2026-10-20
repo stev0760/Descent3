@@ -87,7 +87,7 @@ extern short Multi_deaths[MAX_NET_PLAYERS];
 // Secret code... no more so secret
 const uint8_t gspy_d3_secret[VALIDATE_SIZE + 1] = "feWh2G";
 
-SOCKET gspy_socket;
+SOCKET gspy_socket = INVALID_SOCKET;
 SOCKADDR_IN gspy_server[MAX_GAMESPY_SERVERS];
 extern uint16_t Gameport;
 int gspy_region = 0;
@@ -150,7 +150,17 @@ int gspy_Init() {
   LOG_INFO.printf("Using port %d for gamespy requests.", gspy_listenport);
   sock_addr.sin_port = htons(gspy_listenport);
   if (bind(gspy_socket, (SOCKADDR *)&sock_addr, sizeof(sock_addr)) == SOCKET_ERROR) {
-    LOG_WARNING.printf("Couldn't bind gamespy socket (%d)!", WSAGetLastError());
+    // Another server on this host holds the port. Close the socket: left open, still blocking, gspy_DoFrame would
+    // wait in recvfrom() for a datagram that never comes, and the server would hang on its first frame.
+    LOG_WARNING.printf("Couldn't bind gamespy socket (%d)! Tracker queries are off for this server; give each server "
+                       "on one host its own -gamespyport.",
+                       WSAGetLastError());
+#ifdef WIN32
+    closesocket(gspy_socket);
+#else
+    close(gspy_socket);
+#endif
+    gspy_socket = INVALID_SOCKET;
     return 0;
   }
   // make the socket non-blocking
@@ -243,7 +253,7 @@ void gspy_DoFrame() {
   socklen_t fromsize = sizeof(SOCKADDR_IN);
   char inbuffer[MAX_GAMESPY_BUFFER];
 
-  if (!gspy_game_running)
+  if (!gspy_game_running || gspy_socket == INVALID_SOCKET)
     return;
   // If it's time, send the heartbeat
   if ((timer_GetTime() - gspy_last_heartbeat) > GSPY_HEARBEAT_INTERVAL) {

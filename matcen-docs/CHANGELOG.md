@@ -9,6 +9,14 @@ a larger change that may be backed out whole, until it passes its validation gat
 Versions before 0.10.0 were development builds; their changes are in the git history. Levels named here are listed
 with their mission files in [TEST_LEVELS.md](TEST_LEVELS.md).
 
+## [0.10.14] - 2026-10-20
+
+- **Two servers on one host no longer need `-gamespyport` for the second one to run.** A second server started
+  without it loaded its level and then froze before its first frame: the engine kept a blocking socket after failing
+  to bind the tracker query port the first server holds. The second server now runs, logs that tracker queries are
+  off for it, and says that each server on one host needs its own `-gamespyport` to be listed by a tracker. The
+  write-up is [UPSTREAM_PATCHES.md](UPSTREAM_PATCHES.md) #12.
+
 ## [0.10.13] - 2026-10-20
 
 - **A mission whose file name has a dot before `.mn3` now loads.** `MissionName=name1.1.mn3` failed with "Mission
