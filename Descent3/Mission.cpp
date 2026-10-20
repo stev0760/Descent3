@@ -707,12 +707,14 @@ static inline bool IS_MN3_FILE(const std::filesystem::path &fname) {
   return (stricmp((const char *)ext.u8string().c_str(), ".mn3") == 0);
 }
 
+// The .msn inside a mission archive is named after the archive's stem. Append the extension instead of replacing
+// one: replace_extension() would take a dot inside the stem (name1.1.mn3) for an extension and ask for name1.msn.
 static inline std::filesystem::path MN3_TO_MSN_NAME(const std::filesystem::path &mn3name) {
   std::filesystem::path fname = std::filesystem::path(mn3name).stem();
   if (stricmp((const char *)fname.u8string().c_str(), "d3_2") == 0) {
     fname = "d3";
   }
-  fname.replace_extension(".msn");
+  fname += ".msn";
   return fname;
 }
 
@@ -750,8 +752,11 @@ void InitDefaultMissionFromCLI() {
   // Load mission on startup
   int mission_arg = FindArg("-mission");
   if (mission_arg > 0) {
-    std::filesystem::path filename = std::filesystem::path(GameArgs[mission_arg + 1]).filename().replace_extension(".mn3");
-    LoadMission((const char*)filename.u8string().c_str());
+    std::filesystem::path filename = std::filesystem::path(GameArgs[mission_arg + 1]).filename();
+    if (!IS_MN3_FILE(filename)) {
+      filename += ".mn3"; // append, not replace_extension(): a dot inside the name (name1.1) is not an extension
+    }
+    LoadMission((const char *)filename.u8string().c_str());
 
     int level_arg = FindArg("-loadlevel");
     if (level_arg > 0) {
@@ -1825,7 +1830,7 @@ bool mn3_Open(const std::filesystem::path &mn3file) {
     voice_hog = std::filesystem::path("missions") / "d3voice2.hog"; // Audio for levels 5-17
     Mission_voice_hog_handle = cf_OpenLibrary(voice_hog);
   }
-  filename.replace_extension(".gam");
+  filename += ".gam"; // append, not replace_extension(): the stem of name1.1.mn3 is name1.1
   mng_SetAddonTable((const char *)filename.u8string().c_str());
   Current_mission.mn3_handle = mn3_handle;
   return true;

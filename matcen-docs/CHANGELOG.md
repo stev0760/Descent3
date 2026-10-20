@@ -9,6 +9,15 @@ a larger change that may be backed out whole, until it passes its validation gat
 Versions before 0.10.0 were development builds; their changes are in the git history. Levels named here are listed
 with their mission files in [TEST_LEVELS.md](TEST_LEVELS.md).
 
+## [0.10.13] - 2026-10-20
+
+- **A mission whose file name has a dot before `.mn3` now loads.** `MissionName=name1.1.mn3` failed with "Mission
+  file not found" although the archive was in place: the loader took the `.1` for an extension and looked for
+  `name1.msn` inside the archive. Mission makers use such names for version numbers. The retail-era code split the
+  name at its last dot, so this is a regression of the open-source port, and a client built from the same code needs
+  this version too before it can join a game on such a mission. Found on CarlitosWay1.1 and WickedGv1.2; the
+  write-up is [UPSTREAM_PATCHES.md](UPSTREAM_PATCHES.md) #11.
+
 ## [0.10.12] - 2026-10-19
 
 - **Capture the Flag no longer crashes the server when a flag is captured and picked up again in the same frame.**

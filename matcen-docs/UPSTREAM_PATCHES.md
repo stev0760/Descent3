@@ -26,6 +26,7 @@ Levels named here are listed with their mission files in [TEST_LEVELS.md](TEST_L
 | 8 | A `%` in a callsign or chat line crashes the dedicated server (formatted text re-used as a format string); `$setteamname` writes one past the team-name array | `Descent3/dedicated_server.cpp`, `netgames/dmfc/dmfcbase.cpp`, `dmfcinputcommand.cpp`, `linux/lnxcon_raw.cpp`, `lnxcon_null.cpp` | Fixed (Matcen 0.10.0; consoles 0.10.4) | Not submitted |
 | 9 | A level object saved with room number -1 crashes the loader: a negative room number passes the bad-room check and indexes the terrain array far out of bounds | `Descent3/LoadLevel.cpp` | Fixed (Matcen 0.10.11) | Not submitted |
 | 10 | CTF: a flag captured and picked up again in the same frame crashes the server (the carried flag is killed without being unattached, and a single flag is assumed to hang at attach point 0) | `netgames/ctf/ctf.cpp` | Fixed (Matcen 0.10.12) | Not submitted |
+| 11 | A mission whose file name has a dot before `.mn3` never loads ("Mission file not found"): the `.msn` and `.gam` names are built with `replace_extension()` on a stem that holds a dot | `Descent3/Mission.cpp` | Fixed (Matcen 0.10.13) | Not submitted |
 
 Version labels: the Matcen version is the first release that carried the fix. Not every release was
 tagged, so the index also gives the first git tag that contains the fix (`git tag --contains <commit>`).
@@ -824,6 +825,64 @@ upstream as is.
 ### Status
 
 - **Matcen:** Fixed in 0.10.12. Found by a bot soak on `hellfire.mn3`.
+- **DescentDevelopers/Descent3:** Not submitted. Same lines.
+
+---
+
+## 11. A Mission File Name With a Second Dot Never Loads
+
+### Bug
+
+A dedicated server given `MissionName=name1.1.mn3`, or a client picking the
+same mission, reports "Mission file not found" although the archive is in
+`missions/`. Any mission whose file name holds a dot before the `.mn3` is
+affected. Mission makers use one for a version number, and community
+rotations carry several such files.
+
+### Root cause
+
+`MN3_TO_MSN_NAME()` (`Descent3/Mission.cpp`) takes the archive's stem and
+calls `std::filesystem::path::replace_extension(".msn")` on it. For
+`name1.1.mn3` the stem is `name1.1`, whose "extension" is `.1`, so the
+function asks the archive for `name1.msn` and the lookup fails. `mn3_Open()`
+builds the mission's add-on table name the same way (`name1.gam`), and
+`InitDefaultMissionFromCLI()` does it to a bare `-mission name1.1`.
+
+The retail-era code split the name with `ddio_SplitPath()`, which cuts at
+the last dot, so these missions loaded then. The regression came in with
+the `std::filesystem` port; the fork point and the current
+DescentDevelopers/Descent3 `main` have the same lines.
+
+### Affected files
+
+- `Descent3/Mission.cpp`: `MN3_TO_MSN_NAME()`, `mn3_Open()`,
+  `InitDefaultMissionFromCLI()`
+
+### Fix
+
+Append the extension to the stem (`fname += ".msn"`, `+= ".gam"`) instead
+of replacing one, and append `.mn3` to a `-mission` argument only when it
+lacks that extension.
+
+Verified on the Matcen Debug build: `CarlitosWay1.1.mn3` and
+`WickedGv1.2.mn3`, which the unfixed server refused with "Mission file not
+found", each loaded and ran a bot round.
+
+### Caveats
+
+A mission whose `.msn` inside the archive is not named after the archive
+still fails, as it always has.
+
+### Portability
+
+Client and server; nothing in it depends on the Matcen bots. Applies to
+upstream as is. A client built from the unfixed code cannot load such a
+mission from its own copy, so it cannot join a game on one until it carries
+the fix too.
+
+### Status
+
+- **Matcen:** Fixed in 0.10.13. Found by a bot sweep of community missions.
 - **DescentDevelopers/Descent3:** Not submitted. Same lines.
 
 ---

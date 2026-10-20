@@ -22,6 +22,7 @@ mission.
 | Nightmare Castle | `bsidectf.mn3` | 1 | `Nightmarecastle.d3l` | yes |
 | mysterious_isle | `bsidectf.mn3` | 2 | `mysterious_isle.d3l` | yes |
 | Batteries Included, Batteries, batteriesincluded, bsidectf L3 | `bsidectf.mn3` | 3 | `batteriesincluded.d3l` | yes |
+| CarlitosWay1.1 | `CarlitosWay1.1.mn3` | 1 | `Carlitos Way 1.1.d3l` | no |
 | Inversion | `CHAOS.MN3` | 2 | `Inversion.d3l` | yes |
 | Rim | `CHAOS.MN3` | 3 | `Rim.d3l` | yes |
 | D3 campaign level 4 | `d3.mn3` | 4 | `Level4.d3l` | yes |
@@ -52,3 +53,4 @@ mission.
 | RAGE | `RAGE.mn3` | 1 | `entropybugfix.d3l` | no |
 | Sigma Base, Sigma | `sigmabase.mn3` | 1 | `sigmabase.d3l` | no |
 | stadium-plus, splusv1 | `splusv1.mn3` | 1 | `StadiumPlusv1.d3l` | no |
+| WickedGv1.2 | `WickedGv1.2.mn3` | 1 | `WGtemp2.d3l` | no |
