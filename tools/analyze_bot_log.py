@@ -16,6 +16,7 @@ import os
 import re
 import sys
 from collections import Counter, defaultdict
+from datetime import datetime
 
 # ---------------------------------------------------------------------------
 # Regex patterns — update here when log format changes
@@ -1237,25 +1238,29 @@ def parse_log(path):
     # soakctl can only count a round once the NEXT level begins loading, then it shuts the server
     # down. That terminal load is not gameplay: it produced a map entry with a round count and a few
     # seconds of spawn-time events, which is why Batteries reports kept carrying a phantom
-    # Nightmarecastle round. Drop a map whose only appearance is that trailing load. (ab_guard.py
-    # applies the same grace to the level pin; keep the two thresholds in step.)
+    # Nightmarecastle round. Drop that trailing load from its map's round count, and the map itself
+    # when it was the only appearance. (ab_guard.py applies the same grace to the level pin; keep
+    # the two thresholds in step.) Compare the full stamps, date included: by time of day alone a
+    # run that crosses midnight makes the last map loaded before 00:00 the "newest", with a
+    # negative span, and drops a whole played round.
     TERMINAL_LOAD_GRACE = 30.0
 
-    def _secs(t):
+    def _epoch(t):
         if not t:
             return None
         try:
-            h, m_, rest = t.split(" ")[1].split(":")[0], t.split(" ")[1].split(":")[1], t.split(" ")[1].split(":")[2]
-            return int(h) * 3600 + int(m_) * 60 + float(rest)
-        except (IndexError, ValueError):
+            return (datetime.strptime(t, "%Y-%m-%d %H:%M:%S.%f") - datetime(1970, 1, 1)).total_seconds()
+        except ValueError:
             return None
 
     if len(stats) > 1:
-        newest = max(stats.items(), key=lambda kv: (_secs(kv[1]["load_ts"]) or -1))
+        newest = max(stats.items(), key=lambda kv: (_epoch(kv[1]["load_ts"]) or -1))
         name, st = newest
-        lo, hi = _secs(st["load_ts"]), _secs(st["last_ts"])
-        if lo is not None and hi is not None and st["rounds"] == 1 and (hi - lo) <= TERMINAL_LOAD_GRACE:
-            del stats[name]
+        lo, hi = _epoch(st["load_ts"]), _epoch(st["last_ts"])
+        if lo is not None and hi is not None and st["rounds"] >= 1 and (hi - lo) <= TERMINAL_LOAD_GRACE:
+            st["rounds"] -= 1
+            if st["rounds"] == 0:
+                del stats[name]
 
     return stats, total_lines
 
