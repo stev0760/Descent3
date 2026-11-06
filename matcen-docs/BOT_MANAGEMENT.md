@@ -169,6 +169,15 @@ describes, in its order: the everyday commands first, then the Diagnostics group
 level's navigation geometry as JSON (hidden alias `$navdump`, :1098). Remote-admin tools must gate on `$servercaps`,
 not on which `$nav` rows exist. NAVIGATION.md documents what the toggles do.
 
+**The game's wait holds the bots too.** DMFC's `$wait on`, `$wait <seconds>` (a hold at the start of each level) and
+the listen host's wait for players freeze every client's ship: its movement scalar goes to 0 and its weapons stop
+recharging. A bot has no client to tell, so on the server `DMFCBase::HoldBots` (netgames/dmfc/dmfcbase.cpp) sets the
+same scalars on every bot slot each frame of the wait, and resets them to 1 when the wait ends. A bot whose movement
+scalar is 0 skips its frame (`BotDoFrame`): no thrust, so drag stops the ship as it stops a player's, and no
+thinking, firing or countermeasures. Bot thrust is multiplied by the movement scalar as a player's is
+(`BotApplyThrust`), so a level script that changes it changes it for bots too. The log has one `held by the game`
+and one `released by the game` line per bot.
+
 ### The host's Bots menu (F6)
 
 On a listen server the host's F6 menu has a **Bots** submenu, in every mode (all of them build their F6 menu in DMFC,

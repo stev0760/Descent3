@@ -514,6 +514,7 @@ DMFCBase::DMFCBase(void) {
 
   m_iNumBanPlayers = 0;
   m_bMakeClientsWait = false;
+  m_bBotsHeld = false;
   m_iPlayerDisplayed = 0;
 
   DatabaseRegisteredName[0] = '\0';
@@ -4545,6 +4546,27 @@ void DMFCBase::WaitingForServerLoop(void) {
   // Make sure we stay waiting...
   Players[GetPlayerNum()].movement_scalar = 0;
   Players[GetPlayerNum()].weapon_recharge_scalar = 99999.9f;
+}
+
+//	DMFCBase::HoldBots
+//
+//	On the server, holds the server-side bots (NPF_BOT slots) the way WaitForServer holds a client's own ship: no
+//	thrust, no fire. A bot has no client to receive CM_SIGNALWAIT, so the server sets its scalars itself. Called
+//	every frame while the clients wait, because a respawn resets a ship's scalars (as WaitingForServerLoop
+//	re-applies them on a client), and once more to release.
+void DMFCBase::HoldBots(bool hold) {
+  if (GetLocalRole() != LR_SERVER)
+    return;
+  if (!hold && !m_bBotsHeld)
+    return;
+
+  for (int i = 0; i < DLLMAX_PLAYERS; i++) {
+    if (!(NetPlayers[i].flags & NPF_CONNECTED) || !(NetPlayers[i].flags & NPF_BOT))
+      continue;
+    Players[i].movement_scalar = hold ? 0.0f : 1.0f;
+    Players[i].weapon_recharge_scalar = hold ? 99999.9f : 1.0f;
+  }
+  m_bBotsHeld = hold;
 }
 
 // DMFCBase::IAmDedicatedServer

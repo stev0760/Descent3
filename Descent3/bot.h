@@ -557,6 +557,11 @@ struct bot_info {
   // flags flip on takeover). Cleared on hold exit, load loss, and respawn.
   bool entropy_holding;
 
+  // Held by the game: true while Players[slot].movement_scalar is zero, the scalar every player's thrust is
+  // multiplied by (DMFC's wait sets it to hold everyone in place). Log-transition flag; the hold itself is read
+  // from the scalar every frame in BotDoFrame.
+  bool held_by_game;
+
   // Monsterball M1 fire-at-object primitive (0.9.8, MONSTERBALL_MODE.md §4.1): when set, the
   // aim/fire pipeline targets this object (the ball) instead of the AI combat target —
   // BotUpdateAimDirection orients at its predicted position, BotDoFiring shoots it with the

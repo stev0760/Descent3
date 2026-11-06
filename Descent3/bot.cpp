@@ -6441,7 +6441,7 @@ static void BotApplyThrust(int bot_index) {
     vector burst = Bots[bot_index].unstick_dir;
     if (vm_GetMagnitude(&burst) < 0.5f)
       burst = obj->orient.fvec * -1.0f; // a stale latch: straight back, as before
-    obj->mtype.phys_info.thrust = burst * Bots[bot_index].ship_full_thrust;
+    obj->mtype.phys_info.thrust = burst * (Players[slot].movement_scalar * Bots[bot_index].ship_full_thrust);
     obj->mtype.phys_info.flags |= PF_USES_THRUST;
     Players[slot].flags &= ~(PLAYER_FLAGS_AFTERBURN_ON | PLAYER_FLAGS_THRUSTED);
     return;
@@ -7085,12 +7085,14 @@ static void BotApplyThrust(int bot_index) {
     }
   }
 
-  // Compute thrust vector — same formula as DoFlyingControl (object.cpp:2424-2427)
+  // Compute thrust vector — same formula as DoFlyingControl (object.cpp:2424-2427), the player's movement
+  // scalar included (a level script or the game's wait can change it for every player alike).
   // Tri-chording: forward + sideways + vertical combine without normalization
   float full_thrust = Bots[bot_index].ship_full_thrust;
   obj->mtype.phys_info.thrust =
-      speed_scalar * ((obj->orient.fvec * forward * thrust_multiplier * full_thrust) +
-                      (obj->orient.uvec * vertical * full_thrust) + (obj->orient.rvec * sideways * full_thrust));
+      speed_scalar * Players[slot].movement_scalar *
+      ((obj->orient.fvec * forward * thrust_multiplier * full_thrust) + (obj->orient.uvec * vertical * full_thrust) +
+       (obj->orient.rvec * sideways * full_thrust));
 
   // Ensure PF_USES_THRUST stays enabled (PhysicsDoFrame integrates thrust → velocity with real drag)
   obj->mtype.phys_info.flags |= PF_USES_THRUST;
@@ -8882,6 +8884,7 @@ int BotAdd(const char *name, int ship_index, BotDifficulty difficulty, int desir
   Bots[bot_index].entry_commit_room = -1;
   Bots[bot_index].life_start_time = Gametime;
   Bots[bot_index].gearup_budget_logged = false;
+  Bots[bot_index].held_by_game = false;
   Bots[bot_index].player_slot = slot;
   Bots[bot_index].difficulty = difficulty;
 
@@ -9276,6 +9279,29 @@ void BotDoFrame() {
     }
 
     object *obj = &Objects[Players[slot].objnum];
+
+    // Held by the game. A player whose movement scalar is zero cannot fly (DoFlyingControl multiplies thrust by
+    // it), and the game's wait (DMFC's $wait and its start-of-level hold) sets it on every bot slot as on every
+    // client. A held bot is a paused pilot: zero thrust, so drag stops the ship as it stops a player's, never a
+    // brake; no think, no fire, no countermeasures. Turning stays with the engine's goals, as a held player can
+    // still look around. The bot's Gametime stamps age while it waits, and the ones that lapse (a pending hop, a
+    // hunt, a via) only cost a re-plan; the one a player would see, an order's BLOCKED clock, restarts on release.
+    if (Players[slot].movement_scalar <= 0.0f) {
+      if (!Bots[i].held_by_game) {
+        Bots[i].held_by_game = true;
+        LOG_DEBUG.printf("BOT: '%s' held by the game", Bots[i].callsign);
+      }
+      vm_MakeZero(&obj->mtype.phys_info.thrust);
+      obj->mtype.phys_info.flags |= PF_USES_THRUST;
+      Players[slot].flags &= ~(PLAYER_FLAGS_AFTERBURN_ON | PLAYER_FLAGS_THRUSTED);
+      Bots[i].stuck_timer = 0.0f; // held, not stuck
+      continue;
+    }
+    if (Bots[i].held_by_game) {
+      Bots[i].held_by_game = false;
+      Bots[i].order_progress_time = Gametime;
+      LOG_DEBUG.printf("BOT: '%s' released by the game", Bots[i].callsign);
+    }
 
     // Sound alerting: when exploring, check for nearby human players using afterburner.
     // Afterburner is audible — if we detect one in range, force immediate target re-evaluation.

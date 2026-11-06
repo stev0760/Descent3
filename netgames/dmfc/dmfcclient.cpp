@@ -785,6 +785,9 @@ void DMFCBase::OnInterval(void) {
     }
   }
 
+  // The server-side bots wait with the clients, and are released with them
+  HoldBots(m_bMakeClientsWait);
+
   // CheckPInfo();
 
   // Process remote admin frame

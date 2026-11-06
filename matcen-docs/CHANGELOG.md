@@ -9,6 +9,14 @@ a larger change that may be backed out whole, until it passes its validation gat
 Versions before 0.10.0 were development builds; their changes are in the git history. Levels named here are listed
 with their mission files in [TEST_LEVELS.md](TEST_LEVELS.md).
 
+## [0.10.15] - 2026-11-05
+
+- **Bots now freeze with everyone else during `$wait`.** DMFC's wait (`$wait on`, `$wait <seconds>` at the start of
+  each level, a listen host's wait for players) stops every player's ship and weapons, but the bots kept flying and
+  shooting, so they could kill players who could not move. Held bots now stop under drag like a player's ship, do not
+  fire, and carry on when the wait ends. Bot thrust also follows the player's movement scalar, as a player's does, so a
+  level script that slows or stops players does the same to bots.
+
 ## [0.10.14] - 2026-10-20
 
 - **Two servers on one host no longer need `-gamespyport` for the second one to run.** A second server started

@@ -2042,6 +2042,11 @@ protected:
   //	Called per frame while waiting for the server to signal go
   void WaitingForServerLoop(void);
 
+  //	DMFCBase::HoldBots
+  //
+  //	On the server, holds the server-side bots while the clients wait
+  void HoldBots(bool hold);
+
   // DMFCBase::DisplayTimelimitCountdown
   //
   //	Displays (if needed) the time limit countdown
@@ -2084,6 +2089,7 @@ protected:
 private:
   int m_cPtrs;
   bool m_bMakeClientsWait;
+  bool m_bBotsHeld; // HoldBots has held the bot slots and owes them a release
   bool m_bHasInitialized;
   bool m_bDisplayOutrageLogo;
   int *m_bTrackerGame;
