@@ -1446,6 +1446,14 @@ void InitDedicatedSocket(uint16_t port) {
     LOG_ERROR << "Unable to create listen socket for dedicated server!";
     return;
   }
+#if defined(POSIX)
+  // A console connection the server closed first (a `quit`, a logout) holds the port in TIME_WAIT for about a
+  // minute, and a server started again in that minute could not bind it and ran with no console. SO_REUSEADDR lets
+  // the bind through; a port another server is listening on still fails. Windows is left as it was: there the option
+  // lets a second process take a port that is in use.
+  int reuse = 1;
+  setsockopt(dedicated_listen_socket, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+#endif
   if (SOCKET_ERROR == bind(dedicated_listen_socket, (SOCKADDR *)&sock_addr, sizeof(sock_addr))) {
     LOG_ERROR << "Unable to bind listen socket for dedicated server!";
     return;

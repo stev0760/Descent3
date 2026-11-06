@@ -28,6 +28,7 @@ Levels named here are listed with their mission files in [TEST_LEVELS.md](TEST_L
 | 10 | CTF: a flag captured and picked up again in the same frame crashes the server (the carried flag is killed without being unattached, and a single flag is assumed to hang at attach point 0) | `netgames/ctf/ctf.cpp` | Fixed (Matcen 0.10.12) | Not submitted |
 | 11 | A mission whose file name has a dot before `.mn3` never loads ("Mission file not found"): the `.msn` and `.gam` names are built with `replace_extension()` on a stem that holds a dot | `Descent3/Mission.cpp` | Fixed (Matcen 0.10.13) | Not submitted |
 | 12 | A second server on one host hangs on its first frame: after failing to bind the tracker query port, `gspy_Init` leaves a blocking socket open and `gspy_DoFrame` waits in `recvfrom` for good | `Descent3/gamespy.cpp` | Fixed (Matcen 0.10.14) | Not submitted |
+| 13 | The remote console can stop the server: a console client that disconnects while the server writes to it ends the process by SIGPIPE, with no log line; and a server restarted within a minute of closing a console connection cannot bind the console port and runs with no console | `Descent3/sdlmain.cpp`, `Descent3/dedicated_server.cpp` | Fixed (Matcen 0.10.16) | Not submitted |
 
 Version labels: the Matcen version is the first release that carried the fix. Not every release was
 tagged, so the index also gives the first git tag that contains the fix (`git tag --contains <commit>`).
@@ -943,6 +944,85 @@ here. The fix ends both.
 ### Status
 
 - **Matcen:** Fixed in 0.10.14. Found in the lab beside another server.
+- **DescentDevelopers/Descent3:** Not submitted. Same lines.
+
+---
+
+## 13. The Remote Console Can Stop the Server, or Lose Its Port
+
+### Bug
+
+Two faults in the dedicated server's remote console (telnet).
+
+A console client that closes its connection while the server is writing
+to it stops the server. The console echoes every byte it reads, so a
+client that sends `quit` and closes at once is enough: the process dies
+by SIGPIPE with nothing in its log, and the `quit` never runs, so the
+connected players are not told the server has gone.
+
+A server that closes a console connection first (a `quit` typed at the
+console, a logout) leaves the console port in TIME_WAIT for about a
+minute on Linux. A server started on the same port in that minute logs
+"Unable to bind listen socket for dedicated server!" and runs with no
+console.
+
+### Root cause
+
+`install_signal_handlers()` (`Descent3/sdlmain.cpp`) installs handlers for
+a list of fatal signals; SIGPIPE is not in it and is not ignored, so its
+default action applies: the kernel ends the process the first time
+`send()` writes to a connection the peer has reset. The console's writes
+(`DedicatedReadTelnet`, `PrintDedicatedMessage`) do not use
+`MSG_NOSIGNAL`.
+
+`InitDedicatedSocket()` (`Descent3/dedicated_server.cpp`) binds the
+listen socket without `SO_REUSEADDR`, so Linux refuses the bind while a
+connection on that port is in TIME_WAIT.
+
+Original Outrage 1999 code. DescentDevelopers/Descent3 `main` as fetched
+here (`a3e82bc2`, 2026-09-16) has the same lines.
+
+### Affected files
+
+- `Descent3/sdlmain.cpp`: `install_signal_handlers()`
+- `Descent3/dedicated_server.cpp`: `InitDedicatedSocket()`
+
+### Fix
+
+`install_signal_handlers()` sets SIGPIPE to `SIG_IGN`. A write to a gone
+peer then fails with `EPIPE`, which the console already ignores, and its
+next read sees the connection closed.
+
+`InitDedicatedSocket()` sets `SO_REUSEADDR` on the listen socket before
+`bind()`, on POSIX builds only. A port another server is listening on
+still fails to bind.
+
+Verified on the Matcen Debug build against the 0.10.14 build, each on a
+local dedicated server. `quit` sent and the connection closed at once:
+0.10.14 died by signal 13 with no quit message sent; the fixed build ran
+the `quit`, sent its quit message and exited 0. A `quit` the server
+closed first, then an immediate restart: 0.10.14 logged the bind failure
+and refused console connections; the fixed build, restarted after itself,
+bound the port and took a login.
+
+### Caveats
+
+Linux keeps the setting of the socket that made a TIME_WAIT entry: a
+fixed server restarted in the minute after an unfixed one closed a
+console connection still fails to bind once. Ignoring SIGPIPE applies to
+the whole process, client builds included; every socket write in the
+engine then fails with `EPIPE` instead of ending the process.
+
+### Portability
+
+Windows has no SIGPIPE, and there `SO_REUSEADDR` lets a second process
+bind a port that is in use, so both changes are POSIX-only. Nothing in
+them depends on the Matcen bots. Applies to upstream as is.
+
+### Status
+
+- **Matcen:** Fixed in 0.10.16. Found while making playlist rotations quit
+  the server cleanly.
 - **DescentDevelopers/Descent3:** Not submitted. Same lines.
 
 ---

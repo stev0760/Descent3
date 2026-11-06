@@ -9,6 +9,16 @@ a larger change that may be backed out whole, until it passes its validation gat
 Versions before 0.10.0 were development builds; their changes are in the git history. Levels named here are listed
 with their mission files in [TEST_LEVELS.md](TEST_LEVELS.md).
 
+## [0.10.16] - 2026-11-05
+
+- **A remote console that disconnects can no longer stop the server.** A console client that closed its connection
+  while the server was writing to it (sending `quit` and closing at once is enough) ended the server process with no
+  log line, and the `quit` never ran. The server now carries on, and runs a `quit` it received.
+- **The console port is free again at once after a restart.** A server started within a minute of one that closed a
+  console connection could not bind the console port and ran with no console. Linux and macOS servers now bind it; a
+  port another running server holds still fails. The write-up for both is
+  [UPSTREAM_PATCHES.md](UPSTREAM_PATCHES.md) #13.
+
 ## [0.10.15] - 2026-11-05
 
 - **Bots now freeze with everyone else during `$wait`.** DMFC's wait (`$wait on`, `$wait <seconds>` at the start of

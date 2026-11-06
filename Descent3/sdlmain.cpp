@@ -120,6 +120,15 @@ void install_signal_handlers() {
       LOG_WARNING << "SIG: Unable to install " << signal.second;
     }
   }
+
+  // A write to a socket whose peer has gone (a remote console that disconnects while the server echoes to it)
+  // raises SIGPIPE, whose default action ends the process without a word in the log. Ignore it: the write fails
+  // with EPIPE instead, and the console sees the connection closed on its next read.
+  struct sigaction ignore{};
+  ignore.sa_handler = SIG_IGN;
+  if (sigaction(SIGPIPE, &ignore, nullptr) != 0) {
+    LOG_WARNING << "SIG: Unable to ignore SIGPIPE";
+  }
 }
 #else
 void install_signal_handlers() { SetUnhandledExceptionFilter(RecordExceptionInfo); }
