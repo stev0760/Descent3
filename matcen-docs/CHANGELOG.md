@@ -9,6 +9,13 @@ a larger change that may be backed out whole, until it passes its validation gat
 Versions before 0.10.0 were development builds; their changes are in the git history. Levels named here are listed
 with their mission files in [TEST_LEVELS.md](TEST_LEVELS.md).
 
+## [0.10.17] - 2026-11-09
+
+- **A dedicated server no longer changes the game client's settings.** A server and a client run from the same
+  account share one settings file, and the server's exit could reset the client's saved resolution and undo
+  settings the client saved while the server ran. The server now leaves the saved resolution alone, and on Linux
+  it does not write the settings file once one exists.
+
 ## [0.10.16] - 2026-11-05
 
 - **A remote console that disconnects can no longer stop the server.** A console client that closed its connection

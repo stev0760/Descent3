@@ -1162,7 +1162,12 @@ void SaveGameSettings() {
   Database->write("DetailObjectComp", Detail_settings.Object_complexity);
   Database->write("DetailPowerupHalos", Detail_settings.Powerup_halos);
 
-  Database->write("RS_resolution", Current_video_resolution_id);
+  // The resolution is saved as an index into Video_res_list, which a client builds from its displays' modes. A
+  // dedicated server opens no display and keeps the built-in list, so its index names another resolution in the
+  // client's list: leave the value a client saved.
+  if (!Dedicated_server) {
+    Database->write("RS_resolution", Current_video_resolution_id);
+  }
   Database->write("RS_fov", static_cast<int>(Render_FOV_setting));
   Database->write("RS_fullscreen", static_cast<int>(Game_fullscreen));
 

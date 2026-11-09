@@ -322,6 +322,12 @@ int main(int argc, char *argv[]) {
   if (run_d3) {
     oeD3LnxApp d3(flags);
     oeD3LnxDatabase dbase;
+    if (FindArgChar("-dedicated", 'd')) {
+      // A dedicated server changes no setting a player would want kept, and the game client of the same account
+      // shares the file: written back at exit, the server's copy from its start would undo what the client saved
+      // while the server ran.
+      dbase.set_read_only();
+    }
     StartDedicatedServer();
     PreInitD3Systems();
 

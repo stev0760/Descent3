@@ -41,9 +41,15 @@ class oeLnxAppDatabase : public oeAppDatabase {
 
 protected:
   CRegistry *database;
+  bool imported = false;  // the settings file existed and was read at start
+  bool read_only = false; // see set_read_only()
 
 public:
   oeLnxAppDatabase();
+  // The settings are read into memory at start and the whole file is written back at exit. A process that calls
+  // this keeps a file it read as it found it, so that it cannot undo what another process saved in the meantime.
+  // A file that did not exist is still created.
+  void set_read_only() { read_only = true; }
   oeLnxAppDatabase(oeLnxAppDatabase *parent);
   virtual ~oeLnxAppDatabase();
   CRegistry *GetSystemRegistry();

@@ -78,7 +78,7 @@ oeLnxAppDatabase::oeLnxAppDatabase() {
   std::filesystem::path fileName = prefPath / REGISTRY_FILENAME;
 
   database = new CRegistry((const char*)fileName.u8string().c_str());
-  database->Import();
+  imported = database->Import();
   create_record("Version");
 }
 
@@ -94,7 +94,9 @@ oeLnxAppDatabase::oeLnxAppDatabase(oeLnxAppDatabase *parent) {
 
 oeLnxAppDatabase::~oeLnxAppDatabase() {
   if (database) {
-    database->Export();
+    if (!(read_only && imported)) {
+      database->Export();
+    }
     delete database;
     return;
   }
