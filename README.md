@@ -8,9 +8,11 @@ Bots take real player slots on dedicated and listen servers and show up to every
 
 **No client modification is needed.** The bots run on the server only. Clients built from the open-source Descent 3 engine (Matcen's own build and upstream builds) and PiccuEngine have been tested and play as they are; retail 1.4 clients cannot join. A server with no bot configuration behaves exactly like vanilla Descent 3.
 
-**Status: 0.10.10** (2026-10-11), in the 0.10.x release-package series; the first public release will be a 0.10.x build. What each release changed is in [CHANGELOG.md](matcen-docs/CHANGELOG.md).
+**Status: 0.10.17** (2026-11-09), in the 0.10.x release-package series. What each release changed is in [CHANGELOG.md](matcen-docs/CHANGELOG.md).
 
-**Getting started:** [QUICKSTART.md](matcen-docs/QUICKSTART.md) covers installing over Descent 3, running a server with bots, and reporting a bug. Release packages for Windows, Linux and macOS go on the GitHub Releases page, starting with the first tagged release.
+**Try it:** a public server with bots runs around the clock at `matcen.dev:2092`. In the game, choose Multiplayer, Direct TCP/IP and enter that address, or start the game with `-directip matcen.dev:2092`.
+
+**Getting started:** [QUICKSTART.md](matcen-docs/QUICKSTART.md) covers installing over Descent 3, running a server with bots, and reporting a bug. Packages for Windows and Linux are on the [Releases page](https://github.com/stev0760/Descent3/releases); the macOS package is untested.
 
 ## Configuration
 
@@ -51,7 +53,7 @@ On the dedicated server console, over telnet, or on a listen-server host's chat 
 
 ## Roadmap
 
-*   The first public 0.10.x release: tested release builds and a hosted public server.
+*   Fixes from community play on the 0.10.x releases.
 *   Co-op, Entropy and Monsterball polished.
 *   A simpler navigation layer: one planner per room.
 *   1.0 only after community play shows it is stable.
