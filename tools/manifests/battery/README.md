@@ -1,72 +1,52 @@
-# Regression battery
+# Battery manifests
 
-The manifests here are the tracked regression set for `tools/soakctl.py`. This file is the **release regression
-battery**: the stages a release build passes before its GitHub Release is published. Levels named here
-are listed with their mission files in [TEST_LEVELS.md](../../../matcen-docs/TEST_LEVELS.md).
+These are the manifests for `tools/soakctl.py`: unattended dedicated-server runs of fixed length, one game mode or
+map per manifest. Together they are a regression battery, a fixed set of runs to repeat on a new build. The levels in the manifest names are listed with their mission files in
+[TEST_LEVELS.md](../../../matcen-docs/TEST_LEVELS.md).
 
-## Before the first stage
+## What you need
 
-- **The runtime dir** is per workstation: `--server-dir`, `$SOAK_SERVER_DIR` or `tools/soak.local.json`, never a
-  manifest. Each manifest launches `./Descent3 -dedicated ./<cfg>` there, so the cfg and the bots file it names must
-  exist in that dir (the table lists them). They are lab files, not in the repo.
-- **Deploy the release build**, not the Debug one: the RelWithDebInfo `Descent3`, `d3-linux.hog`, `netgames/` and
-  `online/` from the Linux release package (or from `builds/linux/build/RelWithDebInfo/` after a local
-  `cmake --build --preset linux --config RelWithDebInfo`). Confirm the commit: `strings Descent3 | grep -m1 <hash>`.
-  Redeploy the Debug build afterwards for ordinary soaks.
-- **Telemetry.** The bots' log lines are `LOG_DEBUG`, filtered at run time by the log level. A RelWithDebInfo build
-  defines no `RELEASE`, so it logs at debug level by default and the analyzer reads it as it reads a Debug log. A
-  Release-config build logs at info level unless started with `-loglevel DEBUG`.
-- **Asserts.** In an optimised build a failed `ASSERT` logs `Assertion failed (...)` and the server carries on; the
-  analyzer does not count these, so count them in each stage's log (`grep -c "Assertion failed" <log>`).
-- **A control.** Each stage is read against the same stage on the Debug build from the same evening, or against the
-  previous release's battery, with the same cfg files.
-- One server at a time (`pgrep -a Descent3` first). `tools/soak_battery.sh` kills every process named `Descent3`
-  between stages, so do not play on the same machine while it runs.
+- A runtime directory with the `Descent3` binary, its data and the cfg files a manifest names. Each manifest
+  launches `./Descent3 -dedicated ./<cfg>` there. The cfg and bots files are not in the repo: you supply them.
+- The directory is chosen in this order: `--server-dir`, `$SOAK_SERVER_DIR`, then `server_dir` in
+  `tools/soak.local.json` (copy `tools/soak.local.example.json`). A `server_dir` key in the manifest is read last,
+  and none of these manifests has one.
+- The manifests expect the remote console on port 2092 with password `test`.
 
-## Stages
-
-| Done | Stage | Manifest | Runtime-dir files | Length | Read |
-|---|---|---|---|---|---|
-| [ ] | Bedlam, 4-team CTF (the easy-pool gate) | `battery/reg-bedlam.json` | `soak-dedicated-bedlam4t.cfg`, `soak-bots-4t.cfg` | 12 rounds of 15 min, cap 210 min | `analyze_bot_log.py` and `flag_conversion.py`; lead with the stuck and carrier-loss numbers, not conversion |
-| [ ] | Fellowship CTF (the hard-pool gate) | `battery/battery-fellowship.json` | `soak-dedicated-fellowship.cfg`, `soak-bots.cfg` | 9 rounds of 10 min, cap 130 min | the same two tools; the hard stuck columns |
-| [ ] | Monsterball | `monsterball-soak.json` | `soak-dedicated-mball.cfg`, `soak-bots-8.cfg` | 6 rounds of 20 min, cap 150 min | the analyzer's `## Monsterball`: goals per round, own goals |
-| [ ] | Entropy | `battery/reg-entropy.json` | `soak-dedicated-entropy.cfg`, `soak-bots-12.cfg` | 3 rounds of up to 60 min, cap 150 min | the analyzer's `## Entropy`: pickups and takeovers (at least one takeover on the release build) |
-| [ ] | Anarchy, Team Anarchy, Hyper-Anarchy, Robo-Anarchy | `battery/reg-anarchy.json`, `reg-team.json`, `reg-hyper.json`, `reg-robo.json`, `reg-robo2.json` | `soak-dedicated-reg-<mode>.cfg` and the bots files they name | 2 rounds each, caps 35-40 min | deaths and stucks per map, flat against the control |
-| [ ] | Maintainer flight and one Windows-native run | none | the maintainer's own setup | one evening | the HUD goal lines, and the maintainer's flight against a same-evening Debug control |
-
-Not covered by any stage: removing a bot during a level change.
-
-## Running it
-
-One stage (as a background task; detach anything over 30 minutes with `setsid`):
+## Run one manifest
 
 ```sh
 python3 tools/soakctl.py tools/manifests/battery/reg-bedlam.json
 ```
 
-The whole battery in order, with the analyzer and the flag-conversion report written after each stage. Its caps add
-up to about 14 hours, so detach it:
+`soakctl.py` starts the server, counts rounds from the level loads, stops after the configured rounds or
+`max_minutes`, and prints events such as `SOAK_START`, `ROUND_START`, `ROUND_END`, `SOAK_DONE` and `SOAK_ERROR`. The
+server's output goes to a `soak-<time>.log` file in the runtime directory, named in `SOAK_START`. A manifest with an
+`ab` block also runs `tools/ab_guard.py` at the end and adds `guard=PASS` or `guard=FAIL` to
+`SOAK_DONE`. Read the captured log with `tools/analyze_bot_log.py` and `tools/flag_conversion.py`.
+
+## Run several in a row
 
 ```sh
-OUT=/absolute/path/to/battery-$(date +%Y%m%d)
-setsid tools/soak_battery.sh "$OUT" \
-  tools/manifests/battery/reg-bedlam.json \
-  tools/manifests/battery/battery-fellowship.json \
-  tools/manifests/monsterball-soak.json \
-  tools/manifests/battery/reg-entropy.json \
-  tools/manifests/battery/reg-anarchy.json \
-  tools/manifests/battery/reg-team.json \
-  tools/manifests/battery/reg-hyper.json \
-  tools/manifests/battery/reg-robo.json \
-  tools/manifests/battery/reg-robo2.json \
-  > "$OUT.events" 2>&1 < /dev/null &
+setsid tools/soak_battery.sh "$OUT" tools/manifests/battery/reg-bedlam.json tools/manifests/battery/reg-team.json &
 ```
 
-`soak_battery.sh` prints `BATTERY_SOAK_DONE <name> log=<path>` or `BATTERY_SOAK_FAILED` per stage and `BATTERY_DONE`
-at the end; each stage leaves `<name>-analysis.md` and `<name>-conversion.txt` in `$OUT`. A stage that ends in
-`SOAK_ERROR` (a crash, a hard-stop) fails the battery until it is explained.
+Set `OUT` to an output directory first. For each manifest `soak_battery.sh` runs `soakctl.py` and saves its events
+as `<name>.events` in `$OUT`. When the run ends in `SOAK_DONE` it writes `<name>-analysis.md` and
+`<name>-conversion.txt` there too. It prints `BATTERY_SOAK_BEGIN`, then `BATTERY_SOAK_DONE` or `BATTERY_SOAK_FAILED`
+for each manifest, and `BATTERY_DONE` at the end. After each manifest it kills any process still named `Descent3`,
+so run it on a machine where nothing else is running that server.
 
-## The other manifests here
+## Manifests
 
-`battery-abend2.json`, `battery-bside.json`, `battery-glassh.json`, `isengard-B.json` and the `recheck-*` files are
-navigation regression checks from earlier work, kept for re-runs; they are not release stages.
+| Manifest | Runs | Length |
+|---|---|---|
+| `reg-bedlam.json` | 4-team CTF | 12 rounds, 210 min cap |
+| `battery-fellowship.json` | CTF | 9 rounds, 130 min cap |
+| `reg-entropy.json` | Entropy | 3 rounds, 150 min cap |
+| `reg-anarchy.json`, `reg-team.json`, `reg-hyper.json`, `reg-robo2.json` | Anarchy, Team Anarchy, Hyper-Anarchy, Robo-Anarchy | 2 rounds, 35-40 min caps |
+| `battery-abend2.json`, `battery-bside.json`, `battery-glassh.json`, `isengard-B.json`, `recheck-*.json` | navigation checks on single maps | 1-6 rounds |
+
+Monsterball has its manifest one level up, at `tools/manifests/monsterball-soak.json` (6 rounds, 150 min cap).
+
+`reg-robo.json` is kept but not used. `reg-robo2.json` is the Robo-Anarchy manifest.
