@@ -1,29 +1,27 @@
-# matcen-docs
+# Matcen documentation
 
-Documentation for Matcen, the multiplayer bot fork of Descent 3. The current version is in the top-level
-[README](../README.md), and what each release changed is in [CHANGELOG.md](CHANGELOG.md).
+Start with the [README](../README.md) for what Matcen is. Release notes are in [CHANGELOG.md](CHANGELOG.md).
 
-## For server operators and players
+## For players and server operators
 
-| Document | Purpose |
-|----------|---------|
-| [QUICKSTART.md](QUICKSTART.md) | Install over Descent 3, run a dedicated server with bots, the console, chat orders, Bot Settings, bug reports |
-| [BOT_MANAGEMENT.md](BOT_MANAGEMENT.md) | Config rosters, the console, difficulty, the Bot Settings menu, capacity rules, and population and seats (the reserved seat, the yield, the player target, `$botpopulation`) |
-| [CHAT_COMMANDS.md](CHAT_COMMANDS.md) | The `!` chat orders and the design decisions behind them |
+| Document | What it gives you |
+|----------|-------------------|
+| [QUICKSTART.md](QUICKSTART.md) | Install over Descent 3, run a dedicated server with bots, host from the game, report a bug |
+| [BOT_MANAGEMENT.md](BOT_MANAGEMENT.md) | The reference: the roster file, ships, difficulty, console commands, the Bot Settings and F6 menus, seats and the player target |
+| [CHAT_COMMANDS.md](CHAT_COMMANDS.md) | The `!` orders players give the bots in chat, and the F10 order menu |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes, newest first |
-| [samples/](samples/) | `dedicated.cfg` and `bots.cfg` samples and the `INSTALL.txt` template, all three shipped in the release packages (`.github/workflows/release.yml` fills in the version and links) |
+| [samples/](samples/) | The `dedicated.cfg` and `bots.cfg` samples and the `INSTALL.txt` note that ship in every package |
 
 ## For developers
 
-| Document | Purpose |
-|----------|---------|
-| [NAVIGATION.md](NAVIGATION.md) | The navigation design as built: routing, the portal model, the route network, the execution layer, open navigation problems (§7) and the tried-and-reverted ledger |
+| Document | What it gives you |
+|----------|-------------------|
+| [NAVIGATION.md](NAVIGATION.md) | How the bots find their way: routing between rooms, the portal model, the route network inside a room, known limits and approaches that were tried and withdrawn |
 | [OBSTACLE_GEOMETRY.md](OBSTACLE_GEOMETRY.md) | How the engine represents walls, glass, grates, doors and forcefields, which engine functions decide passability, and what the bots do with each |
-| [D3_MOVEMENT_PHYSICS.md](D3_MOVEMENT_PHYSICS.md) | Engine physics constants and packet flags behind bot movement |
-| [VISUAL_DEBUG.md](VISUAL_DEBUG.md) | The navigation overlay (Ctrl+F7, on a local game or a listen-server host): what it draws, how to read it, what it can and cannot see |
-| [ENTROPY_MODE.md](ENTROPY_MODE.md) | Entropy mechanics (from the game module source) and what the bots do in it |
-| [MONSTERBALL_MODE.md](MONSTERBALL_MODE.md) | Monsterball mechanics and what the bots do in it |
-| [PYRODECK_CONTRACT.md](PYRODECK_CONTRACT.md) | The fork's side of the D3 Pyrodeck telnet contract: `$servercaps`, stability tiers, and every output format the tool parses. Update it whenever a `$` command or its output changes |
-| [UPSTREAM_PATCHES.md](UPSTREAM_PATCHES.md) | Fixes made in the fork for bugs that also exist in upstream Descent 3, written up to share back |
-| [TEST_LEVELS.md](TEST_LEVELS.md) | The levels these docs name as test cases: mission file, level number, level file, and whether it ships with Descent 3 |
-| [Release battery](../tools/manifests/battery/README.md) | Outside this folder: the release regression battery, a stage checklist with its manifests and the `soakctl.py` and `soak_battery.sh` invocations |
+| [D3_MOVEMENT_PHYSICS.md](D3_MOVEMENT_PHYSICS.md) | The engine's physics constants and packet flags behind bot movement |
+| [VISUAL_DEBUG.md](VISUAL_DEBUG.md) | The navigation overlay (Ctrl+F7 in a local game or as a listen-server host): what it draws and how to read it |
+| [ENTROPY_MODE.md](ENTROPY_MODE.md) | Entropy's rules, from the game module's source, and how the bots play it |
+| [MONSTERBALL_MODE.md](MONSTERBALL_MODE.md) | Monsterball's rules and how the bots play it |
+| [PYRODECK_CONTRACT.md](PYRODECK_CONTRACT.md) | The console output an admin tool parses: `$servercaps` and every reply format D3 Pyrodeck reads |
+| [UPSTREAM_PATCHES.md](UPSTREAM_PATCHES.md) | Engine fixes made here for bugs that also exist in upstream Descent 3 |
+| [TEST_LEVELS.md](TEST_LEVELS.md) | The levels these documents name as test cases, with mission file and level number |

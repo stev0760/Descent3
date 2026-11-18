@@ -1,14 +1,10 @@
 # Entropy Mode — Mechanics Reference + Bot Implementation Spec
 
-**Status: E1-E3 built and shipped in 0.9.8 (released 2026-07-18; built 2026-07-12 as commits
-`d18cebb0`/`bed6db43`/`19266727`).** Working takeovers were confirmed during the 2026-07-13 to 07-18 hosted-server
-campaign, after the hold-behavior ladder landed (doorway-plane park, then depth and near-rest gates, then active
-braking; see the 0.9.8 CHANGELOG entry). The 0.9.13 CHANGELOG "known limitations" says the opposite for that release's
-testing: "Entropy room takeover has not been observed in testing." Both statements stand in the record, and a re-check
-on the release build is owed (see "Known open" below). `$nav entropy` gates the E3 invasion layer. E4's
-difficulty scaling is built (2026-10-07, §3.5); its `!attack lab` / `!defend lab` verbs are built (0.10.0,
-`CHAT_COMMANDS.md`), and the rest of E4 is open. The takeover park holds zero thrust and obeys knockback like a player (built
-2026-10-07, §3.3). The as-built summary is §3.
+Bots play Entropy as built in section 3: they pick up viruses, carry a load into an enemy room and hold still there
+to take the room over. Takeovers by bots have been seen in play on a public server; they are rare. A bot holding a
+room uses no thrust and is pushed by hits like any player (§3.3). `$nav entropy` switches the room-invasion behaviour,
+and the chat orders `!attack lab` and `!defend lab` are described in [CHAT_COMMANDS.md](CHAT_COMMANDS.md).
+
 Source of truth: `netgames/entropy/` (EntropyBase.cpp, EntropyAux.h, EntropyPackets.cpp,
 EntropyRoom.cpp), read in full for this document. Line references are to those files.
 Read this before writing any Entropy bot code. Levels named here are listed with their mission files in
@@ -152,7 +148,7 @@ they describe is reconstructable:
 3. **Room identity flips mid-level.** `BotGetObjectiveRoom`-style decisions must come from the
    poll's *current* flag scan. Never bake "room 12 is the red lab" into per-level state. (The
    one-time skeleton/passability caches are fine — geometry doesn't change, only ownership.)
-4. **Two teams only**, like CTF on dedicated servers today. Existing team handling carries over.
+4. **Two teams only**: the game module fixes the team count. Existing team handling carries over.
 5. **Death wipes the load.** A loaded bot (≥5) is a high-value target and must play like our
    CTF carrier (flee bias, beeline); conversely killing a loaded enemy erases 5+ viruses of
    enemy tempo — see target bias below.
@@ -238,11 +234,11 @@ What follows is the code at HEAD. Constants live in `Descent3/bot_objective.h:52
 
 | Item | State at HEAD |
 |---|---|
-| Do takeovers happen on the release build? The 0.9.8 campaign confirmed takeovers; the 0.9.13 CHANGELOG known limitations say none were observed in that testing. | Open. Decided 2026-10-01: one Entropy run on `dementia.mn3` with the release build is owed. 2026-10-07, with every bot force-loaded by a scratch build: GeoDomes holds started and converted; on SteelVapor none started in two 6-minute levels, the loaded bots circling inside the target room at 16-40 u/s, never under the 5 u/s start gate. |
+| Takeovers are rare. | Seen in play on a public server. On some levels a loaded bot circles inside the target room at 16-40 u/s and never slows under the 5 u/s speed at which a hold starts. |
 | Inversion produces refused-pickup spam (bots chase viruses the server refuses). | Open. The analyzer flags it as `ENTROPY_REFUSED_PICKUP_SPAM` (`tools/analyze_bot_log.py:1503-1511`). |
 | RAGE wind-tunnel counter-fly fix (`9e602d7f`, routed-cost room selection in `BotGetNearestEntropyRoom`). | In code since 0.9.8; never verified on RAGE. |
 | Rim is nav-hostile for this mode. | Open; tracked in `NAVIGATION.md` §7. |
-| The active park thrusts against knockback, contrary to physics ruling 2. | **Built 2026-10-07.** The counter-thrust is removed: the park holds zero thrust and still bypasses the FSM thrust path, so no juke or combat thrust reaches the pad (§3.3). Takeover rate under fire is unmeasured on this build; the release-build Dementia run in the first row reads it. |
+| The active park thrusts against knockback, contrary to physics ruling 2. | **Built 2026-10-07.** The counter-thrust is removed: the park holds zero thrust and still bypasses the FSM thrust path, so no juke or combat thrust reaches the pad (§3.3). The takeover rate under fire has not been measured. |
 
 ### 3.5 Phase E4 (polish)
 
@@ -270,7 +266,7 @@ and every other tier moves by its distance from the Hotshot row:
 Above Hotshot the bias stays at full strength (the dodge column tops out at 100%), so in the mode's own behaviour Ace
 and Insane differ from Hotshot by the abort floor alone; a stronger bias would let an intruder across the map outbid
 the line-of-sight penalty for every nearer enemy. Denial appetite (the enemy-virus pickup priority) does not scale.
-Unmeasured in play: no Entropy soak has run on this build.
+The effect of these scalings in play has not been measured.
 
 **The squad verbs, built 2026-10-07** (CHAT_COMMANDS.md §A.5). `!attack lab` (also `!attacklab`) gives the attack
 role and lean, as `!attackflag` does: the bot fights for kills and, like every bot, invades the nearest enemy room once

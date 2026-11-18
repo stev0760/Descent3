@@ -1,9 +1,9 @@
-Matcen @VERSION@: server-side bots for Descent 3 multiplayer
-=================================================================
+Matcen @VERSION@: multiplayer bots for Descent 3
+================================================
 
 This is the Descent 3 open source engine with Matcen built in. It contains no
-game data: you need your own copy of Descent 3 (GOG or Steam, patched to 1.4
-or later). The game's .hog data files are not redistributable and are not here.
+game data: you need your own copy of Descent 3 (GOG or Steam). The game's
+.hog data files are not redistributable and are not here.
 
 Install
 -------
@@ -45,8 +45,8 @@ macOS: untested; the project has no Mac to test it on. The
 
 A log for a bug report
 ----------------------
-The server log, bot lines included, goes to the terminal: about 5 to 15 MB
-an hour with 6 to 8 bots. Add -logfile to the start line to keep all of
+The server log, bot lines included, goes to the terminal: roughly 1 to 2 MB
+an hour for each bot. Add -logfile to the start line to keep all of
 it: Descent3.log, in the folder you start from, holds the bot lines and
 the console's game messages (flag captures, level changes). The next start
 replaces it. On Linux and macOS, ending the start line with

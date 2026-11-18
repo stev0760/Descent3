@@ -4,8 +4,8 @@
 > why. It is the design of record, not a log. The 0.9.12 skeleton rework spec is merged into §5.3. Engine geometry
 > facts (what is passable, what a pane or a grate is) live in `OBSTACLE_GEOMETRY.md`.
 
-**Status (2026-10-01).** Code is 0.9.16-dev, code complete at `4b4e78f4`. Every function, constant and line number
-below was checked against `ee6e6525`. Open problems are §7. The tried-and-reverted ledger is §7.5. Live toggle state
+This document describes the navigation in Matcen 0.10. Open problems are §7. The tried-and-reverted ledger is §7.5.
+Live toggle state
 is the bare `$nav` command, never a table in a doc (§6.3). Levels named here are listed with their mission files in
 [TEST_LEVELS.md](TEST_LEVELS.md).
 
@@ -657,7 +657,8 @@ fallback, and favours unvisited, uncrowded rooms.
   `hop outcome`, `item-reach`, `entry door lookahead blind`, `roadmap attach from contact [REFUSED]`, `spawn egress in
   room`, `pane ... shattered`, `NO-ROUTE` (with hull), `[Perf]`.
 - **Footprint discipline:** per-tick paths log on state change or through a self-healing `Gametime` throttle. One
-  unthrottled carrier line once wrote 90% of a 237 MB overnight log. Release builds log no nav telemetry.
+  unthrottled carrier line once wrote 90% of a 237 MB overnight log. The telemetry is debug-level logging: the release packages (RelWithDebInfo builds) write it by
+  default, and a build that defines `RELEASE` writes it only when started with `-loglevel DEBUG`.
 
 ---
 

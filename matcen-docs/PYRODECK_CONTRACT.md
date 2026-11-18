@@ -1,16 +1,10 @@
 # Pyrodeck contract: the fork-side telnet surface
 
-Decided 2026-10-01: this short contract replaces the Matcen copy of the Pyrodeck spec (v2.6).
+This file states what a Matcen server prints on its console for an admin tool to parse. The tool it was written for
+is [D3 Pyrodeck](https://github.com/stev0760/d3-pyrodeck), a separate project; how that tool works is documented in
+its own repository. When a `$` bot command or its output changes, this file changes in the same commit.
 
-**The spec of record is the Pyrodeck repo** (`stev0760/d3-pyrodeck`, its `D3_PYRODECK_SPEC.md` v2.7, app v0.4.19; v2.8
-and app 0.4.20, synced to this contract, are on its `release/0.4.20` branch).
-That spec owns the tool: architecture, session model, UI, API, packaging, phases, the vanilla commands it parses.
-This file owns only what Matcen promises to print. When a `$` bot command or its output changes, update this file in
-the same commit, and raise the change with the Pyrodeck repo if the command is Tier 1.
-
-Code facts below are true at `ee6e6525` (0.9.16-dev), except the `features=` list, the `$botpopulation` command and
-the seat and ship lines, which are 0.10.0 and cited by function name. `dedicated_server.cpp`, `bot.cpp` and
-`bot_population.cpp` paths are under `Descent3/`.
+Source paths for `dedicated_server.cpp`, `bot.cpp` and `bot_population.cpp` are under `Descent3/`.
 
 ## 1. Where the commands work
 
@@ -25,7 +19,7 @@ line, with no terminator line. Nothing Pyrodeck reads changed when the listen-se
 Printed by `BotPrintServerCaps` (bot.cpp):
 
 ```
-SERVERCAPS version=1 fork=Matcen fork_version=0.10.0 features=bots,roster,ships,difficulty,teams,squad_orders,population
+SERVERCAPS version=1 fork=Matcen fork_version=0.10.17 features=bots,roster,ships,difficulty,teams,squad_orders,population
 ```
 
 - Format string: `"SERVERCAPS version=1 fork=%s fork_version=%d.%d.%d "
@@ -98,8 +92,7 @@ first built-in callsign no player flies under (`BotPopulationFreeDefaultName`); 
 
 Callsigns are `<name>[BOT]`, with **no space** before the suffix (bot.h:725, `BOT_NAME_SUFFIX "[BOT]"`; built at
 bot.cpp:8771 and :8861). The base name is cut to 14 characters so the whole callsign fits in 19
-(`CALLSIGN_LEN`, player_external_struct.h:89). The code comment at bot.cpp:8767-8770 still says " [BOT]" and
-"6-char suffix"; the code is right and the comment is stale.
+(`CALLSIGN_LEN`, player_external_struct.h:89).
 
 **`$removebot <index>`** (:908-921). `index` is the `Bots[]` index from `$botlist`, not the player slot.
 - `Removing bot '%s' from slot %d` (:912), `Invalid bot index %d` (:915), `Usage: $removebot <index>` (:918).
@@ -204,24 +197,3 @@ chunk, then ends the reply after 200 ms without a new chunk (`packages/server/sr
 level can take about a second to answer the first command, and a 200 ms first wait made the `$servercaps` probe fall
 back to vanilla. `$nav dump` prints its line only after the file is written, so on a large level it also leans on
 the first-chunk wait. `$botstat all` and `$botobj` print many lines in one go and fit the 200 ms window.
-
-## 8. Known drift in the spec of record
-
-The Pyrodeck repo's v2.7 spec still shows the old `$addbot` usage and success line (no team), callsigns with a
-space (`'Phantom [BOT]'`), the old `$botmode` names (`TeamAnarchy`, `HyperAnarchy`, `RoboAnarchy`, `Coop`, no
-`Entropy` or `Unknown`) and `fork_version=0.9.5`. Pyrodeck's `$botlist` regex already accepts both callsign forms.
-It also predates the `teams`, `squad_orders` and `population` flags, `$botpopulation`, and the `roster` meaning
-settled in §2. The fix belongs in the Pyrodeck repo.
-
-Pyrodeck 0.4.20 (spec v2.8; merged into Pyrodeck's `main` in 0.5.0 on 2026-10-08) fixes that drift:
-it parses `$addbot` and `$botmode` as §4 specifies, uses `Name[BOT]`, keeps feature flags it does not know, offers a
-team when `teams` is advertised, and keeps a dead bot in its `$botstat` view. It does not drive `$botpopulation`
-yet: it parses and keeps the `population` flag only.
-
-## 9. Open fork-side items
-
-- The Tier 1 drift above: fixed in Pyrodeck 0.5.0; the Pyrodeck side of the population controls is not built (the
-  fork side is: §2 and §4).
-- The new `features=` flags: done in 0.10.0; the `features=` list in §2 is the one the code prints.
-- The mission-download link refresh (rewrite the URL lines inside the `.mn3`; the engine `MissionURL` cvar was
-  reverted on 07-19). Built in Pyrodeck 0.4.20, in its `main` since 0.5.0; it touches no `$` command.

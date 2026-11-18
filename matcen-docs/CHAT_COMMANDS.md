@@ -78,7 +78,7 @@ Everything the bots say goes through one queue in `bot_chat.cpp`, emptied once p
 - **Channel.** A reply goes back on the channel the command came in on: all-chat to all-chat, team chat to team chat,
   and a direct message to the sender only. Bot lines are server messages in yellow (`GR_RGB(200, 200, 50)`).
 - **Order of lines.** An answer goes out later in the same server frame, after the server has relayed the order
-  itself, so the order reaches the screen first. <!-- the listen host's own screen is not yet checked -->
+  itself, so the order reaches the screen first.
 - **Grouping.** Lines that go out in the same frame to the same recipient with the same text become one line:
   `4 bots: Following!`; a single speaker keeps its name, `Reaper[BOT]: Following!`. Different answers stay separate,
   so `!follow all` in a team game gives `3 bots: Following!` and `3 bots: Not taking orders from you!`. The HUD shows
@@ -255,8 +255,8 @@ above and adds nothing chat cannot do, so a player on another client misses noth
   name starts the same way, and the bot answers by direct message. A bot whose callsign contains `:` is named after
   the verb instead (`!cover Re:aper`) on the squad's channel. If the bot or the hunt target has left since the menu
   opened, nothing is sent and the HUD says `<name> is no longer in the game.`
-- **Degrades to chat.** The server sees ordinary chat; nothing server-side changed. A player on retail 1.5,
-  PiccuEngine or any other client types the same lines.
+- **Degrades to chat.** The server sees ordinary chat; nothing server-side changed. A player on PiccuEngine
+  or any other client types the same lines.
 
 ### A.10 Discoverability: `!help`, the tip, unknown orders
 
@@ -432,8 +432,8 @@ and not parking a moving formation are what v1 does about it within the escort's
 
 ### B.6 Plain chat first
 
-Every player-facing feature must work through plain chat, so players on any compatible client (retail 1.5, builds of
-the open-source engine, PiccuEngine) can use it. A HUD (for example the quick-order overlay, §A.9) may only add to a
+Every player-facing feature must work through plain chat, so players on any compatible client (builds of the
+open-source engine, PiccuEngine) can use it. A HUD (for example the quick-order overlay, §A.9) may only add to a
 chat command, never replace one.
 
 ### B.7 Pending flight verification

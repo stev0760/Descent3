@@ -1,21 +1,21 @@
 # Matcen quickstart
 
-Matcen adds bots to Descent 3 multiplayer that play every mode (Anarchy, Team Anarchy, Hyper-Anarchy, Robo-Anarchy,
-CTF, Hoard, Entropy, Monsterball and co-op) on any map, and it is open source. The bots build their own route network
-for each level when it loads, so nothing is scripted per map.
+This page takes you from a Descent 3 folder to a server with bots, or to a game you host yourself. The reference
+for everything the bots can be told is [BOT_MANAGEMENT.md](BOT_MANAGEMENT.md).
 
-The bots run on the server and take real player seats. Players connect with an unmodified client and see each bot as
-an ordinary player called `Name[BOT]`. Clients built from the open-source Descent 3 engine (Matcen's own build and
-upstream builds) and PiccuEngine have been tested. Retail 1.4 clients cannot join.
-
-Levels named here are listed with their mission files in [TEST_LEVELS.md](TEST_LEVELS.md).
+The bots run on the server and take real player seats. Players see each one as an ordinary player called `Name[BOT]`
+and need no special client.
 
 ## What you need
 
-- Descent 3 from GOG or Steam, patched to 1.4 or later. The game data (the `.hog` files and the `missions` folder)
-  comes from your copy. It is not redistributable and is not in the Matcen package.
-- The Matcen package for your system from the GitHub Release: Windows x64, Linux x64, or macOS universal
-  (the macOS build is untested: the project has no Mac to test it on).
+- **Descent 3 from GOG or Steam.** Your copy supplies the game data: the `.hog` files and the `missions` folder. The
+  data is not redistributable and is not in the Matcen package.
+- **The Matcen package** for your system from the
+  [Releases page](https://github.com/stev0760/Descent3/releases): Windows x64, Linux x64 or macOS universal. The
+  macOS build is untested: the project has no Mac to test it on.
+
+Players who join need a client built from the open-source engine: Matcen's own (the same package), an upstream build
+or PiccuEngine. The original retail 1.4 program cannot join.
 
 ## Install
 
@@ -36,8 +36,8 @@ installed. The Linux build needs glibc 2.35 or newer. On macOS the app is not si
 The package carries two sample files in `samples/`. Copy both into the Descent 3 folder and edit them.
 
 **`dedicated.cfg`** is the standard Descent 3 server file. Its first line must be `[server config file]`. The sample
-runs CTF with two teams on `bedlam.mn3`, a mission that ships with Descent 3: four levels built for four teams
-(Apparition, Plutonium, QuadSomniac and Polaris), and adds three lines Matcen cares about:
+runs CTF with two teams on `bedlam.mn3`, a four-level mission that ships with Descent 3. Three of its lines matter
+to Matcen:
 
 - `MaxPlayers=14`: the server's own seat, 12 players and one seat kept free for a human.
 - `PPS=40`: the highest packet rate the server accepts, the rate the bots are tested at.
@@ -71,18 +71,25 @@ Descent3.exe -dedicated ./dedicated.cfg -winconsole       # Windows (-winconsole
 The server needs no display or sound device, so it runs on a headless machine or VPS. To keep it running unattended,
 start that line from a systemd service (or tmux or screen) in the Descent 3 folder, with `-logfile` for a log file.
 
-**Hosting on a small VPS.** A server with 15 bots uses about 3-5% of one CPU core and 60-85 MB of memory (measured on
-a desktop CPU; allow about twice that on a shared VPS core), and D3 Pyrodeck adds about 120 MB. A 2 vCPU / 2 GB Linux
-VPS runs a full server with room to spare. A server runs on one core, so a faster core matters more than more cores;
-avoid plans that throttle the CPU after a burst. Choose a region near your players and a plan with a public IPv4
-address (the game has no IPv6), and open UDP 2092, plus UDP 20142 if you list the server on a tracker. Keep
-`AllowRemoteConsole=0`, so the console stays on the machine. The Linux package needs nothing beyond a stock Ubuntu
-22.04 or 24.04 server image; the retail data a server needs is about 0.3-0.5 GB. At the default log level a server
-writes 12-28 MB of log an hour. `Descent3.log` is replaced at each start but never rotated, so rotate it (logrotate
-with `copytruncate`) or delete old logs from time to time.
+### Hosting on a small VPS
+
+- **Size.** A server with 15 bots uses about 3-5% of one CPU core and 60-85 MB of memory, measured on a desktop CPU;
+  allow about twice that on a shared VPS core. D3 Pyrodeck adds about 120 MB. A 2 vCPU / 2 GB Linux VPS runs a full
+  server with room to spare.
+- **CPU.** A server runs on one core, so a faster core matters more than more cores. Avoid plans that throttle the CPU
+  after a burst.
+- **Network.** Choose a region near your players and a plan with a public IPv4 address (the game has no IPv6). Open
+  UDP 2092, plus UDP 20142 if you list the server on a tracker. Keep `AllowRemoteConsole=0`, so the console stays on
+  the machine.
+- **Disk.** The Linux package needs nothing beyond a stock Ubuntu 22.04 or 24.04 server image. The game data a
+  server needs is about 0.3-0.5 GB.
+- **Logs.** A server writes roughly 1 to 2 MB of log an hour for each bot. `Descent3.log` is replaced at each start
+  but never rotated, so rotate it (logrotate with `copytruncate`) or delete old logs from time to time.
+
+### When the server is up
 
 The `BotCount` bots join when the first level loads, and the target adds the rest one every five seconds, each
-announced in chat. A server with no bot configuration runs exactly like vanilla Descent 3.
+announced in chat. A server with no bot configuration runs without bots.
 [BOT_MANAGEMENT.md](BOT_MANAGEMENT.md) has every key and rule.
 
 Players join from Multiplayer, Direct TCP/IP, or from the command line with `-directip <address:port>`; `+connect`
@@ -124,33 +131,31 @@ on the chat line (F8). The replies appear on the HUD, and Shift+F9 shows the who
 
 ## D3 Pyrodeck (optional)
 
-D3 Pyrodeck is a separate desktop admin tool for Descent 3 dedicated servers. It starts and watches the server and
-manages the bots over the remote console, so the server needs a `ConsolePassword`. Pyrodeck 0.5.1 and later run on
-the same machine as the server and connect on 127.0.0.1, so `AllowRemoteConsole=0` is enough; earlier releases need
-`AllowRemoteConsole=1`. To put Pyrodeck's panel on the internet, follow its guide to running behind a reverse proxy
-(nginx and HTTPS). Matcen works without it.
+[D3 Pyrodeck](https://github.com/stev0760/d3-pyrodeck) is a separate web admin panel for Descent 3 dedicated servers.
+It starts and watches servers, several at once, rotates missions from a playlist and manages the bots from a browser
+or a phone. It talks to each server over the remote console, so the server needs a `ConsolePassword`. Pyrodeck runs
+on the same machine as the server and connects on 127.0.0.1, so `AllowRemoteConsole=0` is enough.
 
-If players may join without your custom mission, turn on Mission Downloads in Pyrodeck's Launch panel, forward its TCP
-port (default 3002) and click "Host this mission": the game then offers joining players a working `http://` link.
-Links are `http://` only, and Pyrodeck keeps them to 86 characters, the most that older clients handle.
+Pyrodeck can also serve your custom missions to players who do not have them, and its documentation covers putting
+the panel on the internet behind a reverse proxy. Matcen works without it.
 
 ## Known limitations
 
-The [README](../README.md#known-limitations) lists them: some maps still trip the bots up, Phoenix and Magnum bots fly
-the route network less well than the Pyro-GL it is sized for, and co-op is the least finished mode.
+Some levels still trip the bots up, mostly very large or unusual ones. The route network is sized for the Pyro, so
+Phoenix and Magnum bots fly it less well. Co-op is the least finished mode.
 
 ## Report a bug
 
-Open an issue on the project's GitHub page. Include:
+Open an issue on the [issue tracker](https://github.com/stev0760/Descent3/issues). Include:
 
 - the version: the server prints `Matcen <version> <commit>` when it starts, and `$servercaps` prints
   `fork_version=`.
 - the mode, the mission and the level, and what the bots did against what you expected.
-- the server log. The release build logs the bots' navigation by default, about 5 to 15 MB an hour with 6 to 8 bots.
-  Do not start it with `-loglevel info`, which drops every bot line. Add `-logfile` and attach `Descent3.log` from the
-  folder you started the server in: it holds the log and the console's game messages (flag pickups and captures,
-  level changes) together. The next start replaces it: copy it before you restart the server. On Linux and macOS,
-  `2>&1 | tee server.log` keeps the same log.
+- the server log. The release build logs the bots' navigation by default; do not start it with `-loglevel info`,
+  which drops every bot line. Add `-logfile` and attach `Descent3.log` from the folder you started the server in: it
+  holds the log and the console's game messages (flag pickups and captures, level changes) together. The next start
+  replaces it, so copy it before you restart the server. On Linux and macOS, `2>&1 | tee server.log` keeps the same
+  log.
 - your `dedicated.cfg` and `bots.cfg`, with the password removed.
 
 A crash report is most useful with the `-symbols` archive for your system (Windows or Linux) unpacked next to the

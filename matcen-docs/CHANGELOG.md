@@ -117,8 +117,7 @@ with their mission files in [TEST_LEVELS.md](TEST_LEVELS.md).
 - **Checked with other clients.** An unmodified client built from the upstream open-source engine and a PiccuEngine
   client joined a Matcen server, saw the bots, got answers to the `!` orders, followed a level change and took the
   seat a bot gave up. Their players type the orders that a Matcen client's F10 menu sends. To join from the command
-  line, give the client `-directip <ip:port>`; `+connect` alone does nothing. Retail 1.5 and Windows clients are still
-  to be tried.
+  line, give the client `-directip <ip:port>`; `+connect` alone does nothing.
 
 ## [0.10.3] - 2026-10-08
 
@@ -137,7 +136,8 @@ with their mission files in [TEST_LEVELS.md](TEST_LEVELS.md).
 
 ## [0.10.2] - 2026-10-08
 
-*Formation flying: `!formup` puts the bots in formation behind you. Lines marked In test have not been flown yet.*
+*Formation flying: `!formup` puts the bots in formation behind you. Lines marked In test had not been flown when this
+version was released.*
 
 - **`!formup` (or `!form up`) flies the bots in formation behind you.** In a tunnel they take places single file
   along the path you flew, one behind the other; where there is room they spread into a wedge behind you, and along
@@ -150,7 +150,7 @@ with their mission files in [TEST_LEVELS.md](TEST_LEVELS.md).
 ## [0.10.1] - 2026-10-08
 
 *Auto population in Bot Settings: a listen-server host keeps a player count without the console. Lines marked In
-test have not been flown yet.*
+test had not been flown when this version was released.*
 
 - **Bot Settings keeps a player count.** Turn on Auto population and set Players to keep (2 up to one less than the
   server's seats; the host counts as a player): bots join as humans leave and leave as humans join, as
@@ -165,7 +165,7 @@ test have not been flown yet.*
 
 *The first of the release-package series: seats kept free for players and a player target, bot commands and menus
 for a listen-server host, the F10 order menu, the finished `!` basics, and a router that knows when one room is
-several spaces. Lines marked In test have not been flown yet.*
+several spaces. Lines marked In test had not been flown when this version was released.*
 
 - **A `%` in a player's name or chat no longer crashes the server.** The dedicated console re-read its own output as a
   format string; so did `$banlist`, `$playerinfo` and the command help. `$setteamname` no longer accepts team 4.
@@ -249,7 +249,6 @@ several spaces. Lines marked In test have not been flown yet.*
 - **Release packages.** A tagged release builds packages for Windows and Linux, and for macOS (untested),
   that extract straight over a Descent 3 install: the engine, the game modules, the sample configs and an
   INSTALL.txt, with the debug symbols in a separate download. The game data stays with your own copy of Descent 3.
-  Not yet run.
 - **Entropy: a bot taking over a room no longer brakes against hits.** A bot holding still in an enemy room to take
   it over used to thrust against any push, weapon knockback included, which no human pilot can do. It now lets go of
   the controls the way a player does: drag stops the ship, and a hit moves it exactly as it would move you. A hit that

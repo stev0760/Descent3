@@ -1,14 +1,8 @@
 # Bot management: operator and developer reference
 
-**Status:** the config-file roster, ship selection, difficulty levels, the Bot Settings menu, per-bot team
-assignment and the `$servercaps` handshake are built and shipped. Seats kept free for humans, the bot that yields a
-seat to a joining human, the population manager and the allowed-ship rule are built in 0.10.0 (section 9); the Bot
-Settings menu sets the population target on a listen server from 0.10.1 (sections 5 and 9.10).
-
 **Key files:** `Descent3/bot.h`, `Descent3/bot.cpp`, `Descent3/bot_population.h`, `Descent3/bot_population.cpp`,
 `Descent3/dedicated_server.cpp`, `Descent3/multi_ui.cpp`, `Descent3/multi_save_setting.cpp`, and the F6 Bots menu in
-`netgames/dmfc/dmfcmenu.cpp`. Line numbers below are at commit `ee6e6525`; the code added for section 9 and the menu
-is cited by function name. Levels named here are listed with their mission files in [TEST_LEVELS.md](TEST_LEVELS.md).
+`netgames/dmfc/dmfcmenu.cpp`. Levels named here are listed with their mission files in [TEST_LEVELS.md](TEST_LEVELS.md).
 
 ---
 
@@ -208,8 +202,7 @@ so an engine without that entry leaves it NULL and the menu is left out. The men
 event, and a bot that joins or leaves calls back into the DLL through the same `DLLInfo` (whose `iRet` `CallGameDLL`
 zeroes), so the entry restores `DLLInfo` on the way out and the Enter key stays consumed. `$removebot` takes the bot's
 `Bots[]` index, not its player slot: the menu reads it from the slot's address, which `BotAdd()` and `BotReinitAll()`
-set to `127.<index>.<slot>.1`, on a slot flagged `NPF_BOT` (the server's own flag). The menu has not yet been checked on
-screen.
+set to `127.<index>.<slot>.1`, on a slot flagged `NPF_BOT` (the server's own flag).
 
 ## 4. Difficulty
 
@@ -545,8 +538,6 @@ Checked 2026-10-08 on a Debug dedicated server with no `BotConfig=` and an `.mps
 | `BOTCOUNT 2`, `BOTTARGETPLAYERS 5`, roster Alpha (Phoenix, Default), Bravo (Pyro-GL, Rookie), `BOTDEFAULTDIFF 3` | Alpha (Ace) and Bravo spawned 3 s after load; `Reaper` (Phoenix, Ace), `Phantom` (Pyro-GL, Rookie) and `Viper` (Phoenix, Ace) joined at 5 s intervals; `$botpopulation status` read `manager=on target=5 reserve=1 humans=0 bots=5 seats=6/8 bot_limit=6` |
 | the same without the `BOTTARGETPLAYERS` line | `manager=off target=0`, the two roster bots |
 | `BOTTARGETPLAYERS 20`, `BOTCOUNT 0` | loaded as 7 with `preset BOTTARGETPLAYERS 20 changed to 7 for MAXPLAYERS 8`; the manager began filling from built-in names (Pyro-GL, Hotshot) |
-
-Not yet checked on screen: the menu's layout, the toggle, the field, the readout, and a save and reload.
 
 ## Related documents
 
