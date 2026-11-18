@@ -16,7 +16,7 @@ Matcen is a build of the open-source Descent 3 engine with bots built in. They j
 
 **No client changes.** The bots run on the server and take real player slots, with `[BOT]` after the callsign (`Reaper[BOT]`). Clients built from the open-source engine and PiccuEngine have been tested and join as they are. Retail 1.4 clients cannot join.
 
-**They fly like pilots.** Bots lead their shots, strafe, use the afterburner and countermeasures, and collect powerups. A cloaked ship is invisible to them until it fires, uses its afterburner or points a headlight at them. They are driven by the same thrust and speed limits as a player's ship and are knocked around by the same hits.
+**They fly like pilots.** Bots lead their shots, strafe, use the afterburner and countermeasures, and collect powerups. A cloaked ship is invisible to them until it fires, uses its afterburner, catches fire or points a headlight at them. They are driven by the same thrust and speed limits as a player's ship and are knocked around by the same hits.
 
 **Five skill levels, four ships.** `trainee`, `rookie`, `hotshot`, `ace` and `insane`, set for the whole roster or per bot. Bots fly the Pyro, Phoenix, Magnum and Black Pyro (the Black Pyro needs Mercenary).
 

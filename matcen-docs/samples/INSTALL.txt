@@ -51,8 +51,8 @@ it: Descent3.log, in the folder you start from, holds the bot lines and
 the console's game messages (flag captures, level changes). The next start
 replaces it. On Linux and macOS, ending the start line with
   2>&1 | tee server.log
-keeps the same log. Leave the log level alone: -loglevel info drops every
-bot line.
+keeps the same log. Leave the log level alone: -loglevel info drops the
+bots' navigation lines.
 
 More
 ----

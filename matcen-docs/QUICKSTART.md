@@ -45,7 +45,8 @@ to Matcen:
 
 Change `GameName`, `ConsolePassword`, `MissionName` (any multiplayer mission in your `missions` folder) and
 `Scriptname` (the mode: `anarchy.d3m`, `team anarchy.d3m`, `hyper-anarchy.d3m`, `robo-anarchy.d3m`, `ctf.d3m`,
-`hoard.d3m`, `entropy.d3m`, `monsterball.d3m`, `co-op.d3m`) with `NumTeams` (2 to 4) for the team modes.
+`hoard.d3m`, `entropy.d3m`, `monsterball.d3m`, `co-op.d3m`) with `NumTeams` (2 to 4) for the team modes; Entropy and
+Monsterball always have two teams.
 
 **`bots.cfg`** lists the bots. The sample starts four named bots and keeps the game at 12 players:
 
@@ -152,7 +153,7 @@ Open an issue on the [issue tracker](https://github.com/stev0760/Descent3/issues
   `fork_version=`.
 - the mode, the mission and the level, and what the bots did against what you expected.
 - the server log. The release build logs the bots' navigation by default; do not start it with `-loglevel info`,
-  which drops every bot line. Add `-logfile` and attach `Descent3.log` from the folder you started the server in: it
+  which drops the navigation lines. Add `-logfile` and attach `Descent3.log` from the folder you started the server in: it
   holds the log and the console's game messages (flag pickups and captures, level changes) together. The next start
   replaces it, so copy it before you restart the server. On Linux and macOS, `2>&1 | tee server.log` keeps the same
   log.
