@@ -1,32 +1,32 @@
-# Descent 3 — 6DoF Movement Physics Reference
+# Descent 3 movement physics
 
-> [!NOTE]
-> **Phase 3.5 implementation is complete.** Sections 9 (Implementation Path) and the CT_AI/CT_FLYING
-> comparison have been removed — the thrust-based movement, afterburner, tri-chording, and
-> `PLAYER_FLAGS` handling are all implemented in `BotApplyThrust()` / `BotConfigureAI()` in `bot.cpp`.
-> This document is retained as a technical reference for the constants and packet flags it defines.
+This document lists the engine's movement physics that bot movement is built on: the drag model, the thrust formula,
+the afterburner ramp, the packet flags clients use for thruster effects, and the constants the bots set. The bots'
+thrust code is `BotApplyThrust()` and `BotConfigureAI()` in `Descent3/bot.cpp`. The rulings that constrain bot
+movement are in [NAVIGATION.md](NAVIGATION.md) §1.3.
 
 ---
 
-## 1. The Physics Model — Exponential Drag
+## 1. The physics model: exponential drag
 
-Descent 3 uses an **exponential drag model** — velocity decays toward an equilibrium set by applied
-thrust, with a time constant determined by mass and drag.
+Descent 3 uses an **exponential drag model**: velocity decays toward an equilibrium set by the applied thrust, with a
+time constant set by mass and drag.
 
 ```
 v_eq = force / drag         (terminal velocity under constant thrust)
-τ    = mass / drag          (time constant — how fast v approaches v_eq)
+τ    = mass / drag          (time constant: how fast v approaches v_eq)
 v(t) = v_eq + (v₀ - v_eq) × exp(-t / τ)
 ```
 
-When drag or mass is negligible, the engine falls back to simple Euler integration.
+With no thrust, `v_eq` is 0 and the ship slows to a stop on its own. The integration is `PhysicsApplyConstantForce()`
+in `physics/physics.cpp`. When drag or mass is zero, it integrates the force with no drag instead.
 
 ---
 
-## 2. Thrust Construction — Tri-Chording
+## 2. Thrust construction: tri-chording
 
 ```cpp
-// DoFlyingControl() — object.cpp:2424–2427
+// DoFlyingControl() in Descent3/object.cpp
 objp->mtype.phys_info.thrust =
     speed_scalar * Players[objp->id].movement_scalar *
     (
@@ -36,117 +36,133 @@ objp->mtype.phys_info.thrust =
     );
 ```
 
-The three axes are added **without normalization** — tri-chording (all three axes simultaneously)
-produces `√3 ≈ 1.732×` single-axis thrust. `BotApplyThrust()` mirrors this formula exactly.
+The three axes are added **without normalization**, so thrusting on all three at once (tri-chording) gives
+`√3 ≈ 1.732×` the thrust of one axis. `BotApplyThrust()` uses the same formula: the same three axes, the ship's
+`full_thrust`, the player's `movement_scalar` and the outdoor scalar, with the afterburner multiplier on the forward
+axis only (§3).
 
-### Speed Scalars
+### Speed scalars
 
-| Condition | speed_scalar |
-|-----------|-------------|
-| Normal | 1.0 |
-| Outside terrain | 1.3 (30% boost) |
-| `EF_FREEZE` effect | `effect_info->freeze_scalar` |
+| Condition | `speed_scalar` in `DoFlyingControl` | In `BotApplyThrust` |
+|---|---|---|
+| Normal | 1.0 | 1.0 |
+| Outside, on terrain | 1.3 | 1.3 |
+| `EF_FREEZE` effect | `effect_info->freeze_scalar` | not applied |
+
+A freeze hit (`ApplyFreezeDamageEffect` in `damage.cpp`, for `WF_FREEZE` weapons) lowers `freeze_scalar` by 0.2 per
+hit, to no less than 0.3. It recovers by one third per second (`ObjDoEffects()` in `object.cpp`), and the effect ends
+when it reaches 1.0. A player's thrust is scaled by it, and a bot's is not.
 
 ---
 
-## 3. Afterburner — Thrust Multiplier Ramp (`object.cpp:2183–2195`)
+## 3. Afterburner: the thrust multiplier ramp
+
+`DoPlayerAfterburnControl()` (`Descent3/object.cpp`), abridged:
 
 ```cpp
-float punch_scalar;
+float punch_scalar = 1.0;
 if (Players[slot].afterburn_time_left > AFTERBURN_TIME * 0.90f)
     punch_scalar = 1.8f;
-else if (Players[slot].afterburn_time_left > AFTERBURN_TIME * 0.80f) {
+else if (Players[slot].afterburn_time_left > AFTERBURN_TIME * 0.80f &&
+         Players[slot].afterburn_time_left < AFTERBURN_TIME * 0.90f) {
     float norm = (Players[slot].afterburn_time_left - AFTERBURN_TIME * 0.80f)
                / (AFTERBURN_TIME * 0.10f);
-    punch_scalar = 1.0f + norm * 0.8f;  // lerps 1.0 → 1.8
-} else {
-    punch_scalar = 1.0f;
+    punch_scalar = 1.0f + norm * 0.8f;  // 1.0 rising to 1.8
 }
 controls->forward_thrust = controls->afterburn_thrust * 1.6f * punch_scalar;
 ```
 
-| Fuel remaining | punch_scalar | Total multiplier |
+| Fuel remaining | `punch_scalar` | Total multiplier |
 |----------------|-------------|-----------------|
-| >90% | 1.8 | **2.88×** normal |
-| 80–90% | 1.0–1.8 (lerp) | **1.6–2.88×** |
-| <80% | 1.0 | **1.6×** |
+| over 90% | 1.8 | **2.88×** normal |
+| 80 to 90% | 1.0 to 1.8 (linear) | **1.6 to 2.88×** |
+| under 80% | 1.0 | **1.6×** |
 
-`#define AFTERBURN_TIME 5.0` — from `Descent3/player.h:394`.
+`AFTERBURN_TIME` is 5.0 seconds (`Descent3/player.h`).
 
-`BotApplyThrust()` replicates this ramp using `Bots[i].afterburner_fuel` instead of
-`Players[slot].afterburn_time_left` (DoFlyingControl skips on dedicated server).
+`DoFlyingControl`, which calls `DoPlayerAfterburnControl`, runs for an object under `CT_FLYING` control, and a bot's
+ship is under `CT_AI` control. `BotApplyThrust()` therefore replicates the ramp with its own fuel counter
+(`Bots[i].afterburner_fuel`, `BOT_AFTERBURNER_FUEL_MAX` 5.0 s, `BOT_AFTERBURNER_THRUST_MULT` 1.6). Burning drains fuel
+and energy at one unit per second each. When the bot is not burning and has more than 20 energy
+(`BOT_AB_RECHARGE_ENERGY_MIN`), fuel recharges from energy at the same rate.
 
 ---
 
-## 4. Multiplayer Packet Flags (`multi.cpp:1822–1829`)
+## 4. Multiplayer packet flags
 
-These flags drive client-side visual effects in `MP_PLAYER_POS` packets.
+These flags drive the clients' visual effects for a ship. They are defined in `Descent3/multi.cpp` and set in
+`MultiStuffPosition` for the position packet.
 
 | Flag | Value | Effect |
 |------|-------|--------|
-| `MPF_AFTERBURNER` | 1 | Blue afterburner flame |
-| `MPF_OUTSIDE` | 2 | Player is in terrain |
-| `MPF_DEAD` | 4 | Player is dead |
-| `MPF_FIRED` | 8 | Weapon fired this frame |
-| `MPF_SPRAY` | 16 | Spray weapon active |
-| `MPF_ON_OFF` | 32 | On/off weapon active |
-| `MPF_HEADLIGHT` | 64 | Headlight on |
-| `MPF_THRUSTED` | 128 | Forward thrust → thruster plume |
+| `MPF_AFTERBURNER` | 1 | blue afterburner flame |
+| `MPF_OUTSIDE` | 2 | the player is on terrain |
+| `MPF_DEAD` | 4 | the player is dead |
+| `MPF_FIRED` | 8 | a weapon fired this frame |
+| `MPF_SPRAY` | 16 | a spray weapon is active |
+| `MPF_ON_OFF` | 32 | an on/off weapon is active |
+| `MPF_HEADLIGHT` | 64 | headlight on |
+| `MPF_THRUSTED` | 128 | forward thrust: the thruster plume |
 
-Set from `PLAYER_FLAGS_*`:
+`MPF_AFTERBURNER` and `MPF_THRUSTED` come from `PLAYER_FLAGS_*` (`Descent3/player_external.h`):
 
-| PLAYER_FLAGS | Value |
+| `PLAYER_FLAGS` | Value |
 |-------------|-------|
 | `PLAYER_FLAGS_AFTERBURN_ON` | `1 << 15` = 32768 |
 | `PLAYER_FLAGS_THRUSTED` | `1 << 17` = 131072 |
 
-Bots set these directly in `BotApplyThrust()`. Both must be set for clients to show
-the afterburner flame effect.
+A client copies the two packet flags back into `Players[slot].flags`. `DoPlayerFrameForOne()` (`Descent3/Player.cpp`)
+then ramps the thruster glow from `PLAYER_FLAGS_THRUSTED` and the afterburner glow and sound from
+`PLAYER_FLAGS_AFTERBURN_ON`, and `renderobject.cpp` draws the plume from both. A player's afterburner sets both flags,
+and `BotApplyThrust()` sets both while a bot burns.
 
 ---
 
-## 5. `physics_info` Structure (`lib/object_external_struct.h:329–373`)
+## 5. The `physics_info` structure
+
+`lib/object_external_struct.h`, abridged to the fields bot movement uses:
 
 ```cpp
 struct physics_info {
-    vector velocity;       // Current linear velocity (units/sec)
-    vector thrust;         // Applied thrust force — integrated by PhysicsDoFrame if PF_USES_THRUST
+    vector velocity;       // current linear velocity (units/sec)
+    vector thrust;         // applied thrust force, integrated by PhysicsDoFrame when PF_USES_THRUST is set
 
-    vector rotvel;         // Angular velocity (rad/sec)
-    vector rotthrust;      // Angular thrust (rad/sec²)
+    vector rotvel;         // angular velocity
+    vector rotthrust;      // angular thrust
 
-    float  mass;           // Object mass
-    float  drag;           // Linear drag coefficient
-    float  rotdrag;        // Rotational drag coefficient
-    float  full_thrust;    // Max thrust magnitude
-    float  full_rotthrust; // Max rotational thrust
+    float  mass;           // object mass
+    float  drag;           // linear drag coefficient
+    float  rotdrag;        // rotational drag coefficient
+    float  full_thrust;    // maximum thrust magnitude
+    float  full_rotthrust; // maximum rotational thrust
 
     uint32_t flags;        // PF_* physics flags
 };
 ```
 
-### Key Physics Flags
+### Key physics flags
 
 | Flag | Meaning |
 |------|---------|
-| `PF_USES_THRUST` | Thrust field integrated by `PhysicsDoFrame()` — must be set for bots |
-| `PF_FIXED_VELOCITY` | Velocity is frozen — set by `ResetPlayerObject()` for non-local players; **must be cleared** in `BotConfigureAI()` |
-| `PF_LEVELING` | Auto-level to horizon |
+| `PF_USES_THRUST` | `PhysicsDoFrame()` integrates the thrust field; it must be set for bots |
+| `PF_FIXED_VELOCITY` | velocity is frozen; `ResetPlayerObject()` sets it for players who are not the local player, and `BotConfigureAI()` **must clear it** |
+| `PF_LEVELING` | the object levels itself toward the horizon |
 
-**Critical**: `PlayerSetControlToAI()` clears `PF_USES_THRUST` and sets `drag=0.1f`.
-`BotConfigureAI()` immediately restores the ship template values and re-sets `PF_USES_THRUST`.
+**Important:** `PlayerSetControlToAI()` (`Descent3/Player.cpp`) clears `PF_USES_THRUST` and `PF_LEVELING`, sets
+`drag = 0.1`, zeroes the ship's velocity and thrust, and zeroes the AI state. `BotConfigureAI()` then restores the ship template values and sets
+`PF_USES_THRUST` again.
 
 ---
 
-## 6. Quick Reference: Bot Physics Constants
+## 6. Quick reference: bot physics constants
 
-From `BotConfigureAI()` / `BotCacheShipPhysics()` in `bot.cpp`:
+From `BotConfigureAI()` and `BotCacheShipPhysics()` in `bot.cpp`:
 
 ```cpp
-obj->ai_info->max_velocity       = 50.0f;   // orientation goal speed (units/sec)
-obj->ai_info->max_delta_velocity = 0.0f;    // ZERO — prevents AI goals from writing velocity
-obj->ai_info->max_turn_rate      = 16000;   // initial; overridden per-frame by BotApplyThrust
-obj->ai_info->avoid_friends_distance = 40.0f; // must override after PlayerSetControlToAI (sets 0)
+obj->ai_info->max_velocity       = 50.0f;   // used by the AI goal system to scale direction
+obj->ai_info->max_delta_velocity = 0.0f;    // zero: AI goals cannot change velocity
+obj->ai_info->max_turn_rate      = 16000;   // initial; BotApplyThrust sets it every frame
+obj->ai_info->avoid_friends_distance = 40.0f; // PlayerSetControlToAI sets 0; must be set again
 
 // Ship template values (restored after PlayerSetControlToAI):
 obj->mtype.phys_info.mass          = Ships[ship_idx].phys_info.mass;
@@ -156,24 +172,15 @@ obj->mtype.phys_info.full_thrust   = Ships[ship_idx].phys_info.full_thrust;
 obj->mtype.phys_info.full_rotthrust = Ships[ship_idx].phys_info.full_rotthrust;
 obj->mtype.phys_info.flags &= ~PF_FIXED_VELOCITY;
 obj->mtype.phys_info.flags |=  PF_USES_THRUST;
+obj->flags |= OF_FORCE_CEILING_CHECK;   // ceiling collision (bots are CT_AI, normally excluded)
 ```
+
+Every frame, `BotApplyThrust()` sets `max_turn_rate` by range to the target (65535 under 70 units, 40000 under 140,
+26000 beyond) times the difficulty's turn-rate scale, capped at 65535 ([NAVIGATION.md](NAVIGATION.md) §1.3).
 
 ---
 
-## 7. Two physics rulings that constrain bot movement
+## 7. The physics rulings
 
-Rulings of 2026-08-04 (design record in [`NAVIGATION.md`](NAVIGATION.md) §1.3). They follow from the drag
-model in §1 and apply to every movement change.
-
-1. **Drag means braking is not thrusting.** With no thrust the ship decays toward zero velocity on its own
-   (§1, `v_eq = 0`). A bot stops by releasing thrust, never by reverse-thrusting. In code: when
-   `BotApplyThrust()` has no nav direction it sets `forward = 0.0f` and coasts (`bot.cpp:6416-6433`); it
-   used to drive full throttle there.
-2. **Bots never resist knockback.** Weapon impulses are applied by the physics engine; a bot does not thrust
-   against them, zero its velocity, snap its position, or hold a spot under fire. A human can barely do it,
-   and it reads as unnatural. Losing a hold under fire is the game as designed.
-
-Both rest on the standing rule that bots use only legal thrust inputs, with no exceptions since 2026-10-01:
-knockback must affect bots exactly as it affects players, always. The Entropy takeover
-park (`entropy_holding` in `BotApplyThrust()`), the last place that thrust against residual velocity, holds zero
-thrust since 2026-10-07: drag stops the parked ship and a knock moves it like any player's.
+The rulings that constrain bot movement (braking is not thrusting, and bots do not resist knockback), and the one place
+bot code writes a velocity, are in [NAVIGATION.md](NAVIGATION.md) §1.3. They follow from the drag model in §1.

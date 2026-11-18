@@ -4,11 +4,10 @@ These are the levels the Matcen docs name as test cases. Each row gives the miss
 mission, and the mine file (the level file) the mission lists for it.
 
 "Ships with Descent 3" means the mission file is in the retail GOG/Steam release. The other missions are third-party
-missions; they are not included with Matcen and are not redistributed here.
+missions, not included with Matcen and not redistributed here.
 
-Some test runs loaded a level from a single-level mission file that holds the same level file, such as `canyons.mn3`
-for Kartoon Kanyon. The table names the full mission instead. "all" in the Level column means the docs name the whole
-mission.
+A level can also be loaded from a single-level mission file that holds the same level file (`canyons.mn3` holds Kartoon
+Kanyon). The table lists the full mission. "all" in the Level column means the docs name the whole mission.
 
 | Name used in the docs | Mission file | Level | Mine file | Ships with Descent 3 |
 |---|---|---|---|---|
@@ -53,4 +52,5 @@ mission.
 | RAGE | `RAGE.mn3` | 1 | `entropybugfix.d3l` | no |
 | Sigma Base, Sigma | `sigmabase.mn3` | 1 | `sigmabase.d3l` | no |
 | stadium-plus, splusv1 | `splusv1.mn3` | 1 | `StadiumPlusv1.d3l` | no |
+| The Mega Factory | `themegafactory.mn3` | 1 | `The Mega Factory.d3l` | no |
 | WickedGv1.2 | `WickedGv1.2.mn3` | 1 | `WGtemp2.d3l` | no |
