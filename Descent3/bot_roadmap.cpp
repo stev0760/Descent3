@@ -177,7 +177,6 @@ struct RoadmapRoom {
   std::vector<int> portal_seed;      // portal index -> node index of its seam seed (indoor; size = num_portals)
   std::vector<int> seed_portal;      // node index -> portal index for the seeds (indoor; size = n_seed)
   int comp_count = 0;
-  int orig_comp_count = 0;    // components BEFORE the bridges merged them (>1 = non-convex / multi-level)
   std::vector<int> zone;      // zone id per node: what a seed reaches without crossing a portal face; -1 = none
   std::vector<int> zone_comp; // zone id -> the lattice component it lies in (a zone never spans two)
   int zone_count = 0;
@@ -1481,16 +1480,6 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     }
   }
 
-  // Record the pre-bridge component count: how fragmented growth left the interior before the bridges merge it
-  // (>1 = geometric separation that direct portal-path routing stalls on). Nothing gates on it: proactive grid
-  // routing is gated on `routable`, computed at the end of the build.
-  {
-    std::unordered_map<int, int> roots;
-    for (int i = 0; i < (int)rr->node.size(); i++)
-      roots[UFFind(uf, i)] = 1;
-    rr->orig_comp_count = (int)roots.size();
-  }
-
   // 2. Component bridge (NAVIGATION.md, the volumetric roadmap). Grow-from-seed leaves the interior as several
   // components when a navigable gap is wider than the neighbour-connect radius (sp*1.8): e.g. a tavern whose
   // upper gallery sits above the main floor across open air. For each cross-component node
@@ -1883,7 +1872,7 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
   rr->local_pair_coverage = RoadmapLocalPairCoverage(rr, n_seed);
 
   // Route-ownership eligibility, computed on the finished network rather than a pre-repair snapshot.
-  // A fragmentation test (`orig_comp_count > 1`, "growth left the interior fragmented") would make a room
+  // A fragmentation test (more than one component before the bridges merge them) would make a room
   // ineligible the moment its coverage got good: a complete network at full portal-pair coverage would
   // serve no roadmap vias. The cell floor also keeps the multibend repair from widening eligibility: a
   // room whose connectivity comes from traced connectors has few real cells and fails on its own.
