@@ -1,22 +1,36 @@
 # Matcen
 
-Server-side multiplayer bots for Descent 3.
+Multiplayer bots for Descent 3.
 
-**Matcen** brings bots to every Descent 3 multiplayer mode: Anarchy, Team Anarchy, Hyper-Anarchy, Robo-Anarchy, CTF, Hoard, Entropy, Monsterball and co-op. They play on any map, third-party levels included. Multiplayer maps carry no AI waypoint data, so Matcen builds its own route network from each level's geometry when it loads; nothing is scripted per map. Descent 3 never shipped with multiplayer bots.
+Matcen is a build of the open-source Descent 3 engine with bots built in. They join a multiplayer game as ordinary players, in every game mode and on any level, and nobody who connects needs to install anything.
 
-Bots take real player slots on dedicated and listen servers and show up to every client as ordinary players, with `[BOT]` after the callsign (for example `Reaper[BOT]`). They fight with lead aiming, strafing, afterburner and countermeasures, collect powerups, honor cloaking, and fly under the same physics as human players.
+**Play now:** a public server with bots runs around the clock at `matcen.dev:2092`. In the game, choose Multiplayer, Direct TCP/IP and enter that address, or start the game with `-directip matcen.dev:2092`.
 
-**No client modification is needed.** The bots run on the server only. Clients built from the open-source Descent 3 engine (Matcen's own build and upstream builds) and PiccuEngine have been tested and play as they are; retail 1.4 clients cannot join. A server with no bot configuration behaves exactly like vanilla Descent 3.
+**Run your own:** packages for Windows and Linux are on the [Releases page](https://github.com/stev0760/Descent3/releases). [QUICKSTART.md](matcen-docs/QUICKSTART.md) gets a server with bots running in a few minutes.
 
-**Status: 0.10.17** (2026-11-09), in the 0.10.x release-package series. What each release changed is in [CHANGELOG.md](matcen-docs/CHANGELOG.md).
+## Features
 
-**Try it:** a public server with bots runs around the clock at `matcen.dev:2092`. In the game, choose Multiplayer, Direct TCP/IP and enter that address, or start the game with `-directip matcen.dev:2092`.
+**Every mode.** Anarchy, Team Anarchy, Hyper-Anarchy, Robo-Anarchy, CTF, Hoard, Entropy, Monsterball and co-op. In the team modes the bots play the objective: they take, carry and return flags in CTF, play the ball in Monsterball, and take over rooms in Entropy.
 
-**Getting started:** [QUICKSTART.md](matcen-docs/QUICKSTART.md) covers installing over Descent 3, running a server with bots, and reporting a bug. Packages for Windows and Linux are on the [Releases page](https://github.com/stev0760/Descent3/releases); the macOS package is untested.
+**Any level.** Multiplayer levels carry no AI waypoint data, so Matcen builds a route network from each level's geometry when it loads. Nothing is scripted per map, and third-party levels work like the stock ones.
+
+**No client changes.** The bots run on the server and take real player slots, with `[BOT]` after the callsign (`Reaper[BOT]`). Clients built from the open-source engine and PiccuEngine have been tested and join as they are. Retail 1.4 clients cannot join.
+
+**They fly like pilots.** Bots lead their shots, strafe, use the afterburner and countermeasures, collect powerups and lose track of a cloaked ship. They fly under the same physics as players, with no speed, damage or knockback advantage.
+
+**Five skill levels, four ships.** `trainee`, `rookie`, `hotshot`, `ace` and `insane`, set for the whole roster or per bot. Bots fly the Pyro, Phoenix, Magnum and Black Pyro (the Black Pyro needs Mercenary).
+
+**Orders in chat.** In team modes and co-op, type `!attack`, `!defend`, `!follow`, `!formup` or `!attack flag` and your team's bots answer and do it. `<botname>: !order` goes to one bot, and `!help` lists what the current mode takes. On a Matcen client, F10 opens the same orders as a menu.
+
+**Always room for people.** Bots never fill a server. One seat stays free, and when a player takes it a bot leaves so the next player finds a seat too. Set a player target and the server keeps humans plus bots at that number as people come and go.
+
+**Dedicated and listen servers.** A dedicated server reads its roster from a file and is managed from the console or over telnet. A listen-server host sets bots up in the Bot Settings screen and manages them from the F6 menu, with no file to edit.
+
+**Vanilla when you want it.** A server with no bot configuration behaves like Descent 3 without Matcen.
 
 ## Configuration
 
-Add `BotConfig=bots.cfg` to `dedicated.cfg`, then list the bots in that file. The bot keys only work in the bot file.
+Add `BotConfig=bots.cfg` to `dedicated.cfg`, then list the bots in that file:
 
 ```ini
 ; bots.cfg
@@ -28,48 +42,23 @@ BotDifficulty1=ace
 BotTeam1=1
 ```
 
-Ships: `pyro`, `phoenix`, `magnum`, `blackpyro` (Black Pyro needs Mercenary). Difficulty: `trainee`, `rookie`, `hotshot`, `ace`, `insane`. Teams: `BotTeam<n>=1` to `4`. A bot with no team joins the smallest one. Names are cut to 14 characters. On a listen server, use the in-game Bot Settings screen instead. Full reference: [BOT_MANAGEMENT.md](matcen-docs/BOT_MANAGEMENT.md).
+`BotTargetPlayers=12` keeps the game at twelve players, bots filling in for missing humans. On the console, `$bothelp` lists the bot commands (`$addbot`, `$removebot`, `$botlist`, `$botdifficulty`, `$botpopulation`). Everything else is in [BOT_MANAGEMENT.md](matcen-docs/BOT_MANAGEMENT.md) and [CHAT_COMMANDS.md](matcen-docs/CHAT_COMMANDS.md).
 
-**Seats:** bots never fill the server. One seat stays free for a human (`BotReservedSlots=`, default 1), and when a human takes it a bot leaves, so the next human finds a seat too.
+## Status
 
-**Player target:** `BotTargetPlayers=12` keeps humans plus bots at 12, adding and removing bots as humans come and go; `$botpopulation` changes it live. Size `MaxPlayers` as the target plus the free seats plus one for the server. On a listen server, turn on Auto population in Bot Settings.
+**0.10.17**, with release notes in [CHANGELOG.md](matcen-docs/CHANGELOG.md). Matcen stays below 1.0 until community play shows it is stable. The bots are strongest in Anarchy and CTF; co-op, Entropy and Monsterball are playable and still being polished, and on some large or unusual levels bots find their way less well. The macOS package is untested.
 
-## Chat orders and console
-
-In team modes and co-op, type a `!` order in chat, such as `!attack`, `!defend`, `!follow`, `!formup` (formation flying) or `!attack flag`. A bare order goes to every bot on your team, and `<botname>: !order` goes to one bot; `!help` lists the orders the current mode takes. In free-for-all modes the bots only taunt back. The full list is in [CHAT_COMMANDS.md](matcen-docs/CHAT_COMMANDS.md).
-
-On a Matcen client, F10 opens a menu of the orders the mode takes and sends the same chat line; players on other clients type it.
-
-On the dedicated server console, over telnet, or on a listen-server host's chat line, `$bothelp` lists the bot commands (`$addbot`, `$removebot`, `$botlist`, `$botdifficulty`, `$botpopulation` and the diagnostics). A listen-server host also finds the everyday ones under Bots in the F6 menu.
-
-## Known limitations
-
-*   On toroid ring maps, bots can get caught in angled alcoves along the ring.
-*   On very large maps and maps built around a big hub, some bots wander or rarely reach the flags.
-*   On four-team crossfire maps, flag carriers often die on the way home, and bots do not hoard flags for the bonus.
-*   Openings barely wider than the ship are a last resort, and very flat rooms get a sparse route grid.
-*   Outdoors, bots can pin against steep hillsides, and a doorway-shaped recess with no door can trap a carrier.
-*   The route network is sized for the Pyro hull, so Phoenix and Magnum bots fly it less well. Co-op is experimental.
-
-## Roadmap
-
-*   Fixes from community play on the 0.10.x releases.
-*   Co-op, Entropy and Monsterball polished.
-*   A simpler navigation layer: one planner per room.
-*   1.0 only after community play shows it is stable.
+Bug reports are welcome on the [issue tracker](https://github.com/stev0760/Descent3/issues). A problem that also happens on an upstream build belongs on the [upstream tracker](https://github.com/DescentDevelopers/Descent3/issues).
 
 ## Documentation
 
-Server operators and players: [QUICKSTART](matcen-docs/QUICKSTART.md), [BOT_MANAGEMENT](matcen-docs/BOT_MANAGEMENT.md), [CHAT_COMMANDS](matcen-docs/CHAT_COMMANDS.md), [CHANGELOG](matcen-docs/CHANGELOG.md).
+- Players and server operators: [QUICKSTART](matcen-docs/QUICKSTART.md), [BOT_MANAGEMENT](matcen-docs/BOT_MANAGEMENT.md), [CHAT_COMMANDS](matcen-docs/CHAT_COMMANDS.md), [CHANGELOG](matcen-docs/CHANGELOG.md).
+- Developers: the design documents in [`matcen-docs/`](matcen-docs/README.md), starting with [NAVIGATION](matcen-docs/NAVIGATION.md). [UPSTREAM_PATCHES](matcen-docs/UPSTREAM_PATCHES.md) lists engine fixes made here that apply to upstream Descent 3 too.
 
-Developers: the design documents in [`matcen-docs/`](matcen-docs/README.md), starting with [NAVIGATION](matcen-docs/NAVIGATION.md); [UPSTREAM_PATCHES](matcen-docs/UPSTREAM_PATCHES.md) lists engine fixes made here that apply to upstream Descent 3 too.
-
-## About this fork
+## About
 
 Matcen is a fork of the [Descent 3 open source engine](https://github.com/DescentDevelopers/Descent3), licensed under [GPL-3.0](LICENSE) like the engine. The engine includes the '1.5' patch written by Kevin Bentley and Jeff Slutter, brought to a stable condition by the Descent community. You need your own game files: [USAGE.md](USAGE.md) covers installation and [BUILD.md](BUILD.md) building from source.
 
-A problem that also happens on an upstream build belongs on the [upstream tracker](https://github.com/DescentDevelopers/Descent3/issues); anything about the bots belongs here.
-
-**Development note:** Matcen was built with substantial AI assistance. LLM coding agents wrote and reviewed code under the maintainer's direction; design, gameplay tuning, playtesting and every release decision were the maintainer's.
+Matcen was built with substantial AI assistance. LLM coding agents wrote and reviewed code under the maintainer's direction; design, gameplay tuning, playtesting and every release decision were the maintainer's.
 
 **Contact:** contact@matcen.dev
