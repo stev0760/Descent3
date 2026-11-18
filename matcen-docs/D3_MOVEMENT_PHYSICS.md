@@ -47,11 +47,12 @@ axis only (§3).
 |---|---|---|
 | Normal | 1.0 | 1.0 |
 | Outside, on terrain | 1.3 | 1.3 |
-| `EF_FREEZE` effect | `effect_info->freeze_scalar` | not applied |
+| `EF_FREEZE` effect | `effect_info->freeze_scalar` | `effect_info->freeze_scalar` |
 
 A freeze hit (`ApplyFreezeDamageEffect` in `damage.cpp`, for `WF_FREEZE` weapons) lowers `freeze_scalar` by 0.2 per
 hit, to no less than 0.3. It recovers by one third per second (`ObjDoEffects()` in `object.cpp`), and the effect ends
-when it reaches 1.0. A player's thrust is scaled by it, and a bot's is not.
+when it reaches 1.0. A player's thrust and a bot's are scaled by it alike. No weapon in the retail game data sets
+`WF_FREEZE`; some custom missions define weapons that do.
 
 ---
 

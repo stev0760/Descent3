@@ -6,7 +6,7 @@ is, what the change does and which files it touches. Each fix applies without th
 
 ## Index
 
-All fixes are in Matcen 0.10.17.
+All fixes are in Matcen 0.10.18.
 
 | # | Defect | Files | Upstream status |
 | :--- | :--- | :--- | :--- |

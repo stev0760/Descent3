@@ -9,6 +9,15 @@ a larger change that may be backed out whole, until it passes its validation gat
 Versions before 0.10.0 were development builds; their changes are in the git history. Levels named here are listed
 with their mission files in [TEST_LEVELS.md](TEST_LEVELS.md).
 
+## [0.10.18] - 2026-11-18
+
+- **A freeze weapon slows a bot as it slows a player.** A weapon with the engine's freeze effect cuts the speed of
+  the ship it hits for a couple of seconds. Bots ignored it and kept full speed. No weapon in the retail game has the
+  effect; some custom missions define weapons that do.
+- The documentation was reorganised: [BOT_MANAGEMENT.md](BOT_MANAGEMENT.md) and
+  [CHAT_COMMANDS.md](CHAT_COMMANDS.md) are references rebuilt from the code, and the developer documents describe the
+  navigation as built.
+
 ## [0.10.17] - 2026-11-09
 
 - **A dedicated server no longer changes the game client's settings.** A server and a client run from the same

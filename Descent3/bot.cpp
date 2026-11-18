@@ -6960,8 +6960,11 @@ static void BotApplyThrust(int bot_index) {
       Players[slot].flags &= ~PLAYER_FLAGS_THRUSTED;
   }
 
-  // Speed scalar (terrain speed bonus, same as DoFlyingControl)
+  // Speed scalar, as DoFlyingControl computes it for a player: the slow-down from a freeze weapon's hit, then the
+  // outdoor speed bonus.
   float speed_scalar = 1.0f;
+  if (obj->effect_info && (obj->effect_info->type_flags & EF_FREEZE))
+    speed_scalar = obj->effect_info->freeze_scalar;
   if (OBJECT_OUTSIDE(obj))
     speed_scalar *= 1.3f;
 
@@ -6995,7 +6998,7 @@ static void BotApplyThrust(int bot_index) {
     }
   }
 
-  // Compute thrust vector — same formula as DoFlyingControl (object.cpp:2424-2427), the player's movement
+  // Compute thrust vector — same formula as DoFlyingControl in object.cpp, the player's movement
   // scalar included (a level script or the game's wait can change it for every player alike).
   // Tri-chording: forward + sideways + vertical combine without normalization
   float full_thrust = Bots[bot_index].ship_full_thrust;

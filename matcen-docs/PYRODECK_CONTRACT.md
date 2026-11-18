@@ -42,7 +42,7 @@ without `$` is a server setting (`DedicatedServerLex`). One the server does not 
 `BotPrintServerCaps` (`bot.cpp`):
 
 ```
-SERVERCAPS version=1 fork=Matcen fork_version=0.10.17 features=bots,roster,ships,difficulty,teams,squad_orders,population
+SERVERCAPS version=1 fork=Matcen fork_version=0.10.18 features=bots,roster,ships,difficulty,teams,squad_orders,population
 ```
 
 - Format string: `"SERVERCAPS version=1 fork=%s fork_version=%d.%d.%d "

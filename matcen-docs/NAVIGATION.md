@@ -89,8 +89,8 @@ What differs from a player's ship:
   `BOT_LONGRANGE_TURNRATE` 26000, in `bot.h`) times the difficulty's `turn_rate_scale`, capped at 65535. This is a
   rate limit by difficulty, not the player's rotational thrust model. Difficulty values are in
   [BOT_MANAGEMENT.md](BOT_MANAGEMENT.md).
-- **Freeze.** `BotApplyThrust()` does not apply the `EF_FREEZE` speed scalar that a player's thrust gets in
-  `DoFlyingControl`, so a freeze hit does not slow a bot.
+- **Freeze.** `BotApplyThrust()` applies the `EF_FREEZE` speed scalar that a player's thrust gets in
+  `DoFlyingControl`, so a hit from a freeze weapon slows a bot as it slows a player.
 
 ### 1.4 One engine goal per leg
 
