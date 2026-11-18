@@ -19,36 +19,34 @@
 #ifndef BOT_ROADMAP_H
 #define BOT_ROADMAP_H
 
-// Navigation substrate, indoor build: a per-room VOLUMETRIC grid-seeded roadmap (deterministic PRM)
-// that the bot routes over with Lazy Theta* (any-angle), replacing the portal-skeleton pass of the via
-// search. The roadmap puts nodes throughout a room's INTERIOR (incl. the Y/vertical extent) so bots can
-// reach an arbitrary interior point and traverse tall shafts — the portal skeleton's two failure modes.
+// Navigation substrate, indoor build: a per-room volumetric grid-seeded roadmap (deterministic PRM)
+// that the bot routes over with Lazy Theta* (any-angle), consulted ahead of the portal-skeleton pass of
+// the via search in non-buried rooms. The roadmap puts nodes throughout a room's interior (incl. the
+// Y/vertical extent) so bots can reach an arbitrary interior point and traverse tall shafts — the portal
+// skeleton's two failure modes. The outdoor build grows the same roadmap over a terrain region.
 //
-// Honors the project invariants: our layer only (output is an AIG_GET_TO_POS waypoint, never movement_dir,
-// never BNode_allocated); additive + toggle-gated; hull radius real and FIXED (no speed-scaled clearance);
-// complement the engine path-follower, don't override. Canonical design: matcen-docs/NAVIGATION.md
-// section 3.5 (absorbs the retired GRID_NAV_DESIGN.md spec).
+// Honors the project invariants: bot layer only (output is an AIG_GET_TO_POS waypoint, never movement_dir,
+// never BNode_allocated); additive + toggle-gated; hull radius real and fixed (no speed-scaled clearance);
+// complement the engine path-follower, don't override. Design: matcen-docs/NAVIGATION.md, the volumetric
+// roadmap.
 
 #include "object.h"
 #include "bot_steering.h" // BotViaResult, BotSegmentClear
 
-// Master toggle ($gridnav). Default ON for 0.9.4 (move fast — the 0.9.3 skeleton stays live as the
-// per-room fallback for degenerate rooms, and $gridnav off reproduces 0.9.3 for A/B).
+// Master toggle ($nav grid). Default on; the portal skeleton stays live as the per-room fallback for
+// degenerate rooms, and `$nav grid off` leaves navigation to the skeleton alone.
 extern bool Bot_gridnav_enabled;
 
-// Single shared clearance for node growth, edge probing, AND Theta* line-of-sight. This is a CONNECTIVITY
-// radius: it must track the ship HULL so the roadmap doesn't falsely reject a passage the ship actually
-// fits through — it is NOT a flight-safety/momentum margin (the engine's avoid-walls owns flight safety).
-// The original 8.0 was over-conservative and falsely fragmented tight rooms (a ~7u tavern doorway the hull
-// clears read as blocked -> disconnected components). Keep it at hull + a sliver, and never BELOW the hull
-// (sub-hull edges route a bot through a gap it doesn't fit, as a BNode build pruned at max_rad 5.0 did).
-// Pyro hull ~6.676. This is a pure FIT radius (connectivity), NOT a flight-safety margin — the engine's
-// avoid-walls owns flight safety. 7.0 still over-rejected the tightest real doorways (the townofbree tavern
-// BASEMENT door, where the blue key lives — a bot/player can barely fit → grid sealed the room → via-dance +
-// "sealed" powerup abandons in room 60). Dropped to a hair over the hull so a gap the ship physically clears
-// is accepted. NEVER set below the hull: sub-hull edges route bots into gaps they jam in (NAVIGATION.md §7.5).
+// Single shared clearance for node growth, edge probing, and Theta* line-of-sight. This is a connectivity
+// radius: it must track the ship hull so the roadmap doesn't falsely reject a passage the ship actually
+// fits through — it is not a flight-safety/momentum margin (the engine's avoid-walls owns flight safety).
+// A wider radius falsely fragments tight rooms: at 8.0 a doorway the hull clears reads as blocked
+// (disconnected components), and even 7.0 rejects the tightest real doorways (a basement door a ship can
+// barely fit through, so the grid seals the room). So it sits a hair over the Pyro hull (~6.676), and a gap
+// the ship physically clears is accepted. Never set it below the hull: sub-hull edges route bots into gaps
+// they jam in, as a BNode build pruned at max_rad 5.0 does (NAVIGATION.md, invariants).
 #define BOT_ROADMAP_CLEARANCE 6.7f // hull 6.676 + 0.024 sliver — fit radius, not a safety margin
-// Fatter clearance used ONLY by the $nav curve Theta* straightening (SetVertex) so it won't shortcut
+// Fatter clearance used only by the $nav curve Theta* straightening (SetVertex) so it won't shortcut
 // two nodes across a mound/bend that clears bare hull but not the engine's avoid-walls margin (~2x
 // hull). Graph adjacency/edges still use BOT_ROADMAP_CLEARANCE so tight doorways thread.
 #define BOT_ROADMAP_STRAIGHTEN_CLEARANCE 13.5f
@@ -60,9 +58,9 @@ extern bool Bot_gridnav_enabled;
 #define BOT_ROADMAP_SLICE_MS 5.0
 #define BOT_ROADMAP_SLICE_IDLE_MS 12.0
 
-// Tube densification ($nav dense): a room thinner than the lattice spacing gets ZERO interior nodes — the
-// isengard room-40 class (21u-wide grate tunnel, 143u tall -> 2 portal seeds in 2 components = DEGENERATE) —
-// and the straight bridge caps at BRIDGE_LEN, so tube-end seeds farther apart than that never connect. The
+// Tube densification ($nav dense): a room thinner than the lattice spacing gets zero interior nodes (a
+// 21u-wide, 143u-tall grate tunnel: 2 portal seeds in 2 components = degenerate), and the straight
+// bridge caps at BRIDGE_LEN, so tube-end seeds farther apart than that never connect. The
 // ladder pass walks each qualifying portal-seed pair at sub-spacing steps, hull-fitting a chain of rung
 // nodes (with small lateral jitter when the direct rung clips a wall). Rung cap bounds per-room insertions.
 #define BOT_ROADMAP_TUBE_RUNG_MAX 96
@@ -78,84 +76,77 @@ extern bool Bot_gridnav_enabled;
 #define BOT_ROADMAP_MULTIBEND_NODE_MAX 96
 #define BOT_ROADMAP_MULTIBEND_STEP 12.0f
 
-// Component bridge (NAVIGATION.md section 3.5, construction step 4): connect grow-from-seed components separated by a
+// Component bridge (NAVIGATION.md, the volumetric roadmap): connect grow-from-seed components separated by a
 // navigable gap wider than the neighbour-connect radius (sp*1.8 = 36u) but still flyable — e.g. an upper
 // gallery ~45u above a tavern floor through open air. Hull-probe-gated, so solid dividers stay split.
 #define BOT_ROADMAP_BRIDGE_LEN 55.0f      // max cross-component gap to attempt bridging (catches ~40-45u splits)
 #define BOT_ROADMAP_BRIDGE_MAX_NODES 1200 // skip the O(n^2) bridge scan above this (huge rooms are ~1 component)
 
-// Corner-rounding component bridge ($gridbridge). The straight bridge above only spans
-// a gap a SINGLE hull-clear segment crosses; it cannot connect two components split by a WALL whose only link
-// is a lateral go-around — the Bree-tavern class: the open-air component vs. the door-approach pocket, divided
-// by the structure facade. This pass inserts ONE intermediate vertex M swept off the A-B midline (laterally to
-// round the wall's end, or vertically to clear over the top) so both legs A->M and M->B are hull-clear. It is
-// probe-gated like the straight bridge — a fully enclosed pocket with no flyable corner stays split (correct).
-// A spatial hash + attempt budget bound it on the large OUTDOOR regions the node-capped straight bridge skips
-// (that skip is exactly why outdoor regions stayed at 2-3 components and the Bree entrance went unbridged).
+// Corner-rounding component bridge ($nav bridge). The straight bridge above only spans
+// a gap a single hull-clear segment crosses; it cannot connect two components split by a wall whose only link
+// is a lateral go-around (an open-air component and a door-approach pocket divided by a structure's facade).
+// This pass inserts one intermediate vertex M swept off the A-B midline (laterally to round the wall's end, or
+// vertically to clear over the top) so both legs A->M and M->B are hull-clear. It is probe-gated like the
+// straight bridge — a fully enclosed pocket with no flyable corner stays split (correct). A spatial hash +
+// attempt budget bound it on the large outdoor regions the node-capped straight bridge skips (without this
+// pass those regions stay in several components and some entrances go unbridged).
 #define BOT_ROADMAP_CORNER_LEN 220.0f        // max straight A-B span (endpoints) to attempt corner-rounding
 #define BOT_ROADMAP_CORNER_OFFSET_MAX 120.0f // max lateral/vertical midpoint offset swept to find the open corner
 #define BOT_ROADMAP_CORNER_MAX_ATTEMPTS 240  // cap corner-insertion attempts per build (closest pairs first)
 
-extern bool Bot_roadmap_corner_enabled; // $gridbridge — corner-rounding component bridge
+extern bool Bot_roadmap_corner_enabled; // $nav bridge — corner-rounding component bridge
 
-// Selective gridroute complexity gate (the floor that fixes the tiny-room false positive). A room earns
-// PROACTIVE grid routing only if BOTH: (a) its airspace fragmented before the bridges merged it
-// (orig_comp_count>1 = non-convex / multi-level), AND (b) it has real interior volume (>= this many accepted
-// lattice nodes). Without the floor, a small room whose few portal seeds growth couldn't connect but the
-// BRIDGE did reads "fragmented" and over-routes (skybox anarchy: trivial 1-6-lattice rooms tagged complex).
-// Genuinely complex rooms (khazaddum divider, the Bree tavern) carry 32+ lattice; simple rooms ≤14 — gap at ~24.
-// Route-ownership eligibility. The old gate asked "did growth leave this room fragmented?" — it
-// measured SAMPLER FAILURE and used it as a proxy for room difficulty, so a room whose coverage got
-// GOOD lost eligibility. These ask what the room actually HAS: enough sampled cells to be worth
-// composing a route through, and portal seeds that genuinely reach each other through the interior.
-// Measured (cells>=8, pairs>=75%): admits 22 of abend2's 66 roadmap rooms including both ring rooms at
-// 223 cells / 100%; on batteries 27 of 302, excluding small rooms whose median is 1 cell and where a
-// direct hop is already the right answer. Both distributions are strongly bimodal, so the exact
-// percentage is not a sensitive knob.
+// Route-ownership eligibility (RoadmapRoom::routable), the gate for proactive grid routing and the
+// composer. It asks what the room actually has: enough sampled cells to be worth composing a route
+// through, and portal seeds that genuinely reach each other through the interior. A test of whether
+// growth left the room fragmented would measure sampler failure and use it as a proxy for room
+// difficulty, so a room whose coverage got good would lose eligibility. Small rooms with a cell or two,
+// where a direct hop is already the right answer, stay out. Both quantities are strongly bimodal across
+// rooms, so the exact percentage is not a sensitive knob.
 #define BOT_ROADMAP_ROUTABLE_MIN_CELLS 8
 #define BOT_ROADMAP_ROUTABLE_MIN_PAIRPCT 75
 
 // Proactive gridroute (always on): route the in-room leg of objective/carrier nav over the volumetric grid
-// PROACTIVELY, not just reactively when a straight line is blocked. Today the router (BotSetRoutedGoal) aims
-// the engine at the raw portal path_pnt of the next room; in a buried-center / multi-level room the engine
-// path-follower stalls flying to that single point, and the reactive via only engages if the LINE happens to
-// be blocked — so normal in-room traversal (and a carrier's escape OUT of a structure) gets no grid help even
-// though the grid has the interior nodes to plan it. Instead, the router asks the roadmap for a
-// furthest-visible waypoint toward the destination and aims there, falling back to the path_pnt when the room
-// roadmap is degenerate. Indoor only (outdoor already routes its region roadmap via the reactive path).
+// proactively, not just reactively when a straight line is blocked. Aimed at the raw portal path_pnt of the
+// next room, the engine path-follower stalls in a buried-center / multi-level room, and the reactive via only
+// engages if the line happens to be blocked — so normal in-room traversal (and a carrier's escape out of a
+// structure) would get no grid help even though the grid has the interior nodes to plan it. So the router
+// (BotSetRoutedGoal) asks the roadmap for a furthest-visible waypoint toward the destination and aims there,
+// falling back to the path_pnt when the room roadmap is degenerate. Indoor only (outdoor already routes its
+// region roadmap via the reactive path).
 
 // $nav outlattice: gate the outdoor region lattice inside the blocked-line via rescue
-// (bot_steering.cpp pass ordering: rings -> [lattice] -> 12.6B connecting graph). OFF restores the
-// 0.9.3 rescue order outdoors while keeping the indoor grid — the bedlam triage lever isolating
-// the 0.9.4 lattice-first preference from the 0.9.7 proactive outroute redirect.
+// (bot_steering.cpp pass ordering: rings -> [lattice] -> connecting graph). Off skips the lattice
+// outdoors (rings, then the connecting graph) while keeping the indoor grid.
 extern bool Bot_outdoor_lattice_enabled;
 
-// 0.9.7 evidence-gated hard-room promotion ($nav hardroom): rooms that accumulate 12.2c via
-// suspensions get proactive grid routing engaged even when the static complexity gate says
-// "simple" (the isengard room-36 class: single-component, huge, concave, unflyable by the raw
-// portal line). Mark on each suspension; promoted for the rest of the level at the threshold.
+// Evidence-gated hard-room promotion ($nav hardroom): rooms that accumulate via suspensions get
+// proactive grid routing engaged even when the static routable gate says no (a huge concave room
+// the raw portal line cannot fly). Mark on each suspension; promoted for the rest of the level at
+// the threshold.
 extern bool Bot_hard_room_enabled;
-extern bool Bot_curve_route_enabled;  // $nav curve: fatter-clearance Theta* straightening (Fork-B fix)
+extern bool Bot_curve_route_enabled;  // $nav curve: fatter-clearance Theta* straightening
 extern bool Bot_tube_densify_enabled; // $nav dense: hull-fit ladder rungs along thin-tube portal pairs
-extern bool Bot_roadmap_heal_enabled; // $nav heal: stale-glass fix — rebuild room roadmaps when panes/grates open
+extern bool Bot_roadmap_heal_enabled; // $nav heal: rebuild room roadmaps when panes/grates open
 void BotRoadmapMarkHardRoom(int room_idx);
 bool BotRoadmapRoomIsHard(int room_idx);
 
-// $nav reach — single-authority in-room reachability (see bot_roadmap.cpp header comment).
-// 1 = reachable, 0 = unreachable, -1 = unknown (caller falls back to legacy behavior).
+// Single-authority in-room reachability (see the comment on BotRoadmapItemReach in bot_roadmap.cpp).
+// 1 = reachable, 0 = unreachable, -1 = unknown (the caller fails open).
 int BotRoadmapItemReach(int room, const vector &from_pos, const vector &item_pos);
 // $nav troute — Theta* path length over the region roadmap between two outdoor points; < 0 = no
 // path (no roadmap / endpoint unconnectable / cross-component). The composer's lattice cost term.
 float BotRoadmapOutdoorPathCost(int region, const vector &a, const vector &b);
 // Bumped on every roadmap flush — key any cache of roadmap-derived answers to this.
 int BotRoadmapSerial();
-// Roadmap component count for a room (0 = none). Do NOT cache reach-style verdicts when > 1.
+// Roadmap component count for a room (0 = none). Do not cache reach-style verdicts when > 1.
 int BotRoadmapRoomComps(int room_idx);
-// Zones: the lattice component each portal's seam seed belongs to. A room whose seeds fall in more than
-// one component is several spaces to a ship (Glasshouse's pyramid: a hollow pyramid open only below and above,
-// and four door galleries on its faces), and a route in through one zone and out through another is a route
-// through a wall. Zone ids are dense per room; -1 = no answer (no lattice, outdoor, degenerate, starved, or no
-// seed), and no answer never constrains anything — like BotRoadmapItemReach, the model speaks only when it has one.
+// Zones: what each portal's seam seed reaches over the lattice without crossing one of the room's own portal
+// faces. A room whose seeds fall in more than one zone is several spaces to a ship (a hollow pyramid open only
+// below and above, with door galleries on its faces), and a route in through one zone and out through another
+// is a route through a wall. Zone ids are dense per room; -1 = no answer (no lattice, outdoor, degenerate,
+// starved, or no seed), and no answer never constrains anything — like BotRoadmapItemReach, the model speaks
+// only when it has one.
 int BotRoadmapPortalZone(int room_idx, int portal);
 // The lattice component a zone lies in (-1 = unknown). Two zones in different components could not be joined even
 // through the next room's nodes: the wall between them is real as far as the model can see. Two zones in one
@@ -165,16 +156,16 @@ int BotRoadmapZoneComp(int room_idx, int zone);
 int BotRoadmapRoomZones(int room_idx);
 // Zone id per node, in BotRoadmapDumpRoom's node order (-1 = a node next door); returns the count written.
 int BotRoadmapDumpRoomZones(int room_idx, int *zone_out, int max_nodes);
-// The zone a position is in: the component of the nearest hull-visible node; -1 when none connects.
+// The zone a position is in: the zone of the nearest hull-visible zoned node; -1 when none connects.
 int BotRoadmapZoneAt(int room_idx, const vector &pos);
-// True when the room's portal seeds span more than one component of a lattice that actually populated.
+// True when the room's door seeds span more than one zone of a lattice that actually populated.
 bool BotRoadmapRoomZoned(int room_idx);
 
-// Outdoor build: the SAME roadmap grown over a terrain REGION's airspace, so the local search threads
-// laterally around outdoor structures (the Bree-wall class) instead of beelining into them. Seeds = the
-// region's BOA_connect door approach points; the lattice extent = the region's structure bboxes expanded
-// into airspace, Y-capped under the outdoor ceiling (no sky-fly). Coarser spacing than indoor — open
-// airspace needs less density, and it keeps the per-region build cost bounded (the scaling lever).
+// Outdoor build: the same roadmap grown over a terrain region's airspace, so the local search threads
+// laterally around outdoor structures (a wall between the bot and a door) instead of beelining into them.
+// Seeds = the door approach points of the region's terrain-door table; the lattice extent = the region's
+// structure bboxes expanded into airspace, Y-capped under the outdoor ceiling (no sky-fly). Coarser spacing
+// than indoor — open airspace needs less density, and it keeps the per-region build cost bounded.
 #define BOT_ROADMAP_OUTDOOR_SPACING 30.0f // terrain-region lattice spacing (coarser than the 20u indoor grid)
 #define BOT_ROADMAP_OUTDOOR_MARGIN 60.0f  // expand each structure bbox this far into airspace to scope the lattice
 
@@ -205,30 +196,30 @@ bool BotComposeRoomRoute(object *obj, const vector &target_pos, int target_room,
                          BotComposedRoute *route_out, bool cached_only = false);
 const char *BotComposedTerminalName(BotComposedTerminal terminal);
 
-// Indoor query. Find a go-around waypoint by routing the bot's CURRENT room's volumetric roadmap with
+// Indoor query. Find a go-around waypoint by routing the bot's current room's volumetric roadmap with
 // Lazy Theta* toward target_pos (same room) or the seam node toward the next room (cross room). Returns
 // BOT_VIA_FOUND (+ *via_out = furthest-visible vertex on the any-angle path) on success, or BOT_VIA_NONE
 // when the room has no usable roadmap / start & goal are in different components — the caller then falls
 // back to the portal skeleton. Indoor only; BotRoadmapFindViaOutdoor is the outdoor query.
 //
 // `proactive` = the selective gridroute gate. When true (objective/carrier routing, not a reactive blocked
-// line), the call returns NONE in a SIMPLE single-component room — only COMPLEX rooms (airspace fragmented
-// before the bridges merged it) earn proactive grid routing; simple rooms route fine on the direct path_pnt.
-// Reactive callers leave it false (a blocked line always needs a go-around regardless of room complexity).
+// line), the call returns NONE unless the room is routable (a usable local-street network) or promoted hard;
+// other rooms route fine on the direct path_pnt. Reactive callers leave it false (a blocked line always needs a
+// go-around regardless of the room).
 BotViaResult BotRoadmapFindVia(object *obj, const vector &target_pos, int target_room, vector *via_out,
                                bool proactive = false, int next_room_hint = -1);
 
-// Outdoor query. Route the bot's terrain REGION over its volumetric roadmap toward target_pos,
+// Outdoor query. Route the bot's terrain region over its volumetric roadmap toward target_pos,
 // threading laterally around structures. Same any-angle Lazy Theta* + furthest-visible delivery as the
 // indoor query. Returns BOT_VIA_FOUND (+ *via_out) or BOT_VIA_NONE (no region graph / start & goal in
 // different components / bot can't see the graph) — the caller then falls back to the outdoor
-// connecting graph. Bot must be outside. Outdoor is gated by $gridnav alongside the indoor roadmap.
+// connecting graph. Bot must be outside. The caller gates it on $nav grid and $nav outlattice.
 BotViaResult BotRoadmapFindViaOutdoor(object *obj, const vector &target_pos, int target_room, vector *via_out);
 
 // Drop every cached room/region roadmap; each rebuilds lazily on its next query. Needed when a
-// BUILD-TIME parameter changes at runtime — today that's the $nav bridge toggle (corner-bridging runs
-// in GrowFromSeeds, so a cached roadmap keeps the bridges it was built with; without this flush the
-// toggle is a false A/B lever until the next level load).
+// build-time parameter changes at runtime — the $nav toggles marked rebuild (bridge, glass, dense, heal):
+// a cached roadmap keeps what it was built with (corner-bridging, for one, runs in GrowFromSeeds), so
+// without this flush the toggle has no effect until the next level load.
 void BotRoadmapInvalidate();
 // Run this frame's share of the sliced roadmap builds (demand lane, then the level prewarm). Call once per
 // server frame while any bot is active; `humans_present` picks the per-frame budget.
@@ -243,43 +234,43 @@ bool BotRoadmapSyncActive();
 // Queue a room's skeleton bridge pass on the worker (demand lane, or the level prewarm).
 void BotRoadmapRequestSkeleton(int room_idx, bool prewarm);
 
-// $navdump diagnostic: build (lazily) and dump a room's roadmap — node world positions + per-node
+// $nav dump diagnostic: build (inline, if needed) and dump a room's roadmap — node world positions + per-node
 // component id. Returns node count (0 = external/invalid). Sets *comp_count_out and *degenerate_out.
 // Caller arrays must hold max_nodes entries.
 int BotRoadmapDumpRoom(int room_idx, vector *pos_out, int *comp_out, int max_nodes, int *comp_count_out,
                        bool *degenerate_out);
 
-// Live nav-overlay accessors — CACHED-ONLY (never Build()/heal, so the render path can't hitch the
+// Live nav-overlay accessors — cached-only (never Build()/heal, so the render path can't hitch the
 // frame or perturb bot routing; a room not yet queried by a bot simply returns 0 and draws nothing).
 // Node dump: world positions + per-node component id (mirrors BotRoadmapDumpRoom but read-only).
 int BotRoadmapDumpRoomCached(int room_idx, vector *pos_out, int *comp_out, int max_nodes, int *comp_count_out,
                              bool *degenerate_out);
-// Edge dump: adjacency as index pairs into the SAME node ordering as BotRoadmapDumpRoomCached (so
+// Edge dump: adjacency as index pairs into the same node ordering as BotRoadmapDumpRoomCached (so
 // a[k]/b[k] index that call's pos_out[]). Each undirected edge once (i<j). `max_node_index` bounds
-// BOTH endpoints to the nodes actually drawn (pass the node count the overlay kept) so the max_edges
+// both endpoints to the nodes actually drawn (pass the node count the overlay kept) so the max_edges
 // budget is spent only on drawable edges — otherwise a huge graph's later in-range edges get dropped
 // and the room reads as falsely fragmented. Returns edge count (0 = external/not-cached).
 int BotRoadmapDumpRoomEdges(int room_idx, int *a_out, int *b_out, int max_edges, int max_node_index);
 
 // Honest coverage stats for a room's local-street layer, read-only (never builds).
-//   cells      — TRUE lattice cells the volumetric sampler accepted. The coverage number.
-//   connector  — nodes traced by the repair passes (corner/tube/multibend). A path, not coverage.
+//   cells      — true lattice cells the volumetric sampler accepted. The coverage number.
+//   connector  — nodes traced by the repair passes (on-ramp/corner/tube/multibend). A path, not coverage.
 //   local_pair — %% of portal-seed pairs joined without a direct seed-to-seed sight line (-1 = n/a).
 // Keep these apart when reading them: a room can look well-populated on `connector` alone while the
-// sampler found nothing, which is precisely how the abend2 ring passed inspection.
+// sampler found nothing.
 // True when the room holds a lattice the composer may plan over (`routable`): built on first use.
 bool BotRoadmapRoomRoutable(int room_idx);
 bool BotRoadmapCoverage(int room_idx, int *cells_out, int *connector_out, int *local_pair_pct_out,
                         bool *routable_out = nullptr);
 
-// $navdump diagnostic: build (lazily) + dump a terrain region's outdoor roadmap — node world
-// positions + per-node component id. Returns node count (0 = empty/out-of-range region). Sets
-// *comp_count_out and *degenerate_out. Caller arrays must hold max_nodes entries.
 // Cached-only region dumps for the live overlay (never build — draw-only contract, see PeekCached).
 int BotRoadmapDumpRegionCached(int region, vector *pos_out, int *comp_out, int max_nodes, int *comp_count_out,
                                bool *degenerate_out);
 int BotRoadmapDumpRegionEdges(int region, int *a_out, int *b_out, int max_edges, int max_node_index);
 
+// $nav dump diagnostic: build (inline, if needed) + dump a terrain region's outdoor roadmap — node world
+// positions + per-node component id. Returns node count (0 = empty/out-of-range region). Sets
+// *comp_count_out and *degenerate_out. Caller arrays must hold max_nodes entries.
 int BotRoadmapDumpRegion(int region, vector *pos_out, int *comp_out, int max_nodes, int *comp_count_out,
                          bool *degenerate_out);
 

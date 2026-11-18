@@ -16,27 +16,27 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-// 0.9.4 — volumetric grid-seeded roadmap + Lazy Theta*. See bot_roadmap.h / NAVIGATION.md section 3.5.
+// Volumetric grid-seeded roadmap + Lazy Theta*. See bot_roadmap.h and NAVIGATION.md, the volumetric roadmap.
 //
 // Build (grow-from-seed): seed the node set with guaranteed-playable points (indoor: a room's portal
 // path_pnts; outdoor: a terrain region's door approach points), then BFS-grow a 3D lattice outward,
-// accepting a lattice cell only when a hull-CLEAR SWEPT edge reaches it from an already-accepted node. A
+// accepting a lattice cell only when a hull-clear swept edge reaches it from an already-accepted node. A
 // sweep from playable space into solid always hits the boundary face (and the probe rejects backfaces), so
 // this is robust to the void/deep-solid fvi false-clears that make a standalone point-probe unreliable in
 // exactly these rooms — and it yields connected components for free.
 //
 // Query (Lazy Theta*): any-angle search over the roadmap, LOS = the same hull-sweep used to build edges, so
-// the path is a few straight segments; we hand the engine the FURTHEST path vertex it has clear LOS to
-// (greedy string-pull) as an AIG_GET_TO_POS via — the engine flies a clean arc, no node-hop thrash.
+// the path is a few straight segments; the engine is handed the furthest path vertex the bot has clear LOS
+// to (greedy string-pull) as an AIG_GET_TO_POS via — the engine flies a clean arc, no node-hop thrash.
 //
 // Indoor builds: per room (room-bbox lattice). Outdoor builds: per terrain region (structure-airspace
-// lattice). The two share this whole core; the ONLY difference is the geometry probe (RoadmapLOS) — indoor
+// lattice). The two share this whole core; the only difference is the geometry probe (RoadmapLOS) — indoor
 // hull-sweeps from the room, outdoor resolves the terrain cell + ceiling cap (BotSegmentClearOutdoor).
 
 #include "bot_roadmap.h"
 #include "bot_steering.h"
 #include "bot_perf.h"
-#include "bot.h" // BOT_OUTDOOR_APPROACH_OFFSET (shared with the 12.6 outdoor graph)
+#include "bot.h" // BOT_OUTDOOR_APPROACH_OFFSET (shared with the outdoor graph)
 #include "room.h"
 #include "terrain.h" // GetTerrainGroundPoint (outdoor lattice: no cells under the heightfield)
 #include "vecmat.h"
@@ -64,35 +64,29 @@
 #include <unordered_map>
 #include <vector>
 
-bool Bot_gridnav_enabled = true;        // $gridnav — default ON for 0.9.4
-bool Bot_roadmap_corner_enabled = true; // $gridbridge — corner-rounding component bridge
+bool Bot_gridnav_enabled = true;        // $nav grid — the volumetric grid roadmap, default on
+bool Bot_roadmap_corner_enabled = true; // $nav bridge — corner-rounding component bridge
 // $nav outlattice — consult the outdoor region lattice (BotRoadmapFindViaOutdoor) in the
-// blocked-line via RESCUE, ahead of the 12.6B connecting graph. OFF = the 0.9.3 rescue order
-// (rings -> connecting graph), the bedlam gold-reference outdoor stack, without giving up the
-// indoor grid. The second triage lever: if bedlam stays broken with outroute off, this isolates
-// the 0.9.4 lattice-first ordering.
+// blocked-line via rescue, ahead of the connecting graph. Off = rings, then the connecting
+// graph, outdoors, while the indoor grid stays live.
 bool Bot_outdoor_lattice_enabled = true;
-bool Bot_hard_room_enabled = true; // 0.9.7: evidence-gated gridroute promotion ($nav hardroom)
-// $nav curve — curve-following at the STRAIGHTENING layer (the isengard room-36 corkscrew class). With
+bool Bot_hard_room_enabled = true; // evidence-gated gridroute promotion ($nav hardroom)
+// $nav curve — curve-following at the straightening layer (a corkscrew path round a mound). With
 // bare-hull (6.7) LOS, Theta* collapses a corkscrew into a straight over-the-mound chord, leaving the
-// hand-out no off-chord node to follow. So the Theta* SetVertex straightening requires a FATTER clearance
+// hand-out no off-chord node to follow. So the Theta* SetVertex straightening requires a fatter clearance
 // (BOT_ROADMAP_STRAIGHTEN_CLEARANCE) before it shortcuts two nodes together: a chord that only clears bare
 // hull over a mound/bend is rejected and the winding node-by-node path is preserved for delivery to follow.
-// Adjacency/edges stay at 6.7 (tight doorways thread). Default ON. Its A/B gain (room-36 stucks 5 vs 37, the
-// only captures in the on arm) came without the len/chord path-shape metric moving (~1.05 both), so it helps
-// by a mechanism other than "paths now wind"; not fully understood, and not a complete room-36 solution.
-// `$nav curve off` disables.
+// Adjacency/edges stay at 6.7 (tight doorways thread). Default on; `$nav curve off` disables.
 bool Bot_curve_route_enabled = true;
-bool Bot_tube_densify_enabled = true; // $nav dense: thin-tube ladder rungs (0.9.7 Fix B; rebuild-flush toggle)
-bool Bot_roadmap_heal_enabled = true; // $nav heal: rebuild a room's roadmap when its glass/grates open (0.9.7)
+bool Bot_tube_densify_enabled = true; // $nav dense: thin-tube ladder rungs (rebuild-flush toggle)
+bool Bot_roadmap_heal_enabled = true; // $nav heal: rebuild a room's roadmap when its glass/grates open
 
-// --- Evidence-gated hard-room promotion (0.9.7, the isengard room-36 lock) ---------------------
-// The static complexity gate (orig_comp_count>1) misses rooms that are SINGLE-component yet
-// unflyable by the raw path_pnt line: isengard room 36 has 2000+ lattice nodes, comp_count 1, a
-// concave center with portal lips sticking out (maintainer's description) — carriers pressed the
-// 36->38 hop 22x per carry, all day, while proactive gridroute stayed gated off. Rather than
-// loosen the static gate (the measured easy-pool regression), promote a room on EVIDENCE: every
-// 12.2c via suspension ("arrivals without crossing") in a room counts against it; at
+// --- Evidence-gated hard-room promotion --------------------------------------------------------
+// The static gate (RoadmapRoom::routable: a cell floor plus portal-pair coverage) misses rooms the
+// raw path_pnt line cannot fly: a concave centre with portal lips sticking out makes carriers press
+// the same hop over and over while proactive gridroute stays gated off. Rather than loosen the
+// static gate (a looser gate costs play on simple maps), promote a room on evidence: every
+// via suspension ("arrivals without crossing") in a room counts against it; at
 // BOT_HARD_ROOM_SUSPENDS the room is promoted for the rest of the level and proactive grid
 // routing engages there. Same philosophy as troll retirement and dynamic portal penalties:
 // observe the failure, adapt the model, no per-map tuning.
@@ -132,14 +126,14 @@ enum UnionEdgeKind : uint8_t {
   UNION_ARTERIAL,
 };
 
-// A ship fatter than the lattice clearance (6.7) must re-prove every union edge at its own radius. That
-// sweep ran on EVERY relaxation of EVERY query — a Magnum composing a route in Isengard's 7600-cell hall
-// swept 85-270 thousand times in one frame (0.2-0.5 s, measured with [Perf]). Walls do not move (the sweep
-// counts wall/backface/terrain hits only, and a shattered pane rebuilds the whole room), so the verdict is
-// cached per directed edge per hull class: same answers, each edge swept once.
+// A ship fatter than the lattice clearance (6.7) must re-prove every union edge at its own radius. Swept on
+// every relaxation of every query, a wide ship's route search through a large hall costs hundreds of thousands
+// of sweeps in one frame. Walls do not move (the sweep counts wall/backface/terrain hits only, and a shattered
+// pane rebuilds the whole room), so the verdict is cached per directed edge per hull class: same answers, each
+// edge swept once.
 #define BOT_UNION_WIDE_CLASSES 4
 #define BOT_UNION_WIDE_MS_PER_QUERY                                                                                    \
-  6.0 // milliseconds of FRESH wide-hull edge sweeps one composed-route search may spend
+  6.0 // milliseconds of fresh wide-hull edge sweeps one composed-route search may spend
 
 struct UnionEdge {
   int to;
@@ -188,13 +182,12 @@ struct RoadmapRoom {
   std::vector<int> zone;      // zone id per node: what a seed reaches without crossing a portal face; -1 = none
   std::vector<int> zone_comp; // zone id -> the lattice component it lies in (a zone never spans two)
   int zone_count = 0;
-  bool routable = false; // route-ownership gate: this room HAS a usable local-street network
-                         // (cell floor + portal pairs that reach through the interior). Replaces the
-                         // old `complex`, which measured how badly the sampler did — see the header.
-  // COVERAGE vs REPAIR — keep these apart. Conflating them is what let a room with 3 real sample
-  // cells report "97 lattice" and earn routing authority it could not honour (see NAVIGATION.md).
-  int lattice_cells = 0;        // TRUE accepted lattice cells: the volumetric sampler's own output, and the
-                                // only honest coverage signal. NOTHING else may increment this.
+  bool routable = false; // route-ownership gate: this room has a usable local-street network
+                         // (cell floor + portal pairs that reach through the interior).
+  // Coverage vs repair — keep these apart. Counted together, a room with 3 real sample cells
+  // reports "97 lattice" and earns routing authority it cannot honour.
+  int lattice_cells = 0;        // true accepted lattice cells: the volumetric sampler's own output, and the
+                                // only honest coverage signal. Nothing else may increment this.
   int connector_nodes = 0;      // nodes synthesized by the repair passes (corner-rounding, tube rungs,
                                 // multibend connectors). Real navigable waypoints, but they trace a single
                                 // path — they do not cover a room. Never read them as coverage.
@@ -203,20 +196,18 @@ struct RoadmapRoom {
   bool degenerate = false;      // no usable interior roadmap -> caller falls back to the skeleton
   bool outdoor = false;         // false: indoor room (probe from probe_room); true: terrain region
   int probe_room = -1;          // indoor fvi start room for the segment probe (unused when outdoor)
-  // The interior room each FOREIGN node lies in: a cell the growth reached through a door into the room next door
+  // The interior room each foreign node lies in: a cell the growth reached through a door into the room next door
   // (kept on purpose, see CellInRoom), or a repair connector placed there. A sweep only meets the faces of the room it
-  // starts in and the rooms it crosses into through portals, so a leg from such a node must start in ITS room
-  // (RoadmapStartRoom). Started in probe_room it met none of that room's walls: Glasshouse's ring hall (rm2) grew
-  // through the pyramid's gallery doors and on through every thin wall inside the pyramid (rm1) — 140 lattice edges
-  // through other rooms' faces on that map, and the via legs bots were handed ran through the alcove walls.
+  // starts in and the rooms it crosses into through portals, so a leg from such a node must start in its room
+  // (RoadmapStartRoom). Started in probe_room it meets none of that room's walls: a lattice grown through a
+  // neighbour's doors then runs edges, and the via legs bots are handed, through every thin wall inside it.
   std::unordered_map<PosKey, int, PosKeyHash> foreign_room;
 
-  // $nav heal (0.9.7, the stale-glass fix): roadmaps build while panes/grates are intact — their
-  // doorway seeds orphan and their legs read blocked — and nothing ever told the model when the
-  // world opened up ($nav glass smashing works at the ROUTER layer; this layer stayed frozen —
-  // batteries lobby rm3: 16 orphan seeds against the conference-room glass; isengard grate tubes).
-  // At build we record WHICH portals were glass-blocked and how many door-class objects live
-  // nearby; Get() rechecks on a throttle and rebuilds the room when the world has opened.
+  // $nav heal: roadmaps build while panes/grates are intact — their doorway seeds orphan and their
+  // legs read blocked — and the router's glass handling does not reach this layer, so the model must
+  // learn on its own when the world opens up. At build, record which portals were glass-blocked and
+  // how many door-class objects live nearby; Get() rechecks on a throttle and rebuilds the room when
+  // the world has opened.
   std::vector<int> heal_watch; // portal indices that were breakable-glass-blocked at build time
   int heal_door_sig = -1;      // live OBJ_DOOR count in room + portal neighbors at build time
   float heal_next_check = 0.0f;
@@ -228,16 +219,16 @@ struct RoadmapRoom {
   std::vector<float> union_wide_radius; // hull class -> radius, for UnionEdge::wide (first come, first slot)
 
   // Theta* answers, memoised. The search is a pure function of (this graph, start, goal, the curve clearance): the
-  // same pair asked again — a bot re-issuing from beside the same node, eleven bots pricing the same door pair —
-  // re-ran every line-of-sight sweep, and outdoors one search is ~2,600 terrain sweeps = 150 ms ([Perf]:
-  // troute pricing, 14-17 searches in a frame, 220-260 ms). Dies with the room, so heal/level flushes cannot stale it.
+  // same pair asked again — a bot re-issuing from beside the same node, many bots pricing the same door pair —
+  // would re-run every line-of-sight sweep, and outdoors one search is thousands of terrain sweeps, with troute
+  // pricing asking for many searches in one frame. Dies with the room, so heal/level flushes cannot stale it.
   struct ThetaMemo {
     bool found;
     std::vector<int> path;
   };
   std::unordered_map<uint64_t, ThetaMemo> theta_memo;
   // ...and the search's own line-of-sight tests between node pairs (directed: a one-sided wall reads differently
-  // from its two sides). A search from a NEW start still re-tests the same corner-to-node lines its predecessors did.
+  // from its two sides). A search from a new start would re-test the same corner-to-node lines its predecessors did.
   std::unordered_map<uint64_t, bool> theta_los_memo;
 };
 
@@ -248,22 +239,22 @@ int g_checksum = 0;
 int g_build_serial = 1; // bumped on every flush — callers key caches of roadmap-derived answers to this
 
 // ---------------------------------------------------------------------------------------------------------------
-// SLICED BUILDS. A roadmap is built the first time anything asks for it. Inline, that would block the server's one
-// thread: up to a million hull sweeps for a big room. Measured with [Perf]: Tower of Isengard froze for 8.6 s, 4.1 s,
-// 2.2 s, 1.6 s... as bots first entered rooms (every client sees all ships freeze, then snap), and DownTown's halls
-// (17,000 cells) froze the server for 100 s at a time — a joining client timed out before it ever got in.
+// Sliced builds. A roadmap is built the first time anything asks for it. Inline, that would block the server's one
+// thread: up to a million hull sweeps for a big room. Every client would see all ships freeze for seconds, then
+// snap, as bots first enter rooms, and a hall of 17,000 cells would stall the server long enough for a joining
+// client to time out.
 //
-// The build now runs on a worker that is a COROUTINE, not a concurrent thread: the main thread hands it the turn for
-// a few milliseconds per frame and BLOCKS until it hands the turn back, so exactly one of the two ever runs and the
+// The build runs on a worker that is a coroutine, not a concurrent thread: the main thread hands it the turn for
+// a few milliseconds per frame and blocks until it hands the turn back, so exactly one of the two ever runs and the
 // engine (fvi and every global it touches) needs no locking. The worker parks only at SliceYield(), which sits in
 // front of this file's own sweep wrappers — never inside an engine call or another module's lazy cache. A build
 // writes to nothing but its own RoadmapRoom until the main thread publishes it, and until then Get() answers
 // nullptr, which every caller already treats as "no lattice here: use the skeleton".
 //
 // Three lanes, each its own parked worker: on-demand requests (a bot is in the room now), on-demand requests for
-// BIG rooms, and the level-start prewarm (every room, regions first). A lane is first-in first-out and a hall can
-// hold one for two minutes (DownTown rm31: 97 s of build), so the corridor a bot just entered must not queue
-// behind it — nor behind a 17,000-cell hall nobody is in. A level change cancels parked builds by
+// big rooms, and the level-start prewarm (every room, regions first). A lane is first-in first-out and a hall can
+// hold one for well over a minute, so the corridor a bot just entered must not queue behind it — nor behind a
+// 17,000-cell hall nobody is in. A level change cancels parked builds by
 // exception from the yield point, before the worker touches the old level's rooms again.
 // ---------------------------------------------------------------------------------------------------------------
 RoadmapRoom *Build(int room_idx);
@@ -281,7 +272,7 @@ enum { LANE_DEMAND = 0, LANE_DEMAND_BIG = 1, LANE_PREWARM = 2, LANE_COUNT = 3 };
   3000 // candidate cells (bbox volume / pitch^3) past which a room builds in the big lane
 
 struct SliceLane {
-  bool worker_turn = false; // whose turn it is — the ONLY thing the two threads pass back and forth
+  bool worker_turn = false; // whose turn it is — the only thing the two threads pass back and forth
   bool cancel = false;
   bool active = false; // a job is assigned and unpublished
   bool done = false;
@@ -314,7 +305,7 @@ bool SameJob(const BuildRequest &a, const BuildRequest &b) {
   return a.outdoor == b.outdoor && a.skel == b.skel && a.id == b.id;
 }
 int g_prewarm_checksum = 0;
-int g_sync_depth = 0; // >0: tools ($nav dump) want the answer now — build inline as before
+int g_sync_depth = 0; // >0: tools ($nav dump) want the answer now — build inline
 
 // The worker's parking spot. Off a worker thread this is one thread_local read.
 void SliceYield() {
@@ -405,7 +396,7 @@ void SlicePublish(SliceLane *ln) {
     return; // cancelled
   RoadmapRoom *&slot = job.outdoor ? g_region[job.id] : g_room[job.id];
   // A region's arrival changes terrain-leg costs that were cached as "no such leg" while it was pending; a room
-  // REPLACED by a heal rebuild invalidates what was derived from the old one. A room's first build invalidates
+  // replaced by a heal rebuild invalidates what was derived from the old one. A room's first build invalidates
   // nothing (no verdict is cached for a room without a roadmap).
   if (job.outdoor || slot)
     g_build_serial++;
@@ -420,7 +411,7 @@ void SlicePublish(SliceLane *ln) {
                    (int)rr->node.size());
 }
 
-// Level change / flush: unwind every parked build NOW (the exception leaves from the yield point, so the worker
+// Level change / flush: unwind every parked build now (the exception leaves from the yield point, so the worker
 // never looks at the old level again) and forget what was queued.
 void SliceCancelAll() {
   if (!g_slicer)
@@ -549,9 +540,9 @@ bool HasEdge(const std::vector<int> &al, int v) {
 
 // The roadmap's one geometry probe, dispatched by build kind. Indoor hull-sweeps from the room (no ceiling
 // check); outdoor resolves the terrain cell under the start point and ceiling-caps. Used for node growth,
-// edge probing, the component bridge, AND Theta* LOS — one primitive, so the graph and the query agree.
+// edge probing, the component bridge, and Theta* LOS — one primitive, so the graph and the query agree.
 // Back-face honest indoors: D3 walls are one-sided, so a probe that starts on the far side of a partition passes
-// straight through it, the lattice grows an edge THROUGH the wall, and Theta* routes a bot into the wall (a tavern
+// straight through it, the lattice grows an edge through the wall, and Theta* routes a bot into the wall (a tavern
 // partition with no face on its far side pins a carrier at the room centre). The steering sweeps (crossing sampler,
 // pseudo-bnodes, the door search) are FQ_BACKFACE too: every layer must agree on what a wall is.
 // Indoors a leg starts in the room its start point lies in: probe_room, or for a foreign node the room recorded when
@@ -584,8 +575,8 @@ bool RoadmapTrace(const RoadmapRoom *rr, const vector &a, const vector &b, fvi_i
 
 // Record that node `p` lies in `room` when that is an interior room other than probe_room. `room` is where the sweep
 // that placed the node ended, as the engine tracked it (fvi's hit_room): only the rooms the sweep actually started in
-// or entered through a portal are candidates. A point-in-room search over every room whose box holds the point let
-// nested rooms claim each other's cells (Facing Worlds rm9: 15 cells in no room, 176 edges through its own walls).
+// or entered through a portal are candidates. A point-in-room search over every room whose box holds the point
+// would let nested rooms claim each other's cells, leaving cells in no room and edges through walls.
 void NoteNodeRoom(RoadmapRoom *rr, int room, const vector &p) {
   if (rr->outdoor || room < 0 || room > Highest_room_index || room == rr->probe_room || !Rooms[room].used ||
       (Rooms[room].flags & RF_EXTERNAL))
@@ -603,8 +594,8 @@ int RoadmapLegEndRoom(const RoadmapRoom *rr, const vector &a, const vector &b) {
 }
 
 // The point a bot is told to fly for roadmap node `node`: a portal seed hands out the portal's
-// validated crossing point (slice 2, see SkelFlyPos in bot_steering.cpp); graph unchanged.
-// A portal seed hands out the door's APPROACH point while the bot is on its way and its PUSH-THROUGH
+// validated crossing point (see SkelFlyPos in bot_steering.cpp); graph unchanged.
+// A portal seed hands out the door's approach point while the bot is on its way and its push-through
 // point once beside the door (see SkelFlyPos in bot_steering.cpp for the arrival-sphere reason);
 // `force_far` marks a composed route's exit terminal, whose arrival must be a crossing.
 vector RoadmapFlyPos(const RoadmapRoom *rr, int node, const vector *from = nullptr, bool force_far = false) {
@@ -919,24 +910,20 @@ void RoadmapConnectPortalComponents(RoadmapRoom *rr, std::vector<int> &uf, int n
   }
 }
 
-// Grow the lattice from the already-seeded rr->node[0..n_seed) over [mn,mx] at sp_start spacing: accept a
-// cell only when a hull-clear swept edge (RoadmapLOS) reaches it from an accepted node, bridge navigable
-// component gaps, then compress components. The shared core of the indoor (per-room) and outdoor
-// (per-region) builds — the caller supplies the seeds, the bbox, the spacing, and the probe kind (rr).
-// Portal-pair LOCAL coverage: of all portal-seed pairs, the fraction that reach each other WITHOUT
+// Portal-pair local coverage: of all portal-seed pairs, the fraction that reach each other without
 // taking a direct seed-to-seed edge — i.e. through the interior network rather than a straight sight
 // line across the room. This is the coverage signal node counts and comp_count cannot give. A starved
 // room whose only connectivity is portal-to-portal sight lines scores 0 here while still reporting a
-// healthy-looking "1 component", which is exactly how abend2's ring rooms passed inspection for three
-// stages. A path may still pass THROUGH a seed (enter and leave it on interior edges); only the direct
-// hop between two seeds is excluded. Diagnostic only — nothing gates on it yet.
+// healthy-looking "1 component". A path may still pass through a seed (enter and leave it on interior
+// edges); only the direct hop between two seeds is excluded. The routable gate reads it
+// (BOT_ROADMAP_ROUTABLE_MIN_PAIRPCT).
 int RoadmapLocalPairCoverage(const RoadmapRoom *rr, int n_seed) {
   if (n_seed < 2)
     return -1; // undefined: nothing to join
   const int N = (int)rr->node.size();
-  // Only DOOR seeds are coverage pairs: a pane is a conditional exit (kinetic bots only) whose seed
-  // sits against a solid face, and counting it made a hub whose doors were all connected read as
-  // "7% covered" and lose composer eligibility (Batteries rm3, 4 doors + 17 panes).
+  // Only door seeds are coverage pairs: a pane is a conditional exit (kinetic bots only) whose seed
+  // sits against a solid face, and counting panes would make a hub with 4 connected doors and 17
+  // panes read as barely covered and lose composer eligibility.
   std::vector<char> is_door(n_seed, 1);
   if (!rr->outdoor && rr->probe_room >= 0)
     for (int s = 0; s < n_seed && s < (int)rr->seed_portal.size(); s++)
@@ -971,6 +958,10 @@ int RoadmapLocalPairCoverage(const RoadmapRoom *rr, int n_seed) {
   return pairs ? (100 * joined) / pairs : -1;
 }
 
+// Grow the lattice from the already-seeded rr->node[0..n_seed) over [mn,mx] at sp_start spacing: accept a
+// cell only when a hull-clear swept edge (RoadmapLOS) reaches it from an accepted node, bridge navigable
+// component gaps, then compress components. The shared core of the indoor (per-room) and outdoor
+// (per-region) builds — the caller supplies the seeds, the bbox, the spacing, and the probe kind (rr).
 void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vector &mn, const vector &mx,
                    float sp_start, const char *kind, int id) {
   // 1. Lattice over the bbox (X, Y, Z — Y mandatory). Auto-coarsen if the cell count would blow past the
@@ -978,12 +969,11 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
   float sp = sp_start;
   int Nx, Ny, Nz;
 
-  // PHASE THE LATTICE ON NAVIGABLE SPACE, NOT ON THE BOUNDING BOX.
-  // Anchoring sample planes at the bbox corner makes coverage a function of room HEIGHT rather than
+  // Phase the lattice on navigable space, not on the bounding box.
+  // Anchoring sample planes at the bbox corner makes coverage a function of room height rather than
   // of navigational need: a room exactly one pitch tall gets its only two planes on the floor and the
-  // ceiling, where the clearance test rejects every candidate. That is why abend2's 20u-tall ring
-  // rooms held 10 and 9 real cells while a 106u-tall open hall held 1279, and why 82% of that map's
-  // rooms had no usable plane at all. The portal seeds are flyable air by construction (they are
+  // ceiling, where the clearance test rejects every candidate, so a low room ends up with almost no
+  // real cells while a tall hall gets thousands. The portal seeds are flyable air by construction (they are
   // portal path points), so running a plane through their centroid puts cells where a hull fits.
   // Indoor only — outdoor regions are open airspace where the bbox phase is harmless.
   vector org = mn;
@@ -997,12 +987,12 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
   }
   const vector bbc = (mn + mx) * 0.5f;
 
-  // Phase candidates. Attempt 0 is the validated seed-centroid phase. Attempt 1 re-anchors, per
-  // axis, on the room centre wherever the seed phase would put a sample plane within hull radius of
-  // a wall — a lone door seed lies ON the room's bounding face in its normal axis (0.9.14 portal
-  // model: walls no longer seed, so single-door rooms are common), and either phase can starve a
-  // room whose doorway geometry sits at the 20u scale (Batteries rm84/rm70/rm80 each starved under
-  // one phase and not the other). A starved first attempt earns the second; the better graph stays.
+  // Phase candidates. Attempt 0 is the seed-centroid phase. Attempt 1 re-anchors, per axis, on the
+  // room centre wherever the seed phase would put a sample plane within hull radius of a wall — a
+  // lone door seed lies on the room's bounding face in its normal axis (only door-class portals
+  // seed, so single-door rooms are common), and either phase can starve a room whose doorway
+  // geometry sits at the 20u scale. Attempt 2 shifts the seed phase half a pitch on every axis.
+  // Every attempt is grown and scored; the best graph stays (see the phase choice below).
   auto PhaseOrg = [&](int attempt, float pitch) {
     vector o = mn;
     if (!phase_on_seeds)
@@ -1062,43 +1052,35 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
   auto CellKey = [&](int ix, int iy, int iz) -> int64_t { return ((int64_t)ix * (Ny + 2) + iy) * (Nz + 2) + iz; };
 
   // cell -> accepted node index. A cell absent from the map is an un-accepted candidate (every in-range
-  // lattice cell is a candidate; growth decides acceptance — we never standalone-probe a point).
+  // lattice cell is a candidate; growth decides acceptance — a point is never probed standalone).
   std::unordered_map<int64_t, int> cell_node;
   cell_node.reserve(1024);
 
   const float nr = sp * 1.8f; // neighbourhood radius: covers the 26-cell lattice ring (+ seed reach)
 
   // Reset the graph to its seeds so an attempt can be re-run from scratch.
-  // In-room admission: the sweep follows portals, so a clear leg from a node beside an open door
-  // reached cells INSIDE THE NEIGHBOURING ROOM and the lattice grew there — Isengard rm36 (the tower's two halls):
-  // 2048 nodes at the cap with a full grid in the space between the halls and past the lower hall's outline, all
-  // of it other rooms' interiors reached through the hatches and side doors; one component "routable", and a bot
-  // handed vias in rooms it was not in. A lattice cell belongs to this room only if the sweep ENDS in this room
-  // (fvi's hit_room is the room the end point is in). Seeds sit on the portals and are exempt; edges between
-  // already-admitted nodes keep the plain probe.
-  // The outdoor twin: the region lattice grew INTO buildings through their doors — Tower of Isengard's
-  // base rendered with the outdoor lattice overlaid had nodes throughout the tower's interior footprint, and a
-  // carrier on its entrance leg sat 75 u up against the tower's north face for 397 s while the leg's waypoint lay
-  // through the wall. An outdoor cell is outdoors only if the sweep ends on a terrain cell or inside an exterior
-  // shell room (RF_EXTERNAL — Bree's sunken tavern courtyard rm25 is one; bots fly there as "outside"), never in an
-  // interior room. Gate on Town of Bree (a sunken town): the region lattice went from 12912 nodes to 1904 — the
-  // 11000 it lost were INSIDE the buildings, down to y=58 under a terrain at y~240 (only 2 cells were rejected by
-  // the room test itself; the rest were only reachable THROUGH those two doorway cells, i.e. the old outdoor
-  // lattice bridged the map through the tavern's interior). The surviving lattice spans the same x/z extent at
-  // terrain level (y 238..309). Isengard's region lattice was unchanged (its buildings stand on the ground).
+  // Cell admission (CellInRoom). The sweep follows portals, so a clear leg from a node beside an open door
+  // reaches cells inside the neighbouring room. Indoors those foreign cells are kept on purpose (see the indoor
+  // branch of CellInRoom) and only cells inside no room at all are rejected. Seeds sit on the portals and are
+  // exempt; edges between already-admitted nodes keep the plain probe.
+  // Outdoors the region lattice must not grow into buildings through their doors: nodes throughout a tower's
+  // interior footprint hand a carrier on its entrance leg a waypoint through the wall. An outdoor cell is
+  // outdoors only if the sweep ends on a terrain cell or inside an exterior shell room (RF_EXTERNAL — a sunken
+  // courtyard can be one; bots fly there as "outside"), never in an interior room. In a sunken town this keeps
+  // the lattice at street level instead of inside the buildings, where it would bridge the map through their
+  // interiors; buildings that stand on the ground lose nothing.
   int od_reject_blocked = 0, od_reject_interior = 0, od_reject_underground = 0, od_ok_terrain = 0, od_ok_shell = 0,
       od_ok_none = 0;
   int in_reject_void = 0; // indoor cells inside no room at all (rock / sky)
   int own_cells = 0;      // indoor lattice cells whose accepting sweep ended in the room being built
-  // Two-way outdoors: the exterior shell's faces are FRONT faces from outside and
-  // nothing at all from inside (Isengard rm2 face 38 blocks (2007,294,2192) -> (2037,294,2222) at 4 u; the reverse
-  // leg is CLEAR at every radius, with or without FQ_BACKFACE), so an edge probed from the node INSIDE the tower
-  // column to the node outside passed, and the carrier outside was handed the inside node through the wall.
-  // An outdoor lattice edge exists only if both directions are clear — the crossing sampler's twin-side rule.
-  // ...but only where it matters: two-way for every leg cut the Isengard region lattice from 6917 nodes to 964
-  // (the growth dies around the door seeds, whose reverse legs clip the door frames). The wall-through edges all
-  // have an endpoint INSIDE an interior room's box (the column base is rm24's volume), so the reverse leg is
-  // demanded only when either endpoint lies in an interior room's bounding box.
+  // Two-way outdoors: the exterior shell's faces are front faces from outside and
+  // nothing at all from inside (the reverse leg reads clear at every radius, with or without FQ_BACKFACE), so an
+  // edge probed from a node inside a structure to a node outside passes, and a bot outside is handed the inside
+  // node through the wall. An outdoor lattice edge exists only if both directions are clear — the crossing
+  // sampler's twin-side rule.
+  // ...but only where it matters: two-way for every leg starves the growth around the door seeds, whose reverse
+  // legs clip the door frames. A wall-through edge has an endpoint inside an interior room's box, so the reverse
+  // leg is demanded only when either endpoint lies in an interior room's bounding box.
   std::vector<int> interior_boxes;
   if (rr->outdoor)
     for (int r = 0; r <= Highest_room_index; r++)
@@ -1121,16 +1103,16 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
       return BotSegmentClearOutdoor(b, a, BOT_ROADMAP_CLEARANCE);
     return true;
   };
-  // Is `pt` inside room `r`? Six axis rays against the room's own shell: the first ray whose closest hit is a FRONT
+  // Is `pt` inside room `r`? Six axis rays against the room's own shell: the first ray whose closest hit is a front
   // face proves an interior point (rock never sees the inside of a wall); a back face or nothing proves nothing by
   // itself, because a cell beside a doorway can send its x-rays out through the door (fvi_QuickRoomCheck's +x/diagonal
-  // pair calls those "outside"; used alone it throws away door-side cells on Bree, Batteries and Apparition).
+  // pair calls those "outside"; used alone it throws away door-side cells).
   auto PointInRoom = [&](const vector &pt, int rnum) -> bool {
     static const vector dirs[6] = {{1, 0, 0}, {-1, 0, 0}, {0, -1, 0}, {0, 1, 0}, {0, 0, 1}, {0, 0, -1}};
     vector p = pt;
     // The engine's own test first (+x ray, then a diagonal retry): it keeps cells the six axis rays alone do not
-    // (41 in Sigma Base rm22, whose only front face lies on the diagonal; without them rm22 had 171 stucks, with
-    // them none). The union of both tests still rejects every rock cell.
+    // (in a room whose only front face from the cell lies on the diagonal). The union of both tests still rejects
+    // every rock cell.
     if (fvi_QuickRoomCheck(&p, &Rooms[rnum]))
       return true;
     for (const vector &d : dirs)
@@ -1149,10 +1131,9 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     return (Rooms[rnum].flags & RF_EXTERNAL) ? InRoomBox(pt, rnum) : PointInRoom(pt, rnum);
   };
   // Outdoor flyable space, for a cell that lies inside no room: over the ground under a visible terrain segment (or
-  // anywhere under an invisible one — Town of Bree's sunken streets are terrain the heightfield neither draws nor
-  // collides with, and a building's lattice growing out of its door into the street is the route THROUGH that door;
-  // the six-ray test alone leaves Bree rm58 at 122 of 372 nodes), and under the outdoor ceiling. Rock beside
-  // Sigma Base's exit shaft is below its bunker's ground level, so it still goes.
+  // anywhere under an invisible one — a sunken town's streets lie under terrain the heightfield neither draws nor
+  // collides with, and a building's lattice growing out of its door into the street is the route through that door),
+  // and under the outdoor ceiling. Rock beside an exit shaft lies below the ground level, so it still goes.
   auto InOutdoorSpace = [&](const vector &cell) -> bool {
     if (cell.y() > BotOutdoorCeilingCap())
       return false;
@@ -1191,15 +1172,14 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
       }
       const int hr = hit.hit_room;
       if (ROOMNUM_OUTSIDE(hr)) {
-        // Under the heightfield (the Isengard valley pins): terrain collides from ABOVE only, so a sweep
-        // that starts below the surface is clear in every direction — one cell admitted underground (through a
-        // shell's buried wall, or a door seed at grade) floods the whole region under the ground, and each of those
-        // cells then links UP through the surface to the real cells above it. A bot over the valley was handed a
-        // waypoint 11 u under its feet ($nav probe: down leg HIT_TERRAIN at 5 u, up leg CLEAR at every radius) and
-        // pressed the ground at agl 7 until the stuck escape — 238 ground pins in one 30-minute round. A cell on
-        // a terrain cell must stand hull clearance above the ground under it. Solid ground only: a sunken town
-        // (Town of Bree) lies under terrain segments flagged TF_INVISIBLE, which neither draw nor collide — its streets
-        // are legitimately below the heightfield, and the rule without this test left Bree 0 lattice cells.
+        // Under the heightfield: terrain collides from above only, so a sweep that starts below the surface is
+        // clear in every direction — one cell admitted underground (through a shell's buried wall, or a door seed
+        // at grade) floods the whole region under the ground, and each of those cells then links up through the
+        // surface to the real cells above it, so a bot over a valley is handed a waypoint under its feet and
+        // presses the ground. A cell on a terrain cell must stand hull clearance above the ground under it. Solid
+        // ground only: a sunken town lies under terrain segments flagged TF_INVISIBLE, which neither draw nor
+        // collide — its streets are legitimately below the heightfield, and without this exception its lattice
+        // would have no cells at all.
         vector gp = cell;
         const int seg = GetTerrainCellFromPos(&gp);
         if (seg >= 0 && !(Terrain_seg[seg].flags & TF_INVISIBLE) &&
@@ -1221,24 +1201,20 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
       od_reject_interior++;
       return false;
     }
-    // INDOOR: the in-room test is OFF. With it, Town of Bree scored 5 and 7 captures in four rounds
-    // against 17 without it, and the same rotation with only this test switched off scored 5 and 4 in its first two
-    // rounds. The foreign cells a room's lattice grows through its doors are what lets a route run THROUGH a door
-    // instead of ending at it; taking them away costs more than the void grids cost, now that the back-face probe
-    // (no edges through one-sided walls) keeps those grids from bridging rooms through solid. A door-transition
-    // zone (cells within 48 u of the door, admitted as leaves) restores too little (Bree +24 cells). The
-    // principled replacement is one route across the boundary.
+    // Indoors there is no in-room test. The foreign cells a room's lattice grows through its doors are what
+    // lets a route run through a door instead of ending at it; taking them away costs more than the void grids
+    // cost, since the back-face probe (no edges through one-sided walls) keeps those grids from bridging rooms
+    // through solid. Admitting only the cells near a door, as leaves, restores too little of that.
     fvi_info hit{};
     if (!RoadmapTrace(rr, from, cell, &hit))
       return false;
-    // Void cells (Sigma Base rm1 / rm28, the exit-room loop): the sweep alone also admits cells in ROCK. A cell hugging
-    // a wall (pitch 20 on a 90 u chamber puts the grid 5 u from the shell) sweeps on with the hull already through the
-    // face, and from a cell outside the room every further sweep is clear because rock has no faces — rm1's lattice
-    // was a full 5x5 grid at every height, 25 nodes above its ceiling, ~95 of 142 outside the room, one component, so
-    // Theta* routed the exit leg THROUGH the shaft wall. This is not the in-room rule above (which also threw
-    // away the foreign cells grown through doors and cost Bree its captures): a cell stays if it lies inside THIS
-    // room, a room adjacent through one of its portals, or the room beyond an adjacent door room. Only cells inside
-    // no room at all — the void grid — are rejected.
+    // Void cells: the sweep alone also admits cells in rock. A cell hugging a wall (pitch 20 on a 90 u chamber
+    // puts the grid 5 u from the shell) sweeps on with the hull already through the face, and from a cell outside
+    // the room every further sweep is clear because rock has no faces, so the lattice becomes a full grid around
+    // and above the room and Theta* routes legs through its walls. This is not an in-room rule (which would also
+    // throw away the foreign cells grown through doors): a cell stays if it lies inside this room, inside any
+    // other room whose box holds it (an exterior shell counts by its box), or in outdoor flyable space. Only cells
+    // inside no room at all — the void grid — are rejected.
     if (!InThisOrNeighbourRoom(cell))
       return false;
     *end_room_out = hit.hit_room;
@@ -1304,7 +1280,7 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
               }
               continue;
             }
-            // Un-accepted candidate: accept it iff a hull-clear swept edge reaches it from u AND it lies in this room.
+            // Un-accepted candidate: accept it iff a hull-clear swept edge reaches it from u and CellInRoom admits it.
             int end_room = -1;
             if (!CellInRoom(pu, vp, &end_room))
               continue;
@@ -1318,7 +1294,7 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
             rr->adj[u].push_back(w);
             rr->adj[w].push_back(u);
             UFUnion(uf, u, w);
-            rr->lattice_cells++; // the ONE true lattice writer
+            rr->lattice_cells++; // the one true lattice writer
             if (end_room == rr->probe_room)
               own_cells++;
             q.push(w);
@@ -1351,15 +1327,14 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
           org.x(), mx.x(), org.y(), mx.y(), org.z(), mx.z(), sp, Nx, Ny, Nz, BotOutdoorCeilingCap());
   };
 
-  // Grow under three phases and keep the one with the most cells inside THIS room, then the fullest (ties keep the
+  // Grow under three phases and keep the one with the most cells inside this room, then the fullest (ties keep the
   // earliest). The count is the honest proxy for how much of the room's free volume the grid managed to sample at
   // this pitch; a room's coverage must not hinge on where its door seed happens to sit relative to a 20u grid (the
-  // same room read 123 or 6 cells depending on a 10u seed move). Only the room's own cells lead. Growth continues
-  // through a door into the room beyond (kept on purpose, see CellInRoom), and while that spill counted, the room
-  // next door chose this room's grid: Isengard rm33's phase was decided by some 240 cells in rm29, a change to what
-  // may grow there moved every node in rm33, and on the new grid the room was marked HARD. Door coverage does not
-  // lead either. Read here, before the repair passes, it kept a thin grid that already joined Sigma Base rm22's
-  // doors (44 cells) over the one the repairs complete (63 cells and 34 connectors), and carriers milled in the room.
+  // same room can read 123 or 6 cells depending on a 10u seed move). Only the room's own cells lead. Growth
+  // continues through a door into the room beyond (kept on purpose, see CellInRoom); counting that spill would let
+  // the room next door choose this room's grid, so that a change to what may grow there moves every node here.
+  // Door coverage does not lead either: read here, before the repair passes, it can keep a thin grid that already
+  // joins the doors over the one the repairs complete.
   GrowAttempt(0);
   if (phase_on_seeds) {
     using PhaseScore = std::pair<int, int>; // {cells in this room, all cells}, compared in that order
@@ -1380,8 +1355,8 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
   }
   LogOutdoorAdmission();
 
-  // DOOR ON-RAMP. Growth is rooted at the seeds, so a doorway whose first hop is blocked (a propped
-  // leaf, a frame lip, a short vestibule) loses the WHOLE room, whichever phase is tried. For each
+  // Door on-ramp. Growth is rooted at the seeds, so a doorway whose first hop is blocked (a propped
+  // leaf, a frame lip, a short vestibule) loses the whole room, whichever phase is tried. For each
   // seed, run a bounded best-first search into the room along the portal normal: expand the reached
   // point that has advanced farthest inward; a blocked step spawns a tangent fan around the blocking
   // face (the same frame BotFindViaPoint and SkelBridge use); a candidate is admitted only if its
@@ -1399,7 +1374,7 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     const float step = sp * 0.4f;                      // 8u at the 20u pitch — hull scale
     const float margin = BOT_ROADMAP_CLEARANCE * 2.0f; // bbox guard, as the multi-bend repair
     const float depth_goal = 3.0f * step;              // 24u in: past a leaf, a lip, a frame
-    const float fan_off[3] = {12.0f, 26.0f, 40.0f};    // SkelBridge's lateral rings
+    const float fan_off[3] = {12.0f, 26.0f, 40.0f};    // fixed lateral rings (SkelBridge's scale with the hull)
     std::queue<int> q;
     int ramp_nodes = 0, ramped_seeds = 0;
     for (int sidx = 0; sidx < n_seed; sidx++) {
@@ -1407,7 +1382,7 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
       if (pi < 0 || pi >= rm.num_portals)
         continue;
       const face &pf = rm.faces[rm.portals[pi].portal_face];
-      vector dir = pf.normal; // points INTO the room (PortalSweepOpen's contract)
+      vector dir = pf.normal; // points into the room (PortalSweepOpen's contract)
       if (vm_NormalizeVector(&dir) < 0.5f)
         continue;
       const vector seed_pos = rr->node[sidx];
@@ -1511,10 +1486,9 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     }
   }
 
-  // Capture the PRE-BRIDGE component count (the room-complexity signal the proactive router gates on): how
-  // fragmented growth left the interior BEFORE the bridges merge it. >1 = geometric separation that direct
-  // portal-path routing stalls on -> the room earns proactive grid routing; ==1 = simple room -> direct
-  // reactive routing only (proactively grid-routing it just adds indirection — the soak-measured easy-pool dip).
+  // Record the pre-bridge component count: how fragmented growth left the interior before the bridges merge it
+  // (>1 = geometric separation that direct portal-path routing stalls on). Nothing gates on it: proactive grid
+  // routing is gated on `routable`, computed at the end of the build.
   {
     std::unordered_map<int, int> roots;
     for (int i = 0; i < (int)rr->node.size(); i++)
@@ -1522,11 +1496,11 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     rr->orig_comp_count = (int)roots.size();
   }
 
-  // 2. Component bridge (NAVIGATION.md section 3.5, construction step 4). Grow-from-seed leaves the interior as several
-  // components when a NAVIGABLE gap is wider than the neighbour-connect radius (sp*1.8): e.g. townofbree's
-  // tavern, where an upper gallery sits above the main floor through open air. For each cross-component node
+  // 2. Component bridge (NAVIGATION.md, the volumetric roadmap). Grow-from-seed leaves the interior as several
+  // components when a navigable gap is wider than the neighbour-connect radius (sp*1.8): e.g. a tavern whose
+  // upper gallery sits above the main floor across open air. For each cross-component node
   // pair within BOT_ROADMAP_BRIDGE_LEN, probe a hull-clear swept edge; if clear, add it and union the
-  // components. The probe gate is the safety: a SOLID divider stays split (correct), only a flyable gap
+  // components. The probe gate is the safety: a solid divider stays split (correct), only a flyable gap
   // bridges. Closest pairs first, so a transitive A-B-C merge resolves cleanly.
   {
     const int N0 = (int)rr->node.size();
@@ -1564,10 +1538,10 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     }
   }
 
-  // 2b. Corner-rounding bridge ($gridbridge). The straight bridge above connects only
+  // 2b. Corner-rounding bridge ($nav bridge). The straight bridge above connects only
   // gaps a single hull-clear segment spans, and it is node-capped (skipped on the big outdoor regions) — which
-  // alone leaves outdoor regions at 2-3 components and the Bree door unbridged. This pass
-  // connects components whose only link is a lateral GO-AROUND by inserting ONE swept midpoint vertex so the
+  // alone leaves outdoor regions in several components and some doors unbridged. This pass
+  // connects components whose only link is a lateral go-around by inserting one swept midpoint vertex so the
   // two legs round the wall's end (or clear over the top). It is hull-probe-gated (a sealed pocket stays
   // split) and bounded by a spatial hash + attempt budget, so it runs regardless of node count.
   if (Bot_roadmap_corner_enabled) {
@@ -1592,9 +1566,9 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
       for (int i = 0; i < N0; i++)
         grid[KeyOf(rr->node[i])].push_back(i);
 
-      // The gather is sweep-free and was the longest unsliceable stretch of a build (Isengard rm34, 12,000 nodes:
-      // 3.4 s in one slice, measured with [Perf]): a 220 u hash cell holds ~1300 lattice nodes, so every node looked
-      // at tens of thousands of neighbours with two union-find walks each. Roots are fixed during the gather, so
+      // The gather is sweep-free, so without care it is the longest unsliceable stretch of a build (seconds in one
+      // slice for a 12,000-node room): a 220 u hash cell holds ~1300 lattice nodes, so every node looks at tens of
+      // thousands of neighbours, with two union-find walks each if done naively. Roots are fixed during the gather, so
       // they are read once; the worker may park between nodes; and the closest-first order comes off a heap, which
       // pops the same sequence a full sort would without sorting the millions of pairs the attempt cap never reaches.
       std::vector<int> root(N0);
@@ -1669,8 +1643,8 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
               vector cm = mid + axes[ax] * (off * signs[sg]);
               // No room-bbox bound on this vertex: a corner vertex legitimately sits just outside a small
               // room's box when the go-around runs through an open portal, and a bound cuts the bridge
-              // such rooms need (abend2's ring connectors fall to two components). A vertex placed
-              // beyond a WALL cannot read clear: RoadmapLOS sweeps with FQ_BACKFACE, so the wall
+              // such rooms need (the connectors of a ring of rooms fall to two components). A vertex placed
+              // beyond a wall cannot read clear: RoadmapLOS sweeps with FQ_BACKFACE, so the wall
               // blocks the leg from either side.
               if (RoadmapLOS(rr, A, cm) && RoadmapLOS(rr, cm, B)) {
                 M = cm;
@@ -1701,22 +1675,21 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
     }
   }
 
-  // 2c. Tube densification ($nav dense, 0.9.7 Fix B). The lattice cannot populate a room thinner than the
-  // spacing (isengard room 40: 21u-wide grate tunnel, 143u tall -> 2 portal seeds, 0 lattice, 2 components =
-  // DEGENERATE) and its tube-end seeds sit farther apart than BRIDGE_LEN, so neither bridge connects them —
-  // the via layer then has nothing to hand out inside the tube (VIA_SEARCH_FAIL x159, seam churn 40->38).
+  // 2c. Tube densification ($nav dense). The lattice cannot populate a room thinner than the spacing (a
+  // 21u-wide, 143u-tall grate tunnel gets 2 portal seeds, 0 lattice cells, 2 components = degenerate) and its
+  // tube-end seeds sit farther apart than BRIDGE_LEN, so neither bridge connects them — the via layer then has
+  // nothing to hand out inside the tube.
   // Ladder: for each portal-seed pair that is still cross-component (or every long pair when the lattice
   // never populated), walk the seed-to-seed run at sub-spacing steps and hull-fit a chain of rung nodes.
-  // v2 (stage-1 A/B falsified v1 on the gate room — room 40 rebuilt with ZERO rungs): the walk now runs from
-  // BOTH ends (a grate/door object parked at one portal blocks every probe anchored on that seed — the
-  // 20->40 blastable grate; the far seed still ladders ~90% of the tube), and each rung offers a room
-  // bbox-CENTERLINE candidate alongside the chord (portal points can hug walls, making the raw chord clip;
+  // The walk runs from both ends (a grate/door object parked at one portal blocks every probe anchored on
+  // that seed; the far seed can still ladder most of the tube), and each rung offers a room
+  // bbox-centerline candidate alongside the chord (portal points can hug walls, making the raw chord clip;
   // the cross-section center is where a hull actually fits in a thin tube). A qualifying pair that still
-  // places nothing logs a FAILED line — this pass must never fail silently again. Chain edges + unions as
-  // we go, so compression sees the merge. Indoor only — outdoor regions have no tube class.
+  // places nothing logs a FAILED line, so this pass never fails silently. Chain edges + unions as the
+  // walk goes, so compression sees the merge. Indoor only — outdoor regions have no tube class.
   if (Bot_tube_densify_enabled && !rr->outdoor && n_seed >= 2) {
-    // Pre-ladder node total. The old inflated sum is kept here on purpose (behaviour-neutral): at this
-    // point only the sampler and the corner pass have run, so this is exactly what it used to be.
+    // Pre-ladder node total: sampled cells plus the connectors placed so far (door on-ramp, corner pass).
+    // Zero means the room has no interior coverage at all, and every long seed pair is laddered.
     const int lattice0 = rr->lattice_cells + rr->connector_nodes;
     const float step = std::min(sp * 0.6f, 12.0f);
     const vector bbc = (mn + mx) * 0.5f;
@@ -1829,8 +1802,8 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
   }
 
   // Zones: what each portal seed reaches without leaving the room. The lattice grows door-approach nodes
-  // into the next room on purpose (the route THROUGH a door), and in an open hall those nodes join every door of a
-  // neighbouring room into one component: Glasshouse's four sealed galleries read as one. So the zone union skips
+  // into the next room on purpose (the route through a door), and in an open hall those nodes join every door of a
+  // neighbouring room into one component, so separately sealed galleries read as one. So the zone union skips
   // every edge whose segment crosses one of this room's own portal faces — the only way out of a room — and keeps
   // all others. No ray test (its rays leave through the doorways too) and no node classification (a narrow room's
   // whole interior lies "behind" its facing doors). A zone no seed reaches is not a zone: its nodes read -1.
@@ -1911,17 +1884,15 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
   }
 
   // Degenerate = the lattice never populated (interior thinner than the spacing): no coverage gained over
-  // the seeds, so defer to the 0.9.3 skeleton (indoor) / connecting graph (outdoor).
+  // the seeds, so defer to the skeleton (indoor) / connecting graph (outdoor).
   rr->degenerate = (rr->lattice_cells + rr->connector_nodes == 0);
 
   rr->local_pair_coverage = RoadmapLocalPairCoverage(rr, n_seed);
 
-  // Route-ownership eligibility, computed on the FINISHED network rather than a pre-repair snapshot.
-  // The old `complex` was `orig_comp_count > 1` — "growth left the interior fragmented" — so a room
-  // became INELIGIBLE the moment its coverage got good. Measured on abend2 after the phase fix: rooms
-  // 0 and 30 each hold a complete 223-cell network at 100% portal-pair coverage and served 0 roadmap
-  // vias against 195 skeleton vias, because both had just lost the flag. The snapshot also existed to
-  // stop the multibend repair widening eligibility; the cell floor does that directly now, since a
+  // Route-ownership eligibility, computed on the finished network rather than a pre-repair snapshot.
+  // A fragmentation test (`orig_comp_count > 1`, "growth left the interior fragmented") would make a room
+  // ineligible the moment its coverage got good: a complete network at full portal-pair coverage would
+  // serve no roadmap vias. The cell floor also keeps the multibend repair from widening eligibility: a
   // room whose connectivity comes from traced connectors has few real cells and fails on its own.
   // A room with one seed (a dead-end office, a flag pocket) has no pair to cover: coverage is -1 and
   // must not fail the gate — the cell floor is its whole eligibility test.
@@ -1941,7 +1912,7 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
 bool PortalSweepOpen(int room_idx, int portal_idx) {
   room &rm = Rooms[room_idx];
   const portal &po = rm.portals[portal_idx];
-  const vector n = rm.faces[po.portal_face].normal; // points INTO the room
+  const vector n = rm.faces[po.portal_face].normal; // points into the room
   vector a = po.path_pnt + n * 8.0f;
   vector b = po.path_pnt - n * 8.0f;
   return BotSegmentClear(room_idx, a, b, BOT_ROADMAP_CLEARANCE);
@@ -1965,7 +1936,7 @@ bool PortalHasBreakable(int room_idx, int portal_idx) {
   return false;
 }
 
-// Live door-class objects in a room + its portal neighbors (grates are OBJ_DOOR that DIE when
+// Live door-class objects in a room + its portal neighbors (grates are OBJ_DOOR that die when
 // shot out — the count dropping is the grate-destruction signal; normal doors animate but never
 // leave the chain, so they hold the signature steady).
 int NearbyDoorObjectCount(int room_idx) {
@@ -1993,7 +1964,7 @@ RoadmapRoom *Build(int room_idx) {
   room &rm = Rooms[room_idx];
   const int npc = rm.num_portals;
 
-  // $nav heal watch list: portals that are breakable-glass AND currently sweep-blocked — the
+  // $nav heal watch list: portals that are breakable-glass and currently sweep-blocked — the
   // panes whose later shattering must trigger a rebuild of this room's model.
   if (Bot_roadmap_heal_enabled) {
     for (int p = 0; p < npc; p++)
@@ -2003,18 +1974,18 @@ RoadmapRoom *Build(int room_idx) {
     rr->heal_next_check = Gametime + 3.0f;
   }
 
-  // Portal seeds — guaranteed-playable points (a ship entered through each). Each starts its own component;
-  // growth/seam edges union them where open air actually connects. 0.9.14 portal model: only DOOR/PANE
-  // portals seed. A solid-wall "portal" is not a playable point — as a seed it grew cells from a point on
-  // a wall, was a legal exit goal for a bot leaving the room (the wall-twin press beside a real door),
-  // and as a pair-coverage denominator it failed the routable gate in exactly the single-door rooms
-  // whose lattice was in fact connected door-to-item (Batteries flag rooms).
+  // Portal seeds — playable points on the room's doors. Each starts its own component; growth/seam edges
+  // union them where open air actually connects. Only door and pane portals seed (the portal model). A
+  // solid-wall "portal" is not a playable point — as a seed it would grow cells from a point on a wall, be
+  // a legal exit goal for a bot leaving the room (a press against the wall twin beside a real door), and as
+  // a pair-coverage denominator fail the routable gate in single-door rooms whose lattice is in fact
+  // connected door-to-item.
   std::vector<int> uf;
   rr->portal_seed.assign(npc, -1);
   for (int p = 0; p < npc; p++) {
-    // Park BETWEEN doors, here and nowhere deeper: classifying a door fills other modules' lazy tables (the
-    // crossing sampler, ~12 ms a door — a 36-door hall was a 450 ms slice), and a worker parked INSIDE one of those
-    // would leave the main thread reading a half-written table.
+    // Park between doors, here and nowhere deeper: classifying a door fills other modules' lazy tables (the
+    // crossing sampler, ~12 ms a door), and a worker parked inside one of those would leave the main thread
+    // reading a half-written table.
     SliceYield();
     int nr = rm.portals[p].croom;
     if (nr < 0 || nr > Highest_room_index || !Rooms[nr].used)
@@ -2022,21 +1993,22 @@ RoadmapRoom *Build(int room_idx) {
     const int pclass = BotPortalClass(room_idx, p);
     if (pclass == BOT_PORTAL_CLASS_NEVER)
       continue;
-    // A TIGHT door (its crossing found only under the comfort hull) is not part of the comfort network: its seed
-    // sits in contact with the frame and the growth from it dies (Batteries rm37: the 11.4 u floor hatch's seed
-    // cost the office its 114 cells). The via layer crosses tight doors, as a last resort, at the wall sphere.
-    // Unless it is the only door of a room (abend2's flag pits): then it seeds, or the room has no lattice at all.
+    // A tight door (its crossing found only under the comfort hull) is not part of the comfort network: its seed
+    // sits in contact with the frame, the growth from it dies, and as a seed it can cost the room most of its
+    // cells (an 11.4 u floor hatch). The via layer crosses tight doors, as a last resort, at the wall sphere.
+    // Unless it is the only door of a room (a flag pit with one hatch): then it seeds, or the room has no
+    // lattice at all.
     if (BotPortalTightLeavesNetwork(room_idx, p))
       continue;
     int idx = (int)rr->node.size();
     vector seed = rm.portals[p].path_pnt;
     if (pclass == BOT_PORTAL_CLASS_PANE) {
-      // An intact pane is a solid face: a seed ON it has its hull sphere embedded in the glass and
-      // never reaches a cell (Batteries rm3: fifteen conference-room panes on the outer wall, each a
-      // one-node component, failing the routable gate on Red's whole approach). Seed a hull radius
-      // inside the room instead — the point a bot stands at before shooting the pane.
+      // An intact pane is a solid face: a seed on it has its hull sphere embedded in the glass and
+      // never reaches a cell (a wall of panes would add a one-node component per pane and fail the
+      // routable gate). Seed a hull radius inside the room instead — the point a bot stands at
+      // before shooting the pane.
       const face &pf = rm.faces[rm.portals[p].portal_face];
-      vector n = pf.normal; // points INTO the room
+      vector n = pf.normal; // points into the room
       if (vm_NormalizeVector(&n) > 0.5f)
         seed += n * BOT_ROADMAP_CLEARANCE;
     }
@@ -2080,7 +2052,7 @@ RoadmapRoom *BuildOutdoor(int region) {
       continue;
     if (ep < 0 || ep >= Rooms[er].num_portals)
       continue;
-    // Door approach point: the validated crossing's outside approach, legacy offset when none.
+    // Door approach point: the validated crossing's outside approach, the fixed standoff when none.
     vector seed;
     BotTerrainDoorPoints(er, ep, &seed, nullptr);
     int idx = (int)rr->node.size();
@@ -2134,9 +2106,9 @@ RoadmapRoom *Get(int room_idx) {
     return nullptr;
   if (Rooms[room_idx].flags & RF_EXTERNAL)
     return nullptr; // outdoor uses the per-region roadmap (GetOutdoor)
-  // $nav heal: the world opens up mid-round (panes shattered, grates shot out) and a frozen model
-  // strands the router's plans in reality-contradiction. Recheck this room's watch list on a
-  // throttle; rebuild when a watched pane now sweeps clear or a nearby door-object died.
+  // $nav heal: the world opens up mid-round (panes shattered, grates shot out) and a model frozen at
+  // build time keeps treating the openings as walls. Recheck this room's watch list on a throttle;
+  // rebuild when a watched pane now sweeps clear or a nearby door-object died.
   if (Bot_roadmap_heal_enabled && g_room[room_idx] && !g_room[room_idx]->outdoor &&
       Gametime >= g_room[room_idx]->heal_next_check) {
     RoadmapRoom *rr = g_room[room_idx];
@@ -2192,9 +2164,9 @@ RoadmapRoom *GetOutdoor(int region) {
   return g_region[region];
 }
 
-// Cached-only fetch for the live overlay DRAW path: never Build() and never heal — those do thousands
+// Cached-only fetch for the live overlay draw path: never Build() and never heal — those do thousands
 // of collision sweeps and can bump g_build_serial, so calling them from inside GameRenderWorld() would
-// hitch the frame and could change WHEN a roadmap is cached relative to doors/glass opening (perturbing
+// hitch the frame and could change when a roadmap is cached relative to doors/glass opening (perturbing
 // the very bots being observed). Returns the already-built roadmap or nullptr (room not queried yet).
 RoadmapRoom *PeekCached(int room_idx) {
   ResetIfStale(); // cheap: only drops caches if the mine checksum changed; never builds
@@ -2263,8 +2235,8 @@ bool ThetaStarSearch(RoadmapRoom *rr, int start, int goal, std::vector<int> &pat
 
     // SetVertex (lazy): if the assumed straight shot parent[s]->s isn't actually clear, re-parent s to the
     // best already-expanded neighbour. This is what turns grid-granular hops into any-angle straight runs.
-    // $nav curve (Fork-B fix): use a FATTER clearance so a straight shortcut that only clears bare hull over
-    // a mound/bend is REJECTED — Theta* then keeps the winding node-by-node path (the corkscrew) instead of
+    // $nav curve: use a fatter clearance so a straight shortcut that only clears bare hull over
+    // a mound/bend is rejected — Theta* then keeps the winding node-by-node path (the corkscrew) instead of
     // collapsing it into an over-the-mound chord the engine can't fly at cruise. Edges stay at 6.7 below.
     float straighten_clear = Bot_curve_route_enabled ? BOT_ROADMAP_STRAIGHTEN_CLEARANCE : BOT_ROADMAP_CLEARANCE;
     bool parent_los = true;
@@ -2321,12 +2293,10 @@ bool ThetaStarSearch(RoadmapRoom *rr, int start, int goal, std::vector<int> &pat
 }
 
 // Nearest roadmap node to pos with clear hull-LOS from pos (the bot's entry/exit to the graph).
-// Probed NEAREST FIRST, and the first clear node is the answer. The old scan walked the nodes in index order
-// (growth order — unrelated to distance) and swept every node closer than the best so far: a bot wedged where
-// no node is in hull view swept the ENTIRE lattice on every via tick — 19,800 sweeps, 80 ms, per tick, in
-// Isengard's 7600-cell hall (measured with [Perf]), exactly when the bot most needs the frame. Same answer, a
-// handful of sweeps; a point that sees none of its BOT_ROADMAP_ATTACH_PROBES nearest nodes (a ~70 u ball at
-// lattice pitch) is not on this lattice — NONE, and the caller's skeleton/ring fallback takes it, as before.
+// Probed nearest first, and the first clear node is the answer: a bot wedged where no node is in hull view must
+// not sweep the whole lattice on every via tick, exactly when it most needs the frame. A point that sees none of
+// its BOT_ROADMAP_ATTACH_PROBES nearest nodes (a ~70 u ball at lattice pitch) is not on this lattice — NONE, and
+// the caller's skeleton/ring fallback takes it.
 #define BOT_ROADMAP_ATTACH_PROBES 256
 int NearestVisible(RoadmapRoom *rr, const vector &pos) {
   const int N = (int)rr->node.size();
@@ -2346,15 +2316,13 @@ int NearestVisible(RoadmapRoom *rr, const vector &pos) {
 }
 
 // --- Attaching a ship that already touches geometry ---
-// A hull sweep that STARTS in contact is blocked at 0 u in every direction, so a ship pressed against a face —
-// or spawned in one: Batteries Included tucks its player starts under desk lids and between partitions —
-// sees no node at all in a room whose lattice is a few units away. The attach said "wedged, let the rings or
-// the skeleton try", the skeleton aimed it into the furniture, and only the timed escape's reverse burst freed
-// it: 36% of Batteries lives began that way, a median 37-86 s each, a fifth of all bot time on the map; across
-// the 0.9.15 baseline 17-49% of failed via searches started at d=0. The ship IS where it is, so the question
-// is only which way is open: when the hull probe toward the nearest node dies within CONTACT_EPS of its start,
-// the nearest few nodes are tried again with a thin ray, and the first leg is flown on that. Used for the
-// SHIP's own attach only — a goal or an item is never attached through a gap a hull cannot pass.
+// A hull sweep that starts in contact is blocked at 0 u in every direction, so a ship pressed against a face —
+// or spawned in one: a level can put player starts under desk lids and between partitions — sees no node at all
+// in a room whose lattice is a few units away. Answering "wedged, let the rings or the skeleton try" lets the
+// skeleton aim it into the furniture until the timed escape's reverse burst frees it. The ship is where it is,
+// so the question is only which way is open: when the hull probe toward the nearest node dies within CONTACT_EPS
+// of its start, the nearest few nodes are tried again with a thin ray, and the first leg is flown on that. Used
+// for the ship's own attach only — a goal or an item is never attached through a gap a hull cannot pass.
 #define BOT_ROADMAP_CONTACT_EPS 1.5f    // a hull sweep blocked this close to its start began in contact
 #define BOT_ROADMAP_CONTACT_RADIUS 2.5f // the thin ray (== BOT_PORTAL_SHIP_RADIUS: a ship fits at all)
 #define BOT_ROADMAP_CONTACT_PROBES 24   // nearest nodes tried with the thin ray
@@ -2362,14 +2330,14 @@ int NearestVisible(RoadmapRoom *rr, const vector &pos) {
 
 bool ShipStartsInContact(const RoadmapRoom *rr, const vector &pos, const vector &toward) {
   if (rr->outdoor)
-    return false; // terrain legs have their own probe; indoor furniture is the measured class
+    return false; // terrain legs have their own probe; indoor furniture is the case this handles
   fvi_info hit{};
   if (BotSegmentClear(rr->probe_room, pos, toward, BOT_ROADMAP_CLEARANCE, &hit, FQ_BACKFACE))
     return false;
   return Dist(pos, hit.hit_pnt) < BOT_ROADMAP_CONTACT_EPS;
 }
 
-// The thin ray says which way is OPEN; it does not say a hull FITS. This game forces tight squeezes and also has
+// The thin ray says which way is open; it does not say a hull fits. This game forces tight squeezes and also has
 // plenty of openings no ship can pass (slits, bars, grates), and a node seen through one of those must not capture
 // a pressed ship ahead of the searches that could find the real way round. So the leg counts only if the ship merely
 // has to un-touch: somewhere in the first CONTACT_UNTOUCH units along the ray, the full hull sweep to the node runs
@@ -2429,11 +2397,11 @@ int NearestVisibleShip(RoadmapRoom *rr, const vector &pos) {
 }
 
 // Bounded graph-connect probe: nearest node to pos with a hull-clear line, testing only the
-// max_cand closest nodes within max_radius. NearestVisible probes every closer node until one
-// clears — fine when a connection EXISTS (a few probes), but a genuinely disconnected point in a
-// 9000-node room would sweep-probe the entire graph. The reach gate needs the disconnected answer
-// cheaply: no clear link among the nearest two dozen nodes IS the verdict (a ship our navigation
-// could deliver would have lattice neighbours within a spacing or two).
+// max_cand closest nodes within max_radius. NearestVisible probes up to BOT_ROADMAP_ATTACH_PROBES
+// nearest nodes until one clears — fine when a connection exists (a few probes), but a genuinely
+// disconnected point pays the whole budget. The reach gate needs the disconnected answer cheaply:
+// no clear link among the nearest two dozen nodes is the verdict (a ship the navigation could
+// deliver would have lattice neighbours within a spacing or two).
 int NearestVisibleBounded(RoadmapRoom *rr, const vector &pos, int max_cand, float max_radius) {
   const int N = (int)rr->node.size();
   std::vector<std::pair<float, int>> cand;
@@ -2474,9 +2442,8 @@ int Nearest(RoadmapRoom *rr, const vector &pos) {
 
 // Shared query body: route rr from the bot's nearest-visible node to `goal` and return the furthest-visible
 // path vertex (greedy string-pull) as the via. Used by both the indoor and outdoor entry points.
-// DIAG (0.9.7 hard-room instrumentation, throttled): which QueryVia outcome dominates in a
-// promoted room? 158 post-promotion suspensions in isengard room 36 = either NONE (which
-// branch?) or FOUND-but-chain-capped. One run with this histogram names the residual.
+// Diagnostic (hard rooms only, throttled): which QueryVia outcome dominates in a promoted room —
+// NONE, and from which branch, or FOUND.
 static int qv_diag_n = 0;
 static void QvDiag(int room_or_region, const char *outcome) {
   if (++qv_diag_n % 20 != 1) // every 20th hard-room query — histogram shape without log flood
@@ -2522,10 +2489,9 @@ BotViaResult QueryVia(RoadmapRoom *rr, object *obj, int goal, vector *via_out) {
       break;
     }
   }
-  // DIAG (read-only, throttled): Fork A/B path-shape discriminator for the curve-following
-  // investigation (NAVIGATION.md §7.0). len/chord ~1.0 => Theta* handed a straight over-obstacle
-  // CHORD (Fork B — fix the straightening, not the hand-out); >1.3 => a WINDING route (Fork A — fix
-  // the hand-out). via_frac = how far along that path the greedy furthest-visible pick reached.
+  // Diagnostic (read-only, throttled): path shape in a hard room. len/chord ~1.0 => Theta* handed a
+  // straight over-obstacle chord (a straightening problem, see $nav curve); >1.3 => a winding route
+  // (a hand-out problem). via_frac = how far along that path the greedy furthest-visible pick reached.
   if (diag) {
     static int shape_n = 0;
     if (++shape_n % 20 == 1) {
@@ -2538,12 +2504,12 @@ BotViaResult QueryVia(RoadmapRoom *rr, object *obj, int goal, vector *via_out) {
                        path.size() > 1 ? (float)via_i / (int)(path.size() - 1) : 0.0f);
     }
   }
-  // Terrain-shadow collapse guard (e.g. the isengard hillside): the bot hovers up to via-arrive
-  // distance OFF the start node, and from that offset even the first edge's far vertex can fail the
+  // Terrain-shadow collapse guard (a hillside): the bot hovers up to via-arrive
+  // distance off the start node, and from that offset even the first edge's far vertex can fail the
   // hull-LOS probe (the hillside clips the sweep). The string-pull then collapses to the start node
-  // itself — the bot "arrives" instantly, re-probes, collapses again ("8 arrivals without crossing",
+  // itself — the bot "arrives" instantly, re-probes, collapses again (arrivals without crossing,
   // zero net progress). The edge start->path[1] is hull-swept by construction, so when the bot is
-  // already effectively AT the start node, hand out path[1]: the engine's avoid-walls covers the
+  // already effectively at the start node, hand out path[1]: the engine's avoid-walls covers the
   // small offset back onto the edge. (When the bot is far from the start node, aiming at it is
   // legitimate progress toward the lattice — leave that case alone.)
   if (via_node == path.front() && path.size() > 1 &&
@@ -2602,8 +2568,8 @@ bool EnsureUnionGraph(RoadmapRoom *rr, int room_idx, bool cached_only) {
     }
   }
 
-  // Skeleton direct portal edges were historically probed at 2.5. Revalidate every imported
-  // arterial at the real 6.7 hull; only pseudo edges that still clear enter the union network.
+  // Skeleton portal-to-portal edges are probed at 2.5 (BOT_PORTAL_SHIP_RADIUS). Revalidate every imported
+  // arterial at the real 6.7 hull; only edges that still clear enter the union network.
   for (int i = 0; i < skel_n; i++)
     for (int j = i + 1; j < skel_n; j++) {
       if (!(skel_edges[i] & (1ull << j)) || map[i] < 0 || map[j] < 0)
@@ -2728,7 +2694,7 @@ bool ComposeUnionRoute(RoadmapRoom *rr, object *obj, const vector &target_pos, i
         goal_extra[node] = 0.0f;
         goal_portal[node] = p;
       }
-    // One mind at the door (BotRouterExitDoor): several doors into next_room and a route that goes on past it —
+    // One door for every layer (BotRouterExitDoor): several doors into next_room and a route that goes on past it —
     // the plan ends at the router's door, not at whichever door this graph reaches first.
     if (goals.size() > 1) {
       const int door = BotRouterExitDoor(obj, room_idx, next_room, target_room);
@@ -2813,10 +2779,11 @@ bool ComposeUnionRoute(RoadmapRoom *rr, object *obj, const vector &target_pos, i
         int8_t uncached = -1;
         int8_t &verdict = (wide_class >= 0) ? edge.wide[wide_class] : uncached;
         if (verdict < 0) {
-          // The first searches through a big hall meet nothing but unknown edges (DownTown rm31: 111,764 fresh sweeps
-          // in ONE query at 0.3 ms each — a 32.7 s server frame). The budget is time, not a count, because a sweep
-          // costs 1 microsecond in a corridor and 300 in that hall. Past it an unknown edge is not taken THIS time and
-          // stays unknown; the re-issue a second later carries on from a fuller cache. Steady state is unchanged.
+          // The first searches through a big hall meet nothing but unknown edges (over a hundred thousand fresh
+          // sweeps in one query, tens of seconds of server frame). The budget is time, not a count, because a sweep
+          // costs 1 microsecond in a corridor and 300 in such a hall. Past it an unknown edge is not taken this time
+          // and stays unknown; the re-issue a second later carries on from a fuller cache. Once every edge is
+          // cached the budget never binds.
           if (wide_class >= 0) { // (an uncached fifth hull size must never be starved)
             if (!wide_clock_started) {
               wide_clock_started = true;
@@ -2915,7 +2882,7 @@ bool ComposeUnionRoute(RoadmapRoom *rr, object *obj, const vector &target_pos, i
   route_out->count = (int)waypoint.size();
   for (int i = 0; i < route_out->count; i++)
     route_out->point[i] = waypoint[i];
-  // A waypoint that is a portal seed is flown at the portal's validated crossing (slice 2): the
+  // A waypoint that is a portal seed is flown at the portal's validated crossing: the
   // exit terminal (last point of a cross-room route) at its push-through, any other seed at its
   // approach point.
   for (int i = 0; i < route_out->count; i++)
@@ -2964,7 +2931,7 @@ bool BotComposeRoomRoute(object *obj, const vector &target_pos, int target_room,
 void BotRoadmapInvalidate() { FreeAll(); }
 
 namespace {
-// Tools ($nav dump, the bot-free geometry gate) want the finished model in the same call, as before slicing.
+// Tools ($nav dump, the bot-free geometry gate) want the finished model in the same call, not a sliced build.
 struct SyncBuildScope {
   SyncBuildScope() { g_sync_depth++; }
   ~SyncBuildScope() { g_sync_depth--; }
@@ -3007,7 +2974,7 @@ void BotRoadmapPump(bool humans_present) {
         SliceRequest(false, r, LANE_PREWARM, /*skel=*/true);
         skels++;
       }
-    // (BotTerrainDoorCount builds the level's terrain-door table HERE, on the main thread, whole: a worker must
+    // (BotTerrainDoorCount builds the level's terrain-door table here, on the main thread, whole: a worker must
     // never be the first to ask for it, because it could park half-way through.)
     for (int rg = 0; rg < MAX_BOA_TERRAIN_REGIONS;
          rg++) // regions first: the costliest, and every outdoor leg needs one
@@ -3063,14 +3030,14 @@ int BotRoadmapSerial() { return g_build_serial; }
 
 // Component count of a room's roadmap (0 = no roadmap). Callers that cache roadmap-derived
 // verdicts must not cache in multi-component rooms — the answer is perspective-dependent there
-// (review finding: the reach gate stamped one bot's minority-component view as global truth).
+// (a cached reach verdict would stamp one bot's minority-component view as global truth).
 int BotRoadmapRoomComps(int room_idx) {
   RoadmapRoom *rr = Get(room_idx);
   return rr ? rr->comp_count : 0;
 }
 
 // A lattice is trusted to split a room only when it populated: the components of a degenerate or starved room
-// (the Canyons thin-strip class) say nothing about its walls. Outdoor regions have no portal seeds.
+// (a room of thin strips) say nothing about its walls. Outdoor regions have no portal seeds.
 static bool ZoneTrusted(const RoadmapRoom *rr) {
   return rr && !rr->outdoor && !rr->degenerate && rr->lattice_cells >= BOT_ROADMAP_ROUTABLE_MIN_CELLS &&
          rr->zone_count > 1 && rr->zone.size() == rr->node.size();
@@ -3113,7 +3080,7 @@ int BotRoadmapZoneAt(int room_idx, const vector &pos) {
   if (!ZoneTrusted(rr))
     return -1;
   // Nearest hull-visible node of the room's own (zoned) nodes: a door-approach node next door says nothing
-  // about which space of THIS room the position is in.
+  // about which space of this room the position is in.
   const int N = (int)rr->node.size();
   std::vector<std::pair<float, int>> cand;
   for (int i = 0; i < N; i++) {
@@ -3153,23 +3120,12 @@ bool BotRoadmapRoomZoned(int room_idx) {
   return false;
 }
 
-// $nav reach (architecture north star, increment 1): SINGLE-AUTHORITY reachability. "Can our
-// navigation actually deliver a ship from from_pos to item_pos inside this room?" answered by the
-// same model that does the delivering: both endpoints must connect to the room roadmap (a
-// hull-clear line to a nearby node) and land in the same component. Selection previously asked
-// line-of-sight — but see-through != passable (the magnet-powerup class: visible across a concave
-// room's inner wall, approachable by nothing). Verdicts are geometric, not behavioral: no strikes,
-// no learning period, correct from the first frame.
-//   returns  1 = reachable (graph path exists)
-//            0 = unreachable (item connects to no node at hull clearance, or cross-component)
-//           -1 = unknown (no/degenerate roadmap, bot itself unconnectable) — callers FAIL OPEN to
-//                legacy behavior; the model only overrides when it genuinely has an answer.
-// $nav troute (piece 1, NAVIGATION.md 3.7): honest terrain-crossing cost — the Theta* path length
+// $nav troute (NAVIGATION.md, the outdoor tier): honest terrain-crossing cost — the Theta* path length
 // over the region roadmap between two outdoor points (door approach points, or a bot/goal position).
-// This is the around-the-hill number Euclidean lies about on exactly the maps that matter (isengard:
-// over-the-hill chord vs the designed valley route). Returns < 0 when the region has no usable
-// roadmap, an endpoint can't hull-connect to the graph, or the endpoints are cross-component —
-// the composer treats that as "no such leg" (coverage-verified FOUND, staged-block rule 1).
+// This is the around-the-hill number a straight line gets wrong (an over-the-hill chord against a
+// valley route). Returns < 0 when the region has no usable roadmap, an endpoint can't hull-connect to
+// the graph, or the endpoints are cross-component — the composer treats that as "no such leg" (a pair
+// without a finite lattice path is not a plan).
 float BotRoadmapOutdoorPathCost(int region, const vector &a, const vector &b) {
   RoadmapRoom *rr = GetOutdoor(region);
   if (!rr || rr->degenerate || (int)rr->node.size() < 2)
@@ -3189,16 +3145,26 @@ float BotRoadmapOutdoorPathCost(int region, const vector &a, const vector &b) {
   return cost;
 }
 
+// Single-authority reachability: "can the navigation actually deliver a ship from from_pos to item_pos
+// inside this room?" answered by the same model that does the delivering: both endpoints must connect to
+// the room roadmap (a hull-clear line to a nearby node) and land in the same component. Line of sight is
+// not enough: see-through != passable (an item visible across a concave room's inner wall, approachable
+// by nothing). Verdicts are geometric, not behavioral: no strikes, no learning period, correct from the
+// first frame.
+//   returns  1 = reachable (both endpoints in one component)
+//            0 = unreachable (item connects to no node at hull clearance, or cross-component)
+//           -1 = unknown (no/degenerate roadmap, bot itself unconnectable) — callers fail open;
+//                the model only overrides when it genuinely has an answer.
 int BotRoadmapItemReach(int room, const vector &from_pos, const vector &item_pos) {
   RoadmapRoom *rr = Get(room);
   if (!rr || rr->degenerate || (int)rr->node.size() < 2)
     return -1;
   int a = NearestVisibleBounded(rr, from_pos, 24, 120.0f);
   if (a < 0)
-    return -1; // the BOT can't connect where it stands — the answer says nothing about the item
+    return -1; // the bot can't connect where it stands — the answer says nothing about the item
   int b = NearestVisibleBounded(rr, item_pos, 24, 120.0f);
   if (b < 0)
-    return 0; // no hull-clear link from the item to the graph — undeliverable by our navigation
+    return 0; // no hull-clear link from the item to the graph — the navigation cannot deliver it
   return (rr->comp[a] == rr->comp[b]) ? 1 : 0;
 }
 
@@ -3209,21 +3175,20 @@ BotViaResult BotRoadmapFindVia(object *obj, const vector &target_pos, int target
   const int room_idx = obj->roomnum;
   RoadmapRoom *rr = Get(room_idx);
   if (!rr || rr->degenerate)
-    return BOT_VIA_NONE; // no usable interior roadmap -> 0.9.3 skeleton fallback
+    return BOT_VIA_NONE; // no usable interior roadmap -> skeleton fallback
 
-  // Selective gate (the $gridroute gate): a PROACTIVE call (objective/carrier routing, NOT a reactive blocked
-  // line) only engages in a COMPLEX room — one whose airspace fragmented before the bridges merged it. Simple
-  // single-component rooms route fine on the direct portal path_pnt; proactively grid-routing them just adds
-  // indirection (the soak-measured easy-pool regression: gollums/darkjourney recovered with gridroute off,
-  // khazaddum's divider rooms collapsed). Reactive calls (proactive=false) always run — a blocked line in a
-  // simple room still needs a go-around.
+  // Selective gate: a proactive call (objective/carrier routing, not a reactive blocked line) engages only
+  // in a routable room (a usable local-street network, see GrowFromSeeds) or one promoted hard on evidence.
+  // Elsewhere the direct portal path_pnt routes fine, and proactive grid routing only adds indirection that
+  // costs play on simple maps. Reactive calls (proactive=false) always run — a blocked line in a simple room
+  // still needs a go-around.
   if (proactive && !rr->routable && !BotRoadmapRoomIsHard(room_idx))
     return BOT_VIA_NONE;
 
   // Goal node: the nearest node to an in-room target, or the seam node toward the next room.
   int goal = -1;
   if (target_room == room_idx) {
-    // Attach the goal to the nearest HULL-VISIBLE node, not the Euclidean-nearest one. The bare
+    // Attach the goal to the nearest hull-visible node, not the Euclidean-nearest one. The bare
     // Nearest() could anchor the goal to a node on the wrong side of a thin wall from target_pos —
     // the route then threads to that node and the (unvalidated) final hop to target_pos crosses the
     // wall. Match the single-authority reach gate (BotRoadmapItemReach), which already requires a
@@ -3238,8 +3203,8 @@ BotViaResult BotRoadmapFindVia(object *obj, const vector &target_pos, int target
         next_room = target_room;
     }
     // The exit goal is chosen from the aim layer's admitted exit set (doors first, then panes per this
-    // bot's glass authority) — never from "any portal into next_room": a wall twin beside the real door
-    // was the nearest seed from most of Batteries rm84 and the lattice routed carriers onto the wall. With the
+    // bot's glass authority) — never from "any portal into next_room": a twin beside the real door can be
+    // the nearest seed from most of the room, and the lattice would route carriers onto the wall. With the
     // route's destination passed in, the set is the router's one door whenever the route goes on past next_room.
     const uint64_t exits = BotAimExitMask(obj, room_idx, next_room, target_room);
     float best_d = FLT_MAX;
@@ -3260,7 +3225,7 @@ BotViaResult BotRoadmapFindVia(object *obj, const vector &target_pos, int target
 }
 
 BotViaResult BotRoadmapFindViaOutdoor(object *obj, const vector &target_pos, int target_room, vector *via_out) {
-  (void)target_room; // v1 routes to the node nearest the target's position; the door transition is the
+  (void)target_room; // routes to the node nearest the target's position; the door transition is the
                      // engine's job (no structure-targeted seam goal). Bot must be outside.
   if (!obj || !OBJECT_OUTSIDE(obj))
     return BOT_VIA_NONE;
@@ -3269,7 +3234,7 @@ BotViaResult BotRoadmapFindViaOutdoor(object *obj, const vector &target_pos, int
     return BOT_VIA_NONE;
   RoadmapRoom *rr = GetOutdoor(region);
   if (!rr || rr->degenerate)
-    return BOT_VIA_NONE; // no usable region roadmap -> 12.6 connecting-graph fallback
+    return BOT_VIA_NONE; // no usable region roadmap -> connecting-graph fallback
 
   int goal = Nearest(rr, target_pos);
   return QueryVia(rr, obj, goal, via_out);
@@ -3326,7 +3291,7 @@ int BotRoadmapDumpRoomCached(int room_idx, vector *pos_out, int *comp_out, int m
   return n;
 }
 
-// Slice 4: the composer's eligibility for a room (builds the roadmap on first use, like Get()).
+// The composer's eligibility for a room (builds the roadmap on first use, like Get()).
 bool BotRoadmapRoomRoutable(int room_idx) {
   RoadmapRoom *rr = Get(room_idx);
   return rr && !rr->degenerate && rr->routable;
@@ -3365,7 +3330,7 @@ int BotRoadmapDumpRoomEdges(int room_idx, int *a_out, int *b_out, int max_edges,
   int e = 0;
   for (int i = 0; i < n && e < max_edges; i++)
     for (int j : rr->adj[i]) {
-      if (j <= i || j >= n) // undirected (emit once) AND within the drawn set
+      if (j <= i || j >= n) // undirected (emit once) and within the drawn set
         continue;
       if (e >= max_edges)
         break;
@@ -3379,10 +3344,9 @@ int BotRoadmapDumpRoomEdges(int room_idx, int *a_out, int *b_out, int max_edges,
 }
 
 // Cached-only region node dump for the live overlay. BotRoadmapDumpRegion() below goes through
-// GetOutdoor(), which BUILDS — fine for $navdump, fatal for a render frame (see PeekCached). The
-// overlay had no outdoor path at all, so flying outdoors showed an empty sky and read as "there is no
-// outdoor lattice" when Polaris in fact carries 4096 nodes in one component. A diagnostic that draws
-// nothing where something exists is worse than no diagnostic.
+// GetOutdoor(), which builds — fine for $nav dump, fatal for a render frame (see PeekCached). Without
+// this the overlay draws nothing outdoors and an existing outdoor lattice looks absent; a diagnostic
+// that draws nothing where something exists is worse than no diagnostic.
 int BotRoadmapDumpRegionCached(int region, vector *pos_out, int *comp_out, int max_nodes, int *comp_count_out,
                                bool *degenerate_out) {
   if (comp_count_out)
