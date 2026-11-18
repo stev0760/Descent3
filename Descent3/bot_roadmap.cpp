@@ -174,7 +174,6 @@ struct RoadmapRoom {
   std::vector<vector> node;          // node world positions (seeds first, then accepted lattice cells)
   std::vector<std::vector<int>> adj; // adjacency: hull-clear lattice-neighbor / seam edges
   std::vector<int> comp;             // connected-component id per node (0..comp_count-1)
-  std::vector<float> tweight;        // tactical weight — flanking hook, unused now
   std::vector<int> portal_seed;      // portal index -> node index of its seam seed (indoor; size = num_portals)
   std::vector<int> seed_portal;      // node index -> portal index for the seeds (indoor; size = n_seed)
   int comp_count = 0;
@@ -798,7 +797,7 @@ bool RoadmapFindMultiBend(RoadmapRoom *rr, std::vector<int> &uf, int root_a, int
 }
 
 // Validate, densify, then atomically append one connector chain. Every delivered leg is <=12u and
-// hull-clear. Failure leaves node/adj/tweight/uf untouched.
+// hull-clear. Failure leaves node/adj/uf untouched.
 bool RoadmapCommitMultiBend(RoadmapRoom *rr, std::vector<int> &uf, int a_idx, int b_idx, const std::vector<vector> &raw,
                             int *node_budget_used) {
   if (raw.size() < 2)
@@ -841,7 +840,6 @@ bool RoadmapCommitMultiBend(RoadmapRoom *rr, std::vector<int> &uf, int a_idx, in
     rr->node.push_back(dense[i]);
     NoteNodeRoom(rr, RoadmapLegEndRoom(rr, dense[i - 1], dense[i]), dense[i]);
     rr->adj.emplace_back();
-    rr->tweight.push_back(0.0f);
     uf.push_back(w);
     rr->adj[prev].push_back(w);
     rr->adj[w].push_back(prev);
@@ -1223,7 +1221,6 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
   auto ResetToSeeds = [&]() {
     rr->node.resize(n_seed);
     rr->adj.assign(n_seed, {});
-    rr->tweight.assign(n_seed, 0.0f);
     uf.assign(n_seed, 0);
     for (int i = 0; i < n_seed; i++)
       uf[i] = i;
@@ -1288,7 +1285,6 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
             rr->node.push_back(vp);
             NoteNodeRoom(rr, end_room, vp);
             rr->adj.emplace_back();
-            rr->tweight.push_back(0.0f);
             uf.push_back(w);
             cell_node[key] = w;
             rr->adj[u].push_back(w);
@@ -1466,7 +1462,6 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
         rr->node.push_back(pulled[i]);
         NoteNodeRoom(rr, RoadmapLegEndRoom(rr, pulled[i - 1], pulled[i]), pulled[i]);
         rr->adj.emplace_back();
-        rr->tweight.push_back(0.0f);
         uf.push_back(w);
         rr->adj[prev].push_back(w);
         rr->adj[w].push_back(prev);
@@ -1658,7 +1653,6 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
         rr->node.push_back(M);
         NoteNodeRoom(rr, RoadmapLegEndRoom(rr, A, M), M);
         rr->adj.emplace_back();
-        rr->tweight.push_back(0.0f);
         uf.push_back(w);
         rr->adj[i].push_back(w);
         rr->adj[w].push_back(i);
@@ -1750,7 +1744,6 @@ void GrowFromSeeds(RoadmapRoom *rr, std::vector<int> &uf, int n_seed, const vect
               rr->node.push_back(cand);
               NoteNodeRoom(rr, RoadmapLegEndRoom(rr, prev_pos, cand), cand);
               rr->adj.emplace_back();
-              rr->tweight.push_back(0.0f);
               uf.push_back(w);
               rr->adj[prev].push_back(w);
               rr->adj[w].push_back(prev);
@@ -2014,7 +2007,6 @@ RoadmapRoom *Build(int room_idx) {
     }
     rr->node.push_back(seed);
     rr->adj.emplace_back();
-    rr->tweight.push_back(0.0f);
     uf.push_back(idx);
     rr->portal_seed[p] = idx;
     rr->seed_portal.push_back(p);
@@ -2058,7 +2050,6 @@ RoadmapRoom *BuildOutdoor(int region) {
     int idx = (int)rr->node.size();
     rr->node.push_back(seed);
     rr->adj.emplace_back();
-    rr->tweight.push_back(0.0f);
     uf.push_back(idx);
     // Scope the lattice to the structures' airspace: union the structure-room bboxes.
     const vector &smn = Rooms[er].min_xyz, &smx = Rooms[er].max_xyz;
