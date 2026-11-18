@@ -1,261 +1,222 @@
-# Entropy Mode — Mechanics Reference + Bot Implementation Spec
+# Entropy: how the bots play it
 
-Bots play Entropy as built in section 3: they pick up viruses, carry a load into an enemy room and hold still there
-to take the room over. Takeovers by bots have been seen in play on a public server; they are rare. A bot holding a
-room uses no thrust and is pushed by hits like any player (§3.3). `$nav entropy` switches the room-invasion behaviour,
-and the chat orders `!attack lab` and `!defend lab` are described in [CHAT_COMMANDS.md](CHAT_COMMANDS.md).
+Entropy is a team mode about owning rooms. This document has two parts. Part 1 gives the rules, as the game module
+implements them. Part 2 says what the bots do.
 
-Source of truth: `netgames/entropy/` (EntropyBase.cpp, EntropyAux.h, EntropyPackets.cpp,
-EntropyRoom.cpp), read in full for this document. Line references are to those files.
-Read this before writing any Entropy bot code. Levels named here are listed with their mission files in
-[TEST_LEVELS.md](TEST_LEVELS.md).
+Bots take over rooms in Entropy: they collect viruses, carry five into an enemy room and hold still there until the
+room changes sides. Takeovers by bots have been seen in play on a public server. They are rare (see
+[Where the bots are weak](#where-the-bots-are-weak)).
 
-Entropy is D3's territory-control mode: teams own special rooms, labs grow "virus" powerups,
-and players carry viruses into enemy rooms to convert them. It builds on what the bots already
-have for other modes (objective polling, hold-station navigation, role leans, room routing).
+Sources: the game module is `netgames/entropy/` (`EntropyBase.cpp`, `EntropyAux.h`, `EntropyPackets.cpp`,
+`EntropyRoom.cpp`). The bot code is `Descent3/bot_objective.cpp`, `Descent3/bot_objective.h` and `Descent3/bot.cpp`.
+Code is cited by function name.
 
----
+## Part 1. The rules
 
-## 1. The Rules (as implemented, not as documented)
+### Teams and rooms
 
-### 1.1 Map requirements
+Entropy runs with two teams, red and blue. The module declares a minimum and a maximum of two (`DLLGetGameInfo`).
 
-- The DLL declares `requirements = "ENTROPY"` (`DLLGetGameInfo`) — only missions whose levels
-  are flagged Entropy-capable appear. A level *must* contain special rooms:
-  `OnClientLevelStart` calls `FatalError("No Special Rooms Defined")` if none exist
-  (EntropyBase.cpp:506). **Never auto-start Entropy on an arbitrary map.**
-- Room types are level `room.flags` bits, two teams only:
+A level can run Entropy only if its rooms carry special-room flags. `DLLGetGameInfo` sets the requirement string
+`ENTROPY`, so only missions marked for the mode appear in the mission list. A level with no special rooms stops the
+game with the error "No Special Rooms Defined" (`OnClientLevelStart`).
 
-  | Flag | Meaning |
-  |---|---|
-  | `RF_SPECIAL1` | Red **Laboratory** |
-  | `RF_SPECIAL2` | Red **Energy** room |
-  | `RF_SPECIAL3` | Red **Repair** room |
-  | `RF_SPECIAL4` | Blue **Laboratory** |
-  | `RF_SPECIAL5` | Blue **Energy** room |
-  | `RF_SPECIAL6` | Blue **Repair** room |
+Each team owns up to three kinds of special room, set by the level's room flags:
 
-- **These flags flip at runtime.** A takeover swaps the bit in place
-  (e.g. `RF_SPECIAL1` → `RF_SPECIAL4`, TakeOverRoom, EntropyBase.cpp:853) and repaints the
-  room's dark faces with the new team's texture. Any bot-side cache of "which rooms are ours"
-  is stale after every takeover — re-scan on poll.
-- `RF_FUELCEN` is stripped from all rooms at level start (the mode replaces fuelcens with its
-  own energy rooms). At most one special bit survives per room (first-set-wins de-dup at init).
+| Flag | Meaning |
+|---|---|
+| `RF_SPECIAL1` | Red laboratory |
+| `RF_SPECIAL2` | Red energy room |
+| `RF_SPECIAL3` | Red repair room |
+| `RF_SPECIAL4` | Blue laboratory |
+| `RF_SPECIAL5` | Blue energy room |
+| `RF_SPECIAL6` | Blue repair room |
 
-### 1.2 The virus lifecycle
+A room keeps one of these flags at most. If a level sets several on one room, the module keeps the first in this
+order and clears the others at level start: red laboratory, blue laboratory, red energy, blue energy, red repair,
+blue repair (`OnClientLevelStart`).
 
-- The virus is a plain `OBJ_POWERUP` with object-type name **`EntropyVirus`**
-  (`virus_id = DLLFindObjectIDName("EntropyVirus")`).
-- **Spawning:** each team's labs spew one virus per lab every `VIRUS_SPEW = 20s` (3 spews
-  fire immediately at level start ≈ 3 per lab). Caps: `MAX_VIRII_PER_ROOM = 4` alive per lab,
-  `MAX_VIRII = 16` tracked per team. Viruses spawn at the room center with a small random
-  velocity and *belong to the team that owns the lab* (tracked by objnum in the DLL's
-  `TeamVirii` table — ownership is **not** stored on the object).
-- **Pickup (server-collision gated, OnServerCollide, EntropyBase.cpp:776):**
-  - Same-team virus: picked up **only if** `current_carry + 1 ≤ kills_since_death × VIRUS_PER_KILL(2)`.
-    Otherwise the virus stays in the world ("can't carry" message). Pickup adds an inventory
-    item (`DLLInvAddTypeID`), not a weapon/effect.
-  - **Enemy virus: touching it DESTROYS it** (denial mechanic — no pickup, the virus is gone).
-- **Carry capacity = 2 × kills-in-a-row.** `NumberOfKillsSinceLastDeath` resets on death,
-  suicide, and disconnect; countermeasure kills credit the owner. A player who hasn't killed
-  since last death **cannot carry anything**.
-- **On death the victim loses ALL carried viruses** (`RemoveVirusFromPlayer(victim, true)` —
-  they are *not* dropped; they vanish). Killing a loaded carrier erases their whole load.
+The flags change during play. A takeover swaps a room's flag to the other team's flag and repaints the room
+(`TakeOverRoom`). Anything that remembers which rooms a team owns is out of date after every takeover.
 
-### 1.3 Room effects (DoIntervalPlayerFrame, runs server-side for ALL players)
+At level start the module removes the fuel-center flag (`RF_FUELCEN`) from every room. The energy rooms replace the
+fuel centers.
 
-| Situation | Effect | Constant |
+### Room effects
+
+The module applies these on the server to every player in a special room (`DoIntervalPlayerFrame`):
+
+| Where the player is | Effect | Constants |
 |---|---|---|
-| Own energy room | +5 energy/s up to **100 cap** | `ENERGY_RATE`, `ENERGY_CAP` |
-| Own repair room | +5 shields/s up to **100 cap** (not 200) | `REPAIR_RATE`, `SHIELD_CAP` |
-| Own lab | nothing (just where your viruses spawn) | — |
-| *Any* enemy special room | **−5 shields/s damage** | `DAMAGE_RATE` |
+| In their own energy room | Energy rises 5 per second, up to 100 | `REPAIR_RATE`, `ENERGY_CAP` |
+| In their own repair room | Shields rise 5 per second, up to 100 | `REPAIR_RATE`, `SHIELD_CAP` |
+| In their own laboratory | Nothing | |
+| In any enemy special room | Shields fall 5 per second | `DAMAGE_RATE` |
 
-### 1.4 Takeover (the core play)
+The energy room uses `REPAIR_RATE` (`DoPlayerInEnergy`). The module also defines `ENERGY_RATE`, with the same value,
+and does not use it.
 
-Standing in an enemy special room with **≥ `MINIMUM_VIRUS_COUNT = 5` viruses** starts a
-takeover clock (`DoPlayerInEnemy`, EntropyBase.cpp:1026):
+### Viruses
 
-- The player must hold **nearly still for `TAKEOVER_TIME = 3.0s`** while taking the 5/s room
-  damage. Movement of more than ~5 units (octagonal-norm approximation,
-  `CompareDistanceTravel`) resets the clock to zero. Changing rooms resets it too.
-- On success (server-side): the room flips team (flag bit + textures), exactly **5 viruses are
-  consumed** (the rest of the load is kept), scores: **+5 player, +3 team**
-  (`SCORE_PLYR_TAKEOVER_ROOM` / `SCORE_TEAM_TAKEOVER_ROOM`).
-- **Lab-regeneration rule:** if the *losing* team now has no lab but still owns rooms, one of
-  their energy/repair rooms is converted into a lab (`ScanForLaboratory`) — a team always has
-  a virus source while it owns anything.
-- **Win condition:** when a team's owned-room count hits 0, the other team gets
-  `SCORE_TEAM_WINSGAME = 10` and the **level ends immediately** (`DMFCBase->EndLevel()`).
+A virus is a powerup object named `EntropyVirus`. It belongs to the team that owned the laboratory it came from. The
+module tracks that by object number. The object itself does not store it.
 
-### 1.5 Scoring summary
+- **Spawning.** Each laboratory spews one virus every 20 seconds (`VIRUS_SPEW`), at the room's center with a small
+  random velocity (`SpewObjectInRoom`). Three spews happen at once when the level starts. A laboratory skips its
+  spew while four of its team's viruses are in the room (`MAX_VIRII_PER_ROOM`). A team has at most 16 viruses lying
+  in the world (`MAX_VIRII`). Carried viruses do not count.
+- **Carrying.** A player may carry two viruses for each kill made since their last death (`VIRUS_PER_KILL`). The
+  count restarts at zero on death, on a suicide and on disconnect. A kill by a player's countermeasure counts as the
+  player's kill. A player with no kills since death cannot pick up a virus.
+- **Touching a virus** (`OnServerCollide`). A virus of your own team goes into your inventory if the pickup keeps you
+  within your carrying limit. Otherwise it stays where it is and the player sees "You can't carry this virus yet". A
+  virus of the other team is destroyed by the touch and is not picked up.
+- **Dying.** A player who dies loses every virus they carry (`RemoveVirusFromPlayer`). The viruses are not dropped.
 
-Player score = takeovers only (5 each; kills/deaths are tracked but score nothing).
-Team score = 3 per takeover + 10 for the win. HUD shows owned-room counts and the player's
-`carried [capacity]` virus load. `$scores` works (we fixed its column truncation in 0.8.8).
+### Takeover
 
-### 1.6 Multiplayer plumbing (informational)
+A player standing in an enemy special room with at least 5 viruses starts a takeover clock (`DoPlayerInEnemy`,
+`MINIMUM_VIRUS_COUNT`). The clock needs 3 seconds (`TAKEOVER_TIME`) of standing nearly still. If the ship moves more
+than about 5 units from where it was when the clock started, the clock restarts from zero (`CompareDistanceTravel`).
+Entering a special room also restarts it. The player takes the room damage the whole time.
 
-Five special packets keep clients in sync: `SPID_NEWPLAYER` (join state: per-player kill
-streaks + virus counts + team scores), `SPID_ROOMINFO` (full room-ownership table),
-`SPID_TAKEOVER`, `SPID_PICKUPVIRUS`, `SPID_VIRUSCREATE` (spark effect). All server→client;
-**bots need none of this** — bot code runs on the server where the authoritative state lives.
+When the clock runs out (`TakeOverRoom`):
 
----
+- The room changes to the player's team, and the module repaints it.
+- The player loses exactly 5 viruses. Any others stay in the inventory.
+- The player scores 5 points and the team scores 3 (`SCORE_PLYR_TAKEOVER_ROOM`, `SCORE_TEAM_TAKEOVER_ROOM`).
+- If the other team now owns no room, the winning team scores 10 more (`SCORE_TEAM_WINSGAME`) and the level ends at
+  once.
+- If the other team still owns rooms but no laboratory, the module turns one of its energy or repair rooms into a
+  laboratory (`ScanForLaboratory`). A team that owns a room always has a source of viruses.
 
-## 2. What this means for bots (integration surface)
+Only takeovers score. Kills are counted but add no points. The HUD shows each team's count of owned rooms and the
+player's load as `Virus Load: carried/limit` (`DisplayHUDScores`).
 
-### 2.1 What already works with zero bot code
+## Part 2. What the bots do
 
-Because bots are real player slots with `OBJ_PLAYER` objects, the DLL's server-side interval
-loop **already applies everything in §1.3–1.4 to them**: they regen in own rooms, take damage
-in enemy rooms, can pick up viruses on collision (if their kill streak allows), destroy enemy
-viruses on touch, and would even complete a takeover if they happened to sit still 3s in an
-enemy room with 5+ viruses. The mode is *playable* by bots today — just blindly.
+Bots are ordinary player slots, so the module's rules apply to them with no change: they heal in their own rooms,
+take damage in enemy rooms, lose their viruses on death, and complete a takeover if they hold still long enough. The
+bot code adds the decisions: where to go, what to pick up, when to hold, when to retreat.
 
-### 2.2 State visible from the main executable
+The bots recognise the mode by the netgame's script name, `entropy`. Every half second they read the game state
+afresh (`BotPollEntropy`, `BOT_OBJECTIVE_POLL_INTERVAL`). Nothing about room ownership is kept from one read to the
+next, because the flags change on takeover.
 
-All polling lives bot-side (main exe), same pattern as CTF/HA/Hoard — the DLL's internals
-(`TeamVirii`, `NumberOfKillsSinceLastDeath`, `RoomList`) are **not** exported, but everything
-they describe is reconstructable:
+### What a bot knows
 
-| DLL state | Bot-side source |
+| Fact | Where it comes from |
 |---|---|
-| Room ownership | scan `Rooms[].flags` for `RF_SPECIAL1..6` each poll (flags are live) |
-| Virus objects | scan `Objects[]` for `OBJ_POWERUP && id == virus_id`; `virus_id` via `FindObjectIDName("EntropyVirus")` at `BotInitObjectiveState` |
-| Virus **team ownership** | NOT on the object. Infer: a virus in a team's lab room belongs to that team (true at spawn). A virus that drifted out of any lab: treat as unknown — see §3.2 |
-| Any player's virus count | `Players[i].inventory.GetTypeIDCount(OBJ_POWERUP, virus_id)` (server-authoritative) |
-| Kill streak / carry capacity | **mirror it ourselves**: per-slot counter, ++ on kill events we already observe, reset on death/suicide/disconnect/level start. Drift risk is low and self-corrects on death. Capacity = `2 × streak` |
-| Takeover progress | not visible — recompute: own clock while holding still in an enemy room (or just trust the hold and let the DLL fire) |
+| Who owns each room, and what kind it is | A scan of the room flags `RF_SPECIAL1` to `RF_SPECIAL6`. Up to 4 laboratories per team are listed. |
+| Free viruses | A scan of the objects for the `EntropyVirus` powerup. A virus inside a room owned by a team is counted as that team's. A virus anywhere else has an unknown team. |
+| How many viruses a player carries | The player's inventory. |
+| A player's kills since death | The game module does not export its count. The bot keeps its own, the kill count, from changes in each player's kill and death counters (`BotEntropyMirrorStreaks`). A kill and a death in the same read count as a death. If a counter goes backwards, the count resets to zero. The carrying limit is twice the count (`BotEntropyCarryCapacity`). |
 
-### 2.3 Hard gotchas (read before coding)
+`$botobj` prints the owned-room counts, the number of free viruses, each team's laboratories, and for each connected
+player the viruses carried, the carrying limit and the kill count, as `carrying N [cap C, streak S]`.
 
-1. **The generic powerup scanner will see viruses.** `EntropyVirus` must be special-cased in
-   the powerup selection loop *exactly like flags and orbs*:
-   - **Never** chase a friendly virus when `count >= capacity` — the server will refuse the
-     pickup, the bot will bump it forever, the chase-timeout machinery will churn, and the
-     troll-strike table will start striking *the game's objective item*. Add the name to the
-     troll-strike exemption list (alongside flag/hyperorb/hoardorb) on day one and gate the
-     chase on mirrored capacity.
-   - Pickup priority should follow the HyperOrb pattern (objective-priority ~25) when the bot
-     *can* carry.
-2. **Takeover hold vs. our own steering.** Movement >5u resets the 3s clock — dodge, juke,
-   wall-avoidance, and friend-avoidance will all break a takeover. We already solved
-   stand-still navigation for Stage 6 (`BotDoHoldStationNav`); the takeover branch must reuse
-   it AND suppress dodge/juke for the hold (a dodging bot never converts). Note the bot takes
-   5/s damage during the hold — flee logic must be suppressed above a shield floor or the bot
-   will abort every attempt.
-3. **Room identity flips mid-level.** `BotGetObjectiveRoom`-style decisions must come from the
-   poll's *current* flag scan. Never bake "room 12 is the red lab" into per-level state. (The
-   one-time skeleton/passability caches are fine — geometry doesn't change, only ownership.)
-4. **Two teams only**: the game module fixes the team count. Existing team handling carries over.
-5. **Death wipes the load.** A loaded bot (≥5) is a high-value target and must play like our
-   CTF carrier (flee bias, beeline); conversely killing a loaded enemy erases 5+ viruses of
-   enemy tempo — see target bias below.
-6. **Suicide resets the streak** — the stuck-clear/self-damage paths should already never
-   suicide, but any future "respawn to unstick" idea is extra-costly in Entropy.
+### Collecting viruses
 
----
+Bots pick up viruses in the normal powerup selection in `bot.cpp`:
 
-## 3. What the bots do (as built, 0.9.8 onward)
+- A virus of the bot's own team gets chase priority 25, but only while the bot carries fewer viruses than its limit.
+  The module refuses a pickup over the limit, and a bot that kept chasing one would never finish.
+- A virus of the other team that lies in the same room as the bot gets priority 4. Touching it destroys it. The bot
+  does this only in passing.
+- A virus of unknown team is ignored.
+- A bot that keeps failing to reach a pickup strikes it from its list of pickups. Viruses, like flags and orbs, are
+  exempt (`BotTrollExempt`).
 
-What follows is the code at HEAD. Constants live in `Descent3/bot_objective.h:52-104`.
+A bot with no kills since death has a limit of zero and does not chase viruses. It fights. Kills are what let a bot
+carry.
 
-### 3.1 Polling and observability (E1)
+### Staying alive with kills
 
-- `BotPollEntropy()` (`Descent3/bot_objective.cpp:611`) rebuilds the Entropy block of
-  `BotObjectiveState` (`bot_objective.h:224-236`) every poll: room owner and kind from the
-  `RF_SPECIAL1..6` scan, owned-room counts, up to `BOT_ENTROPY_MAX_LABS` (4) labs per team, per-player
-  carried virus count from inventory, and the free-virus list with an inferred team. Nothing is
-  cached across polls, because the DLL flips room flags in place on takeover.
-- The virus object id is resolved once at init with `FindObjectIDName("EntropyVirus")`
-  (`bot_objective.cpp:208-212`).
-- `BotEntropyMirrorStreaks()` (`bot_objective.cpp:590`) mirrors the DLL's unexported
-  kills-since-death counter from deltas of `num_kills_level` / `num_deaths_level`. A kill and a death
-  in the same poll count as a death (under-count is safer than over-count), and counters running
-  backwards resync to zero. `BotEntropyCarryCapacity()` (`:713`) returns 2 x streak.
-- `$botobj` prints owned rooms, labs and each player's `carrying N [cap C, streak S]`
-  (`bot_objective.cpp:1459-1479`).
-- `EntropyVirus` is on the troll-strike exemption list with flags and orbs (`Descent3/bot.cpp:4935-4939`).
+A bot that dies loses its kills since death, and with them its carrying limit. Two rules protect a bot with one kill
+or more:
 
-### 3.2 Virus economy (E2)
+- A wounded bot retreats to its own repair room when its shields fall below 50 (`BOT_ENTROPY_HEAL_START`) and stays
+  until its shields reach 95 (`BOT_ENTROPY_HEAL_DONE`). `BotGetObjectiveRoom_Entropy` makes the choice.
+- The bot flees earlier. Below 5 viruses, its flee threshold is multiplied by 1.4 with a kill count of 1 and by 1.8
+  with a count of 2 or more, with caps of 50% and 60% of full shields (`BotUpdateState`).
 
-- Powerup selection (`bot.cpp:5265-5280`): an own-team virus gets objective priority 25 only while the
-  mirrored load is below capacity. An enemy virus in the bot's own room gets priority 4 (denial by
-  touch, in passing only). A virus of unknown team (drifted out of any special room) is skipped.
-- A bot with streak 0 has capacity 0 and simply fights; kills are the currency.
-- Streak banking (`bot_objective.cpp:998-1012`, commit `76549be3`): a wounded bot with a streak of 1 or
-  more retreats to its own repair room below `BOT_ENTROPY_HEAL_START` (50) and stays until
-  `BOT_ENTROPY_HEAL_DONE` (95). Its flee threshold also rises with the streak (`bot.cpp:5552-5562`).
-- DEFEND lean anchors one room out from the own lab along the BOA hop toward the enemy lab, never inside
-  a lab (`bot_objective.cpp:1014-1030`). A zero-capacity defender parked in the lab collided with
-  viruses it could not carry.
+### Defence
 
-### 3.3 Takeover execution (E3, `$nav entropy`)
+The bots on a team with no chat order are split into defenders and attackers (`BotAssignObjectiveLeans`). A bot's side
+of the split is its lean. It is the same split CTF uses when its flag-runner role is off. Of `n` such bots, there are 0
+defenders for 1 bot, 1 for 2 to 4, 2 for 5, and `n / 3` for 6 or more. The best-equipped bots defend. Bots under a
+chat order keep their order instead.
 
-- Loaded branch (`bot.cpp:5635`): a bot carrying `BOT_ENTROPY_TAKEOVER_LOAD` (5) or more runs
-  `BotDoEntropyInvadeNav()` (`bot.cpp:4167`). Its target comes from `BotGetObjectiveRoom_Entropy()`
-  (`bot_objective.cpp:947`): the nearest enemy special room of any kind, chosen by
-  `BotGetNearestEntropyRoom()` (`:901`) on the wind- and glass-aware routed cost (commit `9e602d7f`,
-  the RAGE wind-tunnel fix).
-- Shield policy (`bot_objective.cpp:960-996`): retreat to an own repair room (energy room as fallback)
-  below `BOT_ENTROPY_RETREAT_SHIELDS` (25), or below `BOT_ENTROPY_REENGAGE_SHIELDS` (45) when not yet
-  holding. A loaded bot on its own heal pad stays until `BOT_ENTROPY_DEPART_SHIELDS` (80). The two lower floors are
-  the Hotshot values; they move with difficulty (§3.5).
-- Hold point: the entry portal pushed `BOT_ENTROPY_HOLD_DEPTH` = **24 u** into the room
-  (`bot_objective.h:64`, used at `bot.cpp:4251`). 24 u clears the engine's roughly 10 u goal-arrive
-  radius, so the ship does not stop back on the portal plane. (The original as-built correction used
-  12 u; the 2026-07-14 re-soak showed holds at 12 u still flapping between rooms.)
-- Hold start (`bot.cpp:4190-4192`): only when the ship is at least `BOT_ENTROPY_HOLD_MIN_DEPTH` (8 u)
-  past the nearest portal plane and moving at `BOT_ENTROPY_HOLD_MAX_SPEED` (5 u/s) or less. Once
-  holding, only leaving the room or losing the target aborts; a target of -1 (the enemy owns nothing, or there is
-  no own repair or energy room to retreat to) ends the hold before the bot roams, since before 2026-10-07 the
-  roaming bot kept the hold flag and sat in the park. START and ABORT are logged as `BOT ENTROPY: ... takeover
-  hold`.
-- Park (`bot.cpp:6423-6438`): while holding in EXPLORE, thrust is zero and the FSM thrust path (juke, combat
-  overrides) is skipped. Turning and firing are untouched. The hold starts only near rest (5 u/s or less), and drag
-  stops the ship from there. Weapon knockback moves a parked bot exactly as it moves a player (physics ruling 2; the
-  maintainer ruled on 2026-10-01 that there are no exceptions): the bot never thrusts against it. The DLL restarts its
-  3 s clock wherever the ship comes to rest, so a knock that leaves the ship inside the room costs clock time only. A
-  knock out of the room ends the hold (ABORT), and the invade leg flies the ship back to the hold point under normal
-  thrust, where the hold restarts at depth and near rest. Before 2026-10-07 the park thrust against any
-  velocity above 2 u/s, knockback included.
-- Flee while loaded (`bot.cpp:5534-5552`): mid-hold, fleeing is the abort and is allowed only below the hard floor (the
-  bot's own, §3.5); loaded and en route, the flee threshold is raised (x1.5, capped at 60%). A loaded bot in idle combat
-  snaps back to EXPLORE after the CTF carrier combat timeout (`bot.cpp:6106-6108`).
-- Defense bias (`BotGetObjectiveTargetBias`, `bot_objective.cpp:1854-1879`): an enemy inside one of our
-  special rooms gets `BOT_ENTROPY_INTRUDER_BIAS` (-300), plus `BOT_ENTROPY_TAKEOVER_THREAT_BIAS` (-400)
-  when it carries 5 or more. A loaded enemy anywhere else gets `BOT_ENTROPY_LOADED_BIAS` (-200). These are the
-  Hotshot magnitudes; lower tiers weigh them less (§3.5).
-- `$nav entropy off` (`Descent3/dedicated_server.cpp:785`) leaves the E2 economy running and stops the
-  invade, hold, retreat and streak-banking branches.
+A defender goes to the room one step out from its team's first laboratory, on the route toward the enemy's first
+laboratory (`BotEntropyLabGuardRoom`). The defender is kept out of the laboratory because viruses it cannot carry sit
+there, and a bot parked in the room would keep touching them for nothing. If that room cannot be found, or is itself
+a laboratory, the defender guards the laboratory. A team with no laboratory has no room to guard, and its defenders
+roam.
 
-### 3.4 Known open
+An attacker has no room to go to until it carries a load. It fights, collects viruses and takes kills. Any bot,
+defender or attacker, starts the takeover plan below once it is loaded.
 
-| Item | State at HEAD |
+Target choice favours enemies that threaten the team's rooms (`BotGetObjectiveTargetBias`). A bot scores each enemy
+by distance and picks the lowest score. The bias is added to that score, so a bias of -300 makes an enemy count as
+300 units nearer:
+
+| Enemy | Bias at Hotshot |
 |---|---|
-| Takeovers are rare. | Seen in play on a public server. On some levels a loaded bot circles inside the target room at 16-40 u/s and never slows under the 5 u/s speed at which a hold starts. |
-| Inversion produces refused-pickup spam (bots chase viruses the server refuses). | Open. The analyzer flags it as `ENTROPY_REFUSED_PICKUP_SPAM` (`tools/analyze_bot_log.py:1503-1511`). |
-| RAGE wind-tunnel counter-fly fix (`9e602d7f`, routed-cost room selection in `BotGetNearestEntropyRoom`). | In code since 0.9.8; never verified on RAGE. |
-| Rim is nav-hostile for this mode. | Open; tracked in `NAVIGATION.md` §7. |
-| The active park thrusts against knockback, contrary to physics ruling 2. | **Built 2026-10-07.** The counter-thrust is removed: the park holds zero thrust and still bypasses the FSM thrust path, so no juke or combat thrust reaches the pad (§3.3). The takeover rate under fire has not been measured. |
+| Inside one of the bot's team's special rooms | -300 |
+| Inside one of those rooms and carrying 5 or more viruses | -700 |
+| Carrying 5 or more viruses, anywhere else | -200 |
 
-### 3.5 Phase E4 (polish)
+### Taking over a room
 
-**Difficulty scaling, built 2026-10-07.** The mode reuses the bot difficulty table (`kDiffParams`, BOT_MANAGEMENT.md
-§4) instead of adding columns. Its constants were tuned on Hotshot bots, so a Hotshot bot plays exactly as before
-and every other tier moves by its distance from the Hotshot row:
+A bot carrying 5 or more viruses (`BOT_ENTROPY_TAKEOVER_LOAD`) is loaded. A loaded bot drops its powerup errands and
+runs the takeover plan (`BotDoEntropyInvadeNav`). A chat order that keeps the bot at a post or with a player comes
+first.
 
-- **Invasion aggression.** The hard abort floor is a flee threshold, so it takes the table's flee multiplier, the one
-  the generic flee threshold already uses (`BotEntropyRetreatShields`, `bot_objective.cpp`). The re-engage floor keeps
-  its fixed 20 above it: that margin is the hold's cost (3 s of room damage, 15 shields) plus slack, not temperament.
-  The mid-hold flee threshold in `BotUpdateState` uses the same floor. `BOT_ENTROPY_DEPART_SHIELDS` (80) stays above
-  every tier's re-engage floor.
-- **Lab-defence reaction.** The three target-bias terms (intruder, takeover threat, loaded enemy) are multiplied by
-  the table's threat-reaction column, `dodge_percent` (how often the bot answers incoming fire), in
-  `BotGetObjectiveTargetBias`.
+1. **Choose a room.** The target is the nearest enemy special room of any kind, by the router's route cost
+   (`BotGetNearestEntropyRoom`). The cost includes wind-tunnel handling when `$nav wind` is on, so a room reached
+   only through the wrong end of a one-way wind tunnel is not chosen. If no room is routable, the bot uses the room
+   that is nearest by the plain estimate. A bot already inside an enemy special room takes that room.
+2. **Fly in.** The bot flies to a point 24 units inside the room from the nearest portal (`BOT_ENTROPY_HOLD_DEPTH`).
+   The point is inside the room because a ship on the portal plane flips between the two rooms and the hold keeps
+   breaking. On the way it fights only a visible enemy within 40 units.
+3. **Start the hold.** The hold starts only when the ship is at least 8 units past the portal plane
+   (`BOT_ENTROPY_HOLD_MIN_DEPTH`) and moving at 5 units per second or less (`BOT_ENTROPY_HOLD_MAX_SPEED`). Until then
+   the bot keeps flying toward its point in the room.
+4. **Hold.** The bot clears its movement goals and uses no thrust at all. It still turns and fires. It does not
+   start a chase while holding. The hold runs until the module completes the takeover, the bot is knocked out of the
+   room, the bot flees, or there is no target room any more. Starts and aborts are logged as
+   `BOT ENTROPY: ... takeover hold START` and `... ABORT`.
+5. **Retreat when hurt.** While loaded, the bot keeps its shields above a floor (below). If it falls under the floor
+   it goes to its own repair room, or its energy room if it has no repair room. It stays on that pad until its
+   shields reach 80 (`BOT_ENTROPY_DEPART_SHIELDS`) before it tries again.
 
-| Tier | Abort floor | Re-engage floor | Bias scale | Intruder / loaded intruder / loaded elsewhere |
+The takeover costs the bot about 15 shields in room damage (3 seconds at 5 per second). The two floors leave room
+for that:
+
+| Floor | Hotshot value | Meaning |
+|---|---|---|
+| Abort floor (`BOT_ENTROPY_RETREAT_SHIELDS`) | 25 | Below this the bot retreats, and a hold in progress ends. |
+| Re-engage floor (`BOT_ENTROPY_REENGAGE_SHIELDS`) | 45 | A bot that is not holding retreats below this, so it does not start an approach it cannot finish. |
+
+While loaded and not holding, the flee threshold is 1.5 times the normal value, capped at 60% of full shields. During
+a hold the flee threshold drops to the abort floor, so fleeing is the abort. A loaded bot that is fighting goes back
+to the invasion once the fight has been idle for 3 seconds (`BOT_CTF_CARRIER_COMBAT_TIMEOUT`).
+
+A bot that is hit while it holds is pushed by the hit like any player. It uses no thrust while holding, so it does
+not push back. If the push moves the ship more than about 5 units but leaves it in the room, the module's clock
+starts again where the ship comes to rest. If the push carries the ship out of the room, the hold ends and the bot
+flies back in under normal thrust. See the physics rulings in [NAVIGATION.md](NAVIGATION.md) section 1.3.
+
+### Difficulty
+
+The mode reuses the difficulty table in [BOT_MANAGEMENT.md](BOT_MANAGEMENT.md#4-difficulty) and adds no columns of
+its own. The numbers above are Hotshot values. A Hotshot bot plays them as written. The other levels scale them:
+
+- **Floors.** Both floors scale with the level's flee scale (`flee_pct_scale`, `BotEntropyRetreatShields`). The
+  re-engage floor stays 20 above the abort floor.
+- **Defence bias.** The three target-bias values scale with the level's dodge column (`dodge_percent`).
+
+| Level | Abort floor | Re-engage floor | Bias scale | Intruder / loaded intruder / loaded elsewhere |
 |---|---|---|---|---|
 | Trainee | 45 | 65 | 0.2 | -60 / -140 / -40 |
 | Rookie | 35 | 55 | 0.5 | -150 / -350 / -100 |
@@ -263,75 +224,35 @@ and every other tier moves by its distance from the Hotshot row:
 | Ace | 17.5 | 37.5 | 1.0 | -300 / -700 / -200 |
 | Insane | 10 | 30 | 1.0 | -300 / -700 / -200 |
 
-Above Hotshot the bias stays at full strength (the dodge column tops out at 100%), so in the mode's own behaviour Ace
-and Insane differ from Hotshot by the abort floor alone; a stronger bias would let an intruder across the map outbid
-the line-of-sight penalty for every nearer enemy. Denial appetite (the enemy-virus pickup priority) does not scale.
-The effect of these scalings in play has not been measured.
+The dodge column stops at 100%, so Ace and Insane differ from Hotshot in this mode only by the two floors. The pickup
+priorities do not scale.
 
-**The squad verbs, built 2026-10-07** (CHAT_COMMANDS.md §A.5). `!attack lab` (also `!attacklab`) gives the attack
-role and lean, as `!attackflag` does: the bot fights for kills and, like every bot, invades the nearest enemy room once
-it carries five viruses; the order adds aggression, not a destination, since an unloaded bot has no lab to go to.
-`!defend lab` (also `!defendlab`) posts the bot, with the `!hold` lifecycle, in the room the DEFEND lean guards
-(`BotEntropyLabGuardRoom`, the lean's lookup moved into a function both use: the room next to the team's first lab
-toward the enemy's, never a lab; the lab when that lookup fails); a team with no lab answers `We have no lab to
-defend.` The post is fixed, so a bot stays put if the lab changes hands. Outside Entropy both are a plain `!attack` or
-`!defend`.
+### Chat orders
 
-The rest of E4 is not built. Its content, unchanged from the original §3.4 except that the verbs and the difficulty
-scaling are built: denial appetite scaling; smarter invasion (strand the enemy's last lab, coordinated raids) only with
-soak evidence; mirror hardening for `entropy_kill_streak` (resync on an observed refused pickup); re-evaluating "combat
-light" (`76549be3`) and loaded-bot aggression; a force-load or empty-net drill command; and further iteration on the
-shield knobs.
+Entropy is a team mode, so bots take orders from players on their own team (see
+[CHAT_COMMANDS.md](CHAT_COMMANDS.md#4-the-orders)). Two verbs are specific to the mode. `!attack lab` adds
+aggression. `!defend lab` posts the bot in the room a defender guards (see [Defence](#defence)). Outside Entropy they
+are a plain `!attack` and `!defend`.
 
-### 3.6 Explicit non-goals (first release)
+### Console controls
 
-- No multi-team Entropy (DLL is hard-capped at 2).
-- No virus-team inference beyond room ownership.
-- No takeover-time prediction displays, no coordination chatter beyond existing verbs.
+These are for testing. The bare `$nav` command lists its switches in the running server. Other console commands are in
+[BOT_MANAGEMENT.md](BOT_MANAGEMENT.md#6-console-commands).
 
----
+| Command | Default | What it does |
+|---|---|---|
+| `$nav entropy on\|off` | on | Turns the room-invasion plan off. With it off, a loaded bot does not invade or hold, and no bot goes to a repair room to heal. Bots still collect and deny viruses, defend, favour intruders as targets and flee earlier with kills or a load. |
+| `$botobj` | | Prints the objective state described above. |
 
-## 4. Testing plan
+The bot log carries `BOT ENTROPY:` lines for virus pickups, losses on death, takeover spends, room choices, invade
+legs, and hold starts and aborts.
 
-- **Maps:** `dementia.mn3` (a 2-level Entropy mission that ships with Descent 3, already in our test
-  library — navdumps exist for SteelVapor; GeoDomes is outdoor-heavy, expect the known
-  outdoor entrance-finding gap to show). The mode's "requirements" filter makes the mission
-  list the easy way to find other Entropy-flagged missions.
-- **Analyzer:** add `RE_*` patterns + a "## Entropy" report section before the first soak:
-  takeovers per round/team (the outcome metric — analog of captures), takeover attempts vs.
-  aborts (hold broken / shield bail), pickups vs. refused-pickups (mirror accuracy!), denial
-  touches, viruses-lost-on-death. Anomaly tripwires: `TROLL_RETIRED_OBJECTIVE` already exists
-  and must stay silent; add `ENTROPY_REFUSED_PICKUP_SPAM` (capacity gate broken) and
-  `ENTROPY_ZERO_TAKEOVERS` (the mode's CHASE_PIN analog).
-  *As built:* the analyzer's Entropy section and all three tripwires exist:
-  `ENTROPY_ZERO_TAKEOVERS`, `ENTROPY_HOLD_CHURN` and `ENTROPY_REFUSED_PICKUP_SPAM`
-  (`tools/analyze_bot_log.py:1486-1511`). Soak manifests: `tools/manifests/entropy-smoke.json`,
-  `entropy-soak.json`.
-- **Stage gates** mirror the CTF history: E1 soak = no behavior regressions in any other mode
-  + clean `$botobj`; E2 soak = bots carry loads >0 with zero refused-pickup spam; E3 soak =
-  takeovers happen, rounds END (the win condition fires) — Entropy rounds ending by
-  elimination rather than timer is the headline success signal.
-- **In-person validation matters more than usual:** early sessions double as "is this mode
-  actually fun against bots," which is the project's whole point. HUD virus-load counter and room textures make bot behavior unusually legible.
+### Where the bots are weak
 
-## 5. Open questions (historical: written before E1; kept as the verification checklist)
+Takeovers by bots are rare. Few loaded bots reach the end of the plan. The kill count that lets a bot carry five
+viruses is lost with every death. On some levels a loaded bot circles inside the target room and never slows to the
+5 units per second a hold needs. Levels whose special rooms are hard to reach for the bots' navigation (see
+[NAVIGATION.md](NAVIGATION.md)) make this worse.
 
-> E1–E3 have since shipped and been validated in live play (0.9.8), so nothing below blocked
-> the virus economy or takeovers in practice. The questions are preserved because they document
-> engine behavior worth knowing when extending the mode.
-
-1. **Does the engine's generic powerup pickup also fire for the virus?** The DLL handles the
-   collision and kills/keeps the object itself, then chains to `DMFCBase->OnServerCollide`.
-   Verify a bot touching a friendly virus at capacity does NOT consume it through some default
-   path (expectation: no — `multisafe` pickup runs off the powerup's pickup script, and
-   EntropyVirus shouldn't have one — but confirm in the first live test).
-2. **Virus object lookup timing:** `FindObjectIDName("EntropyVirus")` needs the Entropy table
-   files loaded — confirm it resolves on the dedicated server at `BotInitObjectiveState`
-   time (CTF flag IDs resolve fine at that point; expect the same).
-3. **Spew-at-center vs. buried-center labs:** a lab whose `path_pnt` is buried (12.3 class)
-   spews viruses at an unreachable-by-LOS center — the via/skeleton machinery should handle
-   the approach, but watch for refused *physical* reachability (virus floats in a pit). The
-   sealed-powerup abandon already covers the pathological case.
-4. **`RCF_GOALSPECIAL_FLAGS` / flag-flip visibility:** confirm room-flag changes made by the
-   DLL are immediately visible to main-exe scans on the same frame (they share the Rooms[]
-   array — expect yes, trivially).
+The bot's kill count is rebuilt from the engine's counters and nothing checks it against the module's. If it comes
+out higher than the module's, the bot chases viruses the module refuses to give it.
