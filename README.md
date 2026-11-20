@@ -4,7 +4,7 @@ Multiplayer bots for Descent 3.
 
 Matcen is a build of the open-source Descent 3 engine with bots built in. They join a multiplayer game as ordinary players, in every game mode and on any level, and nobody who connects needs to install anything.
 
-**Play now:** a public server with bots runs around the clock at `matcen.dev:2092`. In the game, choose Multiplayer, Direct TCP/IP and enter that address, or start the game with `-directip matcen.dev:2092`.
+**Play now:** a public server with bots runs around the clock. Its address is on [matcen.dev](https://matcen.dev): the game's join screen takes a numeric address, not a name.
 
 **Run your own:** packages for Windows, Linux and macOS are on the [Releases page](https://github.com/stev0760/Descent3/releases); the macOS one is untested. [QUICKSTART.md](matcen-docs/QUICKSTART.md) gets a server with bots running in a few minutes.
 

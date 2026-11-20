@@ -94,7 +94,7 @@ announced in chat. A server with no bot configuration runs without bots.
 [BOT_MANAGEMENT.md](BOT_MANAGEMENT.md) has every key and rule.
 
 Players join from Multiplayer, Direct TCP/IP, or from the command line with `-directip <address:port>`; `+connect`
-alone joins nothing.
+alone joins nothing. The address is a numeric IPv4 address: the game does not look up host names.
 
 ## The console
 
