@@ -185,8 +185,8 @@ int SliderGetPos(UISlider *slider);
 void SliderSetSelectChangeCallback(UISlider *slider, void (*fn)(int));
 void SliderSetSelectChangeCallbackWData(UISlider *slider, void (*fn)(int, void *), void *ptr);
 UIObject *CheckBoxCreate(UIWindow *parent, int id, UIItem *title, int x, int y, int w, int h, int flags);
-void CheckBoxSetCheck(UICheckBox *cb, bool state);
-bool CheckBoxIsChecked(UICheckBox *cb);
+void CheckBoxSetCheck(UIObject *obj, bool state);
+bool CheckBoxIsChecked(UIObject *obj);
 void GetUIItemPosition(UIObject *item, int *x, int *y, int *w, int *h);
 
 void ScoreAPIFrameInterval();
