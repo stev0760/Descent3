@@ -15,6 +15,9 @@ with their mission files in [TEST_LEVELS.md](TEST_LEVELS.md).
   from the game client crashed when the Team Setup screen opened. A dedicated server never shows that screen, so
   servers were not affected. The fault is in the original game code; the write-up is
   [UPSTREAM_PATCHES.md](UPSTREAM_PATCHES.md) #14.
+- **Up to date with the upstream engine.** Matcen now includes upstream DescentDevelopers/Descent3 as of 2026-11-10,
+  which adds the `-randseed` command-line option. Building from source needs a vcpkg checkout from 2026-10-30 or
+  later.
 
 ## [0.10.18] - 2026-11-18
 
