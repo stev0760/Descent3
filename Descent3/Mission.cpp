@@ -704,14 +704,14 @@ bool mn3_GetInfo(const std::filesystem::path &mn3file, tMissionInfo *msn);
 
 static inline bool IS_MN3_FILE(const std::filesystem::path &fname) {
   std::filesystem::path ext = fname.extension();
-  return (stricmp((const char *)ext.u8string().c_str(), ".mn3") == 0);
+  return stricmp(PATH_TO_CSTR(ext), ".mn3") == 0;
 }
 
 // The .msn inside a mission archive is named after the archive's stem. Append the extension instead of replacing
 // one: replace_extension() would take a dot inside the stem (name1.1.mn3) for an extension and ask for name1.msn.
 static inline std::filesystem::path MN3_TO_MSN_NAME(const std::filesystem::path &mn3name) {
   std::filesystem::path fname = std::filesystem::path(mn3name).stem();
-  if (stricmp((const char *)fname.u8string().c_str(), "d3_2") == 0) {
+  if (stricmp(PATH_TO_CSTR(fname), "d3_2") == 0) {
     fname = "d3";
   }
   fname += ".msn";
@@ -756,7 +756,7 @@ void InitDefaultMissionFromCLI() {
     if (!IS_MN3_FILE(filename)) {
       filename += ".mn3"; // append, not replace_extension(): a dot inside the name (name1.1) is not an extension
     }
-    LoadMission((const char *)filename.u8string().c_str());
+    LoadMission(filename);
 
     int level_arg = FindArg("-loadlevel");
     if (level_arg > 0) {
@@ -907,7 +907,7 @@ bool DemoMission(int mode = 0) {
 }
 #endif
 
-bool LoadMission(const char *mssn) {
+bool LoadMission(const std::filesystem::path& mssn) {
   Times_game_restored = 0;
   LOG_INFO << "In LoadMission()";
 #if (defined(OEM) || defined(DEMO))
@@ -947,7 +947,7 @@ bool LoadMission(const char *mssn) {
   // Open MN3 if filename passed was a mn3 file.
   if (IS_MN3_FILE(mssn)) {
     mission = mssn;
-    pathname = std::filesystem::path("missions") / mission;
+    pathname = "missions" / mission;
   } else {
     mission = mssn;
     pathname = mssn;
@@ -1194,9 +1194,9 @@ bool LoadMission(const char *mssn) {
   //	set up current mission (movies are already set above)
   msn->cur_level = 1;
   msn->num_levels = numlevels;
-  msn->filename = mem_strdup((const char *)mission.u8string().c_str());
+  msn->filename = mem_strdup(PATH_TO_CSTR(mission));
   msn->game_state_flags = 0;
-  strcpy(Net_msn_URLs.msnname, (const char *)mission.u8string().c_str());
+  strcpy(Net_msn_URLs.msnname, PATH_TO_CSTR(mission));
   res = true; // everything is ok.
 
   // if error, print it out, else end.
@@ -1218,7 +1218,7 @@ msnfile_error:
   }
   return res;
 fatal_error:
-  mem_error();
+  Error("Out of memory loading mission %s.", PATH_TO_CSTR(mssn));
   return false;
 #endif
   return false;
@@ -1266,7 +1266,7 @@ void LoadLevelText(const std::filesystem::path &level_filename) {
   pathname.replace_extension(".str");
 
   char **goal_strings;
-  if (CreateStringTable((const char *)pathname.u8string().c_str(), &goal_strings, &n_strings)) {
+  if (CreateStringTable(PATH_TO_CSTR(pathname), &goal_strings, &n_strings)) {
     int n_goals = Level_goals.GetNumGoals();
     ASSERT(n_strings == (n_goals * 3));
     for (int i = 0; i < n_goals; i++) {
@@ -1720,7 +1720,7 @@ bool GetMissionInfo(const std::filesystem::path &msnfile, tMissionInfo *msn) {
   }
   CFILE *fp = cfopen(msnfile, "rt");
   if (!fp) {
-    LOG_WARNING.printf("Failed to open mission file %s in GetMissionInfo.", msnfile.u8string().c_str());
+    LOG_WARNING.printf("Failed to open mission file %s in GetMissionInfo.", PATH_TO_CSTR(msnfile));
     return false;
   }
   msn->multi = true;
@@ -1776,7 +1776,7 @@ bool GetMissionInfo(const std::filesystem::path &msnfile, tMissionInfo *msn) {
   return true;
 }
 
-const char *GetMissionName(const char *mission) {
+const char *GetMissionName(const std::filesystem::path &mission) {
   tMissionInfo msninfo{};
   static char msnname[MSN_NAMELEN];
   msnname[0] = 0;
@@ -1788,7 +1788,7 @@ const char *GetMissionName(const char *mission) {
   return msnname;
 }
 
-bool IsMissionMultiPlayable(const char *mission) {
+bool IsMissionMultiPlayable(const std::filesystem::path &mission) {
   tMissionInfo msninfo{};
   if (GetMissionInfo(mission, &msninfo)) {
     return msninfo.multi;
@@ -1820,18 +1820,17 @@ bool mn3_Open(const std::filesystem::path &mn3file) {
   std::filesystem::path filename = mn3file.stem();
 
   std::filesystem::path voice_hog;
-  if ((stricmp((const char *)filename.u8string().c_str(), "d3") == 0) ||
-      (stricmp((const char *)filename.u8string().c_str(), "training") == 0)) {
+  if (stricmp(PATH_TO_CSTR(filename), "d3") == 0 || stricmp(PATH_TO_CSTR(filename), "training") == 0) {
     // Open audio hog file
     voice_hog = std::filesystem::path("missions") / "d3voice1.hog"; // Audio for levels 1-4
     Mission_voice_hog_handle = cf_OpenLibrary(voice_hog);
-  } else if (stricmp((const char *)filename.u8string().c_str(), "d3_2") == 0) {
+  } else if (stricmp(PATH_TO_CSTR(filename), "d3_2") == 0) {
     // Open audio hog file
     voice_hog = std::filesystem::path("missions") / "d3voice2.hog"; // Audio for levels 5-17
     Mission_voice_hog_handle = cf_OpenLibrary(voice_hog);
   }
   filename += ".gam"; // append, not replace_extension(): the stem of name1.1.mn3 is name1.1
-  mng_SetAddonTable((const char *)filename.u8string().c_str());
+  mng_SetAddonTable(PATH_TO_CSTR(filename));
   Current_mission.mn3_handle = mn3_handle;
   return true;
 }
@@ -1880,8 +1879,8 @@ void mn3_Close() {
 // Return values:
 // -1	Bad match -- this level and this mod shouldn't be played together!
 // MAX_NET_PLAYERS	-- This is playable with any number of teams the mod wants
-int MissionGetKeywords(const char *mission, char *keywords) {
-  ASSERT(mission);
+int MissionGetKeywords(const std::filesystem::path &mission, char *keywords) {
+  ASSERT(!mission.empty());
   ASSERT(keywords);
 
   char msn_keywords[NUM_KEYWORDS][KEYWORD_LEN];
@@ -1898,7 +1897,7 @@ int MissionGetKeywords(const char *mission, char *keywords) {
 
   memset(msn_keywords, 0, sizeof(msn_keywords));
   memset(mod_keywords, 0, sizeof(mod_keywords));
-  LOG_DEBUG.printf("MissionGetKeywords(%s,%s)", mission, keywords);
+  LOG_DEBUG << "MissionGetKeywords(" << mission << ", " << keywords << ")";
   if (!GetMissionInfo(mission, &msn_info)) {
     return -1;
   }
@@ -1961,7 +1960,7 @@ int MissionGetKeywords(const char *mission, char *keywords) {
       }
       // We never found one we needed, so return -1;
       if (!found_keyword) {
-        LOG_WARNING.printf("%s keyword needed in %s not found!", mod_keyword, mission);
+        LOG_WARNING << mod_keyword << " keyword needed in " << mission << " not found!";
         return -1;
       }
     }
@@ -1996,7 +1995,7 @@ void QuickStartMission() {
   if (Editor_quickplay_levelname[0] != '\0')
     Current_level->filename = mem_strdup(Editor_quickplay_levelname);
   else
-    Current_level->filename = NULL;
+    Current_level->filename = nullptr;
   //	proceed with initialization.
   InitMissionScript();
   SetGameState(GAMESTATE_LVLSTART);

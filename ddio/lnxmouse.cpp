@@ -216,12 +216,12 @@ static int sdlButtonToSlot(uint8_t sdl_button) {
   }
 }
 
-bool sdlMouseButtonDownFilter(SDL_Event const *event) {
+void sdlMouseButtonDownEvent(SDL_Event const *event) {
   ASSERT(event->type == SDL_EVENT_MOUSE_BUTTON_DOWN);
 
   int slot = sdlButtonToSlot(event->button.button);
   if (slot < 0)
-    return false;
+    return;
 
   DDIO_mouse_state.btn_mask |= (1 << slot);
   DIM_buttons.down_count[slot]++;
@@ -232,16 +232,14 @@ bool sdlMouseButtonDownFilter(SDL_Event const *event) {
   mevt.btn = slot;
   mevt.state = true;
   MB_queue.send(mevt);
-
-  return false;
 }
 
-bool sdlMouseButtonUpFilter(SDL_Event const *event) {
+void sdlMouseButtonUpEvent(SDL_Event const *event) {
   ASSERT(event->type == SDL_EVENT_MOUSE_BUTTON_UP);
 
   int slot = sdlButtonToSlot(event->button.button);
   if (slot < 0)
-    return false;
+    return;
 
   DDIO_mouse_state.btn_mask &= ~(1 << slot);
   DIM_buttons.up_count[slot]++;
@@ -252,8 +250,6 @@ bool sdlMouseButtonUpFilter(SDL_Event const *event) {
   mevt.btn = slot;
   mevt.state = false;
   MB_queue.send(mevt);
-
-  return false;
 }
 
 // Vertical mouse wheel: represented as click pulses on the engine's reserved
@@ -282,7 +278,7 @@ static void sdlMouseWheelPulse(int slot, int mask_bit) {
   MB_queue.send(mevt);
 }
 
-bool sdlMouseWheelFilter(SDL_Event const *event) {
+void sdlMouseWheelEvent(SDL_Event const *event) {
   ASSERT(event->type == SDL_EVENT_MOUSE_WHEEL);
 
   const SDL_MouseWheelEvent *ev = &event->wheel;
@@ -300,11 +296,9 @@ bool sdlMouseWheelFilter(SDL_Event const *event) {
     sdlMouseWheelPulse(5, MOUSE_B6);
     Mouse_wheel_accum = 0.0f;
   }
-
-  return false;
 }
 
-bool sdlMouseMotionFilter(SDL_Event const *event) {
+void sdlMouseMotionEvent(SDL_Event const *event) {
   if (event->type == SDL_EVENT_JOYSTICK_BALL_MOTION) {
     DDIO_mouse_state.dx = event->jball.xrel / 100.0f;
     DDIO_mouse_state.dy = event->jball.yrel / 100.0f;
@@ -325,16 +319,10 @@ bool sdlMouseMotionFilter(SDL_Event const *event) {
     DDIO_mouse_state.y = DDIO_mouse_state.t;
   if (DDIO_mouse_state.y >= DDIO_mouse_state.b)
     DDIO_mouse_state.y = DDIO_mouse_state.b - 1;
-
-  return false;
 }
 
 //	This function will handle all mouse events.
-void ddio_InternalMouseFrame(void) {
-  static unsigned frame_count = 0;
-  SDL_PumpEvents();
-  frame_count++;
-}
+void ddio_InternalMouseFrame(void) {}
 
 /*	x, y = absolute mouse position
         dx, dy = mouse deltas since last call

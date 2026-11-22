@@ -357,7 +357,6 @@ target_link_libraries(Descent3 PRIVATE
   linux
   logger
   manage
-  mem
   md5
   misc
   model

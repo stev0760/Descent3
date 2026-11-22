@@ -32,6 +32,7 @@
 #endif
 
 #include "log.h"
+#include "pstypes.h"
 
 namespace {
 // The console's lines are already formatted text: the file keeps them as stdout shows them, so a log reader takes the
@@ -96,7 +97,7 @@ private:
 void InitLog(plog::Severity log_level, bool enable_filelog, bool enable_win_console) {
   std::filesystem::path log_file = "Descent3.log";
   static plog::ColorConsoleAppender<plog::TxtFormatter> consoleAppender;
-  static FileAppender fileAppender((const char *)log_file.u8string().c_str());
+  static FileAppender fileAppender(PATH_TO_CSTR(log_file));
 
 #ifdef WIN32
   static plog::DebugOutputAppender<plog::TxtFormatter> debugAppender;

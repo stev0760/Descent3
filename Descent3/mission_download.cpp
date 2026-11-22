@@ -121,8 +121,9 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
-#include <future>
+#include <filesystem>
 #include <fstream>
+#include <future>
 
 #include "mem.h"
 #include "args.h"
@@ -153,7 +154,7 @@ msn_urls Net_msn_URLs;
 extern char Proxy_server[200];
 extern int16_t Proxy_port;
 
-int msn_ExtractZipFile(const std::filesystem::path &zipfilename, const std::filesystem::path &mn3name);
+static int msn_ExtractZipFile(const std::filesystem::path &zipfilename, const std::filesystem::path &mn3name);
 
 // Request a URL structure from a server containing a list of download locations
 // For the current mission being played
@@ -187,7 +188,7 @@ msn_urls *msn_GetURL(network_address *net_addr) {
   }
 
   if (tries >= 5 || Got_url != 1)
-    return NULL;
+    return nullptr;
 
   return &msn_URL;
 }
@@ -333,7 +334,7 @@ bool msn_DownloadWithStatus(const char *url, const std::filesystem::path &filena
   }
   url_parts.front() = scheme;
   std::filesystem::path download_file = std::filesystem::path(url_parts.back());
-  if (stricmp((const char*)download_file.extension().u8string().c_str(), ".zip") == 0) {
+  if (stricmp(PATH_TO_CSTR(download_file.extension()), ".zip") == 0) {
     LOG_DEBUG << "We're downloading a zip file!!!";
     file_is_zip = true;
   }
@@ -441,7 +442,7 @@ bool msn_DownloadWithStatus(const char *url, const std::filesystem::path &filena
 
           if (file_is_zip) {
             // now we gotta handle the zip file
-            ret = msn_ExtractZipFile(qualfile.u8string().c_str(), filename);
+            ret = msn_ExtractZipFile(qualfile, filename);
           } else {
             ret = 1;
           }
@@ -701,37 +702,25 @@ char *msn_SecondsToString(int time_sec) {
   return fmttime;
 }
 
-void _get_zipfilename(char *output, char *directory, char *zipfilename) {
-  char *s = strrchr(zipfilename, '/');
-  if (s)
-    s++;
-  else
-    s = zipfilename;
-
-  ddio_MakePath(output, directory, s, NULL);
-}
-
 // return 0 on failure
 // return 1 on success
-int msn_ExtractZipFile(const std::filesystem::path &zipfilename, const std::filesystem::path &mn3name) {
+static int msn_ExtractZipFile(const std::filesystem::path &zipfilename, const std::filesystem::path &mn3name) {
 
-  LOG_DEBUG.printf("Extracting ZIP File (%s) to missions directory", zipfilename.u8string().c_str());
+  LOG_DEBUG.printf("Extracting ZIP File (%s) to missions directory", PATH_TO_CSTR(zipfilename));
   if (!cfexist(zipfilename)) {
     LOG_WARNING << "Zip file doesn't exist";
     return 0;
   }
 
-  char mission_directory[_MAX_PATH];
-  char output_filename[_MAX_PATH];
   char buffer[256 + 32];
 
-  ddio_MakePath(mission_directory, LocalD3Dir, "missions", NULL);
+  std::filesystem::path mission_directory = std::filesystem::path(LocalD3Dir) / "missions";
 
   // now go through the zip file and extract all the files out that we can
   ZIP zfile;
   zipentry *ze;
 
-  if (!zfile.OpenZip((const char*)zipfilename.u8string().c_str())) {
+  if (!zfile.OpenZip(PATH_TO_CSTR(zipfilename))) {
     LOG_WARNING << "Unable to open zip file";
     return 0;
   }
@@ -747,7 +736,7 @@ int msn_ExtractZipFile(const std::filesystem::path &zipfilename, const std::file
   bool found_mn3 = false;
   bool process_file;
 
-  while ((ze = zfile.ReadNextZipEntry()) != NULL) {
+  while ((ze = zfile.ReadNextZipEntry()) != nullptr) {
     if (ze->crc32 == 0)
       continue; // skip directories
 
@@ -768,14 +757,16 @@ int msn_ExtractZipFile(const std::filesystem::path &zipfilename, const std::file
       console.puts(GR_GREEN, buffer);
 
       // create the filename for this file
-      _get_zipfilename(output_filename, mission_directory, ze->name);
+      std::filesystem::path output_filename = mission_directory / std::filesystem::path(ze->name).filename();
 
       if (cfexist(output_filename)) {
-        snprintf(buffer, sizeof(buffer), "%s already exists. Overwrite?", output_filename);
+        snprintf(buffer, sizeof(buffer), "%s already exists. Overwrite?", output_filename.u8string().c_str());
         if (DoMessageBox("Confirm", buffer, MSGBOX_YESNO, UICOL_WINDOW_TITLE, UICOL_TEXT_NORMAL)) {
           // delete the file
-          LOG_DEBUG.printf("Deleting %s", zipfilename.u8string().c_str());
-          if (!ddio_DeleteFile(output_filename)) {
+          LOG_DEBUG.printf("Deleting %s", PATH_TO_CSTR(zipfilename));
+          std::error_code ec;
+          std::filesystem::remove(output_filename, ec);
+          if (ec) {
             process_file = false;
             console.puts(GR_GREEN, "[Unable to Write] ");
           } else {
@@ -793,7 +784,7 @@ int msn_ExtractZipFile(const std::filesystem::path &zipfilename, const std::file
         DoUIFrame();
         rend_Flip();
 
-        int ret = zfile.ExtractFile(ze, output_filename);
+        int ret = zfile.ExtractFile(ze, PATH_TO_CSTR(output_filename));
         if (ret < 0) {
           if (ret == -9) {
             LOG_WARNING << " Error writing to file";
@@ -804,7 +795,8 @@ int msn_ExtractZipFile(const std::filesystem::path &zipfilename, const std::file
           }
           console.puts(GR_GREEN, buffer);
           if (cfexist(output_filename)) {
-            ddio_DeleteFile(output_filename);
+            std::error_code ec;
+            std::filesystem::remove(output_filename, ec);
           }
         } else {
           // check the CRC
@@ -813,12 +805,13 @@ int msn_ExtractZipFile(const std::filesystem::path &zipfilename, const std::file
             console.puts(GR_GREEN, "CRC OK");
 
             // check to see if we extracted our mn3
-            if (CompareZipFileName(ze->name, (const char*)mn3name.u8string().c_str())) {
+            if (CompareZipFileName(ze->name, PATH_TO_CSTR(mn3name))) {
               found_mn3 = true;
             }
           } else {
             console.puts(GR_GREEN, "CRC FAIL!");
-            ddio_DeleteFile(output_filename);
+            std::error_code ec;
+            std::filesystem::remove(output_filename, ec);
           }
         }
       }
@@ -837,7 +830,7 @@ int msn_ExtractZipFile(const std::filesystem::path &zipfilename, const std::file
   if (DoMessageBox("Confirm", "Do you want to delete the zip file? It is no longer needed.", MSGBOX_YESNO,
                    UICOL_WINDOW_TITLE, UICOL_TEXT_NORMAL)) {
     // delete the file
-    LOG_DEBUG.printf("Deleting %s", zipfilename.u8string().c_str());
+    LOG_DEBUG.printf("Deleting %s", PATH_TO_CSTR(zipfilename));
     std::error_code ec;
     std::filesystem::remove(zipfilename);
   }
@@ -856,7 +849,7 @@ int CheckGetD3M(char *d3m) {
 
   char modurl[MAX_MISSION_URL_LEN + 1];
   char *lowurl;
-  char *fixedd3m = NULL;
+  char *fixedd3m = nullptr;
 
   if (cfexist(d3m) || cfexist(std::filesystem::path(LocalD3Dir) / "netgames" / d3m)) {
     return 1;
