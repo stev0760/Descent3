@@ -803,8 +803,17 @@ UIObject *CheckBoxCreate(UIWindow *parent, int id, UIItem *title, int x, int y, 
     newcb->Create(parent, id, title, x, y, w, h, flags);
   return newcb;
 }
-void CheckBoxSetCheck(UICheckBox *cb, bool state) { cb->SetCheck(state); }
-bool CheckBoxIsChecked(UICheckBox *cb) { return cb->IsChecked(); }
+// A game DLL holds a check box as the UIObject * that CheckBoxCreate returned. UICheckBox derives from UIButton
+// virtually, so that pointer addresses the virtual base, not the UICheckBox: using it as a UICheckBox * reads a wrong
+// base offset and writes outside the object. dynamic_cast is the conversion that finds the whole object again.
+void CheckBoxSetCheck(UIObject *obj, bool state) {
+  if (auto *cb = dynamic_cast<UICheckBox *>(obj))
+    cb->SetCheck(state);
+}
+bool CheckBoxIsChecked(UIObject *obj) {
+  auto *cb = dynamic_cast<UICheckBox *>(obj);
+  return cb && cb->IsChecked();
+}
 float UI_LastPoll = 0l;
 #define MIN_FRAMETIME .033
 int PollUI(void) {

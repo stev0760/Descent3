@@ -6,7 +6,7 @@ is, what the change does and which files it touches. Each fix applies without th
 
 ## Index
 
-All fixes are in Matcen 0.10.18.
+Fixes 1 to 13 are in Matcen 0.10.18; fix 14 is in 0.10.19.
 
 | # | Defect | Files | Upstream status |
 | :--- | :--- | :--- | :--- |
@@ -23,6 +23,7 @@ All fixes are in Matcen 0.10.18.
 | 11 | A mission file name with a second dot never loads | `Descent3/Mission.cpp` | not submitted |
 | 12 | A second server on one host hangs on its first frame | `Descent3/gamespy.cpp` | not submitted |
 | 13 | The remote console can stop the server, or lose its port | `Descent3/sdlmain.cpp`, `Descent3/dedicated_server.cpp` | not submitted |
+| 14 | Hosting a team game from the client crashes in the Team Setup dialog (Windows) | `Descent3/multi_dll_mgr.cpp`, `Descent3/multi_dll_mgr.h` | not submitted |
 
 ---
 
@@ -475,6 +476,47 @@ unfixed one closed a console connection can still fail to bind once.
 
 **Files.** `Descent3/sdlmain.cpp` (`install_signal_handlers`), `Descent3/dedicated_server.cpp`
 (`InitDedicatedSocket`).
+
+---
+
+## 14. Hosting a team game from the client crashes in the Team Setup dialog (Windows)
+
+**Symptom.** A player who hosts a team game (CTF, Team Anarchy and the other team modes) from the game client, not a
+dedicated server, crashes with an access violation when the Team Setup dialog opens. The game writes
+`%TEMP%\d3-crash.dmp`, and the faulting function is `UICheckBox::SetCheck`.
+
+**How to reproduce.** On a Windows (MSVC) build, start a multiplayer CTF game as the host from the client and continue
+to the Team Setup dialog. A dedicated server never opens this dialog.
+
+**Cause.** `UICheckBox` derives from `UIButton` virtually (`ui/ui.h`). `CheckBoxCreate()` in
+`Descent3/multi_dll_mgr.cpp` returns the new check box as a `UIObject *`. The conversion from derived to virtual base
+moves the pointer to the base subobject, which is not at the address of the `UICheckBox`. DMFC keeps that pointer
+(`client_wait_cb` in `netgames/dmfc/dmfcui.cpp`) and passes it to `DLLCheckBoxSetCheck` and `DLLCheckBoxIsChecked`.
+On the engine side `CheckBoxSetCheck()` and `CheckBoxIsChecked()` took a `UICheckBox *`, so the `void *` from the
+DLL was read as a whole `UICheckBox`. `SetCheck()` then took a wrong virtual-base offset from the base's vtable and
+wrote `m_State` outside the object. The code is unchanged since the initial import.
+
+**Fix.** Both functions take the `UIObject *` the DLL holds and convert it with `dynamic_cast`, which finds the
+complete object through the virtual base.
+
+```cpp
+void CheckBoxSetCheck(UIObject *obj, bool state) {
+  if (auto *cb = dynamic_cast<UICheckBox *>(obj))
+    cb->SetCheck(state);
+}
+bool CheckBoxIsChecked(UIObject *obj) {
+  auto *cb = dynamic_cast<UICheckBox *>(obj);
+  return cb && cb->IsChecked();
+}
+```
+
+The DLL interface (`CheckBoxSetCheck_fp`, `CheckBoxIsChecked_fp`) takes `void *` and does not change, so no netgame
+module needs rebuilding. Only the check box crosses the DLL boundary this way: `UIRadioButton` and `newuiButton` also
+derive from `UIButton` virtually, but the game DLL API does not export them. The crash was seen and diagnosed on
+Windows. The Itanium ABI used by GCC and Clang also places a virtual base away from the object's start, so other
+platforms read the same wrong pointer, but no crash has been observed there.
+
+**Files.** `Descent3/multi_dll_mgr.cpp` and `Descent3/multi_dll_mgr.h`: `CheckBoxSetCheck`, `CheckBoxIsChecked`.
 
 ---
 

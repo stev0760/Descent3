@@ -9,6 +9,13 @@ a larger change that may be backed out whole, until it passes its validation gat
 Versions before 0.10.0 were development builds; their changes are in the git history. Levels named here are listed
 with their mission files in [TEST_LEVELS.md](TEST_LEVELS.md).
 
+## [0.10.19] - 2026-11-21
+
+- **Hosting a team game from the Windows client no longer crashes.** Starting a CTF or other team game as the host
+  from the game client crashed when the Team Setup screen opened. A dedicated server never shows that screen, so
+  servers were not affected. The fault is in the original game code; the write-up is
+  [UPSTREAM_PATCHES.md](UPSTREAM_PATCHES.md) #14.
+
 ## [0.10.18] - 2026-11-18
 
 - **A freeze weapon slows a bot as it slows a player.** A weapon with the engine's freeze effect cuts the speed of

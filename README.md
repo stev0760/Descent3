@@ -46,7 +46,7 @@ BotTeam1=1
 
 ## Status
 
-**0.10.18**, with release notes in [CHANGELOG.md](matcen-docs/CHANGELOG.md). Matcen stays below 1.0 until community play shows it is stable. The bots are strongest in Anarchy and CTF; co-op, Entropy and Monsterball are playable and still being polished, and on some large or unusual levels bots find their way less well.
+**0.10.19**, with release notes in [CHANGELOG.md](matcen-docs/CHANGELOG.md). Matcen stays below 1.0 until community play shows it is stable. The bots are strongest in Anarchy and CTF; co-op, Entropy and Monsterball are playable and still being polished, and on some large or unusual levels bots find their way less well.
 
 Bug reports are welcome on the [issue tracker](https://github.com/stev0760/Descent3/issues). A problem that also happens on an upstream build belongs on the [upstream tracker](https://github.com/DescentDevelopers/Descent3/issues).
 
